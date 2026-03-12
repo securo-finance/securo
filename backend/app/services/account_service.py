@@ -122,7 +122,7 @@ async def create_account(session: AsyncSession, user_id: uuid.UUID, data: Accoun
             description="Saldo inicial",
             amount=data.balance,
             currency=data.currency,
-            date=_Date.today(),
+            date=data.balance_date or _Date.today(),
             type=opening_type,
             source="opening_balance",
         )
@@ -144,8 +144,44 @@ async def update_account(
     if account.connection_id is not None:
         raise ValueError("Cannot edit bank-connected accounts")
 
-    for key, value in data.model_dump(exclude_unset=True).items():
+    update_data = data.model_dump(exclude_unset=True)
+    balance_date = update_data.pop("balance_date", None)
+
+    for key, value in update_data.items():
         setattr(account, key, value)
+
+    # When balance changes, sync the opening_balance transaction
+    if "balance" in update_data:
+        new_balance = update_data["balance"]
+        existing_opening = await session.execute(
+            select(Transaction).where(
+                Transaction.account_id == account_id,
+                Transaction.source == "opening_balance",
+            )
+        )
+        opening_tx = existing_opening.scalar_one_or_none()
+        opening_type = "debit" if account.type == "credit_card" else "credit"
+
+        if new_balance > Decimal("0.00"):
+            if opening_tx:
+                opening_tx.amount = new_balance
+                opening_tx.type = opening_type
+                if balance_date:
+                    opening_tx.date = balance_date
+            else:
+                opening_tx = Transaction(
+                    user_id=account.user_id,
+                    account_id=account_id,
+                    description="Saldo inicial",
+                    amount=new_balance,
+                    currency=account.currency,
+                    date=balance_date or _Date.today(),
+                    type=opening_type,
+                    source="opening_balance",
+                )
+                session.add(opening_tx)
+        elif opening_tx:
+            await session.delete(opening_tx)
 
     await session.commit()
     await session.refresh(account)

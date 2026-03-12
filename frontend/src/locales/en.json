@@ -111,6 +111,7 @@
     "openingBalance": "opening balance",
     "notFound": "Account not found.",
     "balance": "Balance",
+    "balanceDate": "Balance date",
     "lastSync": "Last sync",
     "sync": "Sync",
     "disconnect": "Disconnect",

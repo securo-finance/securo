@@ -111,6 +111,7 @@
     "openingBalance": "saldo inicial",
     "notFound": "Conta não encontrada.",
     "balance": "Saldo",
+    "balanceDate": "Data do saldo",
     "lastSync": "Última sincronização",
     "sync": "Sincronizar",
     "disconnect": "Desconectar",

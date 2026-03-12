@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -14,6 +14,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
+import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { Account, BankConnection } from '@/types'
@@ -510,7 +511,7 @@ export default function AccountsPage() {
           if (editingAccount) {
             updateMutation.mutate({ id: editingAccount.id, ...data })
           } else {
-            createMutation.mutate(data as { name: string; type: string; balance?: number; currency?: string })
+            createMutation.mutate(data as { name: string; type: string; balance?: number; balance_date?: string; currency?: string })
           }
         }}
         loading={createMutation.isPending || updateMutation.isPending}
@@ -529,7 +530,7 @@ function AccountDialog({
   open: boolean
   onClose: () => void
   account: Account | null
-  onSave: (data: { name?: string; type?: string; balance?: number; currency?: string }) => void
+  onSave: (data: { name?: string; type?: string; balance?: number; balance_date?: string; currency?: string }) => void
   loading: boolean
 }) {
   const { t } = useTranslation()
@@ -537,6 +538,15 @@ function AccountDialog({
   const [type, setType] = useState(account?.type ?? 'checking')
   const [balance, setBalance] = useState(account?.balance?.toString() ?? '0')
   const [currency, setCurrency] = useState(account?.currency ?? 'BRL')
+  const [balanceDate, setBalanceDate] = useState(new Date().toISOString().slice(0, 10))
+
+  useEffect(() => {
+    setName(account?.name ?? '')
+    setType(account?.type ?? 'checking')
+    setBalance(account?.balance?.toString() ?? '0')
+    setCurrency(account?.currency ?? 'BRL')
+    setBalanceDate(new Date().toISOString().slice(0, 10))
+  }, [account])
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -550,10 +560,7 @@ function AccountDialog({
           key={account?.id ?? 'new'}
           onSubmit={(e) => {
             e.preventDefault()
-            onSave(account
-              ? { name, type, currency }
-              : { name, type, balance: parseFloat(balance), currency }
-            )
+            onSave({ name, type, balance: parseFloat(balance), balance_date: balanceDate, currency })
           }}
           className="space-y-4"
         >
@@ -587,7 +594,7 @@ function AccountDialog({
               </select>
             </div>
           </div>
-          {!account && (
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>{t('accounts.balance')}</Label>
               <Input
@@ -597,7 +604,15 @@ function AccountDialog({
                 onChange={(e) => setBalance(e.target.value)}
               />
             </div>
-          )}
+            <div className="space-y-2">
+              <Label>{t('accounts.balanceDate')}</Label>
+              <DatePickerInput
+                value={balanceDate}
+                onChange={setBalanceDate}
+                className="w-full justify-start"
+              />
+            </div>
+          </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               {t('common.cancel')}
