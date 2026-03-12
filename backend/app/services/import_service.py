@@ -27,6 +27,7 @@ def parse_ofx(content: bytes) -> list[TransactionBase]:
                 amount=abs(Decimal(str(txn.amount))),
                 date=txn.date.date() if hasattr(txn.date, 'date') else txn.date,
                 type="credit" if txn.amount > 0 else "debit",
+                external_id=getattr(txn, 'id', None),
             ))
 
     return transactions
@@ -322,16 +323,25 @@ async def import_transactions(
     imported = 0
     skipped = 0
     for txn_data in transactions:
-        # Duplicate detection: check for existing transaction with same key fields
-        existing = await session.execute(
-            select(Transaction).where(
-                Transaction.account_id == account_id,
-                Transaction.date == txn_data.date,
-                Transaction.amount == txn_data.amount,
-                Transaction.type == txn_data.type,
-                Transaction.description == txn_data.description,
+        # Duplicate detection: use external_id when available (OFX FITID),
+        # fall back to field-based matching for formats without unique IDs
+        if txn_data.external_id:
+            existing = await session.execute(
+                select(Transaction).where(
+                    Transaction.account_id == account_id,
+                    Transaction.external_id == txn_data.external_id,
+                )
             )
-        )
+        else:
+            existing = await session.execute(
+                select(Transaction).where(
+                    Transaction.account_id == account_id,
+                    Transaction.date == txn_data.date,
+                    Transaction.amount == txn_data.amount,
+                    Transaction.type == txn_data.type,
+                    Transaction.description == txn_data.description,
+                )
+            )
         if existing.scalar_one_or_none():
             skipped += 1
             continue
@@ -345,6 +355,7 @@ async def import_transactions(
             type=txn_data.type,
             source=source,
             import_id=import_log.id,
+            external_id=txn_data.external_id,
         )
         session.add(transaction)
         await session.flush()

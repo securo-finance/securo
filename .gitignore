@@ -2,4 +2,7 @@
 .worktrees/
 .DS_Store
 .playwright-mcp/
+.claude
 docs/plans/
+RESUMO_PROJETO.md
+Extratos/

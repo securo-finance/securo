@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.services.import_service import parse_csv, parse_qif, parse_camt
+from app.services.import_service import parse_csv, parse_ofx, parse_qif, parse_camt
 
 
 class TestParseCsv:
@@ -412,3 +412,94 @@ class TestParseCamt:
         assert len(transactions) == 1
         assert transactions[0].description == "No NS"
         assert transactions[0].amount == Decimal("300.00")
+
+
+class TestParseOfx:
+    """Tests for the parse_ofx function."""
+
+    def _make_ofx(self, transactions_sgml: str) -> bytes:
+        """Helper to wrap transaction SGML in a valid OFX structure."""
+        return (
+            "OFXHEADER:100\n"
+            "DATA:OFXSGML\n"
+            "VERSION:102\n"
+            "SECURITY:NONE\n"
+            "ENCODING:USASCII\n"
+            "CHARSET:1252\n"
+            "COMPRESSION:NONE\n"
+            "OLDFILEUID:NONE\n"
+            "NEWFILEUID:NONE\n"
+            "\n"
+            "<OFX>\n"
+            "<SIGNONMSGSRSV1>\n"
+            "<SONRS>\n"
+            "<STATUS><CODE>0<SEVERITY>INFO</STATUS>\n"
+            "<DTSERVER>20260101\n"
+            "<LANGUAGE>POR\n"
+            "</SONRS>\n"
+            "</SIGNONMSGSRSV1>\n"
+            "<BANKMSGSRSV1>\n"
+            "<STMTTRNRS>\n"
+            "<TRNUID>1001\n"
+            "<STATUS><CODE>0<SEVERITY>INFO</STATUS>\n"
+            "<STMTRS>\n"
+            "<CURDEF>BRL\n"
+            "<BANKACCTFROM>\n"
+            "<BANKID>0001\n"
+            "<ACCTID>12345\n"
+            "<ACCTTYPE>CHECKING\n"
+            "</BANKACCTFROM>\n"
+            "<BANKTRANLIST>\n"
+            "<DTSTART>20260101\n"
+            "<DTEND>20260131\n"
+            f"{transactions_sgml}\n"
+            "</BANKTRANLIST>\n"
+            "</STMTRS>\n"
+            "</STMTTRNRS>\n"
+            "</BANKMSGSRSV1>\n"
+            "</OFX>\n"
+        ).encode("ascii")
+
+    def test_parse_ofx_extracts_fitid(self):
+        """FITID from OFX transactions populates external_id."""
+        ofx = self._make_ofx(
+            "<STMTTRN>\n"
+            "<TRNTYPE>DEBIT\n"
+            "<DTPOSTED>20260115\n"
+            "<TRNAMT>-985.50\n"
+            "<FITID>TXN001ABC\n"
+            "<MEMO>PIX ENVIADO - FULANO\n"
+            "</STMTTRN>\n"
+        )
+        transactions = parse_ofx(ofx)
+
+        assert len(transactions) == 1
+        assert transactions[0].external_id == "TXN001ABC"
+        assert transactions[0].amount == Decimal("985.50")
+        assert transactions[0].type == "debit"
+
+    def test_parse_ofx_keeps_duplicate_looking_transactions(self):
+        """Transactions with same fields but different FITIDs are both kept."""
+        ofx = self._make_ofx(
+            "<STMTTRN>\n"
+            "<TRNTYPE>DEBIT\n"
+            "<DTPOSTED>20260115\n"
+            "<TRNAMT>-985.50\n"
+            "<FITID>FITID_001\n"
+            "<MEMO>PIX ENVIADO - FULANO\n"
+            "</STMTTRN>\n"
+            "<STMTTRN>\n"
+            "<TRNTYPE>DEBIT\n"
+            "<DTPOSTED>20260115\n"
+            "<TRNAMT>-985.50\n"
+            "<FITID>FITID_002\n"
+            "<MEMO>PIX ENVIADO - FULANO\n"
+            "</STMTTRN>\n"
+        )
+        transactions = parse_ofx(ofx)
+
+        assert len(transactions) == 2
+        assert transactions[0].external_id == "FITID_001"
+        assert transactions[1].external_id == "FITID_002"
+        assert transactions[0].amount == transactions[1].amount
+        assert transactions[0].description == transactions[1].description

@@ -13,6 +13,7 @@ class TransactionBase(BaseModel):
     amount: Decimal
     date: _Date
     type: str  # debit, credit
+    external_id: Optional[str] = None
 
 
 class TransactionCreate(TransactionBase):
@@ -38,7 +39,6 @@ class TransactionRead(TransactionBase):
     account_id: Optional[uuid.UUID] = None
     category_id: Optional[uuid.UUID] = None
     category: Optional[CategoryRead] = None
-    external_id: Optional[str] = None
     currency: str = "BRL"
     source: str
     status: str = "posted"
