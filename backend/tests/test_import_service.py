@@ -193,7 +193,7 @@ class TestParseCsv:
         assert transactions[1].amount == Decimal("1200.00")
 
     def test_parse_csv_brazilian_amount(self):
-        """CSV using comma instead of dot in amount."""
+        """CSV using comma as the decimal separator in the amount field."""
         csv_content = (
             "date,description,amount\n"
             '2026-01-10,SALARY,"5,000.00"\n' 
