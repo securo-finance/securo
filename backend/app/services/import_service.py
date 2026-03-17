@@ -379,7 +379,6 @@ def normalize_amount(amount_str: str) -> str:
         1,442.20 -> 1442.20
     """
 
-    # Need to change this replace to other currencies in the future
     amount_str = amount_str.replace('R$', '').strip()
 
     if ',' in amount_str and '.' in amount_str:
