@@ -192,6 +192,19 @@ class TestParseCsv:
         assert transactions[1].type == "debit"
         assert transactions[1].amount == Decimal("1200.00")
 
+    def test_parse_csv_brazilian_amount(self):
+        """CSV using comma instead of dot in amount."""
+        csv_content = (
+            "date,description,amount\n"
+            '2026-01-10,SALARY,"5,000.00"\n' 
+            "2026-01-11,RENT,1200.00\n"
+        )
+
+        transactions = parse_csv(csv_content.encode("utf-8"))
+        assert len(transactions) == 2
+        assert transactions[0].amount == Decimal("5000.00")
+        assert transactions[1].amount == Decimal("1200.00")
+
 
 class TestParseQif:
     """Tests for the parse_qif function."""
