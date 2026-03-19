@@ -8,6 +8,7 @@ from app.models.rule import Rule
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.budget import Budget
 from app.models.import_log import ImportLog
+from app.models.savings import Savings
 
 __all__ = [
     "User",
@@ -20,4 +21,5 @@ __all__ = [
     "RecurringTransaction",
     "Budget",
     "ImportLog",
+    "Savings"
 ]

@@ -9,10 +9,13 @@ BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
-info()    { echo -e "${BLUE}[INFO]${NC} $*"; }
+info() { echo -e "${BLUE}[INFO]${NC} $*"; }
 success() { echo -e "${GREEN}[OK]${NC} $*"; }
-warn()    { echo -e "${YELLOW}[WARN]${NC} $*"; }
-error()   { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
+warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
+error() {
+  echo -e "${RED}[ERROR]${NC} $*"
+  exit 1
+}
 
 REPO_URL="https://github.com/securo-finance/securo.git"
 COMPOSE_FILE="docker-compose.prod.yml"
@@ -24,20 +27,20 @@ APP_URL="http://localhost:3000"
 detect_os() {
   OS="$(uname -s)"
   case "$OS" in
-    Linux)
-      if [ -f /etc/os-release ]; then
-        . /etc/os-release
-        DISTRO="$ID"
-      else
-        error "Cannot detect Linux distribution. /etc/os-release not found."
-      fi
-      ;;
-    Darwin)
-      DISTRO="macos"
-      ;;
-    *)
-      error "Unsupported operating system: $OS"
-      ;;
+  Linux)
+    if [ -f /etc/os-release ]; then
+      . /etc/os-release
+      DISTRO="$ID"
+    else
+      error "Cannot detect Linux distribution. /etc/os-release not found."
+    fi
+    ;;
+  Darwin)
+    DISTRO="macos"
+    ;;
+  *)
+    error "Unsupported operating system: $OS"
+    ;;
   esac
   info "Detected OS: $OS ($DISTRO)"
 }
@@ -48,43 +51,43 @@ install_docker_linux() {
   echo -e "${BOLD}Docker is not installed. Install it now?${NC}"
   read -r -p "  [y/N] " response
   case "$response" in
-    [yY][eE][sS]|[yY]) ;;
-    *) error "Docker is required. Install it manually: https://docs.docker.com/engine/install/" ;;
+  [yY][eE][sS] | [yY]) ;;
+  *) error "Docker is required. Install it manually: https://docs.docker.com/engine/install/" ;;
   esac
 
   info "Installing Docker..."
 
   case "$DISTRO" in
-    ubuntu|debian|linuxmint|pop)
-      sudo apt-get update -qq
-      sudo apt-get install -y -qq ca-certificates curl gnupg
-      sudo install -m 0755 -d /etc/apt/keyrings
-      curl -fsSL "https://download.docker.com/linux/$DISTRO/gpg" | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-      sudo chmod a+r /etc/apt/keyrings/docker.gpg
-      echo \
-        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$DISTRO \
-        $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-        sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-      sudo apt-get update -qq
-      sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-      ;;
-    fedora)
-      sudo dnf -y install dnf-plugins-core
-      sudo dnf config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
-      sudo dnf -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-      sudo systemctl start docker
-      sudo systemctl enable docker
-      ;;
-    centos|rhel|rocky|almalinux)
-      sudo yum install -y yum-utils
-      sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-      sudo yum install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-      sudo systemctl start docker
-      sudo systemctl enable docker
-      ;;
-    *)
-      error "Automatic Docker install not supported for $DISTRO. Install manually: https://docs.docker.com/engine/install/"
-      ;;
+  ubuntu | debian | linuxmint | pop)
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq ca-certificates curl gnupg
+    sudo install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL "https://download.docker.com/linux/$DISTRO/gpg" | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    sudo chmod a+r /etc/apt/keyrings/docker.gpg
+    echo \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$DISTRO \
+        $(. /etc/os-release && echo "$VERSION_CODENAME") stable" |
+      sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    ;;
+  fedora)
+    sudo dnf -y install dnf-plugins-core
+    sudo dnf config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
+    sudo dnf -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    sudo systemctl start docker
+    sudo systemctl enable docker
+    ;;
+  centos | rhel | rocky | almalinux)
+    sudo yum install -y yum-utils
+    sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+    sudo yum install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    sudo systemctl start docker
+    sudo systemctl enable docker
+    ;;
+  *)
+    error "Automatic Docker install not supported for $DISTRO. Install manually: https://docs.docker.com/engine/install/"
+    ;;
   esac
 
   # Add current user to docker group
@@ -97,21 +100,21 @@ install_docker_linux() {
 }
 
 check_docker() {
-  if ! command -v docker &> /dev/null; then
+  if ! command -v docker &>/dev/null; then
     case "$DISTRO" in
-      macos)
-        error "Docker Desktop is not installed. Download it from https://www.docker.com/products/docker-desktop/ and re-run this script."
-        ;;
-      *)
-        install_docker_linux
-        ;;
+    macos)
+      error "Docker Desktop is not installed. Download it from https://www.docker.com/products/docker-desktop/ and re-run this script."
+      ;;
+    *)
+      install_docker_linux
+      ;;
     esac
   else
     success "Docker is installed"
   fi
 
   # Verify docker compose is available
-  if ! docker compose version &> /dev/null; then
+  if ! docker compose version &>/dev/null; then
     error "docker compose plugin not found. Please install docker-compose-plugin."
   fi
 }
@@ -122,7 +125,7 @@ wait_for_docker() {
   local retries=0
   local max_retries=15
 
-  while ! docker info &> /dev/null; do
+  while ! docker info &>/dev/null; do
     retries=$((retries + 1))
     if [ "$retries" -ge "$max_retries" ]; then
       error "Docker daemon is not running. Please start Docker and re-run this script."
@@ -156,13 +159,13 @@ generate_env() {
 
   info "Generating .env file..."
 
-  if command -v openssl &> /dev/null; then
+  if command -v openssl &>/dev/null; then
     SECRET_KEY=$(openssl rand -hex 32)
   else
     SECRET_KEY=$(head -c 32 /dev/urandom | xxd -p | tr -d '\n')
   fi
 
-  cat > .env <<EOF
+  cat >.env <<EOF
 SECRET_KEY=$SECRET_KEY
 PLUGGY_CLIENT_ID=
 PLUGGY_CLIENT_SECRET=
@@ -188,7 +191,7 @@ wait_for_health() {
   local elapsed=0
 
   while [ "$elapsed" -lt "$HEALTH_TIMEOUT" ]; do
-    if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
+    if curl -sf "$HEALTH_URL" >/dev/null 2>&1; then
       success "Securo is healthy"
       return
     fi
