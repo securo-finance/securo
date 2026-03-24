@@ -28,3 +28,4 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     categories: Mapped[list["Category"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     category_groups: Mapped[list["CategoryGroup"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     bank_connections: Mapped[list["BankConnection"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+   # savings: Mapped[list["Savings"]] = relationship(back_populates="user", cascade="all, delete-orphan")     
