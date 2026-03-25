@@ -1,12 +1,27 @@
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.category import Category
+from app.models.user import User
+from app.services.category_service import create_default_categories
 
 
 @pytest.mark.asyncio
-async def test_list_categories_creates_defaults(client: AsyncClient, auth_headers):
-    """First call should auto-create default categories."""
+async def test_list_categories_empty(client: AsyncClient, auth_headers):
+    """Listing categories with no data should return an empty list."""
+    response = await client.get("/api/categories", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_list_categories_with_defaults(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user: User
+):
+    """After creating default categories (as registration does), listing returns them."""
+    await create_default_categories(session, test_user.id, "pt-BR")
+
     response = await client.get("/api/categories", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()

@@ -6,15 +6,31 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
+from app.services.category_service import create_default_categories
+from app.services.rule_service import create_default_rules
 
 
 
 @pytest.mark.asyncio
-async def test_list_rules_creates_defaults(client: AsyncClient, auth_headers, test_categories):
+async def test_list_rules_empty(client: AsyncClient, auth_headers, test_categories):
+    """Listing rules with no data should return an empty list."""
+    response = await client.get("/api/rules", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_list_rules_with_defaults(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user: User
+):
+    """After creating default categories and rules (as registration does), listing returns them."""
+    await create_default_categories(session, test_user.id, "pt-BR")
+    await create_default_rules(session, test_user.id, "pt-BR")
+
     response = await client.get("/api/rules", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
-    assert len(data) > 0
+    assert len(data) >= 3
     # Each rule has the expected structure
     rule = data[0]
     assert "conditions" in rule

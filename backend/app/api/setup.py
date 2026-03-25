@@ -76,6 +76,13 @@ async def create_admin(
     db_session.add(wallet)
     await db_session.commit()
 
+    # Create default categories and rules for the new user
+    from app.services.category_service import create_default_categories
+    from app.services.rule_service import create_default_rules
+
+    await create_default_categories(db_session, user.id, body.language)
+    await create_default_rules(db_session, user.id, body.language)
+
     # Refresh user to get updated preferences for token generation
     await db_session.refresh(user)
 

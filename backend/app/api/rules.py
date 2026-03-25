@@ -18,12 +18,7 @@ async def list_rules(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
-    rules = await rule_service.get_rules(session, user.id)
-    if not rules:
-        lang = (user.preferences or {}).get("language", "pt-BR")
-        rules = await rule_service.create_default_rules(session, user.id, lang)
-        rules = await rule_service.get_rules(session, user.id)
-    return rules
+    return await rule_service.get_rules(session, user.id)
 
 
 @router.post("", response_model=RuleRead, status_code=status.HTTP_201_CREATED)

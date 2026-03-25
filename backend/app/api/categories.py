@@ -17,12 +17,7 @@ async def list_categories(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
-    categories = await category_service.get_categories(session, user.id)
-    if not categories:
-        # Create default categories for new users in the user's preferred language
-        lang = (user.preferences or {}).get("language", "pt-BR")
-        categories = await category_service.create_default_categories(session, user.id, lang)
-    return categories
+    return await category_service.get_categories(session, user.id)
 
 
 @router.post("", response_model=CategoryRead, status_code=status.HTTP_201_CREATED)

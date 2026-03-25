@@ -7,7 +7,7 @@ from app.core.auth import current_active_user
 from app.core.database import get_async_session
 from app.models.user import User
 from app.schemas.category_group import CategoryGroupCreate, CategoryGroupRead, CategoryGroupUpdate
-from app.services import category_group_service, category_service
+from app.services import category_group_service
 
 router = APIRouter(prefix="/api/category-groups", tags=["category-groups"])
 
@@ -17,13 +17,7 @@ async def list_groups(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
-    groups = await category_group_service.get_groups(session, user.id)
-    if not groups:
-        # Create default categories + groups for new users in the user's preferred language
-        lang = (user.preferences or {}).get("language", "pt-BR")
-        await category_service.create_default_categories(session, user.id, lang)
-        groups = await category_group_service.get_groups(session, user.id)
-    return groups
+    return await category_group_service.get_groups(session, user.id)
 
 
 @router.post("", response_model=CategoryGroupRead, status_code=status.HTTP_201_CREATED)
