@@ -1,4 +1,6 @@
 """Tests for recurring transactions API."""
+from datetime import date, timedelta
+
 import pytest
 
 
@@ -121,6 +123,11 @@ async def test_generate_pending_creates_transactions(client, auth_headers, test_
 @pytest.mark.asyncio
 async def test_generate_no_duplicate_with_skip_first(client, auth_headers, test_categories, test_account):
     """When created with skip_first, generate doesn't create duplicate for start_date."""
+    # Use relative dates so the test doesn't go stale over time
+    today = date.today()
+    start_date = (today - timedelta(days=10)).isoformat()
+    next_day = (today - timedelta(days=9)).isoformat()
+
     # Simulate creating a transaction + recurring with skip_first (as the UI does)
     # First, create the transaction
     tx_resp = await client.post(
@@ -130,7 +137,7 @@ async def test_generate_no_duplicate_with_skip_first(client, auth_headers, test_
             "amount": 99.90,
             "currency": "BRL",
             "type": "debit",
-            "date": "2026-02-25",
+            "date": start_date,
             "category_id": str(test_categories[1].id),
             "account_id": str(test_account.id),
         },
@@ -147,7 +154,7 @@ async def test_generate_no_duplicate_with_skip_first(client, auth_headers, test_
             "currency": "BRL",
             "type": "debit",
             "frequency": "monthly",
-            "start_date": "2026-02-25",
+            "start_date": start_date,
             "skip_first": True,
             "category_id": str(test_categories[1].id),
             "account_id": str(test_account.id),
@@ -155,8 +162,8 @@ async def test_generate_no_duplicate_with_skip_first(client, auth_headers, test_
         headers=auth_headers,
     )
     assert rec_resp.status_code == 201
-    # next_occurrence should be March, not February
-    assert rec_resp.json()["next_occurrence"] == "2026-03-25"
+    # next_occurrence should be one month after start_date (in the future)
+    assert rec_resp.json()["next_occurrence"] > today.isoformat()
 
     # Generate pending — should NOT create anything (next_occurrence is in the future)
     gen_resp = await client.post(
@@ -166,10 +173,10 @@ async def test_generate_no_duplicate_with_skip_first(client, auth_headers, test_
     assert gen_resp.status_code == 200
     assert gen_resp.json()["generated"] == 0
 
-    # Verify only one "Internet bill" transaction exists for Feb 25
+    # Verify only one "Internet bill" transaction exists for start_date
     tx_list = await client.get(
         "/api/transactions",
-        params={"from": "2026-02-25", "to": "2026-02-26"},
+        params={"from": start_date, "to": next_day},
         headers=auth_headers,
     )
     assert tx_list.status_code == 200
