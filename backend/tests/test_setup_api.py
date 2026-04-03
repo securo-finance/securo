@@ -4,6 +4,11 @@ Tests: GET /api/setup/status, POST /api/setup/create-admin.
 """
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.category import Category
+from app.models.category_group import CategoryGroup
 
 
 @pytest.mark.asyncio
@@ -98,3 +103,26 @@ async def test_create_admin_portuguese_wallet(client: AsyncClient, clean_db):
     assert accounts.status_code == 200
     names = [a["name"] for a in accounts.json()]
     assert "Carteira" in names
+
+
+@pytest.mark.asyncio
+async def test_create_admin_seeds_flat_categories_without_groups(
+    client: AsyncClient, clean_db, session: AsyncSession
+):
+    response = await client.post(
+        "/api/setup/create-admin",
+        json={
+            "email": "flat-admin@test.com",
+            "password": "StrongPass123!",
+            "currency": "USD",
+            "language": "en",
+        },
+    )
+    assert response.status_code == 200
+
+    categories = (await session.execute(select(Category))).scalars().all()
+    groups = (await session.execute(select(CategoryGroup))).scalars().all()
+
+    assert categories
+    assert all(category.group_id is None for category in categories)
+    assert groups == []

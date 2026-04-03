@@ -5,7 +5,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.category import Category
-from app.models.category_group import CategoryGroup
 from app.schemas.category import CategoryCreate, CategoryUpdate
 from app.services.category_service import (
     DEFAULT_CATEGORIES_I18N,
@@ -40,22 +39,22 @@ async def test_create_default_categories(session: AsyncSession, test_user):
 
 
 @pytest.mark.asyncio
-async def test_create_default_categories_creates_groups(session: AsyncSession, test_user):
+async def test_create_default_categories_does_not_create_groups(session: AsyncSession, test_user):
     await create_default_categories(session, test_user.id, lang="pt-BR")
 
     result = await session.execute(
-        select(CategoryGroup).where(CategoryGroup.user_id == test_user.id)
+        select(Category).where(Category.user_id == test_user.id)
     )
-    groups = result.scalars().all()
-    assert len(groups) == 6  # housing, food, transport, lifestyle, income, other
+    categories = result.scalars().all()
+    assert len(categories) == len(DEFAULT_CATEGORIES_I18N)
+    assert all(cat.group_id is None for cat in categories)
 
 
 @pytest.mark.asyncio
-async def test_create_default_categories_links_to_groups(session: AsyncSession, test_user):
+async def test_create_default_categories_keep_group_ids_empty(session: AsyncSession, test_user):
     categories = await create_default_categories(session, test_user.id, lang="pt-BR")
 
-    with_group = [c for c in categories if c.group_id is not None]
-    assert len(with_group) == len(DEFAULT_CATEGORIES_I18N)
+    assert all(c.group_id is None for c in categories)
 
 
 @pytest.mark.asyncio
@@ -133,24 +132,6 @@ async def test_create_custom_category(session: AsyncSession, test_user):
     assert cat.is_system is False
     assert cat.has_budget is False
     assert cat.budget_amount is None
-
-
-@pytest.mark.asyncio
-async def test_create_category_with_group(session: AsyncSession, test_user):
-    from app.services.category_group_service import create_group
-    from app.schemas.category_group import CategoryGroupCreate
-
-    group = await create_group(
-        session,
-        test_user.id,
-        CategoryGroupCreate(name="CustomGroup", icon="folder", color="#000"),
-    )
-    cat = await create_category(
-        session,
-        test_user.id,
-        CategoryCreate(name="WithGroup", icon="star", color="#FFF", group_id=group.id),
-    )
-    assert cat.group_id == group.id
 
 
 @pytest.mark.asyncio

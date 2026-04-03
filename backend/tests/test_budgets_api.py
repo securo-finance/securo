@@ -45,5 +45,8 @@ async def test_legacy_standalone_budget_routes_are_removed(client, auth_headers)
     ]
 
     for method, path in methods_and_paths:
-        response = await getattr(client, method)(path, headers=auth_headers, json={} if method in {"post", "patch"} else None)
+        kwargs = {"headers": auth_headers}
+        if method in {"post", "patch"}:
+            kwargs["json"] = {}
+        response = await getattr(client, method)(path, **kwargs)
         assert response.status_code == 404

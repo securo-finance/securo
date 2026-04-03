@@ -16,7 +16,6 @@ export interface UserPreferences {
 export interface Category {
   id: string
   user_id: string
-  group_id: string | null
   name: string
   icon: string
   color: string

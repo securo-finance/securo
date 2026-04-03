@@ -30,6 +30,7 @@ async def test_list_categories_with_defaults(
     assert "Alimentação" in names
     assert "Transporte" in names
     assert "Outros" in names
+    assert all("group_id" not in category for category in data)
 
 
 @pytest.mark.asyncio
@@ -56,6 +57,7 @@ async def test_create_category(client: AsyncClient, auth_headers, test_categorie
     assert data["is_system"] is False
     assert data["has_budget"] is False
     assert data["budget_amount"] is None
+    assert "group_id" not in data
 
 
 @pytest.mark.asyncio
@@ -86,6 +88,7 @@ async def test_update_category(
     assert data["name"] == "Comida"
     assert data["color"] == "#FF0000"
     assert data["icon"] == "🍔"  # unchanged
+    assert "group_id" not in data
 
 
 @pytest.mark.asyncio

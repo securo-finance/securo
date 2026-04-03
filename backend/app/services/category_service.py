@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.category import Category
 from app.schemas.category import CategoryCreate, CategoryUpdate
-from app.services.category_group_service import CATEGORY_TO_GROUP, create_default_groups
 
 
 # Language-keyed translations for default categories
@@ -38,21 +37,15 @@ async def create_default_categories(session: AsyncSession, user_id: uuid.UUID, l
     if existing.scalar_one_or_none():
         return await get_categories(session, user_id)
 
-    # Create default groups first
-    groups = await create_default_groups(session, user_id, lang)
-
     categories = []
     for key, data in DEFAULT_CATEGORIES_I18N.items():
         name = data.get(lang, data.get("en", key))
-        group_key = CATEGORY_TO_GROUP.get(key)
-        group = groups.get(group_key) if group_key else None
         category = Category(
             user_id=user_id,
             name=name,
             icon=data["icon"],
             color=data["color"],
             is_system=True,
-            group_id=group.id if group else None,
         )
         session.add(category)
         categories.append(category)
