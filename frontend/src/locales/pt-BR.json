@@ -9,7 +9,6 @@
     "import": "Importar",
     "rules": "Regras",
     "categories": "Categorias",
-    "budgets": "Orçamentos",
     "settings": "Configurações",
     "recurring": "Recorrentes",
     "assets": "Patrimônio",
@@ -256,10 +255,7 @@
     "updated": "Orçamento atualizado",
     "deleted": "Orçamento excluído",
     "repeatEveryMonth": "Repetir todo mês",
-    "recurringLabel": "Recorrente",
-    "manageInCategories": "Gerenciar nas categorias",
-    "readOnlyHint": "Esta página agora reflete os valores atuais de orçamento que pertencem às categorias. Edite os limites pelo formulário da categoria.",
-    "editFromCategories": "Editar nas categorias"
+    "recurringLabel": "Recorrente"
   },
   "recurring": {
     "title": "Transações Recorrentes",

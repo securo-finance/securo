@@ -9,7 +9,6 @@
     "import": "Import",
     "rules": "Rules",
     "categories": "Categories",
-    "budgets": "Budgets",
     "settings": "Settings",
     "recurring": "Recurring",
     "assets": "Assets",
@@ -256,10 +255,7 @@
     "updated": "Budget updated",
     "deleted": "Budget deleted",
     "repeatEveryMonth": "Repeat every month",
-    "recurringLabel": "Recurring",
-    "manageInCategories": "Manage in categories",
-    "readOnlyHint": "This page now reflects the current budget values owned by categories. Edit limits from the category form.",
-    "editFromCategories": "Edit in categories"
+    "recurringLabel": "Recurring"
   },
   "recurring": {
     "title": "Recurring Transactions",
