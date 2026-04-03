@@ -2,108 +2,71 @@
 
 ## Overview
 
-Securo is a full-stack self-hosted personal finance application with:
+Securo is a two-application monorepo with infrastructure glue at the repository root:
 
-- Python backend in `backend/app/`
-- React + TypeScript frontend in `frontend/src/`
-- PostgreSQL persistence via SQLAlchemy + Alembic
-- Redis-backed Celery worker and beat processes for background jobs
-- Docker Compose local orchestration in `docker-compose.yml`
+- Backend API and background workers in `backend/`
+- Frontend SPA in `frontend/`
+- Local and production orchestration in `docker-compose.yml` and `docker-compose.prod.yml`
+- CI/CD in `.github/workflows/ci.yml` and `.github/workflows/release.yml`
 
-## Backend Runtime
+## Backend Stack
 
-- Python 3.11+ declared in `backend/pyproject.toml`
-- FastAPI application entry point in `backend/app/main.py`
-- Uvicorn used for local/dev serving via Docker command in `docker-compose.yml`
-- Async SQLAlchemy engine/session in `backend/app/core/database.py`
-- Pydantic Settings for configuration in `backend/app/core/config.py`
-- FastAPI Users for auth plumbing in `backend/app/core/auth.py`
+- Language: Python 3.11+ declared in `backend/pyproject.toml`
+- Web framework: FastAPI in `backend/app/main.py`
+- Auth: `fastapi-users` plus project auth helpers in `backend/app/core/auth.py`
+- ORM: SQLAlchemy 2 async ORM in `backend/app/core/database.py`
+- Migrations: Alembic in `backend/alembic.ini` and `backend/alembic/versions/*.py`
+- Validation/settings: Pydantic v2 and `pydantic-settings` in `backend/app/core/config.py`
+- HTTP client: `httpx` for upstream provider calls in `backend/app/providers/pluggy.py` and `backend/app/providers/openexchangerates.py`
+- Background jobs: Celery with Redis broker/backend in `backend/app/worker.py`
+- File parsing: `ofxparse` and stdlib CSV/XML parsing in `backend/app/services/import_service.py`
+- File uploads/storage: `aiofiles` plus storage abstraction in `backend/app/providers/storage.py` and `backend/app/providers/local_storage.py`
 
-## Backend Libraries
+## Frontend Stack
 
-Core dependencies from `backend/pyproject.toml`:
+- Language: TypeScript in `frontend/src/**/*.ts*`
+- UI runtime: React 19 in `frontend/package.json`
+- Bundler/dev server: Vite 7 in `frontend/vite.config.ts`
+- Routing: `react-router-dom` in `frontend/src/App.tsx`
+- Data fetching/cache: TanStack Query in `frontend/src/App.tsx`
+- HTTP client: Axios in `frontend/src/lib/api.ts`
+- Forms/validation: `react-hook-form`, `@hookform/resolvers`, and `zod` in `frontend/package.json`
+- Styling: Tailwind CSS v4 via `@tailwindcss/vite`, utility helpers in `frontend/src/lib/utils.ts`, and global styles in `frontend/src/index.css`
+- Component primitives: Radix-derived UI components under `frontend/src/components/ui/`
+- Icons/charts/toasts: `lucide-react`, `recharts`, and `sonner`
+- Internationalization: `i18next` and `react-i18next` in `frontend/src/lib/i18n.ts` with locale files in `frontend/src/locales/`
+- Theme management: `next-themes` in `frontend/src/components/theme-provider.tsx`
+- Pluggy UI integration: `react-pluggy-connect` in `frontend/package.json`
 
-- `fastapi` for HTTP API
-- `sqlalchemy` + `asyncpg` for async ORM/database access
-- `alembic` for schema migrations in `backend/alembic/`
-- `pydantic` + `pydantic-settings` for schemas/config
-- `fastapi-users[sqlalchemy]`, `python-jose`, `passlib[bcrypt]` for auth
-- `httpx` for outbound API calls
-- `ofxparse` for import parsing
-- `celery[redis]` for async jobs
-- `aiofiles` for attachment storage
+## Data and Infrastructure
 
-## Frontend Runtime
-
-- React 19 app bootstrapped in `frontend/src/main.tsx`
-- Route tree in `frontend/src/App.tsx`
-- Vite 7 build/dev server in `frontend/vite.config.ts`
-- TypeScript 5.9 config in `frontend/tsconfig*.json`
-- Browser SPA routing via `react-router-dom`
-- Query/cache state via `@tanstack/react-query`
-
-## Frontend Libraries
-
-Notable dependencies from `frontend/package.json`:
-
-- `axios` in `frontend/src/lib/api.ts` for API access
-- `react-hook-form`, `zod`, `@hookform/resolvers` for forms/validation
-- `i18next`, `react-i18next` for localization in `frontend/src/lib/i18n.ts`
-- `next-themes` for theme state in `frontend/src/components/theme-provider.tsx`
-- `recharts` for dashboards/reports
-- `react-pluggy-connect` for Pluggy connection flows
-- Radix-based UI primitives and shadcn-style components in `frontend/src/components/ui/`
-- Tailwind CSS v4 via `@tailwindcss/vite`
-
-## Data Layer
-
-- PostgreSQL is the primary runtime database in `docker-compose.yml`
-- SQLAlchemy declarative models live under `backend/app/models/`
-- Alembic versioned migrations live in `backend/alembic/versions/`
-- SQLite is used for tests through `backend/tests/conftest.py`
-
-## Background Processing
-
-- Celery app configured in `backend/app/worker.py`
-- Scheduled jobs include:
-  - bank sync via `backend/app/tasks/sync_tasks.py`
-  - recurring generation via `backend/app/tasks/recurring_tasks.py`
-  - asset growth via `backend/app/tasks/asset_tasks.py`
-  - FX sync/backfill via `backend/app/tasks/fx_rate_tasks.py` and `backend/app/tasks/fx_backfill_tasks.py`
-- Broker/result backend is Redis from `backend/app/core/config.py`
+- Primary database: PostgreSQL 16 in `docker-compose.yml`
+- Queue/cache: Redis 7 in `docker-compose.yml`
+- Attachment storage: named Docker volume mounted to `/app/data/attachments`, configured by `STORAGE_LOCAL_PATH`
+- Containerization:
+  - Backend dev/prod images from `backend/Dockerfile`
+  - Frontend dev image from `frontend/Dockerfile.dev`
+  - Frontend prod image from `frontend/Dockerfile`
+- Reverse serving in prod: frontend container serves built assets via `frontend/nginx.conf`
 
 ## Tooling
 
-- Ruff configured in `backend/pyproject.toml`
-- ESLint flat config in `frontend/eslint.config.js`
-- GitHub Actions CI in `.github/workflows/ci.yml`
-- Dockerfiles:
-  - `backend/Dockerfile`
-  - `frontend/Dockerfile`
-  - `frontend/Dockerfile.dev`
-- Local frontend dev helper in `scripts/dev-frontend.mjs`
-
-## Build And Serving
-
-- Local dev stack is `docker compose up --build` from `README.md`
-- Frontend dev server proxies `/api` to backend in `frontend/vite.config.ts`
-- Nginx config exists for frontend deployment in `frontend/nginx.conf`
-- Production compose variant exists in `docker-compose.prod.yml`
+- Backend linting: Ruff configured in `backend/pyproject.toml`
+- Backend tests: Pytest, `pytest-asyncio`, and coverage config in `backend/pyproject.toml`
+- Frontend linting: ESLint flat config in `frontend/eslint.config.js`
+- Frontend type/build check: `tsc -b && vite build` from `frontend/package.json`
+- Dev helper: Docker hot-deploy helper in `scripts/dev-frontend.mjs`
 
 ## Configuration Entry Points
 
-- Backend env settings are defined in `backend/app/core/config.py`
-- Compose-level env wiring is in `docker-compose.yml`
-- Frontend runtime host/proxy inputs are in `frontend/vite.config.ts`
-- Optional provider keys documented in `README.md`:
-  - `PLUGGY_CLIENT_ID`
-  - `PLUGGY_CLIENT_SECRET`
-  - `OPENEXCHANGERATES_APP_ID`
+- Root-level optional secrets and integration values in `.env` and `.env.example`
+- Backend settings model in `backend/app/core/config.py`
+- Backend local env example in `backend/.env.example`
+- Frontend runtime backend proxy config in `frontend/vite.config.ts`
+- Compose-level environment wiring in `docker-compose.yml` and `docker-compose.prod.yml`
 
-## Notable Domain Areas
+## Current Constraints
 
-- Accounts: `backend/app/api/accounts.py`, `frontend/src/pages/accounts.tsx`
-- Transactions: `backend/app/api/transactions.py`, `frontend/src/pages/transactions.tsx`
-- Connections/sync: `backend/app/api/connections.py`, `frontend/src/components/bank-connect-dialog.tsx`
-- Budgets/recurring/rules: matching `api/`, `services/`, and `pages/` modules
-- Assets/reports/dashboard: `backend/app/services/dashboard_service.py`, `frontend/src/pages/dashboard.tsx`, `frontend/src/pages/reports.tsx`
+- No monorepo package manager/workspace abstraction; backend and frontend are managed independently
+- No frontend test runner is configured in `frontend/package.json`
+- Production deployment assumes Docker images published to `ghcr.io/securo-finance/*` in `.github/workflows/release.yml`

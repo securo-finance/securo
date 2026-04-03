@@ -1,78 +1,72 @@
 # Testing
 
-## Current Test Stack
+## Current Test Setup
 
-- `pytest` configured in `backend/pyproject.toml`
-- `pytest-asyncio` for async tests
-- `pytest-cov` for coverage reporting
-- `httpx` ASGI transport for API-level integration tests
-- SQLite test database in `backend/tests/conftest.py`
+### Backend
 
-## Test Layout
+- Test framework: Pytest with `pytest-asyncio`
+- Test location: `backend/tests/`
+- App-under-test: real FastAPI app from `backend/app/main.py`
+- HTTP client: `httpx.AsyncClient` with `ASGITransport` in `backend/tests/conftest.py`
+- Test database: SQLite via `sqlite+aiosqlite:///./test.db` in `backend/tests/conftest.py`
+- Table lifecycle: created once per session and dropped at teardown in `backend/tests/conftest.py`
+- Dependency override: `get_async_session` is replaced in tests to route API calls into the SQLite test DB
 
-Backend tests are concentrated in `backend/tests/` with domain-oriented files such as:
+### Frontend
 
-- `backend/tests/test_accounts_api.py`
-- `backend/tests/test_transactions_api.py`
-- `backend/tests/test_dashboard_service.py`
-- `backend/tests/test_import_service.py`
-- `backend/tests/test_rule_engine.py`
-- `backend/tests/test_connection_service.py`
-- `backend/tests/test_fx_rates.py`
-- `backend/tests/test_auth_api.py`
+- No dedicated frontend unit/integration test runner or test files were found
+- Frontend quality gates are lint and build only:
+  - `npm run lint`
+  - `npm run build`
 
-No frontend unit/component/e2e test directory was found in `frontend/` during this mapping pass.
+## Coverage and CI
 
-## Test Harness
+- Coverage tooling is configured in `backend/pyproject.toml`
+- CI runs backend tests with:
+  - `pytest --cov=app --cov-report=xml --cov-report=term-missing --cov-fail-under=60`
+- Coverage XML is uploaded as an artifact and used to update a badge in `.github/workflows/ci.yml`
+- Coverage excludes:
+  - `app/cli.py`
+  - `app/worker.py`
+  - `app/tasks/*`
+  - `app/providers/pluggy.py`
 
-- `backend/tests/conftest.py` creates a SQLite database and overrides `get_async_session`
-- The FastAPI app is exercised in-process through `AsyncClient(transport=ASGITransport(app=app))`
-- Shared fixtures create authenticated users, accounts, categories, rules, and transactions
-- Test DB teardown removes `./test.db` at session end
+## Backend Test Organization
 
-## What Is Covered Well
+- `backend/tests/conftest.py` centralizes shared fixtures:
+  - event loop
+  - database/session setup
+  - API client
+  - auth token
+  - common domain fixtures such as users, categories, accounts, rules, and transactions
+- Test files are mostly feature/domain aligned, for example:
+  - `backend/tests/test_transactions_api.py`
+  - `backend/tests/test_transaction_service.py`
+  - `backend/tests/test_connection_service.py`
+  - `backend/tests/test_dashboard_service.py`
+  - `backend/tests/test_fx_rates.py`
 
-- API route behavior across major finance domains
-- Core service behavior for dashboards, budgets, imports, payees, accounts, rules, recurring, assets, and FX
-- Auth flows
-- Import parsers and transfer detection logic
+## Testing Style
 
-## Notable Gaps
-
-- No tracked frontend tests for routes, forms, or UI regressions
-- No obvious end-to-end browser automation
-- Background Celery task behavior appears to be covered indirectly at best
-- Production-specific infrastructure behavior from Docker/Nginx is not represented as tests
-- Multi-process/runtime integration between frontend, backend, Redis, and PostgreSQL is not verified in CI
-
-## CI Enforcement
-
-GitHub Actions in `.github/workflows/ci.yml` runs:
-
-- backend Ruff lint
-- backend pytest with coverage and `--cov-fail-under=60`
-- frontend ESLint
-- frontend typecheck/build through `npm run build`
-
-This gives decent backend confidence but little automated protection for frontend behavior.
-
-## Mocking Patterns
-
-- `unittest.mock.patch` and `AsyncMock` are imported in `backend/tests/conftest.py`
-- External provider/network behavior is mocked rather than using live integration environments
-- SQLite stands in for PostgreSQL, which is fast but can miss dialect-specific issues
+- Tests are predominantly integration-style at the API or service boundary
+- Assertions usually validate HTTP status, serialized response shape, and important side effects
+- Regression-oriented tests are explicitly documented in several files, for example transaction update/date handling in `backend/tests/test_transactions_api.py`
+- Mocking is selective rather than pervasive; `unittest.mock` is available in `backend/tests/conftest.py` for provider/task isolation when needed
 
 ## Commands
 
-Common test/check commands inferred from repo config:
+- Backend local test run from README guidance:
+  - `docker compose exec backend pytest`
+- CI/backend package install:
+  - `pip install -e ".[dev]"`
+- Frontend checks:
+  - `npm ci`
+  - `npm run lint`
+  - `npm run build`
 
-- `cd backend && pip install -e ".[dev]" && pytest`
-- `cd backend && ruff check .`
-- `cd frontend && npm ci && npm run lint`
-- `cd frontend && npm run build`
+## Notable Gaps
 
-## Risk Assessment
-
-- Backend coverage exists and is enforced, but the threshold is modest
-- Frontend regressions are likely to be caught late because only lint/type/build gates exist
-- DB behavior differences between SQLite and PostgreSQL remain a standing risk, especially around UUIDs, numeric handling, and query semantics
+- No frontend automated tests were found
+- Celery task behavior is largely outside direct coverage because task files are omitted from coverage
+- Pluggy provider code is also omitted from coverage, so external-integration regressions may rely more on manual verification
+- SQLite-backed tests are fast and isolated, but they may not expose PostgreSQL-specific behavior differences

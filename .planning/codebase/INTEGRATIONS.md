@@ -1,108 +1,121 @@
 # Integrations
 
-## External Systems
+## External Services
 
-The codebase integrates with a small set of external systems:
+### PostgreSQL
 
-- PostgreSQL for primary data storage via `DATABASE_URL`
-- Redis for Celery broker/result backend via `REDIS_URL`
-- Pluggy for bank connectivity in `backend/app/providers/pluggy.py`
-- Open Exchange Rates for FX data in `backend/app/providers/openexchangerates.py`
-- Local filesystem storage for attachments in `backend/app/providers/local_storage.py`
+- Purpose: primary relational datastore for users, accounts, transactions, rules, assets, budgets, and sync metadata
+- Configuration: `DATABASE_URL` in `backend/app/core/config.py`
+- Runtime wiring:
+  - `docker-compose.yml`
+  - `docker-compose.prod.yml`
+  - `backend/app/core/database.py`
+- Schema evolution: Alembic migrations in `backend/alembic/versions/`
 
-No evidence of third-party analytics, hosted auth, or SaaS observability was found in the tracked source.
+### Redis
 
-## Database
-
-- Runtime database URL comes from `backend/app/core/config.py`
-- Async engine/session are created in `backend/app/core/database.py`
-- Migrations are managed through `backend/alembic/env.py` and `backend/alembic/versions/`
-- Compose service `db` in `docker-compose.yml` runs PostgreSQL 16
-
-## Authentication
-
-- Authentication is JWT-based through FastAPI Users in `backend/app/core/auth.py`
-- Login/register/reset/user routes are mounted in `backend/app/main.py`
-- Frontend stores the bearer token in `localStorage` and injects it in `frontend/src/lib/api.ts`
-- `frontend/src/contexts/auth-context.tsx` hydrates current user state by calling `/api/users/me`
-
-## Bank Connectivity
+- Purpose: Celery broker and result backend
+- Configuration: `REDIS_URL` in `backend/app/core/config.py`
+- Runtime wiring:
+  - `docker-compose.yml`
+  - `docker-compose.prod.yml`
+  - `backend/app/worker.py`
 
 ### Pluggy
 
-- Provider implementation: `backend/app/providers/pluggy.py`
-- Connect flow is widget-based, not redirect OAuth
-- Frontend dependency: `react-pluggy-connect` in `frontend/package.json`
-- Backend routes:
-  - `POST /api/connections/connect-token`
-  - `POST /api/connections/oauth/callback`
-  - `POST /api/connections/{id}/reconnect-token`
-  - `POST /api/connections/{id}/sync`
-  - implemented in `backend/app/api/connections.py`
-- Provider metadata registry appears in `backend/app/providers/__init__.py`
+- Purpose: optional open-finance/bank connection provider
+- Credentials:
+  - `PLUGGY_CLIENT_ID`
+  - `PLUGGY_CLIENT_SECRET`
+  - `PLUGGY_OAUTH_REDIRECT_URI`
+- Backend integration points:
+  - provider implementation in `backend/app/providers/pluggy.py`
+  - provider registry in `backend/app/providers/__init__.py`
+  - API endpoints in `backend/app/api/connections.py`
+  - orchestration in `backend/app/services/connection_service.py`
+- Frontend integration points:
+  - Pluggy widget dependency in `frontend/package.json`
+  - bank connection UI in `frontend/src/components/bank-connect-dialog.tsx`
+  - provider selection/reconnect settings in `frontend/src/components/connector-select-dialog.tsx` and `frontend/src/components/connection-settings-dialog.tsx`
+- Notes:
+  - Backend creates connect tokens rather than redirecting for the primary Pluggy flow
+  - App startup dispatches a full stale-connection sync from `backend/app/main.py`
 
-### Connection Synchronization
+### Open Exchange Rates
 
-- Sync orchestration is in `backend/app/services/connection_service.py`
-- Background connection sync jobs run in `backend/app/tasks/sync_tasks.py`
-- App startup also dispatches `sync_all_connections` from the lifespan hook in `backend/app/main.py`
+- Purpose: optional FX rates for cross-currency transactions and recurring data restamping
+- Credential: `OPENEXCHANGERATES_APP_ID`
+- Backend integration points:
+  - provider implementation in `backend/app/providers/openexchangerates.py`
+  - FX services/tasks in `backend/app/services/fx_rate_service.py` and `backend/app/tasks/fx_rate_tasks.py`
+  - API endpoints in `backend/app/api/fx_rates.py`
+- Runtime behavior:
+  - on-demand conversion support
+  - scheduled sync controlled by `FX_SYNC_MODE`
 
-## FX And Currency Data
+## Internal Service Boundaries
 
-- FX provider implementation: `backend/app/providers/openexchangerates.py`
-- FX conversion/stamping logic: `backend/app/services/fx_rate_service.py`
-- Scheduled tasks: `backend/app/tasks/fx_rate_tasks.py`, `backend/app/tasks/fx_backfill_tasks.py`
-- Configuration keys:
-  - `OPENEXCHANGERATES_APP_ID`
-  - `FX_SYNC_MODE`
-  - `SUPPORTED_CURRENCIES`
-  - all declared in `backend/app/core/config.py`
+### Frontend to Backend
 
-## File And Attachment Storage
+- Frontend sends all application requests to `/api` using Axios in `frontend/src/lib/api.ts`
+- Vite dev server proxies `/api` to `BACKEND_URL` in `frontend/vite.config.ts`
+- Production frontend container points to backend via container DNS in `docker-compose.prod.yml`
 
-- Storage abstraction in `backend/app/providers/storage.py` and `backend/app/providers/base.py`
-- Local implementation in `backend/app/providers/local_storage.py`
-- Attachment service layer in `backend/app/services/attachment_service.py`
-- Attachment API in `backend/app/api/attachments.py`
-- Default path is `./data/attachments` in `backend/app/core/config.py`
-- Compose maps this to a named Docker volume in `docker-compose.yml`
+### Background Jobs
 
-## Import Formats
+- Celery worker and beat run alongside the API in both compose files
+- Scheduled tasks registered in `backend/app/worker.py`:
+  - bank sync
+  - recurring generation
+  - asset growth application
+  - FX sync
+  - recurring FX restamping
 
-Inbound file parsing is implemented locally rather than through external services:
+## Storage
 
-- OFX parsing via `ofxparse` in `backend/app/services/import_service.py`
-- QIF parsing in `backend/app/services/import_service.py`
-- CAMT.053 XML parsing in `backend/app/services/import_service.py`
-- CSV parsing with configurable date/amount handling in `backend/app/services/import_service.py`
+### Local Attachment Storage
 
-## Frontend-To-Backend Contract
+- Current provider: local filesystem
+- Config:
+  - `STORAGE_PROVIDER`
+  - `STORAGE_LOCAL_PATH`
+  - attachment size/extension limits in `backend/app/core/config.py`
+- Code locations:
+  - provider abstraction in `backend/app/providers/storage.py`
+  - local implementation in `backend/app/providers/local_storage.py`
+  - attachment API in `backend/app/api/attachments.py`
+  - attachment service in `backend/app/services/attachment_service.py`
+- Container persistence: `attachments` volume in both compose files
 
-- Frontend calls the backend through a single Axios client in `frontend/src/lib/api.ts`
-- Vite dev proxy forwards `/api` to `BACKEND_URL` in `frontend/vite.config.ts`
-- Production/reverse proxy details are partly handled by `frontend/nginx.conf`
+### S3 Placeholder
 
-## CI And Hosted Integrations
+- S3 configuration fields exist in `backend/app/core/config.py`
+- No concrete S3 provider implementation is present in the mapped tree, so this looks scaffolded rather than active
 
-- GitHub Actions CI is defined in `.github/workflows/ci.yml`
-- Coverage badge updates use `schneegans/dynamic-badges-action` with a GitHub Gist target in `.github/workflows/ci.yml`
+## Authentication Integration
 
-## Environment-Driven Behavior
+- User auth is handled inside the backend with `fastapi-users`; there is no external IdP integration in the current tree
+- Frontend stores bearer tokens in `localStorage` and injects them through Axios interceptors in `frontend/src/lib/api.ts`
+- Auth bootstrap and session management live in `frontend/src/contexts/auth-context.tsx`
 
-Important integration toggles come from env vars in `backend/app/core/config.py` and `docker-compose.yml`:
+## Import/Export Interfaces
 
-- `DATABASE_URL`
-- `REDIS_URL`
-- `FRONTEND_URL`
-- `PLUGGY_CLIENT_ID`
-- `PLUGGY_CLIENT_SECRET`
-- `PLUGGY_OAUTH_REDIRECT_URI`
-- `OPENEXCHANGERATES_APP_ID`
-- `STORAGE_PROVIDER`
-- `STORAGE_LOCAL_PATH`
+- Supported import formats implemented in `backend/app/services/import_service.py`:
+  - OFX
+  - QIF
+  - CAMT.053 XML
+  - CSV
+- Transaction export endpoint in `backend/app/api/transactions.py`
+- Additional backup/export capability is implied by frontend usage of `backupApi` in `frontend/src/components/app-layout.tsx`; verify corresponding backend API details when changing backup flows
 
-## Gaps / Unclear Areas
+## Environment Dependencies
 
-- S3 storage fields exist in `backend/app/core/config.py`, but no tracked S3 provider implementation was found
-- No outbound email provider, webhook sender, or audit-log sink was found in tracked source
-- No `.env.example` was found in the root or `backend/` during this mapping pass
+- Root `.env.example` documents Pluggy variables only
+- `backend/.env.example` documents core backend variables
+- Compose files add production/dev defaults for database, Redis, storage, frontend URL, and optional provider credentials
+
+## Gaps / Cautions
+
+- Third-party integrations are optional and degrade to local/manual behavior when credentials are absent
+- FX conversion has a documented 1:1 fallback behavior surfaced in the README and transaction API tagging logic in `backend/app/api/transactions.py`
+- Webhook-based integrations were not found in the current repository tree

@@ -2,98 +2,85 @@
 
 ## Top-Level Layout
 
-- `backend/` backend application, migrations, tests, packaging
-- `frontend/` React SPA source, build config, static assets
-- `docs/` branding and screenshot assets
-- `favicons/` favicon source assets
-- `scripts/` local development helpers
-- `.github/workflows/` CI
-- `.codex/` GSD workflow and skill infrastructure
+- `backend/`: Python API, Celery worker, Alembic migrations, and backend tests
+- `frontend/`: React/Vite SPA, reusable components, and static assets
+- `.github/`: CI and release workflows plus issue/PR templates
+- `docs/`: branding and screenshot assets used by the README
+- `favicons/`: generated favicon asset set
+- `scripts/`: small developer utility scripts
+- `.codex/`: local Codex/GSD workflow assets, agents, and skills
+- `.planning/`: generated planning artifacts; `codebase/` is the map created here
 
-## Backend Layout
+## Backend Directory Guide
 
-### Application Code
+- `backend/app/main.py`: API composition root
+- `backend/app/core/`: settings, auth helpers, and database/session setup
+- `backend/app/api/`: HTTP routers grouped by domain
+- `backend/app/models/`: SQLAlchemy models
+- `backend/app/schemas/`: request/response models
+- `backend/app/services/`: business logic modules
+- `backend/app/providers/`: vendor/storage/provider abstractions
+- `backend/app/tasks/`: Celery task implementations
+- `backend/app/worker.py`: Celery app configuration
+- `backend/alembic/`: migration environment and revision history
+- `backend/tests/`: backend integration/service tests using pytest + HTTPX ASGI transport
 
-- `backend/app/main.py` FastAPI app assembly
-- `backend/app/core/` config, database, auth primitives
-- `backend/app/api/` route modules grouped by domain
-- `backend/app/services/` business logic and orchestration
-- `backend/app/models/` SQLAlchemy models
-- `backend/app/schemas/` Pydantic request/response models
-- `backend/app/providers/` external integration adapters and storage/provider abstractions
-- `backend/app/tasks/` Celery task entry points
+### Backend Naming/Location Patterns
 
-### Database And Packaging
+- Domain folders are flattened by type rather than nested by feature
+- Matching file triplets are common:
+  - `backend/app/api/transactions.py`
+  - `backend/app/models/transaction.py`
+  - `backend/app/schemas/transaction.py`
+  - `backend/app/services/transaction_service.py`
+- Services usually use `_service.py` suffix
+- Background tasks use `_tasks.py` suffix
 
-- `backend/alembic/` migration environment
-- `backend/alembic/versions/` chronological schema changes
-- `backend/pyproject.toml` Python package/test/lint configuration
-- `backend/Dockerfile` backend image build
+## Frontend Directory Guide
 
-### Tests
+- `frontend/src/main.tsx`: browser bootstrap
+- `frontend/src/App.tsx`: providers and route definitions
+- `frontend/src/pages/`: route-level screens
+- `frontend/src/components/`: shared feature components
+- `frontend/src/components/ui/`: base UI primitives
+- `frontend/src/contexts/`: React context providers such as auth
+- `frontend/src/hooks/`: custom hooks like privacy mode
+- `frontend/src/lib/`: API client, i18n, formatting, and helpers
+- `frontend/src/locales/`: translation JSON bundles
+- `frontend/src/types/`: shared frontend TypeScript types
+- `frontend/public/`: browser icons and favicon assets
 
-- `backend/tests/` pytest suite
-- `backend/tests/conftest.py` DB/app fixtures and dependency overrides
+### Frontend Naming/Location Patterns
 
-## Frontend Layout
+- Route files are lowercase kebab-style without nested route directories, for example `frontend/src/pages/account-detail.tsx`
+- Shared components are kebab-case files in `frontend/src/components/`
+- UI primitives use one component per file under `frontend/src/components/ui/`
+- Aliased imports use `@/` resolved by `frontend/vite.config.ts`
 
-### Source Tree
+## Infrastructure and Ops Files
 
-- `frontend/src/main.tsx` React bootstrap
-- `frontend/src/App.tsx` provider composition and routes
-- `frontend/src/pages/` route-level feature screens
-- `frontend/src/components/` app shell, dialogs, domain widgets
-- `frontend/src/components/ui/` reusable UI primitives
-- `frontend/src/contexts/` global React context providers
-- `frontend/src/hooks/` reusable hooks
-- `frontend/src/lib/` API client, formatting, i18n, utility helpers
-- `frontend/src/types/` shared TypeScript API/domain types
-- `frontend/src/locales/` translation JSON files
+- `docker-compose.yml`: primary local/dev stack
+- `docker-compose.prod.yml`: production-like container stack using published images
+- `backend/Dockerfile`: backend image
+- `frontend/Dockerfile`: production frontend image
+- `frontend/Dockerfile.dev`: dev frontend image
+- `frontend/nginx.conf`: frontend production serving config
+- `.github/workflows/ci.yml`: backend/frontend checks
+- `.github/workflows/release.yml`: multi-arch image publish on release
 
-### Frontend Config And Assets
+## Where To Look First
 
-- `frontend/package.json` scripts and dependencies
-- `frontend/vite.config.ts` dev/build config
-- `frontend/eslint.config.js` lint rules
-- `frontend/index.html` Vite HTML entry
-- `frontend/public/` static icons and favicons
-- `frontend/nginx.conf` deployment web-server config
-- `frontend/Dockerfile` and `frontend/Dockerfile.dev` image definitions
+- New API/domain behavior: start at `backend/app/api/` then the matching file in `backend/app/services/`
+- Schema/database changes: check `backend/app/models/` and `backend/alembic/versions/`
+- External provider behavior: inspect `backend/app/providers/` and `backend/app/services/connection_service.py`
+- Background or scheduled automation: inspect `backend/app/worker.py` and `backend/app/tasks/`
+- Frontend screen behavior: start at `frontend/src/pages/` and follow calls into `frontend/src/lib/api.ts`
+- Authentication/session issues: inspect `backend/app/core/auth.py` and `frontend/src/contexts/auth-context.tsx`
+- Build/runtime env issues: inspect the relevant compose file plus `backend/app/core/config.py` and `frontend/vite.config.ts`
 
-## Naming And Module Patterns
+## Observed Structural Characteristics
 
-- Backend filenames are mostly snake_case by domain, for example `backend/app/services/dashboard_service.py`
-- Frontend page/component files use kebab-case or lower-case route naming, for example `frontend/src/pages/account-detail.tsx`
-- UI primitives in `frontend/src/components/ui/` match component names, for example `button.tsx`, `dialog.tsx`, `table.tsx`
-- Alembic migration files use numeric prefixes and short descriptions, for example `backend/alembic/versions/019_payees.py`
-
-## Key Files To Read First
-
-For backend orientation:
-
-- `backend/app/main.py`
-- `backend/app/core/config.py`
-- `backend/app/core/database.py`
-- `backend/app/core/auth.py`
-- one representative router/service pair such as `backend/app/api/connections.py` and `backend/app/services/connection_service.py`
-
-For frontend orientation:
-
-- `frontend/src/App.tsx`
-- `frontend/src/lib/api.ts`
-- `frontend/src/contexts/auth-context.tsx`
-- `frontend/src/components/app-layout.tsx`
-- one representative page such as `frontend/src/pages/dashboard.tsx`
-
-For environment/runtime orientation:
-
-- `README.md`
-- `docker-compose.yml`
-- `.github/workflows/ci.yml`
-
-## Structural Observations
-
-- The codebase is feature-rich rather than library-like; most directories map to product capabilities
-- The backend has stronger layering than the frontend, where pages often coordinate many queries and dialogs directly
-- There is no shared package between backend and frontend; type alignment appears hand-maintained in `frontend/src/types/index.ts`
-- Tests are concentrated in the backend; no `frontend/src/**/*.test.*` files were found during this mapping pass
+- This is a practical monorepo, not a formal workspace-managed monorepo
+- The backend has broad domain coverage already; most business areas have API/service/model/schema coverage
+- The frontend is feature-dense but still relatively flat, which keeps discovery easy at current size
+- There is no dedicated `shared/` package between frontend and backend; contracts are duplicated through backend schemas and frontend TS types

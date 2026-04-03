@@ -2,103 +2,92 @@
 
 ## Backend Conventions
 
-### Layering
+### Structure
 
-Backend work generally follows this split:
+- FastAPI routers stay thin and delegate to service modules, for example `backend/app/api/transactions.py`
+- Business logic is primarily written as module-level async functions in `backend/app/services/*.py`
+- Models, schemas, routers, and services use aligned domain names (`account`, `transaction`, `budget`, `payee`, etc.)
 
-- API handlers in `backend/app/api/`
-- business logic in `backend/app/services/`
-- persistence models in `backend/app/models/`
-- schema validation/serialization in `backend/app/schemas/`
-- provider abstractions in `backend/app/providers/`
+### Style
 
-This separation is consistent enough that new backend work should usually follow the same pattern.
-
-### Typing And Models
-
-- SQLAlchemy 2 typed declarative style is used, for example `backend/app/models/transaction.py`
-- Pydantic v2 style schemas are used under `backend/app/schemas/`
-- UUIDs are the standard entity identifier type across the backend
-- Money values are usually `Decimal` in backend domain/model code
-
-### Async Style
-
-- API handlers and services are predominantly `async`
-- DB access uses `AsyncSession`
-- External HTTP calls use `httpx.AsyncClient`
-- Celery tasks bridge to async code with `asyncio.run(...)`
+- Python style is close to Ruff defaults with a configured line length of 100 in `backend/pyproject.toml`
+- Typing is used broadly across service and API functions
+- Pydantic schema names follow `Create`, `Update`, `Read`, and specific request/response suffix patterns
+- Inline comments are used sparingly and usually explain domain-specific behavior rather than syntax
 
 ### Error Handling
 
-- Route handlers usually convert service exceptions into `HTTPException`, for example `backend/app/api/connections.py`
-- Service-layer errors appear to use plain `ValueError` or generic exceptions rather than custom domain exception types
-- Some broad exception handling logs and continues, for example startup sync in `backend/app/main.py`
+- Services generally raise `ValueError` for domain/business validation failures
+- Routers translate those exceptions into HTTP errors with explicit status codes
+- Unexpected provider/sync failures are often caught and wrapped with generic 4xx/5xx messages in router handlers
 
-### Configuration
+### Data and Ownership Rules
 
-- Runtime configuration is centralized in `backend/app/core/config.py`
-- Settings are cached through `get_settings()` with `lru_cache`
-- Env var names follow uppercase snake case
+- Backend service queries consistently enforce user ownership boundaries before returning or mutating records
+- Cross-cutting transaction concerns include:
+  - transfer pairing
+  - primary currency stamping
+  - rule-based categorization
+  - attachment counts
+  - payee enrichment
+
+### Patterns Worth Preserving
+
+- Use `Depends(get_async_session)` and `Depends(current_active_user)` in routers
+- Keep provider-specific code inside `backend/app/providers/`
+- Use Alembic revisions for schema changes instead of ad hoc table creation logic
+- Prefer extending existing domain services before adding duplicate business logic to routers
 
 ## Frontend Conventions
 
-### Component Organization
+### Structure
 
-- Route-level screens live in `frontend/src/pages/`
+- Route-level pages live in `frontend/src/pages/`
 - Shared feature components live in `frontend/src/components/`
-- primitive reusable UI parts live in `frontend/src/components/ui/`
-- common helpers live in `frontend/src/lib/`, `frontend/src/hooks/`, and `frontend/src/contexts/`
+- Reusable primitives live in `frontend/src/components/ui/`
+- Common backend access goes through `frontend/src/lib/api.ts`
 
-### Data Fetching
+### State and Data Flow
 
-- API access is centralized in `frontend/src/lib/api.ts`
-- Components/pages typically call that client through React Query hooks
-- Query keys are simple arrays of strings and parameters, for example in `frontend/src/pages/dashboard.tsx`
-- Mutations commonly invalidate broad query prefixes instead of updating cache surgically
+- Server state is handled with TanStack Query
+- Auth state is held in `frontend/src/contexts/auth-context.tsx`
+- Browser persistence currently relies on `localStorage` for tokens and onboarding/privacy flags
+- Pages and components tend to call API wrapper functions directly rather than through a separate service layer
 
 ### Styling
 
-- Utility-first styling with Tailwind classes is used throughout `frontend/src/`
-- UI primitives follow shadcn/Radix composition patterns
-- Iconography is mostly from `lucide-react`
+- Tailwind utility classes are used directly in component JSX
+- UI primitives and styling patterns are consistent with a shadcn/Radix-style component approach
+- Iconography is standardized on `lucide-react`
 
-### State Management
+### TypeScript / React Patterns
 
-- Local component state with `useState` is common
-- App-wide auth state uses React context in `frontend/src/contexts/auth-context.tsx`
-- Server state uses React Query
-- There is no Redux/Zustand/etc. in the tracked source
+- Functional components only; no class components found
+- Lazy route imports in `frontend/src/App.tsx`
+- Hooks are used for auth, queries, translation, theme, and local UI state
+- `useCallback` appears in some shared components/contexts, but there is no elaborate memoization framework
 
-## Naming Patterns
+## Testing and Quality Conventions
 
-- Backend modules use snake_case filenames
-- Frontend page and component filenames lean toward kebab-case
-- Query/mutation helpers in `frontend/src/lib/api.ts` are grouped by domain object
-- Services often expose verb-centric functions such as `get_summary`, `sync_connection`, `apply_rules_to_transaction`
+- Backend tests use async pytest functions marked with `@pytest.mark.asyncio`
+- API tests interact with the actual ASGI app through HTTPX instead of mocking FastAPI routes directly
+- Fixtures in `backend/tests/conftest.py` create realistic seeded data and auth tokens
+- CI enforces:
+  - `ruff check .` in `backend/`
+  - backend coverage threshold of 60%
+  - `npm run lint`
+  - `npm run build`
 
-## Linting And Formatting
+## Naming Conventions
 
-- Ruff line length is 100 in `backend/pyproject.toml`
-- Ruff ignores `E711` and `E712`
-- Frontend linting is ESLint flat config in `frontend/eslint.config.js`
-- No dedicated formatter config file (for example Prettier or Black) was found during this pass
+- Backend service files: `*_service.py`
+- Backend task files: `*_tasks.py`
+- Frontend component files: kebab-case
+- Frontend imports commonly use the `@/` alias
+- API route prefixes align with plural resource names such as `/api/transactions` and `/api/connections`
 
-## Test Style
+## Local Practices Implied By The Tree
 
-- Backend tests use `pytest` + `pytest-asyncio`
-- API tests use `httpx.AsyncClient` against the in-process ASGI app from `backend/tests/conftest.py`
-- Tests rely on fixture composition heavily
-- External services are mocked with `unittest.mock.patch` / `AsyncMock`
-
-## Recurring Implementation Idioms
-
-- Domain routers, service files, schema files, and frontend pages often share the same business noun
-- Comments are sparse and usually reserved for non-obvious behavior
-- Business rules are often encoded directly in service functions rather than separate policy objects
-- User preferences are stored as flexible dictionaries and read in frontend/backend code paths
-
-## Deviations And Mixed Patterns
-
-- React code uses `useCallback` and `useMemo` in places such as `frontend/src/contexts/auth-context.tsx` and `frontend/src/pages/dashboard.tsx`, but usage is not uniformly minimal
-- Some frontend route modules are very large and combine data, transformations, and rendering in a single file
-- Some backend routes return schema models consistently, while others return ad hoc dicts with extra fields
+- Compose-first development is the default path in `README.md`
+- Optional integrations are expected to be disabled cleanly when env vars are absent
+- The project has strong regression-test habits on backend API and service behavior, but frontend behavior is mostly protected by lint/type/build checks rather than tests
