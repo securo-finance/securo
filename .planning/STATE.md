@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-stopped_at: "Milestone execution complete; all roadmap phases finished."
-last_updated: "2026-04-03T19:28:00.000Z"
+stopped_at: "Phase 7 delivered; milestone ready for lifecycle audit."
+last_updated: "2026-04-03T20:07:27Z"
 last_activity: 2026-04-03
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 5
-  completed_plans: 5
+  total_phases: 7
+  completed_phases: 7
+  total_plans: 7
+  completed_plans: 7
   percent: 100
 ---
 
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-03)
 
 **Core value:** Manage personal finances clearly on a self-hosted app that remains practical to use on mobile.
-**Current focus:** Milestone complete
+**Current focus:** Milestone lifecycle
 
 ## Current Position
 
 Phase: Complete
 Plan: Complete
-Status: Milestone delivered
+Status: Milestone delivered pending archive
 Last activity: 2026-04-03
 
 Progress: [██████████] 100%
@@ -36,15 +36,16 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 5
-- Average duration: ~36 min
-- Total execution time: 3.0 hours
+- Total plans completed: 6
+- Average duration: ~34 min
+- Total execution time: 3.2 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1-5 | 5 | 3.0h | 36m |
+| 6 | 1 | ~10m | ~10m |
 
 **Recent Trend:**
 
@@ -68,12 +69,19 @@ Recent decisions affecting current work:
 
 None yet.
 
+### Roadmap Evolution
+
+- Phase 6 added: Remover a função "Orçamentos" do menu e sua tela também.
+- Phase 6 completed: standalone budgets menu and screen retired in favor of Categories.
+- Phase 7 added: Remove Residual Category Group Contracts.
+- Phase 7 completed: active category contract and setup seeding are flat end to end.
+
 ### Blockers/Concerns
 
-- Remaining milestone archive/tagging work is optional and not yet executed.
+- Remaining work is milestone lifecycle only: re-audit, archive, and cleanup.
 
 ## Session Continuity
 
 Last session: 2026-04-03 00:00 UTC
-Stopped at: Milestone execution complete; optional archive/tagging step remains.
+Stopped at: Phase 7 delivered; milestone ready for lifecycle audit.
 Resume file: None

@@ -13,7 +13,7 @@
     "quick_branch_template": null
   },
   "workflow": {
-    "research": true,
+    "research": false,
     "plan_check": true,
     "verifier": true,
     "nyquist_validation": true,

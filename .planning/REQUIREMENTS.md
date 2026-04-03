@@ -9,36 +9,36 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Branding
 
-- [ ] **BRND-01**: User sees the product name `Flux` instead of `Securo` in the application shell, navigation, page titles, and primary user-facing copy
-- [ ] **BRND-02**: User receives Flux-branded backup/export filenames and related user-facing operational labels
-- [ ] **BRND-03**: Self-hosted setup and project documentation for this release use Flux naming consistently where compatibility does not require legacy identifiers
+- [x] **BRND-01**: User sees the product name `Flux` instead of `Securo` in the application shell, navigation, page titles, and primary user-facing copy
+- [x] **BRND-02**: User receives Flux-branded backup/export filenames and related user-facing operational labels
+- [x] **BRND-03**: Self-hosted setup and project documentation for this release use Flux naming consistently where compatibility does not require legacy identifiers
 
 ### Categories
 
-- [ ] **CAT-01**: User can create a category without assigning it to a category group
-- [ ] **CAT-02**: User can edit an existing category without any category-group dependency in the UI or API contract
-- [ ] **CAT-03**: User can view and manage categories in a flat list that remains usable on mobile screens
-- [ ] **CAT-04**: Existing categories, transactions, and rules remain linked correctly after category-group removal
+- [x] **CAT-01**: User can create a category without assigning it to a category group
+- [x] **CAT-02**: User can edit an existing category without any category-group dependency in the UI or API contract
+- [x] **CAT-03**: User can view and manage categories in a flat list that remains usable on mobile screens
+- [x] **CAT-04**: Existing categories, transactions, and rules remain linked correctly after category-group removal
 
 ### Budgeting
 
-- [ ] **BUDG-01**: User can choose whether a category has a budget during category creation
-- [ ] **BUDG-02**: User can enter a budget amount when budgeting is enabled for a category
-- [ ] **BUDG-03**: User can disable budgeting for a category without treating that state as a zero-value budget
-- [ ] **BUDG-04**: User can edit a category and change its budget enablement and budget amount from the same category flow
-- [ ] **BUDG-05**: Budget-related screens and APIs read category-owned budget settings consistently instead of requiring separate standalone budget CRUD ownership
+- [x] **BUDG-01**: User can choose whether a category has a budget during category creation
+- [x] **BUDG-02**: User can enter a budget amount when budgeting is enabled for a category
+- [x] **BUDG-03**: User can disable budgeting for a category without treating that state as a zero-value budget
+- [x] **BUDG-04**: User can edit a category and change its budget enablement and budget amount from the same category flow
+- [x] **BUDG-05**: Budget-related screens and APIs read category-owned budget settings consistently instead of requiring separate standalone budget CRUD ownership
 
 ### Migration and Reporting
 
-- [ ] **MIG-01**: Existing budgeted categories are migrated to the new category-owned budget model without losing their current effective budget state
-- [ ] **MIG-02**: Historical transactions, reports, and budget-vs-actual views remain accurate for existing data after the migration
-- [ ] **MIG-03**: Existing backups/exports remain recoverable through an explicit compatibility or versioning strategy during the v2 transition
-- [ ] **MIG-04**: Legacy category-group and standalone budget paths are removed only after all active consumers have been migrated
+- [x] **MIG-01**: Existing budgeted categories are migrated to the new category-owned budget model without losing their current effective budget state
+- [x] **MIG-02**: Historical transactions, reports, and budget-vs-actual views remain accurate for existing data after the migration
+- [x] **MIG-03**: Existing backups/exports remain recoverable through an explicit compatibility or versioning strategy during the v2 transition
+- [x] **MIG-04**: Legacy category-group and standalone budget paths are removed only after all active consumers have been migrated
 
 ### Mobile UX
 
-- [ ] **MOB-01**: Category create/edit flows remain fully usable on mobile-width screens with budget controls included in the same responsive flow
-- [ ] **MOB-02**: New v2 category and budget interactions do not depend on hover-only, drag-only, or desktop-only UI patterns
+- [x] **MOB-01**: Category create/edit flows remain fully usable on mobile-width screens with budget controls included in the same responsive flow
+- [x] **MOB-02**: New v2 category and budget interactions do not depend on hover-only, drag-only, or desktop-only UI patterns
 
 ## v2 Requirements
 
@@ -69,24 +69,24 @@ Deferred to future release. Tracked but not in current roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BRND-01 | Phase 1 | Pending |
-| BRND-02 | Phase 1 | Pending |
-| BRND-03 | Phase 5 | Pending |
-| CAT-01 | Phase 3 | Pending |
-| CAT-02 | Phase 3 | Pending |
-| CAT-03 | Phase 4 | Pending |
-| CAT-04 | Phase 2 | Pending |
-| BUDG-01 | Phase 3 | Pending |
-| BUDG-02 | Phase 3 | Pending |
-| BUDG-03 | Phase 3 | Pending |
-| BUDG-04 | Phase 3 | Pending |
-| BUDG-05 | Phase 4 | Pending |
-| MIG-01 | Phase 2 | Pending |
-| MIG-02 | Phase 4 | Pending |
-| MIG-03 | Phase 4 | Pending |
-| MIG-04 | Phase 5 | Pending |
-| MOB-01 | Phase 3 | Pending |
-| MOB-02 | Phase 3 | Pending |
+| BRND-01 | Phase 1 | Satisfied |
+| BRND-02 | Phase 1 | Satisfied |
+| BRND-03 | Phase 5 | Satisfied |
+| CAT-01 | Phase 3 | Satisfied |
+| CAT-02 | Phase 7 | Satisfied |
+| CAT-03 | Phase 7 | Satisfied |
+| CAT-04 | Phase 2 | Satisfied |
+| BUDG-01 | Phase 3 | Satisfied |
+| BUDG-02 | Phase 3 | Satisfied |
+| BUDG-03 | Phase 3 | Satisfied |
+| BUDG-04 | Phase 3 | Satisfied |
+| BUDG-05 | Phase 4 | Satisfied |
+| MIG-01 | Phase 2 | Satisfied |
+| MIG-02 | Phase 4 | Satisfied |
+| MIG-03 | Phase 4 | Satisfied |
+| MIG-04 | Phase 7 | Satisfied |
+| MOB-01 | Phase 3 | Satisfied |
+| MOB-02 | Phase 3 | Satisfied |
 
 **Coverage:**
 - v1 requirements: 18 total
@@ -95,4 +95,4 @@ Deferred to future release. Tracked but not in current roadmap.
 
 ---
 *Requirements defined: 2026-04-03*
-*Last updated: 2026-04-03 after initial definition*
+*Last updated: 2026-04-03 after gap-closure phase planning*

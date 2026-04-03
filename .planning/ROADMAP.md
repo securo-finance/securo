@@ -17,6 +17,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Unified Category Budget Editing** - Move category creation and editing to a single mobile-usable flow with inline budget controls. (completed 2026-04-03)
 - [x] **Phase 4: Flat Categories and Reader Cutover** - Deliver flat category management and migrate budget/report/export readers to category-owned settings. (completed 2026-04-03)
 - [x] **Phase 5: Legacy Removal and Release Cleanup** - Remove deprecated group and standalone budget paths after all consumers are migrated. (completed 2026-04-03)
+- [x] **Phase 6: Remover a função "Orçamentos" do menu e sua tela também.** - Remove the Budgets menu entry and retire the dedicated budgets screen from the supported UI flow. (completed 2026-04-03)
+- [x] **Phase 7: Remove Residual Category Group Contracts** - Eliminate the remaining backend category-group contract and default seeding dependency so flat categories are enforced end to end. (completed 2026-04-03)
 
 ## Phase Details
 
@@ -76,10 +78,32 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Users reach the supported category and budget workflows without encountering deprecated group-based or standalone-budget editing paths.
 **Plans**: TBD
 
+### Phase 6: Remover a função "Orçamentos" do menu e sua tela também.
+**Goal**: Users no longer see a standalone Budgets area in navigation and cannot reach the retired budgets screen through the supported app UI.
+**Depends on**: Phase 5
+**Requirements**: TBD
+**Success Criteria** (what must be TRUE):
+  1. User no longer sees an `Orçamentos` or `Budgets` menu entry in the primary navigation.
+  2. User is not routed to the standalone budgets screen from the supported UI flow.
+  3. Remaining category and budget workflows continue to point users to the supported replacement surfaces without dead links or broken navigation.
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 7: Remove Residual Category Group Contracts
+**Goal**: Flat categories become the only supported category model across setup, API contracts, and active runtime flows.
+**Depends on**: Phase 6
+**Requirements**: CAT-02, CAT-03, MIG-04
+**Gap Closure**: Closes milestone audit gaps around `group_id` exposure and default category-group seeding.
+**Success Criteria** (what must be TRUE):
+  1. `/api/categories` no longer accepts or returns `group_id` in the supported create, update, or read contract.
+  2. Default setup and category seeding create flat categories without creating or assigning category groups.
+  3. Active category and budget workflows continue to function after the contract cleanup without reviving any legacy group dependency.
+**Plans**: TBD
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -88,3 +112,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 | 3. Unified Category Budget Editing | 1/1 | Complete    | 2026-04-03 |
 | 4. Flat Categories and Reader Cutover | 1/1 | Complete   | 2026-04-03 |
 | 5. Legacy Removal and Release Cleanup | 1/1 | Complete   | 2026-04-03 |
+| 6. Remover a função "Orçamentos" do menu e sua tela também. | 1/1 | Complete | 2026-04-03 |
+| 7. Remove Residual Category Group Contracts | 1/1 | Complete | 2026-04-03 |
