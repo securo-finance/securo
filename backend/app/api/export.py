@@ -1,7 +1,7 @@
 import io
 import json
 import zipfile
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -25,6 +25,7 @@ from app.models.transaction import Transaction
 from app.models.user import User
 
 router = APIRouter(prefix="/api/export", tags=["export"])
+EXPORT_FORMAT_VERSION = "2.0"
 
 
 def _serialize(obj) -> dict:
@@ -90,8 +91,13 @@ async def backup(
             zf.writestr(f"{name}.json", json.dumps(serialized, indent=2, ensure_ascii=False))
 
         metadata = {
-            "export_date": datetime.utcnow().isoformat(),
-            "format_version": "1.0",
+            "export_date": datetime.now(UTC).isoformat(),
+            "format_version": EXPORT_FORMAT_VERSION,
+            "compatibility": {
+                "legacy_category_groups_included": True,
+                "category_budget_source": "categories",
+                "notes": "v2 readers use category-owned budgets; legacy category groups remain in the backup for recovery during transition.",
+            },
             "entity_counts": entity_counts,
         }
         zf.writestr("metadata.json", json.dumps(metadata, indent=2, ensure_ascii=False))
@@ -101,5 +107,5 @@ async def backup(
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="securo-backup-{today}.zip"'},
+        headers={"Content-Disposition": f'attachment; filename="flux-backup-{today}.zip"'},
     )

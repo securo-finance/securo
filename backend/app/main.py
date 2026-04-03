@@ -7,7 +7,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.accounts import router as accounts_router
 from app.api.budgets import router as budgets_router
 from app.api.categories import router as categories_router
-from app.api.category_groups import router as category_groups_router
 from app.api.connections import router as connections_router
 from app.api.dashboard import router as dashboard_router
 from app.api.import_logs import router as import_logs_router
@@ -84,7 +83,6 @@ app.include_router(
 
 # Domain routes
 app.include_router(categories_router)
-app.include_router(category_groups_router)
 app.include_router(rules_router)
 app.include_router(transactions_router)
 app.include_router(import_router)

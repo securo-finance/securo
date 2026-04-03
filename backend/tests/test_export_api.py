@@ -31,7 +31,9 @@ async def test_backup_empty(client: AsyncClient, auth_headers):
         assert "transactions.json" in names
 
         metadata = json.loads(zf.read("metadata.json"))
-        assert metadata["format_version"] == "1.0"
+        assert metadata["format_version"] == "2.0"
+        assert metadata["compatibility"]["legacy_category_groups_included"] is True
+        assert metadata["compatibility"]["category_budget_source"] == "categories"
         assert "export_date" in metadata
         for count in metadata["entity_counts"].values():
             assert count == 0
@@ -51,7 +53,7 @@ async def test_backup_with_data(
 
     # Verify Content-Disposition header contains filename
     disposition = response.headers.get("content-disposition", "")
-    assert "securo-backup-" in disposition
+    assert "flux-backup-" in disposition
     assert ".zip" in disposition
 
     buf = io.BytesIO(response.content)
@@ -75,6 +77,8 @@ async def test_backup_with_data(
         # Verify entity counts match
         metadata = json.loads(zf.read("metadata.json"))
         counts = metadata["entity_counts"]
+        assert metadata["format_version"] == "2.0"
+        assert metadata["compatibility"]["legacy_category_groups_included"] is True
         assert counts["accounts"] == 1
         assert counts["transactions"] == len(test_transactions)
         assert counts["categories"] == len(test_categories)

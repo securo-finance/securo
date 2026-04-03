@@ -2,7 +2,6 @@ import axios from 'axios'
 import type {
   User,
   Category,
-  CategoryGroup,
   BankConnection,
   ConnectionSettings,
   Account,
@@ -12,7 +11,6 @@ import type {
   PayeeSummary,
   RecurringTransaction,
   ProjectedTransaction,
-  Budget,
   BudgetVsActual,
   Rule,
   ImportLog,
@@ -109,25 +107,6 @@ export const categories = {
   },
   delete: async (id: string): Promise<void> => {
     await api.delete(`/categories/${id}`)
-  },
-}
-
-// Category Groups
-export const categoryGroups = {
-  list: async (): Promise<CategoryGroup[]> => {
-    const { data } = await api.get('/category-groups')
-    return data
-  },
-  create: async (group: Partial<CategoryGroup>): Promise<CategoryGroup> => {
-    const { data } = await api.post('/category-groups', group)
-    return data
-  },
-  update: async (id: string, group: Partial<CategoryGroup>): Promise<CategoryGroup> => {
-    const { data } = await api.patch(`/category-groups/${id}`, group)
-    return data
-  },
-  delete: async (id: string): Promise<void> => {
-    await api.delete(`/category-groups/${id}`)
   },
 }
 
@@ -294,7 +273,7 @@ export const transactions = {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `transactions-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `flux-transactions-${new Date().toISOString().slice(0, 10)}.csv`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -414,21 +393,6 @@ export const recurring = {
 
 // Budgets
 export const budgets = {
-  list: async (month?: string): Promise<Budget[]> => {
-    const { data } = await api.get('/budgets', { params: { month } })
-    return data
-  },
-  create: async (budget: { category_id: string; amount: number; month: string; is_recurring?: boolean }): Promise<Budget> => {
-    const { data } = await api.post('/budgets', budget)
-    return data
-  },
-  update: async (id: string, budget: { amount?: number }): Promise<Budget> => {
-    const { data } = await api.patch(`/budgets/${id}`, budget)
-    return data
-  },
-  delete: async (id: string): Promise<void> => {
-    await api.delete(`/budgets/${id}`)
-  },
   comparison: async (month?: string): Promise<BudgetVsActual[]> => {
     const { data } = await api.get('/budgets/comparison', { params: { month } })
     return data
@@ -562,7 +526,7 @@ export const backup = {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `securo-backup-${new Date().toISOString().slice(0, 10)}.zip`
+    a.download = `flux-backup-${new Date().toISOString().slice(0, 10)}.zip`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)

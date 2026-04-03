@@ -102,7 +102,7 @@ async def export_transactions(
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="transactions-{today}.csv"'},
+        headers={"Content-Disposition": f'attachment; filename="flux-transactions-{today}.csv"'},
     )
 
 

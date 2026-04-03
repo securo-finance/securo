@@ -21,6 +21,8 @@ export interface Category {
   icon: string
   color: string
   is_system: boolean
+  has_budget: boolean
+  budget_amount: number | null
 }
 
 export interface CategoryGroup {
@@ -245,8 +247,6 @@ export interface BudgetVsActual {
   category_name: string
   category_icon: string
   category_color: string
-  group_id: string | null
-  group_name: string | null
   budget_amount: number | null
   actual_amount: number
   prev_month_amount: number

@@ -34,8 +34,6 @@ class BudgetVsActual(BaseModel):
     category_name: str
     category_icon: str
     category_color: str
-    group_id: Optional[uuid.UUID] = None
-    group_name: Optional[str] = None
     budget_amount: Optional[Decimal] = None
     actual_amount: Decimal
     prev_month_amount: Decimal = Decimal("0")
