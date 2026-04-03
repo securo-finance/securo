@@ -12,11 +12,11 @@ This roadmap delivers Flux v2 as a controlled brownfield migration: establish th
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Flux Branding Foundation** - Establish Flux naming in the product shell and user-facing operational surfaces.
-- [ ] **Phase 2: Category Budget Migration** - Migrate existing category and budget data to the category-owned model without breaking links.
-- [ ] **Phase 3: Unified Category Budget Editing** - Move category creation and editing to a single mobile-usable flow with inline budget controls.
-- [ ] **Phase 4: Flat Categories and Reader Cutover** - Deliver flat category management and migrate budget/report/export readers to category-owned settings.
-- [ ] **Phase 5: Legacy Removal and Release Cleanup** - Remove deprecated group and standalone budget paths after all consumers are migrated.
+- [x] **Phase 1: Flux Branding Foundation** - Establish Flux naming in the product shell and user-facing operational surfaces. (completed 2026-04-03)
+- [x] **Phase 2: Category Budget Migration** - Migrate existing category and budget data to the category-owned model without breaking links. (completed 2026-04-03)
+- [x] **Phase 3: Unified Category Budget Editing** - Move category creation and editing to a single mobile-usable flow with inline budget controls. (completed 2026-04-03)
+- [x] **Phase 4: Flat Categories and Reader Cutover** - Deliver flat category management and migrate budget/report/export readers to category-owned settings. (completed 2026-04-03)
+- [x] **Phase 5: Legacy Removal and Release Cleanup** - Remove deprecated group and standalone budget paths after all consumers are migrated. (completed 2026-04-03)
 
 ## Phase Details
 
@@ -83,8 +83,8 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Flux Branding Foundation | 0/TBD | Not started | - |
-| 2. Category Budget Migration | 0/TBD | Not started | - |
-| 3. Unified Category Budget Editing | 0/TBD | Not started | - |
-| 4. Flat Categories and Reader Cutover | 0/TBD | Not started | - |
-| 5. Legacy Removal and Release Cleanup | 0/TBD | Not started | - |
+| 1. Flux Branding Foundation | 1/1 | Complete    | 2026-04-03 |
+| 2. Category Budget Migration | 1/1 | Complete    | 2026-04-03 |
+| 3. Unified Category Budget Editing | 1/1 | Complete    | 2026-04-03 |
+| 4. Flat Categories and Reader Cutover | 1/1 | Complete   | 2026-04-03 |
+| 5. Legacy Removal and Release Cleanup | 1/1 | Complete   | 2026-04-03 |
