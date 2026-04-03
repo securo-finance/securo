@@ -33,6 +33,16 @@ docker compose up --build
 
 Open [http://localhost:3000](http://localhost:3000) and create an account. That's it.
 
+### Devcontainer / WSL2
+
+If you're running the repo inside a devcontainer with Docker Desktop on the host, use the same command:
+
+```bash
+docker compose up --build
+```
+
+This default compose file avoids bind mounts so it works when Docker cannot mount the devcontainer filesystem directly.
+
 <p align="center">
   <img src="docs/screenshot.png" width="800" alt="Securo dashboard" />
 </p>
@@ -91,8 +101,11 @@ Parts of this codebase were built with help of AI. All code is human-reviewed an
 # Run backend tests
 docker compose exec backend pytest
 
-# Rebuild after dependency changes
+# Stable local stack for validation and devcontainers
 docker compose up --build
+
+# Live-reload stack for host-native development
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
 ## Contributing

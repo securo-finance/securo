@@ -1,0 +1,21 @@
+name: securo
+
+services:
+  backend:
+    command: sh -c "alembic -c /app/alembic.ini upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    volumes:
+      - ./backend:/app
+      - attachments:/app/data/attachments
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:5173"
+    environment:
+      BACKEND_URL: http://backend:8000
+      FRONTEND_URL: http://localhost:3000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
