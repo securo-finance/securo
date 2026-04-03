@@ -4,118 +4,72 @@
 
 ### PostgreSQL
 
-- Purpose: primary relational datastore for users, accounts, transactions, rules, assets, budgets, and sync metadata
-- Configuration: `DATABASE_URL` in `backend/app/core/config.py`
-- Runtime wiring:
-  - `docker-compose.yml`
-  - `docker-compose.prod.yml`
-  - `backend/app/core/database.py`
-- Schema evolution: Alembic migrations in `backend/alembic/versions/`
+- Primary application database.
+- Default DSN is modeled in [`backend/app/core/config.py`](/workspaces/flux-pluggy/securo/backend/app/core/config.py) as `database_url`.
+- Provisioned through [`docker-compose.yml`](/workspaces/flux-pluggy/securo/docker-compose.yml) and [`docker-compose.prod.yml`](/workspaces/flux-pluggy/securo/docker-compose.prod.yml).
+- SQLAlchemy async engine/session are created in [`backend/app/core/database.py`](/workspaces/flux-pluggy/securo/backend/app/core/database.py).
 
-### Redis
+### Redis / Celery
 
-- Purpose: Celery broker and result backend
-- Configuration: `REDIS_URL` in `backend/app/core/config.py`
-- Runtime wiring:
-  - `docker-compose.yml`
-  - `docker-compose.prod.yml`
-  - `backend/app/worker.py`
+- Redis is used as both Celery broker and result backend.
+- Configured in [`backend/app/worker.py`](/workspaces/flux-pluggy/securo/backend/app/worker.py) using `settings.redis_url`.
+- Worker and beat services are launched in both compose files.
+- Background jobs currently cover connection sync, recurring generation, asset growth, FX sync, and FX restamping.
 
 ### Pluggy
 
-- Purpose: optional open-finance/bank connection provider
-- Credentials:
-  - `PLUGGY_CLIENT_ID`
-  - `PLUGGY_CLIENT_SECRET`
-  - `PLUGGY_OAUTH_REDIRECT_URI`
-- Backend integration points:
-  - provider implementation in `backend/app/providers/pluggy.py`
-  - provider registry in `backend/app/providers/__init__.py`
-  - API endpoints in `backend/app/api/connections.py`
-  - orchestration in `backend/app/services/connection_service.py`
-- Frontend integration points:
-  - Pluggy widget dependency in `frontend/package.json`
-  - bank connection UI in `frontend/src/components/bank-connect-dialog.tsx`
-  - provider selection/reconnect settings in `frontend/src/components/connector-select-dialog.tsx` and `frontend/src/components/connection-settings-dialog.tsx`
-- Notes:
-  - Backend creates connect tokens rather than redirecting for the primary Pluggy flow
-  - App startup dispatches a full stale-connection sync from `backend/app/main.py`
+- Optional open-finance/bank-sync provider.
+- Credentials: `PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET`, `PLUGGY_OAUTH_REDIRECT_URI` in [`.env.example`](/workspaces/flux-pluggy/securo/.env.example), [`backend/.env.example`](/workspaces/flux-pluggy/securo/backend/.env.example), and [`backend/app/core/config.py`](/workspaces/flux-pluggy/securo/backend/app/core/config.py).
+- Provider implementation lives in [`backend/app/providers/pluggy.py`](/workspaces/flux-pluggy/securo/backend/app/providers/pluggy.py).
+- Connection orchestration lives in [`backend/app/services/connection_service.py`](/workspaces/flux-pluggy/securo/backend/app/services/connection_service.py).
+- API surface is exposed from [`backend/app/api/connections.py`](/workspaces/flux-pluggy/securo/backend/app/api/connections.py).
+- Frontend interaction points include [`frontend/src/components/bank-connect-dialog.tsx`](/workspaces/flux-pluggy/securo/frontend/src/components/bank-connect-dialog.tsx), [`frontend/src/components/connector-select-dialog.tsx`](/workspaces/flux-pluggy/securo/frontend/src/components/connector-select-dialog.tsx), and `connections.*` methods in [`frontend/src/lib/api.ts`](/workspaces/flux-pluggy/securo/frontend/src/lib/api.ts).
+- Flow style: Pluggy widget/connect-token flow, not a pure redirect OAuth flow, even though the app exposes callback endpoints.
 
 ### Open Exchange Rates
 
-- Purpose: optional FX rates for cross-currency transactions and recurring data restamping
-- Credential: `OPENEXCHANGERATES_APP_ID`
-- Backend integration points:
-  - provider implementation in `backend/app/providers/openexchangerates.py`
-  - FX services/tasks in `backend/app/services/fx_rate_service.py` and `backend/app/tasks/fx_rate_tasks.py`
-  - API endpoints in `backend/app/api/fx_rates.py`
-- Runtime behavior:
-  - on-demand conversion support
-  - scheduled sync controlled by `FX_SYNC_MODE`
+- Optional FX-rate provider for multi-currency normalization.
+- Credential: `OPENEXCHANGERATES_APP_ID` in README and [`backend/app/core/config.py`](/workspaces/flux-pluggy/securo/backend/app/core/config.py).
+- Provider implementation: [`backend/app/providers/openexchangerates.py`](/workspaces/flux-pluggy/securo/backend/app/providers/openexchangerates.py).
+- Related services/tasks: [`backend/app/services/fx_rate_service.py`](/workspaces/flux-pluggy/securo/backend/app/services/fx_rate_service.py), [`backend/app/tasks/fx_rate_tasks.py`](/workspaces/flux-pluggy/securo/backend/app/tasks/fx_rate_tasks.py), [`backend/app/tasks/fx_backfill_tasks.py`](/workspaces/flux-pluggy/securo/backend/app/tasks/fx_backfill_tasks.py).
 
-## Internal Service Boundaries
+### Local File Storage
 
-### Frontend to Backend
+- Attachment storage defaults to local disk via `storage_provider=local`.
+- Implementation: [`backend/app/providers/local_storage.py`](/workspaces/flux-pluggy/securo/backend/app/providers/local_storage.py).
+- Runtime path: `storage_local_path`, defaulting to `./data/attachments` in config and `/app/data/attachments` in compose.
+- Attachment domain logic lives in [`backend/app/services/attachment_service.py`](/workspaces/flux-pluggy/securo/backend/app/services/attachment_service.py) and API routes in [`backend/app/api/attachments.py`](/workspaces/flux-pluggy/securo/backend/app/api/attachments.py).
+- S3 settings exist in [`backend/app/core/config.py`](/workspaces/flux-pluggy/securo/backend/app/core/config.py), but no S3 provider implementation is present in the mapped code.
 
-- Frontend sends all application requests to `/api` using Axios in `frontend/src/lib/api.ts`
-- Vite dev server proxies `/api` to `BACKEND_URL` in `frontend/vite.config.ts`
-- Production frontend container points to backend via container DNS in `docker-compose.prod.yml`
+## Internal Integration Boundaries
+
+### Backend API <-> Frontend SPA
+
+- Frontend axios client is centralized in [`frontend/src/lib/api.ts`](/workspaces/flux-pluggy/securo/frontend/src/lib/api.ts) with `baseURL: '/api'`.
+- JWT token is pulled from `localStorage` and sent on every request via axios interceptors.
+- A 401 response clears the token and redirects the browser to `/login`.
+- This assumes the frontend is reverse-proxied with the backend or served from a shared origin path layout.
+
+### Auth
+
+- JWT auth is implemented with `fastapi-users` in [`backend/app/core/auth.py`](/workspaces/flux-pluggy/securo/backend/app/core/auth.py).
+- Frontend auth state is managed in [`frontend/src/contexts/auth-context.tsx`](/workspaces/flux-pluggy/securo/frontend/src/contexts/auth-context.tsx).
+- Setup and registration flows also create initial domain state such as wallet/categories/rules via backend services.
 
 ### Background Jobs
 
-- Celery worker and beat run alongside the API in both compose files
-- Scheduled tasks registered in `backend/app/worker.py`:
-  - bank sync
-  - recurring generation
-  - asset growth application
-  - FX sync
-  - recurring FX restamping
+- The FastAPI app triggers a startup sync dispatch in [`backend/app/main.py`](/workspaces/flux-pluggy/securo/backend/app/main.py).
+- Celery beat schedules periodic tasks in [`backend/app/worker.py`](/workspaces/flux-pluggy/securo/backend/app/worker.py).
+- Task modules then call service-layer async functions, usually by opening their own SQLAlchemy session.
 
-## Storage
+## Environment And Deployment Dependencies
 
-### Local Attachment Storage
+- Required/important variables are split across [`.env.example`](/workspaces/flux-pluggy/securo/.env.example), [`backend/.env.example`](/workspaces/flux-pluggy/securo/backend/.env.example), and compose files.
+- Frontend container uses `BACKEND_URL` and `FRONTEND_URL` environment variables in compose files, but the TypeScript client does not read them directly; runtime handling likely depends on container/web-server configuration.
+- Production images are built and pushed through [`.github/workflows/release.yml`](/workspaces/flux-pluggy/securo/.github/workflows/release.yml).
 
-- Current provider: local filesystem
-- Config:
-  - `STORAGE_PROVIDER`
-  - `STORAGE_LOCAL_PATH`
-  - attachment size/extension limits in `backend/app/core/config.py`
-- Code locations:
-  - provider abstraction in `backend/app/providers/storage.py`
-  - local implementation in `backend/app/providers/local_storage.py`
-  - attachment API in `backend/app/api/attachments.py`
-  - attachment service in `backend/app/services/attachment_service.py`
-- Container persistence: `attachments` volume in both compose files
+## Integration Gaps / Unclear Areas
 
-### S3 Placeholder
-
-- S3 configuration fields exist in `backend/app/core/config.py`
-- No concrete S3 provider implementation is present in the mapped tree, so this looks scaffolded rather than active
-
-## Authentication Integration
-
-- User auth is handled inside the backend with `fastapi-users`; there is no external IdP integration in the current tree
-- Frontend stores bearer tokens in `localStorage` and injects them through Axios interceptors in `frontend/src/lib/api.ts`
-- Auth bootstrap and session management live in `frontend/src/contexts/auth-context.tsx`
-
-## Import/Export Interfaces
-
-- Supported import formats implemented in `backend/app/services/import_service.py`:
-  - OFX
-  - QIF
-  - CAMT.053 XML
-  - CSV
-- Transaction export endpoint in `backend/app/api/transactions.py`
-- Additional backup/export capability is implied by frontend usage of `backupApi` in `frontend/src/components/app-layout.tsx`; verify corresponding backend API details when changing backup flows
-
-## Environment Dependencies
-
-- Root `.env.example` documents Pluggy variables only
-- `backend/.env.example` documents core backend variables
-- Compose files add production/dev defaults for database, Redis, storage, frontend URL, and optional provider credentials
-
-## Gaps / Cautions
-
-- Third-party integrations are optional and degrade to local/manual behavior when credentials are absent
-- FX conversion has a documented 1:1 fallback behavior surfaced in the README and transaction API tagging logic in `backend/app/api/transactions.py`
-- Webhook-based integrations were not found in the current repository tree
+- No explicit S3 provider implementation was found despite S3 configuration fields.
+- No email provider, payment provider, or analytics integration was found.
+- No webhook receiver surface was obvious in `backend/app/api`; sync appears pull-based through provider APIs and scheduled jobs.

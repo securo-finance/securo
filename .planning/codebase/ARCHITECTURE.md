@@ -2,136 +2,78 @@
 
 ## System Shape
 
-Securo is a self-hosted personal-finance system split into:
+Securo is a two-tier web application with asynchronous backend services and a client-rendered SPA frontend.
 
-- A FastAPI backend in `backend/app/`
-- A React single-page app in `frontend/src/`
-- Celery workers for asynchronous and scheduled tasks in `backend/app/worker.py`
-- PostgreSQL and Redis managed by Docker Compose at the repo root
+- Frontend: React SPA bootstrapped from [`frontend/src/main.tsx`](/workspaces/flux-pluggy/securo/frontend/src/main.tsx), routed in [`frontend/src/App.tsx`](/workspaces/flux-pluggy/securo/frontend/src/App.tsx).
+- Backend: FastAPI app assembled in [`backend/app/main.py`](/workspaces/flux-pluggy/securo/backend/app/main.py).
+- Persistence: PostgreSQL accessed through SQLAlchemy async sessions in [`backend/app/core/database.py`](/workspaces/flux-pluggy/securo/backend/app/core/database.py).
+- Background processing: Celery worker/beat in [`backend/app/worker.py`](/workspaces/flux-pluggy/securo/backend/app/worker.py).
 
-The dominant pattern is a layered CRUD-plus-domain-services backend with a page-oriented frontend consuming a typed API wrapper.
+## Backend Layering
 
-## Backend Layers
+The backend follows a conventional router -> service -> model/schema pattern.
 
-### API Layer
+- API routers under [`backend/app/api`](/workspaces/flux-pluggy/securo/backend/app/api) define HTTP endpoints, auth/session dependencies, request parsing, and response shaping.
+- Service modules under [`backend/app/services`](/workspaces/flux-pluggy/securo/backend/app/services) hold most business logic.
+- Models under [`backend/app/models`](/workspaces/flux-pluggy/securo/backend/app/models) define persistence entities.
+- Schemas under [`backend/app/schemas`](/workspaces/flux-pluggy/securo/backend/app/schemas) define request/response contracts.
+- Core wiring under [`backend/app/core`](/workspaces/flux-pluggy/securo/backend/app/core) provides config, database, and auth primitives.
+- Provider abstractions under [`backend/app/providers`](/workspaces/flux-pluggy/securo/backend/app/providers) isolate external systems such as bank sync, FX rates, and storage.
+- Task modules under [`backend/app/tasks`](/workspaces/flux-pluggy/securo/backend/app/tasks) wrap recurring or asynchronous workflows for Celery.
 
-- HTTP routers live in `backend/app/api/*.py`
-- `backend/app/main.py` assembles routers, auth routes, middleware, and startup behavior
-- Routers are thin: they validate request/query parameters, fetch the current user/session via dependency injection, and delegate to services
+## Frontend Layering
 
-### Service Layer
-
-- Domain logic lives in `backend/app/services/*.py`
-- Services handle:
-  - ownership checks
-  - query composition
-  - rule application
-  - FX stamping/conversion
-  - connection sync/import orchestration
-  - transfer detection and attachment management
-- Example: `backend/app/services/transaction_service.py` owns filtering, pagination, creation, transfer pairing, and primary-currency stamping behavior
-
-### Persistence Layer
-
-- SQLAlchemy models live in `backend/app/models/*.py`
-- Pydantic schemas for API contracts live in `backend/app/schemas/*.py`
-- Async session creation is centralized in `backend/app/core/database.py`
-- Migration history is maintained under `backend/alembic/versions/`
-
-### Provider/Integration Layer
-
-- Provider interfaces and implementations live in `backend/app/providers/`
-- This abstracts:
-  - bank providers such as Pluggy
-  - FX providers such as Open Exchange Rates
-  - attachment storage
-
-### Background Task Layer
-
-- Celery app configuration in `backend/app/worker.py`
-- Task modules under `backend/app/tasks/`
-- Startup in `backend/app/main.py` dispatches a stale-connection sync task immediately on app boot
-
-## Frontend Layers
-
-### Application Shell
-
-- `frontend/src/main.tsx` mounts the app and global CSS/i18n
-- `frontend/src/App.tsx` composes providers and route definitions
-- The main shell layout is `frontend/src/components/app-layout.tsx`
-
-### Routing and Access Control
-
-- Public routes: setup/login/register
-- Protected application routes render inside `ProtectedRoute` and `AppLayout`
-- Route modules live in `frontend/src/pages/*.tsx`
-
-### Client Data Layer
-
-- Central API wrapper: `frontend/src/lib/api.ts`
-- Query caching/orchestration: TanStack Query from `frontend/src/App.tsx` and page-level hooks
-- Authentication state is centralized in `frontend/src/contexts/auth-context.tsx`
-
-### UI Layer
-
-- Reusable feature components live in `frontend/src/components/`
-- Primitive UI building blocks live in `frontend/src/components/ui/`
-- Cross-cutting UX concerns include theme, privacy mode, onboarding, and internationalization
+- `App` sets up Theme, Query Client, Router, Auth context, and protected layout in [`frontend/src/App.tsx`](/workspaces/flux-pluggy/securo/frontend/src/App.tsx).
+- Page-level screens live under [`frontend/src/pages`](/workspaces/flux-pluggy/securo/frontend/src/pages).
+- Reusable composite components live under [`frontend/src/components`](/workspaces/flux-pluggy/securo/frontend/src/components).
+- Lower-level UI primitives live under [`frontend/src/components/ui`](/workspaces/flux-pluggy/securo/frontend/src/components/ui).
+- Cross-page data access is centralized in [`frontend/src/lib/api.ts`](/workspaces/flux-pluggy/securo/frontend/src/lib/api.ts).
+- Auth state is separated into [`frontend/src/contexts/auth-context.tsx`](/workspaces/flux-pluggy/securo/frontend/src/contexts/auth-context.tsx).
+- Utilities and formatting helpers live under [`frontend/src/lib`](/workspaces/flux-pluggy/securo/frontend/src/lib).
 
 ## Main Execution Paths
 
-### Authenticated User Request
+### Request/Response Path
 
-1. Frontend route/page calls a method from `frontend/src/lib/api.ts`
-2. Axios injects bearer token from `localStorage`
-3. FastAPI router in `backend/app/api/*.py` resolves current user and DB session
-4. Service method in `backend/app/services/*.py` performs business logic and DB access
-5. SQLAlchemy models are loaded/persisted through async sessions
-6. Router serializes response through Pydantic schema models
-7. Frontend updates cached/query-driven UI
+1. Browser route loads a page component from [`frontend/src/pages`](/workspaces/flux-pluggy/securo/frontend/src/pages).
+2. The page uses TanStack Query or direct mutations with API methods from [`frontend/src/lib/api.ts`](/workspaces/flux-pluggy/securo/frontend/src/lib/api.ts).
+3. FastAPI router receives the request in a file such as [`backend/app/api/transactions.py`](/workspaces/flux-pluggy/securo/backend/app/api/transactions.py).
+4. The router resolves auth and DB session dependencies from [`backend/app/core/auth.py`](/workspaces/flux-pluggy/securo/backend/app/core/auth.py) and [`backend/app/core/database.py`](/workspaces/flux-pluggy/securo/backend/app/core/database.py).
+5. Router delegates to a service module such as [`backend/app/services/transaction_service.py`](/workspaces/flux-pluggy/securo/backend/app/services/transaction_service.py).
+6. Service reads/writes SQLAlchemy models, commits, and the router returns a schema-validated response.
 
-### Bank Sync Flow
+### Bank Sync Path
 
-1. Frontend requests providers/connect token through `frontend/src/lib/api.ts`
-2. `backend/app/api/connections.py` delegates to `backend/app/services/connection_service.py`
-3. Provider-specific behavior is executed through `backend/app/providers/pluggy.py`
-4. Accounts/transactions are persisted and normalized into internal models
-5. Celery tasks in `backend/app/tasks/sync_tasks.py` and startup dispatch in `backend/app/main.py` automate refreshes
+1. Frontend requests a connect token or callback handling through `connections.*` in [`frontend/src/lib/api.ts`](/workspaces/flux-pluggy/securo/frontend/src/lib/api.ts).
+2. Connections router delegates to [`backend/app/services/connection_service.py`](/workspaces/flux-pluggy/securo/backend/app/services/connection_service.py).
+3. The service resolves a provider through [`backend/app/providers/__init__.py`](/workspaces/flux-pluggy/securo/backend/app/providers/__init__.py).
+4. Provider implementation in [`backend/app/providers/pluggy.py`](/workspaces/flux-pluggy/securo/backend/app/providers/pluggy.py) fetches accounts and transactions.
+5. The service persists connections/accounts/transactions, applies category rules, payee mapping, FX stamping, and transfer detection.
+6. Scheduled refreshes are triggered from [`backend/app/tasks/sync_tasks.py`](/workspaces/flux-pluggy/securo/backend/app/tasks/sync_tasks.py) through Celery.
 
-### Transaction Import Flow
+### Startup/Background Path
 
-1. User uploads OFX/QIF/CAMT/CSV through frontend import UI in `frontend/src/pages/import.tsx`
-2. Backend endpoint in `backend/app/api/import_transactions.py` delegates to `backend/app/services/import_service.py`
-3. Parsed transactions are normalized into internal transaction schema structures
-4. Rules and payee logic are applied before persistence
+- FastAPI startup in [`backend/app/main.py`](/workspaces/flux-pluggy/securo/backend/app/main.py) attempts to enqueue sync-all-connections.
+- Celery beat schedules periodic jobs in [`backend/app/worker.py`](/workspaces/flux-pluggy/securo/backend/app/worker.py).
+- Task modules create their own DB sessions and call service-layer functions.
 
-### Scheduled Domain Automation
+## Architectural Decisions Visible In Code
 
-1. `celery-beat` schedules tasks from `backend/app/worker.py`
-2. Celery worker executes domain tasks in `backend/app/tasks/*.py`
-3. Tasks update recurring transactions, FX rates, connection sync state, and asset growth
+- Thin routers, heavier services: routers mostly validate/input-map and translate `ValueError` to HTTP errors.
+- Async-first backend: endpoints, sessions, providers, and services are `async def`.
+- Central API client on frontend: one axios instance handles auth and base URL concerns.
+- Protected-shell routing: authenticated routes are nested beneath [`frontend/src/components/protected-route.tsx`](/workspaces/flux-pluggy/securo/frontend/src/components/protected-route.tsx) and [`frontend/src/components/app-layout.tsx`](/workspaces/flux-pluggy/securo/frontend/src/components/app-layout.tsx).
+- Domain-oriented backend modules: accounts, budgets, rules, payees, assets, recurring, reports, dashboard, import/export.
 
-## Architectural Conventions
+## Cross-Cutting Concerns
 
-- Backend routers map closely to domain entities (`accounts`, `transactions`, `budgets`, `assets`, `payees`, etc.)
-- Services are mostly module-level functions rather than service classes
-- Provider abstractions isolate vendor-specific behavior from routers
-- Frontend uses one file per route page and a large shared API client instead of feature-scoped clients
-- Lazy loading is used for route modules in `frontend/src/App.tsx`
+- Auth and user ownership checks are repeated across service queries.
+- Multi-currency support is cross-cutting: transactions can track `amount_primary` and `fx_rate_used`; dashboard/reporting code consumes primary-currency totals.
+- Attachment handling spans API/service/model/storage-provider layers.
+- Internationalization is frontend-only and wired through [`frontend/src/lib/i18n.ts`](/workspaces/flux-pluggy/securo/frontend/src/lib/i18n.ts) with locale files under [`frontend/src/locales`](/workspaces/flux-pluggy/securo/frontend/src/locales).
 
-## Important Entry Points
+## Boundaries That Are Less Formal
 
-- Backend app startup: `backend/app/main.py`
-- Backend worker startup: `backend/app/worker.py`
-- Backend CLI entry: `backend/app/cli.py`
-- Frontend bootstrap: `frontend/src/main.tsx`
-- Frontend route graph: `frontend/src/App.tsx`
-- Local orchestration: `docker-compose.yml`
-- Production orchestration: `docker-compose.prod.yml`
-
-## Notable Decisions / Tradeoffs
-
-- The backend mixes synchronous-looking module-level services with async SQLAlchemy access, which keeps call sites simple but can create very large service modules
-- Background processing is first-class; sync, recurring, asset, and FX flows are not handled only inline with user requests
-- The frontend relies on `localStorage` token persistence instead of cookie-based auth
-- Root-level compose is the primary developer and deployment interface; there is no Kubernetes/Terraform-style deployment layer in-repo
+- Service modules are plain functions rather than injected service classes, so shared logic is imported directly across modules.
+- There is no separate repository/data-access layer between services and SQLAlchemy queries.
+- Frontend page components can become large and combine data loading, formatting, interaction state, and rendering in one file, as seen in [`frontend/src/pages/dashboard.tsx`](/workspaces/flux-pluggy/securo/frontend/src/pages/dashboard.tsx).

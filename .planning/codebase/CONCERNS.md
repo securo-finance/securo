@@ -1,79 +1,63 @@
 # Concerns
 
-## Primary Risks
+## High-Value Risk Areas
 
-### Large Backend Service Modules
+### Large Frontend Page Components
 
-- Several domain services are sizeable and handle multiple responsibilities, for example `backend/app/services/transaction_service.py` and `backend/app/services/import_service.py`
-- Risk: changes become harder to reason about, and coupling between query logic, domain rules, and serialization-side concerns increases over time
+- Some route files, especially [`frontend/src/pages/dashboard.tsx`](/workspaces/flux-pluggy/securo/frontend/src/pages/dashboard.tsx), are large and combine formatting helpers, query wiring, mutation handling, local state, and rendering.
+- This makes behavioral changes harder to isolate and raises regression risk when touching dashboard interactions or calculations.
 
-### Uneven Test Coverage Surface
+### Frontend Test Coverage Gap
 
-- Backend testing is strong, but key runtime areas are excluded from coverage:
-  - `backend/app/tasks/*`
-  - `backend/app/providers/pluggy.py`
-  - `backend/app/worker.py`
-- Frontend has no automated test suite in the current tree
-- Risk: regressions in async scheduling, third-party integrations, and UI flows are caught late
+- The frontend has lint/build checks but no unit, integration, or browser test harness in [`frontend/package.json`](/workspaces/flux-pluggy/securo/frontend/package.json).
+- High-interaction components such as [`frontend/src/components/transaction-dialog.tsx`](/workspaces/flux-pluggy/securo/frontend/src/components/transaction-dialog.tsx), [`frontend/src/components/bank-connect-dialog.tsx`](/workspaces/flux-pluggy/securo/frontend/src/components/bank-connect-dialog.tsx), and multiple pages are therefore protected only by manual testing.
 
-### Auth Token Storage
+### Provider And Background-Job Fragility
 
-- Frontend auth tokens are stored in `localStorage` in `frontend/src/lib/api.ts` and `frontend/src/contexts/auth-context.tsx`
-- Risk: XSS exposure is higher than cookie/session-based approaches; any future rich HTML input should be reviewed carefully
+- Critical sync behavior depends on third-party APIs and background execution through Pluggy, Open Exchange Rates, Redis, and Celery.
+- Startup dispatch in [`backend/app/main.py`](/workspaces/flux-pluggy/securo/backend/app/main.py) catches broad exceptions and logs them, which prevents crashes but can hide broken background wiring until data stops syncing.
+- Task modules use `asyncio.run(...)` wrappers, which are workable but can be awkward to test and debug.
 
-### Startup Side Effects
+### Test Environment Drift
 
-- Backend startup in `backend/app/main.py` dispatches a sync-all-connections Celery task immediately
-- Risk: container restarts can create noisy sync traffic or confusing behavior during development/recovery if Redis/Celery is unhealthy
+- Backend tests run against SQLite in [`backend/tests/conftest.py`](/workspaces/flux-pluggy/securo/backend/tests/conftest.py), while production uses PostgreSQL/asyncpg.
+- That reduces setup cost, but it can hide Postgres-only issues around SQL behavior, migrations, data types, and performance.
 
-### SQLite vs PostgreSQL Test Mismatch
+## Domain-Specific Complexity
 
-- Tests run on SQLite in `backend/tests/conftest.py`, while production runs on PostgreSQL
-- Risk: async ORM behavior is covered, but Postgres-specific SQL/constraint/index behavior can still diverge
+### Multi-Currency Logic
 
-## Secondary Risks
+- FX stamping, primary-currency amounts, fallback exchange rates, and reporting conversions cross several modules:
+  - [`backend/app/services/fx_rate_service.py`](/workspaces/flux-pluggy/securo/backend/app/services/fx_rate_service.py)
+  - [`backend/app/services/transaction_service.py`](/workspaces/flux-pluggy/securo/backend/app/services/transaction_service.py)
+  - [`backend/app/services/dashboard_service.py`](/workspaces/flux-pluggy/securo/backend/app/services/dashboard_service.py)
+  - [`backend/app/api/transactions.py`](/workspaces/flux-pluggy/securo/backend/app/api/transactions.py)
+- This is a feature differentiator, but it raises the cost of “simple” transaction changes.
 
-### Frontend API Client Size
+### Sync Import Side Effects
 
-- `frontend/src/lib/api.ts` is a large, central API wrapper covering many domains
-- Risk: merge conflicts and weak feature isolation as the surface area keeps growing
+- Connection sync in [`backend/app/services/connection_service.py`](/workspaces/flux-pluggy/securo/backend/app/services/connection_service.py) does many things in one flow: create connection/accounts, import transactions, resolve payees, map categories, stamp FX data, and detect transfers.
+- That centralization is practical, but it concentrates failure modes and makes partial-sync edge cases harder to reason about.
 
-### Flat Frontend Growth
+### Attachment Storage Mismatch
 
-- `frontend/src/pages/` and `frontend/src/components/` are still manageable, but the app is already feature-dense
-- Risk: discoverability and ownership will degrade without feature-level grouping if the UI grows much further
+- Config includes future-facing S3 settings in [`backend/app/core/config.py`](/workspaces/flux-pluggy/securo/backend/app/core/config.py), but only local storage implementation was found.
+- If the product messaging or deployment assumptions imply pluggable cloud storage today, the code does not appear fully there yet.
 
-### Configuration Drift
+## Maintainability Concerns
 
-- Integration/config defaults are spread across:
-  - `.env.example`
-  - `backend/.env.example`
-  - `backend/app/core/config.py`
-  - compose files
-- Risk: env documentation can drift from real runtime expectations
+- Service modules are numerous and flat. Discoverability is still reasonable, but cross-service imports can become tangled as features grow.
+- There is no dedicated repository/data-access layer, so complex queries and business rules can mix within the same function.
+- Some runtime behavior is encoded in comments and conventions rather than stronger abstractions, for example recurring idempotency assumptions in [`backend/app/worker.py`](/workspaces/flux-pluggy/securo/backend/app/worker.py).
 
-### Incomplete Storage Abstraction Rollout
+## Operational Concerns
 
-- `backend/app/core/config.py` contains S3 settings, but no active S3 provider implementation was found
-- Risk: the settings surface implies a capability that is not actually available yet
+- The app depends on Docker Compose for the happy path, which is fine for self-hosting but means local debugging outside containers requires more manual setup.
+- Frontend auth relies on `localStorage` and hard redirect on `401` in [`frontend/src/lib/api.ts`](/workspaces/flux-pluggy/securo/frontend/src/lib/api.ts); this is simple, but abrupt and potentially awkward for concurrent-tab/session-expiry UX.
+- Scheduled sync and recurring jobs are time-based, not event-driven, so some freshness/latency tradeoffs are structural.
 
-## Fragile Areas To Treat Carefully
+## Positive Signals
 
-- Connection sync and reconnect flows in `backend/app/api/connections.py` and `backend/app/services/connection_service.py`
-- Import parsing and normalization in `backend/app/services/import_service.py`
-- FX stamping and transfer logic in `backend/app/services/fx_rate_service.py` and `backend/app/services/transaction_service.py`
-- Attachment handling across API/service/provider boundaries
-- App shell behavior in `frontend/src/components/app-layout.tsx`, which combines navigation, privacy mode, backup UI, onboarding, account summaries, and user actions
-
-## Security / Operational Notes
-
-- The root `.env.example` still shows a development-style secret placeholder
-- Compose defaults include permissive dev secrets and local URLs; production deployments need explicit override discipline
-- Optional external providers should be reviewed for timeout/retry/error-shaping behavior before scaling usage
-
-## Recommended Follow-Up Mapping Targets
-
-- Review `backend/app/services/connection_service.py` and task modules for sync failure/retry semantics
-- Audit whether backup/export behavior referenced by the frontend is fully covered and documented
-- Decide whether frontend feature modules should be reorganized before more pages/components are added
-- Revisit auth storage strategy if the app grows richer browser-side content or embeds third-party UI
+- The backend test suite is broad and domain-oriented.
+- The architecture is understandable without deep framework indirection.
+- External integration points are at least partially abstracted behind provider interfaces, which should help future replacement or extension work.
