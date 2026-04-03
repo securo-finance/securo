@@ -3,4 +3,5 @@
 .DS_Store
 .playwright-mcp/
 .claude
+.codex
 docs/plans/
