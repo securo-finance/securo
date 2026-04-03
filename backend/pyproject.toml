@@ -1,7 +1,7 @@
 [project]
 name = "securo-backend"
 version = "0.1.0"
-description = "Securo API - Personal Finance Manager"
+description = "Flux API - Personal Finance Manager"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.109.0",

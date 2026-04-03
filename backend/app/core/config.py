@@ -4,7 +4,7 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     # App
-    app_name: str = "Securo"
+    app_name: str = "Flux"
     debug: bool = False
 
     # Database

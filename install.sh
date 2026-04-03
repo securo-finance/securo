@@ -141,7 +141,7 @@ setup_repo() {
     return
   fi
 
-  info "Cloning Securo repository..."
+  info "Cloning Flux repository..."
   git clone "$REPO_URL" securo
   cd securo
   success "Repository cloned"
@@ -176,7 +176,7 @@ start_services() {
   info "Pulling latest images..."
   docker compose -f "$COMPOSE_FILE" pull
 
-  info "Starting Securo..."
+  info "Starting Flux..."
   docker compose -f "$COMPOSE_FILE" up -d
 
   success "Containers started"
@@ -184,12 +184,12 @@ start_services() {
 
 # ── Health Check ─────────────────────────────────────────────────────────────
 wait_for_health() {
-  info "Waiting for Securo to be ready (up to ${HEALTH_TIMEOUT}s)..."
+  info "Waiting for Flux to be ready (up to ${HEALTH_TIMEOUT}s)..."
   local elapsed=0
 
   while [ "$elapsed" -lt "$HEALTH_TIMEOUT" ]; do
     if curl -sf "$HEALTH_URL" > /dev/null 2>&1; then
-      success "Securo is healthy"
+      success "Flux is healthy"
       return
     fi
     sleep 3
@@ -206,7 +206,7 @@ wait_for_health() {
 main() {
   echo ""
   echo -e "${BOLD}╔══════════════════════════════════════╗${NC}"
-  echo -e "${BOLD}║         Securo Installer             ║${NC}"
+  echo -e "${BOLD}║          Flux Installer              ║${NC}"
   echo -e "${BOLD}╚══════════════════════════════════════╝${NC}"
   echo ""
 
@@ -220,14 +220,14 @@ main() {
 
   echo ""
   echo -e "${GREEN}${BOLD}════════════════════════════════════════${NC}"
-  echo -e "${GREEN}${BOLD}  Securo is running!${NC}"
+  echo -e "${GREEN}${BOLD}  Flux is running!${NC}"
   echo -e "${GREEN}${BOLD}  Open ${APP_URL}${NC}"
   echo -e "${GREEN}${BOLD}════════════════════════════════════════${NC}"
   echo ""
   echo -e "  Useful commands:"
   echo -e "    ${BLUE}docker compose -f $COMPOSE_FILE logs -f${NC}    # View logs"
   echo -e "    ${BLUE}docker compose -f $COMPOSE_FILE ps${NC}         # Container status"
-  echo -e "    ${BLUE}docker compose -f $COMPOSE_FILE down${NC}       # Stop Securo"
+  echo -e "    ${BLUE}docker compose -f $COMPOSE_FILE down${NC}       # Stop Flux"
   echo ""
 }
 

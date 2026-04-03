@@ -1,6 +1,6 @@
-# Contributing to Securo
+# Contributing to Flux
 
-Thanks for your interest in contributing to Securo! This guide will help you get started.
+Thanks for your interest in contributing to Flux! This guide will help you get started.
 
 ## Getting Started
 

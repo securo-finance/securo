@@ -1,7 +1,7 @@
 <p align="center">
-  <img src="docs/logo.svg" width="200" alt="Securo logo" />
+  <img src="docs/logo.svg" width="200" alt="Flux logo" />
 </p>
-<h1 align="center">Securo</h1>
+<h1 align="center">Flux</h1>
 <p align="center">
   <a href="https://github.com/securo-finance/securo/actions/workflows/ci.yml"><img src="https://github.com/securo-finance/securo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <img src="https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/tassionoronha/ae627b744aaa2ba89d850ea541c311be/raw/coverage.json" alt="Coverage" />
@@ -13,7 +13,7 @@
 <h3 align="center">Finance apps want your data. This one doesn't.</h3>
 
 <p align="center">
-We believe personal finance should actually be <em>personal</em>. No corporation should sit between you and your financial data. Securo is an open-source finance manager that runs on your own infrastructure, giving you full visibility into your accounts, spending, and habits, without surrendering a single byte to third parties. Take back control.
+We believe personal finance should actually be <em>personal</em>. No corporation should sit between you and your financial data. Flux is an open-source finance manager that runs on your own infrastructure, giving you full visibility into your accounts, spending, and habits, without surrendering a single byte to third parties. Take back control.
 </p>
 
 ## Quick Start
@@ -44,7 +44,7 @@ docker compose up --build
 This default compose file avoids bind mounts so it works when Docker cannot mount the devcontainer filesystem directly.
 
 <p align="center">
-  <img src="docs/screenshot.png" width="800" alt="Securo dashboard" />
+  <img src="docs/screenshot.png" width="800" alt="Flux dashboard" />
 </p>
 
 ## Features
