@@ -3,18 +3,17 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import select, func, and_
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.models.budget import Budget
 from app.models.category import Category
-from app.models.category_group import CategoryGroup
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.schemas.budget import BudgetCreate, BudgetUpdate, BudgetVsActual
 from app.services.dashboard_service import _get_recurring_projections
 from app.services.fx_rate_service import convert
-from app.core.config import get_settings
 
 
 def _primary_amount_expr():
@@ -22,120 +21,64 @@ def _primary_amount_expr():
     return func.coalesce(Transaction.amount_primary, Transaction.amount)
 
 
-async def _build_budget_map(
-    session: AsyncSession, user_id: uuid.UUID, month_start: date
-) -> dict[str, tuple[Decimal, bool]]:
-    """Build a map of category_id -> (amount, is_recurring) for the given month.
-
-    Resolution order:
-    1. Month-specific override (is_recurring=false, month=M) takes priority
-    2. Most recent recurring default (is_recurring=true, month<=M) as fallback
-    """
-    budget_map: dict[str, tuple[Decimal, bool]] = {}
-
-    # Query 1: Get effective recurring defaults (most recent per category where month <= M)
-    # Use a subquery to get the max month per category for recurring budgets
-    max_month_subq = (
-        select(
-            Budget.category_id,
-            func.max(Budget.month).label("max_month"),
-        )
-        .where(
-            Budget.user_id == user_id,
-            Budget.is_recurring == True,  # noqa: E712
-            Budget.month <= month_start,
-        )
-        .group_by(Budget.category_id)
-        .subquery()
+async def _get_category(session: AsyncSession, user_id: uuid.UUID, category_id: uuid.UUID) -> Optional[Category]:
+    result = await session.execute(
+        select(Category).where(Category.id == category_id, Category.user_id == user_id)
     )
+    return result.scalar_one_or_none()
 
-    recurring_result = await session.execute(
+
+async def _get_category_budgets(
+    session: AsyncSession, user_id: uuid.UUID, category_id: uuid.UUID
+) -> list[Budget]:
+    result = await session.execute(
         select(Budget)
-        .join(
-            max_month_subq,
-            and_(
-                Budget.category_id == max_month_subq.c.category_id,
-                Budget.month == max_month_subq.c.max_month,
-            ),
-        )
-        .where(
-            Budget.user_id == user_id,
-            Budget.is_recurring == True,  # noqa: E712
-        )
+        .where(Budget.user_id == user_id, Budget.category_id == category_id)
+        .order_by(Budget.month.desc(), Budget.created_at.desc(), Budget.id.desc())
     )
-    for b in recurring_result.scalars().all():
-        budget_map[str(b.category_id)] = (b.amount, True)
+    return list(result.scalars().all())
 
-    # Query 2: Month-specific overrides (take priority over recurring)
-    overrides_result = await session.execute(
-        select(Budget).where(
-            Budget.user_id == user_id,
-            Budget.is_recurring == False,  # noqa: E712
-            Budget.month == month_start,
-        )
-    )
-    for b in overrides_result.scalars().all():
-        budget_map[str(b.category_id)] = (b.amount, False)
 
-    return budget_map
+async def _collapse_budget_rows(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    category_id: uuid.UUID,
+    primary_budget: Optional[Budget] = None,
+) -> Optional[Budget]:
+    budgets = await _get_category_budgets(session, user_id, category_id)
+    if not budgets:
+        return None
+
+    keeper = primary_budget or budgets[0]
+    duplicates = [b for b in budgets if b.id != keeper.id]
+    for duplicate in duplicates:
+        await session.delete(duplicate)
+    return keeper
 
 
 async def get_budgets(
     session: AsyncSession, user_id: uuid.UUID, month: Optional[date] = None
 ) -> list[Budget]:
-    if not month:
-        query = select(Budget).where(Budget.user_id == user_id)
-        result = await session.execute(query.order_by(Budget.month.desc()))
-        return list(result.scalars().all())
+    """Return one budget row per category.
 
-    month_start = month.replace(day=1)
-
-    # Get month-specific overrides
-    overrides_result = await session.execute(
-        select(Budget).where(
-            Budget.user_id == user_id,
-            Budget.is_recurring == False,  # noqa: E712
-            Budget.month == month_start,
-        )
-    )
-    overrides = list(overrides_result.scalars().all())
-    override_category_ids = {str(b.category_id) for b in overrides}
-
-    # Get effective recurring defaults for this month
-    max_month_subq = (
-        select(
-            Budget.category_id,
-            func.max(Budget.month).label("max_month"),
-        )
-        .where(
-            Budget.user_id == user_id,
-            Budget.is_recurring == True,  # noqa: E712
-            Budget.month <= month_start,
-        )
-        .group_by(Budget.category_id)
-        .subquery()
-    )
-
-    recurring_result = await session.execute(
+    `month` is kept for route compatibility but no longer affects resolution.
+    """
+    result = await session.execute(
         select(Budget)
-        .join(
-            max_month_subq,
-            and_(
-                Budget.category_id == max_month_subq.c.category_id,
-                Budget.month == max_month_subq.c.max_month,
-            ),
-        )
-        .where(
-            Budget.user_id == user_id,
-            Budget.is_recurring == True,  # noqa: E712
-        )
+        .join(Category, Budget.category_id == Category.id)
+        .where(Budget.user_id == user_id, Category.has_budget.is_(True))
+        .order_by(Budget.month.desc(), Budget.created_at.desc(), Budget.id.desc())
     )
-    recurring = [
-        b for b in recurring_result.scalars().all()
-        if str(b.category_id) not in override_category_ids
-    ]
 
-    return sorted(overrides + recurring, key=lambda b: b.month, reverse=True)
+    seen_categories: set[uuid.UUID] = set()
+    budgets: list[Budget] = []
+    for budget in result.scalars().all():
+        # Keep the newest surviving row for each category.
+        if budget.category_id in seen_categories:
+            continue
+        seen_categories.add(budget.category_id)
+        budgets.append(budget)
+    return budgets
 
 
 async def get_budget(
@@ -150,14 +93,30 @@ async def get_budget(
 async def create_budget(
     session: AsyncSession, user_id: uuid.UUID, data: BudgetCreate
 ) -> Budget:
-    budget = Budget(
-        user_id=user_id,
-        category_id=data.category_id,
-        amount=data.amount,
-        month=data.month.replace(day=1),
-        is_recurring=data.is_recurring,
-    )
-    session.add(budget)
+    category = await _get_category(session, user_id, data.category_id)
+    if not category:
+        raise ValueError("Category not found")
+
+    normalized_month = data.month.replace(day=1)
+    existing = await _collapse_budget_rows(session, user_id, data.category_id)
+    if existing:
+        existing.amount = data.amount
+        existing.month = normalized_month
+        existing.is_recurring = False
+        budget = existing
+    else:
+        budget = Budget(
+            user_id=user_id,
+            category_id=data.category_id,
+            amount=data.amount,
+            month=normalized_month,
+            is_recurring=False,
+        )
+        session.add(budget)
+
+    category.has_budget = True
+    category.budget_amount = data.amount
+
     await session.commit()
     await session.refresh(budget)
     return budget
@@ -170,25 +129,20 @@ async def update_budget(
     if not budget:
         return None
 
-    if budget.is_recurring and data.effective_month:
-        effective = data.effective_month.replace(day=1)
-        if effective != budget.month:
-            # Create a new recurring record with new effective-from month
-            new_budget = Budget(
-                user_id=budget.user_id,
-                category_id=budget.category_id,
-                amount=data.amount if data.amount is not None else budget.amount,
-                month=effective,
-                is_recurring=True,
-            )
-            session.add(new_budget)
-            await session.commit()
-            await session.refresh(new_budget)
-            return new_budget
+    category = await _get_category(session, user_id, budget.category_id)
+    if not category:
+        return None
 
-    # Update in place (non-recurring, or same effective-from month)
-    for key, value in data.model_dump(exclude_unset=True, exclude={"effective_month"}).items():
-        setattr(budget, key, value)
+    if data.amount is not None:
+        budget.amount = data.amount
+        category.has_budget = True
+        category.budget_amount = data.amount
+
+    if data.effective_month is not None:
+        budget.month = data.effective_month.replace(day=1)
+
+    budget.is_recurring = False
+    await _collapse_budget_rows(session, user_id, budget.category_id, primary_budget=budget)
 
     await session.commit()
     await session.refresh(budget)
@@ -202,7 +156,14 @@ async def delete_budget(
     if not budget:
         return False
 
-    await session.delete(budget)
+    category = await _get_category(session, user_id, budget.category_id)
+    if category:
+        category.has_budget = False
+        category.budget_amount = None
+
+    await session.execute(
+        delete(Budget).where(Budget.user_id == user_id, Budget.category_id == budget.category_id)
+    )
     await session.commit()
     return True
 
@@ -219,33 +180,20 @@ async def get_budget_vs_actual(
     else:
         month_end = month.replace(month=month.month + 1, day=1)
 
-    # Previous month range
     if month_start.month == 1:
         prev_month_start = month_start.replace(year=month_start.year - 1, month=12)
     else:
         prev_month_start = month_start.replace(month=month_start.month - 1)
     prev_month_end = month_start
 
-    # Get all categories for this user with their groups
-    cats_result = await session.execute(
-        select(Category, CategoryGroup)
-        .outerjoin(CategoryGroup, Category.group_id == CategoryGroup.id)
-        .where(Category.user_id == user_id)
-    )
-    all_categories = cats_result.all()
-
+    cats_result = await session.execute(select(Category).where(Category.user_id == user_id))
+    all_categories = list(cats_result.scalars().all())
     if not all_categories:
         return []
 
-    # Get budgets for this month (with recurring resolution)
-    budget_map = await _build_budget_map(session, user_id, month_start)
-
-    # Get user's primary currency for FX conversion
     user = await session.get(User, user_id)
     primary_currency = user.primary_currency if user else get_settings().default_currency
 
-    # Get actual spending by category for this month (exclude transfer pairs)
-    # Use amount_primary for multi-currency support
     spending_result = await session.execute(
         select(
             Transaction.category_id,
@@ -265,7 +213,6 @@ async def get_budget_vs_actual(
     for row in spending_result.all():
         spending_map[str(row[0])] = abs(row[1] or Decimal("0"))
 
-    # Add projected recurring transactions for this month (converted to primary currency)
     projections = await _get_recurring_projections(session, user_id, month_start, month_end)
     for proj in projections:
         if proj["type"] != "debit" or not proj["category_id"]:
@@ -276,8 +223,6 @@ async def get_budget_vs_actual(
         )
         spending_map[cat_id] = spending_map.get(cat_id, Decimal("0")) + converted
 
-    # Get previous month spending by category (exclude transfer pairs)
-    # Use amount_primary for multi-currency support
     prev_spending_result = await session.execute(
         select(
             Transaction.category_id,
@@ -297,7 +242,6 @@ async def get_budget_vs_actual(
     for row in prev_spending_result.all():
         prev_spending_map[str(row[0])] = abs(row[1] or Decimal("0"))
 
-    # Add projected recurring transactions for previous month (converted to primary currency)
     prev_projections = await _get_recurring_projections(session, user_id, prev_month_start, prev_month_end)
     for proj in prev_projections:
         if proj["type"] != "debit" or not proj["category_id"]:
@@ -309,20 +253,17 @@ async def get_budget_vs_actual(
         prev_spending_map[cat_id] = prev_spending_map.get(cat_id, Decimal("0")) + converted
 
     comparisons = []
-    for category, group in all_categories:
+    for category in all_categories:
         cat_id = str(category.id)
         actual = spending_map.get(cat_id, Decimal("0"))
         prev_actual = prev_spending_map.get(cat_id, Decimal("0"))
-        budget_entry = budget_map.get(cat_id)
-        budget_amount = budget_entry[0] if budget_entry else None
-        is_recurring = budget_entry[1] if budget_entry else False
+        budget_amount = category.budget_amount if category.has_budget else None
 
-        # Skip categories with no spending in either month and no budget
         if actual == 0 and prev_actual == 0 and budget_amount is None:
             continue
 
         percentage = None
-        if budget_amount and budget_amount > 0:
+        if budget_amount is not None and budget_amount > 0:
             percentage = round(float(actual / budget_amount * 100), 1)
 
         comparisons.append(BudgetVsActual(
@@ -330,13 +271,11 @@ async def get_budget_vs_actual(
             category_name=category.name,
             category_icon=category.icon,
             category_color=category.color,
-            group_id=group.id if group else None,
-            group_name=group.name if group else None,
             budget_amount=budget_amount,
             actual_amount=actual,
             prev_month_amount=prev_actual,
             percentage_used=percentage,
-            is_recurring=is_recurring,
+            is_recurring=False,
         ))
 
     return sorted(comparisons, key=lambda x: float(x.actual_amount), reverse=True)

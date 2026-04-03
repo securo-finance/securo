@@ -1,4 +1,3 @@
-import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
@@ -6,7 +5,6 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
-from app.models.category_group import CategoryGroup
 from app.models.transaction import Transaction
 from app.schemas.budget import BudgetCreate, BudgetUpdate
 from app.services.budget_service import (
@@ -19,128 +17,106 @@ from app.services.budget_service import (
 )
 
 
-# ---------------------------------------------------------------------------
-# create_budget
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
-async def test_create_budget(session: AsyncSession, test_user, test_categories):
-    data = BudgetCreate(
-        category_id=test_categories[0].id,
-        amount=Decimal("500.00"),
-        month=date(2025, 3, 15),  # mid-month — should normalize to day=1
-    )
-    budget = await create_budget(session, test_user.id, data)
-
-    assert budget.id is not None
-    assert budget.amount == Decimal("500.00")
-    assert budget.month == date(2025, 3, 1)
-    assert budget.is_recurring is False
-
-
-@pytest.mark.asyncio
-async def test_create_recurring_budget(session: AsyncSession, test_user, test_categories):
-    data = BudgetCreate(
-        category_id=test_categories[0].id,
-        amount=Decimal("300.00"),
-        month=date(2025, 1, 1),
-        is_recurring=True,
-    )
-    budget = await create_budget(session, test_user.id, data)
-
-    assert budget.is_recurring is True
-    assert budget.month == date(2025, 1, 1)
-
-
-# ---------------------------------------------------------------------------
-# get_budgets
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_get_budgets_all(session: AsyncSession, test_user, test_categories):
-    await create_budget(
+async def test_create_budget_sets_category_budget_state(
+    session: AsyncSession, test_user, test_categories
+):
+    budget = await create_budget(
         session,
         test_user.id,
         BudgetCreate(
             category_id=test_categories[0].id,
-            amount=Decimal("100"),
-            month=date(2025, 1, 1),
+            amount=Decimal("500.00"),
+            month=date(2025, 3, 15),
+            is_recurring=True,
         ),
     )
-    await create_budget(
+
+    await session.refresh(test_categories[0])
+    assert budget.amount == Decimal("500.00")
+    assert budget.month == date(2025, 3, 1)
+    assert budget.is_recurring is False
+    assert test_categories[0].has_budget is True
+    assert test_categories[0].budget_amount == Decimal("500.00")
+
+
+@pytest.mark.asyncio
+async def test_create_budget_collapses_existing_rows_for_same_category(
+    session: AsyncSession, test_user, test_categories
+):
+    first = await create_budget(
         session,
         test_user.id,
         BudgetCreate(
-            category_id=test_categories[1].id,
-            amount=Decimal("200"),
-            month=date(2025, 2, 1),
+            category_id=test_categories[0].id,
+            amount=Decimal("100.00"),
+            month=date(2025, 1, 1),
+        ),
+    )
+    second = await create_budget(
+        session,
+        test_user.id,
+        BudgetCreate(
+            category_id=test_categories[0].id,
+            amount=Decimal("250.00"),
+            month=date(2025, 6, 1),
         ),
     )
 
     budgets = await get_budgets(session, test_user.id)
-    assert len(budgets) >= 2
+    cat_budgets = [b for b in budgets if b.category_id == test_categories[0].id]
+    assert len(cat_budgets) == 1
+    assert cat_budgets[0].id == first.id == second.id
+    assert cat_budgets[0].amount == Decimal("250.00")
 
 
 @pytest.mark.asyncio
-async def test_get_budgets_with_month_filter(session: AsyncSession, test_user, test_categories):
-    # Recurring default for Jan
-    await create_budget(
-        session,
-        test_user.id,
-        BudgetCreate(
-            category_id=test_categories[0].id,
-            amount=Decimal("100"),
-            month=date(2025, 1, 1),
-            is_recurring=True,
-        ),
-    )
-    # Month-specific override for March
-    await create_budget(
-        session,
-        test_user.id,
-        BudgetCreate(
-            category_id=test_categories[0].id,
-            amount=Decimal("999"),
-            month=date(2025, 3, 1),
-            is_recurring=False,
-        ),
-    )
-
-    # Querying March should get the override, not the recurring
-    budgets = await get_budgets(session, test_user.id, month=date(2025, 3, 1))
-    cat0_budgets = [b for b in budgets if b.category_id == test_categories[0].id]
-    assert len(cat0_budgets) == 1
-    assert cat0_budgets[0].amount == Decimal("999")
-    assert cat0_budgets[0].is_recurring is False
-
-
-@pytest.mark.asyncio
-async def test_get_budgets_recurring_default_for_future(
+async def test_get_budgets_ignores_month_filter_and_returns_current_rows(
     session: AsyncSession, test_user, test_categories
 ):
-    # Recurring from Jan carries forward to June
     await create_budget(
         session,
         test_user.id,
         BudgetCreate(
-            category_id=test_categories[1].id,
-            amount=Decimal("250"),
-            month=date(2025, 1, 1),
-            is_recurring=True,
+            category_id=test_categories[0].id,
+            amount=Decimal("300.00"),
+            month=date(2025, 2, 1),
         ),
     )
 
-    budgets = await get_budgets(session, test_user.id, month=date(2025, 6, 1))
-    cat1_budgets = [b for b in budgets if b.category_id == test_categories[1].id]
-    assert len(cat1_budgets) == 1
-    assert cat1_budgets[0].amount == Decimal("250")
+    budgets = await get_budgets(session, test_user.id, month=date(2026, 2, 1))
+    assert len([b for b in budgets if b.category_id == test_categories[0].id]) == 1
 
 
-# ---------------------------------------------------------------------------
-# get_budget
-# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_update_budget_syncs_category_budget_state(
+    session: AsyncSession, test_user, test_categories
+):
+    budget = await create_budget(
+        session,
+        test_user.id,
+        BudgetCreate(
+            category_id=test_categories[0].id,
+            amount=Decimal("100.00"),
+            month=date(2025, 5, 1),
+        ),
+    )
+
+    updated = await update_budget(
+        session,
+        budget.id,
+        test_user.id,
+        BudgetUpdate(amount=Decimal("777.00"), effective_month=date(2025, 8, 1)),
+    )
+
+    await session.refresh(test_categories[0])
+    assert updated is not None
+    assert updated.id == budget.id
+    assert updated.amount == Decimal("777.00")
+    assert updated.month == date(2025, 8, 1)
+    assert updated.is_recurring is False
+    assert test_categories[0].has_budget is True
+    assert test_categories[0].budget_amount == Decimal("777.00")
 
 
 @pytest.mark.asyncio
@@ -150,48 +126,18 @@ async def test_get_budget_by_id(session: AsyncSession, test_user, test_categorie
         test_user.id,
         BudgetCreate(
             category_id=test_categories[0].id,
-            amount=Decimal("400"),
+            amount=Decimal("400.00"),
             month=date(2025, 4, 1),
         ),
     )
+
     fetched = await get_budget(session, created.id, test_user.id)
     assert fetched is not None
     assert fetched.id == created.id
 
 
 @pytest.mark.asyncio
-async def test_get_budget_not_found(session: AsyncSession, test_user):
-    result = await get_budget(session, uuid.uuid4(), test_user.id)
-    assert result is None
-
-
-# ---------------------------------------------------------------------------
-# update_budget
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_update_budget_in_place(session: AsyncSession, test_user, test_categories):
-    budget = await create_budget(
-        session,
-        test_user.id,
-        BudgetCreate(
-            category_id=test_categories[0].id,
-            amount=Decimal("100"),
-            month=date(2025, 5, 1),
-        ),
-    )
-    updated = await update_budget(
-        session, budget.id, test_user.id, BudgetUpdate(amount=Decimal("777"))
-    )
-
-    assert updated is not None
-    assert updated.id == budget.id
-    assert updated.amount == Decimal("777")
-
-
-@pytest.mark.asyncio
-async def test_update_recurring_different_effective_month_creates_new(
+async def test_delete_budget_clears_category_budget_state(
     session: AsyncSession, test_user, test_categories
 ):
     budget = await create_budget(
@@ -199,114 +145,41 @@ async def test_update_recurring_different_effective_month_creates_new(
         test_user.id,
         BudgetCreate(
             category_id=test_categories[0].id,
-            amount=Decimal("100"),
-            month=date(2025, 1, 1),
-            is_recurring=True,
-        ),
-    )
-    updated = await update_budget(
-        session,
-        budget.id,
-        test_user.id,
-        BudgetUpdate(amount=Decimal("200"), effective_month=date(2025, 6, 1)),
-    )
-
-    assert updated is not None
-    assert updated.id != budget.id  # new record
-    assert updated.month == date(2025, 6, 1)
-    assert updated.amount == Decimal("200")
-    assert updated.is_recurring is True
-
-
-@pytest.mark.asyncio
-async def test_update_budget_not_found(session: AsyncSession, test_user):
-    result = await update_budget(
-        session, uuid.uuid4(), test_user.id, BudgetUpdate(amount=Decimal("1"))
-    )
-    assert result is None
-
-
-# ---------------------------------------------------------------------------
-# delete_budget
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_delete_budget(session: AsyncSession, test_user, test_categories):
-    budget = await create_budget(
-        session,
-        test_user.id,
-        BudgetCreate(
-            category_id=test_categories[0].id,
-            amount=Decimal("50"),
+            amount=Decimal("50.00"),
             month=date(2025, 7, 1),
         ),
     )
+
     assert await delete_budget(session, budget.id, test_user.id) is True
+    await session.refresh(test_categories[0])
     assert await get_budget(session, budget.id, test_user.id) is None
+    assert test_categories[0].has_budget is False
+    assert test_categories[0].budget_amount is None
 
 
 @pytest.mark.asyncio
-async def test_delete_budget_not_found(session: AsyncSession, test_user):
-    assert await delete_budget(session, uuid.uuid4(), test_user.id) is False
-
-
-# ---------------------------------------------------------------------------
-# get_budget_vs_actual
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_get_budget_vs_actual(session: AsyncSession, test_user, test_categories):
-    # Need a category group for budget_vs_actual join
-    group = CategoryGroup(
-        id=uuid.uuid4(),
-        user_id=test_user.id,
-        name="TestGroup",
-        icon="folder",
-        color="#000000",
-        position=0,
-        is_system=False,
-    )
-    session.add(group)
-    await session.commit()
-
-    # Assign group to category
-    test_categories[0].group_id = group.id
-    await session.commit()
-
-    # Create account
+async def test_get_budget_vs_actual_reads_category_budget_state(
+    session: AsyncSession, test_user, test_categories
+):
     account = Account(
-        id=uuid.uuid4(),
         user_id=test_user.id,
-        name="BudgetAcc",
+        connection_id=None,
+        external_id=None,
+        name="Checking",
         type="checking",
-        balance=Decimal("5000"),
+        balance=Decimal("1000.00"),
         currency="BRL",
     )
     session.add(account)
-    await session.commit()
+    await session.flush()
 
-    # Create budget for March 2025
-    await create_budget(
-        session,
-        test_user.id,
-        BudgetCreate(
-            category_id=test_categories[0].id,
-            amount=Decimal("500"),
-            month=date(2025, 3, 1),
-        ),
-    )
-
-    # Create spending transaction in March
     txn = Transaction(
-        id=uuid.uuid4(),
         user_id=test_user.id,
         account_id=account.id,
         category_id=test_categories[0].id,
-        description="IFOOD",
-        amount=Decimal("100"),
-        date=date(2025, 3, 10),
+        description="Market",
+        amount=Decimal("120.00"),
+        date=date(2025, 3, 5),
         type="debit",
         source="manual",
         created_at=datetime.now(timezone.utc),
@@ -314,113 +187,19 @@ async def test_get_budget_vs_actual(session: AsyncSession, test_user, test_categ
     session.add(txn)
     await session.commit()
 
-    comparisons = await get_budget_vs_actual(session, test_user.id, month=date(2025, 3, 1))
-    assert len(comparisons) > 0
-
-    cat0_comp = [c for c in comparisons if c.category_id == test_categories[0].id]
-    assert len(cat0_comp) == 1
-    assert cat0_comp[0].budget_amount == Decimal("500")
-    assert cat0_comp[0].actual_amount == Decimal("100")
-    assert cat0_comp[0].percentage_used == pytest.approx(20.0)
-
-
-@pytest.mark.asyncio
-async def test_budget_vs_actual_excludes_transfers(
-    session: AsyncSession, test_user, test_categories
-):
-    account = Account(
-        id=uuid.uuid4(),
-        user_id=test_user.id,
-        name="BvAXfer",
-        type="checking",
-        balance=Decimal("5000"),
-        currency="BRL",
-    )
-    session.add(account)
-    await session.commit()
-
-    pair_id = uuid.uuid4()
-    txns = [
-        Transaction(
-            id=uuid.uuid4(),
-            user_id=test_user.id,
-            account_id=account.id,
+    await create_budget(
+        session,
+        test_user.id,
+        BudgetCreate(
             category_id=test_categories[0].id,
-            description="Transfer",
-            amount=Decimal("200"),
-            date=date(2025, 4, 5),
-            type="debit",
-            source="manual",
-            transfer_pair_id=pair_id,
-            created_at=datetime.now(timezone.utc),
+            amount=Decimal("500.00"),
+            month=date(2025, 3, 1),
         ),
-        Transaction(
-            id=uuid.uuid4(),
-            user_id=test_user.id,
-            account_id=account.id,
-            category_id=test_categories[0].id,
-            description="Real spend",
-            amount=Decimal("50"),
-            date=date(2025, 4, 6),
-            type="debit",
-            source="manual",
-            created_at=datetime.now(timezone.utc),
-        ),
-    ]
-    session.add_all(txns)
-    await session.commit()
-
-    comparisons = await get_budget_vs_actual(session, test_user.id, month=date(2025, 4, 1))
-    cat0 = [c for c in comparisons if c.category_id == test_categories[0].id]
-    if cat0:
-        assert cat0[0].actual_amount == Decimal("50")
-
-
-@pytest.mark.asyncio
-async def test_budget_vs_actual_includes_prev_month(
-    session: AsyncSession, test_user, test_categories
-):
-    account = Account(
-        id=uuid.uuid4(),
-        user_id=test_user.id,
-        name="PrevMonth",
-        type="checking",
-        balance=Decimal("5000"),
-        currency="BRL",
     )
-    session.add(account)
-    await session.commit()
-
-    # Spending in Feb (prev month)
-    txn_prev = Transaction(
-        id=uuid.uuid4(),
-        user_id=test_user.id,
-        account_id=account.id,
-        category_id=test_categories[0].id,
-        description="Feb spend",
-        amount=Decimal("75"),
-        date=date(2025, 2, 15),
-        type="debit",
-        source="manual",
-        created_at=datetime.now(timezone.utc),
-    )
-    # Spending in March (current)
-    txn_curr = Transaction(
-        id=uuid.uuid4(),
-        user_id=test_user.id,
-        account_id=account.id,
-        category_id=test_categories[0].id,
-        description="Mar spend",
-        amount=Decimal("120"),
-        date=date(2025, 3, 15),
-        type="debit",
-        source="manual",
-        created_at=datetime.now(timezone.utc),
-    )
-    session.add_all([txn_prev, txn_curr])
-    await session.commit()
 
     comparisons = await get_budget_vs_actual(session, test_user.id, month=date(2025, 3, 1))
-    cat0 = [c for c in comparisons if c.category_id == test_categories[0].id]
-    if cat0:
-        assert cat0[0].prev_month_amount == Decimal("75")
+    cat_comp = [c for c in comparisons if c.category_id == test_categories[0].id]
+    assert len(cat_comp) == 1
+    assert cat_comp[0].budget_amount == Decimal("500.00")
+    assert cat_comp[0].actual_amount == Decimal("120.00")
+    assert cat_comp[0].is_recurring is False

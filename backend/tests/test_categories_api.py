@@ -54,6 +54,21 @@ async def test_create_category(client: AsyncClient, auth_headers, test_categorie
     assert data["name"] == "Educação"
     assert data["icon"] == "📚"
     assert data["is_system"] is False
+    assert data["has_budget"] is False
+    assert data["budget_amount"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_category_with_budget(client: AsyncClient, auth_headers, test_categories):
+    response = await client.post(
+        "/api/categories",
+        headers=auth_headers,
+        json={"name": "Educação", "icon": "📚", "color": "#9333EA", "has_budget": True, "budget_amount": 350},
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["has_budget"] is True
+    assert float(data["budget_amount"]) == 350.0
 
 
 @pytest.mark.asyncio
@@ -71,6 +86,22 @@ async def test_update_category(
     assert data["name"] == "Comida"
     assert data["color"] == "#FF0000"
     assert data["icon"] == "🍔"  # unchanged
+
+
+@pytest.mark.asyncio
+async def test_update_category_budget_state(
+    client: AsyncClient, auth_headers, test_categories: list[Category]
+):
+    cat_id = str(test_categories[0].id)
+    response = await client.patch(
+        f"/api/categories/{cat_id}",
+        headers=auth_headers,
+        json={"has_budget": True, "budget_amount": 275},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["has_budget"] is True
+    assert float(data["budget_amount"]) == 275.0
 
 
 @pytest.mark.asyncio

@@ -75,7 +75,13 @@ async def get_category(session: AsyncSession, category_id: uuid.UUID, user_id: u
 
 
 async def create_category(session: AsyncSession, user_id: uuid.UUID, data: CategoryCreate) -> Category:
-    category = Category(user_id=user_id, **data.model_dump())
+    payload = data.model_dump()
+    if payload.get("budget_amount") is not None:
+        payload["has_budget"] = True
+    if not payload.get("has_budget"):
+        payload["budget_amount"] = None
+
+    category = Category(user_id=user_id, **payload)
     session.add(category)
     await session.commit()
     await session.refresh(category)
@@ -89,7 +95,13 @@ async def update_category(
     if not category:
         return None
 
-    for key, value in data.model_dump(exclude_unset=True).items():
+    payload = data.model_dump(exclude_unset=True)
+    if payload.get("budget_amount") is not None and payload.get("has_budget") is not False:
+        payload["has_budget"] = True
+    if payload.get("has_budget") is False:
+        payload["budget_amount"] = None
+
+    for key, value in payload.items():
         setattr(category, key, value)
 
     await session.commit()

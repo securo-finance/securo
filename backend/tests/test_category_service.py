@@ -131,6 +131,8 @@ async def test_create_custom_category(session: AsyncSession, test_user):
     assert cat.name == "Pets"
     assert cat.icon == "paw-print"
     assert cat.is_system is False
+    assert cat.has_budget is False
+    assert cat.budget_amount is None
 
 
 @pytest.mark.asyncio
@@ -203,6 +205,39 @@ async def test_update_category_partial(session: AsyncSession, test_user, test_ca
     assert updated.name == "Mobilidade"
     assert updated.icon == original_icon
     assert updated.color == original_color
+
+
+@pytest.mark.asyncio
+async def test_create_category_with_budget_sets_budget_state(session: AsyncSession, test_user):
+    cat = await create_category(
+        session,
+        test_user.id,
+        CategoryCreate(name="Budgeted", icon="wallet", color="#123456", budget_amount=123),
+    )
+
+    assert cat.has_budget is True
+    assert cat.budget_amount == 123
+
+
+@pytest.mark.asyncio
+async def test_update_category_disables_budget_when_has_budget_false(
+    session: AsyncSession, test_user, test_categories
+):
+    cat = test_categories[0]
+    cat.has_budget = True
+    cat.budget_amount = 456
+    await session.commit()
+
+    updated = await update_category(
+        session,
+        cat.id,
+        test_user.id,
+        CategoryUpdate(has_budget=False),
+    )
+
+    assert updated is not None
+    assert updated.has_budget is False
+    assert updated.budget_amount is None
 
 
 @pytest.mark.asyncio
