@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Securo"
+    "name": "Flux"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -244,6 +244,7 @@
   },
   "budgets": {
     "title": "Budgets",
+    "currentLimitsTitle": "Current category limits",
     "add": "Add Budget",
     "edit": "Edit Budget",
     "category": "Category",
@@ -255,7 +256,10 @@
     "updated": "Budget updated",
     "deleted": "Budget deleted",
     "repeatEveryMonth": "Repeat every month",
-    "recurringLabel": "Recurring"
+    "recurringLabel": "Recurring",
+    "manageInCategories": "Manage in categories",
+    "readOnlyHint": "This page now reflects the current budget values owned by categories. Edit limits from the category form.",
+    "editFromCategories": "Edit in categories"
   },
   "recurring": {
     "title": "Recurring Transactions",
@@ -361,7 +365,19 @@
     "updated": "Category updated",
     "deleted": "Category deleted",
     "expandAll": "Expand all",
-    "collapseAll": "Collapse all"
+    "collapseAll": "Collapse all",
+    "formDescription": "Create or update the category details and budget in one flow.",
+    "flatDescription": "Categories are managed in one flat list so mobile editing stays quick.",
+    "budgetToggle": "Budget this category",
+    "budgetHint": "Turn this on only when the category should have a spending limit.",
+    "budgetPlaceholder": "0.00",
+    "unbudgeted": "No budget",
+    "unbudgetedHint": "This category stays explicitly unbudgeted until you turn budgeting on.",
+    "groupOptional": "Optional. Leave empty if the category should stay without a group.",
+    "colorLabel": "Color {{color}}",
+    "groupAssigned": "Grouped",
+    "noGroupAssigned": "No group",
+    "empty": "No categories yet"
   },
   "groups": {
     "title": "Category Groups",
@@ -562,7 +578,7 @@
     "show": "Show values"
   },
   "setup": {
-    "title": "Welcome to Securo",
+    "title": "Welcome to Flux",
     "description": "Create your admin account to get started.",
     "confirmPassword": "Confirm password",
     "createAdmin": "Create Admin Account",

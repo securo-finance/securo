@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { categories as categoriesApi, categoryGroups as groupsApi } from '@/lib/api'
+import { categories as categoriesApi } from '@/lib/api'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,13 +11,15 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
-import type { Category, CategoryGroup } from '@/types'
-import { Pencil, Trash2, Plus, ChevronDown, ChevronRight, ChevronsUpDown } from 'lucide-react'
+import type { Category } from '@/types'
+import { Pencil, Trash2, Plus, PiggyBank } from 'lucide-react'
 import { PageHeader } from '@/components/page-header'
 import { CategoryIcon } from '@/components/category-icon'
 import { IconPicker } from '@/components/icon-picker'
+import { useAuth } from '@/contexts/auth-context'
 
 function SectionCard({ children }: { children: React.ReactNode }) {
   return (
@@ -38,23 +40,22 @@ function SectionHeader({ title, titleExtra, action }: { title: string; titleExtr
   )
 }
 
+function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
+  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
+}
+
 export default function CategoriesPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const { user } = useAuth()
+  const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const locale = i18n.language === 'en' ? 'en-US' : i18n.language
   const queryClient = useQueryClient()
   const [catDialogOpen, setCatDialogOpen] = useState(false)
   const [editingCat, setEditingCat] = useState<Category | null>(null)
   const [formIcon, setFormIcon] = useState('circle-help')
   const [formColor, setFormColor] = useState('#6366f1')
-  const [groupDialogOpen, setGroupDialogOpen] = useState(false)
-  const [editingGroup, setEditingGroup] = useState<CategoryGroup | null>(null)
-  const [groupFormIcon, setGroupFormIcon] = useState('folder')
-  const [groupFormColor, setGroupFormColor] = useState('#6B7280')
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
-
-  const { data: groups } = useQuery({
-    queryKey: ['category-groups'],
-    queryFn: groupsApi.list,
-  })
+  const [formHasBudget, setFormHasBudget] = useState(false)
+  const [formBudgetAmount, setFormBudgetAmount] = useState('')
 
   const { data: categoriesList } = useQuery({
     queryKey: ['categories'],
@@ -63,7 +64,6 @@ export default function CategoriesPage() {
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ['categories'] })
-    queryClient.invalidateQueries({ queryKey: ['category-groups'] })
   }
 
   const createCatMutation = useMutation({
@@ -79,54 +79,34 @@ export default function CategoriesPage() {
     onSuccess: () => { invalidateAll(); toast.success(t('categories.deleted')) },
   })
 
-  const createGroupMutation = useMutation({
-    mutationFn: (g: Partial<CategoryGroup>) => groupsApi.create(g),
-    onSuccess: () => { invalidateAll(); setGroupDialogOpen(false); toast.success(t('groups.created')) },
-  })
-  const updateGroupMutation = useMutation({
-    mutationFn: ({ id, ...data }: Partial<CategoryGroup> & { id: string }) => groupsApi.update(id, data),
-    onSuccess: () => { invalidateAll(); setGroupDialogOpen(false); setEditingGroup(null); toast.success(t('groups.updated')) },
-    onError: () => { toast.error(t('common.error')) },
-  })
-  const deleteGroupMutation = useMutation({
-    mutationFn: (id: string) => groupsApi.delete(id),
-    onSuccess: () => { invalidateAll(); toast.success(t('groups.deleted')) },
-  })
-
-  const toggleCollapse = (groupId: string) => {
-    setCollapsedGroups((prev) => {
-      const next = new Set(prev)
-      if (next.has(groupId)) next.delete(groupId)
-      else next.add(groupId)
-      return next
-    })
-  }
-
-  const ungrouped = categoriesList?.filter((c) => !c.group_id) ?? []
-
   const openCatDialog = (cat: Category | null) => {
     setEditingCat(cat)
     setFormIcon(cat?.icon ?? 'circle-help')
     setFormColor(cat?.color ?? '#6366f1')
+    setFormHasBudget(cat?.has_budget ?? false)
+    setFormBudgetAmount(cat?.budget_amount?.toString() ?? '')
     setCatDialogOpen(true)
   }
 
-  const openGroupDialog = (group: CategoryGroup | null) => {
-    setEditingGroup(group)
-    setGroupFormIcon(group?.icon ?? 'folder')
-    setGroupFormColor(group?.color ?? '#6B7280')
-    setGroupDialogOpen(true)
-  }
+  const sortedCategories = [...(categoriesList ?? [])].sort((a, b) => a.name.localeCompare(b.name, locale))
 
   const renderCategoryItem = (cat: Category) => (
-    <div key={cat.id} className="flex items-center gap-3 px-4 sm:px-5 pl-6 sm:pl-12 py-2.5 border-b border-border last:border-0 hover:bg-muted transition-colors">
-      <CategoryIcon icon={cat.icon} color={cat.color} size="md" />
-      <span className="text-sm font-medium text-foreground flex-1 min-w-0 truncate">{cat.name}</span>
-      <div className="hidden sm:flex items-center gap-2 shrink-0">
-        <span className="inline-block w-3.5 h-3.5 rounded-full border border-black/10" style={{ backgroundColor: cat.color }} />
-        <span className="text-xs text-muted-foreground font-mono">{cat.color}</span>
-      </div>
-      <div className="flex items-center gap-1 shrink-0 ml-2">
+    <div key={cat.id} className="border-b border-border last:border-0 hover:bg-muted transition-colors">
+      <div className="flex items-start gap-3 px-4 sm:px-5 py-3">
+        <CategoryIcon icon={cat.icon} color={cat.color} size="md" />
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium text-foreground truncate">{cat.name}</span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+              <PiggyBank size={11} />
+              {cat.has_budget && cat.budget_amount != null
+                ? formatCurrency(Number(cat.budget_amount), userCurrency, locale)
+                : t('categories.unbudgeted')}
+            </span>
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">{t('categories.colorLabel', { color: cat.color })}</div>
+        </div>
+        <div className="flex items-center gap-1 shrink-0 ml-2">
         <button
           className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
           onClick={() => openCatDialog(cat)}
@@ -144,6 +124,7 @@ export default function CategoriesPage() {
             <Trash2 size={13} />
           </button>
         )}
+        </div>
       </div>
     </div>
   )
@@ -156,99 +137,41 @@ export default function CategoriesPage() {
         <SectionHeader
           title={t('categories.title')}
           titleExtra={
-            <button
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-              onClick={() => {
-                if (!groups) return
-                const allCollapsed = groups.every((g) => collapsedGroups.has(g.id))
-                if (allCollapsed) {
-                  setCollapsedGroups(new Set())
-                } else {
-                  setCollapsedGroups(new Set(groups.map((g) => g.id)))
-                }
-              }}
-            >
-              <ChevronsUpDown size={13} />
-              {groups && groups.every((g) => collapsedGroups.has(g.id)) ? t('categories.expandAll') : t('categories.collapseAll')}
-            </button>
+            <p className="text-xs text-muted-foreground">{t('categories.flatDescription')}</p>
           }
           action={
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" className="gap-1.5 h-8" onClick={() => openGroupDialog(null)}>
-                <Plus size={13} /> <span className="hidden sm:inline">{t('groups.add')}</span>
-              </Button>
-              <Button size="sm" className="gap-1.5 h-8" onClick={() => openCatDialog(null)}>
-                <Plus size={13} /> <span className="hidden sm:inline">{t('categories.addCategory')}</span>
-              </Button>
-            </div>
+            <Button size="sm" className="gap-1.5 h-8" onClick={() => openCatDialog(null)}>
+              <Plus size={13} /> <span className="hidden sm:inline">{t('categories.addCategory')}</span>
+            </Button>
           }
         />
         <div>
-          {groups?.map((group) => {
-            const isCollapsed = collapsedGroups.has(group.id)
-            return (
-              <div key={group.id}>
-                <div className="flex items-center gap-2 px-4 sm:px-5 py-3 border-b border-border bg-muted/40">
-                  <button
-                    className="flex items-center gap-2 flex-1 min-w-0 text-left"
-                    onClick={() => toggleCollapse(group.id)}
-                  >
-                    {isCollapsed ? <ChevronRight size={14} className="text-muted-foreground shrink-0" /> : <ChevronDown size={14} className="text-muted-foreground shrink-0" />}
-                    <CategoryIcon icon={group.icon} color={group.color} size="md" />
-                    <span className="text-sm font-semibold" style={{ color: group.color }}>{group.name}</span>
-                    <span className="text-xs text-muted-foreground">({group.categories.length})</span>
-                  </button>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
-                      onClick={() => openGroupDialog(group)}
-                      title={t('common.edit')}
-                    >
-                      <Pencil size={13} />
-                    </button>
-                    {!group.is_system && (
-                      <button
-                        className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
-                        onClick={() => deleteGroupMutation.mutate(group.id)}
-                        disabled={deleteGroupMutation.isPending}
-                        title={t('common.delete')}
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    )}
-                  </div>
-                </div>
-                {!isCollapsed && group.categories.map(renderCategoryItem)}
-              </div>
-            )
-          })}
-          {ungrouped.length > 0 && (
-            <div>
-              <div className="px-5 py-3 border-b border-border bg-muted/40">
-                <span className="text-sm font-semibold text-muted-foreground">{t('groups.noGroup')}</span>
-              </div>
-              {ungrouped.map(renderCategoryItem)}
-            </div>
-          )}
+          {sortedCategories.map(renderCategoryItem)}
+          {sortedCategories.length === 0 ? (
+            <div className="px-4 sm:px-5 py-6 text-sm text-muted-foreground">{t('categories.empty')}</div>
+          ) : null}
         </div>
       </SectionCard>
 
       {/* Category Dialog */}
       <Dialog open={catDialogOpen} onOpenChange={() => { setCatDialogOpen(false); setEditingCat(null) }}>
-        <DialogContent>
+        <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>{editingCat ? t('categories.editCategory') : t('categories.newCategory')}</DialogTitle>
+            <DialogDescription>{t('categories.formDescription')}</DialogDescription>
           </DialogHeader>
           <form
             key={editingCat?.id ?? 'new'}
             onSubmit={(e) => {
               e.preventDefault()
               const formData = new FormData(e.currentTarget)
+              const budgetAmount = formBudgetAmount.trim() === '' ? null : Number(formBudgetAmount)
               const data = {
                 name: formData.get('name') as string,
                 icon: formData.get('icon') as string,
                 color: formData.get('color') as string,
-                group_id: (formData.get('group_id') as string) || null,
+                has_budget: formHasBudget,
+                budget_amount: formHasBudget ? budgetAmount : null,
               }
               if (editingCat) {
                 updateCatMutation.mutate({ id: editingCat.id, ...data })
@@ -263,19 +186,6 @@ export default function CategoriesPage() {
               <Input name="name" defaultValue={editingCat?.name ?? ''} required />
             </div>
             <div className="space-y-2">
-              <Label>{t('categories.group')}</Label>
-              <select
-                name="group_id"
-                defaultValue={editingCat?.group_id ?? ''}
-                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option value="">{t('categories.noGroup')}</option>
-                {groups?.map((g) => (
-                  <option key={g.id} value={g.id}>{g.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
               <Label>{t('groups.color')}</Label>
               <Input name="color" type="color" value={formColor} onChange={(e) => setFormColor(e.target.value)} required className="h-9 px-2 py-1" />
             </div>
@@ -284,63 +194,66 @@ export default function CategoriesPage() {
               <IconPicker value={formIcon} color={formColor} onChange={setFormIcon} />
               <input type="hidden" name="icon" value={formIcon} />
             </div>
+            <div className="rounded-xl border border-border bg-muted/40 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="has-budget" className="text-sm font-semibold text-foreground">
+                    {t('categories.budgetToggle')}
+                  </Label>
+                  <p className="text-xs text-muted-foreground">{t('categories.budgetHint')}</p>
+                </div>
+                <button
+                  id="has-budget"
+                  type="button"
+                  role="switch"
+                  aria-checked={formHasBudget}
+                  onClick={() => {
+                    setFormHasBudget((current) => {
+                      const next = !current
+                      if (!next) setFormBudgetAmount('')
+                      return next
+                    })
+                  }}
+                  className={`relative inline-flex h-7 w-12 shrink-0 rounded-full border transition-colors ${
+                    formHasBudget ? 'border-primary bg-primary' : 'border-border bg-background'
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 size-5 rounded-full bg-white shadow-sm transition-transform ${
+                      formHasBudget ? 'translate-x-6' : 'translate-x-0.5'
+                    }`}
+                  />
+                  <span className="sr-only">{t('categories.budgetToggle')}</span>
+                </button>
+              </div>
+              {formHasBudget ? (
+                <div className="mt-4 space-y-2">
+                  <Label htmlFor="budget-amount">{t('budgets.amount')}</Label>
+                  <Input
+                    id="budget-amount"
+                    name="budget_amount"
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    value={formBudgetAmount}
+                    onChange={(e) => setFormBudgetAmount(e.target.value)}
+                    placeholder={t('categories.budgetPlaceholder')}
+                    required={formHasBudget}
+                    className="h-11"
+                  />
+                </div>
+              ) : (
+                <p className="mt-4 text-sm text-muted-foreground">{t('categories.unbudgetedHint')}</p>
+              )}
+            </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => { setCatDialogOpen(false); setEditingCat(null) }}>
                 {t('common.cancel')}
               </Button>
-              <Button type="submit">{t('common.save')}</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Group Dialog */}
-      <Dialog open={groupDialogOpen} onOpenChange={() => { setGroupDialogOpen(false); setEditingGroup(null) }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editingGroup ? t('groups.edit') : t('groups.new')}</DialogTitle>
-          </DialogHeader>
-          <form
-            key={editingGroup?.id ?? 'new-group'}
-            onSubmit={(e) => {
-              e.preventDefault()
-              const formData = new FormData(e.currentTarget)
-              const data = {
-                name: formData.get('name') as string,
-                icon: formData.get('icon') as string,
-                color: formData.get('color') as string,
-                position: parseInt(formData.get('position') as string) || 0,
-              }
-              if (editingGroup) {
-                updateGroupMutation.mutate({ id: editingGroup.id, ...data })
-              } else {
-                createGroupMutation.mutate(data)
-              }
-            }}
-            className="space-y-4"
-          >
-            <div className="space-y-2">
-              <Label>{t('groups.name')}</Label>
-              <Input name="name" defaultValue={editingGroup?.name ?? ''} required />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('groups.position')}</Label>
-              <Input name="position" type="number" defaultValue={editingGroup?.position?.toString() ?? '0'} />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('groups.color')}</Label>
-              <Input name="color" type="color" value={groupFormColor} onChange={(e) => setGroupFormColor(e.target.value)} required className="h-9 px-2 py-1" />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('groups.icon')}</Label>
-              <IconPicker value={groupFormIcon} color={groupFormColor} onChange={setGroupFormIcon} />
-              <input type="hidden" name="icon" value={groupFormIcon} />
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => { setGroupDialogOpen(false); setEditingGroup(null) }}>
-                {t('common.cancel')}
+              <Button type="submit" disabled={createCatMutation.isPending || updateCatMutation.isPending}>
+                {t('common.save')}
               </Button>
-              <Button type="submit">{t('common.save')}</Button>
             </DialogFooter>
           </form>
         </DialogContent>

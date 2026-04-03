@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Securo"
+    "name": "Flux"
   },
   "nav": {
     "dashboard": "Painel",
@@ -244,6 +244,7 @@
   },
   "budgets": {
     "title": "Orçamentos",
+    "currentLimitsTitle": "Limites atuais por categoria",
     "add": "Adicionar Orçamento",
     "edit": "Editar Orçamento",
     "category": "Categoria",
@@ -255,7 +256,10 @@
     "updated": "Orçamento atualizado",
     "deleted": "Orçamento excluído",
     "repeatEveryMonth": "Repetir todo mês",
-    "recurringLabel": "Recorrente"
+    "recurringLabel": "Recorrente",
+    "manageInCategories": "Gerenciar nas categorias",
+    "readOnlyHint": "Esta página agora reflete os valores atuais de orçamento que pertencem às categorias. Edite os limites pelo formulário da categoria.",
+    "editFromCategories": "Editar nas categorias"
   },
   "recurring": {
     "title": "Transações Recorrentes",
@@ -361,7 +365,19 @@
     "updated": "Categoria atualizada",
     "deleted": "Categoria excluída",
     "expandAll": "Expandir tudo",
-    "collapseAll": "Recolher tudo"
+    "collapseAll": "Recolher tudo",
+    "formDescription": "Crie ou atualize os detalhes da categoria e o orçamento no mesmo fluxo.",
+    "flatDescription": "As categorias agora são gerenciadas em uma lista única para manter a edição rápida no celular.",
+    "budgetToggle": "Orçar esta categoria",
+    "budgetHint": "Ative apenas quando a categoria precisar de um limite de gastos.",
+    "budgetPlaceholder": "0,00",
+    "unbudgeted": "Sem orçamento",
+    "unbudgetedHint": "Esta categoria fica explicitamente sem orçamento até você ativar essa opção.",
+    "groupOptional": "Opcional. Deixe vazio se a categoria deve permanecer sem grupo.",
+    "colorLabel": "Cor {{color}}",
+    "groupAssigned": "Com grupo",
+    "noGroupAssigned": "Sem grupo",
+    "empty": "Nenhuma categoria ainda"
   },
   "groups": {
     "title": "Grupos de Categorias",
@@ -562,7 +578,7 @@
     "show": "Mostrar valores"
   },
   "setup": {
-    "title": "Bem-vindo ao Securo",
+    "title": "Bem-vindo ao Flux",
     "description": "Crie sua conta de administrador para começar.",
     "confirmPassword": "Confirmar senha",
     "createAdmin": "Criar Conta Admin",
