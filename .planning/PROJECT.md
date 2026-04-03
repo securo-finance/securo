@@ -2,75 +2,73 @@
 
 ## What This Is
 
-Flux is a self-hosted personal finance web application for personal use, with responsive mobile usage treated as a first-class constraint for all new work. It already handles account aggregation, transaction tracking, budgeting, recurring finance workflows, and reporting; this v2 focuses on rebranding the product from Securo to Flux and simplifying how categories and budgets work.
+Flux is a self-hosted personal finance web application for personal use, with responsive mobile usage treated as a first-class constraint. The shipped `v1.0` milestone completed the visible Flux rebrand and flattened the category and budget model so categories are now the supported place to manage budget state.
 
 ## Core Value
 
 Manage personal finances clearly on a self-hosted app that remains practical to use on mobile.
 
+## Current State
+
+- Shipped milestone: `v1.0 Flux v2` on 2026-04-03
+- Active product shape: Flux-branded shell, flat categories, category-owned budget state, retired standalone budgets surface
+- Planning state: milestone archived, waiting on next-milestone definition
+
 ## Requirements
 
 ### Validated
 
-- ✓ User can authenticate and maintain a session — existing
-- ✓ User can connect financial accounts and sync account/transaction data — existing
-- ✓ User can categorize transactions and apply category rules — existing
-- ✓ User can manage budgets, payees, assets, recurring items, and reports — existing
-- ✓ User can use the application as a responsive web SPA with mobile support — existing
+- ✓ Flux branding is consistent across the application shell, setup/auth copy, and export filenames — `v1.0`
+- ✓ Categories can be created and edited without category-group dependency in the supported UI or API contract — `v1.0`
+- ✓ Budget enablement and amount are managed from the category flow with an explicit unbudgeted state — `v1.0`
+- ✓ Budget readers, reports, and exports consume the category-owned budget model consistently — `v1.0`
+- ✓ Legacy standalone budget and category-group user flows are removed from the supported runtime path — `v1.0`
+- ✓ Mobile-width category and budget flows remain supported — `v1.0`
 
 ### Active
 
-- [ ] Rebrand the product from `Securo` to `Flux` across the user-facing product and planning artifacts
-- [ ] Remove category groups from the domain and UI
-- [ ] Move budget configuration into the category itself, with an explicit flag indicating whether the category has a budget
-- [ ] Allow budget value creation and editing directly from category create/edit flows
-- [ ] Update existing budget-related screens and flows to read from the category-owned budget model
+- [ ] Allow category archiving or hiding to improve organization in the flat list
+- [ ] Add explicit mobile-friendly category reordering controls
+- [ ] Suggest budget amounts based on recent spending history
+- [ ] Let users save a categorization rule from budget-related workflows
+- [ ] Add a dedicated category budget reallocation workflow
 
 ### Out of Scope
 
-- Native or hybrid mobile app — v2 remains the current responsive web application
-- Broad visual redesign — preserve the current design language and responsive behavior
-- Multi-user productization — current target remains personal self-hosted usage, with possible future use by friends
-- New finance domains beyond rebranding and category/budget changes — not part of this v2 scope
+- Native or hybrid mobile app — the responsive web application remains the supported product surface
+- Broad visual redesign — preserve the existing visual language unless a future milestone makes design a primary goal
+- Multi-user productization — the target remains personal self-hosted usage
+- Reintroducing groups through a renamed or hidden grouping layer — conflicts with the simplification goal shipped in `v1.0`
+- Forcing every category to have a budget — categories must continue to support an explicit non-budgeted state
 
 ## Context
 
-The existing codebase is a brownfield React SPA + FastAPI application with PostgreSQL, Redis, and Celery. It already supports personal-finance workflows including account sync, transaction management, categories, budgets, payees, assets, recurring items, import/export, dashboard views, and reports. The user wants to keep the current design system because it is already responsive on mobile, but all new features in this version should continue to work well in mobile layouts. The v2 is intentionally narrow: establish the Flux name and simplify category budgeting by removing category groups and attaching optional budget data directly to each category.
+The current codebase is a brownfield React SPA plus FastAPI application with PostgreSQL, Redis, and Celery. After `v1.0`, the active runtime no longer depends on category groups or standalone budget CRUD for supported user workflows. Remaining known debt is mostly cleanup and artifact quality: verification files do not map REQ IDs directly, `*-VALIDATION.md` artifacts are still missing, legacy compatibility export payloads remain intentionally present for recovery, and dormant internal group code still exists outside the supported path.
 
 ## Constraints
 
-- **Product scope**: Self-hosted personal finance app — built primarily for personal use in this version
-- **UX**: Preserve existing design language — current UI is already responsive and should stay visually consistent
-- **Mobile**: New features must work well on mobile layouts — mobile remains a first-class usage mode
-- **Architecture**: Brownfield evolution of the current stack — changes should fit the existing React/FastAPI/PostgreSQL architecture
-- **Scope control**: v2 is limited to rebranding and category/budget model changes — avoid opportunistic feature expansion
+- **Product scope**: Self-hosted personal finance app for personal use in this version
+- **UX**: Preserve the existing design language unless a milestone explicitly changes that goal
+- **Mobile**: New work must remain usable on mobile-width screens
+- **Architecture**: Continue brownfield evolution within the current React/FastAPI/PostgreSQL stack
+- **Scope control**: Future milestones should add value without reviving category-group or standalone-budget concepts
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Keep the product as a responsive web app for v2 | The current design already works on mobile; the user does not want a separate native app in this round | — Pending |
-| Rebrand from `Securo` to `Flux` in v2 | Establishes the new product identity without expanding scope beyond the current platform | — Pending |
-| Remove category groups | The user no longer wants grouped categories in the product model | — Pending |
-| Store optional budget settings directly on each category | Budget ownership should live with the category itself and be editable in category flows | — Pending |
-| Preserve the existing visual design language | The current UI is already responsive and should remain familiar while v2 updates behavior | — Pending |
+| Keep the product as a responsive web app for v2 | The current design already works on mobile and did not justify a platform split | ✓ Good |
+| Rebrand from `Securo` to `Flux` in v2 | Establish the new product identity without expanding platform scope | ✓ Good |
+| Remove category groups from the supported model | Flat categories are simpler for the intended personal-finance workflow | ✓ Good |
+| Store optional budget settings directly on each category | Budget ownership belongs with the category and simplifies editing flows | ✓ Good |
+| Preserve the existing visual design language during the migration | The current UI was already responsive and the milestone goal was behavioral simplification, not redesign | ✓ Good |
+| Retire the standalone Budgets screen after category editing shipped | One supported write path reduces drift and dead-end navigation | ✓ Good |
 
-## Evolution
+## Next Milestone Goals
 
-This document evolves at phase transitions and milestone boundaries.
-
-**After each phase transition** (via `$gsd-transition`):
-1. Requirements invalidated? → Move to Out of Scope with reason
-2. Requirements validated? → Move to Validated with phase reference
-3. New requirements emerged? → Add to Active
-4. Decisions to log? → Add to Key Decisions
-5. "What This Is" still accurate? → Update if drifted
-
-**After each milestone** (via `$gsd-complete-milestone`):
-1. Full review of all sections
-2. Core Value check — still the right priority?
-3. Audit Out of Scope — reasons still valid?
-4. Update Context with current state
+- Decide whether the next milestone should focus on flat-category quality-of-life features or cleanup debt from `v1.0`
+- Define fresh milestone requirements before adding new phases
+- Keep flat categories and category-owned budgets as the baseline architecture
 
 ---
-*Last updated: 2026-04-03 after initialization*
+*Last updated: 2026-04-03 after v1.0 milestone completion*

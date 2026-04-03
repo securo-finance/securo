@@ -1,10 +1,10 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: milestone
+milestone_name: Flux v2
 status: completed
-stopped_at: "Phase 7 delivered; milestone ready for lifecycle audit."
-last_updated: "2026-04-03T20:07:27Z"
+stopped_at: "v1.0 milestone completed and archived."
+last_updated: "2026-04-03T21:08:03.348Z"
 last_activity: 2026-04-03
 progress:
   total_phases: 7
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-03)
 
 **Core value:** Manage personal finances clearly on a self-hosted app that remains practical to use on mobile.
-**Current focus:** Milestone lifecycle
+**Current focus:** Planning next milestone
 
 ## Current Position
 
 Phase: Complete
 Plan: Complete
-Status: Milestone delivered pending archive
+Status: v1.0 milestone complete
 Last activity: 2026-04-03
 
 Progress: [██████████] 100%
@@ -78,10 +78,10 @@ None yet.
 
 ### Blockers/Concerns
 
-- Remaining work is milestone lifecycle only: re-audit, archive, and cleanup.
+- Remaining work is milestone definition only: decide the next milestone scope and refresh requirements.
 
 ## Session Continuity
 
 Last session: 2026-04-03 00:00 UTC
-Stopped at: Phase 7 delivered; milestone ready for lifecycle audit.
+Stopped at: v1.0 milestone completed and archived.
 Resume file: None
