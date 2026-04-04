@@ -16,6 +16,7 @@ from app.providers import get_provider
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.transfer_detection_service import detect_transfer_pairs
 from app.services.fx_rate_service import stamp_primary_amount
+from app.services.month_service import get_current_month_period, get_or_create_monthly_period, resolve_current_monthly_period
 from app.services.payee_service import get_or_create_payee
 
 settings = get_settings()
@@ -138,11 +139,15 @@ async def handle_oauth_callback(
 
     user = await session.get(User, user_id)
     user_currency = user.primary_currency if user else get_settings().default_currency
+    current_monthly_period = None
+    if user is not None and get_current_month_period(user):
+        current_monthly_period = await resolve_current_monthly_period(session, user_id, user)
     new_tx_ids: list[uuid.UUID] = []
 
     for acc_data in connection_data.accounts:
         account = Account(
             user_id=user_id,
+            monthly_period_id=current_monthly_period.id if current_monthly_period is not None else None,
             connection_id=connection.id,
             external_id=acc_data.external_id,
             name=acc_data.name,
@@ -170,6 +175,7 @@ async def handle_oauth_callback(
             transaction = Transaction(
                 user_id=user_id,
                 account_id=account.id,
+                monthly_period_id=(await get_or_create_monthly_period(session, user_id, txn_data.date.strftime("%Y-%m"))).id,
                 external_id=txn_data.external_id,
                 description=txn_data.description,
                 amount=txn_data.amount,
@@ -281,6 +287,9 @@ async def sync_connection(
         # Update accounts
         user = await session.get(User, user_id)
         user_currency = user.primary_currency if user else get_settings().default_currency
+        current_monthly_period = None
+        if user is not None and get_current_month_period(user):
+            current_monthly_period = await resolve_current_monthly_period(session, user_id, user)
         new_tx_ids: list[uuid.UUID] = []
         merged_count = 0
         accounts_data = await provider.get_accounts(credentials)
@@ -299,6 +308,7 @@ async def sync_connection(
             else:
                 account = Account(
                     user_id=user_id,
+                    monthly_period_id=current_monthly_period.id if current_monthly_period is not None else None,
                     connection_id=connection.id,
                     external_id=acc_data.external_id,
                     name=acc_data.name,
@@ -358,6 +368,7 @@ async def sync_connection(
                 transaction = Transaction(
                     user_id=user_id,
                     account_id=account.id,
+                    monthly_period_id=(await get_or_create_monthly_period(session, user_id, txn_data.date.strftime("%Y-%m"))).id,
                     external_id=txn_data.external_id,
                     description=txn_data.description,
                     amount=txn_data.amount,

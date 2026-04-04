@@ -16,6 +16,7 @@ from app.models.user import User
 from app.models.category import Category
 from app.models.bank_connection import BankConnection
 from app.models.account import Account
+from app.models.monthly_period import MonthlyPeriod
 from app.models.transaction import Transaction
 from app.models.rule import Rule
 from app.models.asset import Asset  # noqa: F401
@@ -184,11 +185,31 @@ async def test_connection(session: AsyncSession, test_user: User) -> BankConnect
 
 
 @pytest_asyncio.fixture
-async def test_account(session: AsyncSession, test_user: User, test_connection: BankConnection) -> Account:
+async def test_monthly_period(session: AsyncSession, test_user: User) -> MonthlyPeriod:
+    period = (test_user.preferences or {}).get("current_month_period")
+    monthly_period = MonthlyPeriod(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        period=period,
+    )
+    session.add(monthly_period)
+    await session.commit()
+    await session.refresh(monthly_period)
+    return monthly_period
+
+
+@pytest_asyncio.fixture
+async def test_account(
+    session: AsyncSession,
+    test_user: User,
+    test_connection: BankConnection,
+    test_monthly_period: MonthlyPeriod,
+) -> Account:
     """Create a test account."""
     account = Account(
         id=uuid.uuid4(),
         user_id=test_user.id,
+        monthly_period_id=test_monthly_period.id,
         connection_id=test_connection.id,
         external_id="acc-ext-123",
         name="Conta Corrente",
@@ -204,7 +225,11 @@ async def test_account(session: AsyncSession, test_user: User, test_connection: 
 
 @pytest_asyncio.fixture
 async def test_transactions(
-    session: AsyncSession, test_user: User, test_account: Account, test_categories: list[Category]
+    session: AsyncSession,
+    test_user: User,
+    test_account: Account,
+    test_categories: list[Category],
+    test_monthly_period: MonthlyPeriod,
 ) -> list[Transaction]:
     """Create test transactions in the current month so tests don't break as time passes."""
     today = date.today()
@@ -221,6 +246,7 @@ async def test_transactions(
             id=uuid.uuid4(),
             user_id=test_user.id,
             account_id=test_account.id,
+            monthly_period_id=test_monthly_period.id,
             category_id=cat_id,
             description=desc,
             amount=amount,

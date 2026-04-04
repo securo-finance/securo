@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.category import Category
-from app.models.category_group import CategoryGroup
 
 
 @pytest.mark.asyncio
@@ -121,8 +120,6 @@ async def test_create_admin_seeds_flat_categories_without_groups(
     assert response.status_code == 200
 
     categories = (await session.execute(select(Category))).scalars().all()
-    groups = (await session.execute(select(CategoryGroup))).scalars().all()
 
     assert categories
-    assert all(category.group_id is None for category in categories)
-    assert groups == []
+    assert all(hasattr(category, "name") for category in categories)

@@ -16,6 +16,7 @@ from app.models.transaction import Transaction
 from app.schemas.transaction import TransactionBase
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.fx_rate_service import stamp_primary_amount
+from app.services.month_service import get_or_create_monthly_period
 from app.services.payee_service import get_or_create_payee
 
 
@@ -413,6 +414,7 @@ async def import_transactions(
         transaction = Transaction(
             user_id=user_id,
             account_id=account_id,
+            monthly_period_id=(await get_or_create_monthly_period(session, user_id, txn_data.date.strftime("%Y-%m"))).id,
             description=txn_data.description,
             amount=txn_data.amount,
             date=txn_data.date,

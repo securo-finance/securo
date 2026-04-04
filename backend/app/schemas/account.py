@@ -31,6 +31,7 @@ class AccountUpdate(BaseModel):
 class AccountRead(AccountBase):
     id: uuid.UUID
     user_id: uuid.UUID
+    monthly_period_id: Optional[uuid.UUID] = None
     connection_id: Optional[uuid.UUID] = None
     external_id: Optional[str] = None
     current_balance: float = 0.0

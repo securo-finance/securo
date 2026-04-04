@@ -1,6 +1,7 @@
 import pytest
+from datetime import date as _Date
 from httpx import AsyncClient
-from sqlalchemy import update
+from sqlalchemy import select, update
 
 from app.models.account import Account
 from app.models.user import User
@@ -67,6 +68,7 @@ async def test_create_manual_account(client: AsyncClient, auth_headers):
     assert data["balance"] == "500.00"
     assert data["connection_id"] is None
     assert data["external_id"] is None
+    assert data["monthly_period_id"] is not None
 
 
 @pytest.mark.asyncio
@@ -176,10 +178,10 @@ async def test_create_account_with_balance_creates_opening_transaction(
     client: AsyncClient, auth_headers, session
 ):
     """Creating an account with balance > 0 must create an opening_balance transaction in the DB."""
-    from sqlalchemy import select
     from app.models.transaction import Transaction as TxModel
     import uuid as _uuid
     from decimal import Decimal
+    from app.models.monthly_period import MonthlyPeriod as MonthlyPeriodModel
 
     response = await client.post(
         "/api/accounts",
@@ -201,6 +203,13 @@ async def test_create_account_with_balance_creates_opening_transaction(
     assert opening_tx.amount == Decimal("500.00")
     assert opening_tx.type == "credit"
     assert opening_tx.description == "Saldo inicial"
+    assert opening_tx.monthly_period_id is not None
+
+    monthly_period = await session.scalar(
+        select(MonthlyPeriodModel).where(MonthlyPeriodModel.id == opening_tx.monthly_period_id)
+    )
+    assert monthly_period is not None
+    assert monthly_period.period == _Date.today().replace(day=1).isoformat()[:7]
 
     # Also verify it does NOT appear in the public transaction list
     txn_response = await client.get(

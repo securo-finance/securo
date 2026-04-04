@@ -1,7 +1,8 @@
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import update
+from sqlalchemy import select, update
 
+from app.models.monthly_period import MonthlyPeriod
 from app.models.user import User
 
 
@@ -18,7 +19,7 @@ async def test_get_current_month_state(client: AsyncClient, auth_headers):
 
 @pytest.mark.asyncio
 async def test_set_current_month_accepts_month_input(
-    client: AsyncClient, auth_headers
+    client: AsyncClient, auth_headers, session
 ):
     response = await client.put(
         "/api/months/current",
@@ -31,6 +32,11 @@ async def test_set_current_month_accepts_month_input(
     assert data["current_period"] == "2026-04"
     assert data["current_period_label"] == "04/2026"
     assert data["is_defined"] is True
+
+    stored_period = await session.scalar(
+        select(MonthlyPeriod).where(MonthlyPeriod.period == "2026-04")
+    )
+    assert stored_period is not None
 
 
 @pytest.mark.asyncio

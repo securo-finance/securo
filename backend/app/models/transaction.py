@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from app.models.account import Account
     from app.models.category import Category
     from app.models.import_log import ImportLog
+    from app.models.monthly_period import MonthlyPeriod
     from app.models.payee import Payee
     from app.models.transaction_attachment import TransactionAttachment
 
@@ -23,6 +24,7 @@ class Transaction(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     account_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("accounts.id"), nullable=False)
+    monthly_period_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("monthly_periods.id"), nullable=True)
     category_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("categories.id"), nullable=True)
     external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Provider's transaction ID
     description: Mapped[str] = mapped_column(String(500))
@@ -43,6 +45,7 @@ class Transaction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     account: Mapped["Account"] = relationship(back_populates="transactions")
+    monthly_period: Mapped[Optional["MonthlyPeriod"]] = relationship()
     category: Mapped[Optional["Category"]] = relationship()
     payee_entity: Mapped[Optional["Payee"]] = relationship(back_populates="transactions")
     import_log: Mapped[Optional["ImportLog"]] = relationship(back_populates="transactions")

@@ -17,7 +17,6 @@ from app.models.asset import Asset
 from app.models.asset_value import AssetValue
 from app.models.budget import Budget
 from app.models.category import Category
-from app.models.category_group import CategoryGroup
 from app.models.import_log import ImportLog
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.rule import Rule
@@ -54,7 +53,6 @@ async def backup(
     accounts = (await session.execute(select(Account).where(Account.user_id == user_id))).scalars().all()
     transactions = (await session.execute(select(Transaction).where(Transaction.user_id == user_id))).scalars().all()
     categories = (await session.execute(select(Category).where(Category.user_id == user_id))).scalars().all()
-    category_groups = (await session.execute(select(CategoryGroup).where(CategoryGroup.user_id == user_id))).scalars().all()
     rules = (await session.execute(select(Rule).where(Rule.user_id == user_id))).scalars().all()
     recurring_transactions = (await session.execute(select(RecurringTransaction).where(RecurringTransaction.user_id == user_id))).scalars().all()
     budgets = (await session.execute(select(Budget).where(Budget.user_id == user_id))).scalars().all()
@@ -72,7 +70,6 @@ async def backup(
         "accounts": accounts,
         "transactions": transactions,
         "categories": categories,
-        "category_groups": category_groups,
         "rules": rules,
         "recurring_transactions": recurring_transactions,
         "budgets": budgets,
@@ -94,9 +91,9 @@ async def backup(
             "export_date": datetime.now(UTC).isoformat(),
             "format_version": EXPORT_FORMAT_VERSION,
             "compatibility": {
-                "legacy_category_groups_included": True,
+                "legacy_category_groups_included": False,
                 "category_budget_source": "categories",
-                "notes": "v2 readers use category-owned budgets; legacy category groups remain in the backup for recovery during transition.",
+                "notes": "v2 readers use category-owned budgets and no longer include legacy category groups in backups.",
             },
             "entity_counts": entity_counts,
         }

@@ -30,14 +30,14 @@
 
 ### Period-Linked Data Model
 
-- [ ] **DATA-01**: User has transactions linked to a monthly period so records can be queried and rendered from the correct current month or snapshot.
-- [ ] **DATA-02**: User can create a new account with the intended `Mês Atual` period recorded as part of the flow.
+- [x] **DATA-01**: User has transactions linked to a monthly period so records can be queried and rendered from the correct current month or snapshot.
+- [x] **DATA-02**: User can create a new account with the intended `Mês Atual` period recorded as part of the flow.
 - [ ] **DATA-03**: User can close a month only when the resulting snapshot is linked to the monthly period being closed.
 
 ### Category Group Removal
 
-- [ ] **CLEAN-01**: User no longer depends on category-group fields or relationships in the supported backend and database model.
-- [ ] **CLEAN-02**: User no longer encounters category-group concepts in supported APIs, sync flows, or monthly-finance workflows.
+- [x] **CLEAN-01**: User no longer depends on category-group fields or relationships in the supported backend and database model.
+- [x] **CLEAN-02**: User no longer encounters category-group concepts in supported APIs, sync flows, or monthly-finance workflows.
 
 ## v2 Requirements
 
@@ -79,11 +79,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | GUARD-02 | Phase 8 | Complete |
 | GUARD-03 | Phase 8 | Complete |
 | UX-01 | Phase 8 | Complete |
-| DATA-01 | Phase 9 | Pending |
-| DATA-02 | Phase 9 | Pending |
+| DATA-01 | Phase 9 | Complete |
+| DATA-02 | Phase 9 | Complete |
 | DATA-03 | Phase 10 | Pending |
-| CLEAN-01 | Phase 9 | Pending |
-| CLEAN-02 | Phase 9 | Pending |
+| CLEAN-01 | Phase 9 | Complete |
+| CLEAN-02 | Phase 9 | Complete |
 
 **Coverage:**
 - v1 requirements: 16 total
@@ -92,4 +92,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-04-04*
-*Last updated: 2026-04-04 after Phase 8 completion*
+*Last updated: 2026-04-04 after Phase 9 completion*

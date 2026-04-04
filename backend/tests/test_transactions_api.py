@@ -121,6 +121,7 @@ async def test_create_transaction(
     assert data["description"] == "Almoço restaurante"
     assert data["source"] == "manual"
     assert data["category_id"] == str(test_categories[0].id)
+    assert data["monthly_period_id"] is not None
 
 
 @pytest.mark.asyncio

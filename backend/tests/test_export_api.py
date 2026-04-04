@@ -32,7 +32,7 @@ async def test_backup_empty(client: AsyncClient, auth_headers):
 
         metadata = json.loads(zf.read("metadata.json"))
         assert metadata["format_version"] == "2.0"
-        assert metadata["compatibility"]["legacy_category_groups_included"] is True
+        assert metadata["compatibility"]["legacy_category_groups_included"] is False
         assert metadata["compatibility"]["category_budget_source"] == "categories"
         assert "export_date" in metadata
         for count in metadata["entity_counts"].values():
@@ -62,7 +62,6 @@ async def test_backup_with_data(
             "accounts.json",
             "transactions.json",
             "categories.json",
-            "category_groups.json",
             "rules.json",
             "recurring_transactions.json",
             "budgets.json",
@@ -78,7 +77,7 @@ async def test_backup_with_data(
         metadata = json.loads(zf.read("metadata.json"))
         counts = metadata["entity_counts"]
         assert metadata["format_version"] == "2.0"
-        assert metadata["compatibility"]["legacy_category_groups_included"] is True
+        assert metadata["compatibility"]["legacy_category_groups_included"] is False
         assert counts["accounts"] == 1
         assert counts["transactions"] == len(test_transactions)
         assert counts["categories"] == len(test_categories)

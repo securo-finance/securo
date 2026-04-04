@@ -8,7 +8,6 @@ from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.category import Category
-    from app.models.category_group import CategoryGroup
     from app.models.bank_connection import BankConnection
 
 
@@ -26,7 +25,6 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     )
 
     categories: Mapped[list["Category"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    category_groups: Mapped[list["CategoryGroup"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     bank_connections: Mapped[list["BankConnection"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
     @property

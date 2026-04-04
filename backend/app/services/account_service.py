@@ -9,7 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.transaction import Transaction
+from app.models.user import User
 from app.schemas.account import AccountCreate, AccountUpdate
+from app.services.month_service import (
+    get_current_month_period,
+    get_monthly_period,
+    month_to_period_value,
+    period_to_month_start,
+    resolve_current_monthly_period,
+)
 
 
 async def get_accounts(session: AsyncSession, user_id: uuid.UUID, include_closed: bool = False) -> list[dict]:
@@ -25,20 +33,28 @@ async def get_accounts(session: AsyncSession, user_id: uuid.UUID, include_closed
         else_=-effective_amount,
     )
 
+    user = await session.get(User, user_id)
+    current_period = get_current_month_period(user) if user else None
+    current_monthly_period = await resolve_current_monthly_period(session, user_id, user) if current_period else None
+    previous_monthly_period = None
+    if current_period:
+        previous_period = month_to_period_value(period_to_month_start(current_period) - timedelta(days=1))
+        previous_monthly_period = await get_monthly_period(session, user_id, previous_period)
+
     balance_sq = (
         select(
             Transaction.account_id,
             func.coalesce(func.sum(signed_amount), 0).label("current_balance"),
         )
         .join(Account, Transaction.account_id == Account.id)
+        .where(
+            Transaction.monthly_period_id == current_monthly_period.id
+            if current_monthly_period is not None
+            else True
+        )
         .group_by(Transaction.account_id)
         .subquery()
     )
-
-    # Subquery: compute previous_balance (balance at end of previous month)
-    today = _Date.today()
-    first_of_month = today.replace(day=1)
-    prev_month_end = first_of_month - timedelta(days=1)
 
     prev_balance_sq = (
         select(
@@ -46,7 +62,11 @@ async def get_accounts(session: AsyncSession, user_id: uuid.UUID, include_closed
             func.coalesce(func.sum(signed_amount), 0).label("previous_balance"),
         )
         .join(Account, Transaction.account_id == Account.id)
-        .where(Transaction.date <= prev_month_end)
+        .where(
+            Transaction.monthly_period_id == previous_monthly_period.id
+            if previous_monthly_period is not None
+            else False
+        )
         .group_by(Transaction.account_id)
         .subquery()
     )
@@ -77,6 +97,7 @@ async def get_accounts(session: AsyncSession, user_id: uuid.UUID, include_closed
         {
             "id": acc.id,
             "user_id": acc.user_id,
+            "monthly_period_id": acc.monthly_period_id,
             "connection_id": acc.connection_id,
             "external_id": acc.external_id,
             "name": acc.name,
@@ -110,8 +131,10 @@ async def get_account(session: AsyncSession, account_id: uuid.UUID, user_id: uui
 
 
 async def create_account(session: AsyncSession, user_id: uuid.UUID, data: AccountCreate) -> Account:
+    monthly_period = await resolve_current_monthly_period(session, user_id)
     account = Account(
         user_id=user_id,
+        monthly_period_id=monthly_period.id,
         name=data.name,
         type=data.type,
         balance=data.balance,
@@ -127,6 +150,7 @@ async def create_account(session: AsyncSession, user_id: uuid.UUID, data: Accoun
         opening_tx = Transaction(
             user_id=user_id,
             account_id=account.id,
+            monthly_period_id=monthly_period.id,
             description="Saldo inicial",
             amount=data.balance,
             currency=data.currency,
@@ -161,6 +185,7 @@ async def update_account(
     # When balance changes, sync the opening_balance transaction
     if "balance" in update_data:
         new_balance = update_data["balance"]
+        monthly_period = await resolve_current_monthly_period(session, user_id)
         existing_opening = await session.execute(
             select(Transaction).where(
                 Transaction.account_id == account_id,
@@ -174,12 +199,14 @@ async def update_account(
             if opening_tx:
                 opening_tx.amount = new_balance
                 opening_tx.type = opening_type
+                opening_tx.monthly_period_id = monthly_period.id
                 if balance_date:
                     opening_tx.date = balance_date
             else:
                 opening_tx = Transaction(
                     user_id=account.user_id,
                     account_id=account_id,
+                    monthly_period_id=monthly_period.id,
                     description="Saldo inicial",
                     amount=new_balance,
                     currency=account.currency,
@@ -265,8 +292,11 @@ async def get_account_summary(
         return None
 
     today = _Date.today()
+    user = await session.get(User, user_id)
+    current_period = get_current_month_period(user) if user else None
+    current_monthly_period = await resolve_current_monthly_period(session, user_id, user) if current_period else None
     if not date_from:
-        date_from = today.replace(day=1)
+        date_from = period_to_month_start(current_period) if current_period else today.replace(day=1)
     if not date_to:
         date_to = today
 
@@ -281,6 +311,9 @@ async def get_account_summary(
         current_balance = float(account.balance)
     else:
         # Current balance = SUM(credit amounts) - SUM(debit amounts)
+        balance_filters = [Transaction.account_id == account_id]
+        if current_monthly_period is not None and date_from == period_to_month_start(current_period) and date_to == today:
+            balance_filters.append(Transaction.monthly_period_id == current_monthly_period.id)
         balance_result = await session.execute(
             select(
                 func.coalesce(
@@ -292,7 +325,7 @@ async def get_account_summary(
                     ),
                     0,
                 )
-            ).where(Transaction.account_id == account_id)
+            ).where(*balance_filters)
         )
         current_balance = float(balance_result.scalar())
 
@@ -302,27 +335,32 @@ async def get_account_summary(
         current_balance = -current_balance
 
     # Income = SUM of credit transactions in [date_from, date_to] (excluding opening_balance and transfers)
+    income_filters = [
+        Transaction.account_id == account_id,
+        Transaction.type == "credit",
+        Transaction.source != "opening_balance",
+        Transaction.transfer_pair_id.is_(None),
+    ]
+    expense_filters = [
+        Transaction.account_id == account_id,
+        Transaction.type == "debit",
+        Transaction.transfer_pair_id.is_(None),
+    ]
+    if current_monthly_period is not None and date_from == period_to_month_start(current_period) and date_to == today:
+        income_filters.append(Transaction.monthly_period_id == current_monthly_period.id)
+        expense_filters.append(Transaction.monthly_period_id == current_monthly_period.id)
+    else:
+        income_filters.extend([Transaction.date >= date_from, Transaction.date <= date_to])
+        expense_filters.extend([Transaction.date >= date_from, Transaction.date <= date_to])
+
     income_result = await session.execute(
-        select(func.coalesce(func.sum(effective_amount), 0)).where(
-            Transaction.account_id == account_id,
-            Transaction.type == "credit",
-            Transaction.source != "opening_balance",
-            Transaction.transfer_pair_id.is_(None),
-            Transaction.date >= date_from,
-            Transaction.date <= date_to,
-        )
+        select(func.coalesce(func.sum(effective_amount), 0)).where(*income_filters)
     )
     monthly_income = float(income_result.scalar())
 
     # Expenses = SUM of debit transactions in [date_from, date_to] (as positive value, excluding transfers)
     expenses_result = await session.execute(
-        select(func.coalesce(func.sum(func.abs(effective_amount)), 0)).where(
-            Transaction.account_id == account_id,
-            Transaction.type == "debit",
-            Transaction.transfer_pair_id.is_(None),
-            Transaction.date >= date_from,
-            Transaction.date <= date_to,
-        )
+        select(func.coalesce(func.sum(func.abs(effective_amount)), 0)).where(*expense_filters)
     )
     monthly_expenses = float(expenses_result.scalar())
 

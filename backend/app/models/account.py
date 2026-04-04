@@ -11,6 +11,7 @@ from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.bank_connection import BankConnection
+    from app.models.monthly_period import MonthlyPeriod
     from app.models.transaction import Transaction
 
 
@@ -19,6 +20,7 @@ class Account(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+    monthly_period_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("monthly_periods.id"), nullable=True)
     connection_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("bank_connections.id"), nullable=True)
     external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     name: Mapped[str] = mapped_column(String(255))
@@ -30,4 +32,5 @@ class Account(Base):
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     connection: Mapped[Optional["BankConnection"]] = relationship(back_populates="accounts")
+    monthly_period: Mapped[Optional["MonthlyPeriod"]] = relationship()
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="account", cascade="all, delete-orphan")

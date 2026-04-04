@@ -46,6 +46,7 @@ class TransactionRead(TransactionBase):
     id: uuid.UUID
     user_id: uuid.UUID
     account_id: Optional[uuid.UUID] = None
+    monthly_period_id: Optional[uuid.UUID] = None
     category_id: Optional[uuid.UUID] = None
     category: Optional[CategoryRead] = None
     currency: str = "USD"

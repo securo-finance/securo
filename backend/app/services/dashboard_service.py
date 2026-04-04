@@ -16,6 +16,12 @@ from app.schemas.dashboard import DashboardSummary, SpendingByCategory, MonthlyT
 from app.services.recurring_transaction_service import get_occurrences_in_range
 from app.services.asset_service import get_total_asset_value
 from app.services.fx_rate_service import convert
+from app.services.month_service import (
+    get_current_month_period,
+    get_monthly_period,
+    month_to_period_value,
+    resolve_current_monthly_period,
+)
 from app.models.user import User
 
 
@@ -27,6 +33,27 @@ def _month_range(month: date) -> tuple[date, date]:
     else:
         month_end = month.replace(month=month.month + 1, day=1)
     return month_start, month_end
+
+
+async def _transaction_month_filters(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    month: date,
+) -> list:
+    period_value = month_to_period_value(month)
+    user = await session.get(User, user_id)
+    current_period = get_current_month_period(user) if user else None
+
+    if current_period == period_value and user is not None:
+        current_monthly_period = await resolve_current_monthly_period(session, user_id, user)
+        return [Transaction.monthly_period_id == current_monthly_period.id]
+
+    monthly_period = await get_monthly_period(session, user_id, period_value)
+    if monthly_period is not None:
+        return [Transaction.monthly_period_id == monthly_period.id]
+
+    month_start, month_end = _month_range(month)
+    return [Transaction.date >= month_start, Transaction.date < month_end]
 
 
 async def _get_recurring_projections(
@@ -73,6 +100,7 @@ async def get_summary(
         month = date.today().replace(day=1)
 
     month_start, month_end = _month_range(month)
+    tx_month_filters = await _transaction_month_filters(session, user_id, month)
     today = date.today()
 
     # Compute the effective cutoff date for balance calculation
@@ -109,10 +137,9 @@ async def get_summary(
         .where(
             Transaction.user_id == user_id,
             Account.is_closed == False,
-            Transaction.date >= month_start,
-            Transaction.date < month_end,
             Transaction.source != "opening_balance",
             Transaction.transfer_pair_id.is_(None),
+            *tx_month_filters,
         )
     )
     monthly_row = monthly_result.one()
@@ -144,6 +171,7 @@ async def get_summary(
         Transaction.category_id.is_(None),
         Transaction.source != "opening_balance",
         Transaction.transfer_pair_id.is_(None),
+        *tx_month_filters,
     ]
     pending_categorization = await session.scalar(
         select(func.count())
@@ -190,11 +218,10 @@ async def get_summary(
         .where(
             Transaction.user_id == user_id,
             Account.is_closed == False,
-            Transaction.date >= month_start,
-            Transaction.date < month_end,
             Transaction.source != "opening_balance",
             Transaction.transfer_pair_id.is_(None),
             Transaction.amount_primary.isnot(None),
+            *tx_month_filters,
         )
     )
     primary_row = primary_result.one()
@@ -243,6 +270,7 @@ async def get_spending_by_category(
         month = date.today().replace(day=1)
 
     month_start, month_end = _month_range(month)
+    tx_month_filters = await _transaction_month_filters(session, user_id, month)
 
     # Real transactions grouped by category (exclude transfer pairs and closed accounts)
     # Use amount_primary for multi-currency support
@@ -261,9 +289,8 @@ async def get_spending_by_category(
             Transaction.user_id == user_id,
             Account.is_closed == False,
             Transaction.type == "debit",
-            Transaction.date >= month_start,
-            Transaction.date < month_end,
             Transaction.transfer_pair_id.is_(None),
+            *tx_month_filters,
         )
         .group_by(Category.id, Category.name, Category.icon, Category.color)
         .order_by(func.sum(_primary_amount_expr()).desc())

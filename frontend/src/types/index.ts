@@ -31,17 +31,6 @@ export interface Category {
   budget_amount: number | null
 }
 
-export interface CategoryGroup {
-  id: string
-  user_id: string
-  name: string
-  icon: string
-  color: string
-  position: number
-  is_system: boolean
-  categories: Category[]
-}
-
 export interface BankConnection {
   id: string
   user_id: string
@@ -62,6 +51,7 @@ export interface ConnectionSettings {
 export interface Account {
   id: string
   user_id: string
+  monthly_period_id: string | null
   connection_id: string | null
   external_id: string | null
   name: string
@@ -89,6 +79,7 @@ export interface Transaction {
   id: string
   user_id: string
   account_id: string | null
+  monthly_period_id: string | null
   category_id: string | null
   category: Category | null
   external_id: string | null

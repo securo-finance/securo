@@ -9,7 +9,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 if TYPE_CHECKING:
-    from app.models.category_group import CategoryGroup
     from app.models.user import User
 
 
@@ -18,7 +17,6 @@ class Category(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
-    group_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("category_groups.id"), nullable=True)
     name: Mapped[str] = mapped_column(String(100))
     icon: Mapped[str] = mapped_column(String(50), default="circle-help")
     color: Mapped[str] = mapped_column(String(7), default="#6B7280")
@@ -27,4 +25,3 @@ class Category(Base):
     budget_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="categories")
-    group: Mapped[Optional["CategoryGroup"]] = relationship(back_populates="categories")
