@@ -19,6 +19,7 @@ import { Pencil, Trash2, Plus, PiggyBank } from 'lucide-react'
 import { PageHeader } from '@/components/page-header'
 import { CategoryIcon } from '@/components/category-icon'
 import { IconPicker } from '@/components/icon-picker'
+import { useCurrentMonth } from '@/hooks/use-current-month'
 import { useAuth } from '@/contexts/auth-context'
 
 function SectionCard({ children }: { children: React.ReactNode }) {
@@ -47,6 +48,8 @@ function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
 export default function CategoriesPage() {
   const { t, i18n } = useTranslation()
   const { user } = useAuth()
+  const { data: currentMonthState } = useCurrentMonth()
+  const currentMonthDefined = currentMonthState?.is_defined ?? false
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const locale = i18n.language === 'en' ? 'en-US' : i18n.language
   const queryClient = useQueryClient()
@@ -133,6 +136,13 @@ export default function CategoriesPage() {
     <div>
       <PageHeader section={t('categories.title')} title={t('categories.title')} />
 
+      {!currentMonthDefined ? (
+        <div className="mb-6 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground shadow-sm">
+          <p className="font-medium text-foreground">{t('common.currentMonthLocked')}</p>
+          <p className="mt-1">{t('categories.currentMonthGuard')}</p>
+        </div>
+      ) : null}
+
       <SectionCard>
         <SectionHeader
           title={t('categories.title')}
@@ -140,7 +150,13 @@ export default function CategoriesPage() {
             <p className="text-xs text-muted-foreground">{t('categories.flatDescription')}</p>
           }
           action={
-            <Button size="sm" className="gap-1.5 h-8" onClick={() => openCatDialog(null)}>
+            <Button
+              size="sm"
+              className="gap-1.5 h-8"
+              onClick={() => openCatDialog(null)}
+              disabled={!currentMonthDefined}
+              title={!currentMonthDefined ? t('common.currentMonthLocked') : undefined}
+            >
               <Plus size={13} /> <span className="hidden sm:inline">{t('categories.addCategory')}</span>
             </Button>
           }

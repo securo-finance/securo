@@ -18,6 +18,7 @@ from app.schemas.bank_connection import (
     ConnectionSettingsUpdate,
 )
 from app.services import connection_service
+from app.services.month_service import ensure_current_month_defined
 from app.services.transfer_detection_service import detect_transfer_pairs, unlink_transfer_pair
 
 router = APIRouter(prefix="/api/connections", tags=["connections"])
@@ -91,6 +92,11 @@ async def sync_connection(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
+    try:
+        ensure_current_month_defined(user)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
     try:
         connection, merged_count = await connection_service.sync_connection(session, connection_id, user.id)
         result = BankConnectionRead.model_validate(connection)

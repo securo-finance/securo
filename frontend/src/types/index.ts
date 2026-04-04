@@ -11,6 +11,13 @@ export interface UserPreferences {
   currency_display?: string
   display_name?: string
   onboarding_completed?: boolean
+  current_month_period?: string
+}
+
+export interface CurrentMonthStatus {
+  current_period: string | null
+  current_period_label: string | null
+  is_defined: boolean
 }
 
 export interface Category {

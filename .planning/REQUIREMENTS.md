@@ -7,9 +7,9 @@
 
 ### Period Management
 
-- [ ] **PERIOD-01**: User can define the monthly period identifier for `Mês Atual` using a month/year competency format.
+- [x] **PERIOD-01**: User can define the monthly period identifier for `Mês Atual` using a month/year competency format.
 - [ ] **PERIOD-02**: User can switch the main financial context between `Mês Atual` and any previously closed monthly snapshot.
-- [ ] **PERIOD-03**: User sees only closed monthly snapshots when no current-month period has been defined yet.
+- [x] **PERIOD-03**: User sees only closed monthly snapshots when no current-month period has been defined yet.
 - [ ] **PERIOD-04**: User is prompted to define the next `Mês Atual` period immediately after closing the current month.
 
 ### Month Closure and Snapshots
@@ -21,12 +21,12 @@
 ### Mutation Guards
 
 - [ ] **GUARD-01**: User must confirm before executing an action that changes the control state of a closed monthly snapshot.
-- [ ] **GUARD-02**: User cannot sync external data while `Mês Atual` has no defined monthly period.
-- [ ] **GUARD-03**: User cannot manually create transactions, accounts, or categories while `Mês Atual` has no defined monthly period.
+- [x] **GUARD-02**: User cannot sync external data while `Mês Atual` has no defined monthly period.
+- [x] **GUARD-03**: User cannot manually create transactions, accounts, or categories while `Mês Atual` has no defined monthly period.
 
 ### UX Consistency
 
-- [ ] **UX-01**: User sees any new or updated screens in this milestone follow the existing Flux layout pattern instead of a new visual structure.
+- [x] **UX-01**: User sees any new or updated screens in this milestone follow the existing Flux layout pattern instead of a new visual structure.
 
 ### Period-Linked Data Model
 
@@ -68,17 +68,17 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PERIOD-01 | Phase 8 | Pending |
+| PERIOD-01 | Phase 8 | Complete |
 | PERIOD-02 | Phase 11 | Pending |
-| PERIOD-03 | Phase 8 | Pending |
+| PERIOD-03 | Phase 8 | Complete |
 | PERIOD-04 | Phase 10 | Pending |
 | SNAP-01 | Phase 10 | Pending |
 | SNAP-02 | Phase 11 | Pending |
 | SNAP-03 | Phase 11 | Pending |
 | GUARD-01 | Phase 11 | Pending |
-| GUARD-02 | Phase 8 | Pending |
-| GUARD-03 | Phase 8 | Pending |
-| UX-01 | Phase 8 | Pending |
+| GUARD-02 | Phase 8 | Complete |
+| GUARD-03 | Phase 8 | Complete |
+| UX-01 | Phase 8 | Complete |
 | DATA-01 | Phase 9 | Pending |
 | DATA-02 | Phase 9 | Pending |
 | DATA-03 | Phase 10 | Pending |
@@ -92,4 +92,4 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 ---
 *Requirements defined: 2026-04-04*
-*Last updated: 2026-04-04 after initial milestone definition*
+*Last updated: 2026-04-04 after Phase 8 completion*

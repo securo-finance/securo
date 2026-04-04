@@ -8,6 +8,7 @@ from app.core.database import get_async_session
 from app.models.user import User
 from app.schemas.category import CategoryCreate, CategoryRead, CategoryUpdate
 from app.services import category_service
+from app.services.month_service import ensure_current_month_defined
 
 router = APIRouter(prefix="/api/categories", tags=["categories"])
 
@@ -26,7 +27,11 @@ async def create_category(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
-    return await category_service.create_category(session, user.id, data)
+    try:
+        ensure_current_month_defined(user)
+        return await category_service.create_category(session, user.id, data)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.patch("/{category_id}", response_model=CategoryRead)

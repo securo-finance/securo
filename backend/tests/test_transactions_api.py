@@ -1,9 +1,11 @@
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import update
 
 from app.models.account import Account
 from app.models.transaction import Transaction
 from app.models.category import Category
+from app.models.user import User
 
 
 @pytest.mark.asyncio
@@ -159,6 +161,39 @@ async def test_create_transaction_invalid_account(
         },
     )
     assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_create_transaction_requires_current_month(
+    client: AsyncClient, auth_headers, test_account: Account, test_categories: list[Category], session
+):
+    await session.execute(
+        update(User)
+        .values(
+            preferences={
+                "language": "pt-BR",
+                "date_format": "DD/MM/YYYY",
+                "timezone": "America/Sao_Paulo",
+                "currency_display": "BRL",
+            }
+        )
+    )
+    await session.commit()
+
+    response = await client.post(
+        "/api/transactions",
+        headers=auth_headers,
+        json={
+            "account_id": str(test_account.id),
+            "category_id": str(test_categories[0].id),
+            "description": "Almoço restaurante",
+            "amount": "32.50",
+            "date": "2026-02-20",
+            "type": "debit",
+        },
+    )
+    assert response.status_code == 400
+    assert "Mês Atual não definido" in response.json()["detail"]
 
 
 @pytest.mark.asyncio

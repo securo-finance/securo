@@ -18,6 +18,7 @@ import type {
   AssetValue,
   Attachment,
   DashboardSummary,
+  CurrentMonthStatus,
   SpendingByCategory,
   MonthlyTrend,
   BalanceHistory,
@@ -87,6 +88,17 @@ export const auth = {
   },
   changePassword: async (password: string): Promise<User> => {
     const { data } = await api.patch('/users/me', { password })
+    return data
+  },
+}
+
+export const months = {
+  current: async (): Promise<CurrentMonthStatus> => {
+    const { data } = await api.get('/months/current')
+    return data
+  },
+  setCurrent: async (period: string): Promise<CurrentMonthStatus> => {
+    const { data } = await api.put('/months/current', { period })
     return data
   },
 }

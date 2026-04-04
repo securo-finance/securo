@@ -3,9 +3,11 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { ptBR, enUS } from 'date-fns/locale'
-import { dashboard, transactions, budgets, categories as categoriesApi, accounts as accountsApi } from '@/lib/api'
+import { toast } from 'sonner'
+import { dashboard, transactions, budgets, categories as categoriesApi, accounts as accountsApi, months } from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
 import {
@@ -30,6 +32,7 @@ import { PageHeader } from '@/components/page-header'
 import { CategoryIcon } from '@/components/category-icon'
 import { TransactionDrillDown, type DrillDownFilter } from '@/components/transaction-drill-down'
 import { TransactionDialog, extractApiError } from '@/components/transaction-dialog'
+import { useCurrentMonth } from '@/hooks/use-current-month'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import type { Transaction } from '@/types'
@@ -78,7 +81,10 @@ export default function DashboardPage() {
     const base = t(`dashboard.${key}`)
     return displayName ? `${base}, ${displayName}` : base
   })()
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth)
+  const { data: currentMonthState } = useCurrentMonth()
+  const currentMonthDefined = currentMonthState?.is_defined ?? false
+  const [selectedMonth, setSelectedMonth] = useState('')
+  const [monthDraft, setMonthDraft] = useState(currentMonth())
   const [drillDown, setDrillDown] = useState<DrillDownFilter | null>(null)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -86,30 +92,54 @@ export default function DashboardPage() {
   const [headerCalOpen, setHeaderCalOpen] = useState(false)
   const [hoveredDay, setHoveredDay] = useState<number | null>(null)
   const dateFnsLocale = i18n.language === 'pt-BR' ? ptBR : enUS
-  const monthParam = `${selectedMonth}-01`
-  const monthStart = `${selectedMonth}-01`
-  const monthEnd = `${selectedMonth}-${String(monthLastDay(selectedMonth)).padStart(2, '0')}`
-  const monthLabelStr = monthLabel(selectedMonth, locale)
+  const monthParam = selectedMonth ? `${selectedMonth}-01` : undefined
+  const monthStart = selectedMonth ? `${selectedMonth}-01` : ''
+  const monthEnd = selectedMonth ? `${selectedMonth}-${String(monthLastDay(selectedMonth)).padStart(2, '0')}` : ''
+  const monthLabelStr = selectedMonth ? monthLabel(selectedMonth, locale) : ''
+
+  useEffect(() => {
+    if (currentMonthState?.current_period) {
+      setSelectedMonth(currentMonthState.current_period)
+      setMonthDraft(currentMonthState.current_period)
+    }
+  }, [currentMonthState?.current_period])
 
   const handleMonthChange = (newMonth: string) => {
     setSelectedMonth(newMonth)
-}
+  }
+
+  const saveCurrentMonthMutation = useMutation({
+    mutationFn: (period: string) => months.setCurrent(period),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['current-month'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      setSelectedMonth(data.current_period ?? '')
+      setMonthDraft(data.current_period ?? currentMonth())
+      toast.success(t('dashboard.currentMonthSaved'))
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
     queryKey: ['dashboard', 'summary', selectedMonth],
     queryFn: () => dashboard.summary(monthParam),
+    enabled: currentMonthDefined && !!monthParam,
   })
 
   const { data: spending, isLoading: spendingLoading } = useQuery({
     queryKey: ['dashboard', 'spending', selectedMonth],
     queryFn: () => dashboard.spendingByCategory(monthParam),
+    enabled: currentMonthDefined && !!monthParam,
   })
 
-  const prevMonth = shiftMonth(selectedMonth, -1)
+  const prevMonth = selectedMonth ? shiftMonth(selectedMonth, -1) : currentMonth()
 
   const { data: balanceHistory, isLoading: balanceHistoryLoading } = useQuery({
     queryKey: ['dashboard', 'balance-history', selectedMonth],
     queryFn: () => dashboard.balanceHistory(monthParam),
+    enabled: currentMonthDefined && !!monthParam,
   })
 
   const { data: currentMonthTxs, isLoading: currentTxLoading } = useQuery({
@@ -119,16 +149,19 @@ export default function DashboardPage() {
       to: `${selectedMonth}-${String(monthLastDay(selectedMonth)).padStart(2, '0')}`,
       limit: 500,
     }),
+    enabled: currentMonthDefined && !!selectedMonth,
   })
 
   const { data: projectedTxs, isLoading: projectedTxLoading } = useQuery({
     queryKey: ['dashboard', 'projected-transactions', selectedMonth],
     queryFn: () => dashboard.projectedTransactions(monthParam),
+    enabled: currentMonthDefined && !!monthParam,
   })
 
   const { data: budgetComparison } = useQuery({
     queryKey: ['budgets', 'comparison', selectedMonth],
     queryFn: () => budgets.comparison(monthParam),
+    enabled: currentMonthDefined && !!monthParam,
   })
 
   const { data: categoriesList } = useQuery({
@@ -211,6 +244,44 @@ export default function DashboardPage() {
   // Uncategorized data
   const uncategorizedCount = summary?.pending_categorization ?? 0
   const uncategorizedAmount = summary?.pending_categorization_amount ?? 0
+
+  if (!currentMonthDefined) {
+    return (
+      <div className="space-y-6">
+        <PageHeader section={t('dashboard.title')} title={greeting} />
+
+        <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-foreground">{t('dashboard.currentMonthTitle')}</p>
+              <p className="text-sm text-muted-foreground">{t('dashboard.currentMonthUndefined')}</p>
+              <p className="text-xs text-muted-foreground">{t('dashboard.currentMonthGuardHint')}</p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+              <div className="space-y-2">
+                <label htmlFor="current-month-input" className="text-xs font-medium text-muted-foreground">
+                  {t('dashboard.currentMonthField')}
+                </label>
+                <Input
+                  id="current-month-input"
+                  type="month"
+                  value={monthDraft}
+                  onChange={(event) => setMonthDraft(event.target.value)}
+                  className="w-full sm:w-[180px]"
+                />
+              </div>
+              <Button
+                onClick={() => saveCurrentMonthMutation.mutate(monthDraft)}
+                disabled={!monthDraft || saveCurrentMonthMutation.isPending}
+              >
+                {saveCurrentMonthMutation.isPending ? t('common.loading') : t('dashboard.defineCurrentMonth')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   // Merged category bars data
   const mergedCategories = useMemo(() => {

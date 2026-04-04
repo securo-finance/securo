@@ -11,6 +11,7 @@ from app.api.connections import router as connections_router
 from app.api.dashboard import router as dashboard_router
 from app.api.import_logs import router as import_logs_router
 from app.api.import_transactions import router as import_router
+from app.api.months import router as months_router
 from app.api.recurring_transactions import router as recurring_router
 from app.api.rules import router as rules_router
 from app.api.assets import router as assets_router
@@ -85,6 +86,7 @@ app.include_router(
 app.include_router(categories_router)
 app.include_router(rules_router)
 app.include_router(transactions_router)
+app.include_router(months_router)
 app.include_router(import_router)
 app.include_router(import_logs_router)
 app.include_router(accounts_router)

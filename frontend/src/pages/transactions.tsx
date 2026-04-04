@@ -22,6 +22,7 @@ import { CategoryIcon } from '@/components/category-icon'
 import { TransactionDialog, extractApiError } from '@/components/transaction-dialog'
 import { TransferDialog } from '@/components/transfer-dialog'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
+import { useCurrentMonth } from '@/hooks/use-current-month'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 
@@ -39,6 +40,8 @@ export default function TransactionsPage() {
   const { t, i18n } = useTranslation()
   const [searchParams] = useSearchParams()
   const locale = i18n.language === 'en' ? 'en-US' : i18n.language
+  const { data: currentMonthState } = useCurrentMonth()
+  const currentMonthDefined = currentMonthState?.is_defined ?? false
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
@@ -274,16 +277,32 @@ export default function TransactionsPage() {
               <Download size={16} className="mr-1.5" />
               {exporting ? t('transactions.exporting') : t('transactions.exportCsv')}
             </Button>
-            <Button variant="outline" onClick={() => setTransferDialogOpen(true)}>
+            <Button
+              variant="outline"
+              onClick={() => setTransferDialogOpen(true)}
+              disabled={!currentMonthDefined}
+              title={!currentMonthDefined ? t('common.currentMonthLocked') : undefined}
+            >
               <ArrowLeftRight size={16} className="mr-1.5" />
               {t('transactions.transfer')}
             </Button>
-            <Button onClick={() => { setEditingTx(null); setDialogOpen(true) }}>
+            <Button
+              onClick={() => { setEditingTx(null); setDialogOpen(true) }}
+              disabled={!currentMonthDefined}
+              title={!currentMonthDefined ? t('common.currentMonthLocked') : undefined}
+            >
               + {t('transactions.addManual')}
             </Button>
           </div>
         }
       />
+
+      {!currentMonthDefined ? (
+        <div className="mb-4 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground shadow-sm">
+          <p className="font-medium text-foreground">{t('common.currentMonthLocked')}</p>
+          <p className="mt-1">{t('transactions.currentMonthGuard')}</p>
+        </div>
+      ) : null}
 
       {/* Filters */}
       <div className="bg-card rounded-xl border border-border shadow-sm p-3 md:p-4 mb-4">

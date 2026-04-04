@@ -12,6 +12,7 @@ from app.models.user import User
 from app.schemas.account import AccountCreate, AccountRead, AccountUpdate, AccountSummary
 from app.services import account_service
 from app.services.fx_rate_service import convert
+from app.services.month_service import ensure_current_month_defined
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
@@ -109,7 +110,11 @@ async def create_account(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
-    return await account_service.create_account(session, user.id, data)
+    try:
+        ensure_current_month_defined(user)
+        return await account_service.create_account(session, user.id, data)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.patch("/{account_id}", response_model=AccountRead)

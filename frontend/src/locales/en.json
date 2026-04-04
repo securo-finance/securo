@@ -85,7 +85,13 @@
     "fxRateUsed": "FX rate: {{rate}}",
     "refreshRates": "Refresh FX rates",
     "ratesRefreshed": "FX rates updated",
-    "ratesError": "Failed to update FX rates"
+    "ratesError": "Failed to update FX rates",
+    "currentMonthTitle": "Current Month",
+    "currentMonthUndefined": "Define the active month before syncing or creating data manually.",
+    "currentMonthGuardHint": "Until the current month period is defined, the app keeps only closed history in read-only mode.",
+    "currentMonthField": "Active period",
+    "defineCurrentMonth": "Define Current Month",
+    "currentMonthSaved": "Current month saved"
   },
   "transactions": {
     "title": "Transactions",
@@ -159,7 +165,8 @@
     "transferSameAccount": "Source and destination must be different",
     "transferDescription": "Description",
     "transferNotes": "Notes",
-    "transferInfo": "This is a transfer — changes to description, date, and notes will apply to both sides"
+    "transferInfo": "This is a transfer — changes to description, date, and notes will apply to both sides",
+    "currentMonthGuard": "Define the current month on the dashboard before adding manual transactions or creating transfers."
   },
   "accounts": {
     "title": "Accounts",
@@ -188,6 +195,7 @@
     "typeCreditCard": "Credit Card",
     "typeInvestment": "Investment",
     "typeWallet": "Wallet",
+    "currentMonthGuard": "Define the current month on the dashboard before creating manual accounts or syncing connections.",
     "created": "Account created",
     "updated": "Account updated",
     "deleted": "Account deleted",
@@ -373,7 +381,8 @@
     "colorLabel": "Color {{color}}",
     "groupAssigned": "Grouped",
     "noGroupAssigned": "No group",
-    "empty": "No categories yet"
+    "empty": "No categories yet",
+    "currentMonthGuard": "Define the current month on the dashboard before adding categories manually."
   },
   "groups": {
     "title": "Category Groups",
@@ -567,7 +576,8 @@
     "success": "Success",
     "searchIcon": "Search icon...",
     "noIconsFound": "No icons found",
-    "primaryCurrency": "Primary Currency"
+    "primaryCurrency": "Primary Currency",
+    "currentMonthLocked": "The current month has not been defined yet."
   },
   "privacy": {
     "hide": "Hide values",

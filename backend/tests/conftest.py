@@ -111,6 +111,7 @@ async def test_user(session: AsyncSession, clean_db) -> User:
             "date_format": "DD/MM/YYYY",
             "timezone": "America/Sao_Paulo",
             "currency_display": "BRL",
+            "current_month_period": date.today().replace(day=1).isoformat()[:7],
         },
     )
     session.add(user)

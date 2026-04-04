@@ -1,5 +1,6 @@
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.category import Category
@@ -58,6 +59,32 @@ async def test_create_category(client: AsyncClient, auth_headers, test_categorie
     assert data["has_budget"] is False
     assert data["budget_amount"] is None
     assert "group_id" not in data
+
+
+@pytest.mark.asyncio
+async def test_create_category_requires_current_month(
+    client: AsyncClient, auth_headers, session: AsyncSession
+):
+    await session.execute(
+        update(User)
+        .values(
+            preferences={
+                "language": "pt-BR",
+                "date_format": "DD/MM/YYYY",
+                "timezone": "America/Sao_Paulo",
+                "currency_display": "BRL",
+            }
+        )
+    )
+    await session.commit()
+
+    response = await client.post(
+        "/api/categories",
+        headers=auth_headers,
+        json={"name": "Educação", "icon": "📚", "color": "#9333EA"},
+    )
+    assert response.status_code == 400
+    assert "Mês Atual não definido" in response.json()["detail"]
 
 
 @pytest.mark.asyncio

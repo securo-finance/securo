@@ -1,7 +1,9 @@
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import update
 
 from app.models.bank_connection import BankConnection
+from app.models.user import User
 
 
 @pytest.mark.asyncio
@@ -74,3 +76,28 @@ async def test_delete_connection_not_found(client: AsyncClient, auth_headers, te
 async def test_connections_unauthenticated(client: AsyncClient, clean_db):
     response = await client.get("/api/connections")
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_requires_current_month(
+    client: AsyncClient, auth_headers, test_connection: BankConnection, session
+):
+    await session.execute(
+        update(User)
+        .values(
+            preferences={
+                "language": "pt-BR",
+                "date_format": "DD/MM/YYYY",
+                "timezone": "America/Sao_Paulo",
+                "currency_display": "BRL",
+            }
+        )
+    )
+    await session.commit()
+
+    response = await client.post(
+        f"/api/connections/{test_connection.id}/sync",
+        headers=auth_headers,
+    )
+    assert response.status_code == 400
+    assert "Mês Atual não definido" in response.json()["detail"]

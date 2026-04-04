@@ -85,7 +85,13 @@
     "fxRateUsed": "Taxa de câmbio: {{rate}}",
     "refreshRates": "Atualizar taxas de câmbio",
     "ratesRefreshed": "Taxas de câmbio atualizadas",
-    "ratesError": "Erro ao atualizar taxas de câmbio"
+    "ratesError": "Erro ao atualizar taxas de câmbio",
+    "currentMonthTitle": "Mês Atual",
+    "currentMonthUndefined": "Defina a competência ativa antes de começar a sincronizar ou criar dados manualmente.",
+    "currentMonthGuardHint": "Enquanto o período do Mês Atual não estiver definido, o app mantém apenas o histórico fechado em modo de consulta.",
+    "currentMonthField": "Competência ativa",
+    "defineCurrentMonth": "Definir Mês Atual",
+    "currentMonthSaved": "Mês Atual definido com sucesso"
   },
   "transactions": {
     "title": "Transações",
@@ -159,7 +165,8 @@
     "transferSameAccount": "Origem e destino devem ser diferentes",
     "transferDescription": "Descrição",
     "transferNotes": "Notas",
-    "transferInfo": "Esta é uma transferência — alterações na descrição, data e notas serão aplicadas em ambos os lados"
+    "transferInfo": "Esta é uma transferência — alterações na descrição, data e notas serão aplicadas em ambos os lados",
+    "currentMonthGuard": "Defina o período do Mês Atual no painel antes de adicionar transações manuais ou criar transferências."
   },
   "accounts": {
     "title": "Contas",
@@ -188,6 +195,7 @@
     "typeCreditCard": "Cartão de Crédito",
     "typeInvestment": "Investimento",
     "typeWallet": "Carteira",
+    "currentMonthGuard": "Defina o período do Mês Atual no painel antes de criar contas manuais ou sincronizar conexões.",
     "created": "Conta criada",
     "updated": "Conta atualizada",
     "deleted": "Conta excluída",
@@ -373,7 +381,8 @@
     "colorLabel": "Cor {{color}}",
     "groupAssigned": "Com grupo",
     "noGroupAssigned": "Sem grupo",
-    "empty": "Nenhuma categoria ainda"
+    "empty": "Nenhuma categoria ainda",
+    "currentMonthGuard": "Defina o período do Mês Atual no painel antes de adicionar categorias manualmente."
   },
   "groups": {
     "title": "Grupos de Categorias",
@@ -567,7 +576,8 @@
     "success": "Sucesso",
     "searchIcon": "Buscar ícone...",
     "noIconsFound": "Nenhum ícone encontrado",
-    "primaryCurrency": "Moeda Principal"
+    "primaryCurrency": "Moeda Principal",
+    "currentMonthLocked": "O Mês Atual ainda não foi definido."
   },
   "privacy": {
     "hide": "Ocultar valores",

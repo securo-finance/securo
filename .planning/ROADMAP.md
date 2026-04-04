@@ -22,7 +22,7 @@ Archived roadmap: `.planning/milestones/v1.0-ROADMAP.md`
 
 </details>
 
-- [ ] **Phase 8: Current Month Setup & Guards** - Define `Mês Atual` explicitly and block sync or manual entry until the active month exists.
+- [x] **Phase 8: Current Month Setup & Guards** - Define `Mês Atual` explicitly and block sync or manual entry until the active month exists.
 - [ ] **Phase 9: Period-Linked Records & Cleanup** - Make monthly period identity part of supported financial records while removing remaining category-group dependencies.
 - [ ] **Phase 10: Month Closure & Next Month Start** - Close the active month into a period-bound snapshot and immediately bootstrap the next editable month.
 - [ ] **Phase 11: Snapshot Navigation & Protected History** - Let users browse current and closed months clearly while guarding snapshot control mutations.
@@ -39,7 +39,7 @@ Archived roadmap: `.planning/milestones/v1.0-ROADMAP.md`
   3. User cannot sync external data while `Mês Atual` has no defined monthly period.
   4. User cannot manually create transactions, accounts, or categories while `Mês Atual` has no defined monthly period.
   5. User sees the new or updated month-selection and guard states inside the existing Flux layout pattern.
-**Plans**: TBD
+**Plans**: 1 complete
 **UI hint**: yes
 
 ### Phase 9: Period-Linked Records & Cleanup
@@ -81,7 +81,7 @@ Archived roadmap: `.planning/milestones/v1.0-ROADMAP.md`
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 8. Current Month Setup & Guards | 0/TBD | Not started | - |
-| 9. Period-Linked Records & Cleanup | 0/TBD | Not started | - |
+| 8. Current Month Setup & Guards | 1/1 | Complete | 2026-04-04 |
+| 9. Period-Linked Records & Cleanup | 0/TBD | Ready to plan | - |
 | 10. Month Closure & Next Month Start | 0/TBD | Not started | - |
 | 11. Snapshot Navigation & Protected History | 0/TBD | Not started | - |

@@ -36,6 +36,7 @@ import { PageHeader } from '@/components/page-header'
 import { BankConnectDialog } from '@/components/bank-connect-dialog'
 import { ConnectorSelectDialog } from '@/components/connector-select-dialog'
 import { ConnectionSettingsDialog } from '@/components/connection-settings-dialog'
+import { useCurrentMonth } from '@/hooks/use-current-month'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 
@@ -60,6 +61,8 @@ export default function AccountsPage() {
   const locale = i18n.language === 'en' ? 'en-US' : i18n.language
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
+  const { data: currentMonthState } = useCurrentMonth()
+  const currentMonthDefined = currentMonthState?.is_defined ?? false
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -184,13 +187,25 @@ export default function AccountsPage() {
               <Plus size={16} />
               {t('accounts.connectBank')}
             </Button>
-            <Button onClick={() => { setEditingAccount(null); setDialogOpen(true) }} className="gap-1.5">
+            <Button
+              onClick={() => { setEditingAccount(null); setDialogOpen(true) }}
+              className="gap-1.5"
+              disabled={!currentMonthDefined}
+              title={!currentMonthDefined ? t('common.currentMonthLocked') : undefined}
+            >
               <Plus size={16} />
               {t('accounts.addManual')}
             </Button>
           </div>
         }
       />
+
+      {!currentMonthDefined ? (
+        <div className="mb-6 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground shadow-sm">
+          <p className="font-medium text-foreground">{t('common.currentMonthLocked')}</p>
+          <p className="mt-1">{t('accounts.currentMonthGuard')}</p>
+        </div>
+      ) : null}
 
       {isLoading ? (
         <div className="space-y-3">
@@ -309,7 +324,8 @@ export default function AccountsPage() {
                           size="sm"
                           className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
                           onClick={() => syncMutation.mutate(conn.id)}
-                          disabled={syncMutation.isPending}
+                          disabled={syncMutation.isPending || !currentMonthDefined}
+                          title={!currentMonthDefined ? t('common.currentMonthLocked') : undefined}
                         >
                           <RefreshCw size={14} className={syncMutation.isPending ? 'animate-spin' : ''} />
                         </Button>

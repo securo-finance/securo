@@ -13,6 +13,7 @@ from app.core.auth import current_active_user
 from app.core.database import get_async_session
 from app.models.user import User
 from app.schemas.transaction import BulkCategorizeRequest, TransactionCreate, TransactionRead, TransactionUpdate, TransferCreate, TransferRead
+from app.services.month_service import ensure_current_month_defined
 from app.services import transaction_service
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
@@ -125,6 +126,7 @@ async def create_transfer(
     user: User = Depends(current_active_user),
 ):
     try:
+        ensure_current_month_defined(user)
         debit_tx, credit_tx = await transaction_service.create_transfer(session, user.id, data)
         debit_full = await transaction_service.get_transaction(session, debit_tx.id, user.id)
         credit_full = await transaction_service.get_transaction(session, credit_tx.id, user.id)
@@ -158,6 +160,7 @@ async def create_transaction(
     user: User = Depends(current_active_user),
 ):
     try:
+        ensure_current_month_defined(user)
         transaction = await transaction_service.create_transaction(session, user.id, data)
         full_tx = await transaction_service.get_transaction(session, transaction.id, user.id)
         primary_currency = user.primary_currency

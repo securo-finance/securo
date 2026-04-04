@@ -1,7 +1,9 @@
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import update
 
 from app.models.account import Account
+from app.models.user import User
 
 
 @pytest.mark.asyncio
@@ -65,6 +67,37 @@ async def test_create_manual_account(client: AsyncClient, auth_headers):
     assert data["balance"] == "500.00"
     assert data["connection_id"] is None
     assert data["external_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_manual_account_requires_current_month(
+    client: AsyncClient, auth_headers, session
+):
+    await session.execute(
+        update(User)
+        .values(
+            preferences={
+                "language": "pt-BR",
+                "date_format": "DD/MM/YYYY",
+                "timezone": "America/Sao_Paulo",
+                "currency_display": "BRL",
+            }
+        )
+    )
+    await session.commit()
+
+    response = await client.post(
+        "/api/accounts",
+        headers=auth_headers,
+        json={
+            "name": "Carteira",
+            "type": "checking",
+            "balance": "500.00",
+            "currency": "BRL",
+        },
+    )
+    assert response.status_code == 400
+    assert "Mês Atual não definido" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
