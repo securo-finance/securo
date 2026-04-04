@@ -18,6 +18,22 @@ export interface CurrentMonthStatus {
   current_period: string | null
   current_period_label: string | null
   is_defined: boolean
+  selected_mode: 'current' | 'snapshot'
+  selected_period: string | null
+  selected_period_label: string | null
+  is_snapshot_view: boolean
+  snapshots: ClosedMonthSnapshot[]
+}
+
+export interface ClosedMonthSnapshot {
+  period: string
+  period_label: string
+  closed_at: string
+}
+
+export interface CloseCurrentMonthResult {
+  state: CurrentMonthStatus
+  closed_snapshot: ClosedMonthSnapshot
 }
 
 export interface Category {

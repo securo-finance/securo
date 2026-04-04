@@ -4,6 +4,7 @@ from httpx import AsyncClient
 from sqlalchemy import select, update
 
 from app.models.account import Account
+from app.models.monthly_snapshot import MonthlySnapshot
 from app.models.user import User
 
 
@@ -100,6 +101,51 @@ async def test_create_manual_account_requires_current_month(
     )
     assert response.status_code == 400
     assert "Mês Atual não definido" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_create_manual_account_rejected_in_snapshot_view(
+    client: AsyncClient,
+    auth_headers,
+    session,
+    test_user,
+    test_monthly_period,
+):
+    current_period = (test_user.preferences or {})["current_month_period"]
+    session.add(
+        MonthlySnapshot(
+            user_id=test_user.id,
+            monthly_period_id=test_monthly_period.id,
+            period=current_period,
+        )
+    )
+    await session.commit()
+
+    await session.execute(
+        update(User)
+        .where(User.id == test_user.id)
+        .values(
+            preferences={
+                **(test_user.preferences or {}),
+                "selected_snapshot_period": current_period,
+            }
+        )
+    )
+    await session.commit()
+
+    response = await client.post(
+        "/api/accounts",
+        headers=auth_headers,
+        json={
+            "name": "Carteira",
+            "type": "checking",
+            "balance": "500.00",
+            "currency": "BRL",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "mês fechado" in response.json()["detail"].lower()
 
 
 @pytest.mark.asyncio

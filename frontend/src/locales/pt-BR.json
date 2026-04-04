@@ -87,11 +87,30 @@
     "ratesRefreshed": "Taxas de câmbio atualizadas",
     "ratesError": "Erro ao atualizar taxas de câmbio",
     "currentMonthTitle": "Mês Atual",
-    "currentMonthUndefined": "Defina a competência ativa antes de começar a sincronizar ou criar dados manualmente.",
+    "currentMonthUndefined": "Escolha o Mês Atual para liberar sincronização e lançamentos manuais.",
     "currentMonthGuardHint": "Enquanto o período do Mês Atual não estiver definido, o app mantém apenas o histórico fechado em modo de consulta.",
-    "currentMonthField": "Competência ativa",
     "defineCurrentMonth": "Definir Mês Atual",
-    "currentMonthSaved": "Mês Atual definido com sucesso"
+    "browseClosedMonths": "Abrir histórico fechado",
+    "currentMonthSaved": "Mês Atual definido com sucesso",
+    "currentMonthActiveDescription": "Mês editável em uso: {{period}}.",
+    "currentMonthOption": "Mês Atual · {{period}}",
+    "monthSetupOption": "Configurar Mês Atual",
+    "snapshotOption": "Histórico fechado · {{period}}",
+    "snapshotViewDescription": "Você está revisando o histórico fechado de {{period}}.",
+    "snapshotViewBadge": "Histórico fechado selecionado: {{period}}",
+    "snapshotReadOnlyHint": "Esse contexto é preservado e somente leitura. Volte ao Mês Atual para sincronizar ou editar dados.",
+    "snapshotConfirmMessage": "Entrar no histórico fechado de {{period}}? Esse mês é preservado e os controles de edição serão bloqueados.",
+    "snapshotViewActivated": "Histórico fechado de {{period}} ativado",
+    "returnedToCurrentMonth": "Voltando ao Mês Atual {{period}}",
+    "returnedToMonthSetupToast": "Voltando para a configuração do Mês Atual",
+    "returnToCurrentMonth": "Voltar ao Mês Atual",
+    "returnToMonthSetup": "Voltar para configuração",
+    "closeCurrentMonth": "Fechar Mês",
+    "confirmCloseCurrentMonth": "Fechar mês e continuar",
+    "closeMonthModalTitle": "Selecionar próximo período",
+    "closeMonthModalDescription": "Após fechar {{period}}, selecione qual será o próximo Mês Atual.",
+    "closeMonthSuccess": "{{closed}} foi fechado e {{next}} já está aberto como novo Mês Atual",
+    "snapshotCloseDisabled": "Volte ao Mês Atual antes de fechar outro mês."
   },
   "transactions": {
     "title": "Transações",
@@ -291,6 +310,7 @@
     "active": "Ativo",
     "inactive": "Inativo",
     "empty": "Nenhuma transação recorrente",
+    "currentMonthGuard": "Defina o Mês Atual no painel antes de criar ou gerar recorrências.",
     "created": "Transação recorrente criada",
     "updated": "Transação recorrente atualizada",
     "deleted": "Transação recorrente excluída",
@@ -382,7 +402,9 @@
     "groupAssigned": "Com grupo",
     "noGroupAssigned": "Sem grupo",
     "empty": "Nenhuma categoria ainda",
-    "currentMonthGuard": "Defina o período do Mês Atual no painel antes de adicionar categorias manualmente."
+    "currentMonthGuard": "Defina o período do Mês Atual no painel antes de adicionar categorias manualmente.",
+    "currentMonthFlexibleTitle": "Categorias continuam disponíveis",
+    "currentMonthFlexibleHint": "Você pode organizar categorias mesmo sem definir o Mês Atual. O bloqueio continua valendo apenas para lançamentos e outras mutações financeiras."
   },
   "groups": {
     "title": "Grupos de Categorias",
@@ -416,6 +438,7 @@
     "subtitle": "Extrato bancário",
     "processing": "Processando arquivo…",
     "removeFile": "Remover arquivo",
+    "currentMonthGuard": "Defina o Mês Atual no painel antes de importar transações.",
     "dragOrClick": "Arraste um arquivo ou clique para selecionar",
     "preview": "Pré-visualização",
     "incomeCount": "{{count}} receitas",
@@ -577,7 +600,10 @@
     "searchIcon": "Buscar ícone...",
     "noIconsFound": "Nenhum ícone encontrado",
     "primaryCurrency": "Moeda Principal",
-    "currentMonthLocked": "O Mês Atual ainda não foi definido."
+    "currentMonthLocked": "O Mês Atual ainda não foi definido.",
+    "snapshotReadOnlyLocked": "O histórico fechado está ativo. Volte ao Mês Atual para editar.",
+    "snapshotReadOnlyTitle": "Histórico fechado ativo: {{period}}",
+    "snapshotReadOnlyHint": "Você está visualizando um mês preservado. Para criar, editar ou sincronizar dados, volte ao Mês Atual no painel."
   },
   "privacy": {
     "hide": "Ocultar valores",

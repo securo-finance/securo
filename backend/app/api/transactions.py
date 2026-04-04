@@ -13,7 +13,7 @@ from app.core.auth import current_active_user
 from app.core.database import get_async_session
 from app.models.user import User
 from app.schemas.transaction import BulkCategorizeRequest, TransactionCreate, TransactionRead, TransactionUpdate, TransferCreate, TransferRead
-from app.services.month_service import ensure_current_month_defined
+from app.services.month_service import ensure_current_month_editable
 from app.services import transaction_service
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
@@ -113,6 +113,10 @@ async def bulk_categorize(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
+    try:
+        ensure_current_month_editable(user)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     count = await transaction_service.bulk_update_category(
         session, user.id, data.transaction_ids, data.category_id
     )
@@ -126,7 +130,7 @@ async def create_transfer(
     user: User = Depends(current_active_user),
 ):
     try:
-        ensure_current_month_defined(user)
+        ensure_current_month_editable(user)
         debit_tx, credit_tx = await transaction_service.create_transfer(session, user.id, data)
         debit_full = await transaction_service.get_transaction(session, debit_tx.id, user.id)
         credit_full = await transaction_service.get_transaction(session, credit_tx.id, user.id)
@@ -160,7 +164,7 @@ async def create_transaction(
     user: User = Depends(current_active_user),
 ):
     try:
-        ensure_current_month_defined(user)
+        ensure_current_month_editable(user)
         transaction = await transaction_service.create_transaction(session, user.id, data)
         full_tx = await transaction_service.get_transaction(session, transaction.id, user.id)
         primary_currency = user.primary_currency
@@ -176,6 +180,10 @@ async def update_transaction(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
+    try:
+        ensure_current_month_editable(user)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     transaction = await transaction_service.update_transaction(session, transaction_id, user.id, data)
     if not transaction:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
@@ -189,6 +197,10 @@ async def delete_transaction(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
+    try:
+        ensure_current_month_editable(user)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     deleted = await transaction_service.delete_transaction(session, transaction_id, user.id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")

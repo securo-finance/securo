@@ -8,7 +8,7 @@ from app.core.database import get_async_session
 from app.models.user import User
 from app.schemas.category import CategoryCreate, CategoryRead, CategoryUpdate
 from app.services import category_service
-from app.services.month_service import ensure_current_month_defined
+from app.services.month_service import ensure_not_snapshot_view
 
 router = APIRouter(prefix="/api/categories", tags=["categories"])
 
@@ -28,7 +28,7 @@ async def create_category(
     user: User = Depends(current_active_user),
 ):
     try:
-        ensure_current_month_defined(user)
+        ensure_not_snapshot_view(user)
         return await category_service.create_category(session, user.id, data)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -41,6 +41,10 @@ async def update_category(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
+    try:
+        ensure_not_snapshot_view(user)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     category = await category_service.update_category(session, category_id, user.id, data)
     if not category:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
@@ -53,6 +57,10 @@ async def delete_category(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
+    try:
+        ensure_not_snapshot_view(user)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     deleted = await category_service.delete_category(session, category_id, user.id)
     if not deleted:
         raise HTTPException(

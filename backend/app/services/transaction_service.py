@@ -15,7 +15,7 @@ from app.models.user import User
 from app.schemas.transaction import TransactionCreate, TransactionUpdate, TransferCreate
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.fx_rate_service import stamp_primary_amount, convert as fx_convert
-from app.services.month_service import get_current_month_period, resolve_current_monthly_period
+from app.services.month_service import get_selected_view_period, resolve_selected_view_monthly_period, resolve_current_monthly_period
 
 
 def _apply_fx_override(transaction, amount, amount_primary=None, fx_rate_used=None):
@@ -61,9 +61,9 @@ async def get_transactions(
     skip_pagination: bool = False,
 ) -> tuple[list[Transaction], int]:
     user = await session.get(User, user_id)
-    current_monthly_period = None
-    if from_date is None and to_date is None and user is not None and get_current_month_period(user):
-        current_monthly_period = await resolve_current_monthly_period(session, user_id, user)
+    selected_monthly_period = None
+    if from_date is None and to_date is None and user is not None and get_selected_view_period(user):
+        selected_monthly_period = await resolve_selected_view_monthly_period(session, user_id, user)
 
     # Base query: user's own transactions (manual or via account)
     base_query = (
@@ -98,11 +98,11 @@ async def get_transactions(
         )
     if txn_type:
         base_query = base_query.where(Transaction.type == txn_type)
-    if current_monthly_period is not None:
-        base_query = base_query.where(Transaction.monthly_period_id == current_monthly_period.id)
+    if selected_monthly_period is not None:
+        base_query = base_query.where(Transaction.monthly_period_id == selected_monthly_period.id)
     elif from_date:
         base_query = base_query.where(Transaction.date >= from_date)
-    if current_monthly_period is None and to_date:
+    if selected_monthly_period is None and to_date:
         base_query = base_query.where(Transaction.date <= to_date)
     if search:
         term = f"%{search}%"

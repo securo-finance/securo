@@ -19,6 +19,7 @@ import type {
   Attachment,
   DashboardSummary,
   CurrentMonthStatus,
+  CloseCurrentMonthResult,
   SpendingByCategory,
   MonthlyTrend,
   BalanceHistory,
@@ -99,6 +100,14 @@ export const months = {
   },
   setCurrent: async (period: string): Promise<CurrentMonthStatus> => {
     const { data } = await api.put('/months/current', { period })
+    return data
+  },
+  setView: async (mode: 'current' | 'snapshot', period?: string): Promise<CurrentMonthStatus> => {
+    const { data } = await api.put('/months/view', { mode, period })
+    return data
+  },
+  closeCurrent: async (nextPeriod: string): Promise<CloseCurrentMonthResult> => {
+    const { data } = await api.post('/months/close', { next_period: nextPeriod })
     return data
   },
 }

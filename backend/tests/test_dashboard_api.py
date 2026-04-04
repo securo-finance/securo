@@ -3,6 +3,10 @@ import calendar
 from datetime import date, timedelta
 
 import pytest
+from sqlalchemy import update
+
+from app.models.monthly_snapshot import MonthlySnapshot
+from app.models.user import User
 
 
 def _current_month_str() -> str:
@@ -257,6 +261,42 @@ async def test_recurring_projection_respects_end_date(
     )
     assert cat_spending is not None
     assert cat_spending["total"] == 60.0
+
+
+@pytest.mark.asyncio
+async def test_summary_defaults_to_selected_snapshot_context(
+    client, auth_headers, test_transactions, test_user, test_monthly_period, session
+):
+    current_period = (test_user.preferences or {})["current_month_period"]
+    next_period = _future_month_str(1)[:7]
+    session.add(
+        MonthlySnapshot(
+            user_id=test_user.id,
+            monthly_period_id=test_monthly_period.id,
+            period=current_period,
+        )
+    )
+    await session.commit()
+
+    await session.execute(
+        update(User)
+        .where(User.id == test_user.id)
+        .values(
+            preferences={
+                **(test_user.preferences or {}),
+                "current_month_period": next_period,
+                "selected_snapshot_period": current_period,
+            }
+        )
+    )
+    await session.commit()
+
+    response = await client.get("/api/dashboard/summary", headers=auth_headers)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["monthly_income"] == pytest.approx(8150.0)
+    assert data["monthly_expenses"] == pytest.approx(110.4)
 
 
 @pytest.mark.asyncio

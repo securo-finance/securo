@@ -12,7 +12,7 @@ from app.models.user import User
 from app.schemas.account import AccountCreate, AccountRead, AccountUpdate, AccountSummary
 from app.services import account_service
 from app.services.fx_rate_service import convert
-from app.services.month_service import ensure_current_month_defined
+from app.services.month_service import ensure_current_month_editable
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
@@ -111,7 +111,7 @@ async def create_account(
     user: User = Depends(current_active_user),
 ):
     try:
-        ensure_current_month_defined(user)
+        ensure_current_month_editable(user)
         return await account_service.create_account(session, user.id, data)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -125,6 +125,7 @@ async def update_account(
     user: User = Depends(current_active_user),
 ):
     try:
+        ensure_current_month_editable(user)
         account = await account_service.update_account(session, account_id, user.id, data)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -140,6 +141,7 @@ async def delete_account(
     user: User = Depends(current_active_user),
 ):
     try:
+        ensure_current_month_editable(user)
         deleted = await account_service.delete_account(session, account_id, user.id)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -154,6 +156,7 @@ async def close_account(
     user: User = Depends(current_active_user),
 ):
     try:
+        ensure_current_month_editable(user)
         account = await account_service.close_account(session, account_id, user.id)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -169,6 +172,7 @@ async def reopen_account(
     user: User = Depends(current_active_user),
 ):
     try:
+        ensure_current_month_editable(user)
         account = await account_service.reopen_account(session, account_id, user.id)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

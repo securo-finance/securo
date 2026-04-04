@@ -5,6 +5,7 @@ from sqlalchemy import update
 from app.models.account import Account
 from app.models.transaction import Transaction
 from app.models.category import Category
+from app.models.monthly_snapshot import MonthlySnapshot
 from app.models.user import User
 
 
@@ -195,6 +196,134 @@ async def test_create_transaction_requires_current_month(
     )
     assert response.status_code == 400
     assert "Mês Atual não definido" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_create_transaction_rejected_in_snapshot_view(
+    client: AsyncClient,
+    auth_headers,
+    test_account: Account,
+    test_categories: list[Category],
+    session,
+    test_user,
+    test_monthly_period,
+):
+    current_period = (test_user.preferences or {})["current_month_period"]
+    session.add(
+        MonthlySnapshot(
+            user_id=test_user.id,
+            monthly_period_id=test_monthly_period.id,
+            period=current_period,
+        )
+    )
+    await session.commit()
+
+    await session.execute(
+        update(User)
+        .where(User.id == test_user.id)
+        .values(
+            preferences={
+                **(test_user.preferences or {}),
+                "selected_snapshot_period": current_period,
+            }
+        )
+    )
+    await session.commit()
+
+    response = await client.post(
+        "/api/transactions",
+        headers=auth_headers,
+        json={
+            "account_id": str(test_account.id),
+            "category_id": str(test_categories[0].id),
+            "description": "Almoço restaurante",
+            "amount": "32.50",
+            "date": "2026-02-20",
+            "type": "debit",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "mês fechado" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_bulk_categorize_requires_current_month(
+    client: AsyncClient,
+    auth_headers,
+    test_transactions: list[Transaction],
+    test_categories: list[Category],
+    session,
+):
+    await session.execute(
+        update(User)
+        .values(
+            preferences={
+                "language": "pt-BR",
+                "date_format": "DD/MM/YYYY",
+                "timezone": "America/Sao_Paulo",
+                "currency_display": "BRL",
+            }
+        )
+    )
+    await session.commit()
+
+    response = await client.patch(
+        "/api/transactions/bulk-categorize",
+        headers=auth_headers,
+        json={
+            "transaction_ids": [str(test_transactions[0].id)],
+            "category_id": str(test_categories[0].id),
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Mês Atual não definido" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_bulk_categorize_rejected_in_snapshot_view(
+    client: AsyncClient,
+    auth_headers,
+    test_transactions: list[Transaction],
+    test_categories: list[Category],
+    session,
+    test_user,
+    test_monthly_period,
+):
+    current_period = (test_user.preferences or {})["current_month_period"]
+    session.add(
+        MonthlySnapshot(
+            user_id=test_user.id,
+            monthly_period_id=test_monthly_period.id,
+            period=current_period,
+        )
+    )
+    await session.commit()
+
+    await session.execute(
+        update(User)
+        .where(User.id == test_user.id)
+        .values(
+            preferences={
+                **(test_user.preferences or {}),
+                "selected_snapshot_period": current_period,
+            }
+        )
+    )
+    await session.commit()
+
+    response = await client.patch(
+        "/api/transactions/bulk-categorize",
+        headers=auth_headers,
+        json={
+            "transaction_ids": [str(test_transactions[0].id)],
+            "category_id": str(test_categories[0].id),
+        },
+    )
+
+    assert response.status_code == 400
+    assert "mês fechado" in response.json()["detail"].lower()
 
 
 @pytest.mark.asyncio

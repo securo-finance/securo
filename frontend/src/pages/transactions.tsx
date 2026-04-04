@@ -42,6 +42,8 @@ export default function TransactionsPage() {
   const locale = i18n.language === 'en' ? 'en-US' : i18n.language
   const { data: currentMonthState } = useCurrentMonth()
   const currentMonthDefined = currentMonthState?.is_defined ?? false
+  const isSnapshotView = currentMonthState?.is_snapshot_view ?? false
+  const editableMonth = currentMonthDefined && !isSnapshotView
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
@@ -77,6 +79,13 @@ export default function TransactionsPage() {
     setSelectedIds(new Set())
     setBulkCategory('')
   }, [page, filterAccount, filterCategory, filterPayee, filterFrom, filterTo, searchQuery])
+
+  useEffect(() => {
+    if (!editableMonth) {
+      setSelectedIds(new Set())
+      setBulkCategory('')
+    }
+  }, [editableMonth])
 
   const { data, isLoading } = useQuery({
     queryKey: ['transactions', page, filterAccount, filterCategory, filterPayee, filterFrom, filterTo, searchQuery],
@@ -280,16 +289,16 @@ export default function TransactionsPage() {
             <Button
               variant="outline"
               onClick={() => setTransferDialogOpen(true)}
-              disabled={!currentMonthDefined}
-              title={!currentMonthDefined ? t('common.currentMonthLocked') : undefined}
+              disabled={!editableMonth}
+              title={!currentMonthDefined ? t('common.currentMonthLocked') : isSnapshotView ? t('common.snapshotReadOnlyLocked') : undefined}
             >
               <ArrowLeftRight size={16} className="mr-1.5" />
               {t('transactions.transfer')}
             </Button>
             <Button
               onClick={() => { setEditingTx(null); setDialogOpen(true) }}
-              disabled={!currentMonthDefined}
-              title={!currentMonthDefined ? t('common.currentMonthLocked') : undefined}
+              disabled={!editableMonth}
+              title={!currentMonthDefined ? t('common.currentMonthLocked') : isSnapshotView ? t('common.snapshotReadOnlyLocked') : undefined}
             >
               + {t('transactions.addManual')}
             </Button>
@@ -301,6 +310,11 @@ export default function TransactionsPage() {
         <div className="mb-4 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground shadow-sm">
           <p className="font-medium text-foreground">{t('common.currentMonthLocked')}</p>
           <p className="mt-1">{t('transactions.currentMonthGuard')}</p>
+        </div>
+      ) : isSnapshotView ? (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 shadow-sm">
+          <p className="font-medium">{t('common.snapshotReadOnlyTitle', { period: currentMonthState?.selected_period_label })}</p>
+          <p className="mt-1">{t('common.snapshotReadOnlyHint')}</p>
         </div>
       ) : null}
 
@@ -410,6 +424,7 @@ export default function TransactionsPage() {
                     checked={allSelected}
                     ref={(el) => { if (el) el.indeterminate = someSelected }}
                     onChange={toggleSelectAll}
+                    disabled={!editableMonth}
                     className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                   />
                 </TableHead>
@@ -424,7 +439,11 @@ export default function TransactionsPage() {
                 <TableRow
                   key={tx.id}
                   className={`cursor-pointer hover:bg-muted border-b border-border last:border-0 ${selectedIds.has(tx.id) ? 'bg-primary/5' : ''}`}
-                  onClick={() => { setEditingTx(tx); setDialogOpen(true) }}
+                  onClick={() => {
+                    if (!editableMonth) return
+                    setEditingTx(tx)
+                    setDialogOpen(true)
+                  }}
                 >
                   <TableCell className="py-2.5 pl-4 pr-0 w-[40px]">
                     <input
@@ -432,6 +451,7 @@ export default function TransactionsPage() {
                       checked={selectedIds.has(tx.id)}
                       onChange={() => toggleSelect(tx.id)}
                       onClick={(e) => e.stopPropagation()}
+                      disabled={!editableMonth}
                       className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
                     />
                   </TableCell>
@@ -550,7 +570,7 @@ export default function TransactionsPage() {
 
       {/* Bulk Action Bar */}
       <div
-        className={`fixed bottom-0 left-0 right-0 z-50 transition-transform duration-200 ease-out ${selectedIds.size > 0 ? 'translate-y-0' : 'translate-y-full'}`}
+        className={`fixed bottom-0 left-0 right-0 z-50 transition-transform duration-200 ease-out ${editableMonth && selectedIds.size > 0 ? 'translate-y-0' : 'translate-y-full'}`}
       >
         <div className="mx-auto max-w-2xl px-3 md:px-4 pb-4 md:pb-6">
           <div className="flex items-center gap-2 md:gap-3 bg-card border border-border shadow-lg rounded-xl px-3 md:px-5 py-2.5 md:py-3">
@@ -561,6 +581,7 @@ export default function TransactionsPage() {
               className="border border-border rounded-lg px-2 md:px-3 py-1.5 text-xs md:text-sm bg-card text-foreground focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px] flex-1 min-w-0"
               value={bulkCategory}
               onChange={(e) => setBulkCategory(e.target.value)}
+              disabled={!editableMonth}
             >
               <option value="">{t('transactions.selectCategory')}</option>
               {categoriesList?.map((cat) => (
@@ -569,7 +590,7 @@ export default function TransactionsPage() {
             </select>
             <Button
               size="sm"
-              disabled={!bulkCategory || bulkCategorizeMutation.isPending}
+              disabled={!editableMonth || !bulkCategory || bulkCategorizeMutation.isPending}
               onClick={() => {
                 bulkCategorizeMutation.mutate({
                   ids: Array.from(selectedIds),

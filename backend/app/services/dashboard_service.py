@@ -18,6 +18,7 @@ from app.services.asset_service import get_total_asset_value
 from app.services.fx_rate_service import convert
 from app.services.month_service import (
     get_current_month_period,
+    get_selected_view_period,
     get_monthly_period,
     month_to_period_value,
     resolve_current_monthly_period,
@@ -42,10 +43,14 @@ async def _transaction_month_filters(
 ) -> list:
     period_value = month_to_period_value(month)
     user = await session.get(User, user_id)
-    current_period = get_current_month_period(user) if user else None
+    current_period = get_selected_view_period(user) if user else None
 
     if current_period == period_value and user is not None:
-        current_monthly_period = await resolve_current_monthly_period(session, user_id, user)
+        actual_current_period = get_current_month_period(user)
+        if actual_current_period == current_period:
+            current_monthly_period = await resolve_current_monthly_period(session, user_id, user)
+        else:
+            current_monthly_period = await get_monthly_period(session, user_id, current_period)
         return [Transaction.monthly_period_id == current_monthly_period.id]
 
     monthly_period = await get_monthly_period(session, user_id, period_value)
@@ -97,7 +102,9 @@ async def get_summary(
     balance_date: Optional[date] = None,
 ) -> DashboardSummary:
     if not month:
-        month = date.today().replace(day=1)
+        user = await session.get(User, user_id)
+        selected_period = get_selected_view_period(user) if user else None
+        month = date.fromisoformat(f"{selected_period}-01") if selected_period else date.today().replace(day=1)
 
     month_start, month_end = _month_range(month)
     tx_month_filters = await _transaction_month_filters(session, user_id, month)
@@ -267,7 +274,9 @@ async def get_spending_by_category(
     session: AsyncSession, user_id: uuid.UUID, month: Optional[date] = None
 ) -> list[SpendingByCategory]:
     if not month:
-        month = date.today().replace(day=1)
+        user = await session.get(User, user_id)
+        selected_period = get_selected_view_period(user) if user else None
+        month = date.fromisoformat(f"{selected_period}-01") if selected_period else date.today().replace(day=1)
 
     month_start, month_end = _month_range(month)
     tx_month_filters = await _transaction_month_filters(session, user_id, month)

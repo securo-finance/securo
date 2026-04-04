@@ -7,9 +7,17 @@ import { toast } from 'sonner'
 import { dashboard, transactions, budgets, categories as categoriesApi, accounts as accountsApi, months } from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
+import { DatePickerInput } from '@/components/ui/date-picker-input'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   Table,
   TableBody,
@@ -83,26 +91,42 @@ export default function DashboardPage() {
   })()
   const { data: currentMonthState } = useCurrentMonth()
   const currentMonthDefined = currentMonthState?.is_defined ?? false
+  const isSnapshotView = currentMonthState?.is_snapshot_view ?? false
+  const editableMonth = currentMonthDefined && !isSnapshotView
+  const snapshots = currentMonthState?.snapshots ?? []
   const [selectedMonth, setSelectedMonth] = useState('')
   const [monthDraft, setMonthDraft] = useState(currentMonth())
+  const [nextMonthDraft, setNextMonthDraft] = useState(shiftMonth(currentMonth(), 1))
   const [drillDown, setDrillDown] = useState<DrillDownFilter | null>(null)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [closeMonthDialogOpen, setCloseMonthDialogOpen] = useState(false)
   const queryClient = useQueryClient()
   const [headerCalOpen, setHeaderCalOpen] = useState(false)
   const [hoveredDay, setHoveredDay] = useState<number | null>(null)
   const dateFnsLocale = i18n.language === 'pt-BR' ? ptBR : enUS
-  const monthParam = selectedMonth ? `${selectedMonth}-01` : undefined
-  const monthStart = selectedMonth ? `${selectedMonth}-01` : ''
-  const monthEnd = selectedMonth ? `${selectedMonth}-${String(monthLastDay(selectedMonth)).padStart(2, '0')}` : ''
-  const monthLabelStr = selectedMonth ? monthLabel(selectedMonth, locale) : ''
+  const effectiveSelectedMonth =
+    selectedMonth ||
+    currentMonthState?.selected_period ||
+    currentMonthState?.current_period ||
+    currentMonth()
+  const monthParam = `${effectiveSelectedMonth}-01`
+  const monthStart = `${effectiveSelectedMonth}-01`
+  const monthEnd = `${effectiveSelectedMonth}-${String(monthLastDay(effectiveSelectedMonth)).padStart(2, '0')}`
+  const monthLabelStr = monthLabel(effectiveSelectedMonth, locale)
+  const hasReadableSelectedPeriod = Boolean(effectiveSelectedMonth) && (currentMonthDefined || isSnapshotView)
 
   useEffect(() => {
-    if (currentMonthState?.current_period) {
+    if (currentMonthState?.selected_period) {
+      setSelectedMonth(currentMonthState.selected_period)
+    } else if (currentMonthState?.current_period) {
       setSelectedMonth(currentMonthState.current_period)
-      setMonthDraft(currentMonthState.current_period)
     }
-  }, [currentMonthState?.current_period])
+    if (currentMonthState?.current_period) {
+      setMonthDraft(currentMonthState.current_period)
+      setNextMonthDraft(shiftMonth(currentMonthState.current_period, 1))
+    }
+  }, [currentMonthState?.current_period, currentMonthState?.selected_period])
 
   const handleMonthChange = (newMonth: string) => {
     setSelectedMonth(newMonth)
@@ -122,46 +146,93 @@ export default function DashboardPage() {
     },
   })
 
+  const setMonthViewMutation = useMutation({
+    mutationFn: ({ mode, period }: { mode: 'current' | 'snapshot'; period?: string }) =>
+      months.setView(mode, period),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['current-month'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      queryClient.invalidateQueries({ queryKey: ['budgets'] })
+      setSelectedMonth(data.selected_period ?? '')
+      toast.success(
+        data.selected_mode === 'snapshot'
+          ? t('dashboard.snapshotViewActivated', { period: data.selected_period_label ?? data.selected_period })
+          : data.current_period
+            ? t('dashboard.returnedToCurrentMonth', { period: data.current_period_label ?? data.current_period })
+            : t('dashboard.returnedToMonthSetupToast')
+      )
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
+
+  const closeCurrentMonthMutation = useMutation({
+    mutationFn: (nextPeriod: string) => months.closeCurrent(nextPeriod),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['current-month'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['transactions'] })
+      queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      queryClient.invalidateQueries({ queryKey: ['budgets'] })
+      setCloseMonthDialogOpen(false)
+      setSelectedMonth(data.state.selected_period ?? '')
+      setMonthDraft(data.state.current_period ?? currentMonth())
+      setNextMonthDraft(shiftMonth(data.state.current_period ?? currentMonth(), 1))
+      toast.success(
+        t('dashboard.closeMonthSuccess', {
+          closed: data.closed_snapshot.period_label,
+          next: data.state.current_period_label ?? data.state.current_period,
+        })
+      )
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
+
   const { data: summary, isLoading: summaryLoading } = useQuery({
-    queryKey: ['dashboard', 'summary', selectedMonth],
+    queryKey: ['dashboard', 'summary', effectiveSelectedMonth],
     queryFn: () => dashboard.summary(monthParam),
-    enabled: currentMonthDefined && !!monthParam,
+    enabled: hasReadableSelectedPeriod && !!monthParam,
   })
 
   const { data: spending, isLoading: spendingLoading } = useQuery({
-    queryKey: ['dashboard', 'spending', selectedMonth],
+    queryKey: ['dashboard', 'spending', effectiveSelectedMonth],
     queryFn: () => dashboard.spendingByCategory(monthParam),
-    enabled: currentMonthDefined && !!monthParam,
+    enabled: hasReadableSelectedPeriod && !!monthParam,
   })
 
-  const prevMonth = selectedMonth ? shiftMonth(selectedMonth, -1) : currentMonth()
+  const prevMonth = shiftMonth(effectiveSelectedMonth, -1)
 
   const { data: balanceHistory, isLoading: balanceHistoryLoading } = useQuery({
-    queryKey: ['dashboard', 'balance-history', selectedMonth],
+    queryKey: ['dashboard', 'balance-history', effectiveSelectedMonth],
     queryFn: () => dashboard.balanceHistory(monthParam),
-    enabled: currentMonthDefined && !!monthParam,
+    enabled: hasReadableSelectedPeriod && !!monthParam,
   })
 
   const { data: currentMonthTxs, isLoading: currentTxLoading } = useQuery({
-    queryKey: ['transactions', 'cumulative', selectedMonth],
+    queryKey: ['transactions', 'cumulative', effectiveSelectedMonth],
     queryFn: () => transactions.list({
-      from: `${selectedMonth}-01`,
-      to: `${selectedMonth}-${String(monthLastDay(selectedMonth)).padStart(2, '0')}`,
+      from: `${effectiveSelectedMonth}-01`,
+      to: `${effectiveSelectedMonth}-${String(monthLastDay(effectiveSelectedMonth)).padStart(2, '0')}`,
       limit: 500,
     }),
-    enabled: currentMonthDefined && !!selectedMonth,
+    enabled: hasReadableSelectedPeriod && !!effectiveSelectedMonth,
   })
 
   const { data: projectedTxs, isLoading: projectedTxLoading } = useQuery({
-    queryKey: ['dashboard', 'projected-transactions', selectedMonth],
+    queryKey: ['dashboard', 'projected-transactions', effectiveSelectedMonth],
     queryFn: () => dashboard.projectedTransactions(monthParam),
-    enabled: currentMonthDefined && !!monthParam,
+    enabled: hasReadableSelectedPeriod && !!monthParam,
   })
 
   const { data: budgetComparison } = useQuery({
-    queryKey: ['budgets', 'comparison', selectedMonth],
+    queryKey: ['budgets', 'comparison', effectiveSelectedMonth],
     queryFn: () => budgets.comparison(monthParam),
-    enabled: currentMonthDefined && !!monthParam,
+    enabled: hasReadableSelectedPeriod && !!monthParam,
   })
 
   const { data: categoriesList } = useQuery({
@@ -202,7 +273,7 @@ export default function DashboardPage() {
 
   const cumulativeData = useMemo(() => {
     if (!balanceHistory) return []
-    const daysInMonth = monthLastDay(selectedMonth)
+    const daysInMonth = monthLastDay(effectiveSelectedMonth)
     const result: { day: number; current: number | null; previous: number }[] = []
     let lastPrevBalance = 0
     for (let day = 1; day <= daysInMonth; day++) {
@@ -218,7 +289,7 @@ export default function DashboardPage() {
       })
     }
     return result
-  }, [balanceHistory, selectedMonth])
+  }, [balanceHistory, effectiveSelectedMonth])
 
   const lastCurrentPoint = [...cumulativeData].reverse().find(d => d.current !== null)
   const lastDay = lastCurrentPoint?.day ?? 0
@@ -234,9 +305,9 @@ export default function DashboardPage() {
   const income = Number(summary?.monthly_income_primary ?? summary?.monthly_income ?? 0)
   const expenses = Number(summary?.monthly_expenses_primary ?? summary?.monthly_expenses ?? 0)
   const savingsRate = income > 0 ? ((income - expenses) / income) * 100 : 0
-  const isCurrentMonth = selectedMonth === currentMonth()
-  const daysElapsed = isCurrentMonth ? new Date().getDate() : monthLastDay(selectedMonth)
-  const daysInMonth = monthLastDay(selectedMonth)
+  const isCurrentMonth = effectiveSelectedMonth === currentMonth()
+  const daysElapsed = isCurrentMonth ? new Date().getDate() : monthLastDay(effectiveSelectedMonth)
+  const daysInMonth = monthLastDay(effectiveSelectedMonth)
   const projectedSpend = expenses > 0 && isCurrentMonth && daysElapsed > 0
     ? (expenses / daysElapsed) * daysInMonth
     : null
@@ -245,43 +316,9 @@ export default function DashboardPage() {
   const uncategorizedCount = summary?.pending_categorization ?? 0
   const uncategorizedAmount = summary?.pending_categorization_amount ?? 0
 
-  if (!currentMonthDefined) {
-    return (
-      <div className="space-y-6">
-        <PageHeader section={t('dashboard.title')} title={greeting} />
-
-        <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-            <div className="space-y-1">
-              <p className="text-sm font-semibold text-foreground">{t('dashboard.currentMonthTitle')}</p>
-              <p className="text-sm text-muted-foreground">{t('dashboard.currentMonthUndefined')}</p>
-              <p className="text-xs text-muted-foreground">{t('dashboard.currentMonthGuardHint')}</p>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-              <div className="space-y-2">
-                <label htmlFor="current-month-input" className="text-xs font-medium text-muted-foreground">
-                  {t('dashboard.currentMonthField')}
-                </label>
-                <Input
-                  id="current-month-input"
-                  type="month"
-                  value={monthDraft}
-                  onChange={(event) => setMonthDraft(event.target.value)}
-                  className="w-full sm:w-[180px]"
-                />
-              </div>
-              <Button
-                onClick={() => saveCurrentMonthMutation.mutate(monthDraft)}
-                disabled={!monthDraft || saveCurrentMonthMutation.isPending}
-              >
-                {saveCurrentMonthMutation.isPending ? t('common.loading') : t('dashboard.defineCurrentMonth')}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  const selectedPeriodLabel = currentMonthState?.selected_period_label ?? monthLabel(effectiveSelectedMonth, locale)
+  const currentPeriodLabel = currentMonthState?.current_period_label ?? null
+  const selectedSnapshotPeriod = currentMonthState?.selected_mode === 'snapshot' ? currentMonthState.selected_period : ''
 
   // Merged category bars data
   const mergedCategories = useMemo(() => {
@@ -319,7 +356,7 @@ export default function DashboardPage() {
   }, [spending, budgetComparison])
 
   const [txPage, setTxPage] = useState(1)
-  useEffect(() => setTxPage(1), [selectedMonth])
+  useEffect(() => setTxPage(1), [effectiveSelectedMonth])
 
   type DisplayRow = {
     key: string
@@ -392,17 +429,74 @@ export default function DashboardPage() {
     ? '---'
     : `${savingsRate.toFixed(0)}%`
 
+  if (!currentMonthDefined && !isSnapshotView) {
+    return (
+      <div className="space-y-6">
+        <PageHeader section={t('dashboard.title')} title={greeting} />
+
+        <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-foreground">{t('dashboard.currentMonthTitle')}</p>
+              <p className="text-sm text-muted-foreground">{t('dashboard.currentMonthUndefined')}</p>
+              <p className="text-xs text-muted-foreground">{t('dashboard.currentMonthGuardHint')}</p>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+              <DatePickerInput
+                value={monthDraft}
+                onChange={setMonthDraft}
+                mode="month"
+                className="w-full sm:w-[220px] justify-start"
+              />
+              <Button
+                onClick={() => saveCurrentMonthMutation.mutate(monthDraft)}
+                disabled={!monthDraft || saveCurrentMonthMutation.isPending}
+              >
+                {saveCurrentMonthMutation.isPending ? t('common.loading') : t('dashboard.defineCurrentMonth')}
+              </Button>
+              {snapshots.length > 0 ? (
+                <select
+                  className="h-10 min-w-[220px] rounded-lg border border-border bg-card px-3 text-sm text-foreground"
+                  defaultValue=""
+                  onChange={(event) => {
+                    const nextValue = event.target.value
+                    if (!nextValue) return
+                    const snapshot = snapshots.find((item) => item.period === nextValue)
+                    if (!snapshot) return
+                    const confirmed = window.confirm(
+                      t('dashboard.snapshotConfirmMessage', { period: snapshot.period_label })
+                    )
+                    if (!confirmed) return
+                    setMonthViewMutation.mutate({ mode: 'snapshot', period: snapshot.period })
+                  }}
+                  disabled={setMonthViewMutation.isPending}
+                >
+                  <option value="">{t('dashboard.browseClosedMonths')}</option>
+                  {snapshots.map((snapshot) => (
+                    <option key={snapshot.period} value={snapshot.period}>
+                      {t('dashboard.snapshotOption', { period: snapshot.period_label })}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div>
       {/* Header */}
       <PageHeader
         section={greeting}
-        title={new Date(selectedMonth + '-02').toLocaleDateString(locale, { month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase())}
+        title={new Date(effectiveSelectedMonth + '-02').toLocaleDateString(locale, { month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase())}
         action={
           <div className="flex items-center gap-1">
             <button
               className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
-              onClick={() => handleMonthChange(shiftMonth(selectedMonth, -1))}
+              onClick={() => handleMonthChange(shiftMonth(effectiveSelectedMonth, -1))}
             >&#8249;</button>
             <Popover open={headerCalOpen} onOpenChange={setHeaderCalOpen}>
               <PopoverTrigger asChild>
@@ -411,15 +505,15 @@ export default function DashboardPage() {
                   className="inline-flex items-center gap-2 border border-border rounded-lg px-3 py-1.5 text-sm bg-card text-foreground hover:bg-muted/50 transition-all cursor-pointer"
                 >
                   <CalendarIcon className="size-3.5 text-muted-foreground" />
-                  {new Date(selectedMonth + '-02').toLocaleDateString(locale, { month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase())}
+                  {new Date(effectiveSelectedMonth + '-02').toLocaleDateString(locale, { month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase())}
                 </button>
               </PopoverTrigger>
               <PopoverContent align="center" className="w-auto p-0">
                 <Calendar
                   mode="single"
                   locale={dateFnsLocale}
-                  selected={new Date(`${selectedMonth}-01T00:00:00`)}
-                  defaultMonth={new Date(`${selectedMonth}-01T00:00:00`)}
+                  selected={new Date(`${effectiveSelectedMonth}-01T00:00:00`)}
+                  defaultMonth={new Date(`${effectiveSelectedMonth}-01T00:00:00`)}
                   onSelect={(date) => {
                     if (!date) return
                     const newMonth = format(date, 'yyyy-MM')
@@ -431,11 +525,90 @@ export default function DashboardPage() {
             </Popover>
             <button
               className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
-              onClick={() => handleMonthChange(shiftMonth(selectedMonth, 1))}
+              onClick={() => handleMonthChange(shiftMonth(effectiveSelectedMonth, 1))}
             >&#8250;</button>
           </div>
         }
       />
+
+      <div className="mb-5 rounded-xl border border-border bg-card shadow-sm">
+        <div className="flex flex-col gap-4 px-5 py-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-foreground">{t('dashboard.currentMonthTitle')}</p>
+              <p className="text-sm text-muted-foreground">
+                {isSnapshotView
+                  ? t('dashboard.snapshotViewDescription', { period: selectedPeriodLabel })
+                  : t('dashboard.currentMonthActiveDescription', { period: currentPeriodLabel })}
+              </p>
+            </div>
+
+            {isSnapshotView ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                <p className="font-medium">{t('dashboard.snapshotViewBadge', { period: selectedPeriodLabel })}</p>
+                <p className="mt-1 text-amber-800">{t('dashboard.snapshotReadOnlyHint')}</p>
+              </div>
+            ) : null}
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+              <select
+                id="month-view-select"
+                className="h-10 min-w-[220px] rounded-lg border border-border bg-card px-3 text-sm text-foreground"
+                value={selectedSnapshotPeriod || '__current__'}
+                onChange={(event) => {
+                  const nextValue = event.target.value
+                  if (nextValue === '__current__') {
+                    setMonthViewMutation.mutate({ mode: 'current' })
+                    return
+                  }
+                  const snapshot = snapshots.find((item) => item.period === nextValue)
+                  if (!snapshot) return
+                  const confirmed = window.confirm(
+                    t('dashboard.snapshotConfirmMessage', { period: snapshot.period_label })
+                  )
+                  if (!confirmed) return
+                  setMonthViewMutation.mutate({ mode: 'snapshot', period: snapshot.period })
+                }}
+                disabled={setMonthViewMutation.isPending}
+              >
+                {currentMonthDefined ? (
+                  <option value="__current__">
+                    {t('dashboard.currentMonthOption', { period: currentPeriodLabel })}
+                  </option>
+                ) : (
+                  <option value="__current__">{t('dashboard.monthSetupOption')}</option>
+                )}
+                {snapshots.map((snapshot) => (
+                  <option key={snapshot.period} value={snapshot.period}>
+                    {t('dashboard.snapshotOption', { period: snapshot.period_label })}
+                  </option>
+                ))}
+              </select>
+
+              {isSnapshotView ? (
+                <Button
+                  variant="outline"
+                  onClick={() => setMonthViewMutation.mutate({ mode: 'current' })}
+                  disabled={setMonthViewMutation.isPending}
+                >
+                  {currentMonthDefined ? t('dashboard.returnToCurrentMonth') : t('dashboard.returnToMonthSetup')}
+                </Button>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+            <Button
+              variant="outline"
+              onClick={() => setCloseMonthDialogOpen(true)}
+              disabled={!editableMonth || closeCurrentMonthMutation.isPending}
+              title={isSnapshotView ? t('dashboard.snapshotCloseDisabled') : undefined}
+            >
+              {closeCurrentMonthMutation.isPending ? t('common.loading') : t('dashboard.closeCurrentMonth')}
+            </Button>
+          </div>
+        </div>
+      </div>
 
       {/* Hero Card: Savings Rate + Uncategorized CTA */}
       <div className="bg-card rounded-xl border border-border shadow-sm mb-5">
@@ -664,7 +837,7 @@ export default function DashboardPage() {
               <div>
                 <p className="text-base font-bold text-foreground">{t('dashboard.balanceFlow')}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {new Date(`${selectedMonth}-01T00:00:00`).toLocaleDateString(locale)} → {new Date(`${selectedMonth}-${String(lastCurrentPoint?.day ?? monthLastDay(selectedMonth)).padStart(2, '0')}T00:00:00`).toLocaleDateString(locale)}
+                  {new Date(`${effectiveSelectedMonth}-01T00:00:00`).toLocaleDateString(locale)} → {new Date(`${effectiveSelectedMonth}-${String(lastCurrentPoint?.day ?? monthLastDay(effectiveSelectedMonth)).padStart(2, '0')}T00:00:00`).toLocaleDateString(locale)}
                 </p>
               </div>
               {!balanceHistoryLoading && lastCurrentPoint && (
@@ -697,7 +870,7 @@ export default function DashboardPage() {
                     const payload = chartState?.activePayload ?? []
                     if (payload[0]) {
                       const day = String(payload[0].payload.day).padStart(2, '0')
-                      const dateStr = `${selectedMonth}-${day}`
+                      const dateStr = `${effectiveSelectedMonth}-${day}`
                       setDrillDown({
                         title: t('dashboard.drillDownDay', { date: new Date(dateStr + 'T00:00:00').toLocaleDateString(locale) }),
                         from: dateStr,
@@ -738,7 +911,7 @@ export default function DashboardPage() {
                   <Tooltip
                     formatter={(value, name) => [
                       value !== null ? (privacyMode ? MASK : formatCurrency(Number(value), userCurrency, locale)) : '\u2014',
-                      name === 'current' ? monthLabel(selectedMonth, locale).split(' ')[0] : monthLabel(prevMonth, locale).split(' ')[0],
+                      name === 'current' ? monthLabel(effectiveSelectedMonth, locale).split(' ')[0] : monthLabel(prevMonth, locale).split(' ')[0],
                     ]}
                     labelFormatter={(day) => t('dashboard.day', { day })}
                     contentStyle={{
@@ -901,6 +1074,43 @@ export default function DashboardPage() {
         onClose={() => setDrillDown(null)}
         onTransactionClick={(tx) => { setEditingTx(tx); setDialogOpen(true) }}
       />
+
+      <Dialog open={closeMonthDialogOpen} onOpenChange={setCloseMonthDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('dashboard.closeMonthModalTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('dashboard.closeMonthModalDescription', { period: currentPeriodLabel ?? selectedPeriodLabel })}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <DatePickerInput
+              value={nextMonthDraft}
+              onChange={setNextMonthDraft}
+              mode="month"
+              className="w-full justify-start"
+              disabled={closeCurrentMonthMutation.isPending}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCloseMonthDialogOpen(false)}
+              disabled={closeCurrentMonthMutation.isPending}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => closeCurrentMonthMutation.mutate(nextMonthDraft)}
+              disabled={!nextMonthDraft || closeCurrentMonthMutation.isPending}
+            >
+              {closeCurrentMonthMutation.isPending ? t('common.loading') : t('dashboard.confirmCloseCurrentMonth')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <TransactionDialog
         open={dialogOpen}

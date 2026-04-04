@@ -17,6 +17,7 @@ from app.models.category import Category
 from app.models.bank_connection import BankConnection
 from app.models.account import Account
 from app.models.monthly_period import MonthlyPeriod
+from app.models.monthly_snapshot import MonthlySnapshot  # noqa: F401
 from app.models.transaction import Transaction
 from app.models.rule import Rule
 from app.models.asset import Asset  # noqa: F401

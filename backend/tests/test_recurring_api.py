@@ -2,6 +2,10 @@
 from datetime import date, timedelta
 
 import pytest
+from sqlalchemy import update
+
+from app.models.monthly_snapshot import MonthlySnapshot
+from app.models.user import User
 
 
 @pytest.mark.asyncio
@@ -27,6 +31,83 @@ async def test_create_recurring_transaction(client, auth_headers, test_categorie
     assert data["is_active"] is True
     # next_occurrence should be start_date since skip_first not set
     assert data["next_occurrence"] == "2026-03-01"
+
+
+@pytest.mark.asyncio
+async def test_create_recurring_requires_current_month(client, auth_headers, test_categories, session):
+    await session.execute(
+        update(User)
+        .values(
+            preferences={
+                "language": "pt-BR",
+                "date_format": "DD/MM/YYYY",
+                "timezone": "America/Sao_Paulo",
+                "currency_display": "BRL",
+            }
+        )
+    )
+    await session.commit()
+
+    response = await client.post(
+        "/api/recurring-transactions",
+        json={
+            "description": "Netflix",
+            "amount": 39.90,
+            "currency": "BRL",
+            "type": "debit",
+            "frequency": "monthly",
+            "start_date": "2026-03-01",
+            "category_id": str(test_categories[0].id),
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 400
+    assert "Mês Atual não definido" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_create_recurring_rejected_in_snapshot_view(
+    client, auth_headers, test_categories, session, test_user, test_monthly_period
+):
+    current_period = (test_user.preferences or {})["current_month_period"]
+    session.add(
+        MonthlySnapshot(
+            user_id=test_user.id,
+            monthly_period_id=test_monthly_period.id,
+            period=current_period,
+        )
+    )
+    await session.commit()
+
+    await session.execute(
+        update(User)
+        .where(User.id == test_user.id)
+        .values(
+            preferences={
+                **(test_user.preferences or {}),
+                "selected_snapshot_period": current_period,
+            }
+        )
+    )
+    await session.commit()
+
+    response = await client.post(
+        "/api/recurring-transactions",
+        json={
+            "description": "Netflix",
+            "amount": 39.90,
+            "currency": "BRL",
+            "type": "debit",
+            "frequency": "monthly",
+            "start_date": "2026-03-01",
+            "category_id": str(test_categories[0].id),
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 400
+    assert "mês fechado" in response.json()["detail"].lower()
 
 
 @pytest.mark.asyncio

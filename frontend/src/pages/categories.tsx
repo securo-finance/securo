@@ -50,6 +50,8 @@ export default function CategoriesPage() {
   const { user } = useAuth()
   const { data: currentMonthState } = useCurrentMonth()
   const currentMonthDefined = currentMonthState?.is_defined ?? false
+  const isSnapshotView = currentMonthState?.is_snapshot_view ?? false
+  const editableCategories = !isSnapshotView
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const locale = i18n.language === 'en' ? 'en-US' : i18n.language
   const queryClient = useQueryClient()
@@ -113,6 +115,7 @@ export default function CategoriesPage() {
         <button
           className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
           onClick={() => openCatDialog(cat)}
+          disabled={!editableCategories}
           title={t('common.edit')}
         >
           <Pencil size={13} />
@@ -121,7 +124,7 @@ export default function CategoriesPage() {
           <button
             className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
             onClick={() => deleteCatMutation.mutate(cat.id)}
-            disabled={deleteCatMutation.isPending}
+            disabled={deleteCatMutation.isPending || !editableCategories}
             title={t('common.delete')}
           >
             <Trash2 size={13} />
@@ -138,8 +141,13 @@ export default function CategoriesPage() {
 
       {!currentMonthDefined ? (
         <div className="mb-6 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground shadow-sm">
-          <p className="font-medium text-foreground">{t('common.currentMonthLocked')}</p>
-          <p className="mt-1">{t('categories.currentMonthGuard')}</p>
+          <p className="font-medium text-foreground">{t('categories.currentMonthFlexibleTitle')}</p>
+          <p className="mt-1">{t('categories.currentMonthFlexibleHint')}</p>
+        </div>
+      ) : isSnapshotView ? (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 shadow-sm">
+          <p className="font-medium">{t('common.snapshotReadOnlyTitle', { period: currentMonthState?.selected_period_label })}</p>
+          <p className="mt-1">{t('common.snapshotReadOnlyHint')}</p>
         </div>
       ) : null}
 
@@ -154,8 +162,8 @@ export default function CategoriesPage() {
               size="sm"
               className="gap-1.5 h-8"
               onClick={() => openCatDialog(null)}
-              disabled={!currentMonthDefined}
-              title={!currentMonthDefined ? t('common.currentMonthLocked') : undefined}
+              disabled={!editableCategories}
+              title={isSnapshotView ? t('common.snapshotReadOnlyLocked') : undefined}
             >
               <Plus size={13} /> <span className="hidden sm:inline">{t('categories.addCategory')}</span>
             </Button>

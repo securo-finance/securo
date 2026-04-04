@@ -63,6 +63,8 @@ export default function AccountsPage() {
   const { user } = useAuth()
   const { data: currentMonthState } = useCurrentMonth()
   const currentMonthDefined = currentMonthState?.is_defined ?? false
+  const isSnapshotView = currentMonthState?.is_snapshot_view ?? false
+  const editableMonth = currentMonthDefined && !isSnapshotView
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -183,15 +185,21 @@ export default function AccountsPage() {
         title={t('accounts.title')}
         action={
           <div className="flex gap-2">
-            <Button variant="outline" className="gap-1.5" onClick={() => setConnectorSelectOpen(true)}>
+            <Button
+              variant="outline"
+              className="gap-1.5"
+              onClick={() => setConnectorSelectOpen(true)}
+              disabled={!editableMonth}
+              title={!currentMonthDefined ? t('common.currentMonthLocked') : isSnapshotView ? t('common.snapshotReadOnlyLocked') : undefined}
+            >
               <Plus size={16} />
               {t('accounts.connectBank')}
             </Button>
             <Button
               onClick={() => { setEditingAccount(null); setDialogOpen(true) }}
               className="gap-1.5"
-              disabled={!currentMonthDefined}
-              title={!currentMonthDefined ? t('common.currentMonthLocked') : undefined}
+              disabled={!editableMonth}
+              title={!currentMonthDefined ? t('common.currentMonthLocked') : isSnapshotView ? t('common.snapshotReadOnlyLocked') : undefined}
             >
               <Plus size={16} />
               {t('accounts.addManual')}
@@ -204,6 +212,11 @@ export default function AccountsPage() {
         <div className="mb-6 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground shadow-sm">
           <p className="font-medium text-foreground">{t('common.currentMonthLocked')}</p>
           <p className="mt-1">{t('accounts.currentMonthGuard')}</p>
+        </div>
+      ) : isSnapshotView ? (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 shadow-sm">
+          <p className="font-medium">{t('common.snapshotReadOnlyTitle', { period: currentMonthState?.selected_period_label })}</p>
+          <p className="mt-1">{t('common.snapshotReadOnlyHint')}</p>
         </div>
       ) : null}
 
@@ -239,6 +252,7 @@ export default function AccountsPage() {
                         <button
                           className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                           onClick={() => { setEditingAccount(acc); setDialogOpen(true) }}
+                          disabled={!editableMonth}
                           title={t('common.edit')}
                         >
                           <Pencil size={13} />
@@ -246,6 +260,7 @@ export default function AccountsPage() {
                         <button
                           className="p-1.5 rounded-md text-muted-foreground hover:text-amber-600 hover:bg-amber-50 transition-colors"
                           onClick={() => setClosingAccountId(acc.id)}
+                          disabled={!editableMonth}
                           title={t('accounts.close')}
                         >
                           <Archive size={13} />
@@ -253,7 +268,7 @@ export default function AccountsPage() {
                         <button
                           className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
                           onClick={() => setDeletingId(acc.id)}
-                          disabled={deleteMutation.isPending}
+                          disabled={deleteMutation.isPending || !editableMonth}
                           title={t('common.delete')}
                         >
                           <Trash2 size={13} />
@@ -316,6 +331,7 @@ export default function AccountsPage() {
                           size="sm"
                           className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
                           onClick={() => setSettingsConnection(conn)}
+                          disabled={!editableMonth}
                         >
                           <Settings size={14} />
                         </Button>
@@ -324,8 +340,8 @@ export default function AccountsPage() {
                           size="sm"
                           className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
                           onClick={() => syncMutation.mutate(conn.id)}
-                          disabled={syncMutation.isPending || !currentMonthDefined}
-                          title={!currentMonthDefined ? t('common.currentMonthLocked') : undefined}
+                          disabled={syncMutation.isPending || !editableMonth}
+                          title={!currentMonthDefined ? t('common.currentMonthLocked') : isSnapshotView ? t('common.snapshotReadOnlyLocked') : undefined}
                         >
                           <RefreshCw size={14} className={syncMutation.isPending ? 'animate-spin' : ''} />
                         </Button>
@@ -334,7 +350,7 @@ export default function AccountsPage() {
                           size="sm"
                           className="h-8 w-8 p-0 text-muted-foreground hover:text-rose-500"
                           onClick={() => disconnectMutation.mutate(conn.id)}
-                          disabled={disconnectMutation.isPending}
+                          disabled={disconnectMutation.isPending || !editableMonth}
                         >
                           <Unlink size={14} />
                         </Button>
@@ -354,6 +370,7 @@ export default function AccountsPage() {
                             setReconnectConnId(conn.id)
                             setReconnectItemId(conn.external_id)
                           }}
+                          disabled={!editableMonth}
                         >
                           <RefreshCw size={12} />
                           {t('accounts.reconnect')}
@@ -379,10 +396,11 @@ export default function AccountsPage() {
                                 </div>
                               </Link>
                               <button
-                                className="p-1.5 rounded-md text-muted-foreground hover:text-amber-600 hover:bg-amber-50 transition-colors opacity-0 group-hover:opacity-100 mr-3"
-                                onClick={(e) => { e.preventDefault(); setClosingAccountId(acc.id) }}
-                                title={t('accounts.close')}
-                              >
+                              className="p-1.5 rounded-md text-muted-foreground hover:text-amber-600 hover:bg-amber-50 transition-colors opacity-0 group-hover:opacity-100 mr-3"
+                              onClick={(e) => { e.preventDefault(); setClosingAccountId(acc.id) }}
+                              disabled={!editableMonth}
+                              title={t('accounts.close')}
+                            >
                                 <Archive size={13} />
                               </button>
                               <div className="text-right">
@@ -437,7 +455,7 @@ export default function AccountsPage() {
                         size="sm"
                         className="text-xs text-muted-foreground hover:text-foreground h-7 px-2 mr-3"
                         onClick={() => reopenMutation.mutate(acc.id)}
-                        disabled={reopenMutation.isPending}
+                        disabled={reopenMutation.isPending || !editableMonth}
                       >
                         {t('accounts.reopen')}
                       </Button>

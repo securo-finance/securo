@@ -62,7 +62,7 @@ async def test_create_category(client: AsyncClient, auth_headers, test_categorie
 
 
 @pytest.mark.asyncio
-async def test_create_category_requires_current_month(
+async def test_create_category_allowed_without_current_month(
     client: AsyncClient, auth_headers, session: AsyncSession
 ):
     await session.execute(
@@ -83,8 +83,34 @@ async def test_create_category_requires_current_month(
         headers=auth_headers,
         json={"name": "Educação", "icon": "📚", "color": "#9333EA"},
     )
+    assert response.status_code == 201
+    assert response.json()["name"] == "Educação"
+
+
+@pytest.mark.asyncio
+async def test_create_category_rejected_in_snapshot_view(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user: User, test_monthly_period
+):
+    current_period = (test_user.preferences or {})["current_month_period"]
+    await session.execute(
+        update(User)
+        .where(User.id == test_user.id)
+        .values(
+            preferences={
+                **(test_user.preferences or {}),
+                "selected_snapshot_period": current_period,
+            }
+        )
+    )
+    await session.commit()
+
+    response = await client.post(
+        "/api/categories",
+        headers=auth_headers,
+        json={"name": "Educação", "icon": "📚", "color": "#9333EA"},
+    )
     assert response.status_code == 400
-    assert "Mês Atual não definido" in response.json()["detail"]
+    assert "mês fechado" in response.json()["detail"].lower()
 
 
 @pytest.mark.asyncio

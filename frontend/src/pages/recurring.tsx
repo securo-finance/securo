@@ -20,6 +20,7 @@ import { PageHeader } from '@/components/page-header'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
+import { useCurrentMonth } from '@/hooks/use-current-month'
 
 function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
   return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
@@ -61,6 +62,10 @@ function RecurringTab() {
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const { data: currentMonthState } = useCurrentMonth()
+  const currentMonthDefined = currentMonthState?.is_defined ?? false
+  const isSnapshotView = currentMonthState?.is_snapshot_view ?? false
+  const editableMonth = currentMonthDefined && !isSnapshotView
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<RecurringTransaction | null>(null)
@@ -127,6 +132,18 @@ function RecurringTab() {
 
   return (
     <>
+      {!currentMonthDefined ? (
+        <div className="mb-4 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground shadow-sm">
+          <p className="font-medium text-foreground">{t('common.currentMonthLocked')}</p>
+          <p className="mt-1">{t('recurring.currentMonthGuard')}</p>
+        </div>
+      ) : isSnapshotView ? (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 shadow-sm">
+          <p className="font-medium">{t('common.snapshotReadOnlyTitle', { period: currentMonthState?.selected_period_label })}</p>
+          <p className="mt-1">{t('common.snapshotReadOnlyHint')}</p>
+        </div>
+      ) : null}
+
       <SectionCard>
         <SectionHeader
           title={t('recurring.title')}
@@ -137,12 +154,18 @@ function RecurringTab() {
                 size="sm"
                 className="gap-1.5 h-8"
                 onClick={() => generateMutation.mutate()}
-                disabled={generateMutation.isPending}
+                disabled={!editableMonth || generateMutation.isPending}
               >
                 <RefreshCw size={12} />
                 <span className="hidden sm:inline">{t('recurring.generatePending')}</span>
               </Button>
-              <Button size="sm" className="gap-1.5 h-8" onClick={() => { setEditing(null); setDialogOpen(true) }}>
+              <Button
+                size="sm"
+                className="gap-1.5 h-8"
+                onClick={() => { setEditing(null); setDialogOpen(true) }}
+                disabled={!editableMonth}
+                title={!currentMonthDefined ? t('common.currentMonthLocked') : isSnapshotView ? t('common.snapshotReadOnlyLocked') : undefined}
+              >
                 <Plus size={13} /> <span className="hidden sm:inline">{t('recurring.add')}</span>
               </Button>
             </div>
@@ -198,13 +221,14 @@ function RecurringTab() {
                       <button
                         className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
                         onClick={() => { setEditing(rt); setDialogOpen(true) }}
+                        disabled={!editableMonth}
                       >
                         <Pencil size={13} />
                       </button>
                       <button
                         className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
                         onClick={() => deleteMutation.mutate(rt.id)}
-                        disabled={deleteMutation.isPending}
+                        disabled={!editableMonth || deleteMutation.isPending}
                       >
                         <Trash2 size={13} />
                       </button>

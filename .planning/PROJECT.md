@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Flux is a self-hosted personal finance web application for personal use, with responsive mobile usage treated as a first-class constraint. The shipped `v1.0` milestone completed the visible Flux rebrand and flattened the category and budget model so categories are now the supported place to manage budget state.
+Flux is a self-hosted personal finance web application for personal use, with responsive mobile usage treated as a first-class constraint. After shipping `v1.1`, the product now operates on an explicit monthly-control model built around one editable `Mês Atual` plus preserved closed-month snapshots.
 
 ## Core Value
 
@@ -10,9 +10,9 @@ Manage personal finances clearly on a self-hosted app that remains practical to 
 
 ## Current State
 
-- Shipped milestone: `v1.0 Flux v2` on 2026-04-03
-- Active product shape: Flux-branded shell, flat categories, category-owned budget state, retired standalone budgets surface
-- Planning state: defining `v1.1 Gestão Mensal`
+- Shipped milestone: `v1.1 Gestão Mensal` on 2026-04-04
+- Active product shape: explicit `Mês Atual`, durable `monthly_periods`, preserved `monthly_snapshots`, protected-history navigation, and categories available as setup metadata even before `Mês Atual` exists
+- Planning state: next milestone not yet defined
 
 ## Requirements
 
@@ -24,28 +24,33 @@ Manage personal finances clearly on a self-hosted app that remains practical to 
 - ✓ Budget readers, reports, and exports consume the category-owned budget model consistently — `v1.0`
 - ✓ Legacy standalone budget and category-group user flows are removed from the supported runtime path — `v1.0`
 - ✓ Mobile-width category and budget flows remain supported — `v1.0`
+- ✓ The app now uses an explicit monthly competency model with a first-class `Mês Atual` — `v1.1`
+- ✓ Users can close a month into a preserved snapshot and continue in the next editable month — `v1.1`
+- ✓ Users can browse closed snapshots in a protected read-only context — `v1.1`
+- ✓ Sync and period-bound manual financial writes are blocked while `Mês Atual` is undefined — `v1.1`
+- ✓ Accounts and transactions now carry durable monthly-period identity in the supported runtime — `v1.1`
 
 ### Active
 
-- [ ] Remove all remaining category-group references from the supported runtime, backend contract, and database model
-- [ ] Let the app operate on a monthly competency model where `Mês Atual` is explicitly identified by period
-- [ ] Allow users to close the current month into an immutable historical snapshot
-- [ ] Let users browse and compare saved monthly snapshots and the current open month
-- [ ] Block sync and manual financial data entry while the current month period is undefined
+- [ ] User can archive or hide categories to improve organization in the flat list
+- [ ] User can reorder categories with explicit mobile-friendly controls
+- [ ] User receives suggested budget amounts based on recent spending history
+- [ ] User can save a categorization rule from budget-related workflows
+- [ ] User can reallocate budget amounts through a dedicated workflow
 
 ### Out of Scope
 
 - Native or hybrid mobile app — the responsive web application remains the supported product surface
-- Broad visual redesign — preserve the existing visual language unless a future milestone makes design a primary goal
+- Broad visual redesign — preserve the existing visual language unless a milestone explicitly changes that goal
 - Multi-user productization — the target remains personal self-hosted usage
-- Reintroducing groups through a renamed or hidden grouping layer — conflicts with the simplification goal shipped in `v1.0`
-- Forcing every category to have a budget — categories must continue to support an explicit non-budgeted state
+- Reintroducing groups through a renamed or hidden grouping layer — conflicts with the simplification baseline already shipped
+- Returning to freeform date-range period navigation as the primary workflow — conflicts with the shipped monthly-control model
 
 ## Context
 
-The current codebase is a brownfield React SPA plus FastAPI application with PostgreSQL, Redis, and Celery. After `v1.0`, the active runtime no longer depends on category groups or standalone budget CRUD for supported user workflows. Remaining known debt is mostly cleanup and artifact quality: verification files do not map REQ IDs directly, `*-VALIDATION.md` artifacts are still missing, legacy compatibility export payloads remain intentionally present for recovery, and dormant internal group code still exists outside the supported path.
+The current codebase is a brownfield React SPA plus FastAPI application with PostgreSQL, Redis, and Celery. The supported runtime now includes explicit month-state APIs, durable monthly period and snapshot persistence, protected-history read routing, and milestone-aligned guard behavior across transactions, accounts, imports, and recurring flows.
 
-The next milestone shifts the domain model from date-range period navigation to monthly competencies. The product now needs a clear distinction between the editable `Mês Atual` and closed monthly snapshots, with transactions and month-level operations linked directly to a declared period so historical lookup and closure stay consistent.
+Known remaining debt is mostly process and verification quality rather than feature completeness. The milestone audit passed all functional categories, but Nyquist `*-VALIDATION.md` artifacts are still missing for phases `08-12`.
 
 ## Constraints
 
@@ -54,9 +59,8 @@ The next milestone shifts the domain model from date-range period navigation to 
 - **Mobile**: New work must remain usable on mobile-width screens
 - **Architecture**: Continue brownfield evolution within the current React/FastAPI/PostgreSQL stack
 - **Scope control**: Future milestones should add value without reviving category-group or standalone-budget concepts
-- **Period model**: The active editable workspace must always resolve to one monthly period — monthly closure and snapshot retrieval depend on it
-- **Historical integrity**: Closed months must preserve historical state and require explicit confirmation before any mutating action
-- **UI consistency**: Any new or edited screens in this milestone must follow the existing application layout pattern instead of introducing a new visual structure
+- **Period model**: The active editable workspace must always resolve to one monthly period
+- **Historical integrity**: Closed months must preserve historical state and require explicit confirmation before mutating control-state actions
 
 ## Key Decisions
 
@@ -68,23 +72,27 @@ The next milestone shifts the domain model from date-range period navigation to 
 | Store optional budget settings directly on each category | Budget ownership belongs with the category and simplifies editing flows | ✓ Good |
 | Preserve the existing visual design language during the migration | The current UI was already responsive and the milestone goal was behavioral simplification, not redesign | ✓ Good |
 | Retire the standalone Budgets screen after category editing shipped | One supported write path reduces drift and dead-end navigation | ✓ Good |
-| Model operational periods as monthly competencies with a distinct editable `Mês Atual` | Monthly closing and historical review need first-class period identity instead of freeform date ranges | — Pending |
-| Treat closed months as snapshots with guarded mutations | Historical views must stay trustworthy while still allowing explicitly confirmed corrective actions | — Pending |
+| Model operational periods as monthly competencies with a distinct editable `Mês Atual` | Monthly closing and historical review need first-class period identity instead of freeform date ranges | ✓ Good |
+| Treat closed months as snapshots with guarded mutations | Historical views must stay trustworthy while still allowing explicitly confirmed corrective actions | ✓ Good |
+| Keep categories available without `Mês Atual` while blocking period-bound financial writes | Categories act as setup metadata; transactions, accounts, sync, and recurring flows remain period-bound | ✓ Good |
 
 ## Next Milestone Goals
 
-## Current Milestone: v1.1 Gestão Mensal
+- Define the next milestone explicitly before creating new planning artifacts
+- Prioritize category workflow improvements or budget-assistance capabilities from the archived v2 candidate list
+- Close process debt around Nyquist validation artifacts while preserving delivery speed
 
-**Goal:** Evolve Flux into a monthly financial control model where `Mês Atual` is the editable working month and closed months are preserved as snapshots.
+<details>
+<summary>Archived v1.1 Planning Notes</summary>
 
-**Target features:**
-- Remove all remaining category-group references, including database and backend remnants
-- Replace date-range period selection with selection between `Mês Atual` and saved monthly snapshots
-- Add a `Fechar Mês` action that creates a snapshot for the closed month
-- Clearly mark closed snapshots and require confirmation for actions that affect month control
-- Require period assignment for the current month before sync or manual creation of transactions, accounts, and categories
-- Automatically open a new `Mês Atual` after month closure and prompt for its period
-- Link transactions directly to the relevant monthly period for historical lookup
+Previous milestone focus:
+
+- Replace date-range period selection with explicit monthly competency management
+- Add close-month snapshot creation and protected-history navigation
+- Remove remaining supported category-group dependencies
+- Guard period-bound writes while the editable month is undefined
+
+</details>
 
 ## Evolution
 
@@ -104,4 +112,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-04 after v1.1 milestone start*
+*Last updated: 2026-04-04 after v1.1 milestone completion*

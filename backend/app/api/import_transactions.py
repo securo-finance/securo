@@ -10,6 +10,7 @@ from app.models.user import User
 from app.schemas.transaction import TransactionImportPreview, TransactionImportRequest
 from app.services import import_service
 from app.services import account_service
+from app.services.month_service import ensure_current_month_editable
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,11 @@ async def import_transactions(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
+    try:
+        ensure_current_month_editable(user)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
     # Verify account belongs to user
     account = await account_service.get_account(session, data.account_id, user.id)
     if not account:

@@ -87,11 +87,30 @@
     "ratesRefreshed": "FX rates updated",
     "ratesError": "Failed to update FX rates",
     "currentMonthTitle": "Current Month",
-    "currentMonthUndefined": "Define the active month before syncing or creating data manually.",
+    "currentMonthUndefined": "Choose the Current Month to unlock sync and manual entries.",
     "currentMonthGuardHint": "Until the current month period is defined, the app keeps only closed history in read-only mode.",
-    "currentMonthField": "Active period",
     "defineCurrentMonth": "Define Current Month",
-    "currentMonthSaved": "Current month saved"
+    "browseClosedMonths": "Browse closed history",
+    "currentMonthSaved": "Current month saved",
+    "currentMonthActiveDescription": "Editable month in use: {{period}}.",
+    "currentMonthOption": "Current Month · {{period}}",
+    "monthSetupOption": "Set up Current Month",
+    "snapshotOption": "Closed history · {{period}}",
+    "snapshotViewDescription": "You're reviewing the closed snapshot for {{period}}.",
+    "snapshotViewBadge": "Closed history selected: {{period}}",
+    "snapshotReadOnlyHint": "This context is preserved and read-only. Return to Current Month to sync or edit data.",
+    "snapshotConfirmMessage": "Enter the closed history for {{period}}? This month is preserved and edit controls will be locked.",
+    "snapshotViewActivated": "Closed history for {{period}} activated",
+    "returnedToCurrentMonth": "Returned to Current Month {{period}}",
+    "returnedToMonthSetupToast": "Returned to Current Month setup",
+    "returnToCurrentMonth": "Return to Current Month",
+    "returnToMonthSetup": "Return to setup",
+    "closeCurrentMonth": "Close Month",
+    "confirmCloseCurrentMonth": "Close month and continue",
+    "closeMonthModalTitle": "Select next period",
+    "closeMonthModalDescription": "After closing {{period}}, select which period becomes the next Current Month.",
+    "closeMonthSuccess": "{{closed}} was closed and {{next}} is now open as the new Current Month",
+    "snapshotCloseDisabled": "Return to Current Month before closing another month."
   },
   "transactions": {
     "title": "Transactions",
@@ -291,6 +310,7 @@
     "active": "Active",
     "inactive": "Inactive",
     "empty": "No recurring transactions",
+    "currentMonthGuard": "Define the Current Month on the dashboard before creating or generating recurring entries.",
     "created": "Recurring transaction created",
     "updated": "Recurring transaction updated",
     "deleted": "Recurring transaction deleted",
@@ -382,7 +402,9 @@
     "groupAssigned": "Grouped",
     "noGroupAssigned": "No group",
     "empty": "No categories yet",
-    "currentMonthGuard": "Define the current month on the dashboard before adding categories manually."
+    "currentMonthGuard": "Define the current month on the dashboard before adding categories manually.",
+    "currentMonthFlexibleTitle": "Categories stay available",
+    "currentMonthFlexibleHint": "You can organize categories even before defining the Current Month. The lock still applies to entries and other financial mutations."
   },
   "groups": {
     "title": "Category Groups",
@@ -416,6 +438,7 @@
     "subtitle": "Bank statement",
     "processing": "Processing file…",
     "removeFile": "Remove file",
+    "currentMonthGuard": "Define the Current Month on the dashboard before importing transactions.",
     "dragOrClick": "Drag a file or click to select",
     "preview": "Preview",
     "incomeCount": "{{count}} income",
@@ -577,7 +600,10 @@
     "searchIcon": "Search icon...",
     "noIconsFound": "No icons found",
     "primaryCurrency": "Primary Currency",
-    "currentMonthLocked": "The current month has not been defined yet."
+    "currentMonthLocked": "The current month has not been defined yet.",
+    "snapshotReadOnlyLocked": "Closed history is active. Return to Current Month to edit.",
+    "snapshotReadOnlyTitle": "Closed history active: {{period}}",
+    "snapshotReadOnlyHint": "You're viewing a preserved month. To create, edit, or sync data, return to Current Month on the dashboard."
   },
   "privacy": {
     "hide": "Hide values",

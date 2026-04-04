@@ -1,7 +1,10 @@
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import update
 
 from app.models.account import Account
+from app.models.monthly_snapshot import MonthlySnapshot
+from app.models.user import User
 
 
 @pytest.mark.asyncio
@@ -80,6 +83,79 @@ async def test_import_transactions(
     assert response.status_code == 201
     data = response.json()
     assert data["imported"] == 2
+
+
+@pytest.mark.asyncio
+async def test_import_requires_current_month(
+    client: AsyncClient, auth_headers, test_account: Account, session
+):
+    await session.execute(
+        update(User)
+        .values(
+            preferences={
+                "language": "pt-BR",
+                "date_format": "DD/MM/YYYY",
+                "timezone": "America/Sao_Paulo",
+                "currency_display": "BRL",
+            }
+        )
+    )
+    await session.commit()
+
+    response = await client.post(
+        "/api/transactions/import",
+        headers=auth_headers,
+        json={
+            "account_id": str(test_account.id),
+            "transactions": [
+                {"description": "UBER TRIP", "amount": "25.50", "date": "2026-02-10", "type": "debit"},
+            ],
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Mês Atual não definido" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_import_rejected_in_snapshot_view(
+    client: AsyncClient, auth_headers, test_account: Account, session, test_user, test_monthly_period
+):
+    current_period = (test_user.preferences or {})["current_month_period"]
+    session.add(
+        MonthlySnapshot(
+            user_id=test_user.id,
+            monthly_period_id=test_monthly_period.id,
+            period=current_period,
+        )
+    )
+    await session.commit()
+
+    await session.execute(
+        update(User)
+        .where(User.id == test_user.id)
+        .values(
+            preferences={
+                **(test_user.preferences or {}),
+                "selected_snapshot_period": current_period,
+            }
+        )
+    )
+    await session.commit()
+
+    response = await client.post(
+        "/api/transactions/import",
+        headers=auth_headers,
+        json={
+            "account_id": str(test_account.id),
+            "transactions": [
+                {"description": "UBER TRIP", "amount": "25.50", "date": "2026-02-10", "type": "debit"},
+            ],
+        },
+    )
+
+    assert response.status_code == 400
+    assert "mês fechado" in response.json()["detail"].lower()
 
 
 @pytest.mark.asyncio

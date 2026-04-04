@@ -13,10 +13,12 @@ from app.models.user import User
 from app.schemas.account import AccountCreate, AccountUpdate
 from app.services.month_service import (
     get_current_month_period,
+    get_selected_view_period,
     get_monthly_period,
     month_to_period_value,
     period_to_month_start,
     resolve_current_monthly_period,
+    resolve_selected_view_monthly_period,
 )
 
 
@@ -34,8 +36,8 @@ async def get_accounts(session: AsyncSession, user_id: uuid.UUID, include_closed
     )
 
     user = await session.get(User, user_id)
-    current_period = get_current_month_period(user) if user else None
-    current_monthly_period = await resolve_current_monthly_period(session, user_id, user) if current_period else None
+    current_period = get_selected_view_period(user) if user else None
+    current_monthly_period = await resolve_selected_view_monthly_period(session, user_id, user) if current_period else None
     previous_monthly_period = None
     if current_period:
         previous_period = month_to_period_value(period_to_month_start(current_period) - timedelta(days=1))
@@ -293,8 +295,8 @@ async def get_account_summary(
 
     today = _Date.today()
     user = await session.get(User, user_id)
-    current_period = get_current_month_period(user) if user else None
-    current_monthly_period = await resolve_current_monthly_period(session, user_id, user) if current_period else None
+    current_period = get_selected_view_period(user) if user else None
+    current_monthly_period = await resolve_selected_view_monthly_period(session, user_id, user) if current_period else None
     if not date_from:
         date_from = period_to_month_start(current_period) if current_period else today.replace(day=1)
     if not date_to:
@@ -445,10 +447,17 @@ async def get_account_balance_history(
         return None
 
     today = _Date.today()
-    if not date_from:
-        date_from = today.replace(day=1)
-    if not date_to:
-        date_to = today
+    if not date_from or not date_to:
+        user = await session.get(User, user_id)
+        selected_period = get_selected_view_period(user) if user else None
+        if not date_from:
+            date_from = period_to_month_start(selected_period) if selected_period else today.replace(day=1)
+        if not date_to:
+            if selected_period and selected_period != get_current_month_period(user) if user else None:
+                next_period_start = period_to_month_start(month_to_period_value(date_from.replace(day=28) + timedelta(days=4)))
+                date_to = next_period_start - timedelta(days=1)
+            else:
+                date_to = today
 
     sign = -1.0 if (account.type == "credit_card" and account.connection_id) else 1.0
 

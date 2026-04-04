@@ -18,6 +18,7 @@ import { Upload, FileText, X, CheckCircle2, AlertCircle, History, Trash2, Settin
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { PageHeader } from '@/components/page-header'
 import { useAuth } from '@/contexts/auth-context'
+import { useCurrentMonth } from '@/hooks/use-current-month'
 
 function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
   return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
@@ -34,6 +35,10 @@ export default function ImportPage() {
   const { t, i18n } = useTranslation()
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const { data: currentMonthState } = useCurrentMonth()
+  const currentMonthDefined = currentMonthState?.is_defined ?? false
+  const isSnapshotView = currentMonthState?.is_snapshot_view ?? false
+  const editableMonth = currentMonthDefined && !isSnapshotView
   const locale = i18n.language === 'en' ? 'en-US' : i18n.language
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -176,6 +181,18 @@ export default function ImportPage() {
     <div className="space-y-6">
       {/* Page header */}
       <PageHeader section={t('import.title')} title={t('import.subtitle')} />
+
+      {!currentMonthDefined ? (
+        <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground shadow-sm">
+          <p className="font-medium text-foreground">{t('common.currentMonthLocked')}</p>
+          <p className="mt-1">{t('import.currentMonthGuard')}</p>
+        </div>
+      ) : isSnapshotView ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 shadow-sm">
+          <p className="font-medium">{t('common.snapshotReadOnlyTitle', { period: currentMonthState?.selected_period_label })}</p>
+          <p className="mt-1">{t('common.snapshotReadOnlyHint')}</p>
+        </div>
+      ) : null}
 
       {/* Upload zone */}
       <div
@@ -425,7 +442,7 @@ export default function ImportPage() {
             </button>
             <Button
               onClick={() => importMutation.mutate()}
-              disabled={!selectedAccount || importMutation.isPending}
+              disabled={!editableMonth || !selectedAccount || importMutation.isPending}
               className="gap-2"
             >
               <Upload size={14} />

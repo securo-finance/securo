@@ -1,4 +1,6 @@
-from pydantic import BaseModel, field_validator
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 def normalize_period_value(value: str) -> str:
@@ -26,6 +28,11 @@ class CurrentMonthRead(BaseModel):
     current_period: str | None = None
     current_period_label: str | None = None
     is_defined: bool
+    selected_mode: Literal["current", "snapshot"]
+    selected_period: str | None = None
+    selected_period_label: str | None = None
+    is_snapshot_view: bool = False
+    snapshots: list["ClosedMonthSnapshotRead"] = Field(default_factory=list)
 
 
 class CurrentMonthUpdate(BaseModel):
@@ -35,3 +42,38 @@ class CurrentMonthUpdate(BaseModel):
     @classmethod
     def validate_period(cls, value: str) -> str:
         return normalize_period_value(value)
+
+
+class ClosedMonthSnapshotRead(BaseModel):
+    period: str
+    period_label: str
+    closed_at: str
+
+
+class CurrentMonthViewUpdate(BaseModel):
+    mode: Literal["current", "snapshot"]
+    period: str | None = None
+
+    @model_validator(mode="after")
+    def validate_payload(self):
+        if self.mode == "snapshot":
+            if not self.period:
+                raise ValueError("Snapshot view requires a period")
+            self.period = normalize_period_value(self.period)
+        else:
+            self.period = None
+        return self
+
+
+class CloseCurrentMonthRequest(BaseModel):
+    next_period: str
+
+    @field_validator("next_period")
+    @classmethod
+    def validate_period(cls, value: str) -> str:
+        return normalize_period_value(value)
+
+
+class CloseCurrentMonthRead(BaseModel):
+    state: CurrentMonthRead
+    closed_snapshot: ClosedMonthSnapshotRead
