@@ -68,27 +68,27 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PERIOD-01 | TBD | Pending |
-| PERIOD-02 | TBD | Pending |
-| PERIOD-03 | TBD | Pending |
-| PERIOD-04 | TBD | Pending |
-| SNAP-01 | TBD | Pending |
-| SNAP-02 | TBD | Pending |
-| SNAP-03 | TBD | Pending |
-| GUARD-01 | TBD | Pending |
-| GUARD-02 | TBD | Pending |
-| GUARD-03 | TBD | Pending |
-| UX-01 | TBD | Pending |
-| DATA-01 | TBD | Pending |
-| DATA-02 | TBD | Pending |
-| DATA-03 | TBD | Pending |
-| CLEAN-01 | TBD | Pending |
-| CLEAN-02 | TBD | Pending |
+| PERIOD-01 | Phase 8 | Pending |
+| PERIOD-02 | Phase 11 | Pending |
+| PERIOD-03 | Phase 8 | Pending |
+| PERIOD-04 | Phase 10 | Pending |
+| SNAP-01 | Phase 10 | Pending |
+| SNAP-02 | Phase 11 | Pending |
+| SNAP-03 | Phase 11 | Pending |
+| GUARD-01 | Phase 11 | Pending |
+| GUARD-02 | Phase 8 | Pending |
+| GUARD-03 | Phase 8 | Pending |
+| UX-01 | Phase 8 | Pending |
+| DATA-01 | Phase 9 | Pending |
+| DATA-02 | Phase 9 | Pending |
+| DATA-03 | Phase 10 | Pending |
+| CLEAN-01 | Phase 9 | Pending |
+| CLEAN-02 | Phase 9 | Pending |
 
 **Coverage:**
 - v1 requirements: 16 total
-- Mapped to phases: 0
-- Unmapped: 16 ⚠️
+- Mapped to phases: 16
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-04*

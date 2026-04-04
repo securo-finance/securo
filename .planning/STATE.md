@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Gestão Mensal
-status: defining_requirements
-stopped_at: "Defining milestone requirements."
+status: ready_to_plan
+stopped_at: "Roadmap created for phases 8-11."
 last_updated: "2026-04-04T00:00:00.000Z"
 last_activity: 2026-04-04
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,20 +21,33 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-04)
 
 **Core value:** Manage personal finances clearly on a self-hosted app that remains practical to use on mobile.
-**Current focus:** Defining `v1.1 Gestão Mensal`
+**Current focus:** Phase 8 - Current Month Setup & Guards
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: -
-Status: Defining requirements
-Last activity: 2026-04-04 - Milestone v1.1 started
+Phase: 8 of 11 (Current Month Setup & Guards)
+Plan: 0 of 0 in current phase
+Status: Ready to plan
+Last activity: 2026-04-04 - Roadmap for v1.1 Gestão Mensal created
 
 Progress: [----------] 0%
 
 ## Performance Metrics
 
-Milestone metrics reset for v1.1 planning.
+**Velocity:**
+- Total plans completed: 0
+- Average duration: -
+- Total execution time: 0.0 hours
+
+**By Phase:**
+
+| Phase | Plans | Total | Avg/Plan |
+|-------|-------|-------|----------|
+| - | - | - | - |
+
+**Recent Trend:**
+- Last 5 plans: -
+- Trend: Stable
 
 ## Accumulated Context
 
@@ -43,26 +56,21 @@ Milestone metrics reset for v1.1 planning.
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- Phase 1: Rebrand visible product shell and operational labels before domain migration work.
-- Phase 2: Treat category-owned budgets as a migration step with preserved existing links and effective budget state.
-- Phase 3: Make category create/edit the single user-facing write flow for budget settings.
-- Phase 4: Cut reports, budget readers, and export compatibility over only after the unified category flow exists.
-- Phase 5: Remove legacy group and standalone budget paths only after active consumers are migrated.
+- Phase 8-11 roadmap starts after Phase 7 to preserve continuous numbering across milestones.
+- `Mês Atual` must be explicitly defined before sync or manual creation flows are allowed.
+- Closed months remain preserved snapshots and require confirmation before control-state mutations.
+- New or changed screens in this milestone must keep the existing Flux layout pattern.
 
 ### Pending Todos
 
-- Define requirement categories and roadmap for the monthly period model.
-
-### Roadmap Evolution
-
-- Milestone v1.1 started: Gestão Mensal.
+None yet.
 
 ### Blockers/Concerns
 
-- Monthly period rules, snapshot mutability, and phase breakdown still need to be captured in REQUIREMENTS.md and ROADMAP.md.
+- Phase plans still need to define the exact closure confirmation flow and snapshot mutation boundaries.
 
 ## Session Continuity
 
 Last session: 2026-04-04 00:00 UTC
-Stopped at: Defining milestone requirements.
+Stopped at: Roadmap creation completed for milestone v1.1.
 Resume file: None
