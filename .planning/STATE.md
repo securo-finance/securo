@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: Gestão Mensal
-status: milestone_complete
-stopped_at: "Milestone v1.1 archived and ready for next milestone definition."
+milestone: v1.2
+milestone_name: Gestão de contas e faturas
+status: roadmap_defined
+stopped_at: "Milestone v1.2 initialized and ready for phase planning."
 last_updated: "2026-04-04T23:59:00Z"
 last_activity: 2026-04-04
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 5
-  completed_plans: 5
-  percent: 100
+  total_phases: 4
+  completed_phases: 0
+  total_plans: 4
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-04)
 
 **Core value:** Manage personal finances clearly on a self-hosted app that remains practical to use on mobile.
-**Current focus:** Define the next milestone after shipping `v1.1 Gestão Mensal`
+**Current focus:** Plan and execute `v1.2 Gestão de contas e faturas`
 
 ## Current Position
 
-Phase: Milestone complete
-Plan: 5 of 5 in milestone
-Status: Archived and shipped
-Last activity: 2026-04-04 - `v1.1 Gestão Mensal` archived after final validation
+Phase: 1
+Plan: 0 of 1 in phase
+Status: Ready for planning
+Last activity: 2026-04-04 - `v1.2 Gestão de contas e faturas` initialized with requirements and roadmap
 
-Progress: [██████████] 100%
+Progress: [░░░░░░░░░░] 0%
 
 ## Accumulated Context
 
@@ -45,16 +45,17 @@ Recent milestone outcomes:
 
 ### Pending Todos
 
-- Define the next milestone requirements and roadmap.
+- Plan Phase 1 for the connected-account model and data migration away from wallets and balances.
 - Decide whether to close Nyquist validation debt retroactively for phases 08-12.
 
 ### Blockers/Concerns
 
 - No active implementation blockers.
 - Remaining debt is process-oriented: missing `*-VALIDATION.md` artifacts for phases 08-12.
+- The monthly totals and imported-card-bill model need careful migration to avoid leaking legacy account-balance assumptions.
 
 ## Session Continuity
 
 Last session: 2026-04-04 00:00 UTC
-Stopped at: Milestone completed and awaiting next milestone planning.
+Stopped at: Milestone initialized and awaiting phase planning.
 Resume file: None
