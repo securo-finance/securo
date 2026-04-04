@@ -1,56 +1,40 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: Flux v2
-status: completed
-stopped_at: "v1.0 milestone completed and archived."
-last_updated: "2026-04-03T21:08:03.348Z"
-last_activity: 2026-04-03
+milestone: v1.1
+milestone_name: Gestão Mensal
+status: defining_requirements
+stopped_at: "Defining milestone requirements."
+last_updated: "2026-04-04T00:00:00.000Z"
+last_activity: 2026-04-04
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 7
-  completed_plans: 7
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-03)
+See: .planning/PROJECT.md (updated 2026-04-04)
 
 **Core value:** Manage personal finances clearly on a self-hosted app that remains practical to use on mobile.
-**Current focus:** Planning next milestone
+**Current focus:** Defining `v1.1 Gestão Mensal`
 
 ## Current Position
 
-Phase: Complete
-Plan: Complete
-Status: v1.0 milestone complete
-Last activity: 2026-04-03
+Phase: Not started (defining requirements)
+Plan: -
+Status: Defining requirements
+Last activity: 2026-04-04 - Milestone v1.1 started
 
-Progress: [██████████] 100%
+Progress: [----------] 0%
 
 ## Performance Metrics
 
-**Velocity:**
-
-- Total plans completed: 6
-- Average duration: ~34 min
-- Total execution time: 3.2 hours
-
-**By Phase:**
-
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 1-5 | 5 | 3.0h | 36m |
-| 6 | 1 | ~10m | ~10m |
-
-**Recent Trend:**
-
-- Last 5 plans: complete
-- Trend: Completed
+Milestone metrics reset for v1.1 planning.
 
 ## Accumulated Context
 
@@ -67,21 +51,18 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+- Define requirement categories and roadmap for the monthly period model.
 
 ### Roadmap Evolution
 
-- Phase 6 added: Remover a função "Orçamentos" do menu e sua tela também.
-- Phase 6 completed: standalone budgets menu and screen retired in favor of Categories.
-- Phase 7 added: Remove Residual Category Group Contracts.
-- Phase 7 completed: active category contract and setup seeding are flat end to end.
+- Milestone v1.1 started: Gestão Mensal.
 
 ### Blockers/Concerns
 
-- Remaining work is milestone definition only: decide the next milestone scope and refresh requirements.
+- Monthly period rules, snapshot mutability, and phase breakdown still need to be captured in REQUIREMENTS.md and ROADMAP.md.
 
 ## Session Continuity
 
-Last session: 2026-04-03 00:00 UTC
-Stopped at: v1.0 milestone completed and archived.
+Last session: 2026-04-04 00:00 UTC
+Stopped at: Defining milestone requirements.
 Resume file: None

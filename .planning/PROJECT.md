@@ -12,7 +12,7 @@ Manage personal finances clearly on a self-hosted app that remains practical to 
 
 - Shipped milestone: `v1.0 Flux v2` on 2026-04-03
 - Active product shape: Flux-branded shell, flat categories, category-owned budget state, retired standalone budgets surface
-- Planning state: milestone archived, waiting on next-milestone definition
+- Planning state: defining `v1.1 Gestão Mensal`
 
 ## Requirements
 
@@ -27,11 +27,11 @@ Manage personal finances clearly on a self-hosted app that remains practical to 
 
 ### Active
 
-- [ ] Allow category archiving or hiding to improve organization in the flat list
-- [ ] Add explicit mobile-friendly category reordering controls
-- [ ] Suggest budget amounts based on recent spending history
-- [ ] Let users save a categorization rule from budget-related workflows
-- [ ] Add a dedicated category budget reallocation workflow
+- [ ] Remove all remaining category-group references from the supported runtime, backend contract, and database model
+- [ ] Let the app operate on a monthly competency model where `Mês Atual` is explicitly identified by period
+- [ ] Allow users to close the current month into an immutable historical snapshot
+- [ ] Let users browse and compare saved monthly snapshots and the current open month
+- [ ] Block sync and manual financial data entry while the current month period is undefined
 
 ### Out of Scope
 
@@ -45,6 +45,8 @@ Manage personal finances clearly on a self-hosted app that remains practical to 
 
 The current codebase is a brownfield React SPA plus FastAPI application with PostgreSQL, Redis, and Celery. After `v1.0`, the active runtime no longer depends on category groups or standalone budget CRUD for supported user workflows. Remaining known debt is mostly cleanup and artifact quality: verification files do not map REQ IDs directly, `*-VALIDATION.md` artifacts are still missing, legacy compatibility export payloads remain intentionally present for recovery, and dormant internal group code still exists outside the supported path.
 
+The next milestone shifts the domain model from date-range period navigation to monthly competencies. The product now needs a clear distinction between the editable `Mês Atual` and closed monthly snapshots, with transactions and month-level operations linked directly to a declared period so historical lookup and closure stay consistent.
+
 ## Constraints
 
 - **Product scope**: Self-hosted personal finance app for personal use in this version
@@ -52,6 +54,8 @@ The current codebase is a brownfield React SPA plus FastAPI application with Pos
 - **Mobile**: New work must remain usable on mobile-width screens
 - **Architecture**: Continue brownfield evolution within the current React/FastAPI/PostgreSQL stack
 - **Scope control**: Future milestones should add value without reviving category-group or standalone-budget concepts
+- **Period model**: The active editable workspace must always resolve to one monthly period — monthly closure and snapshot retrieval depend on it
+- **Historical integrity**: Closed months must preserve historical state and require explicit confirmation before any mutating action
 
 ## Key Decisions
 
@@ -63,12 +67,40 @@ The current codebase is a brownfield React SPA plus FastAPI application with Pos
 | Store optional budget settings directly on each category | Budget ownership belongs with the category and simplifies editing flows | ✓ Good |
 | Preserve the existing visual design language during the migration | The current UI was already responsive and the milestone goal was behavioral simplification, not redesign | ✓ Good |
 | Retire the standalone Budgets screen after category editing shipped | One supported write path reduces drift and dead-end navigation | ✓ Good |
+| Model operational periods as monthly competencies with a distinct editable `Mês Atual` | Monthly closing and historical review need first-class period identity instead of freeform date ranges | — Pending |
+| Treat closed months as snapshots with guarded mutations | Historical views must stay trustworthy while still allowing explicitly confirmed corrective actions | — Pending |
 
 ## Next Milestone Goals
 
-- Decide whether the next milestone should focus on flat-category quality-of-life features or cleanup debt from `v1.0`
-- Define fresh milestone requirements before adding new phases
-- Keep flat categories and category-owned budgets as the baseline architecture
+## Current Milestone: v1.1 Gestão Mensal
+
+**Goal:** Evolve Flux into a monthly financial control model where `Mês Atual` is the editable working month and closed months are preserved as snapshots.
+
+**Target features:**
+- Remove all remaining category-group references, including database and backend remnants
+- Replace date-range period selection with selection between `Mês Atual` and saved monthly snapshots
+- Add a `Fechar Mês` action that creates a snapshot for the closed month
+- Clearly mark closed snapshots and require confirmation for actions that affect month control
+- Require period assignment for the current month before sync or manual creation of transactions, accounts, and categories
+- Automatically open a new `Mês Atual` after month closure and prompt for its period
+- Link transactions directly to the relevant monthly period for historical lookup
+
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `$gsd-transition`):
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone** (via `$gsd-complete-milestone`):
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
 
 ---
-*Last updated: 2026-04-03 after v1.0 milestone completion*
+*Last updated: 2026-04-04 after v1.1 milestone start*
