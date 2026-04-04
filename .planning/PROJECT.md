@@ -56,6 +56,7 @@ The next milestone shifts the domain model from date-range period navigation to 
 - **Scope control**: Future milestones should add value without reviving category-group or standalone-budget concepts
 - **Period model**: The active editable workspace must always resolve to one monthly period — monthly closure and snapshot retrieval depend on it
 - **Historical integrity**: Closed months must preserve historical state and require explicit confirmation before any mutating action
+- **UI consistency**: Any new or edited screens in this milestone must follow the existing application layout pattern instead of introducing a new visual structure
 
 ## Key Decisions
 
