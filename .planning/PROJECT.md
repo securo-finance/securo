@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Flux is a self-hosted personal finance web application for personal use, with responsive mobile usage treated as a first-class constraint. After shipping `v1.1`, the product now operates on an explicit monthly-control model built around one editable `Mês Atual` plus preserved closed-month snapshots.
+Flux is a self-hosted personal finance web application for personal use, with responsive mobile usage treated as a first-class constraint. After shipping `v1.2`, the product now operates on an explicit monthly-control model built around one editable `Mês Atual` plus preserved closed-month snapshots, connected-account management, and bill-only Pluggy imports.
 
 ## Core Value
 
@@ -10,24 +10,9 @@ Manage personal finances clearly on a self-hosted app that remains practical to 
 
 ## Current State
 
-- Shipped milestone: `v1.1 Gestão Mensal` on 2026-04-04
-- Current milestone: `v1.2 Gestão de contas e faturas`
-- Active product shape: explicit `Mês Atual`, durable `monthly_periods`, preserved `monthly_snapshots`, protected-history navigation, and categories available as setup metadata even before `Mês Atual` exists
-- Planning state: requirements and roadmap defined for the account-and-bill-management milestone
-
-## Current Milestone: v1.2 Gestão de contas e faturas
-
-**Goal:** Rework account and Pluggy connection management so Flux imports only credit-card bill transactions into the current month model.
-
-**Target features:**
-- Remove wallets from the supported product model
-- Remove account balances from the supported runtime and treat the monthly result as `receitas - despesas`
-- Redefine `Contas` as Pluggy-connected accounts only
-- Allow connected-account management with rename, bill-import toggle, and delete actions
-- Import only credit-card bill transactions from Pluggy
-- Run daily bill ingestion for the current month
-- Persist imported bill transactions in app-owned storage linked to card and `Mês Atual`
-- Keep imported bill transactions uncategorized unless a user-defined rule applies
+- Shipped milestone: `v1.2 Gestão de contas e faturas` on 2026-04-05
+- Active product shape: explicit `Mês Atual`, durable monthly records and snapshots, connected-account-only account management, bill-only Pluggy imports, and monthly totals derived from `receitas - despesas`
+- Planning state: no active milestone is defined; the next planning step is to create a fresh requirements set and roadmap
 
 ## Requirements
 
@@ -44,13 +29,17 @@ Manage personal finances clearly on a self-hosted app that remains practical to 
 - ✓ Users can browse closed snapshots in a protected read-only context — `v1.1`
 - ✓ Sync and period-bound manual financial writes are blocked while `Mês Atual` is undefined — `v1.1`
 - ✓ Accounts and transactions now carry durable monthly-period identity in the supported runtime — `v1.1`
+- ✓ User manages only Pluggy-connected accounts from `Contas`, including rename, bill-import toggle, and connection deletion — `v1.2`
+- ✓ User imports only credit-card bill transactions into the active monthly workflow instead of importing all account transactions — `v1.2`
+- ✓ User has imported bill transactions persisted against a card and `Mês Atual`, with categorization applied only when a matching rule exists — `v1.2`
+- ✓ User no longer sees wallets or account balances as part of the supported financial model, with the month total derived from `receitas - despesas` — `v1.2`
 
 ### Active
 
-- [ ] User manages only Pluggy-connected accounts from `Contas`, including rename, bill-import toggle, and connection deletion
-- [ ] User imports only credit-card bill transactions into the active monthly workflow instead of importing all account transactions
-- [ ] User has imported bill transactions persisted against a card and `Mês Atual`, with categorization applied only when a matching rule exists
-- [ ] User no longer sees wallets or account balances as part of the supported financial model, with the month total derived from `receitas - despesas`
+- [ ] User can import non-card banking transactions from Pluggy when broader sync coverage becomes valuable
+- [ ] User can choose different sync scopes per institution or account type
+- [ ] User can create and edit categorization rules from imported bill transaction flows
+- [ ] User can review why an imported bill transaction matched a categorization rule
 
 ### Out of Scope
 
@@ -64,11 +53,11 @@ Manage personal finances clearly on a self-hosted app that remains practical to 
 
 ## Context
 
-The current codebase is a brownfield React SPA plus FastAPI application with PostgreSQL, Redis, and Celery. The supported runtime now includes explicit month-state APIs, durable monthly period and snapshot persistence, protected-history read routing, and milestone-aligned guard behavior across transactions, accounts, imports, and recurring flows.
+The current codebase is a brownfield React SPA plus FastAPI application with PostgreSQL, Redis, and Celery. The supported runtime now includes explicit month-state APIs, durable monthly period and snapshot persistence, protected-history read routing, connected-account management, bill-only Pluggy sync behavior, and monthly summaries centered on `receitas - despesas`.
 
-This milestone changes the meaning of `Contas` and Pluggy connections: connected accounts become bill-import sources instead of general transaction-sync sources. Imported credit-card bill rows should be stored in app-owned monthly data, associated with the relevant card and current month, and should only receive a category automatically when a saved user rule matches.
+Connected accounts now act as managed credit-card bill sources rather than general transaction-sync sources. Imported bill rows are stored in Flux-owned monthly data for the active period, associated with the relevant card, and remain uncategorized unless a saved user rule matches.
 
-Known remaining debt is mostly process and verification quality rather than feature completeness. The milestone audit passed all functional categories, but Nyquist `*-VALIDATION.md` artifacts are still missing for phases `08-12`.
+Known remaining debt is mostly process and verification quality rather than feature completeness. Nyquist `*-VALIDATION.md` artifacts are still missing for phases `08-12`, and the checked-in planning archive does not currently include a `v1.2-MILESTONE-AUDIT.md` artifact.
 
 ## Constraints
 
@@ -96,18 +85,24 @@ Known remaining debt is mostly process and verification quality rather than feat
 | Model operational periods as monthly competencies with a distinct editable `Mês Atual` | Monthly closing and historical review need first-class period identity instead of freeform date ranges | ✓ Good |
 | Treat closed months as snapshots with guarded mutations | Historical views must stay trustworthy while still allowing explicitly confirmed corrective actions | ✓ Good |
 | Keep categories available without `Mês Atual` while blocking period-bound financial writes | Categories act as setup metadata; transactions, accounts, sync, and recurring flows remain period-bound | ✓ Good |
-| Treat Pluggy connections as bill-import sources instead of full transaction-sync sources in v1.2 | The milestone is focused on credit-card invoice tracking, not broad bank ingestion | — Pending |
-| Remove wallets and per-account balances from the supported product model | The month-level result should be derived from `receitas - despesas` rather than account-ledger balances | — Pending |
+| Treat Pluggy connections as bill-import sources instead of full transaction-sync sources in v1.2 | The milestone is focused on credit-card invoice tracking, not broad bank ingestion | ✓ Good |
+| Remove wallets and per-account balances from the supported product model | The month-level result should be derived from `receitas - despesas` rather than account-ledger balances | ✓ Good |
+| Persist imported credit-card bill rows against the active monthly period instead of provider-native date buckets | Monthly reporting and close-month behavior need Flux-owned period identity | ✓ Good |
+| Default imported bill transactions to uncategorized unless a saved categorization rule matches | Rule-driven automation is safer than inheriting opaque provider categories | ✓ Good |
 
 <details>
-<summary>Archived v1.1 Planning Notes</summary>
+<summary>Archived v1.2 Planning Notes</summary>
 
-Previous milestone focus:
+Most recently shipped milestone focus:
 
-- Replace date-range period selection with explicit monthly competency management
-- Add close-month snapshot creation and protected-history navigation
-- Remove remaining supported category-group dependencies
-- Guard period-bound writes while the editable month is undefined
+- Remove wallets from the supported product model
+- Remove account balances from the supported runtime and treat the monthly result as `receitas - despesas`
+- Redefine `Contas` as Pluggy-connected accounts only
+- Allow connected-account management with rename, bill-import toggle, and delete actions
+- Import only credit-card bill transactions from Pluggy
+- Run daily bill ingestion for the current month
+- Persist imported bill transactions in app-owned storage linked to card and `Mês Atual`
+- Keep imported bill transactions uncategorized unless a user-defined rule applies
 
 </details>
 
@@ -129,4 +124,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-04 after milestone v1.2 definition*
+*Last updated: 2026-04-05 after milestone v1.2 archival*

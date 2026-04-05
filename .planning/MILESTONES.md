@@ -1,5 +1,23 @@
 # Milestones
 
+## v1.2 Gestão de contas e faturas (Shipped: 2026-04-05)
+
+**Phases completed:** 4 phases, 4 plans, 14 tasks
+
+**Key accomplishments:**
+
+- Reworked `Contas` into a connected-account management surface with persistent renames, per-account bill-import toggles, and no supported manual or wallet account path
+- Reworked Pluggy sync to fetch only credit-card bill transactions tied to the active monthly workflow
+- Shifted bill import persistence onto a daily automated schedule and made categorization rule-only by default
+- Changed the supported dashboard and reports surface to speak in monthly result terms instead of account balance and net worth
+
+**Known debt:**
+
+- `v1.2` was archived without a checked-in `v1.2-MILESTONE-AUDIT.md` artifact, even though the milestone state indicates it passed readiness checks
+- Backend automated tests were not executed in the recorded phase summaries because no local `pytest` runtime was available in the shell
+
+---
+
 ## v1.0 Flux v2 (Shipped: 2026-04-03)
 
 **Phases completed:** 7 phases, 7 plans, 9 tasks
