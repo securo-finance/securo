@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: "v1.3"
 milestone_name: "Gestão de Cartões"
 status: planning
-stopped_at: Milestone v1.3 started; defining requirements and roadmap.
-last_updated: "2026-04-05T00:00:00Z"
+stopped_at: Milestone v1.3 initialized; roadmap approved pending execution.
+last_updated: "2026-04-05T13:09:23Z"
 last_activity: 2026-04-05
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Manage personal finances clearly on a self-hosted app that remains practical to use on mobile.
-**Current focus:** Define milestone `v1.3 Gestão de Cartões`
+**Current focus:** Milestone `v1.3 Gestão de Cartões` is ready for phase 1 planning
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 1 - Cards Navigation Surface
 Plan: -
-Status: Defining requirements
-Last activity: 2026-04-05 - Milestone v1.3 started
+Status: Milestone initialized; ready for phase discussion or planning
+Last activity: 2026-04-05 - Milestone v1.3 roadmap created
 
 Progress: [----------] 0%
 
@@ -46,7 +46,7 @@ Recent milestone outcomes:
 
 ### Pending Todos
 
-- Define scoped requirements and roadmap for `v1.3 Gestão de Cartões`.
+- Start phase 1 planning for `v1.3 Gestão de Cartões`.
 - Decide whether to close Nyquist validation debt retroactively for phases 08-12.
 - Reconstruct or regenerate a `v1.2-MILESTONE-AUDIT.md` artifact if audit-history completeness matters.
 
@@ -58,5 +58,5 @@ Recent milestone outcomes:
 ## Session Continuity
 
 Last session: 2026-04-05 00:00 UTC
-Stopped at: Milestone v1.3 started; requirements and roadmap pending.
+Stopped at: Milestone initialized and waiting for phase 1 execution.
 Resume file: None
