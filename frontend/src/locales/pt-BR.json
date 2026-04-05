@@ -5,6 +5,7 @@
   "nav": {
     "dashboard": "Painel",
     "transactions": "Transações",
+    "cards": "Cartões",
     "accounts": "Contas",
     "import": "Importar",
     "rules": "Regras",
@@ -187,6 +188,27 @@
     "transferNotes": "Notas",
     "transferInfo": "Esta é uma transferência — alterações na descrição, data e notas serão aplicadas em ambos os lados",
     "currentMonthGuard": "Defina o período do Mês Atual no painel antes de adicionar transações manuais ou criar transferências."
+  },
+  "cards": {
+    "title": "Cartões",
+    "section": "Financeiro",
+    "description": "Navegue pelos cartões importados da Pluggy e abra as transações de cada um.",
+    "open": "Abrir transações",
+    "empty": "Nenhum cartão importado disponível",
+    "emptyHint": "Quando a Pluggy sincronizar contas do tipo cartão de crédito, elas aparecerão aqui.",
+    "detailSection": "Cartões",
+    "backToCards": "Voltar para cartões",
+    "unknownCard": "Cartão",
+    "notFound": "Cartão não encontrado.",
+    "notFoundHint": "Verifique se o cartão ainda está conectado e disponível no período atual.",
+    "snapshotLabel": "Período",
+    "currentOption": "Mês Atual · {{period}}",
+    "setupOption": "Configurar Mês Atual",
+    "snapshotOption": "Histórico fechado · {{period}}",
+    "returnToCurrent": "Voltar ao Mês Atual",
+    "snapshotDescription": "Você está revisando {{period}} para este cartão.",
+    "resultsEmpty": "Nenhuma transação encontrada para este cartão.",
+    "resultsEmptyFiltered": "Nenhuma transação encontrada com os filtros atuais para este cartão."
   },
   "accounts": {
     "title": "Contas",

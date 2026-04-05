@@ -12,6 +12,8 @@ const LoginPage = lazy(() => import('@/pages/login'))
 const RegisterPage = lazy(() => import('@/pages/register'))
 const DashboardPage = lazy(() => import('@/pages/dashboard'))
 const TransactionsPage = lazy(() => import('@/pages/transactions'))
+const CardsPage = lazy(() => import('@/pages/cards'))
+const CardTransactionsPage = lazy(() => import('@/pages/card-transactions'))
 const AccountsPage = lazy(() => import('@/pages/accounts'))
 const AccountDetailPage = lazy(() => import('@/pages/account-detail'))
 const ImportPage = lazy(() => import('@/pages/import'))
@@ -59,6 +61,8 @@ function App() {
                 >
                   <Route path="/" element={<DashboardPage />} />
                   <Route path="/transactions" element={<TransactionsPage />} />
+                  <Route path="/cards" element={<CardsPage />} />
+                  <Route path="/cards/:id" element={<CardTransactionsPage />} />
                   <Route path="/accounts" element={<AccountsPage />} />
                   <Route path="/accounts/:id" element={<AccountDetailPage />} />
                   <Route path="/import" element={<ImportPage />} />

@@ -12,7 +12,7 @@ Manage personal finances clearly on a self-hosted app that remains practical to 
 
 - Shipped milestone: `v1.2 Gestão de contas e faturas` on 2026-04-05
 - Active product shape: explicit `Mês Atual`, durable monthly records and snapshots, connected-account-only account management, bill-only Pluggy imports, and monthly totals derived from `receitas - despesas`
-- Planning state: milestone `v1.3 Gestão de Cartões` is defined with requirements and roadmap pending execution
+- Planning state: milestone `v1.3 Gestão de Cartões` is implemented and awaiting user validation before archival
 
 ## Current Milestone: v1.3 Gestão de Cartões
 

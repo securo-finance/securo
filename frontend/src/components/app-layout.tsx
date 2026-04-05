@@ -35,6 +35,7 @@ import {
   Landmark,
   Users,
   BarChart3,
+  CreditCard,
   Sun,
   Moon,
   KeyRound,
@@ -50,6 +51,7 @@ type NavItem =
 const navItems: NavItem[] = [
   { type: 'link', key: 'dashboard',    path: '/',             icon: LayoutDashboard },
   { type: 'link', key: 'transactions', path: '/transactions', icon: ArrowLeftRight },
+  { type: 'link', key: 'cards',        path: '/cards',        icon: CreditCard },
   { type: 'separator', labelKey: 'nav.groupAccounts' },
   { type: 'link', key: 'accounts',     path: '/accounts',     icon: Building2 },
   { type: 'link', key: 'import',       path: '/import',       icon: Upload },

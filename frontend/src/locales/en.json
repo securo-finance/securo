@@ -5,6 +5,7 @@
   "nav": {
     "dashboard": "Dashboard",
     "transactions": "Transactions",
+    "cards": "Cards",
     "accounts": "Accounts",
     "import": "Import",
     "rules": "Rules",
@@ -187,6 +188,27 @@
     "transferNotes": "Notes",
     "transferInfo": "This is a transfer — changes to description, date, and notes will apply to both sides",
     "currentMonthGuard": "Define the current month on the dashboard before adding manual transactions or creating transfers."
+  },
+  "cards": {
+    "title": "Cards",
+    "section": "Financial",
+    "description": "Browse Pluggy-imported cards and open each card's transactions.",
+    "open": "Open transactions",
+    "empty": "No imported cards available",
+    "emptyHint": "When Pluggy syncs credit-card accounts, they will appear here.",
+    "detailSection": "Cards",
+    "backToCards": "Back to cards",
+    "unknownCard": "Card",
+    "notFound": "Card not found.",
+    "notFoundHint": "Check whether the card is still connected and available in the current period.",
+    "snapshotLabel": "Period",
+    "currentOption": "Current Month · {{period}}",
+    "setupOption": "Set up Current Month",
+    "snapshotOption": "Closed history · {{period}}",
+    "returnToCurrent": "Return to Current Month",
+    "snapshotDescription": "You're reviewing {{period}} for this card.",
+    "resultsEmpty": "No transactions found for this card.",
+    "resultsEmptyFiltered": "No transactions found for this card with the current filters."
   },
   "accounts": {
     "title": "Accounts",

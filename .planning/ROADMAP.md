@@ -17,9 +17,9 @@
 
 | # | Phase | Goal | Requirements | Success Criteria | Status |
 |---|-------|------|--------------|------------------|--------|
-| 1 | Cards Navigation Surface | Add the `Cartões` entry and a browsable list of imported Pluggy cards | CARD-01, CARD-02, CARD-03 | 3 | Not started |
-| 2 | Card Transaction Browsing | Open a card-scoped transaction experience that mirrors the main `Transações` flow | CARD-04, CARD-05, CARD-06 | 4 | Not started |
-| 3 | Snapshots and Category Filters | Keep card browsing compatible with snapshot selection and category filtering | CARD-07, CARD-08, CARD-09 | 4 | Not started |
+| 1 | Cards Navigation Surface | Add the `Cartões` entry and a browsable list of imported Pluggy cards | CARD-01, CARD-02, CARD-03 | 3 | Complete |
+| 2 | Card Transaction Browsing | Open a card-scoped transaction experience that mirrors the main `Transações` flow | CARD-04, CARD-05, CARD-06 | 4 | Complete |
+| 3 | Snapshots and Category Filters | Keep card browsing compatible with snapshot selection and category filtering | CARD-07, CARD-08, CARD-09 | 4 | Complete |
 
 ## Phase Details
 
@@ -60,4 +60,4 @@
 
 ## Next Step
 
-Start with `$gsd-discuss-phase 1` to gather execution context for the first phase, or use `$gsd-plan-phase 1` to plan it directly.
+Implementation is complete. Run manual validation on the new `Cartões` flow, then decide whether to archive the milestone.
