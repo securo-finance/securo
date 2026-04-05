@@ -14,6 +14,17 @@ Manage personal finances clearly on a self-hosted app that remains practical to 
 - Active product shape: explicit `Mês Atual`, durable monthly records and snapshots, connected-account-only account management, bill-only Pluggy imports, and monthly totals derived from `receitas - despesas`
 - Planning state: no active milestone is defined; the next planning step is to create a fresh requirements set and roadmap
 
+## Current Milestone: v1.3 Gestão de Cartões
+
+**Goal:** Gerenciar a visualização e navegação das transações dos cartões importados diariamente pela Pluggy.
+
+**Target features:**
+- Novo menu `Cartões` abaixo de `Transações`
+- Tela `Cartões` com cards dos cartões importados da Pluggy
+- Tela de detalhe por cartão, parecida com `Transações`, mostrando apenas as transações daquele cartão
+- Alternância entre snapshots e filtro por categorias na visão de transações do cartão
+- Escopo limitado a visualização e navegação; sem gestão de cartão nessa área
+
 ## Requirements
 
 ### Validated
@@ -36,10 +47,10 @@ Manage personal finances clearly on a self-hosted app that remains practical to 
 
 ### Active
 
-- [ ] User can import non-card banking transactions from Pluggy when broader sync coverage becomes valuable
-- [ ] User can choose different sync scopes per institution or account type
-- [ ] User can create and edit categorization rules from imported bill transaction flows
-- [ ] User can review why an imported bill transaction matched a categorization rule
+- [ ] User can access a dedicated `Cartões` navigation entry for imported Pluggy cards
+- [ ] User can browse imported cards as a card list in the new `Cartões` area
+- [ ] User can open a card-scoped transaction view that mirrors the main `Transações` workflow
+- [ ] User can switch snapshots and filter card transactions by category in that view
 
 ### Out of Scope
 
@@ -124,4 +135,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-05 after milestone v1.2 archival*
+*Last updated: 2026-04-05 after milestone v1.3 start*
