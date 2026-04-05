@@ -2,9 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, ArrowLeft, Check, Download, Paperclip, Search, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, Check, Paperclip, Search, X } from 'lucide-react'
 import { toast } from 'sonner'
-
 import { accounts as accountsApi, categories as categoriesApi, months, recurring, transactions } from '@/lib/api'
 import type { Transaction } from '@/types'
 import { PageHeader } from '@/components/page-header'
@@ -59,7 +58,6 @@ export default function CardTransactionsPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [tagFilter, setTagFilter] = useState<string | null>(null)
-  const [exporting, setExporting] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [bulkCategory, setBulkCategory] = useState('')
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null)
@@ -230,35 +228,12 @@ export default function CardTransactionsPage() {
         section={t('cards.detailSection')}
         title={card?.name ?? t('cards.unknownCard')}
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 self-start sm:self-auto">
             <Button asChild variant="outline">
               <Link to="/cards">
                 <ArrowLeft size={16} className="mr-1.5" />
                 {t('cards.backToCards')}
               </Link>
-            </Button>
-            <Button
-              variant="outline"
-              disabled={exporting}
-              onClick={async () => {
-                setExporting(true)
-                try {
-                  await transactions.export({
-                    account_id: id,
-                    category_id: filterCategory === '__uncategorized__' ? undefined : (filterCategory || undefined),
-                    uncategorized: filterCategory === '__uncategorized__' ? true : undefined,
-                    q: searchQuery || undefined,
-                  })
-                  toast.success(t('transactions.exportSuccess'))
-                } catch {
-                  toast.error(t('transactions.exportError'))
-                } finally {
-                  setExporting(false)
-                }
-              }}
-            >
-              <Download size={16} className="mr-1.5" />
-              {exporting ? t('transactions.exporting') : t('transactions.exportCsv')}
             </Button>
           </div>
         }
@@ -267,22 +242,29 @@ export default function CardTransactionsPage() {
       {cardLoading ? (
         <Skeleton className="mb-4 h-32 rounded-xl" />
       ) : (
+        <>
+          {isSnapshotView ? (
+            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm">
+              <p className="font-medium">{t('dashboard.snapshotViewBadge', { period: selectedPeriodLabel })}</p>
+              <p className="mt-1 text-amber-800">{t('dashboard.snapshotReadOnlyHint')}</p>
+              <Button
+                variant="outline"
+                className="mt-3"
+                onClick={() => setMonthViewMutation.mutate({ mode: 'current' })}
+                disabled={setMonthViewMutation.isPending}
+              >
+                {t('cards.returnToCurrent')}
+              </Button>
+            </div>
+          ) : null}
+
         <div className="mb-4 rounded-xl border border-border bg-card p-4 shadow-sm">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-sm text-muted-foreground">{t('cards.description')}</p>
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                <span className="rounded-full bg-muted px-2.5 py-1 text-muted-foreground">{card?.currency}</span>
-                <span
-                  className={`rounded-full px-2.5 py-1 ${
-                    card?.bill_import_enabled
-                      ? 'bg-emerald-100 text-emerald-700'
-                      : 'bg-muted text-muted-foreground'
-                  }`}
-                >
-                  {card?.bill_import_enabled ? t('accounts.billImportEnabled') : t('accounts.billImportDisabled')}
-                </span>
-              </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">{t('accounts.typeCreditCard')}</p>
+              {isSnapshotView ? (
+                <p className="mt-1 text-sm text-muted-foreground">{t('cards.snapshotDescription', { period: selectedPeriodLabel })}</p>
+              ) : null}
             </div>
 
             <div className="flex flex-col gap-2 sm:min-w-[240px]">
@@ -321,23 +303,10 @@ export default function CardTransactionsPage() {
                   </option>
                 ))}
               </select>
-              {isSnapshotView ? (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                  <p className="font-medium">{t('cards.snapshotDescription', { period: selectedPeriodLabel })}</p>
-                  <p className="mt-1 text-amber-800">{t('dashboard.snapshotReadOnlyHint')}</p>
-                  <Button
-                    variant="outline"
-                    className="mt-3"
-                    onClick={() => setMonthViewMutation.mutate({ mode: 'current' })}
-                    disabled={setMonthViewMutation.isPending}
-                  >
-                    {t('cards.returnToCurrent')}
-                  </Button>
-                </div>
-              ) : null}
             </div>
           </div>
         </div>
+        </>
       )}
 
       {!currentMonthDefined ? (
@@ -348,7 +317,7 @@ export default function CardTransactionsPage() {
       ) : null}
 
       <div className="mb-4 rounded-xl border border-border bg-card p-3 shadow-sm md:p-4">
-        <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-end md:gap-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-2 md:flex-row md:flex-wrap md:items-end md:gap-3">
           <div className="relative w-full md:w-auto">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" size={16} />
             <Input

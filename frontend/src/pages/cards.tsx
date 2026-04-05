@@ -56,31 +56,29 @@ export default function CardsPage() {
               to={`/cards/${card.id}`}
               className="group rounded-xl border border-border bg-card p-5 shadow-sm transition-colors hover:border-primary/40 hover:bg-primary/[0.03]"
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex min-w-0 items-start gap-3">
+              <div className="flex items-start gap-3">
+                <div className="flex min-w-0 flex-1 items-start gap-3">
                   <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
                     <CreditCard size={18} />
                   </div>
                   <div className="min-w-0">
                     <p className="truncate text-base font-semibold text-foreground">{card.name}</p>
                     <p className="mt-1 text-sm text-muted-foreground">{t('accounts.typeCreditCard')}</p>
+                    <span
+                      className={`mt-2 inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${
+                        card.bill_import_enabled
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-muted text-muted-foreground'
+                      }`}
+                    >
+                      {card.bill_import_enabled ? t('accounts.billImportEnabled') : t('accounts.billImportDisabled')}
+                    </span>
                   </div>
                 </div>
-                <span
-                  className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-semibold ${
-                    card.bill_import_enabled
-                      ? 'bg-emerald-100 text-emerald-700'
-                      : 'bg-muted text-muted-foreground'
-                  }`}
-                >
-                  {card.bill_import_enabled ? t('accounts.billImportEnabled') : t('accounts.billImportDisabled')}
-                </span>
               </div>
 
               <div className="mt-5 flex items-center justify-between border-t border-border pt-4">
-                <div className="text-sm text-muted-foreground">
-                  <p>{card.currency}</p>
-                </div>
+                <div />
                 <Button variant="ghost" size="sm" className="pointer-events-none gap-1 text-primary">
                   {t('cards.open')}
                   <ChevronRight size={14} />
