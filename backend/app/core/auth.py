@@ -1,5 +1,4 @@
 import uuid
-from decimal import Decimal
 from typing import Optional
 
 from fastapi import Depends, Request
@@ -29,28 +28,11 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
 
     async def on_after_register(self, user: User, request: Optional[Request] = None):
         print(f"User {user.id} has registered.")
-        # If request is None, this was called programmatically (e.g., from setup endpoint)
-        # which handles wallet creation, categories, and rules itself.
-        if request is None:
-            return
-        # Create default wallet for users registered via /auth/register.
-        from app.models.account import Account
         from app.services.category_service import create_default_categories
         from app.services.rule_service import create_default_rules
 
         session = self.user_db.session
-        currency = user.primary_currency
         lang = (user.preferences or {}).get("language", "en")
-        wallet_name = "Carteira" if lang.startswith("pt") else "Wallet"
-        wallet = Account(
-            user_id=user.id,
-            name=wallet_name,
-            type="checking",
-            balance=Decimal("0.00"),
-            currency=currency,
-        )
-        session.add(wallet)
-        await session.commit()
 
         # Create default categories and rules for the new user
         await create_default_categories(session, user.id, lang)

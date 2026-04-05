@@ -23,72 +23,16 @@ from app.services.month_service import (
 
 
 async def get_accounts(session: AsyncSession, user_id: uuid.UUID, include_closed: bool = False) -> list[dict]:
-    # Subquery: compute current_balance per account from transactions in one pass
-    # Use amount_primary only when tx currency differs from account currency
-    # (converts foreign txs to account's reporting currency)
-    effective_amount = case(
-        (Transaction.currency == Account.currency, Transaction.amount),
-        else_=func.coalesce(Transaction.amount_primary, Transaction.amount),
-    )
-    signed_amount = case(
-        (Transaction.type == "credit", effective_amount),
-        else_=-effective_amount,
-    )
-
-    user = await session.get(User, user_id)
-    current_period = get_selected_view_period(user) if user else None
-    current_monthly_period = await resolve_selected_view_monthly_period(session, user_id, user) if current_period else None
-    previous_monthly_period = None
-    if current_period:
-        previous_period = month_to_period_value(period_to_month_start(current_period) - timedelta(days=1))
-        previous_monthly_period = await get_monthly_period(session, user_id, previous_period)
-
-    balance_sq = (
-        select(
-            Transaction.account_id,
-            func.coalesce(func.sum(signed_amount), 0).label("current_balance"),
-        )
-        .join(Account, Transaction.account_id == Account.id)
-        .where(
-            Transaction.monthly_period_id == current_monthly_period.id
-            if current_monthly_period is not None
-            else True
-        )
-        .group_by(Transaction.account_id)
-        .subquery()
-    )
-
-    prev_balance_sq = (
-        select(
-            Transaction.account_id,
-            func.coalesce(func.sum(signed_amount), 0).label("previous_balance"),
-        )
-        .join(Account, Transaction.account_id == Account.id)
-        .where(
-            Transaction.monthly_period_id == previous_monthly_period.id
-            if previous_monthly_period is not None
-            else False
-        )
-        .group_by(Transaction.account_id)
-        .subquery()
-    )
-
-    # Build the query
     query = (
-        select(
-            Account,
-            func.coalesce(balance_sq.c.current_balance, 0).label("current_balance"),
-            func.coalesce(prev_balance_sq.c.previous_balance, 0).label("previous_balance"),
-        )
+        select(Account)
         .outerjoin(BankConnection)
-        .outerjoin(balance_sq, Account.id == balance_sq.c.account_id)
-        .outerjoin(prev_balance_sq, Account.id == prev_balance_sq.c.account_id)
         .where(
             or_(
                 Account.user_id == user_id,
                 BankConnection.user_id == user_id,
             )
         )
+        .where(Account.connection_id.is_not(None))
     )
     if not include_closed:
         query = query.where(Account.is_closed == False)
@@ -102,18 +46,14 @@ async def get_accounts(session: AsyncSession, user_id: uuid.UUID, include_closed
             "monthly_period_id": acc.monthly_period_id,
             "connection_id": acc.connection_id,
             "external_id": acc.external_id,
-            "name": acc.name,
+            "name": acc.custom_name or acc.name,
             "type": acc.type,
-            "balance": acc.balance,
             "currency": acc.currency,
-            # Connected CC: provider stores positive for debt → negate.
-            # Manual accounts: transaction math already gives correct sign.
-            "current_balance": float(acc.balance) * (-1 if acc.type == "credit_card" else 1) if acc.connection_id else float(current_balance or 0),
-            "previous_balance": float(previous_balance or 0),
+            "bill_import_enabled": acc.bill_import_enabled,
             "is_closed": acc.is_closed,
             "closed_at": acc.closed_at,
         }
-        for acc, current_balance, previous_balance in result.all()
+        for acc in result.scalars().all()
     ]
 
 
@@ -123,6 +63,7 @@ async def get_account(session: AsyncSession, account_id: uuid.UUID, user_id: uui
         .outerjoin(BankConnection)
         .where(
             Account.id == account_id,
+            Account.connection_id.is_not(None),
             or_(
                 Account.user_id == user_id,
                 BankConnection.user_id == user_id,
@@ -133,38 +74,7 @@ async def get_account(session: AsyncSession, account_id: uuid.UUID, user_id: uui
 
 
 async def create_account(session: AsyncSession, user_id: uuid.UUID, data: AccountCreate) -> Account:
-    monthly_period = await resolve_current_monthly_period(session, user_id)
-    account = Account(
-        user_id=user_id,
-        monthly_period_id=monthly_period.id,
-        name=data.name,
-        type=data.type,
-        balance=data.balance,
-        currency=data.currency,
-    )
-    session.add(account)
-    await session.flush()  # get account.id without committing
-
-    if data.balance > Decimal("0.00"):
-        # Credit cards: opening balance represents debt → record as debit.
-        # Other accounts: opening balance represents assets → record as credit.
-        opening_type = "debit" if data.type == "credit_card" else "credit"
-        opening_tx = Transaction(
-            user_id=user_id,
-            account_id=account.id,
-            monthly_period_id=monthly_period.id,
-            description="Saldo inicial",
-            amount=data.balance,
-            currency=data.currency,
-            date=data.balance_date or _Date.today(),
-            type=opening_type,
-            source="opening_balance",
-        )
-        session.add(opening_tx)
-
-    await session.commit()
-    await session.refresh(account)
-    return account
+    raise ValueError("Manual account creation is no longer supported")
 
 
 async def update_account(
@@ -174,51 +84,11 @@ async def update_account(
     if not account:
         return None
 
-    # Only allow editing manual accounts
-    if account.connection_id is not None:
-        raise ValueError("Cannot edit bank-connected accounts")
-
     update_data = data.model_dump(exclude_unset=True)
-    balance_date = update_data.pop("balance_date", None)
-
-    for key, value in update_data.items():
-        setattr(account, key, value)
-
-    # When balance changes, sync the opening_balance transaction
-    if "balance" in update_data:
-        new_balance = update_data["balance"]
-        monthly_period = await resolve_current_monthly_period(session, user_id)
-        existing_opening = await session.execute(
-            select(Transaction).where(
-                Transaction.account_id == account_id,
-                Transaction.source == "opening_balance",
-            )
-        )
-        opening_tx = existing_opening.scalar_one_or_none()
-        opening_type = "debit" if account.type == "credit_card" else "credit"
-
-        if new_balance > Decimal("0.00"):
-            if opening_tx:
-                opening_tx.amount = new_balance
-                opening_tx.type = opening_type
-                opening_tx.monthly_period_id = monthly_period.id
-                if balance_date:
-                    opening_tx.date = balance_date
-            else:
-                opening_tx = Transaction(
-                    user_id=account.user_id,
-                    account_id=account_id,
-                    monthly_period_id=monthly_period.id,
-                    description="Saldo inicial",
-                    amount=new_balance,
-                    currency=account.currency,
-                    date=balance_date or _Date.today(),
-                    type=opening_type,
-                    source="opening_balance",
-                )
-                session.add(opening_tx)
-        elif opening_tx:
-            await session.delete(opening_tx)
+    if "name" in update_data:
+        account.custom_name = update_data["name"]
+    if "bill_import_enabled" in update_data:
+        account.bill_import_enabled = update_data["bill_import_enabled"]
 
     await session.commit()
     await session.refresh(account)
@@ -230,19 +100,8 @@ async def delete_account(session: AsyncSession, account_id: uuid.UUID, user_id: 
     if not account:
         return False
 
-    # Only allow deleting manual accounts
-    if account.connection_id is not None:
-        raise ValueError("Cannot delete bank-connected accounts")
-
-    # Clean up attachment files for all transactions in this account
-    from app.services.attachment_service import cleanup_attachment_files
-    tx_result = await session.execute(
-        select(Transaction.id).where(Transaction.account_id == account_id)
-    )
-    tx_ids = [row[0] for row in tx_result.all()]
-    await cleanup_attachment_files(session, tx_ids)
-
-    await session.delete(account)
+    account.is_closed = True
+    account.closed_at = datetime.now(timezone.utc)
     await session.commit()
     return True
 
@@ -258,10 +117,6 @@ async def close_account(
 
     account.is_closed = True
     account.closed_at = datetime.now(timezone.utc)
-
-    # Unlink from bank connection so sync skips it
-    if account.connection_id is not None:
-        account.connection_id = None
 
     await session.commit()
     await session.refresh(account)

@@ -23,15 +23,7 @@ async def list_accounts(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
-    accounts = await account_service.get_accounts(session, user.id, include_closed=include_closed)
-    primary_currency = user.primary_currency
-    for acc in accounts:
-        if acc["currency"] != primary_currency:
-            converted, _ = await convert(
-                session, Decimal(str(acc["current_balance"])), acc["currency"], primary_currency,
-            )
-            acc["balance_primary"] = float(converted)
-    return accounts
+    return await account_service.get_accounts(session, user.id, include_closed=include_closed)
 
 
 @router.get("/{account_id}/summary", response_model=AccountSummary)
@@ -101,7 +93,9 @@ async def get_account(
     account = await account_service.get_account(session, account_id, user.id)
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
-    return account
+    payload = AccountRead.model_validate(account, from_attributes=True).model_dump()
+    payload["name"] = account.custom_name or account.name
+    return payload
 
 
 @router.post("", response_model=AccountRead, status_code=status.HTTP_201_CREATED)
@@ -131,7 +125,9 @@ async def update_account(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
-    return account
+    payload = AccountRead.model_validate(account, from_attributes=True).model_dump()
+    payload["name"] = account.custom_name or account.name
+    return payload
 
 
 @router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -162,7 +158,9 @@ async def close_account(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
-    return account
+    payload = AccountRead.model_validate(account, from_attributes=True).model_dump()
+    payload["name"] = account.custom_name or account.name
+    return payload
 
 
 @router.post("/{account_id}/reopen", response_model=AccountRead)
@@ -178,4 +176,6 @@ async def reopen_account(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
-    return account
+    payload = AccountRead.model_validate(account, from_attributes=True).model_dump()
+    payload["name"] = account.custom_name or account.name
+    return payload

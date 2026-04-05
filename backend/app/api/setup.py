@@ -1,5 +1,3 @@
-from decimal import Decimal
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import select, func, update as sql_update
@@ -7,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_jwt_strategy, get_user_manager, UserManager
 from app.core.database import get_async_session
-from app.models.account import Account
 from app.models.user import User
 
 router = APIRouter(prefix="/api/setup", tags=["setup"])
@@ -64,24 +61,13 @@ async def create_admin(
         sql_update(User).where(User.id == user.id).values(preferences=prefs)
     )
 
-    # Create default wallet with the chosen currency
-    wallet_name = "Carteira" if body.language.startswith("pt") else "Wallet"
-    wallet = Account(
-        user_id=user.id,
-        name=wallet_name,
-        type="checking",
-        balance=Decimal("0.00"),
-        currency=body.currency,
-    )
-    db_session.add(wallet)
-    await db_session.commit()
-
     # Create default categories and rules for the new user
     from app.services.category_service import create_default_categories
     from app.services.rule_service import create_default_rules
 
     await create_default_categories(db_session, user.id, body.language)
     await create_default_rules(db_session, user.id, body.language)
+    await db_session.commit()
 
     # Refresh user to get updated preferences for token generation
     await db_session.refresh(user)

@@ -23,20 +23,19 @@ class AccountCreate(BaseModel):
 
 class AccountUpdate(BaseModel):
     name: Optional[str] = None
-    type: Optional[str] = None
-    balance: Optional[Decimal] = None
-    balance_date: Optional[date] = None
+    bill_import_enabled: Optional[bool] = None
 
 
-class AccountRead(AccountBase):
+class AccountRead(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
     monthly_period_id: Optional[uuid.UUID] = None
     connection_id: Optional[uuid.UUID] = None
     external_id: Optional[str] = None
-    current_balance: float = 0.0
-    previous_balance: Optional[float] = None
-    balance_primary: Optional[float] = None
+    name: str
+    type: str
+    currency: str = "USD"
+    bill_import_enabled: bool = True
     is_closed: bool = False
     closed_at: Optional[datetime] = None
 
