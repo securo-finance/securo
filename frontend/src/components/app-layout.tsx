@@ -63,20 +63,14 @@ const navItems: NavItem[] = [
   { type: 'link', key: 'rules',        path: '/rules',        icon: SlidersHorizontal },
 ]
 
-function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
-}
-
 export function AppLayout() {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const { user, logout, updateUser } = useAuth()
-  const userCurrency = user?.preferences?.currency_display ?? 'USD'
-  const locale = i18n.language === 'en' ? 'en-US' : i18n.language
   const { theme, setTheme } = useTheme()
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [accountsExpanded, setAccountsExpanded] = useState(true)
-  const { privacyMode, togglePrivacyMode, mask } = usePrivacyMode()
+  const { privacyMode, togglePrivacyMode } = usePrivacyMode()
   const [changePasswordOpen, setChangePasswordOpen] = useState(false)
   const [backingUp, setBackingUp] = useState(false)
 
@@ -94,17 +88,12 @@ export function AppLayout() {
   }, [user, updateUser])
 
   const userInitial = user?.email?.charAt(0).toUpperCase() ?? '?'
-  const currentLang = i18n.language
-
   const { data: accountsList } = useQuery({
     queryKey: ['accounts'],
     queryFn: () => accountsApi.list(),
   })
 
   const allAccounts = accountsList ?? []
-  const totalBalance = allAccounts.reduce((sum, a) => {
-    return sum + Number(a.balance_primary ?? a.current_balance)
-  }, 0)
 
   return (
     <div className="min-h-screen bg-background">
@@ -222,32 +211,20 @@ export function AppLayout() {
                 className="flex items-center justify-between w-full px-3 py-2 hover:text-sidebar-foreground transition-colors"
               >
                 <span className="text-[11px] uppercase tracking-[0.12em] font-semibold text-sidebar-muted">{t('accounts.title')}</span>
-                <div className="flex items-center gap-2">
-                  <span className={`tabular-nums font-medium text-xs ${totalBalance < 0 ? 'text-rose-400' : 'text-sidebar-muted'}`}>
-                    {mask(formatCurrency(totalBalance, userCurrency, locale))}
-                  </span>
-                  <ChevronRight
-                    size={12}
-                    className={cn('text-sidebar-muted transition-transform', accountsExpanded && 'rotate-90')}
-                  />
-                </div>
+                <ChevronRight
+                  size={12}
+                  className={cn('text-sidebar-muted transition-transform', accountsExpanded && 'rotate-90')}
+                />
               </button>
               {accountsExpanded && (
                 <div className="mt-1 space-y-0.5">
                   {allAccounts.map((acc) => {
-                    const balance = Number(acc.current_balance)
-                    const prevBalance = acc.previous_balance ?? 0
-                    const pctChange = prevBalance !== 0
-                      ? ((balance - prevBalance) / Math.abs(prevBalance)) * 100
-                      : null
                     const typeKey = acc.type.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()).replace(/^./, c => c.toUpperCase())
 
                     return (
-                      <Link
+                      <div
                         key={acc.id}
-                        to={`/accounts/${acc.id}`}
-                        onClick={() => setSidebarOpen(false)}
-                        className="flex items-center justify-between px-3 py-2 rounded-lg text-[13px] text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all"
+                        className="flex items-center justify-between px-3 py-2 rounded-lg text-[13px] text-sidebar-muted"
                       >
                         <div className="truncate min-w-0">
                           <span className="block truncate">{acc.name}</span>
@@ -255,17 +232,13 @@ export function AppLayout() {
                             {t(`accounts.type${typeKey}`)}
                           </span>
                         </div>
-                        <div className="text-right shrink-0 ml-2">
-                          <span className={`block tabular-nums font-medium text-[13px] ${balance < 0 ? 'text-rose-400' : 'text-sidebar-foreground'}`}>
-                            {mask(formatCurrency(balance, acc.currency))}
-                          </span>
-                          {pctChange !== null && (
-                            <span className={`block text-[11px] tabular-nums font-medium ${pctChange >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                              {mask(`${pctChange >= 0 ? '+' : ''}${pctChange.toFixed(1)}%`)}
-                            </span>
-                          )}
-                        </div>
-                      </Link>
+                        <span className={cn(
+                          'text-[11px] font-medium',
+                          acc.bill_import_enabled ? 'text-emerald-400' : 'text-sidebar-muted/60',
+                        )}>
+                          {acc.bill_import_enabled ? t('accounts.billImportEnabled') : t('accounts.billImportDisabled')}
+                        </span>
+                      </div>
                     )
                   })}
                 </div>
@@ -275,35 +248,9 @@ export function AppLayout() {
 
           <div className="flex-1" />
 
-          {/* Language & Theme toggles */}
+          {/* Theme toggles */}
           <div className="group/toggles px-3 pb-2 border-b border-sidebar-border">
-            <div className="flex items-center justify-between gap-2 px-1 py-2">
-              {/* Language toggle */}
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => i18n.changeLanguage('pt-BR')}
-                  className={cn(
-                    'px-2 py-1 rounded text-[11px] font-semibold transition-all duration-300',
-                    currentLang === 'pt-BR'
-                      ? 'bg-primary/15 text-primary group-hover/toggles:bg-primary/25'
-                      : 'text-sidebar-muted/40 group-hover/toggles:text-sidebar-muted group-hover/toggles:hover:text-sidebar-foreground'
-                  )}
-                >
-                  PT
-                </button>
-                <button
-                  onClick={() => i18n.changeLanguage('en')}
-                  className={cn(
-                    'px-2 py-1 rounded text-[11px] font-semibold transition-all duration-300',
-                    currentLang === 'en'
-                      ? 'bg-primary/15 text-primary group-hover/toggles:bg-primary/25'
-                      : 'text-sidebar-muted/40 group-hover/toggles:text-sidebar-muted group-hover/toggles:hover:text-sidebar-foreground'
-                  )}
-                >
-                  EN
-                </button>
-              </div>
-              {/* Theme toggle */}
+            <div className="flex items-center justify-end gap-2 px-1 py-2">
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => setTheme('light')}

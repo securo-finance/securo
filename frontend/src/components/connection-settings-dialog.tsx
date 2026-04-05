@@ -1,20 +1,19 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { connections } from '@/lib/api'
 import { toast } from 'sonner'
+import { connections } from '@/lib/api'
+import type { BankConnection } from '@/types'
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import type { BankConnection, ConnectionSettings } from '@/types'
-
-type PayeeSource = NonNullable<ConnectionSettings['payee_source']>
 
 interface ConnectionSettingsDialogProps {
   open: boolean
@@ -29,25 +28,24 @@ export function ConnectionSettingsDialog({
 }: ConnectionSettingsDialogProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-
-  const [payeeSource, setPayeeSource] = useState<PayeeSource>('auto')
-  const [importPending, setImportPending] = useState(true)
+  const [displayName, setDisplayName] = useState('')
+  const [billImportEnabled, setBillImportEnabled] = useState(true)
 
   useEffect(() => {
-    if (connection) {
-      setPayeeSource(connection.settings?.payee_source ?? 'auto')
-      setImportPending(connection.settings?.import_pending ?? true)
-    }
+    if (!connection) return
+    setDisplayName(connection.settings?.display_name ?? connection.institution_name)
+    setBillImportEnabled(connection.settings?.bill_import_enabled ?? true)
   }, [connection])
 
   const mutation = useMutation({
     mutationFn: () =>
       connections.updateSettings(connection!.id, {
-        payee_source: payeeSource,
-        import_pending: importPending,
+        display_name: displayName.trim(),
+        bill_import_enabled: billImportEnabled,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['connections'] })
+      queryClient.invalidateQueries({ queryKey: ['accounts'] })
       toast.success(t('accounts.updated'))
       onClose()
     },
@@ -62,26 +60,26 @@ export function ConnectionSettingsDialog({
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>{t('connections.payeeSource')}</Label>
-            <select
-              className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-              value={payeeSource}
-              onChange={(e) => setPayeeSource(e.target.value as PayeeSource)}
-            >
-              <option value="auto">{t('connections.payeeAuto')}</option>
-              <option value="merchant">{t('connections.payeeMerchant')}</option>
-              <option value="payment_data">{t('connections.payeePaymentData')}</option>
-              <option value="description">{t('connections.payeeDescription')}</option>
-              <option value="none">{t('connections.payeeNone')}</option>
-            </select>
+            <Label htmlFor="connection-name">{t('connections.displayName')}</Label>
+            <Input
+              id="connection-name"
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
+              placeholder={connection?.institution_name}
+              required
+            />
+            <p className="text-sm text-muted-foreground">{t('connections.displayNameHint')}</p>
           </div>
-          <div className="flex items-center justify-between">
-            <Label htmlFor="import-pending">{t('connections.importPending')}</Label>
+          <div className="flex items-center justify-between gap-4">
+            <div className="space-y-1">
+              <Label htmlFor="connection-bill-import">{t('connections.billImportEnabled')}</Label>
+              <p className="text-sm text-muted-foreground">{t('connections.billImportHint')}</p>
+            </div>
             <input
-              id="import-pending"
+              id="connection-bill-import"
               type="checkbox"
-              checked={importPending}
-              onChange={(e) => setImportPending(e.target.checked)}
+              checked={billImportEnabled}
+              onChange={(event) => setBillImportEnabled(event.target.checked)}
               className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
             />
           </div>
@@ -90,7 +88,7 @@ export function ConnectionSettingsDialog({
           <Button variant="outline" onClick={onClose}>
             {t('common.cancel')}
           </Button>
-          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !displayName.trim()}>
             {mutation.isPending ? t('common.loading') : t('common.save')}
           </Button>
         </DialogFooter>

@@ -60,6 +60,8 @@ export interface BankConnection {
 }
 
 export interface ConnectionSettings {
+  display_name?: string
+  bill_import_enabled?: boolean
   payee_source?: 'auto' | 'merchant' | 'payment_data' | 'description' | 'none'
   import_pending?: boolean
 }
@@ -72,11 +74,8 @@ export interface Account {
   external_id: string | null
   name: string
   type: string
-  balance: number
-  current_balance: number
-  previous_balance: number | null
-  balance_primary: number | null
   currency: string
+  bill_import_enabled: boolean
   is_closed: boolean
   closed_at: string | null
 }

@@ -45,6 +45,7 @@
     "greetingMorning": "Bom dia",
     "greetingAfternoon": "Boa tarde",
     "greetingEvening": "Boa noite",
+    "monthlyResult": "Resultado do Mês",
     "totalBalance": "Saldo Total",
     "monthlyIncome": "Entradas do Mês",
     "monthlyExpenses": "Saídas do Mês",
@@ -192,6 +193,7 @@
     "connectBank": "Conectar Banco",
     "confirmDeleteTitle": "Excluir conta?",
     "confirmDeleteDesc": "Esta ação é irreversível e removerá todas as transações associadas a esta conta.",
+    "deleteConnectedDesc": "Isso ocultará a conta conectada no Flux e interromperá importações futuras para ela.",
     "openingBalance": "saldo inicial",
     "notFound": "Conta não encontrada.",
     "balance": "Saldo",
@@ -220,6 +222,8 @@
     "deleted": "Conta excluída",
     "syncDone": "Sincronização concluída",
     "syncError": "Erro ao sincronizar",
+    "fetchBills": "Buscar faturas",
+    "fetchingBills": "Buscando faturas...",
     "connected": "Banco conectado com sucesso",
     "connectError": "Erro ao conectar banco",
     "disconnected": "Conexão removida",
@@ -246,17 +250,17 @@
     "selectConnector": "Selecionar Conector",
     "selectConnectorDesc": "Escolha um provedor de conexão bancária",
     "connectorNotConfigured": "Este conector requer configuração. Configure as credenciais necessárias para habilitá-lo.",
-    "noConnectorsAvailable": "Nenhum conector bancário disponível"
+    "noConnectorsAvailable": "Nenhum conector bancário disponível",
+    "billImportEnabled": "Importação de fatura ativa",
+    "billImportDisabled": "Importação de fatura desligada",
+    "renameHint": "Renomear altera apenas o rótulo exibido no Flux. A sincronização mantém a conexão do provedor intacta."
   },
   "connections": {
     "settings": "Configurações da conexão",
-    "payeeSource": "Origem do beneficiário",
-    "payeeAuto": "Automático (comerciante > dados de pagamento)",
-    "payeeMerchant": "Apenas nome do comerciante",
-    "payeePaymentData": "Nome do pagador/recebedor",
-    "payeeDescription": "Descrição da transação",
-    "payeeNone": "Não definir beneficiário",
-    "importPending": "Importar transações pendentes"
+    "displayName": "Nome da conexão",
+    "displayNameHint": "Esse nome é exibido no Flux e não altera a conexão no provedor.",
+    "billImportEnabled": "Importar faturas",
+    "billImportHint": "Quando desativado, o Flux deixa de buscar faturas dessa conexão."
   },
   "settings": {
     "rules": "Regras",

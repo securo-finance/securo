@@ -45,6 +45,7 @@
     "greetingMorning": "Good morning",
     "greetingAfternoon": "Good afternoon",
     "greetingEvening": "Good evening",
+    "monthlyResult": "Month Result",
     "totalBalance": "Total Balance",
     "monthlyIncome": "Monthly Income",
     "monthlyExpenses": "Monthly Expenses",
@@ -192,6 +193,7 @@
     "connectBank": "Connect Bank",
     "confirmDeleteTitle": "Delete account?",
     "confirmDeleteDesc": "This action is irreversible and will remove all transactions associated with this account.",
+    "deleteConnectedDesc": "This will hide the connected account from Flux and stop future imports for it.",
     "openingBalance": "opening balance",
     "notFound": "Account not found.",
     "balance": "Balance",
@@ -220,6 +222,8 @@
     "deleted": "Account deleted",
     "syncDone": "Sync completed",
     "syncError": "Sync failed",
+    "fetchBills": "Fetch bills",
+    "fetchingBills": "Fetching bills...",
     "connected": "Bank connected successfully",
     "connectError": "Failed to connect bank",
     "disconnected": "Connection removed",
@@ -246,17 +250,17 @@
     "selectConnector": "Select Connector",
     "selectConnectorDesc": "Choose a bank connection provider",
     "connectorNotConfigured": "This connector requires configuration. Set up the required credentials to enable it.",
-    "noConnectorsAvailable": "No bank connectors available"
+    "noConnectorsAvailable": "No bank connectors available",
+    "billImportEnabled": "Bill import on",
+    "billImportDisabled": "Bill import off",
+    "renameHint": "Rename only changes the label shown inside Flux. Sync will keep the provider connection intact."
   },
   "connections": {
     "settings": "Connection settings",
-    "payeeSource": "Payee source",
-    "payeeAuto": "Auto (merchant > payment data)",
-    "payeeMerchant": "Merchant name only",
-    "payeePaymentData": "Payer/receiver name",
-    "payeeDescription": "Transaction description",
-    "payeeNone": "Don't set payee",
-    "importPending": "Import pending transactions"
+    "displayName": "Connection name",
+    "displayNameHint": "This name is shown inside Flux and does not change the provider connection.",
+    "billImportEnabled": "Import bills",
+    "billImportHint": "When disabled, Flux stops fetching bills for this connection."
   },
   "settings": {
     "rules": "Rules",
