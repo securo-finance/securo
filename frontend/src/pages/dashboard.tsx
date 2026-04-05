@@ -26,15 +26,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  ComposedChart,
-  Area,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-} from 'recharts'
 import { CheckCircle2, CalendarIcon, Paperclip } from 'lucide-react'
 import { PageHeader } from '@/components/page-header'
 import { CategoryIcon } from '@/components/category-icon'
@@ -77,7 +68,7 @@ function formatDate(dateStr: string, locale = 'pt-BR') {
 
 export default function DashboardPage() {
   const { t, i18n } = useTranslation()
-  const { mask, privacyMode, MASK } = usePrivacyMode()
+  const { mask } = usePrivacyMode()
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const displayName = user?.preferences?.display_name || ''
@@ -103,7 +94,6 @@ export default function DashboardPage() {
   const [closeMonthDialogOpen, setCloseMonthDialogOpen] = useState(false)
   const queryClient = useQueryClient()
   const [headerCalOpen, setHeaderCalOpen] = useState(false)
-  const [hoveredDay, setHoveredDay] = useState<number | null>(null)
   const dateFnsLocale = i18n.language === 'pt-BR' ? ptBR : enUS
   const effectiveSelectedMonth =
     selectedMonth ||
@@ -205,11 +195,9 @@ export default function DashboardPage() {
     enabled: hasReadableSelectedPeriod && !!monthParam,
   })
 
-  const prevMonth = shiftMonth(effectiveSelectedMonth, -1)
-
-  const { data: balanceHistory, isLoading: balanceHistoryLoading } = useQuery({
-    queryKey: ['dashboard', 'balance-history', effectiveSelectedMonth],
-    queryFn: () => dashboard.balanceHistory(monthParam),
+  const { data: monthlyTrend, isLoading: monthlyTrendLoading } = useQuery({
+    queryKey: ['dashboard', 'monthly-trend'],
+    queryFn: () => dashboard.monthlyTrend(6),
     enabled: hasReadableSelectedPeriod && !!monthParam,
   })
 
@@ -270,40 +258,12 @@ export default function DashboardPage() {
     },
   })
 
-
-  const cumulativeData = useMemo(() => {
-    if (!balanceHistory) return []
-    const daysInMonth = monthLastDay(effectiveSelectedMonth)
-    const result: { day: number; current: number | null; previous: number }[] = []
-    let lastPrevBalance = 0
-    for (let day = 1; day <= daysInMonth; day++) {
-      const cur = balanceHistory.current.find(d => d.day === day)
-      const prev = balanceHistory.previous.find(d => d.day === day)
-      if (prev?.balance != null) {
-        lastPrevBalance = prev.balance
-      }
-      result.push({
-        day,
-        current: cur?.balance ?? null,
-        previous: prev?.balance ?? lastPrevBalance,
-      })
-    }
-    return result
-  }, [balanceHistory, effectiveSelectedMonth])
-
-  const lastCurrentPoint = [...cumulativeData].reverse().find(d => d.current !== null)
-  const lastDay = lastCurrentPoint?.day ?? 0
-  const currentStartBalance = balanceHistory?.current.find(d => d.day === 1)?.balance ?? 0
-  const currentLatestBalance = lastCurrentPoint?.current ?? 0
-  const monthVariation = currentLatestBalance - currentStartBalance
-
   const primaryCurrency = summary?.primary_currency ?? userCurrency
-  const totalBalance = summary?.total_balance_primary ?? Object.values(summary?.total_balance ?? {}).reduce((a, b) => a + Number(b), 0)
-
 
   // Savings rate & projection
   const income = Number(summary?.monthly_income_primary ?? summary?.monthly_income ?? 0)
   const expenses = Number(summary?.monthly_expenses_primary ?? summary?.monthly_expenses ?? 0)
+  const monthlyResult = income - expenses
   const savingsRate = income > 0 ? ((income - expenses) / income) * 100 : 0
   const isCurrentMonth = effectiveSelectedMonth === currentMonth()
   const daysElapsed = isCurrentMonth ? new Date().getDate() : monthLastDay(effectiveSelectedMonth)
@@ -319,6 +279,23 @@ export default function DashboardPage() {
   const selectedPeriodLabel = currentMonthState?.selected_period_label ?? monthLabel(effectiveSelectedMonth, locale)
   const currentPeriodLabel = currentMonthState?.current_period_label ?? null
   const selectedSnapshotPeriod = currentMonthState?.selected_mode === 'snapshot' ? currentMonthState.selected_period : ''
+
+  const trendRows = useMemo(() => {
+    return [...(monthlyTrend ?? [])]
+      .slice(-6)
+      .reverse()
+      .map((item) => {
+        const result = Number(item.income) - Number(item.expenses)
+        return {
+          ...item,
+          result,
+          label: new Date(`${item.month}-01T00:00:00`).toLocaleDateString(locale, {
+            month: 'short',
+            year: 'numeric',
+          }),
+        }
+      })
+  }, [locale, monthlyTrend])
 
   // Merged category bars data
   const mergedCategories = useMemo(() => {
@@ -629,27 +606,15 @@ export default function DashboardPage() {
             </div>
 
             <div className="flex flex-wrap gap-6">
-              {/* Balance */}
+              {/* Month result */}
               <div className="min-w-0">
-                <p className="text-xs font-medium text-muted-foreground mb-0.5">{t('dashboard.totalBalance')}</p>
+                <p className="text-xs font-medium text-muted-foreground mb-0.5">{t('dashboard.monthlyResult')}</p>
                 {summaryLoading ? (
                   <Skeleton className="h-7 w-24" />
                 ) : (
-                  <div>
-                    <p className={`text-lg font-bold tabular-nums ${totalBalance < 0 ? 'text-rose-500' : 'text-foreground'}`}>
-                      {mask(formatCurrency(totalBalance, primaryCurrency, locale))}
-                    </p>
-                    {/* Per-currency breakdown when multiple currencies */}
-                    {summary?.total_balance && Object.keys(summary.total_balance).length > 1 && (
-                      <div className="flex flex-wrap gap-x-2 mt-0.5">
-                        {Object.entries(summary.total_balance).map(([cur, val]) => (
-                          <span key={cur} className="text-[10px] text-muted-foreground tabular-nums">
-                            {mask(formatCurrency(val, cur, locale))}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  <p className={`text-lg font-bold tabular-nums ${monthlyResult < 0 ? 'text-rose-500' : 'text-foreground'}`}>
+                    {mask(formatCurrency(monthlyResult, primaryCurrency, locale))}
+                  </p>
                 )}
               </div>
 
@@ -752,7 +717,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Charts: Category Spending Bars + Balance Flow */}
+      {/* Charts: Category Spending Bars + Monthly Trend */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5" style={{ gridAutoRows: 'minmax(380px, auto)' }}>
         {/* Category Spending Bars */}
         <div className="bg-card rounded-xl border border-border shadow-sm flex flex-col max-h-[420px]">
@@ -830,147 +795,40 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Cumulative Spending Comparison */}
+        {/* Monthly Trend Summary */}
         <div className="bg-card rounded-xl border border-border shadow-sm max-h-[420px] flex flex-col">
-          <div className="px-5 pt-5 pb-3 shrink-0">
-            <div className="flex items-start justify-between mb-0.5">
-              <div>
-                <p className="text-base font-bold text-foreground">{t('dashboard.balanceFlow')}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {new Date(`${effectiveSelectedMonth}-01T00:00:00`).toLocaleDateString(locale)} → {new Date(`${effectiveSelectedMonth}-${String(lastCurrentPoint?.day ?? monthLastDay(effectiveSelectedMonth)).padStart(2, '0')}T00:00:00`).toLocaleDateString(locale)}
-                </p>
-              </div>
-              {!balanceHistoryLoading && lastCurrentPoint && (
-                <span className={`text-lg font-bold tabular-nums ${monthVariation >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                  {mask(`${monthVariation > 0 ? '+' : ''}${formatCurrency(monthVariation, userCurrency, locale)}`)}
-                </span>
-              )}
-            </div>
+          <div className="px-5 py-4 border-b border-border shrink-0">
+            <p className="text-sm font-semibold text-foreground">{t('dashboard.monthlyTrend')}</p>
           </div>
-          <div className="px-1 pb-4 flex-1 min-h-0">
-            {balanceHistoryLoading ? (
-              <Skeleton className="h-full w-full" />
-            ) : cumulativeData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart
-                  data={cumulativeData}
-                  margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
-                  className="cursor-pointer"
-                  onMouseMove={(state) => {
-                    const idx = state?.activeTooltipIndex
-                    if (typeof idx === 'number') {
-                      const point = cumulativeData[idx]
-                      if (point) setHoveredDay(point.day)
-                    }
-                  }}
-                  onMouseLeave={() => setHoveredDay(null)}
-                  onClick={(_state) => {
-                    // Access activePayload from the underlying native event target chart state
-                    const chartState = _state as unknown as { activePayload?: Array<{ payload: { day: number } }> }
-                    const payload = chartState?.activePayload ?? []
-                    if (payload[0]) {
-                      const day = String(payload[0].payload.day).padStart(2, '0')
-                      const dateStr = `${effectiveSelectedMonth}-${day}`
-                      setDrillDown({
-                        title: t('dashboard.drillDownDay', { date: new Date(dateStr + 'T00:00:00').toLocaleDateString(locale) }),
-                        from: dateStr,
-                        to: dateStr,
-                      })
-                    }
-                  }}
-                >
-                  <defs>
-                    <linearGradient id="cumGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10B981" stopOpacity={0.18} />
-                      <stop offset="95%" stopColor="#10B981" stopOpacity={0.02} />
-                    </linearGradient>
-                  </defs>
-                  <XAxis
-                    dataKey="day"
-                    tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
-                    axisLine={false}
-                    tickLine={false}
-                    interval={3}
-                  />
-                  <YAxis
-                    tickFormatter={(v) => {
-                      if (privacyMode) return ''
-                      if (v === 0) return '0'
-                      return formatCurrency(v, userCurrency, locale).replace(/,00$/, '').replace(/\.00$/, '')
-                    }}
-                    tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
-                    axisLine={false}
-                    tickLine={false}
-                    width={56}
-                    tickCount={5}
-                    domain={[
-                      (dataMin: number) => dataMin < 0 ? Math.floor(dataMin / 100) * 100 : 0,
-                      (dataMax: number) => Math.ceil(dataMax / 100) * 100,
-                    ]}
-                  />
-                  <Tooltip
-                    formatter={(value, name) => [
-                      value !== null ? (privacyMode ? MASK : formatCurrency(Number(value), userCurrency, locale)) : '\u2014',
-                      name === 'current' ? monthLabel(effectiveSelectedMonth, locale).split(' ')[0] : monthLabel(prevMonth, locale).split(' ')[0],
-                    ]}
-                    labelFormatter={(day) => t('dashboard.day', { day })}
-                    contentStyle={{
-                      background: 'var(--card)',
-                      color: 'var(--foreground)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '0.75rem',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-                      fontSize: '12px',
-                    }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="current"
-                    stroke="#10B981"
-                    strokeWidth={2}
-                    fill="url(#cumGrad)"
-                    dot={false}
-                    activeDot={{ r: 3, fill: '#10B981' }}
-                    connectNulls={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="previous"
-                    stroke="#94A3B8"
-                    strokeWidth={2}
-                    strokeDasharray="5 3"
-                    dot={false}
-                    activeDot={{ r: 3, fill: '#94A3B8' }}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
+          <div className="p-3 overflow-y-auto flex-1">
+            {monthlyTrendLoading ? (
+              <div className="space-y-3 p-2">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-12 w-full" />
+                ))}
+              </div>
+            ) : trendRows.length > 0 ? (
+              <div className="space-y-1.5">
+                {trendRows.map((row) => (
+                  <div key={row.month} className="rounded-lg px-3 py-2.5 hover:bg-muted/30 transition-colors">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{row.label}</p>
+                        <p className="text-xs text-muted-foreground">
+                          +{mask(formatCurrency(row.income, primaryCurrency, locale))} / -{mask(formatCurrency(row.expenses, primaryCurrency, locale))}
+                        </p>
+                      </div>
+                      <p className={`text-sm font-bold tabular-nums ${row.result < 0 ? 'text-rose-500' : 'text-emerald-600'}`}>
+                        {mask(formatCurrency(row.result, primaryCurrency, locale))}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : (
               <p className="text-muted-foreground text-sm text-center py-12">{t('dashboard.noData')}</p>
             )}
           </div>
-          {!balanceHistoryLoading && lastCurrentPoint && (() => {
-            const footerDay = hoveredDay ?? lastDay
-            const footerPrev = balanceHistory?.previous.find(d => d.day === footerDay)?.balance ?? 0
-            const footerCurrent = cumulativeData.find(d => d.day === footerDay)?.current ?? totalBalance
-            const footerPct = footerPrev !== 0 ? ((footerCurrent - footerPrev) / Math.abs(footerPrev)) * 100 : null
-            if (footerPrev === 0 || footerPct === null) return null
-            return (
-              <div className="px-5 pb-4 pt-0 shrink-0">
-                <p className="text-xs text-muted-foreground">
-                  {t('dashboard.balanceFlowVsPrev', {
-                    month: monthLabel(prevMonth, locale).split(' ')[0],
-                    day: footerDay,
-                    amount: mask(formatCurrency(footerPrev, userCurrency, locale)),
-                    delta: `${footerPct >= 0 ? '+' : ''}${footerPct.toFixed(1)}%`,
-                  })}
-                  {' '}
-                  <span className={footerPct >= 0 ? 'text-emerald-600' : 'text-rose-500'}>
-                    {footerPct >= 0 ? '\u25B2' : '\u25BC'}
-                  </span>
-                </p>
-              </div>
-            )
-          })()}
         </div>
       </div>
 

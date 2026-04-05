@@ -72,7 +72,6 @@ interface ReportTab {
 }
 
 const REPORT_TABS: ReportTab[] = [
-  { key: 'net_worth', labelKey: 'reports.netWorth', fetch: (m, i) => reports.netWorth(m, i), enabled: true },
   { key: 'income_expenses', labelKey: 'reports.incomeExpenses', fetch: (m, i) => reports.incomeExpenses(m, i), enabled: true },
   { key: 'cash_flow', labelKey: 'reports.cashFlow', fetch: () => Promise.reject(), enabled: false },
 ]
@@ -86,7 +85,7 @@ export default function ReportsPage() {
 
   const [months, setMonths] = useState(12)
   const [interval, setInterval] = useState('monthly')
-  const [activeTab, setActiveTab] = useState('net_worth')
+  const [activeTab, setActiveTab] = useState('income_expenses')
   const [compositionView, setCompositionView] = useState<string>('summary')
   const [sparklineView, setSparklineView] = useState<'byExpenses' | 'byIncome'>('byExpenses')
   const [sparklinePage, setSparklinePage] = useState(0)
