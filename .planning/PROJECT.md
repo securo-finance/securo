@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Flux is a self-hosted personal finance web application for personal use, with responsive mobile usage treated as a first-class constraint. After shipping `v1.2`, the product now operates on an explicit monthly-control model built around one editable `Mês Atual` plus preserved closed-month snapshots, connected-account management, and bill-only Pluggy imports.
+Flux is a self-hosted personal finance web application for personal use, with responsive mobile usage treated as a first-class constraint. After shipping `v1.3`, the product now operates on an explicit monthly-control model built around one editable `Mês Atual` plus preserved closed-month snapshots, connected-account management, bill-only Pluggy imports, and card-specific transaction browsing.
 
 ## Core Value
 
@@ -10,20 +10,9 @@ Manage personal finances clearly on a self-hosted app that remains practical to 
 
 ## Current State
 
-- Shipped milestone: `v1.2 Gestão de contas e faturas` on 2026-04-05
-- Active product shape: explicit `Mês Atual`, durable monthly records and snapshots, connected-account-only account management, bill-only Pluggy imports, and monthly totals derived from `receitas - despesas`
-- Planning state: milestone `v1.3 Gestão de Cartões` is implemented and awaiting user validation before archival
-
-## Current Milestone: v1.3 Gestão de Cartões
-
-**Goal:** Gerenciar a visualização e navegação das transações dos cartões importados diariamente pela Pluggy.
-
-**Target features:**
-- Novo menu `Cartões` abaixo de `Transações`
-- Tela `Cartões` com cards dos cartões importados da Pluggy
-- Tela de detalhe por cartão, parecida com `Transações`, mostrando apenas as transações daquele cartão
-- Alternância entre snapshots e filtro por categorias na visão de transações do cartão
-- Escopo limitado a visualização e navegação; sem gestão de cartão nessa área
+- Shipped milestone: `v1.3 Gestão de Cartões` on 2026-04-05
+- Active product shape: explicit `Mês Atual`, durable monthly records and snapshots, connected-account-only account management, bill-only Pluggy imports, monthly totals derived from `receitas - despesas`, and a dedicated `Cartões` workflow for card-scoped transaction browsing
+- Planning state: no active milestone is defined; the next planning step is to create a fresh requirements set and roadmap
 
 ## Requirements
 
@@ -44,13 +33,18 @@ Manage personal finances clearly on a self-hosted app that remains practical to 
 - ✓ User imports only credit-card bill transactions into the active monthly workflow instead of importing all account transactions — `v1.2`
 - ✓ User has imported bill transactions persisted against a card and `Mês Atual`, with categorization applied only when a matching rule exists — `v1.2`
 - ✓ User no longer sees wallets or account balances as part of the supported financial model, with the month total derived from `receitas - despesas` — `v1.2`
+- ✓ User can access a dedicated `Cartões` navigation entry for imported Pluggy cards — `v1.3`
+- ✓ User can browse imported cards as a card list in the new `Cartões` area — `v1.3`
+- ✓ User can open a card-scoped transaction view that mirrors the main `Transações` workflow where compatible — `v1.3`
+- ✓ User can switch snapshots and filter card transactions by category in that view — `v1.3`
 
 ### Active
 
-- [ ] User can access a dedicated `Cartões` navigation entry for imported Pluggy cards
-- [ ] User can browse imported cards as a card list in the new `Cartões` area
-- [ ] User can open a card-scoped transaction view that mirrors the main `Transações` workflow
-- [ ] User can switch snapshots and filter card transactions by category in that view
+- [ ] User can rename imported cards from the `Cartões` area
+- [ ] User can enable or disable bill import for a card from the `Cartões` area
+- [ ] User can remove a card or connection from the `Cartões` area
+- [ ] User can review card-specific totals, limits, or invoice summaries in the `Cartões` area
+- [ ] User can compare multiple cards side by side
 
 ### Out of Scope
 
@@ -67,6 +61,8 @@ Manage personal finances clearly on a self-hosted app that remains practical to 
 The current codebase is a brownfield React SPA plus FastAPI application with PostgreSQL, Redis, and Celery. The supported runtime now includes explicit month-state APIs, durable monthly period and snapshot persistence, protected-history read routing, connected-account management, bill-only Pluggy sync behavior, and monthly summaries centered on `receitas - despesas`.
 
 Connected accounts now act as managed credit-card bill sources rather than general transaction-sync sources. Imported bill rows are stored in Flux-owned monthly data for the active period, associated with the relevant card, and remain uncategorized unless a saved user rule matches.
+
+The shipped `Cartões` area now gives those imported cards a dedicated browsing workflow. Users can open a card-specific transaction screen, stay inside the existing current-month/snapshot model, and narrow one card's transactions by category without falling back to the broader `Transações` page.
 
 Known remaining debt is mostly process and verification quality rather than feature completeness. Nyquist `*-VALIDATION.md` artifacts are still missing for phases `08-12`, and the checked-in planning archive does not currently include a `v1.2-MILESTONE-AUDIT.md` artifact.
 
@@ -100,6 +96,7 @@ Known remaining debt is mostly process and verification quality rather than feat
 | Remove wallets and per-account balances from the supported product model | The month-level result should be derived from `receitas - despesas` rather than account-ledger balances | ✓ Good |
 | Persist imported credit-card bill rows against the active monthly period instead of provider-native date buckets | Monthly reporting and close-month behavior need Flux-owned period identity | ✓ Good |
 | Default imported bill transactions to uncategorized unless a saved categorization rule matches | Rule-driven automation is safer than inheriting opaque provider categories | ✓ Good |
+| Add a dedicated `Cartões` route instead of overloading `Contas` or `Transações` for card browsing | Card-specific review is a distinct workflow but should still reuse the existing transaction model underneath | ✓ Good |
 
 <details>
 <summary>Archived v1.2 Planning Notes</summary>
@@ -135,4 +132,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-05 after milestone v1.3 start*
+*Last updated: 2026-04-05 after milestone v1.3 archival*

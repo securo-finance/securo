@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: "v1.3"
-milestone_name: "Gestão de Cartões"
+milestone: null
+milestone_name: null
 status: planning
-stopped_at: Milestone v1.3 implementation complete; awaiting user validation and approval before milestone completion.
-last_updated: "2026-04-05T13:20:45Z"
+stopped_at: Milestone v1.3 archived; ready for next milestone definition.
+last_updated: "2026-04-05T13:46:25.961Z"
 last_activity: 2026-04-05
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 3
-  completed_plans: 3
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Manage personal finances clearly on a self-hosted app that remains practical to use on mobile.
-**Current focus:** Validate and approve milestone `v1.3 Gestão de Cartões`
+**Current focus:** Define the next milestone after shipping `v1.3 Gestão de Cartões`
 
 ## Current Position
 
-Phase: Complete through Phase 3
-Plan: 3 of 3 complete
-Status: Awaiting user validation before milestone completion
-Last activity: 2026-04-05 - Autonomous implementation finished for phases 1-3
+Phase: None
+Plan: 0 of 0 active
+Status: Planning next milestone
+Last activity: 2026-04-05
 
-Progress: [##########] 100%
+Progress: [----------] 0%
 
 ## Accumulated Context
 
@@ -46,8 +46,7 @@ Recent milestone outcomes:
 
 ### Pending Todos
 
-- Validate the new `Cartões` navigation and card transaction workflow in the browser.
-- Decide whether milestone `v1.3 Gestão de Cartões` is ready for `$gsd-complete-milestone`.
+- Run `$gsd-new-milestone` to define the next milestone roadmap and requirements.
 - Decide whether to close Nyquist validation debt retroactively for phases 08-12.
 - Reconstruct or regenerate a `v1.2-MILESTONE-AUDIT.md` artifact if audit-history completeness matters.
 
@@ -59,5 +58,5 @@ Recent milestone outcomes:
 ## Session Continuity
 
 Last session: 2026-04-05 00:00 UTC
-Stopped at: Milestone v1.3 implemented and waiting for user validation.
+Stopped at: Milestone archived and waiting for next milestone definition.
 Resume file: None

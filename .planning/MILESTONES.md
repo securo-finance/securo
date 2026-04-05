@@ -1,5 +1,23 @@
 # Milestones
 
+## v1.3 Gestão de Cartões (Shipped: 2026-04-05)
+
+**Phases completed:** 3 phases, 3 plans, 12 tasks
+
+**Key accomplishments:**
+
+- Added `Cartões` as a first-class navigation route directly below `Transações`
+- Built a dedicated cards list for imported Pluggy credit-card accounts
+- Added a card-scoped transaction screen that keeps users inside one selected card context
+- Added snapshot switching and category filtering inside the card transaction workflow
+
+**Known debt:**
+
+- Manual browser validation is still recommended for mobile/desktop layout and snapshot switching behavior
+- Nyquist `*-VALIDATION.md` artifacts were not created for phases `1-3`
+
+---
+
 ## v1.2 Gestão de contas e faturas (Shipped: 2026-04-05)
 
 **Phases completed:** 4 phases, 4 plans, 14 tasks
