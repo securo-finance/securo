@@ -9,59 +9,81 @@ from sqlalchemy.orm import selectinload
 from app.core.config import get_settings
 from app.models.bank_connection import BankConnection
 from app.models.account import Account
-from app.models.category import Category
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.providers import get_provider
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.transfer_detection_service import detect_transfer_pairs
 from app.services.fx_rate_service import stamp_primary_amount
-from app.services.month_service import get_current_month_period, get_or_create_monthly_period, resolve_current_monthly_period
+from app.services.month_service import (
+    get_current_month_period,
+    month_to_period_value,
+    period_to_month_start,
+    resolve_current_monthly_period,
+)
 from app.services.payee_service import get_or_create_payee
 
 settings = get_settings()
 
-PLUGGY_CATEGORY_MAP = {
-    "Eating out": "Alimentação",
-    "Restaurants": "Alimentação",
-    "Food": "Alimentação",
-    "Groceries": "Mercado",
-    "Supermarkets": "Mercado",
-    "Pharmacy": "Saúde",
-    "Health": "Saúde",
-    "Taxi and ride-hailing": "Transporte",
-    "Transport": "Transporte",
-    "Gas": "Transporte",
-    "Travel": "Transporte",
-    "Housing": "Moradia",
-    "Rent": "Moradia",
-    "Utilities": "Moradia",
-    "Entertainment": "Lazer",
-    "Leisure": "Lazer",
-    "Education": "Educação",
-    "Subscriptions": "Assinaturas",
-    "Online services": "Assinaturas",
-    "Transfer": "Transferências",
-    "Transfers": "Transferências",
-    "Wire transfers": "Transferências",
-}
+
+def _next_period(period: str) -> str:
+    month_start = period_to_month_start(period)
+    next_month = month_start.replace(day=28) + timedelta(days=4)
+    return month_to_period_value(next_month.replace(day=1))
 
 
-async def _match_pluggy_category(
-    session: AsyncSession, user_id: uuid.UUID, pluggy_category: Optional[str]
-) -> Optional[uuid.UUID]:
-    if not pluggy_category:
-        return None
-    # Try exact match first, then prefix before " - " (e.g. "Transfer - PIX" → "Transfer")
-    app_name = PLUGGY_CATEGORY_MAP.get(pluggy_category)
-    if not app_name and " - " in pluggy_category:
-        app_name = PLUGGY_CATEGORY_MAP.get(pluggy_category.split(" - ")[0])
-    if not app_name:
-        return None
-    result = await session.execute(
-        select(Category.id).where(Category.user_id == user_id, Category.name == app_name)
+async def _get_target_bill_ids(
+    provider,
+    credentials: dict,
+    account_external_id: str,
+    current_period: str | None,
+) -> set[str]:
+    if current_period is None:
+        return set()
+
+    target_due_period = _next_period(current_period)
+    bills = await provider.get_bills(credentials, account_external_id)
+    return {
+        bill.id
+        for bill in bills
+        if month_to_period_value(bill.due_date) == target_due_period
+    }
+
+
+async def _load_bill_transactions_for_current_month(
+    provider,
+    credentials: dict,
+    account_external_id: str,
+    current_period: str | None,
+    payee_source: str = "auto",
+) -> list:
+    if current_period is None:
+        return []
+
+    target_bill_ids = await _get_target_bill_ids(
+        provider, credentials, account_external_id, current_period
     )
-    return result.scalar_one_or_none()
+    transactions = await provider.get_transactions(
+        credentials,
+        account_external_id,
+        None,
+        payee_source=payee_source,
+    )
+
+    if target_bill_ids:
+        bill_transactions = [txn for txn in transactions if txn.bill_id in target_bill_ids]
+        if bill_transactions:
+            return bill_transactions
+
+    # Some connectors expose credit-card bills but never populate transaction.billId.
+    # In that case, fall back to the active month window and keep expense rows only.
+    month_start = period_to_month_start(current_period)
+    next_month_start = period_to_month_start(_next_period(current_period))
+    return [
+        txn
+        for txn in transactions
+        if txn.type == "debit" and month_start <= txn.date < next_month_start
+    ]
 
 
 async def get_connections(session: AsyncSession, user_id: uuid.UUID) -> list[BankConnection]:
@@ -115,6 +137,11 @@ async def update_connection_settings(
             current[key] = value
     connection.settings = current
 
+    if "bill_import_enabled" in settings_update and settings_update["bill_import_enabled"] is not None:
+        for account in connection.accounts:
+            if account.type == "credit_card":
+                account.bill_import_enabled = bool(settings_update["bill_import_enabled"])
+
     await session.commit()
     await session.refresh(connection)
     return connection
@@ -132,6 +159,10 @@ async def handle_oauth_callback(
         external_id=connection_data.external_id,
         institution_name=connection_data.institution_name,
         credentials=connection_data.credentials,
+        settings={
+            "display_name": connection_data.institution_name,
+            "bill_import_enabled": True,
+        },
         status="active",
     )
     session.add(connection)
@@ -143,6 +174,7 @@ async def handle_oauth_callback(
     if user is not None and get_current_month_period(user):
         current_monthly_period = await resolve_current_monthly_period(session, user_id, user)
     new_tx_ids: list[uuid.UUID] = []
+    current_period = get_current_month_period(user) if user is not None else None
 
     for acc_data in connection_data.accounts:
         account = Account(
@@ -151,21 +183,25 @@ async def handle_oauth_callback(
             connection_id=connection.id,
             external_id=acc_data.external_id,
             name=acc_data.name,
+            custom_name=None,
             type=acc_data.type,
             balance=acc_data.balance,
             currency=acc_data.currency,
+            bill_import_enabled=bool((connection.settings or {}).get("bill_import_enabled", True)),
         )
         session.add(account)
         await session.flush()
 
-        # Fetch initial transactions (since=None fetches all available history)
-        transactions_data = await provider.get_transactions(
-            connection_data.credentials, acc_data.external_id, None
+        if acc_data.type != "credit_card" or not bool((connection.settings or {}).get("bill_import_enabled", True)):
+            continue
+
+        transactions_data = await _load_bill_transactions_for_current_month(
+            provider,
+            connection_data.credentials,
+            acc_data.external_id,
+            current_period,
         )
         for txn_data in transactions_data:
-            category_id = await _match_pluggy_category(
-                session, user_id, txn_data.pluggy_category
-            )
             # Resolve payee entity from raw payee text
             payee_id = None
             if txn_data.payee:
@@ -175,7 +211,9 @@ async def handle_oauth_callback(
             transaction = Transaction(
                 user_id=user_id,
                 account_id=account.id,
-                monthly_period_id=(await get_or_create_monthly_period(session, user_id, txn_data.date.strftime("%Y-%m"))).id,
+                monthly_period_id=(
+                    current_monthly_period.id if current_monthly_period is not None else None
+                ),
                 external_id=txn_data.external_id,
                 description=txn_data.description,
                 amount=txn_data.amount,
@@ -187,13 +225,12 @@ async def handle_oauth_callback(
                 payee=txn_data.payee,
                 payee_id=payee_id,
                 raw_data=txn_data.raw_data,
-                category_id=category_id,
+                category_id=None,
             )
             session.add(transaction)
             await session.flush()
             new_tx_ids.append(transaction.id)
-            if not category_id:
-                await apply_rules_to_transaction(session, user_id, transaction)
+            await apply_rules_to_transaction(session, user_id, transaction)
 
             # Prefer bank-provided conversion for international transactions
             acct_currency = acc_data.currency or user_currency
@@ -290,6 +327,7 @@ async def sync_connection(
         current_monthly_period = None
         if user is not None and get_current_month_period(user):
             current_monthly_period = await resolve_current_monthly_period(session, user_id, user)
+        current_period = get_current_month_period(user) if user is not None else None
         new_tx_ids: list[uuid.UUID] = []
         merged_count = 0
         accounts_data = await provider.get_accounts(credentials)
@@ -304,7 +342,8 @@ async def sync_connection(
 
             if account:
                 account.balance = acc_data.balance
-                account.name = acc_data.name
+                if not account.custom_name:
+                    account.name = acc_data.name
             else:
                 account = Account(
                     user_id=user_id,
@@ -312,9 +351,11 @@ async def sync_connection(
                     connection_id=connection.id,
                     external_id=acc_data.external_id,
                     name=acc_data.name,
+                    custom_name=None,
                     type=acc_data.type,
                     balance=acc_data.balance,
                     currency=acc_data.currency,
+                    bill_import_enabled=bool(conn_settings.get("bill_import_enabled", True)),
                 )
                 session.add(account)
                 await session.flush()
@@ -322,10 +363,19 @@ async def sync_connection(
             if account and account.is_closed:
                 continue
 
-            # Fetch and sync transactions
-            since = connection.last_sync_at.date() if connection.last_sync_at else None
-            transactions_data = await provider.get_transactions(
-                credentials, acc_data.external_id, since, payee_source=payee_source
+            if (
+                account.type != "credit_card"
+                or not bool(conn_settings.get("bill_import_enabled", True))
+                or not account.bill_import_enabled
+            ):
+                continue
+
+            transactions_data = await _load_bill_transactions_for_current_month(
+                provider,
+                credentials,
+                acc_data.external_id,
+                current_period,
+                payee_source=payee_source,
             )
 
             if not import_pending:
@@ -355,10 +405,6 @@ async def sync_connection(
                     merged_count += 1
                     continue
 
-                category_id = await _match_pluggy_category(
-                    session, user_id, txn_data.pluggy_category
-                )
-
                 # Resolve payee entity from raw payee text
                 sync_payee_id = None
                 if txn_data.payee:
@@ -368,7 +414,9 @@ async def sync_connection(
                 transaction = Transaction(
                     user_id=user_id,
                     account_id=account.id,
-                    monthly_period_id=(await get_or_create_monthly_period(session, user_id, txn_data.date.strftime("%Y-%m"))).id,
+                    monthly_period_id=(
+                        current_monthly_period.id if current_monthly_period is not None else None
+                    ),
                     external_id=txn_data.external_id,
                     description=txn_data.description,
                     amount=txn_data.amount,
@@ -380,13 +428,12 @@ async def sync_connection(
                     payee=txn_data.payee,
                     payee_id=sync_payee_id,
                     raw_data=txn_data.raw_data,
-                    category_id=category_id,
+                    category_id=None,
                 )
                 session.add(transaction)
                 await session.flush()
                 new_tx_ids.append(transaction.id)
-                if not category_id:
-                    await apply_rules_to_transaction(session, user_id, transaction)
+                await apply_rules_to_transaction(session, user_id, transaction)
 
                 # Prefer bank-provided conversion for international transactions
                 acct_currency = acc_data.currency or user_currency

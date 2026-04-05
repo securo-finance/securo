@@ -26,6 +26,7 @@ class TransactionData:
     pluggy_category: Optional[str] = None
     status: str = "posted"  # posted, pending
     payee: Optional[str] = None
+    bill_id: Optional[str] = None
     raw_data: Optional[dict] = None
 
 
@@ -40,6 +41,14 @@ class ConnectionData:
 @dataclass
 class ConnectTokenData:
     access_token: str
+
+
+@dataclass
+class BillData:
+    id: str
+    due_date: date
+    total_amount: Decimal
+    currency_code: str
 
 
 class FxRateProvider(ABC):
@@ -99,6 +108,11 @@ class BankProvider(ABC):
     @abstractmethod
     async def get_accounts(self, credentials: dict) -> list[AccountData]:
         """Fetch accounts for a connection."""
+        ...
+
+    @abstractmethod
+    async def get_bills(self, credentials: dict, account_external_id: str) -> list[BillData]:
+        """Fetch credit-card bills for an account."""
         ...
 
     @abstractmethod

@@ -9,6 +9,7 @@ from app.core.config import get_settings
 from app.providers.base import (
     AccountData,
     BankProvider,
+    BillData,
     ConnectionData,
     ConnectTokenData,
     TransactionData,
@@ -161,6 +162,30 @@ class PluggyProvider(BankProvider):
             )
         return accounts
 
+    async def get_bills(self, credentials: dict, account_external_id: str) -> list[BillData]:
+        headers = await self._headers()
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{PLUGGY_API_BASE}/bills",
+                headers=headers,
+                params={"accountId": account_external_id},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        bills = []
+        for bill in data.get("results", []):
+            bills.append(
+                BillData(
+                    id=bill["id"],
+                    due_date=date.fromisoformat(bill["dueDate"][:10]),
+                    total_amount=Decimal(str(bill.get("totalAmount", 0))),
+                    currency_code=bill.get("totalAmountCurrencyCode", "USD"),
+                )
+            )
+        return bills
+
     async def get_transactions(
         self, credentials: dict, account_external_id: str,
         since: Optional[date] = None, payee_source: str = "auto",
@@ -230,6 +255,7 @@ class PluggyProvider(BankProvider):
                             pluggy_category=txn.get("category"),
                             status=status,
                             payee=payee,
+                            bill_id=txn.get("billId"),
                             raw_data=txn,
                         )
                     )

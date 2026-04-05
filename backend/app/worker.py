@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.schedules import crontab
 
 from app.core.config import get_settings
 
@@ -14,14 +15,14 @@ celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
-    timezone="UTC",
+    timezone="America/Sao_Paulo",
     enable_utc=True,
 )
 
 celery_app.conf.beat_schedule = {
-    "sync-all-connections-hourly": {
+    "sync-all-connections-daily": {
         "task": "app.tasks.sync_tasks.sync_all_connections",
-        "schedule": 60 * 60,  # every hour; task itself skips connections synced < 4h ago
+        "schedule": crontab(hour=4, minute=0),
     },
     "generate-recurring-daily": {
         "task": "app.tasks.recurring_tasks.generate_all_recurring",

@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timezone, timedelta
 
 from sqlalchemy import select
 
@@ -12,28 +11,20 @@ from app.services import connection_service
 
 logger = logging.getLogger(__name__)
 
-STALE_THRESHOLD = timedelta(hours=4)
-
 
 async def _sync_all() -> int:
-    """Find stale connections and sync each one."""
-    cutoff = datetime.now(timezone.utc) - STALE_THRESHOLD
+    """Sync all active or errored connections once per scheduled run."""
     synced = 0
 
     async with async_session_maker() as session:
         result = await session.execute(
             select(BankConnection.id, BankConnection.user_id, BankConnection.last_sync_at).where(
-                BankConnection.status.in_(["active", "error"]),
-                (BankConnection.last_sync_at < cutoff) | (BankConnection.last_sync_at.is_(None)),
+                BankConnection.status.in_(["active", "error"])
             )
         )
         connections = result.all()
 
-    logger.info(
-        "Sync check: found %d stale connections (cutoff=%s)",
-        len(connections),
-        cutoff.isoformat(),
-    )
+    logger.info("Daily bill sync: found %d connections to process", len(connections))
 
     for conn_id, user_id, last_sync in connections:
         try:
@@ -54,7 +45,7 @@ async def _sync_one(connection_id: uuid.UUID, user_id: uuid.UUID) -> None:
 
 @celery_app.task(name="app.tasks.sync_tasks.sync_all_connections")
 def sync_all_connections() -> dict:
-    """Celery task: sync all stale bank connections."""
+    """Celery task: sync all active or errored bank connections."""
     synced = asyncio.run(_sync_all())
     logger.info("Background sync complete: %d connections synced", synced)
     return {"synced": synced}
