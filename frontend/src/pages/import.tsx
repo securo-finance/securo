@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
+import { getAccountName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { transactions as transactionsApi, accounts as accountsApi, importLogs as importLogsApi } from '@/lib/api'
@@ -284,7 +285,7 @@ export default function ImportPage() {
               >
                 <option value="">{t('import.selectAccount')}</option>
                 {accountsList?.map((acc) => (
-                  <option key={acc.id} value={acc.id}>{acc.name} ({t(TYPE_LABELS[acc.type] || acc.type)})</option>
+                  <option key={acc.id} value={acc.id}>{getAccountName(acc)} ({t(TYPE_LABELS[acc.type] || acc.type)})</option>
                 ))}
               </select>
               {!selectedAccount && (

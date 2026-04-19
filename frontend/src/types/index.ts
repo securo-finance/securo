@@ -80,6 +80,7 @@ export interface Account {
   connection_id: string | null
   external_id: string | null
   name: string
+  display_name: string | null
   type: string
   balance: number
   current_balance: number

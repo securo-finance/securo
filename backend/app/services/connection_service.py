@@ -417,12 +417,11 @@ async def sync_connection(
             if account and account.is_closed:
                 continue
 
-            # Fetch and sync transactions.
-            # Rewind the window by 14 days on incremental syncs so we catch
-            # late-arriving transactions: bank authorizations that post a few
-            # days after the purchase date, or direct debits that Pluggy only
-            # exposes once they've been processed by the issuer. Dedup on
-            # external_id below handles any overlap cheaply.
+            # Fetch and sync transactions. The 14-day rewind is on Pluggy's
+            # `createdAt` (when their row was inserted), so it covers two
+            # cases: (1) PENDING transactions that POSTED since last sync,
+            # (2) any rows Pluggy ingested late but backdated. Dedup on
+            # external_id below handles overlap cheaply.
             since = (
                 connection.last_sync_at.date() - timedelta(days=14)
                 if connection.last_sync_at

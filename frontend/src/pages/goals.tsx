@@ -1,4 +1,5 @@
 import { createElement, useState } from 'react'
+import { getAccountName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { goals as goalsApi, accounts as accountsApi, assets as assetsApi, currencies as currenciesApi } from '@/lib/api'
@@ -477,7 +478,7 @@ export default function GoalsPage() {
                   <option value="">{t('goals.selectAccount')}</option>
                   {accountsList?.map((acc) => (
                     <option key={acc.id} value={acc.id}>
-                      {acc.name} ({acc.currency})
+                      {getAccountName(acc)} ({acc.currency})
                     </option>
                   ))}
                 </select>

@@ -447,7 +447,7 @@ export default function AssetsPage() {
               <div className="space-y-2">
                 <Label>{t('assets.type')}</Label>
                 <select
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                  className="bg-card border border-border focus:outline-none focus:ring-2 focus:ring-primary px-3 py-2 rounded-lg text-foreground text-sm w-full"
                   value={formType}
                   onChange={e => setFormType(e.target.value)}
                 >
@@ -461,7 +461,7 @@ export default function AssetsPage() {
               <div className="space-y-2">
                 <Label>{t('assets.currency')}</Label>
                 <select
-                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                  className="bg-card border border-border focus:outline-none focus:ring-2 focus:ring-primary px-3 py-2 rounded-lg text-foreground text-sm w-full"
                   value={formCurrency}
                   onChange={e => setFormCurrency(e.target.value)}
                 >
@@ -501,7 +501,7 @@ export default function AssetsPage() {
                   <div className="space-y-2">
                     <Label>{t('assets.growthType')}</Label>
                     <select
-                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                      className="bg-card border border-border focus:outline-none focus:ring-2 focus:ring-primary px-3 py-2 rounded-lg text-foreground text-sm w-full"
                       value={formGrowthType}
                       onChange={e => setFormGrowthType(e.target.value)}
                     >
@@ -524,7 +524,7 @@ export default function AssetsPage() {
                   <div className="space-y-2">
                     <Label>{t('assets.growthFrequency')}</Label>
                     <select
-                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                      className="bg-card border border-border focus:outline-none focus:ring-2 focus:ring-primary px-3 py-2 rounded-lg text-foreground text-sm w-full"
                       value={formGrowthFrequency}
                       onChange={e => setFormGrowthFrequency(e.target.value)}
                     >

@@ -98,6 +98,7 @@ def serialize_account(
         "connection_id": acc.connection_id,
         "external_id": acc.external_id,
         "name": acc.name,
+        "display_name": acc.display_name,
         "type": acc.type,
         "balance": acc.balance,
         "currency": acc.currency,
@@ -203,6 +204,7 @@ async def update_account(
     # expose those — users fill them in to unlock cycle-aware filtering.
     if account.connection_id is not None:
         editable_fields = {
+            "display_name",
             "credit_limit",
             "statement_close_day",
             "payment_due_day",
@@ -213,7 +215,9 @@ async def update_account(
         disallowed = set(update_data.keys()) - editable_fields
         if disallowed:
             raise ValueError("Cannot edit bank-connected accounts")
-        if account.type != "credit_card":
+        cc_fields = editable_fields - {"display_name"}
+        cc_update = {k: v for k, v in update_data.items() if k in cc_fields}
+        if cc_update and account.type != "credit_card":
             raise ValueError("Credit card fields can only be set on credit card accounts")
         for key, value in update_data.items():
             setattr(account, key, value)

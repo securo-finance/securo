@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { getAccountName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -136,7 +137,7 @@ export function TransferDialog({
                 <option value="" disabled>{t('transactions.account')}</option>
                 {accounts.map((acc) => (
                   <option key={acc.id} value={acc.id}>
-                    {acc.name} ({acc.currency})
+                    {getAccountName(acc)} ({acc.currency})
                   </option>
                 ))}
               </select>
@@ -159,7 +160,7 @@ export function TransferDialog({
                 <option value="" disabled>{t('transactions.account')}</option>
                 {availableToAccounts.map((acc) => (
                   <option key={acc.id} value={acc.id}>
-                    {acc.name} ({acc.currency})
+                    {getAccountName(acc)} ({acc.currency})
                   </option>
                 ))}
               </select>

@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
+import { getAccountName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { format, startOfMonth, startOfYear, subDays } from 'date-fns'
 import {
@@ -593,7 +594,7 @@ export function TransactionsFilterBar({
                   key={`acc-${id}`}
                   icon={<Wallet size={12} />}
                   label={t('transactions.account')}
-                  value={account.name}
+                  value={getAccountName(account)}
                   onRemove={() =>
                     onAccountIdsChange(filterAccountIds.filter((x) => x !== id))
                   }

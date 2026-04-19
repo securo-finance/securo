@@ -41,6 +41,11 @@ export default function PayeesPage() {
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const typeLabels: Record<string, string> = {
+    merchant: t('payees.typeMerchant'),
+    person: t('payees.typePerson'),
+    company: t('payees.typeCompany'),
+  }
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -257,7 +262,7 @@ export default function PayeesPage() {
                     )}
                   </TableCell>
                   <TableCell className="hidden md:table-cell py-2.5">
-                    <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full capitalize">{payee.type}</span>
+                    <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full capitalize">{typeLabels[payee.type] ?? payee.type}</span>
                   </TableCell>
                   <TableCell className="py-2.5 text-right">
                     <span className="text-sm tabular-nums text-muted-foreground">{payee.transaction_count}</span>

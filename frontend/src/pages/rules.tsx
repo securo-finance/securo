@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { getAccountName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { categories as categoriesApi, rules as rulesApi, accounts as accountsApi, payees as payeesApi } from '@/lib/api'
@@ -532,7 +533,7 @@ function RuleDialog({
                     >
                       <option value="">{t('rules.selectAccount')}</option>
                       {accounts.map(acc => (
-                        <option key={acc.id} value={acc.id}>{acc.name}</option>
+                        <option key={acc.id} value={acc.id}>{getAccountName(acc)}</option>
                       ))}
                     </select>
                   ) : (

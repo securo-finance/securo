@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { getAccountName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
@@ -224,7 +225,7 @@ export function LinkTransferDialog({
                               )}
                             </div>
                             <p className="text-xs text-muted-foreground truncate">
-                              {account?.name ?? '—'} · {new Date(c.date + 'T00:00:00').toLocaleDateString(locale)}
+                              {account ? getAccountName(account) : '—'} · {new Date(c.date + 'T00:00:00').toLocaleDateString(locale)}
                             </p>
                           </div>
                           <p className={`text-sm font-bold tabular-nums ${colorClass} shrink-0`}>

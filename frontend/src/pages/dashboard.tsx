@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { getAccountName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
@@ -936,7 +937,7 @@ export default function DashboardPage() {
         onClose={() => { setDialogOpen(false); setEditingTx(null) }}
         transaction={editingTx}
         categories={(categoriesList ?? []).map((c: { id: string; name: string; icon: string }) => ({ id: c.id, name: c.name, icon: c.icon }))}
-        accounts={(accountsList ?? []).map((a: { id: string; name: string }) => ({ id: a.id, name: a.name }))}
+        accounts={(accountsList ?? []).map((a: { id: string; name: string; display_name?: string | null }) => ({ id: a.id, name: getAccountName(a) }))}
         onSave={(data) => {
           if (editingTx) updateMutation.mutate({ id: editingTx.id, ...data })
         }}

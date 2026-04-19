@@ -505,3 +505,83 @@ async def test_get_account_summary_with_dates(client: AsyncClient, auth_headers)
         headers=auth_headers,
     )
     assert resp.status_code == 200
+
+
+# --- display_name tests ---
+
+
+@pytest.mark.asyncio
+async def test_display_name_returned_in_list(client: AsyncClient, auth_headers):
+    """display_name field must be present in the accounts list response."""
+    create_resp = await client.post(
+        "/api/accounts",
+        headers=auth_headers,
+        json={"name": "Conta Teste", "type": "checking", "balance": "0"},
+    )
+    assert create_resp.status_code == 201
+    assert "display_name" in create_resp.json()
+
+
+@pytest.mark.asyncio
+async def test_set_display_name_on_manual_account(client: AsyncClient, auth_headers):
+    """Setting display_name on a manual account must be persisted and returned."""
+    create_resp = await client.post(
+        "/api/accounts",
+        headers=auth_headers,
+        json={"name": "Nubank", "type": "checking", "balance": "0"},
+    )
+    account_id = create_resp.json()["id"]
+
+    patch_resp = await client.patch(
+        f"/api/accounts/{account_id}",
+        headers=auth_headers,
+        json={"display_name": "Nu Pessoal"},
+    )
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["display_name"] == "Nu Pessoal"
+
+
+@pytest.mark.asyncio
+async def test_set_display_name_on_connected_account(
+    client: AsyncClient, auth_headers, test_account: Account
+):
+    """display_name must be editable on bank-connected accounts."""
+    response = await client.patch(
+        f"/api/accounts/{test_account.id}",
+        headers=auth_headers,
+        json={"display_name": "Minha Conta"},
+    )
+    assert response.status_code == 200
+    assert response.json()["display_name"] == "Minha Conta"
+
+
+@pytest.mark.asyncio
+async def test_clear_display_name(client: AsyncClient, auth_headers, test_account: Account):
+    """Setting display_name to null must clear it."""
+    await client.patch(
+        f"/api/accounts/{test_account.id}",
+        headers=auth_headers,
+        json={"display_name": "Apelido"},
+    )
+
+    clear_resp = await client.patch(
+        f"/api/accounts/{test_account.id}",
+        headers=auth_headers,
+        json={"display_name": None},
+    )
+    assert clear_resp.status_code == 200
+    assert clear_resp.json()["display_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_connected_account_name_still_rejected(
+    client: AsyncClient, auth_headers, test_account: Account
+):
+    """Editing 'name' on a bank-connected account must still be rejected even when display_name is allowed."""
+    response = await client.patch(
+        f"/api/accounts/{test_account.id}",
+        headers=auth_headers,
+        json={"name": "Nome Hackeado"},
+    )
+    assert response.status_code == 400
+    assert "bank-connected" in response.json()["detail"].lower()

@@ -129,6 +129,8 @@ export default function ReportsPage() {
     fontSize: '12px',
   }
 
+  const tooltipItemStyle = { color: 'var(--foreground)' }
+
   // Composition view options per report type
   const compositionOptions = meta?.type === 'income_expenses'
     ? ['summary', 'byIncome', 'byExpenses'] as const
@@ -508,6 +510,7 @@ export default function ReportsPage() {
                               ]
                             }}
                             contentStyle={{ ...tooltipStyle, zIndex: 10 }}
+                            itemStyle={tooltipItemStyle}
                             wrapperStyle={{ zIndex: 10 }}
                             offset={20}
                           />

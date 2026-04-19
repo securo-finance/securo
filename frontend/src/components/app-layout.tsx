@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import { getAccountName } from '@/lib/account-utils'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
@@ -326,7 +327,7 @@ export function AppLayout() {
                         className="flex items-center justify-between px-3 py-1.5 rounded-lg text-xs text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all"
                       >
                         <div className="truncate min-w-0">
-                          <span className="block truncate font-medium">{acc.name}</span>
+                          <span className="block truncate font-medium">{getAccountName(acc)}</span>
                           <span className="block text-[10px] text-sidebar-muted/60">
                             {t(`accounts.type${typeKey}`)}
                           </span>

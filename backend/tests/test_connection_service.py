@@ -572,3 +572,51 @@ async def test_sync_connection_persists_installment_metadata(
     assert row.total_installments == 6
     assert row.installment_total_amount == Decimal("300.00")
     assert row.installment_purchase_date == date(2026, 3, 25)
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_preserves_display_name(session: AsyncSession, test_user):
+    """Resyncing a connection must update the provider name but never overwrite display_name."""
+    from app.models.account import Account
+
+    conn = await _make_connection(session, test_user.id, "Preserve Bank")
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="preserve-acc-1", name="BANCO ORIGINAL",
+            type="checking", balance=Decimal("500"), currency="BRL",
+        ),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(session, conn.id, test_user.id)
+
+    # Set a display_name after the first sync
+    account = (await session.execute(
+        select(Account).where(Account.connection_id == conn.id)
+    )).scalar_one()
+    account.display_name = "Meu Apelido"
+    await session.commit()
+
+    # Resync — provider now returns a different name
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="preserve-acc-1", name="BANCO ATUALIZADO",
+            type="checking", balance=Decimal("600"), currency="BRL",
+        ),
+    ])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(session, conn.id, test_user.id)
+
+    await session.refresh(account)
+    assert account.name == "BANCO ATUALIZADO"
+    assert account.display_name == "Meu Apelido"

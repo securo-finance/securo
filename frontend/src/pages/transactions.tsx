@@ -19,7 +19,7 @@ import { AlertTriangle, ArrowLeftRight, Check, Download, HelpCircle, Info, Paper
 import type { Transaction } from '@/types'
 import { PageHeader } from '@/components/page-header'
 import { CategoryIcon } from '@/components/category-icon'
-import { TransactionDialog, extractApiError } from '@/components/transaction-dialog'
+import { TransactionDialog, extractApiError, type SaveAction } from '@/components/transaction-dialog'
 import { TransferDialog } from '@/components/transfer-dialog'
 import { LinkTransferDialog } from '@/components/link-transfer-dialog'
 import { TransactionsFilterBar } from '@/components/transactions-filter-bar'
@@ -57,6 +57,8 @@ export default function TransactionsPage() {
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') ?? '')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
+  const [formResetKey, setFormResetKey] = useState(0)
+  const [duplicateDraft, setDuplicateDraft] = useState<Partial<Transaction> | null>(null)
   const [filterPayee, setFilterPayee] = useState<string>(searchParams.get('payee_id') ?? '')
   const [tagFilter, setTagFilter] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
@@ -164,7 +166,7 @@ export default function TransactionsPage() {
   const invalidateAfterTxMutation = () => invalidateFinancialQueries(queryClient)
 
   const createMutation = useMutation({
-    mutationFn: async (payload: { tx: Partial<Transaction>; recurringData?: { frequency: string; end_date?: string }; pendingFiles?: File[] }) => {
+    mutationFn: async (payload: { tx: Partial<Transaction>; recurringData?: { frequency: string; end_date?: string }; pendingFiles?: File[]; action?: SaveAction }) => {
       const created = await transactions.create(payload.tx)
       if (payload.recurringData) {
         await recurring.create({
@@ -187,11 +189,19 @@ export default function TransactionsPage() {
       }
       return created
     },
-    onSuccess: () => {
+    onSuccess: (_created, variables) => {
       invalidateAfterTxMutation()
       queryClient.invalidateQueries({ queryKey: ['recurring'] })
-      setDialogOpen(false)
       toast.success(t('transactions.created'))
+      if (variables.action === 'saveAndNew') {
+        setDuplicateDraft(null)
+        setFormResetKey(k => k + 1)
+      } else if (variables.action === 'saveAndDuplicate') {
+        setDuplicateDraft(variables.tx)
+        setFormResetKey(k => k + 1)
+      } else {
+        setDialogOpen(false)
+      }
     },
     onError: (error) => {
       toast.error(extractApiError(error))
@@ -687,16 +697,18 @@ export default function TransactionsPage() {
       {/* Add/Edit Dialog */}
       <TransactionDialog
         open={dialogOpen}
-        onClose={() => { setDialogOpen(false); setEditingTx(null) }}
+        onClose={() => { setDialogOpen(false); setEditingTx(null); setDuplicateDraft(null) }}
         transaction={editingTx}
+        duplicateDraft={duplicateDraft}
+        formResetKey={formResetKey}
         categories={categoriesList ?? []}
         accounts={accountsList ?? []}
         recurringMatch={editingTx ? recurringList?.find(r => r.description === editingTx.description && r.type === editingTx.type) : undefined}
-        onSave={(data, recurringData, pendingFiles) => {
+        onSave={(data, recurringData, pendingFiles, action) => {
           if (editingTx) {
             updateMutation.mutate({ id: editingTx.id, ...data })
           } else {
-            createMutation.mutate({ tx: data, recurringData, pendingFiles })
+            createMutation.mutate({ tx: data, recurringData, pendingFiles, action })
           }
         }}
         onDelete={editingTx ? () => deleteMutation.mutate(editingTx.id) : undefined}

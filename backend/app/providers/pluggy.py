@@ -210,7 +210,14 @@ class PluggyProvider(BankProvider):
                     "page": page,
                 }
                 if since:
-                    params["from"] = since.isoformat()
+                    # Filter by Pluggy ingestion time, NOT transaction date.
+                    # `from`/`to` filter on `date` (when the txn happened),
+                    # which silently drops transactions Pluggy ingests later
+                    # but backdates — e.g. credit card bill payments dated
+                    # to the bill close, or merchants that settle weeks late.
+                    # `createdAtFrom` filters on Pluggy's row creation time,
+                    # so any newly-ingested row is fetched regardless of date.
+                    params["createdAtFrom"] = since.isoformat()
 
                 resp = await client.get(
                     f"{PLUGGY_API_BASE}/transactions",

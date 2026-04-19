@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { getAccountName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { categories as categoriesApi, recurring as recurringApi, accounts as accountsApi, currencies as currenciesApi } from '@/lib/api'
@@ -377,7 +378,7 @@ function RecurringForm({
           >
             {!accountId && <option value="" disabled>{t('recurring.noAccount')}</option>}
             {accounts.map((acc) => (
-              <option key={acc.id} value={acc.id}>{acc.name}</option>
+              <option key={acc.id} value={acc.id}>{getAccountName(acc)}</option>
             ))}
           </select>
         </div>
