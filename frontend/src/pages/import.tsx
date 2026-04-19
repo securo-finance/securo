@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { transactions as transactionsApi, accounts as accountsApi, importLogs as importLogsApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
+import { accountDisplayName } from '@/lib/format'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -284,7 +285,7 @@ export default function ImportPage() {
               >
                 <option value="">{t('import.selectAccount')}</option>
                 {accountsList?.map((acc) => (
-                  <option key={acc.id} value={acc.id}>{acc.name} ({t(TYPE_LABELS[acc.type] || acc.type)})</option>
+                  <option key={acc.id} value={acc.id}>{accountDisplayName(acc)} ({t(TYPE_LABELS[acc.type] || acc.type)})</option>
                 ))}
               </select>
               {!selectedAccount && (

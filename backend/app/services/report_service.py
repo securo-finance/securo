@@ -271,7 +271,7 @@ async def get_net_worth_report(
         if account.type == "credit_card":
             composition.append(ReportCompositionItem(
                 key=str(account.id),
-                label=account.name,
+                label=account.alias or account.name,
                 value=round(converted_val, 2),
                 color=account_type_colors.get(account.type, "#6B7280"),
                 group="liabilities",
@@ -280,7 +280,7 @@ async def get_net_worth_report(
             if bal > 0:
                 composition.append(ReportCompositionItem(
                     key=str(account.id),
-                    label=account.name,
+                    label=account.alias or account.name,
                     value=round(converted_val, 2),
                     color=account_type_colors.get(account.type, "#6B7280"),
                     group="accounts",

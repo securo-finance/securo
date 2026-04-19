@@ -1,3 +1,7 @@
+export function accountDisplayName(account: { name: string; alias?: string | null }): string {
+  return account.alias?.trim() || account.name
+}
+
 /**
  * Format a numeric value as currency using Intl.NumberFormat.
  */

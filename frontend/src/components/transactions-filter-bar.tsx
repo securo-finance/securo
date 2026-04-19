@@ -36,6 +36,7 @@ import { Calendar } from '@/components/ui/calendar'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { accountDisplayName } from '@/lib/format'
 import type { Account, Category, Payee } from '@/types'
 
 interface TransactionsFilterBarProps {
@@ -333,7 +334,7 @@ export function TransactionsFilterBar({
                                 toggleInArray(filterAccountIds, a.id),
                               )
                             }}
-                            label={a.name}
+                            label={accountDisplayName(a)}
                             sublabel={a.currency}
                           />
                         ))
@@ -593,7 +594,7 @@ export function TransactionsFilterBar({
                   key={`acc-${id}`}
                   icon={<Wallet size={12} />}
                   label={t('transactions.account')}
-                  value={account.name}
+                  value={accountDisplayName(account)}
                   onRemove={() =>
                     onAccountIdsChange(filterAccountIds.filter((x) => x !== id))
                   }

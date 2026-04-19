@@ -2,6 +2,7 @@ import { createElement, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { goals as goalsApi, accounts as accountsApi, assets as assetsApi, currencies as currenciesApi } from '@/lib/api'
+import { accountDisplayName } from '@/lib/format'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -477,7 +478,7 @@ export default function GoalsPage() {
                   <option value="">{t('goals.selectAccount')}</option>
                   {accountsList?.map((acc) => (
                     <option key={acc.id} value={acc.id}>
-                      {acc.name} ({acc.currency})
+                      {accountDisplayName(acc)} ({acc.currency})
                     </option>
                   ))}
                 </select>

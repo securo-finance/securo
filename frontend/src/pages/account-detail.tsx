@@ -21,6 +21,7 @@ import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
+import { accountDisplayName } from '@/lib/format'
 import {
   AreaChart,
   Area,
@@ -549,7 +550,7 @@ export default function AccountDetailPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <h1 className="text-2xl sm:text-3xl font-semibold text-foreground tracking-tight truncate">
-              {account.name}
+              {accountDisplayName(account)}
             </h1>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
               <span className="text-xs font-medium text-muted-foreground">

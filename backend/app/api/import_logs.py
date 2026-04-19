@@ -30,7 +30,7 @@ async def list_import_logs(
             id=log.id,
             user_id=log.user_id,
             account_id=log.account_id,
-            account_name=log.account.name if log.account else None,
+            account_name=(log.account.alias or log.account.name) if log.account else None,
             filename=log.filename,
             format=log.format,
             transaction_count=log.transaction_count,

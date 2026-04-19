@@ -98,6 +98,7 @@ def serialize_account(
         "connection_id": acc.connection_id,
         "external_id": acc.external_id,
         "name": acc.name,
+        "alias": acc.alias,
         "type": acc.type,
         "balance": acc.balance,
         "currency": acc.currency,
@@ -203,6 +204,7 @@ async def update_account(
     # expose those — users fill them in to unlock cycle-aware filtering.
     if account.connection_id is not None:
         editable_fields = {
+            "alias",
             "credit_limit",
             "statement_close_day",
             "payment_due_day",
@@ -213,8 +215,12 @@ async def update_account(
         disallowed = set(update_data.keys()) - editable_fields
         if disallowed:
             raise ValueError("Cannot edit bank-connected accounts")
-        if account.type != "credit_card":
+        cc_only = editable_fields - {"alias"}
+        if account.type != "credit_card" and (set(update_data.keys()) & cc_only):
             raise ValueError("Credit card fields can only be set on credit card accounts")
+        if "alias" in update_data:
+            alias_val = update_data["alias"]
+            update_data["alias"] = alias_val.strip() if isinstance(alias_val, str) and alias_val.strip() else None
         for key, value in update_data.items():
             setattr(account, key, value)
         if cycle_fields_changed:
@@ -222,6 +228,10 @@ async def update_account(
         await session.commit()
         await session.refresh(account)
         return account
+
+    if "alias" in update_data:
+        alias_val = update_data["alias"]
+        update_data["alias"] = alias_val.strip() if isinstance(alias_val, str) and alias_val.strip() else None
 
     for key, value in update_data.items():
         setattr(account, key, value)

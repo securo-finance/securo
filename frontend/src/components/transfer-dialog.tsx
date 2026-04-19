@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import { ArrowRight, Info } from 'lucide-react'
 import type { Account } from '@/types'
+import { accountDisplayName } from '@/lib/format'
 
 export function TransferDialog({
   open,
@@ -136,7 +137,7 @@ export function TransferDialog({
                 <option value="" disabled>{t('transactions.account')}</option>
                 {accounts.map((acc) => (
                   <option key={acc.id} value={acc.id}>
-                    {acc.name} ({acc.currency})
+                    {accountDisplayName(acc)} ({acc.currency})
                   </option>
                 ))}
               </select>
@@ -159,7 +160,7 @@ export function TransferDialog({
                 <option value="" disabled>{t('transactions.account')}</option>
                 {availableToAccounts.map((acc) => (
                   <option key={acc.id} value={acc.id}>
-                    {acc.name} ({acc.currency})
+                    {accountDisplayName(acc)} ({acc.currency})
                   </option>
                 ))}
               </select>

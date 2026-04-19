@@ -116,7 +116,7 @@ async def export_transactions(
             tx.type,
             tx.currency,
             tx.category.name if tx.category else "",
-            tx.account.name if tx.account else "",
+            (tx.account.alias or tx.account.name) if tx.account else "",
             tx.payee or "",
             getattr(tx, "payee_name", "") or "",
             tx.notes or "",

@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import { accountDisplayName } from '@/lib/format'
 import { ShellLogo } from '@/components/shell-logo'
 import {
   LayoutDashboard,
@@ -326,7 +327,7 @@ export function AppLayout() {
                         className="flex items-center justify-between px-3 py-1.5 rounded-lg text-xs text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all"
                       >
                         <div className="truncate min-w-0">
-                          <span className="block truncate font-medium">{acc.name}</span>
+                          <span className="block truncate font-medium">{accountDisplayName(acc)}</span>
                           <span className="block text-[10px] text-sidebar-muted/60">
                             {t(`accounts.type${typeKey}`)}
                           </span>

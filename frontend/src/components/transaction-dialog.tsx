@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
 import { currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { accountDisplayName } from '@/lib/format'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -614,7 +615,7 @@ function TransactionForm({
               required
             >
               {accounts.map((acc) => (
-                <option key={acc.id} value={acc.id}>{acc.name}</option>
+                <option key={acc.id} value={acc.id}>{accountDisplayName(acc)}</option>
               ))}
             </select>
           </div>

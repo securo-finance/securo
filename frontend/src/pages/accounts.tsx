@@ -39,6 +39,7 @@ import { ConnectorSelectDialog } from '@/components/connector-select-dialog'
 import { ConnectionSettingsDialog } from '@/components/connection-settings-dialog'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
+import { accountDisplayName } from '@/lib/format'
 
 function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
   return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
@@ -78,6 +79,7 @@ export default function AccountsPage() {
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null)
   const [settingsConnection, setSettingsConnection] = useState<BankConnection | null>(null)
   const [closingAccountId, setClosingAccountId] = useState<string | null>(null)
+  const [renamingAccount, setRenamingAccount] = useState<Account | null>(null)
   const [reconnectConnId, setReconnectConnId] = useState<string | null>(null)
   const [reconnectItemId, setReconnectItemId] = useState<string | null>(null)
 
@@ -149,6 +151,17 @@ export default function AccountsPage() {
       invalidateFinancialQueries(queryClient)
       setDeletingId(null)
       toast.success(t('accounts.deleted'))
+    },
+    onError: () => toast.error(t('common.error')),
+  })
+
+  const renameMutation = useMutation({
+    mutationFn: ({ id, alias }: { id: string; alias: string | null }) =>
+      accounts.update(id, { alias }),
+    onSuccess: () => {
+      invalidateFinancialQueries(queryClient)
+      setRenamingAccount(null)
+      toast.success(t('accounts.updated'))
     },
     onError: () => toast.error(t('common.error')),
   })
@@ -227,7 +240,7 @@ export default function AccountsPage() {
                           <Icon size={14} className={cfg.color} />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-foreground truncate">{acc.name}</p>
+                          <p className="text-sm font-medium text-foreground truncate">{accountDisplayName(acc)}</p>
                           <p className="text-xs text-muted-foreground">
                             {t(cfg.label)}
                             {dueText && <> · <span className={dueClass}>{dueText}</span></>}
@@ -384,20 +397,29 @@ export default function AccountsPage() {
                                   <Icon size={14} className={cfg.color} />
                                 </div>
                                 <div className="min-w-0 flex-1">
-                                  <p className="text-sm font-medium text-foreground truncate">{acc.name}</p>
+                                  <p className="text-sm font-medium text-foreground truncate">{accountDisplayName(acc)}</p>
                                   <p className="text-xs text-muted-foreground">
                                     {t(cfg.label)}
                                     {dueText && <> · <span className={dueClass}>{dueText}</span></>}
                                   </p>
                                 </div>
                               </Link>
-                              <button
-                                className="p-1.5 rounded-md text-muted-foreground hover:text-amber-600 hover:bg-amber-50 transition-colors opacity-0 group-hover:opacity-100 mr-3"
-                                onClick={(e) => { e.preventDefault(); setClosingAccountId(acc.id) }}
-                                title={t('accounts.close')}
-                              >
-                                <Archive size={13} />
-                              </button>
+                              <div className="flex items-center gap-1 mr-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                                  onClick={(e) => { e.preventDefault(); setRenamingAccount(acc) }}
+                                  title={t('accounts.rename')}
+                                >
+                                  <Pencil size={13} />
+                                </button>
+                                <button
+                                  className="p-1.5 rounded-md text-muted-foreground hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                                  onClick={(e) => { e.preventDefault(); setClosingAccountId(acc.id) }}
+                                  title={t('accounts.close')}
+                                >
+                                  <Archive size={13} />
+                                </button>
+                              </div>
                               <div className="text-right">
                                 <p className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
                                   {mask(formatCurrency(bal, acc.currency, locale))}
@@ -447,7 +469,7 @@ export default function AccountsPage() {
                         <div className={`w-8 h-8 rounded-lg ${cfg.bg} flex items-center justify-center shrink-0`}>
                           <Icon size={14} className={cfg.color} />
                         </div>
-                        <p className="text-sm font-medium text-muted-foreground truncate">{acc.name}</p>
+                        <p className="text-sm font-medium text-muted-foreground truncate">{accountDisplayName(acc)}</p>
                       </div>
                       <Button
                         variant="ghost"
@@ -566,7 +588,76 @@ export default function AccountsPage() {
         }}
         loading={createMutation.isPending || updateMutation.isPending}
       />
+
+      {/* Rename (Alias) Dialog */}
+      <RenameAccountDialog
+        account={renamingAccount}
+        onClose={() => setRenamingAccount(null)}
+        onSave={(alias) => {
+          if (renamingAccount) {
+            renameMutation.mutate({ id: renamingAccount.id, alias })
+          }
+        }}
+        loading={renameMutation.isPending}
+      />
     </div>
+  )
+}
+
+function RenameAccountDialog({
+  account,
+  onClose,
+  onSave,
+  loading,
+}: {
+  account: Account | null
+  onClose: () => void
+  onSave: (alias: string | null) => void
+  loading: boolean
+}) {
+  const { t } = useTranslation()
+  const [alias, setAlias] = useState('')
+
+  useEffect(() => {
+    setAlias(account?.alias ?? '')
+  }, [account])
+
+  return (
+    <Dialog open={!!account} onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t('accounts.renameTitle')}</DialogTitle>
+        </DialogHeader>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            const trimmed = alias.trim()
+            onSave(trimmed === '' ? null : trimmed)
+          }}
+          className="space-y-4"
+        >
+          <div className="space-y-1">
+            <Label htmlFor="alias">{t('accounts.aliasLabel')}</Label>
+            <Input
+              id="alias"
+              value={alias}
+              onChange={(e) => setAlias(e.target.value)}
+              placeholder={account?.name ?? ''}
+              autoFocus
+            />
+            <p className="text-xs text-muted-foreground">{t('accounts.aliasHint')}</p>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" disabled={loading}>
+              {t('common.save')}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 

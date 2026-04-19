@@ -166,7 +166,7 @@ async def _enrich_goal(
     if goal.account_id:
         account = await session.get(Account, goal.account_id)
         if account:
-            account_name = account.name
+            account_name = account.alias or account.name
     asset_name = None
     if goal.asset_id:
         asset = await session.get(Asset, goal.asset_id)

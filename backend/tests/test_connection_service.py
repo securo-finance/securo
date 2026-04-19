@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.category import Category
 from app.models.transaction import Transaction
@@ -386,6 +387,52 @@ async def test_sync_connection_new_transactions(session: AsyncSession, test_user
 async def test_sync_connection_not_found(session: AsyncSession, test_user):
     with pytest.raises(ValueError, match="not found"):
         await sync_connection(session, uuid.uuid4(), test_user.id)
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_preserves_alias(session: AsyncSession, test_user):
+    """Re-syncing must overwrite name from the provider but keep the user-set alias (issue #77)."""
+    conn = await _make_connection(session, test_user.id, "Alias Bank")
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="alias-acc-1", name="Pluggy Original",
+            type="checking", balance=Decimal("100"), currency="BRL",
+        ),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(session, conn.id, test_user.id)
+
+    result = await session.execute(
+        select(Account).where(Account.external_id == "alias-acc-1")
+    )
+    account = result.scalar_one()
+    account.alias = "My Nickname"
+    await session.commit()
+
+    # Provider returns a different name on the second sync.
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="alias-acc-1", name="Pluggy Renamed",
+            type="checking", balance=Decimal("150"), currency="BRL",
+        ),
+    ])
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(session, conn.id, test_user.id)
+
+    await session.refresh(account)
+    assert account.name == "Pluggy Renamed"
+    assert account.alias == "My Nickname"
 
 
 @pytest.mark.asyncio

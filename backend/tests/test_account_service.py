@@ -284,6 +284,85 @@ async def test_update_account_not_found(session: AsyncSession, test_user):
     assert result is None
 
 
+@pytest.mark.asyncio
+async def test_update_bank_connected_alias_allowed(session: AsyncSession, test_user, test_connection):
+    """Alias is editable on bank-connected accounts (issue #77)."""
+    account = await _make_account(
+        session, test_user.id, "Pluggy Original Name",
+        connection_id=test_connection.id, external_id="ext-alias-1",
+    )
+    updated = await update_account(
+        session, account.id, test_user.id, AccountUpdate(alias="Nubank"),
+    )
+    assert updated is not None
+    assert updated.alias == "Nubank"
+    # Original Pluggy name is preserved verbatim.
+    assert updated.name == "Pluggy Original Name"
+
+
+@pytest.mark.asyncio
+async def test_update_bank_connected_alias_blank_clears(session: AsyncSession, test_user, test_connection):
+    """Empty/whitespace alias clears it back to None."""
+    account = await _make_account(
+        session, test_user.id, "Pluggy Original",
+        connection_id=test_connection.id, external_id="ext-alias-2",
+    )
+    account.alias = "Old Alias"
+    await session.commit()
+
+    updated = await update_account(
+        session, account.id, test_user.id, AccountUpdate(alias="   "),
+    )
+    assert updated is not None
+    assert updated.alias is None
+
+
+@pytest.mark.asyncio
+async def test_update_bank_connected_name_still_rejected(session: AsyncSession, test_user, test_connection):
+    """Name remains read-only on bank-connected accounts even though alias is editable."""
+    account = await _make_account(
+        session, test_user.id, "Pluggy Original",
+        connection_id=test_connection.id, external_id="ext-alias-3",
+    )
+    with pytest.raises(ValueError, match="bank-connected"):
+        await update_account(
+            session, account.id, test_user.id, AccountUpdate(name="Hacked"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_manual_account_alias(session: AsyncSession, test_user):
+    """Manual accounts can also set alias (trimmed, blank → None)."""
+    account = await _make_account(session, test_user.id, "Manual")
+    updated = await update_account(
+        session, account.id, test_user.id, AccountUpdate(alias="  Wallet  "),
+    )
+    assert updated is not None
+    assert updated.alias == "Wallet"
+
+    cleared = await update_account(
+        session, account.id, test_user.id, AccountUpdate(alias=""),
+    )
+    assert cleared is not None
+    assert cleared.alias is None
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_serializes_alias(session: AsyncSession, test_user, test_connection):
+    """serialize_account exposes the alias field in API responses."""
+    account = await _make_account(
+        session, test_user.id, "Pluggy Original",
+        connection_id=test_connection.id, external_id="ext-alias-4",
+    )
+    account.alias = "My Bank"
+    await session.commit()
+
+    rows = await get_accounts(session, test_user.id)
+    payload = next(r for r in rows if r["id"] == account.id)
+    assert payload["alias"] == "My Bank"
+    assert payload["name"] == "Pluggy Original"
+
+
 # ---------------------------------------------------------------------------
 # delete_account
 # ---------------------------------------------------------------------------
