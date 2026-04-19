@@ -26,7 +26,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts'
-import { CheckCircle2, CalendarIcon, Paperclip, Target } from 'lucide-react'
+import { CheckCircle2, CalendarIcon, Paperclip, Target, ArrowUpDown } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { ICON_MAP } from '@/lib/category-icons'
 import { PageHeader } from '@/components/page-header'
@@ -224,6 +224,8 @@ export default function DashboardPage() {
   const uncategorizedCount = summary?.pending_categorization ?? 0
   const uncategorizedAmount = summary?.pending_categorization_amount ?? 0
 
+  const [catSortDesc, setCatSortDesc] = useState(true)
+
   // Merged category bars data
   const mergedCategories = useMemo(() => {
     if (!spending) return []
@@ -256,10 +258,11 @@ export default function DashboardPage() {
           momPct,
         }
       })
-      .sort((a, b) => b.actual - a.actual)
-  }, [spending, budgetComparison])
+      .sort((a, b) => catSortDesc ? b.actual - a.actual : a.actual - b.actual)
+  }, [spending, budgetComparison, catSortDesc])
 
   const [txPage, setTxPage] = useState(1)
+  const [txSortDesc, setTxSortDesc] = useState(true)
   useEffect(() => setTxPage(1), [selectedMonth])
 
   type DisplayRow = {
@@ -312,9 +315,9 @@ export default function DashboardPage() {
         attachmentCount: 0,
       })
     }
-    rows.sort((a, b) => a.date.localeCompare(b.date))
+    rows.sort((a, b) => txSortDesc ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date))
     return rows
-  }, [currentMonthTxs, projectedTxs])
+  }, [currentMonthTxs, projectedTxs, txSortDesc])
 
   const txTotalPages = Math.ceil(allDisplayRows.length / TX_PER_PAGE)
   const pagedRows = allDisplayRows.slice((txPage - 1) * TX_PER_PAGE, txPage * TX_PER_PAGE)
@@ -524,8 +527,15 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5" style={{ gridAutoRows: 'minmax(380px, auto)' }}>
         {/* Category Spending Bars */}
         <div className="bg-card rounded-xl border border-border shadow-sm flex flex-col max-h-[420px]">
-          <div className="px-5 py-4 border-b border-border shrink-0">
+          <div className="px-5 py-4 border-b border-border shrink-0 flex items-center justify-between">
             <p className="text-sm font-semibold text-foreground">{t('dashboard.spendingByCategory')}</p>
+            <button
+              onClick={() => setCatSortDesc(v => !v)}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            >
+              <ArrowUpDown size={13} />
+              {catSortDesc ? t('dashboard.sortHighest') : t('dashboard.sortLowest')}
+            </button>
           </div>
           <div className="p-3 overflow-y-auto flex-1">
             {spendingLoading ? (
@@ -816,8 +826,15 @@ export default function DashboardPage() {
       {/* Period Transactions */}
       <div>
         <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-border">
+          <div className="px-5 py-4 border-b border-border flex items-center justify-between">
             <p className="text-sm font-semibold text-foreground">{t('dashboard.periodTransactions')}</p>
+            <button
+              onClick={() => { setTxSortDesc(v => !v); setTxPage(1) }}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            >
+              <ArrowUpDown size={13} />
+              {txSortDesc ? t('dashboard.sortNewest') : t('dashboard.sortOldest')}
+            </button>
           </div>
           {txListLoading ? (
             <div className="p-5 space-y-3">
