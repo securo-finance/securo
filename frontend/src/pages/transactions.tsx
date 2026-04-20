@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { getAccountName } from '@/lib/account-utils'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -559,7 +560,7 @@ export default function TransactionsPage() {
                     )}
                   </TableCell>
                   <TableCell className="hidden lg:table-cell py-2.5 text-sm text-muted-foreground">
-                    {accountsList?.find((a) => a.id === tx.account_id)?.name ?? (
+                    {getAccountName(accountsList?.find((a) => a.id === tx.account_id) ?? { name: '', display_name: null }) || (
                       <span className="text-muted-foreground">—</span>
                     )}
                   </TableCell>

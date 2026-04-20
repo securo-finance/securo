@@ -3,6 +3,10 @@ from datetime import date as _Date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Optional
 
+
+def get_account_name(account: "Account") -> str:
+    return account.display_name or account.name
+
 from sqlalchemy import case, func, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 

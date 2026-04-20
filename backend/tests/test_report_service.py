@@ -745,6 +745,20 @@ async def test_net_worth_composition_includes_assets(session: AsyncSession, test
 
 
 @pytest.mark.asyncio
+async def test_net_worth_composition_uses_display_name(session: AsyncSession, test_user: User):
+    """Composition labels must use display_name when set, falling back to name."""
+    acct = await _make_manual_account(session, test_user.id, "Provider Name")
+    acct.display_name = "My Nickname"
+    await session.commit()
+    await _add_txn(session, test_user.id, acct.id, 10000, "credit", date.today())
+
+    report = await get_net_worth_report(session, test_user.id, months=1, interval="monthly")
+    comp_labels = [c.label for c in report.composition]
+    assert "My Nickname" in comp_labels
+    assert "Provider Name" not in comp_labels
+
+
+@pytest.mark.asyncio
 async def test_net_worth_weekly_interval(session: AsyncSession, test_user: User):
     acct = await _make_manual_account(session, test_user.id, "Weekly Test")
     await _add_txn(session, test_user.id, acct.id, 1000, "credit", date.today())
