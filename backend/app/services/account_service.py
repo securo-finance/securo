@@ -3,10 +3,6 @@ from datetime import date as _Date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Optional
 
-
-def get_account_name(account: "Account") -> str:
-    return account.display_name or account.name
-
 from sqlalchemy import case, func, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +11,10 @@ from app.models.bank_connection import BankConnection
 from app.models.transaction import Transaction
 from app.schemas.account import AccountCreate, AccountUpdate
 from app.services.credit_card_service import apply_effective_date, compute_available_credit, get_cycle_dates
+
+
+def get_account_name(account: Account) -> str:
+    return account.display_name or account.name
 
 
 async def get_accounts(session: AsyncSession, user_id: uuid.UUID, include_closed: bool = False) -> list[dict]:
