@@ -17,6 +17,7 @@ class TransactionBase(BaseModel):
     currency: Optional[str] = None
     fx_rate: Optional[Decimal] = None
     payee_raw: Optional[str] = None  # raw payee string from import (OFX/QIF)
+    category_name: Optional[str] = None  # resolved to category_id during import
 
 
 class TransactionCreate(TransactionBase):

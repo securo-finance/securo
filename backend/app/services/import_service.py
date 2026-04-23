@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.account import Account
+from app.models.category import Category
 from app.models.transaction import Transaction
 from app.schemas.transaction import TransactionBase
 from app.services.credit_card_service import apply_effective_date
@@ -221,6 +222,8 @@ def parse_csv(
     date_cols = ['date', 'data', 'dt', 'transaction_date', 'data_transacao']
     desc_cols = ['description', 'descricao', 'desc', 'memo', 'historico', 'lancamento']
     amount_cols = ['amount', 'valor', 'value', 'quantia']
+    type_cols = ['type', 'tipo']
+    category_cols = ['category', 'categoria']
     currency_cols = ['currency', 'moeda', 'currency_code']
     fx_rate_cols = ['fx_rate', 'fx_rate_used', 'taxa_cambio', 'exchange_rate', 'taxa']
 
@@ -245,6 +248,8 @@ def parse_csv(
     else:
         amount_col = find_col(amount_cols)
 
+    type_col = find_col(type_cols)
+    category_col = find_col(category_cols)
     currency_col = find_col(currency_cols)
     fx_rate_col = find_col(fx_rate_cols)
 
@@ -316,10 +321,14 @@ def parse_csv(
             if flip_amount:
                 amount = -amount
 
-            txn_type = "credit" if amount > 0 else "debit"
+            if type_col and row.get(type_col, '').strip() in ('credit', 'debit'):
+                txn_type = row[type_col].strip()
+            else:
+                txn_type = "credit" if amount > 0 else "debit"
             amount = abs(amount)
 
-        # Extract optional currency and fx_rate from CSV columns
+        # Extract optional category, currency and fx_rate from CSV columns
+        category_name = row[category_col].strip() if category_col and row.get(category_col) else None
         txn_currency = None
         txn_fx_rate = None
         if currency_col and row.get(currency_col):
@@ -339,6 +348,7 @@ def parse_csv(
             type=txn_type,
             currency=txn_currency,
             fx_rate=txn_fx_rate,
+            category_name=category_name,
         ))
 
     return transactions
@@ -380,6 +390,12 @@ async def import_transactions(
     account = account_result.scalar_one_or_none()
     account_currency = account.currency if account else get_settings().default_currency
 
+    # Build category name → id map for this user (used when CSV provides category names)
+    category_result = await session.execute(
+        select(Category).where(Category.user_id == user_id)
+    )
+    category_map = {c.name: c.id for c in category_result.scalars()}
+
     imported = 0
     skipped = 0
     for txn_data in transactions:
@@ -416,6 +432,8 @@ async def import_transactions(
             import_payee_entity = await get_or_create_payee(session, user_id, import_payee_raw)
             import_payee_id = import_payee_entity.id
 
+        category_id = category_map.get(txn_data.category_name) if txn_data.category_name else None
+
         transaction = Transaction(
             user_id=user_id,
             account_id=account_id,
@@ -429,6 +447,7 @@ async def import_transactions(
             currency=txn_currency,
             payee=import_payee_raw,
             payee_id=import_payee_id,
+            category_id=category_id,
         )
         apply_effective_date(transaction, account)
 
