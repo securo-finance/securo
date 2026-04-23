@@ -27,6 +27,8 @@ from app.schemas.report import (
 )
 from app.services.dashboard_service import _get_open_accounts, _account_balance_at
 
+CATEGORY_TREND_TOP_N = 11
+
 
 async def _asset_value_at(
     session: AsyncSession, user_id: uuid.UUID, cutoff: date,
@@ -655,8 +657,8 @@ async def get_income_expenses_report(
             (k, v) for (k, g), v in cat_trend_map.items() if g == group
         ]
         group_items.sort(key=lambda x: x[1]["total"], reverse=True)
-        top = group_items[:6]
-        rest = group_items[6:]
+        top = group_items[:CATEGORY_TREND_TOP_N]
+        rest = group_items[CATEGORY_TREND_TOP_N:]
 
         for cat_key, info in top:
             series = [

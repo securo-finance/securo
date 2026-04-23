@@ -38,6 +38,8 @@ function formatCompact(value: number, currency = 'USD', locale = 'en-US') {
   }).format(value)
 }
 
+const COMPOSITION_TOP_N = 6
+
 const RANGE_OPTIONS = [
   { key: '6m', months: 6 },
   { key: '1y', months: 12 },
@@ -157,10 +159,10 @@ export default function ReportsPage() {
       items = composition.filter((c) => c.group === 'expenses')
     }
 
-    // Sort descending, take top 6, bucket the rest into "Other"
+    // Sort descending, take top N, bucket the rest into "Other"
     const sorted = [...items].sort((a, b) => b.value - a.value)
-    const top = sorted.slice(0, 6)
-    const rest = sorted.slice(6)
+    const top = sorted.slice(0, COMPOSITION_TOP_N)
+    const rest = sorted.slice(COMPOSITION_TOP_N)
     const otherValue = rest.reduce((sum, c) => sum + c.value, 0)
 
     const result = top.map((c) => ({
