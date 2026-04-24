@@ -4,10 +4,10 @@ x-backend-env: &backend-env
   DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/securo
   SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-production}
   DEBUG: ${DEBUG:-true}
-  FRONTEND_URL: http://localhost:3000
+  FRONTEND_URL: http://localhost:${FRONTEND_PORT:-3000}
   PLUGGY_CLIENT_ID: ${PLUGGY_CLIENT_ID:-}
   PLUGGY_CLIENT_SECRET: ${PLUGGY_CLIENT_SECRET:-}
-  PLUGGY_OAUTH_REDIRECT_URI: http://localhost:3000/oauth/callback
+  PLUGGY_OAUTH_REDIRECT_URI: http://localhost:${FRONTEND_PORT:-3000}/oauth/callback
   REDIS_URL: redis://redis:6379/0
   OPENEXCHANGERATES_APP_ID: ${OPENEXCHANGERATES_APP_ID:-}
   FX_SYNC_MODE: ${FX_SYNC_MODE:-on_demand}
@@ -53,14 +53,14 @@ services:
       sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port
       8000 --reload"
     ports:
-      - '8000:8000'
+      - "${BACKEND_PORT:-8000}:8000"
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
     ports:
-      - '3000:5173'
+      - "${FRONTEND_PORT:-3000}:5173"
     environment:
       BACKEND_URL: http://backend:8000
       FRONTEND_URL: http://localhost:3000
