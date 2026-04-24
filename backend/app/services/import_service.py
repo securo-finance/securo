@@ -14,7 +14,7 @@ from app.core.config import get_settings
 from app.models.account import Account
 from app.models.category import Category
 from app.models.transaction import Transaction
-from app.schemas.transaction import TransactionBase
+from app.schemas.transaction import TransactionBase, TransactionImport
 from app.services.credit_card_service import apply_effective_date
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.fx_rate_service import stamp_primary_amount
@@ -341,7 +341,7 @@ def parse_csv(
                 except Exception:
                     pass
 
-        transactions.append(TransactionBase(
+        transactions.append(TransactionImport(
             description=row[desc_col].strip(),
             amount=abs(amount),
             date=txn_date,
@@ -432,7 +432,7 @@ async def import_transactions(
             import_payee_entity = await get_or_create_payee(session, user_id, import_payee_raw)
             import_payee_id = import_payee_entity.id
 
-        category_id = category_map.get(txn_data.category_name) if txn_data.category_name else None
+        category_id = category_map.get(getattr(txn_data, "category_name", None)) if getattr(txn_data, "category_name", None) else None
 
         transaction = Transaction(
             user_id=user_id,

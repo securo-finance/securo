@@ -1104,8 +1104,8 @@ class TestImportTransactionsWithCategory:
         session.add(category)
         await session.commit()
 
-        from app.schemas.transaction import TransactionBase
-        txns = [TransactionBase(
+        from app.schemas.transaction import TransactionImport
+        txns = [TransactionImport(
             description="Salario Dia 5",
             amount=Decimal("13311.00"),
             date=date(2026, 1, 5),
@@ -1131,11 +1131,11 @@ class TestImportTransactionsWithCategory:
         self, mock_provider, session: AsyncSession, test_user: User, test_account: Account,
     ):
         """When category_name has no match, category_id should be None."""
-        from app.schemas.transaction import TransactionBase
+        from app.schemas.transaction import TransactionImport
         from app.models.transaction import Transaction
         from sqlalchemy import select
 
-        txns = [TransactionBase(
+        txns = [TransactionImport(
             description="Unknown Cat Transaction",
             amount=Decimal("100.00"),
             date=date(2026, 1, 10),
@@ -1160,11 +1160,11 @@ class TestImportTransactionsWithCategory:
         self, mock_provider, session: AsyncSession, test_user: User, test_account: Account,
     ):
         """When category_name is None, category_id should be None."""
-        from app.schemas.transaction import TransactionBase
+        from app.schemas.transaction import TransactionImport
         from app.models.transaction import Transaction
         from sqlalchemy import select
 
-        txns = [TransactionBase(
+        txns = [TransactionImport(
             description="No Cat Transaction",
             amount=Decimal("50.00"),
             date=date(2026, 1, 15),
@@ -1190,7 +1190,7 @@ class TestImportTransactionsWithCategory:
         """Multiple transactions with different categories should each resolve correctly."""
         from app.models.category import Category
         from app.models.transaction import Transaction
-        from app.schemas.transaction import TransactionBase
+        from app.schemas.transaction import TransactionImport
         from sqlalchemy import select
 
         salary_cat = Category(
@@ -1206,21 +1206,21 @@ class TestImportTransactionsWithCategory:
         await session.commit()
 
         txns = [
-            TransactionBase(
+            TransactionImport(
                 description="Salario",
                 amount=Decimal("13311.00"),
                 date=date(2026, 1, 5),
                 type="credit",
                 category_name="Salário & Renda",
             ),
-            TransactionBase(
+            TransactionImport(
                 description="Financiamento",
                 amount=Decimal("577.00"),
                 date=date(2026, 1, 1),
                 type="debit",
                 category_name="Moradia",
             ),
-            TransactionBase(
+            TransactionImport(
                 description="Unknown",
                 amount=Decimal("100.00"),
                 date=date(2026, 1, 2),
