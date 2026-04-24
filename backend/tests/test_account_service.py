@@ -374,6 +374,48 @@ async def test_delete_account_with_recurring_transactions(session: AsyncSession,
 
 
 @pytest.mark.asyncio
+async def test_delete_account_with_imported_transactions(session: AsyncSession, test_user):
+    """Regression (#110 v2, @ivancarlosti): deleting an account whose transactions
+    were imported from a file must succeed. The imported rows reference the
+    import_log via transactions.import_id — deleting import_logs first would
+    trip transactions_import_id_fkey until that reference is cleared."""
+    from sqlalchemy import select
+
+    account = await _make_account(session, test_user.id, "Imported Txns")
+    log = ImportLog(
+        id=uuid.uuid4(), user_id=test_user.id, account_id=account.id,
+        filename="stmt.ofx", format="ofx", transaction_count=1,
+    )
+    session.add(log)
+    await session.flush()
+
+    tx = await _add_txn(
+        session, test_user.id, account.id,
+        amount=42.0, txn_type="debit", txn_date=date.today(),
+        source="import",
+    )
+    tx.import_id = log.id
+    await session.commit()
+    log_id = log.id
+    tx_id = tx.id
+
+    result = await delete_account(session, account.id, test_user.id)
+    assert result is True
+
+    assert await get_account(session, account.id, test_user.id) is None
+
+    session.expire_all()
+    orphan_log = await session.execute(
+        select(ImportLog).where(ImportLog.id == log_id)
+    )
+    assert orphan_log.scalar_one_or_none() is None
+    orphan_tx = await session.execute(
+        select(Transaction).where(Transaction.id == tx_id)
+    )
+    assert orphan_tx.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
 async def test_delete_account_with_linked_goal(session: AsyncSession, test_user):
     """Regression (#110): deleting an account tracked by a goal must succeed;
     the goal survives with account_id nulled out (progress history is kept)."""

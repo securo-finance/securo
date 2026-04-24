@@ -415,9 +415,20 @@ async def delete_account(session: AsyncSession, account_id: uuid.UUID, user_id: 
     await cleanup_attachment_files(session, tx_ids)
 
     # Break FK references before deleting the account. In production these are
-    # also enforced at the DB level (see migration 032) — this code path makes
+    # also enforced at the DB level (see migration 039) — this code path makes
     # the behavior explicit and keeps the FK bug from #110 from regressing for
-    # any of the three dependent tables.
+    # any of the dependent tables.
+    #
+    # Order matters: transactions imported from a file reference import_logs
+    # via transactions.import_id. We must null that out *before* deleting the
+    # log rows, otherwise the log delete trips transactions_import_id_fkey.
+    # The transaction rows themselves cascade-delete via Account.transactions
+    # when session.delete(account) flushes below.
+    await session.execute(
+        Transaction.__table__.update()
+        .where(Transaction.account_id == account_id)
+        .values(import_id=None)
+    )
     await session.execute(
         ImportLog.__table__.delete().where(ImportLog.account_id == account_id)
     )
