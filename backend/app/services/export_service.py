@@ -139,16 +139,46 @@ class ExportService:
             "connections": existing_connections,
         }
 
-    async def _insert_new_user_data(self, data_map: dict[str, list[dict[str, Any]]], existing_keys: dict[str, set[str]]):
-        context = RestoreContext(self.user_id, data_map, existing_keys)
+    def _sanitize_row(self, model: type[DeclarativeBase], row: dict[str, Any], data_map: dict[str, list[dict[str, Any]]], existing_keys: dict[str, set[str]]) -> dict[str, Any]:
+        clean_row = deserialize_row(model, row)
+        restoring_without_payees = "payees" not in data_map
+        restoring_without_asset_groups = "asset_groups" not in data_map
 
+        has_user_id = "user_id" in row
+        if has_user_id:
+            clean_row["user_id"] = self.user_id
+
+        is_transaction_model = model == Transaction
+        if is_transaction_model and restoring_without_payees:
+            payee_uuid = clean_row.get("payee_id")
+            is_unresolved_payee = payee_uuid and str(payee_uuid) not in existing_keys["payees"]
+            if is_unresolved_payee:
+                clean_row["payee_id"] = None
+
+        is_asset_model = model == Asset
+        if is_asset_model and restoring_without_asset_groups:
+            group_uuid = clean_row.get("group_id")
+            is_unresolved_group = group_uuid and str(group_uuid) not in existing_keys["asset_groups"]
+            if is_unresolved_group:
+                clean_row["group_id"] = None
+
+        has_connection_id = hasattr(model, "connection_id") or "connection_id" in row
+        if has_connection_id:
+            connection_uuid = clean_row.get("connection_id")
+            is_unresolved_connection = connection_uuid and str(connection_uuid) not in existing_keys["connections"]
+            if is_unresolved_connection:
+                clean_row["connection_id"] = None
+
+        return clean_row
+
+    async def _insert_new_user_data(self, data_map: dict[str, list[dict[str, Any]]], existing_keys: dict[str, set[str]]):
         for key, model in EXPORT_MODELS_ORDER:
             requires_insertion = key in data_map and data_map[key]
             if not requires_insertion:
                 continue
 
             for row in data_map[key]:
-                clean_row = context.sanitize_row(model, row)
+                clean_row = self._sanitize_row(model, row, data_map, existing_keys)
                 await self.session.merge(model(**clean_row))
 
             await self.session.flush()
@@ -156,3 +186,4 @@ class ExportService:
     async def restore_data(self, data_map: dict[str, list[dict[str, Any]]]):
         existing_keys = await self._get_existing_foreign_keys(data_map)
         await self._insert_new_user_data(data_map, existing_keys)
+
