@@ -1,12 +1,18 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any, TypeVar
 from uuid import UUID
 
-def serialize_model(obj) -> dict:
+from sqlalchemy.orm import DeclarativeBase
+
+T = TypeVar("T", bound=DeclarativeBase)
+
+
+def serialize_model(obj: T) -> dict[str, Any]:
     """
     Serializes an SQLAlchemy model instance into a JSON-compatible dictionary.
     """
-    row = {}
+    row: dict[str, Any] = {}
     for col in obj.__table__.columns:
         val = getattr(obj, col.key)
         if isinstance(val, UUID):
@@ -18,7 +24,8 @@ def serialize_model(obj) -> dict:
         row[col.key] = val
     return row
 
-def deserialize_row(model, row_data: dict) -> dict:
+
+def deserialize_row(model: type[T], row_data: dict[str, Any]) -> dict[str, Any]:
     """
     Given an SQLAlchemy model and a dictionary of raw JSON data,
     filters exactly out invalid keys and converts string values 
@@ -27,11 +34,11 @@ def deserialize_row(model, row_data: dict) -> dict:
     """
     valid_keys = {c.key for c in model.__table__.columns}
     clean_row = {k: v for k, v in row_data.items() if k in valid_keys}
-    
+
     for k, v in list(clean_row.items()):
         if v is None:
             continue
-            
+
         col_type = getattr(model.__table__.columns, k).type
         try:
             ptype = col_type.python_type
@@ -45,5 +52,7 @@ def deserialize_row(model, row_data: dict) -> dict:
                 clean_row[k] = UUID(v)
         except NotImplementedError:
             pass
-            
+
     return clean_row
+
+
