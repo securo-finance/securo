@@ -16,9 +16,10 @@ async def backup(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
-    from app.services.export_service import export_user_data
+    from app.services.export_service import ExportService
 
-    buf = await export_user_data(session, user.id)
+    service = ExportService(session, user.id)
+    buf = await service.export_data()
     today = date.today().isoformat()
     return StreamingResponse(
         iter([buf.getvalue()]),
@@ -33,7 +34,7 @@ async def restore(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
-    from app.services.export_service import BackupArchiveHandler, restore_user_data
+    from app.services.export_service import BackupArchiveHandler, ExportService
 
     try:
         content = await file.read()
@@ -42,7 +43,8 @@ async def restore(
         raise HTTPException(status_code=400, detail=f"Invalid backup file: {str(e)}")
 
     try:
-        await restore_user_data(session, user.id, data_map)
+        service = ExportService(session, user.id)
+        await service.restore_data(data_map)
         await session.commit()
     except Exception as e:
         await session.rollback()
