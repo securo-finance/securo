@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { getAccountName } from '@/lib/account-utils'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -111,6 +111,8 @@ export function AppLayout() {
   const [changePasswordOpen, setChangePasswordOpen] = useState(false)
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
   const [backingUp, setBackingUp] = useState(false)
+  const [restoring, setRestoring] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false)
   useCommandPaletteHotkey(setPaletteOpen)
@@ -136,6 +138,28 @@ export function AppLayout() {
       // localStorage fallback is already set
     }
   }, [user, updateUser])
+
+  const handleRestore = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    if (!window.confirm(t('backup.restoreConfirm', { defaultValue: 'Restoring will OVERWRITE ALL your current data (except bank connections). This action cannot be undone. Are you sure?' }))) {
+      event.target.value = ''
+      return
+    }
+
+    setRestoring(true)
+    try {
+      await backupApi.restore(file)
+      toast.success(t('backup.restoreSuccess', { defaultValue: 'Backup restored successfully!' }))
+      window.location.reload()
+    } catch {
+      toast.error(t('backup.restoreError', { defaultValue: 'Failed to restore backup.' }))
+    } finally {
+      setRestoring(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
 
   const userInitial = user?.email?.charAt(0).toUpperCase() ?? '?'
   const currentLang = i18n.language
@@ -206,6 +230,7 @@ export function AppLayout() {
             onChangePassword={() => setChangePasswordOpen(true)}
             onTwoFactor={() => setTwoFactorOpen(true)}
             backingUp={backingUp}
+            restoring={restoring}
             onBackup={async () => {
               setBackingUp(true)
               try {
@@ -217,6 +242,7 @@ export function AppLayout() {
                 setBackingUp(false)
               }
             }}
+            onRestoreClick={() => fileInputRef.current?.click()}
             dark
             isAdmin={user?.is_superuser}
           />
@@ -461,7 +487,7 @@ export function AppLayout() {
                   {t('auth.twoFactorTitle')}
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  disabled={backingUp}
+                  disabled={backingUp || restoring}
                   onClick={async () => {
                     setBackingUp(true)
                     try {
@@ -477,6 +503,14 @@ export function AppLayout() {
                 >
                   <HardDriveDownload size={14} />
                   {backingUp ? t('backup.downloading') : t('backup.button')}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={backingUp || restoring}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-2"
+                >
+                  <Upload size={14} />
+                  {restoring ? t('backup.restoring', { defaultValue: 'Restoring...' }) : t('backup.restoreButton', { defaultValue: 'Restore Backup' })}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setUpdateDialogOpen(true)}
@@ -566,6 +600,13 @@ export function AppLayout() {
         open={updateDialogOpen}
         onClose={() => setUpdateDialogOpen(false)}
       />
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        className="hidden" 
+        accept=".zip" 
+        onChange={handleRestore} 
+      />
     </div>
   )
 }
@@ -576,7 +617,9 @@ function UserMenu({
   onChangePassword,
   onTwoFactor,
   onBackup,
+  onRestoreClick,
   backingUp,
+  restoring,
   dark,
   isAdmin,
 }: {
@@ -585,7 +628,9 @@ function UserMenu({
   onChangePassword: () => void
   onTwoFactor: () => void
   onBackup: () => void
+  onRestoreClick: () => void
   backingUp: boolean
+  restoring: boolean
   dark?: boolean
   isAdmin?: boolean
 }) {
@@ -637,12 +682,20 @@ function UserMenu({
           {t('auth.twoFactorTitle')}
         </DropdownMenuItem>
         <DropdownMenuItem
-          disabled={backingUp}
+          disabled={backingUp || restoring}
           onClick={onBackup}
           className="flex items-center gap-2"
         >
           <HardDriveDownload size={14} />
           {backingUp ? t('backup.downloading') : t('backup.button')}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          disabled={backingUp || restoring}
+          onClick={onRestoreClick}
+          className="flex items-center gap-2"
+        >
+          <Upload size={14} />
+          {restoring ? t('backup.restoring', { defaultValue: 'Restoring...' }) : t('backup.restoreButton', { defaultValue: 'Restore Backup' })}
         </DropdownMenuItem>
         <DropdownMenuSub>
           <DropdownMenuSubTrigger className="flex items-center gap-2">

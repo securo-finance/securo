@@ -142,3 +142,39 @@ async def test_backup_metadata_structure(client: AsyncClient, auth_headers):
         assert "export_date" in meta
         assert meta["format_version"] == "1.0"
         assert "entity_counts" in meta
+
+@pytest.mark.asyncio
+async def test_restore_backup_invalid_file(client: AsyncClient, auth_headers):
+    files = {"file": ("backup.txt", b"not a zip file", "text/plain")}
+    resp = await client.post("/api/export/restore", headers=auth_headers, files=files)
+    assert resp.status_code == 400
+    assert "Invalid backup file" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_restore_backup_success(client: AsyncClient, auth_headers, session: AsyncSession, test_user: User):
+    # First create a valid backup structure in memory
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        metadata = {
+            "export_date": datetime.utcnow().isoformat(),
+            "format_version": "1.0",
+            "entity_counts": {"accounts": 1}
+        }
+        zf.writestr("metadata.json", json.dumps(metadata))
+        
+        accounts_data = [{
+            "id": str(uuid.uuid4()),
+            "user_id": str(uuid.uuid4()),  # Testing if remapping user_id works
+            "name": "Test Restored Account",
+            "type": "Checking",
+            "currency": "USD"
+        }]
+        zf.writestr("accounts.json", json.dumps(accounts_data))
+
+    buf.seek(0)
+    files = {"file": ("backup.zip", buf.getvalue(), "application/zip")}
+    
+    resp = await client.post("/api/export/restore", headers=auth_headers, files=files)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "success"

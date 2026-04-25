@@ -697,6 +697,11 @@ export const backup = {
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
   },
+  restore: async (file: File): Promise<void> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    await api.post('/export/restore', formData)
+  },
 }
 
 // Admin
