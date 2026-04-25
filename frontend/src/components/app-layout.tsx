@@ -143,7 +143,7 @@ export function AppLayout() {
     const file = event.target.files?.[0]
     if (!file) return
 
-    if (!window.confirm(t('backup.restoreConfirm', { defaultValue: 'Restoring will OVERWRITE ALL your current data (except bank connections). This action cannot be undone. Are you sure?' }))) {
+    if (!window.confirm(t('backup.restoreConfirmMerge', { defaultValue: 'Restoring will safely MERGE the backup data with your existing records. No current data will be deleted. Do you want to proceed?' }))) {
       event.target.value = ''
       return
     }
