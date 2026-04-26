@@ -819,7 +819,12 @@
     "button": "Backup",
     "downloading": "Downloading...",
     "success": "Backup downloaded successfully",
-    "error": "Failed to download backup"
+    "error": "Failed to download backup",
+    "restoreConfirmMerge": "Restoring will safely MERGE the backup data with your existing records. No current data will be deleted. Do you want to proceed?",
+    "restoreSuccess": "Backup restored successfully!",
+    "restoreError": "Failed to restore backup.",
+    "restoreButton": "Restore Backup",
+    "restoring": "Restoring..."
   },
   "update": {
     "title": "Server update",

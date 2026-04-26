@@ -819,7 +819,12 @@
     "button": "Backup",
     "downloading": "Baixando...",
     "success": "Backup baixado com sucesso",
-    "error": "Erro ao baixar backup"
+    "error": "Erro ao baixar backup",
+    "restoreConfirmMerge": "A restauração irá MESCLAR com segurança os dados do backup com seus registros atuais. Nenhuma informação será perdida. Deseja continuar?",
+    "restoreSuccess": "Backup restaurado com sucesso!",
+    "restoreError": "Erro ao restaurar o backup.",
+    "restoreButton": "Restaurar Backup",
+    "restoring": "Restaurando..."
   },
   "update": {
     "title": "Atualização do servidor",
