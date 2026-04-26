@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import current_active_user
 from app.core.database import get_async_session
 from app.models.user import User
+from app.services.export_service import BackupArchiveHandler, ExportService
 
 router = APIRouter(prefix="/api/export", tags=["export"])
 
@@ -16,8 +17,6 @@ async def backup(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
-    from app.services.export_service import ExportService
-
     service = ExportService(session, user.id)
     buf = await service.export_data()
     today = date.today().isoformat()
@@ -34,8 +33,6 @@ async def restore(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
-    from app.services.export_service import BackupArchiveHandler, ExportService
-
     try:
         content = await file.read()
         data_map = BackupArchiveHandler.parse_import_zip(content)
