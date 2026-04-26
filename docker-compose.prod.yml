@@ -7,6 +7,7 @@ x-backend-env: &backend-env
   FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
   PLUGGY_CLIENT_ID: ${PLUGGY_CLIENT_ID:-}
   PLUGGY_CLIENT_SECRET: ${PLUGGY_CLIENT_SECRET:-}
+  OPENEXCHANGERATES_APP_ID: ${OPENEXCHANGERATES_APP_ID:-}
   PLUGGY_OAUTH_REDIRECT_URI: ${PLUGGY_OAUTH_REDIRECT_URI:-http://localhost:3000/oauth/callback}
   REDIS_URL: redis://redis:6379/0
   STORAGE_LOCAL_PATH: /app/data/attachments
