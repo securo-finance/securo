@@ -575,11 +575,18 @@ async def get_account_summary(
     #       fills) whose bucketing date is in the cycle window — without (b)
     #       we'd drop user-added compensations for missing provider txs.
     # Without bill_id (cycle-math or non-CC), apply the date window straight.
-    from sqlalchemy import and_ as _and  # local: only for this scope helper
+    from sqlalchemy import and_ as _and, not_ as _not  # local: only for scope
     def _scope(query):
         if bill_id is not None:
             unlinked_in_window = _and(
                 Transaction.bill_id.is_(None),
+                # See get_transactions: defer sync-pending txs without billId
+                # so they don't pollute the bill total before the provider
+                # classifies them (issue #92).
+                _not(_and(
+                    Transaction.source == "sync",
+                    Transaction.status == "pending",
+                )),
                 bucket_date >= date_from,
                 bucket_date <= date_to,
             )

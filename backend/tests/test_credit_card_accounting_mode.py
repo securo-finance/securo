@@ -829,6 +829,67 @@ class TestEffectiveBillDateFiltersList:
         )
 
     @pytest.mark.asyncio
+    async def test_bill_id_filter_excludes_pending_sync_unlinked_txs(
+        self, session, test_user, cc_account
+    ):
+        """Pending sync txs without a billId are 'provider hasn't classified
+        yet' — they shouldn't auto-bucket into a bill by date, because the
+        bank often rolls them to the next bill once they post (issue #92,
+        abdalanervoso's Bradesco late-month pending case)."""
+        from app.services.transaction_service import get_transactions
+        from app.models.credit_card_bill import CreditCardBill
+        from datetime import datetime, timezone
+
+        bill = CreditCardBill(
+            user_id=test_user.id, account_id=cc_account.id,
+            external_id="bill-z", due_date=date(2026, 4, 16),
+            total_amount=Decimal("100"), currency="BRL",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        session.add(bill)
+        await session.flush()
+
+        # Pending sync tx with date in cycle window — should be DEFERRED
+        pending = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 8), Decimal("99"),
+            effective_date=date(2026, 4, 16),
+            source="sync",
+        )
+        pending.status = "pending"
+
+        # Posted sync tx in window without billId — SHOULD count (provider
+        # returned but didn't tag, reasonable to fill in by date)
+        posted_synced = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 9), Decimal("50"),
+            effective_date=date(2026, 4, 16),
+            source="sync",
+        )
+        posted_synced.status = "posted"
+
+        # Manual user entry in window — SHOULD count (explicit intent)
+        manual = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 10), Decimal("75"),
+            effective_date=date(2026, 4, 16),
+            source="manual",
+        )
+        await session.commit()
+
+        txs, _ = await get_transactions(
+            session, test_user.id, account_id=cc_account.id,
+            bill_id=bill.id,
+            from_date=date(2026, 3, 17), to_date=date(2026, 4, 16),
+            accounting_mode="cash",
+        )
+        ids = {t.id for t in txs}
+        assert pending.id not in ids, "pending sync without billId must NOT be counted"
+        assert posted_synced.id in ids
+        assert manual.id in ids
+
+    @pytest.mark.asyncio
     async def test_bill_id_filter_excludes_unlinked_txs_outside_window(
         self, session, test_user, cc_account
     ):

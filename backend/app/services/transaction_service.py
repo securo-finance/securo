@@ -129,12 +129,24 @@ async def get_transactions(
     if bill_id is not None:
         bill_predicates = [Transaction.bill_id == bill_id]
         if from_date or to_date:
-            unlinked_clauses = [Transaction.bill_id.is_(None)]
+            from sqlalchemy import and_ as _and, not_ as _not
+            unlinked_clauses = [
+                Transaction.bill_id.is_(None),
+                # Defer sync-pending txs without a billId — the provider hasn't
+                # classified them yet, so date-window inclusion can wrongly
+                # bucket a tx the bank will roll to the next bill (issue #92,
+                # abdalanervoso's late-April pending-in-April-bill case).
+                # Manual / OFX / CSV / posted-sync stay in: those are
+                # definitive intents we shouldn't second-guess by date.
+                _not(_and(
+                    Transaction.source == "sync",
+                    Transaction.status == "pending",
+                )),
+            ]
             if from_date:
                 unlinked_clauses.append(date_col >= from_date)
             if to_date:
                 unlinked_clauses.append(date_col <= to_date)
-            from sqlalchemy import and_ as _and
             bill_predicates.append(_and(*unlinked_clauses))
         base_query = base_query.where(or_(*bill_predicates))
     else:
