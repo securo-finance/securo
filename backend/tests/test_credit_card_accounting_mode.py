@@ -926,6 +926,273 @@ class TestEffectiveBillDateFiltersList:
         assert outside.id not in {t.id for t in txs}
 
     @pytest.mark.asyncio
+    async def test_bill_id_filter_includes_pending_tx_with_bill_id_set(
+        self, session, test_user, cc_account
+    ):
+        """The pending-sync exclusion only applies when bill_id IS NULL.
+        A pending tx that Pluggy already tagged with a billId is still
+        bank-truth and must count — otherwise we'd lose pending charges
+        that the bank has already classified."""
+        from app.services.transaction_service import get_transactions
+        from app.models.credit_card_bill import CreditCardBill
+        from datetime import datetime, timezone
+
+        bill = CreditCardBill(
+            user_id=test_user.id, account_id=cc_account.id,
+            external_id="bill-pending-tagged", due_date=date(2026, 4, 16),
+            total_amount=Decimal("100"), currency="BRL",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        session.add(bill)
+        await session.flush()
+
+        # Pluggy tagged a pending tx — bill_id is set even though status is pending
+        tx = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 8), Decimal("50"),
+            effective_date=date(2026, 4, 16),
+            source="sync",
+        )
+        tx.bill_id = bill.id
+        tx.status = "pending"
+        await session.commit()
+
+        txs, _ = await get_transactions(
+            session, test_user.id, account_id=cc_account.id,
+            bill_id=bill.id,
+            from_date=date(2026, 3, 17), to_date=date(2026, 4, 16),
+            accounting_mode="cash",
+        )
+        assert tx.id in {t.id for t in txs}
+
+    @pytest.mark.asyncio
+    async def test_bill_id_filter_includes_posted_sync_unlinked_in_window(
+        self, session, test_user, cc_account
+    ):
+        """Posted sync tx without billId is the rare case where the provider
+        returned the tx but didn't tag a bill. Date-window inclusion is
+        reasonable — the user wants to see their charges, and the tx is
+        definitively settled. Only pending sync without billId is excluded."""
+        from app.services.transaction_service import get_transactions
+        from app.models.credit_card_bill import CreditCardBill
+        from datetime import datetime, timezone
+
+        bill = CreditCardBill(
+            user_id=test_user.id, account_id=cc_account.id,
+            external_id="bill-posted-untagged", due_date=date(2026, 4, 16),
+            total_amount=Decimal("100"), currency="BRL",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        session.add(bill)
+        await session.flush()
+
+        tx = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 8), Decimal("50"),
+            effective_date=date(2026, 4, 16),
+            source="sync",
+        )
+        tx.status = "posted"
+        # bill_id stays None
+        await session.commit()
+
+        txs, _ = await get_transactions(
+            session, test_user.id, account_id=cc_account.id,
+            bill_id=bill.id,
+            from_date=date(2026, 3, 17), to_date=date(2026, 4, 16),
+            accounting_mode="cash",
+        )
+        assert tx.id in {t.id for t in txs}
+
+    @pytest.mark.asyncio
+    async def test_bill_id_filter_includes_ofx_imported_in_window(
+        self, session, test_user, cc_account
+    ):
+        """An OFX import is a definitive user intent — must count toward the
+        bill cycle whose window contains its date. Confirms the pending-sync
+        exclusion is narrow (sync+pending only), not blanket source-based."""
+        from app.services.transaction_service import get_transactions
+        from app.models.credit_card_bill import CreditCardBill
+        from datetime import datetime, timezone
+
+        bill = CreditCardBill(
+            user_id=test_user.id, account_id=cc_account.id,
+            external_id="bill-ofx", due_date=date(2026, 4, 16),
+            total_amount=Decimal("100"), currency="BRL",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        session.add(bill)
+        await session.flush()
+
+        tx = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 8), Decimal("50"),
+            effective_date=date(2026, 4, 16),
+            source="ofx",
+        )
+        await session.commit()
+
+        txs, _ = await get_transactions(
+            session, test_user.id, account_id=cc_account.id,
+            bill_id=bill.id,
+            from_date=date(2026, 3, 17), to_date=date(2026, 4, 16),
+            accounting_mode="cash",
+        )
+        assert tx.id in {t.id for t in txs}
+
+    @pytest.mark.asyncio
+    async def test_override_to_date_with_no_matching_bill_keeps_bill_id_null(
+        self, session, test_user, cc_account
+    ):
+        """The user can pick any date as effective_bill_date — including one
+        that doesn't correspond to a known bill (e.g. a far-future statement
+        that hasn't been issued yet). bill_id stays null, effective_date
+        follows the override, and the tx is bucketed by override only."""
+        from app.services.transaction_service import update_transaction
+        from app.schemas.transaction import TransactionUpdate
+
+        tx = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 18), Decimal("55.90"),
+            effective_date=date(2026, 5, 16),
+            source="manual",
+        )
+        await session.commit()
+
+        # No bill exists for 2099-01-01 — override still takes effect
+        await update_transaction(
+            session, tx.id, test_user.id,
+            TransactionUpdate(effective_bill_date=date(2099, 1, 1)),
+        )
+        await session.commit()
+        await session.refresh(tx)
+
+        assert tx.effective_bill_date == date(2099, 1, 1)
+        assert tx.effective_date == date(2099, 1, 1)
+        assert tx.bill_id is None
+
+    @pytest.mark.asyncio
+    async def test_credit_tx_with_bill_id_counts_as_income(
+        self, session, test_user, cc_account
+    ):
+        """Refund/return txs are type=credit. Per-bill summary must include
+        them in monthly_income when their bill_id matches — otherwise CC
+        refunds show up as 0 for the cycle."""
+        from app.services.account_service import get_account_summary
+        from app.models.credit_card_bill import CreditCardBill
+        from datetime import datetime, timezone
+
+        bill = CreditCardBill(
+            user_id=test_user.id, account_id=cc_account.id,
+            external_id="bill-refund", due_date=date(2026, 4, 16),
+            total_amount=Decimal("0"), currency="BRL",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        session.add(bill)
+        await session.flush()
+
+        refund = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 8), Decimal("80"),
+            effective_date=date(2026, 4, 16),
+            tx_type="credit",
+        )
+        refund.bill_id = bill.id
+        await session.commit()
+
+        summary = await get_account_summary(
+            session, cc_account.id, test_user.id,
+            date_from=date(2026, 3, 17), date_to=date(2026, 4, 16),
+            bill_id=bill.id,
+        )
+        assert summary["monthly_income"] == 80.0
+
+    @pytest.mark.asyncio
+    async def test_year_boundary_cycle_buckets_correctly(
+        self, session, test_user, cc_account
+    ):
+        """December → January cycle: a tx dated 27/12 with override 5/1 must
+        bucket into the January cycle, not December. Catches off-by-month
+        bugs in the COALESCE/OR logic at year boundaries."""
+        from app.services.transaction_service import get_transactions
+
+        tx = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2025, 12, 27), Decimal("100"),
+            effective_date=date(2025, 12, 27),
+            source="manual",
+        )
+        tx.effective_bill_date = date(2026, 1, 5)
+        await session.commit()
+
+        # December window: tx must NOT appear (override moved it to Jan)
+        dec_txs, _ = await get_transactions(
+            session, test_user.id, account_id=cc_account.id,
+            from_date=date(2025, 12, 1), to_date=date(2025, 12, 31),
+            accounting_mode="cash",
+        )
+        assert tx.id not in {t.id for t in dec_txs}
+
+        # January window: tx must appear
+        jan_txs, _ = await get_transactions(
+            session, test_user.id, account_id=cc_account.id,
+            from_date=date(2026, 1, 1), to_date=date(2026, 1, 31),
+            accounting_mode="cash",
+        )
+        assert tx.id in {t.id for t in jan_txs}
+
+    @pytest.mark.asyncio
+    async def test_summary_excludes_pending_sync_unlinked_in_window(
+        self, session, test_user, cc_account
+    ):
+        """get_account_summary applies the same pending-sync exclusion as
+        get_transactions — otherwise the totals card and bar chart would
+        sum a tx the transactions list omits."""
+        from app.services.account_service import get_account_summary
+        from app.models.credit_card_bill import CreditCardBill
+        from datetime import datetime, timezone
+
+        bill = CreditCardBill(
+            user_id=test_user.id, account_id=cc_account.id,
+            external_id="bill-summary", due_date=date(2026, 4, 16),
+            total_amount=Decimal("100"), currency="BRL",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        session.add(bill)
+        await session.flush()
+
+        # Pending sync without billId — must be excluded
+        pending = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 8), Decimal("99"),
+            effective_date=date(2026, 4, 16),
+            source="sync",
+        )
+        pending.status = "pending"
+
+        # Manual entry in the same window — must be included
+        await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 9), Decimal("50"),
+            effective_date=date(2026, 4, 16),
+            source="manual",
+        )
+        await session.commit()
+
+        summary = await get_account_summary(
+            session, cc_account.id, test_user.id,
+            date_from=date(2026, 3, 17), date_to=date(2026, 4, 16),
+            bill_id=bill.id,
+        )
+        # Manual 50 counted, pending 99 excluded
+        assert summary["monthly_expenses"] == 50.0
+
+    @pytest.mark.asyncio
     async def test_override_unset_falls_back_to_mode_column(
         self, session, test_user, cc_account
     ):
