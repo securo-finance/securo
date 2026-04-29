@@ -223,8 +223,8 @@ export const accounts = {
   delete: async (id: string): Promise<void> => {
     await api.delete(`/accounts/${id}`)
   },
-  summary: async (id: string, from?: string, to?: string): Promise<AccountSummary> => {
-    const { data } = await api.get(`/accounts/${id}/summary`, { params: { from, to } })
+  summary: async (id: string, from?: string, to?: string, billId?: string): Promise<AccountSummary> => {
+    const { data } = await api.get(`/accounts/${id}/summary`, { params: { from, to, bill_id: billId } })
     return data
   },
   balanceHistory: async (id: string, from?: string, to?: string): Promise<{ date: string; balance: number; balance_primary?: number }[]> => {

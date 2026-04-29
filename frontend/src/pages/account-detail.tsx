@@ -393,8 +393,15 @@ export default function AccountDetailPage() {
   })
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
-    queryKey: ['accounts', id, 'summary', filterFrom, filterTo],
-    queryFn: () => accounts.summary(id!, filterFrom || undefined, filterTo || undefined),
+    // When a real bill anchors the active cycle, aggregate by bill_id so the
+    // stat card matches the bar chart and the transactions list (all bank-
+    // truth). Otherwise fall back to the [from, to] window from cycle math.
+    queryKey: activeBill
+      ? ['accounts', id, 'summary', { bill_id: activeBill.id }]
+      : ['accounts', id, 'summary', filterFrom, filterTo],
+    queryFn: () => activeBill
+      ? accounts.summary(id!, undefined, undefined, activeBill.id)
+      : accounts.summary(id!, filterFrom || undefined, filterTo || undefined),
     enabled: !!id,
   })
 
@@ -456,15 +463,18 @@ export default function AccountDetailPage() {
 
   const timelineQueries = useQueries({
     queries: timelineCycles.map(c => ({
-      queryKey: ['accounts', id, 'summary', c.start, c.end],
-      queryFn: () => accounts.summary(id!, c.start, c.end),
-      // Skip the per-cycle summary fetch when the cycle is anchored on a real
-      // bill — bill.total_amount is the bank's own number (stable for closed
-      // cycles, slightly stale for the in-progress one but fine for a small
-      // historical bar). The summary endpoint here filters by Transaction.date
-      // anyway, which doesn't agree with bill_id bucketing for txs Pluggy
-      // rolled outside the nominal cycle range.
-      enabled: !!id && !c.bill,
+      // For bill-anchored cycles, fetch by bill_id so the live debit sum
+      // agrees with the transactions list (handles charges Pluggy rolled
+      // outside the nominal cycle range). For cycle-math cycles, use the
+      // [start, end] window. Both produce LIVE values — clicking a bar
+      // doesn't change its number anymore (issue #92 follow-up).
+      queryKey: c.bill
+        ? ['accounts', id, 'summary', { bill_id: c.bill.id }]
+        : ['accounts', id, 'summary', c.start, c.end],
+      queryFn: () => c.bill
+        ? accounts.summary(id!, undefined, undefined, c.bill.id)
+        : accounts.summary(id!, c.start, c.end),
+      enabled: !!id,
     })),
   })
 
@@ -910,36 +920,17 @@ export default function AccountDetailPage() {
       {/* Bill timeline (last 6 cycles) — only for CC with cycle metadata */}
       {isCreditCard && timelineCycles.length > 0 && (() => {
         const dfLocale = i18n.language === 'pt-BR' ? ptBR : enUS
-        // Live debit sum for the active bill, computed from the bill_id-filtered
-      // tx list so it matches the user's bank app (bill.total_amount can lag
-      // any charges added since the last sync).
-      const liveActiveBillDebits = activeBill && txData?.items
-        ? txData.items
-            .filter(tx => tx.type === 'debit' && tx.source !== 'opening_balance' && !tx.transfer_pair_id)
-            .reduce((sum, tx) => {
-              const amt = usePrimary && tx.amount_primary != null
-                ? Number(tx.amount_primary)
-                : Number(tx.amount)
-              return sum + amt
-            }, 0)
-        : null
-      const totals = timelineQueries.map((q, i) => {
+        const totals = timelineQueries.map((q, i) => {
           const c = timelineCycles[i]
-          // Use live debit sum for the active bill so the bar matches the
-          // stat card. Stable bill snapshot for non-active bills (historical
-          // bars). Summary fallback for cycles without a bill.
-          let total: number
-          if (c.bill && activeBill && c.bill.id === activeBill.id && liveActiveBillDebits != null) {
-            total = liveActiveBillDebits
-          } else if (c.bill) {
-            total = Number(c.bill.total_amount)
-          } else {
-            total = Number(q.data?.monthly_expenses ?? 0)
-          }
+          // Single source of truth: live debit sum from the summary endpoint,
+          // filtered by bill_id when the cycle has a bill (handles dynamic
+          // close days) or by [start, end] otherwise. Same number whether
+          // the bar is active or not — clicking doesn't shift the value.
+          const total = Number(q.data?.monthly_expenses ?? 0)
           return {
             ...c,
             total,
-            loading: !c.bill && q.isLoading,
+            loading: q.isLoading,
           }
         })
         const max = Math.max(1, ...totals.map(c => c.total))

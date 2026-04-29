@@ -521,6 +521,7 @@ async def reopen_account(
 async def get_account_summary(
     session: AsyncSession, account_id: uuid.UUID, user_id: uuid.UUID,
     date_from: Optional[_Date] = None, date_to: Optional[_Date] = None,
+    bill_id: Optional[uuid.UUID] = None,
 ) -> Optional[dict]:
     account = await get_account(session, account_id, user_id)
     if not account:
@@ -568,29 +569,34 @@ async def get_account_summary(
     # totals card and bar chart agree with the transactions list (issue #92).
     bucket_date = func.coalesce(Transaction.effective_bill_date, Transaction.date)
 
-    # Income = SUM of credit transactions in [date_from, date_to] (excluding
-    # opening_balance, paired transfers, and transfer-like categories).
+    # When the caller passes bill_id, filter by Pluggy's billId mapping
+    # (the bank's truth). This makes per-bill summaries match the txs list
+    # exactly — including charges Pluggy rolled into a bill outside its
+    # nominal cycle range. Falls back to the date-range filter otherwise.
+    def _scope(query):
+        if bill_id is not None:
+            return query.where(Transaction.bill_id == bill_id)
+        return query.where(bucket_date >= date_from, bucket_date <= date_to)
+
+    # Income = SUM of credit transactions in window (excluding opening_balance,
+    # paired transfers, and transfer-like categories).
     income_result = await session.execute(
-        select(func.coalesce(func.sum(effective_amount), 0)).where(
+        _scope(select(func.coalesce(func.sum(effective_amount), 0)).where(
             Transaction.account_id == account_id,
             Transaction.type == "credit",
             Transaction.source != "opening_balance",
             counts_as_pnl(),
-            bucket_date >= date_from,
-            bucket_date <= date_to,
-        )
+        ))
     )
     monthly_income = float(income_result.scalar())
 
-    # Expenses = SUM of debit transactions in [date_from, date_to] (same exclusions)
+    # Expenses = SUM of debit transactions in window (same exclusions)
     expenses_result = await session.execute(
-        select(func.coalesce(func.sum(func.abs(effective_amount)), 0)).where(
+        _scope(select(func.coalesce(func.sum(func.abs(effective_amount)), 0)).where(
             Transaction.account_id == account_id,
             Transaction.type == "debit",
             counts_as_pnl(),
-            bucket_date >= date_from,
-            bucket_date <= date_to,
-        )
+        ))
     )
     monthly_expenses = float(expenses_result.scalar())
 
