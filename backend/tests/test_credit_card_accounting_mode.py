@@ -775,6 +775,96 @@ class TestEffectiveBillDateFiltersList:
         assert any(t.id == tx.id for t in march_txs)
 
     @pytest.mark.asyncio
+    async def test_bill_id_filter_includes_unlinked_txs_in_cycle_window(
+        self, session, test_user, cc_account
+    ):
+        """When a tx is NOT linked to the bill via bill_id (e.g. a manual
+        recurring entry the user added to compensate for a tx Pluggy failed
+        to fetch — abdalanervoso's Wellhub on Bradesco case), it should
+        still count toward the bill's cycle if its date falls in the
+        cycle window."""
+        from app.services.transaction_service import get_transactions
+        from app.models.credit_card_bill import CreditCardBill
+        from datetime import datetime, timezone
+
+        # Pluggy bill due Apr 16
+        bill = CreditCardBill(
+            user_id=test_user.id, account_id=cc_account.id,
+            external_id="bill-x", due_date=date(2026, 4, 16),
+            total_amount=Decimal("100"), currency="BRL",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        session.add(bill)
+        await session.flush()
+
+        # Linked tx (the real one Pluggy returned)
+        linked = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 5), Decimal("50"),
+            effective_date=date(2026, 4, 16),
+        )
+        linked.bill_id = bill.id
+
+        # Unlinked manual recurring (the workaround tx)
+        unlinked = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 6), Decimal("50"),
+            effective_date=date(2026, 4, 16),
+        )
+        await session.commit()
+
+        # Cycle window for this bill = [Mar 17, Apr 16]
+        txs, _ = await get_transactions(
+            session, test_user.id, account_id=cc_account.id,
+            bill_id=bill.id,
+            from_date=date(2026, 3, 17), to_date=date(2026, 4, 16),
+            accounting_mode="cash",
+        )
+        ids = {t.id for t in txs}
+        assert linked.id in ids
+        assert unlinked.id in ids, (
+            "manual unlinked tx in cycle window must still count when filtering "
+            "by bill_id (issue #92, abdalanervoso's recurring-payment workaround)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_bill_id_filter_excludes_unlinked_txs_outside_window(
+        self, session, test_user, cc_account
+    ):
+        """An unlinked tx with a date outside the cycle window must NOT be
+        counted — otherwise we'd pick up unrelated manual entries."""
+        from app.services.transaction_service import get_transactions
+        from app.models.credit_card_bill import CreditCardBill
+        from datetime import datetime, timezone
+
+        bill = CreditCardBill(
+            user_id=test_user.id, account_id=cc_account.id,
+            external_id="bill-y", due_date=date(2026, 4, 16),
+            total_amount=Decimal("100"), currency="BRL",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        session.add(bill)
+        await session.flush()
+
+        # Unlinked tx in a totally different month — should NOT be in cycle
+        outside = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 1, 5), Decimal("99"),
+            effective_date=date(2026, 1, 16),
+        )
+        await session.commit()
+
+        txs, _ = await get_transactions(
+            session, test_user.id, account_id=cc_account.id,
+            bill_id=bill.id,
+            from_date=date(2026, 3, 17), to_date=date(2026, 4, 16),
+            accounting_mode="cash",
+        )
+        assert outside.id not in {t.id for t in txs}
+
+    @pytest.mark.asyncio
     async def test_override_unset_falls_back_to_mode_column(
         self, session, test_user, cc_account
     ):

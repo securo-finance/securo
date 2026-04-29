@@ -115,14 +115,28 @@ async def get_transactions(
         base_query = base_query.where(Transaction.transfer_pair_id.is_(None))
     if txn_type:
         base_query = base_query.where(Transaction.type == txn_type)
-    # Bill-driven filter: when the caller knows the active bill, use Pluggy's
-    # billId mapping (the bank's truth) instead of a date range. This handles
-    # cases where the bill's actual close shifted around weekends/holidays
-    # and a transaction landed in a bill whose date range doesn't include it
-    # (e.g. a 30/03 charge that the bank rolled into the May statement).
-    # Issue #92.
+    # Bill-driven filter: when the caller passes bill_id, include
+    #   (a) txs linked to this bill via Pluggy's billId mapping (handles
+    #       charges the bank rolled into a bill whose nominal range doesn't
+    #       contain them — e.g. a 30/03 charge in the May statement), AND
+    #   (b) txs with NO bill_id (manual / OFX / CSV / recurring fills) whose
+    #       bucketing date falls in the cycle window. Without (b) we'd drop
+    #       user-added entries that exist precisely to compensate for txs
+    #       the provider failed to fetch (issue #92, abdalanervoso's Wellhub
+    #       case on Bradesco).
+    # Without bill_id (cycle-math cycles or non-CC), apply the date window
+    # straight to all txs.
     if bill_id is not None:
-        base_query = base_query.where(Transaction.bill_id == bill_id)
+        bill_predicates = [Transaction.bill_id == bill_id]
+        if from_date or to_date:
+            unlinked_clauses = [Transaction.bill_id.is_(None)]
+            if from_date:
+                unlinked_clauses.append(date_col >= from_date)
+            if to_date:
+                unlinked_clauses.append(date_col <= to_date)
+            from sqlalchemy import and_ as _and
+            bill_predicates.append(_and(*unlinked_clauses))
+        base_query = base_query.where(or_(*bill_predicates))
     else:
         if from_date:
             base_query = base_query.where(date_col >= from_date)

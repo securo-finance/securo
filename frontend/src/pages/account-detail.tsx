@@ -393,15 +393,18 @@ export default function AccountDetailPage() {
   })
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
-    // When a real bill anchors the active cycle, aggregate by bill_id so the
-    // stat card matches the bar chart and the transactions list (all bank-
-    // truth). Otherwise fall back to the [from, to] window from cycle math.
+    // When a real bill anchors the active cycle, send bill_id AND the cycle
+    // window. Backend ORs them so both bill_id-linked txs (bank truth) and
+    // unlinked txs in the window (manual recurring, CSV imports) count.
     queryKey: activeBill
-      ? ['accounts', id, 'summary', { bill_id: activeBill.id }]
+      ? ['accounts', id, 'summary', { bill_id: activeBill.id, from: filterFrom, to: filterTo }]
       : ['accounts', id, 'summary', filterFrom, filterTo],
-    queryFn: () => activeBill
-      ? accounts.summary(id!, undefined, undefined, activeBill.id)
-      : accounts.summary(id!, filterFrom || undefined, filterTo || undefined),
+    queryFn: () => accounts.summary(
+      id!,
+      filterFrom || undefined,
+      filterTo || undefined,
+      activeBill?.id,
+    ),
     enabled: !!id,
   })
 
@@ -463,17 +466,14 @@ export default function AccountDetailPage() {
 
   const timelineQueries = useQueries({
     queries: timelineCycles.map(c => ({
-      // For bill-anchored cycles, fetch by bill_id so the live debit sum
-      // agrees with the transactions list (handles charges Pluggy rolled
-      // outside the nominal cycle range). For cycle-math cycles, use the
-      // [start, end] window. Both produce LIVE values — clicking a bar
-      // doesn't change its number anymore (issue #92 follow-up).
+      // Bill-anchored cycles send bill_id AND the cycle window so the
+      // backend includes both Pluggy-linked txs and any unlinked txs
+      // (manual / recurring) the user placed in this cycle. Cycle-math
+      // cycles use the window only.
       queryKey: c.bill
-        ? ['accounts', id, 'summary', { bill_id: c.bill.id }]
+        ? ['accounts', id, 'summary', { bill_id: c.bill.id, from: c.start, to: c.end }]
         : ['accounts', id, 'summary', c.start, c.end],
-      queryFn: () => c.bill
-        ? accounts.summary(id!, undefined, undefined, c.bill.id)
-        : accounts.summary(id!, c.start, c.end),
+      queryFn: () => accounts.summary(id!, c.start, c.end, c.bill?.id),
       enabled: !!id,
     })),
   })
@@ -488,12 +488,13 @@ export default function AccountDetailPage() {
     queryKey: ['transactions', { account_id: id, bill_id: activeBill?.id, from: filterFrom, to: filterTo, limit: 500, include_opening_balance: true }],
     queryFn: () => transactions.list({
       account_id: id,
-      // When the active cycle is a real bill, filter by bill_id (Pluggy's
-      // truth) instead of date range — handles charges the bank rolled into
-      // a bill whose nominal range doesn't include the tx date. Issue #92.
+      // When the active cycle is a real bill, prefer bill_id (Pluggy's
+      // truth — picks up charges the bank rolled outside the nominal date
+      // range) AND keep from/to so manual / non-bill-linked txs (recurring
+      // fills, CSV imports) bucketed into this cycle still show up.
       bill_id: activeBill?.id,
-      from: activeBill ? undefined : (filterFrom || undefined),
-      to: activeBill ? undefined : (filterTo || undefined),
+      from: filterFrom || undefined,
+      to: filterTo || undefined,
       limit: 500,
       include_opening_balance: true,
     }),

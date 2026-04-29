@@ -569,13 +569,21 @@ async def get_account_summary(
     # totals card and bar chart agree with the transactions list (issue #92).
     bucket_date = func.coalesce(Transaction.effective_bill_date, Transaction.date)
 
-    # When the caller passes bill_id, filter by Pluggy's billId mapping
-    # (the bank's truth). This makes per-bill summaries match the txs list
-    # exactly — including charges Pluggy rolled into a bill outside its
-    # nominal cycle range. Falls back to the date-range filter otherwise.
+    # Bill-driven filter (issue #92): when the caller passes bill_id, include
+    #   (a) txs linked to this bill via Pluggy's billId mapping, AND
+    #   (b) txs with NO bill_id (manual entries, OFX/CSV imports, recurring
+    #       fills) whose bucketing date is in the cycle window — without (b)
+    #       we'd drop user-added compensations for missing provider txs.
+    # Without bill_id (cycle-math or non-CC), apply the date window straight.
+    from sqlalchemy import and_ as _and  # local: only for this scope helper
     def _scope(query):
         if bill_id is not None:
-            return query.where(Transaction.bill_id == bill_id)
+            unlinked_in_window = _and(
+                Transaction.bill_id.is_(None),
+                bucket_date >= date_from,
+                bucket_date <= date_to,
+            )
+            return query.where(or_(Transaction.bill_id == bill_id, unlinked_in_window))
         return query.where(bucket_date >= date_from, bucket_date <= date_to)
 
     # Income = SUM of credit transactions in window (excluding opening_balance,
