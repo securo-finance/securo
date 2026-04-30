@@ -93,12 +93,50 @@ export default function TransactionsPage() {
     const nextQ = searchParams.get('q') ?? ''
     setSearchInput(nextQ)
     setSearchQuery(nextQ)
+    const tags = searchParams.get('tags');
+    setTagFilters(tags ? tags.split(',') : []);
     setFilterPayee(searchParams.get('payee_id') ?? '')
-    const nextCategory = searchParams.get('category_id')
-    setFilterCategoryIds(nextCategory ? [nextCategory] : [])
-    setFilterUncategorized(false)
+    const categories = searchParams.get('category_id');
+    setFilterCategoryIds(categories ? categories.split(',') : []);
+    setFilterUncategorized(searchParams.get('uncategorized') === '1');
+    const accounts = searchParams.get('account_id');
+    setFilterAccountIds(accounts ? accounts.split(',') : []);
+    setFilterFrom(searchParams.get('from') ?? '');
+    setFilterTo(searchParams.get('to') ?? '');
     setPage(1)
   }, [searchParams])
+
+  // Keep the URL in sync with the current filters, so that the current page can be
+  // refreshed, bookmarked or shared.
+  useEffect(() => {
+    const params = new URLSearchParams(
+      [
+        ['q', searchQuery],
+        ['tags', tagFilters.join(',')],
+        ['payee_id', filterPayee],
+        ['category_id', filterCategoryIds.join(',')],
+        ['uncategorized', filterUncategorized ? '1' : ''],
+        ['account_id', filterAccountIds.join(',')],
+        ['from', filterFrom],
+        ['to', filterTo],
+      ].filter(([, v]) => v.length),
+    );
+
+    window.history.replaceState(
+      null,
+      '',
+      params.size ? `?${params}` : window.location.pathname,
+    );
+  }, [
+    searchQuery,
+    tagFilters,
+    filterPayee,
+    filterCategoryIds,
+    filterUncategorized,
+    filterAccountIds,
+    filterFrom,
+    filterTo,
+  ]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
