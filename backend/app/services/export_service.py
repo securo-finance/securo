@@ -61,7 +61,7 @@ class BackupArchiveHandler:
                 serialized = []
                 for r in rows:
                     d = serialize_model(r)
-                    # Remove connection_id de Account, Asset e AssetGroup
+                    # Remove connection_id from Account, Asset and AssetGroup
                     if name in {"accounts", "assets", "asset_groups"}:
                         d.pop("connection_id", None)
                     serialized.append(d)
@@ -135,7 +135,6 @@ class ExportService:
     async def _get_existing_foreign_keys(
         self, data_map: dict[str, list[dict[str, Any]]]
     ) -> dict[str, set[str]]:
-        # Busca todos os IDs válidos do usuário para cada FK relevante
         async def get_ids(model):
             ids = await self.session.execute(select(model.id).where(model.user_id == self.user_id))
             return {str(i) for i in ids.scalars().all()}
