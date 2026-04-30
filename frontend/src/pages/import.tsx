@@ -50,6 +50,7 @@ export default function ImportPage() {
   // CSV options
   const [csvDateFormat, setCsvDateFormat] = useState('')
   const [csvFlipAmount, setCsvFlipAmount] = useState(false)
+  const [csvDetectDuplicates, setCsvDetectDuplicates] = useState(true)
   const [csvSplitColumns, setCsvSplitColumns] = useState(false)
   const [csvInflowColumn, setCsvInflowColumn] = useState('')
   const [csvOutflowColumn, setCsvOutflowColumn] = useState('')
@@ -75,7 +76,13 @@ export default function ImportPage() {
   })
 
   const importMutation = useMutation({
-    mutationFn: () => transactionsApi.import(selectedAccount, previewData!.transactions, fileName ?? '', previewData!.detected_format),
+    mutationFn: () => transactionsApi.import(
+      selectedAccount,
+      previewData!.transactions,
+      fileName ?? '',
+      previewData!.detected_format,
+      isCsvFile ? { detect_duplicates: csvDetectDuplicates } : undefined,
+    ),
     onSuccess: (data) => {
       invalidateFinancialQueries(queryClient)
       queryClient.invalidateQueries({ queryKey: ['import-logs'] })
@@ -108,6 +115,7 @@ export default function ImportPage() {
   function resetCsvOptions() {
     setCsvDateFormat('')
     setCsvFlipAmount(false)
+    setCsvDetectDuplicates(true)
     setCsvSplitColumns(false)
     setCsvInflowColumn('')
     setCsvOutflowColumn('')
@@ -345,6 +353,20 @@ export default function ImportPage() {
                   />
                   <Label htmlFor="split-columns" className="text-sm text-muted-foreground cursor-pointer">
                     {t('import.splitColumns')}
+                  </Label>
+                </div>
+
+                {/* Duplicate detection toggle */}
+                <div className="flex items-center gap-2 pt-4">
+                  <input
+                    type="checkbox"
+                    id="detect-duplicates"
+                    checked={csvDetectDuplicates}
+                    onChange={(e) => setCsvDetectDuplicates(e.target.checked)}
+                    className="rounded border-border text-primary focus:ring-primary"
+                  />
+                  <Label htmlFor="detect-duplicates" className="text-sm text-muted-foreground cursor-pointer">
+                    {t('import.detectDuplicates')}
                   </Label>
                 </div>
               </div>

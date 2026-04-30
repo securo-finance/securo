@@ -103,6 +103,7 @@ async def import_transactions(
     imported, skipped, import_log_id = await import_service.import_transactions(
         session, user.id, data.account_id, data.transactions, "import",
         filename=data.filename, detected_format=data.detected_format,
+        detect_duplicates=data.detect_duplicates,
     )
 
     return {"imported": imported, "skipped": skipped, "import_log_id": str(import_log_id)}

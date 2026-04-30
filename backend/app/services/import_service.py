@@ -436,6 +436,7 @@ async def import_transactions(
     source: str,
     filename: str = "",
     detected_format: str = "",
+    detect_duplicates: bool = True,
 ) -> tuple[int, int, uuid.UUID]:
     """Import transactions into an account. Returns (imported, skipped, import_log_id)."""
     from app.models.import_log import ImportLog
@@ -472,37 +473,41 @@ async def import_transactions(
 
     imported = 0
     skipped = 0
+    effective_format = (detected_format or source or "").lower()
+    should_detect_duplicates = detect_duplicates if effective_format == "csv" else True
+
     for txn_data in transactions:
         # Resolve currency: CSV value > account currency
         txn_currency = txn_data.currency or account_currency
 
-        # Duplicate detection: use external_id when available (OFX FITID),
-        # fall back to field-based matching for formats without unique IDs.
-        # When matching by external_id, also require the same `date` so that
-        # Brazilian credit-card installments — where some banks reuse one
-        # purchase FITID across every monthly statement — don't get skipped
-        # as duplicates from later monthly imports (issue #98).
-        if txn_data.external_id:
-            existing = await session.execute(
-                select(Transaction).where(
-                    Transaction.account_id == account_id,
-                    Transaction.external_id == txn_data.external_id,
-                    Transaction.date == txn_data.date,
+        if should_detect_duplicates:
+            # Duplicate detection: use external_id when available (OFX FITID),
+            # fall back to field-based matching for formats without unique IDs.
+            # When matching by external_id, also require the same `date` so that
+            # Brazilian credit-card installments — where some banks reuse one
+            # purchase FITID across every monthly statement — don't get skipped
+            # as duplicates from later monthly imports (issue #98).
+            if txn_data.external_id:
+                existing = await session.execute(
+                    select(Transaction).where(
+                        Transaction.account_id == account_id,
+                        Transaction.external_id == txn_data.external_id,
+                        Transaction.date == txn_data.date,
+                    )
                 )
-            )
-        else:
-            existing = await session.execute(
-                select(Transaction).where(
-                    Transaction.account_id == account_id,
-                    Transaction.date == txn_data.date,
-                    Transaction.amount == txn_data.amount,
-                    Transaction.type == txn_data.type,
-                    Transaction.description == txn_data.description,
+            else:
+                existing = await session.execute(
+                    select(Transaction).where(
+                        Transaction.account_id == account_id,
+                        Transaction.date == txn_data.date,
+                        Transaction.amount == txn_data.amount,
+                        Transaction.type == txn_data.type,
+                        Transaction.description == txn_data.description,
+                    )
                 )
-            )
-        if existing.scalar_one_or_none():
-            skipped += 1
-            continue
+            if existing.scalar_one_or_none():
+                skipped += 1
+                continue
 
         # Resolve payee entity from raw payee text (OFX/QIF)
         import_payee_id = None

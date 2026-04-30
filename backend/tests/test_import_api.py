@@ -133,6 +133,31 @@ async def test_import_creates_log(client: AsyncClient, auth_headers, test_accoun
 
 
 @pytest.mark.asyncio
+async def test_import_csv_with_duplicate_detection_disabled_allows_reimport(
+    client: AsyncClient, auth_headers, test_account: Account,
+):
+    payload = {
+        "account_id": str(test_account.id),
+        "transactions": [
+            {"description": "REPEATED CSV", "amount": "10.00", "date": "2026-03-01", "type": "debit"},
+        ],
+        "filename": "repeated.csv",
+        "detected_format": "csv",
+        "detect_duplicates": False,
+    }
+
+    first = await client.post("/api/transactions/import", headers=auth_headers, json=payload)
+    assert first.status_code == 201
+    assert first.json()["imported"] == 1
+    assert first.json()["skipped"] == 0
+
+    second = await client.post("/api/transactions/import", headers=auth_headers, json=payload)
+    assert second.status_code == 201
+    assert second.json()["imported"] == 1
+    assert second.json()["skipped"] == 0
+
+
+@pytest.mark.asyncio
 async def test_list_import_logs(client: AsyncClient, auth_headers, test_account: Account):
     # Create an import first
     await client.post(

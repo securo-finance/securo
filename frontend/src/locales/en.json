@@ -586,6 +586,7 @@
     "dateFormat": "Date format",
     "dateFormatAuto": "Auto (detect)",
     "flipAmounts": "Negate amounts (swap income/expense)",
+    "detectDuplicates": "Skip duplicate transactions",
     "splitColumns": "Split inflow/outflow columns",
     "inflowColumn": "Inflow column",
     "outflowColumn": "Outflow column",

@@ -1425,3 +1425,74 @@ class TestOfxInstallmentDedup:
         )
         assert imported == 0
         assert skipped == 1
+
+
+class TestCsvDuplicateDetectionToggle:
+    @pytest.mark.asyncio
+    async def test_csv_detect_duplicates_false_allows_duplicates(
+        self, session: AsyncSession, test_user: User, test_account: Account,
+    ):
+        from app.schemas.transaction import TransactionBase
+
+        txn = TransactionBase(
+            description="CSV DUP TOGGLE",
+            amount=Decimal("42.00"),
+            date=date(2026, 3, 10),
+            type="debit",
+        )
+
+        await import_transactions(
+            session,
+            test_user.id,
+            test_account.id,
+            [txn],
+            "csv",
+            detected_format="csv",
+            detect_duplicates=False,
+        )
+        imported, skipped, _ = await import_transactions(
+            session,
+            test_user.id,
+            test_account.id,
+            [txn],
+            "csv",
+            detected_format="csv",
+            detect_duplicates=False,
+        )
+        assert imported == 1
+        assert skipped == 0
+
+    @pytest.mark.asyncio
+    async def test_non_csv_ignores_toggle_and_still_dedups(
+        self, session: AsyncSession, test_user: User, test_account: Account,
+    ):
+        from app.schemas.transaction import TransactionBase
+
+        txn = TransactionBase(
+            description="OFX DUP",
+            amount=Decimal("15.00"),
+            date=date(2026, 3, 11),
+            type="debit",
+            external_id="OFX_DUP_01",
+        )
+
+        await import_transactions(
+            session,
+            test_user.id,
+            test_account.id,
+            [txn],
+            "ofx",
+            detected_format="ofx",
+            detect_duplicates=False,
+        )
+        imported, skipped, _ = await import_transactions(
+            session,
+            test_user.id,
+            test_account.id,
+            [txn],
+            "ofx",
+            detected_format="ofx",
+            detect_duplicates=False,
+        )
+        assert imported == 0
+        assert skipped == 1

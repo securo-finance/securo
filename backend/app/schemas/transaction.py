@@ -114,3 +114,4 @@ class TransactionImportRequest(BaseModel):
     transactions: list[TransactionImport]
     filename: str = ""
     detected_format: str = ""
+    detect_duplicates: bool = True

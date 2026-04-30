@@ -586,6 +586,7 @@
     "dateFormat": "Formato da data",
     "dateFormatAuto": "Automático (detectar)",
     "flipAmounts": "Inverter valores (trocar entrada/saída)",
+    "detectDuplicates": "Ignorar transações duplicadas",
     "splitColumns": "Separar colunas entrada/saída",
     "inflowColumn": "Coluna de entrada",
     "outflowColumn": "Coluna de saída",

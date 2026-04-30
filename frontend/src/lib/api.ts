@@ -341,8 +341,26 @@ export const transactions = {
     const { data } = await api.post('/transactions/import/preview', formData)
     return data
   },
-  import: async (account_id: string, transactions: Transaction[], filename: string, detected_format: string): Promise<{ imported: number; skipped: number; import_log_id: string }> => {
-    const { data } = await api.post('/transactions/import', { account_id, transactions, filename, detected_format })
+  import: async (
+    account_id: string,
+    transactions: Transaction[],
+    filename: string,
+    detected_format: string,
+    options?: { detect_duplicates?: boolean },
+  ): Promise<{ imported: number; skipped: number; import_log_id: string }> => {
+    const payload: {
+      account_id: string
+      transactions: Transaction[]
+      filename: string
+      detected_format: string
+      detect_duplicates?: boolean
+    } = { account_id, transactions, filename, detected_format }
+
+    if (typeof options?.detect_duplicates === 'boolean') {
+      payload.detect_duplicates = options.detect_duplicates
+    }
+
+    const { data } = await api.post('/transactions/import', payload)
     return data
   },
   export: async (params?: {
