@@ -2,7 +2,7 @@ import io
 import json
 import uuid
 import zipfile
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 import pytest
@@ -104,17 +104,26 @@ async def test_backup_with_data(
 
 @pytest.mark.asyncio
 async def test_backup_with_assets(
-    client: AsyncClient, auth_headers, session: AsyncSession, test_user: User,
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
 ):
     asset = Asset(
-        id=uuid.uuid4(), user_id=test_user.id, name="Export Asset",
-        type="other", currency="BRL", purchase_price=Decimal("1000"),
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Export Asset",
+        type="other",
+        currency="BRL",
+        purchase_price=Decimal("1000"),
     )
     session.add(asset)
     await session.flush()
     av = AssetValue(
-        id=uuid.uuid4(), asset_id=asset.id,
-        amount=Decimal("1200"), date=date.today(),
+        id=uuid.uuid4(),
+        asset_id=asset.id,
+        amount=Decimal("1200"),
+        date=date.today(),
     )
     session.add(av)
     await session.commit()
@@ -143,6 +152,7 @@ async def test_backup_metadata_structure(client: AsyncClient, auth_headers):
         assert meta["format_version"] == "1.0"
         assert "entity_counts" in meta
 
+
 @pytest.mark.asyncio
 async def test_restore_backup_invalid_file(client: AsyncClient, auth_headers):
     files = {"file": ("backup.txt", b"not a zip file", "text/plain")}
@@ -152,29 +162,33 @@ async def test_restore_backup_invalid_file(client: AsyncClient, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_restore_backup_success(client: AsyncClient, auth_headers, session: AsyncSession, test_user: User):
+async def test_restore_backup_success(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user: User
+):
     # First create a valid backup structure in memory
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         metadata = {
             "export_date": datetime.utcnow().isoformat(),
             "format_version": "1.0",
-            "entity_counts": {"accounts": 1}
+            "entity_counts": {"accounts": 1},
         }
         zf.writestr("metadata.json", json.dumps(metadata))
-        
-        accounts_data = [{
-            "id": str(uuid.uuid4()),
-            "user_id": str(uuid.uuid4()),  # Testing if remapping user_id works
-            "name": "Test Restored Account",
-            "type": "Checking",
-            "currency": "USD"
-        }]
+
+        accounts_data = [
+            {
+                "id": str(uuid.uuid4()),
+                "user_id": str(uuid.uuid4()),  # Testing if remapping user_id works
+                "name": "Test Restored Account",
+                "type": "Checking",
+                "currency": "USD",
+            }
+        ]
         zf.writestr("accounts.json", json.dumps(accounts_data))
 
     buf.seek(0)
     files = {"file": ("backup.zip", buf.getvalue(), "application/zip")}
-    
+
     resp = await client.post("/api/export/restore", headers=auth_headers, files=files)
     assert resp.status_code == 200
     assert resp.json()["status"] == "success"

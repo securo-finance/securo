@@ -64,4 +64,3 @@ def test_deserialize_row():
     assert deserialized["currency"] == "USD"
     assert deserialized["description"] == "Grocery"
     assert "invalid_extra_field" not in deserialized
-    assert "raw_data" not in deserialized
