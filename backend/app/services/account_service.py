@@ -576,16 +576,27 @@ async def get_account_summary(
     #       we'd drop user-added compensations for missing provider txs.
     # Without bill_id (cycle-math or non-CC), apply the date window straight.
     from sqlalchemy import and_ as _and, not_ as _not  # local: only for scope
+    # Resolve the active bill's due_date once so the pending-exclusion can
+    # trust our cycle-math pre-classification (see get_transactions).
+    active_due_subq = (
+        select(CreditCardBill.due_date)
+        .where(CreditCardBill.id == bill_id)
+        .scalar_subquery()
+    ) if bill_id is not None else None
+
     def _scope(query):
         if bill_id is not None:
             unlinked_in_window = _and(
                 Transaction.bill_id.is_(None),
-                # See get_transactions: defer sync-pending txs without billId
-                # so they don't pollute the bill total before the provider
-                # classifies them (issue #92).
+                # Defer sync-pending txs only when their effective_date does
+                # NOT match this bill — i.e., cycle math placed them in a
+                # different bill. If effective_date matches, the tx is
+                # pre-classified to this bill and we include it (the
+                # in-progress case abdalanervoso reported empty).
                 _not(_and(
                     Transaction.source == "sync",
                     Transaction.status == "pending",
+                    Transaction.effective_date != active_due_subq,
                 )),
                 bucket_date >= date_from,
                 bucket_date <= date_to,

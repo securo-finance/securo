@@ -127,20 +127,33 @@ async def get_transactions(
     # Without bill_id (cycle-math cycles or non-CC), apply the date window
     # straight to all txs.
     if bill_id is not None:
+        from app.models.credit_card_bill import CreditCardBill  # local — avoid cycle
         bill_predicates = [Transaction.bill_id == bill_id]
         if from_date or to_date:
             from sqlalchemy import and_ as _and, not_ as _not
+            # Resolve the active bill's due_date once so we can trust
+            # cycle-math classification when Pluggy hasn't tagged a tx yet.
+            active_due_subq = (
+                select(CreditCardBill.due_date)
+                .where(CreditCardBill.id == bill_id)
+                .scalar_subquery()
+            )
             unlinked_clauses = [
                 Transaction.bill_id.is_(None),
-                # Defer sync-pending txs without a billId — the provider hasn't
-                # classified them yet, so date-window inclusion can wrongly
-                # bucket a tx the bank will roll to the next bill (issue #92,
-                # abdalanervoso's late-April pending-in-April-bill case).
-                # Manual / OFX / CSV / posted-sync stay in: those are
-                # definitive intents we shouldn't second-guess by date.
+                # Sync-pending txs without a billId are normally deferred
+                # (provider hasn't classified them) — but if our cycle-math
+                # `apply_effective_date` already pre-classified them to THIS
+                # bill's due_date, trust it and include them. That's the
+                # in-progress case: pending charges the user can already see
+                # in their bank app, classified by close-date math we
+                # computed at sync time. Past closed bills aren't affected
+                # because pending txs there have effective_date pointing
+                # forward to a later bill (ingrid's case stays clean).
+                # Issue #92, abdalanervoso's empty-May.
                 _not(_and(
                     Transaction.source == "sync",
                     Transaction.status == "pending",
+                    Transaction.effective_date != active_due_subq,
                 )),
             ]
             if from_date:
