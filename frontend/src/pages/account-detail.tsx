@@ -655,22 +655,20 @@ export default function AccountDetailPage() {
     if (!txData?.items) return []
 
     if (isCreditCard) {
-      // Match the cycle spending chart: cumulative sum of debits (excluding
-      // transfers and opening balance), computed oldest → newest, then
-      // displayed by reversing the array (NOT a fresh descending sort).
-      // The reverse keeps each row showing its true per-tx cumulative AND
-      // makes within-same-day rows read monotonically top-down — the
-      // last-processed within a day lands at the top of that day's group.
-      // A descending sort would re-tie-break and put the smallest-cumulative
-      // row at top instead, producing a non-monotonic visual.
+      // Cycle running total: debits add, refund credits subtract (net
+      // matches the bank's bill total). Excludes opening_balance and any
+      // transfer-paired tx (bill payments — those zero out separately).
+      // Computed oldest → newest, then reversed (not re-sorted) so
+      // same-day rows read monotonically top-down.
       const ascending = [...txData.items].sort(
         (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
       )
       let running = 0
       const withBalance = ascending.map((tx) => {
-        if (tx.type === 'debit' && tx.source !== 'opening_balance' && !tx.transfer_pair_id) {
+        if (tx.source !== 'opening_balance' && !tx.transfer_pair_id) {
           const amt = usePrimary && tx.amount_primary != null ? Number(tx.amount_primary) : Number(tx.amount)
-          running += amt
+          if (tx.type === 'debit') running += amt
+          else if (tx.type === 'credit') running -= amt
         }
         return { ...tx, runningBalance: running }
       })
@@ -987,20 +985,9 @@ export default function AccountDetailPage() {
         // Total da fatura. When a real bill is active, sum debits from the
         // bill_id-filtered tx list (matches the bank app — bills' total_amount
         // can lag any charges added since the last sync). Otherwise use the
-        // summary endpoint's monthly_expenses for the cycle-math range.
-        const liveBillDebits = activeBill && txData?.items
-          ? txData.items
-              .filter(tx => tx.type === 'debit' && tx.source !== 'opening_balance' && !tx.transfer_pair_id)
-              .reduce((sum, tx) => {
-                const amt = usePrimary && tx.amount_primary != null
-                  ? Number(tx.amount_primary)
-                  : Number(tx.amount)
-                return sum + amt
-              }, 0)
-          : null
-        const billTotal = liveBillDebits != null
-          ? liveBillDebits
-          : (showPrimary ? summary?.monthly_expenses_primary : undefined) ?? summary?.monthly_expenses ?? 0
+        // summary endpoint's monthly_expenses now nets refund credits against
+        // debits for CC accounts (matches the bank's bill total).
+        const billTotal = (showPrimary ? summary?.monthly_expenses_primary : undefined) ?? summary?.monthly_expenses ?? 0
         // "Default cycle" = the bill the user is here to pay (next due). The
         // AGORA tag on Limite disponível only shows when viewing a different cycle.
         const isDefaultCycle =

@@ -605,14 +605,31 @@ async def get_account_summary(
     )
     monthly_income = float(income_result.scalar())
 
-    # Expenses = SUM of debit transactions in window (same exclusions)
-    expenses_result = await session.execute(
-        _scope(select(func.coalesce(func.sum(func.abs(effective_amount)), 0)).where(
-            Transaction.account_id == account_id,
-            Transaction.type == "debit",
-            counts_as_pnl(),
-        ))
-    )
+    # Expenses = SUM of debit transactions in window (same exclusions).
+    # For credit-card accounts, NET refund credits against debits so the
+    # cycle's "Total da fatura" matches the bank's bill (refunds reduce the
+    # invoice amount). counts_as_pnl already excludes paired transfers and
+    # transfer-like categories, so bill payments are not double-counted.
+    if account.type == "credit_card":
+        signed_for_bill = case(
+            (Transaction.type == "credit", -func.abs(effective_amount)),
+            else_=func.abs(effective_amount),
+        )
+        expenses_result = await session.execute(
+            _scope(select(func.coalesce(func.sum(signed_for_bill), 0)).where(
+                Transaction.account_id == account_id,
+                Transaction.source != "opening_balance",
+                counts_as_pnl(),
+            ))
+        )
+    else:
+        expenses_result = await session.execute(
+            _scope(select(func.coalesce(func.sum(func.abs(effective_amount)), 0)).where(
+                Transaction.account_id == account_id,
+                Transaction.type == "debit",
+                counts_as_pnl(),
+            ))
+        )
     monthly_expenses = float(expenses_result.scalar())
 
     return {

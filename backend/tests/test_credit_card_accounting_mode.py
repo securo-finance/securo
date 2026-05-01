@@ -1112,6 +1112,102 @@ class TestEffectiveBillDateFiltersList:
         assert summary["monthly_income"] == 80.0
 
     @pytest.mark.asyncio
+    async def test_cc_refund_credit_nets_against_debits_in_bill_total(
+        self, session, test_user, cc_account
+    ):
+        """For CC accounts, refund credits must subtract from the cycle's
+        monthly_expenses so 'Total da fatura' matches the bank's bill (which
+        is net of refunds, e.g. R$50 charge + R$50 refund = R$0 owed).
+        abdalanervoso reported this on Bradesco — refunds on the same day
+        as the original charge should zero out the cycle."""
+        from app.services.account_service import get_account_summary
+        from app.models.credit_card_bill import CreditCardBill
+        from datetime import datetime, timezone
+
+        bill = CreditCardBill(
+            user_id=test_user.id, account_id=cc_account.id,
+            external_id="bill-net", due_date=date(2026, 4, 16),
+            total_amount=Decimal("0"), currency="BRL",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        session.add(bill)
+        await session.flush()
+
+        # Original charge (debit)
+        charge = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 17), Decimal("44.90"),
+            effective_date=date(2026, 4, 16),
+        )
+        charge.bill_id = bill.id
+
+        # Same-day refund (credit) — fully reverses the charge
+        refund = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 17), Decimal("44.90"),
+            effective_date=date(2026, 4, 16),
+            tx_type="credit",
+        )
+        refund.bill_id = bill.id
+
+        # An unrelated charge that should still appear in the bill
+        other = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 18), Decimal("32.50"),
+            effective_date=date(2026, 4, 16),
+        )
+        other.bill_id = bill.id
+        await session.commit()
+
+        summary = await get_account_summary(
+            session, cc_account.id, test_user.id,
+            date_from=date(2026, 3, 17), date_to=date(2026, 4, 16),
+            bill_id=bill.id,
+        )
+        # 44.90 (charge) - 44.90 (refund) + 32.50 (other) = 32.50
+        assert summary["monthly_expenses"] == 32.50
+
+    @pytest.mark.asyncio
+    async def test_non_cc_account_keeps_debit_only_expenses(
+        self, session, test_user, test_connection
+    ):
+        """For non-CC accounts (checking, etc.), monthly_expenses must STAY
+        as sum-of-debits — credits there are income, not refunds. Confirms
+        the CC netting fix doesn't leak into other account types."""
+        from app.services.account_service import get_account_summary
+
+        checking = Account(
+            id=uuid.uuid4(), user_id=test_user.id,
+            connection_id=test_connection.id,
+            name="Checking", type="checking",
+            balance=Decimal("100"), currency="BRL",
+        )
+        session.add(checking)
+        await session.flush()
+
+        await _make_tx(
+            session, test_user.id, checking.id,
+            date(2026, 4, 5), Decimal("50"),
+            effective_date=date(2026, 4, 5),
+        )
+        # Salary credit — must NOT subtract from expenses
+        await _make_tx(
+            session, test_user.id, checking.id,
+            date(2026, 4, 10), Decimal("3000"),
+            effective_date=date(2026, 4, 10),
+            tx_type="credit",
+        )
+        await session.commit()
+
+        summary = await get_account_summary(
+            session, checking.id, test_user.id,
+            date_from=date(2026, 4, 1), date_to=date(2026, 4, 30),
+        )
+        assert summary["monthly_expenses"] == 50.0
+        assert summary["monthly_income"] == 3000.0
+
+    @pytest.mark.asyncio
     async def test_year_boundary_cycle_buckets_correctly(
         self, session, test_user, cc_account
     ):
