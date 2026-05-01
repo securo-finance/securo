@@ -192,8 +192,8 @@ export default function AssetsPage() {
   const [walletFormName, setWalletFormName] = useState('')
   const [walletFormColor, setWalletFormColor] = useState('#0EA5E9')
   const [deletingWalletId, setDeletingWalletId] = useState<string | null>(null)
-  // Collapsed wallet IDs — default is expanded (empty set), user can collapse manually
-  const [collapsedWallets, setCollapsedWallets] = useState<Set<string>>(new Set())
+// Collapsed wallet IDs — default is expanded (empty set), user can collapse manually
+  const [collapsedWallets, setCollapsedWallets] = useState<Set<string>>(new Set(['init']))
   // Asset being moved to a wallet (null = no picker open)
   const [movingAsset, setMovingAsset] = useState<Asset | null>(null)
 
@@ -750,7 +750,7 @@ export default function AssetsPage() {
   }
 
   function renderWalletSection(wallet: AssetGroup, walletAssets: Asset[]) {
-    const isCollapsed = collapsedWallets.has(wallet.id)
+    const isCollapsed = !collapsedWallets.has(wallet.id)
     const isSynced = wallet.source !== 'manual'
     // Sum in wallet's reported current_value (already computed by backend).
     // Fall back to per-asset sum if the rollup is stale after a move.
