@@ -45,6 +45,7 @@ async def get_account_summary(
     date_from: Optional[str] = Query(None, alias="from", description="YYYY-MM-DD"),
     date_to: Optional[str] = Query(None, alias="to", description="YYYY-MM-DD"),
     bill_id: Optional[uuid.UUID] = Query(None, description="Aggregate by bill_id (issue #92); takes precedence over from/to"),
+    unbilled_only: bool = Query(False, description="Cycle-math fallback only: exclude txs already linked to any bill"),
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
@@ -52,7 +53,7 @@ async def get_account_summary(
     to_date = date.fromisoformat(date_to) if date_to else None
     summary = await account_service.get_account_summary(
         session, account_id, user.id, date_from=from_date, date_to=to_date,
-        bill_id=bill_id,
+        bill_id=bill_id, unbilled_only=unbilled_only,
     )
     if not summary:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")

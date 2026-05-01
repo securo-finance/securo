@@ -870,6 +870,89 @@ class TestEffectiveBillDateFiltersList:
         assert pending.id in {t.id for t in txs}
 
     @pytest.mark.asyncio
+    async def test_inprogress_cycle_includes_prev_close_day_tx_per_brazilian_convention(
+        self, session, test_user, cc_account
+    ):
+        """Brazilian convention: a tx ON the previous close day belongs to the
+        NEXT cycle. Cycle math sets effective_date accordingly, but the
+        in-progress cycle window must also START at prev_close (not
+        prev_close+1) so the date filter picks it up. abdalanervoso's
+        SUPERMERCADO MERCOCENTR dated 2026-04-30 with effective_date
+        2026-06-10 must show in the in-progress June cycle."""
+        from app.services.transaction_service import get_transactions
+
+        # Pending sync, no billId, dated on the close day (April 30 with close=30)
+        pending = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 30), Decimal("91.51"),
+            effective_date=date(2026, 6, 10),  # cycle-math classified to June
+            source="sync",
+        )
+        pending.status = "pending"
+        await session.commit()
+
+        # In-progress June cycle (cycle-math fallback, no bill_id passed)
+        # range = [April 30, May 29] — the start INCLUDES the prev close day.
+        txs, _ = await get_transactions(
+            session, test_user.id, account_id=cc_account.id,
+            from_date=date(2026, 4, 30), to_date=date(2026, 5, 29),
+            accounting_mode="cash",
+        )
+        assert pending.id in {t.id for t in txs}
+
+    @pytest.mark.asyncio
+    async def test_inprogress_cycle_excludes_already_billed_txs(
+        self, session, test_user, cc_account
+    ):
+        """When the user views the in-progress cycle (no bill_id passed) but
+        the date window overlaps a closed bill's range, txs already linked
+        to that closed bill must NOT appear — otherwise they'd double-count
+        in the bar/total against their bill's view."""
+        from app.services.transaction_service import get_transactions
+        from app.models.credit_card_bill import CreditCardBill
+        from datetime import datetime, timezone
+
+        prior_bill = CreditCardBill(
+            user_id=test_user.id, account_id=cc_account.id,
+            external_id="may", due_date=date(2026, 5, 10),
+            total_amount=Decimal("100"), currency="BRL",
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        session.add(prior_bill)
+        await session.flush()
+
+        # Tx already linked to the May bill, dated within the in-progress
+        # June cycle window
+        billed = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 5, 5), Decimal("50"),
+            effective_date=date(2026, 5, 10),
+        )
+        billed.bill_id = prior_bill.id
+        await session.commit()
+
+        # In-progress cycle window happens to include May 5. With the
+        # `unbilled_only` flag set (which account-detail uses for the
+        # in-progress cycle), the prior-bill tx must NOT appear.
+        txs, _ = await get_transactions(
+            session, test_user.id, account_id=cc_account.id,
+            from_date=date(2026, 4, 30), to_date=date(2026, 5, 29),
+            accounting_mode="cash",
+            unbilled_only=True,
+        )
+        assert billed.id not in {t.id for t in txs}
+
+        # Without unbilled_only (e.g., the global /transactions list page),
+        # the same tx IS visible — the flag is opt-in.
+        txs_unfiltered, _ = await get_transactions(
+            session, test_user.id, account_id=cc_account.id,
+            from_date=date(2026, 4, 30), to_date=date(2026, 5, 29),
+            accounting_mode="cash",
+        )
+        assert billed.id in {t.id for t in txs_unfiltered}
+
+    @pytest.mark.asyncio
     async def test_pending_sync_excluded_from_past_bill_when_effective_date_points_elsewhere(
         self, session, test_user, cc_account
     ):

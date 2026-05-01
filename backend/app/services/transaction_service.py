@@ -65,6 +65,7 @@ async def get_transactions(
     accounting_mode: Optional[str] = None,
     tags: Optional[list[str]] = None,
     bill_id: Optional[uuid.UUID] = None,
+    unbilled_only: bool = False,
 ) -> tuple[list[Transaction], int]:
     # In "accrual" mode, bucket/order by effective_date so list filters
     # line up with the cash-flow view used by the dashboard and reports.
@@ -163,6 +164,14 @@ async def get_transactions(
             bill_predicates.append(_and(*unlinked_clauses))
         base_query = base_query.where(or_(*bill_predicates))
     else:
+        # Cycle-math fallback (no bill_id was passed). The opt-in
+        # `unbilled_only` flag is for callers that need the in-progress
+        # cycle on a CC account whose date window may overlap a closed
+        # bill's range — they ask us to exclude already-billed txs so the
+        # in-progress bar / list doesn't double-count them. The global
+        # /transactions list and other generic callers leave it False.
+        if unbilled_only:
+            base_query = base_query.where(Transaction.bill_id.is_(None))
         if from_date:
             base_query = base_query.where(date_col >= from_date)
         if to_date:

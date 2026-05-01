@@ -522,6 +522,7 @@ async def get_account_summary(
     session: AsyncSession, account_id: uuid.UUID, user_id: uuid.UUID,
     date_from: Optional[_Date] = None, date_to: Optional[_Date] = None,
     bill_id: Optional[uuid.UUID] = None,
+    unbilled_only: bool = False,
 ) -> Optional[dict]:
     account = await get_account(session, account_id, user_id)
     if not account:
@@ -602,6 +603,15 @@ async def get_account_summary(
                 bucket_date <= date_to,
             )
             return query.where(or_(Transaction.bill_id == bill_id, unlinked_in_window))
+        # Cycle-math fallback. Opt-in `unbilled_only` excludes already-billed
+        # txs so an in-progress cycle's bar/total doesn't double-count past-
+        # bill txs whose date falls in the window (see get_transactions).
+        if unbilled_only:
+            return query.where(
+                Transaction.bill_id.is_(None),
+                bucket_date >= date_from,
+                bucket_date <= date_to,
+            )
         return query.where(bucket_date >= date_from, bucket_date <= date_to)
 
     # Income = SUM of credit transactions in window (excluding opening_balance,
