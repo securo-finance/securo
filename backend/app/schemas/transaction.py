@@ -129,11 +129,22 @@ class TransferRead(BaseModel):
 class TransactionImport(TransactionBase):
     """TransactionBase extended with import-only fields not exposed in read responses."""
     category_name: Optional[str] = None
+    raw_data: Optional[dict] = None
+    installment_number: Optional[int] = None
+    total_installments: Optional[int] = None
+
+
+class C6CardPreview(BaseModel):
+    card_last4: str
+    cardholder: str
+    transactions: list[TransactionImport]
 
 
 class TransactionImportPreview(BaseModel):
     transactions: list[TransactionImport]
     detected_format: str
+    institution: Optional[str] = None   # "picpay" | "c6" | None for other formats
+    cards: Optional[list[C6CardPreview]] = None  # populated only for C6
 
 
 class TransactionImportRequest(BaseModel):
