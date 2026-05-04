@@ -706,6 +706,15 @@ def _parse_c6_text(text: str) -> dict[str, list[TransactionImport]]:
     return cards
 
 
+def detect_pdf_institution(text: str) -> str | None:
+    """Return 'picpay', 'c6', or None if institution cannot be identified."""
+    if 'PicPay' in text:
+        return 'picpay'
+    if 'C6 Carbon' in text or 'C6 Bank' in text:
+        return 'c6'
+    return None
+
+
 def parse_c6_pdf(file_bytes: bytes, password: str) -> dict[str, list[TransactionImport]]:
     """Parse C6 credit card PDF. Raises ValueError('invalid_password') on wrong password."""
     text = _extract_pdf_text_encrypted(file_bytes, password)

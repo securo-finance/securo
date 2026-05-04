@@ -1,5 +1,6 @@
 import pytest
 from httpx import AsyncClient
+from unittest.mock import patch
 
 from app.models.account import Account
 
@@ -208,3 +209,29 @@ async def test_delete_import_log(client: AsyncClient, auth_headers, test_account
     logs_resp = await client.get("/api/import-logs", headers=auth_headers)
     log_ids = [entry["id"] for entry in logs_resp.json()]
     assert import_log_id not in log_ids
+
+
+class TestPdfPreview:
+    """Tests for PDF detection and error handling in the preview endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_unsupported_pdf_returns_400(self, client: AsyncClient, auth_headers):
+        fake_pdf = b'%PDF-1.4 Unrecognized bank statement content'
+        files = {'file': ('statement.pdf', fake_pdf, 'application/pdf')}
+        with patch('app.services.import_service._extract_pdf_text', return_value='unknown content'):
+            with patch('app.services.import_service.detect_pdf_institution', return_value=None):
+                resp = await client.post('/api/transactions/import/preview', files=files, headers=auth_headers)
+        assert resp.status_code == 400
+        assert 'unsupported_pdf_format' in resp.json()['detail']
+
+    @pytest.mark.asyncio
+    async def test_c6_without_password_returns_400(self, client: AsyncClient, auth_headers):
+        fake_pdf = b'%PDF-1.4'
+        files = {'file': ('fatura.pdf', fake_pdf, 'application/pdf')}
+        import pikepdf
+        with patch('app.services.import_service._extract_pdf_text', return_value='unknown content'):
+            with patch('app.services.import_service.detect_pdf_institution', return_value=None):
+                with patch('pikepdf.open', side_effect=pikepdf.PasswordError('password required')):
+                    resp = await client.post('/api/transactions/import/preview', files=files, headers=auth_headers)
+        assert resp.status_code == 400
+        assert 'password_required' in resp.json()['detail']
