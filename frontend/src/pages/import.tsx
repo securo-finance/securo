@@ -260,7 +260,7 @@ export default function ImportPage() {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".ofx,.qfx,.csv,.qif,.xml,.camt"
+          accept=".ofx,.qfx,.csv,.qif,.xml,.camt,.pdf"
           onChange={handleFileChange}
           className="hidden"
         />
