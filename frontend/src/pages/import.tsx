@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import type { Transaction, ImportLog } from '@/types'
+import type { Transaction, ImportLog, ImportPreview, ImportPreviewCard } from '@/types'
 import { Upload, FileText, X, CheckCircle2, AlertCircle, History, Trash2, Settings2, Download } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { PageHeader } from '@/components/page-header'
@@ -39,13 +39,19 @@ export default function ImportPage() {
   const locale = i18n.language === 'en' ? 'en-US' : i18n.language
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [previewData, setPreviewData] = useState<{ transactions: Transaction[]; detected_format: string } | null>(null)
+  const [previewData, setPreviewData] = useState<ImportPreview | null>(null)
   const [selectedAccount, setSelectedAccount] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const [fileName, setFileName] = useState<string | null>(null)
   const [currentFile, setCurrentFile] = useState<File | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ImportLog | null>(null)
   const [csvHeaders, setCsvHeaders] = useState<string[]>([])
+
+  // PDF options
+  const [pdfPassword, setPdfPassword] = useState('')
+  const [c6Cards, setC6Cards] = useState<ImportPreviewCard[] | null>(null)
+  const [c6AccountMap, setC6AccountMap] = useState<Record<string, string>>({})
+  const [activeC6Tab, setActiveC6Tab] = useState<string>('')
 
   // CSV options
   const [csvDateFormat, setCsvDateFormat] = useState('')
@@ -66,23 +72,56 @@ export default function ImportPage() {
   })
 
   const previewMutation = useMutation({
-    mutationFn: ({ file, options }: { file: File; options?: { date_format?: string; flip_amount?: boolean; inflow_column?: string; outflow_column?: string } }) =>
+    mutationFn: ({ file, options }: { file: File; options?: { date_format?: string; flip_amount?: boolean; inflow_column?: string; outflow_column?: string; password?: string } }) =>
       transactionsApi.previewImport(file, options),
-    onSuccess: (data) => setPreviewData(data),
+    onSuccess: (data) => {
+      setPreviewData(data)
+      if (data.institution === 'c6' && data.cards?.length) {
+        setC6Cards(data.cards)
+        setActiveC6Tab(data.cards[0].card_last4)
+        setC6AccountMap({})
+      } else {
+        setC6Cards(null)
+      }
+    },
     onError: (error: unknown) => {
       const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      toast.error(detail || t('import.processError'))
+      if (detail === 'password_required') {
+        toast.error(t('import.pdfPasswordRequired', 'Este PDF está protegido. Informe a senha para continuar.'))
+      } else {
+        toast.error(detail || t('import.processError'))
+      }
     },
   })
 
   const importMutation = useMutation({
-    mutationFn: () => transactionsApi.import(
-      selectedAccount,
-      previewData!.transactions,
-      fileName ?? '',
-      previewData!.detected_format,
-      isCsvFile ? { detect_duplicates: csvDetectDuplicates } : undefined,
-    ),
+    mutationFn: async () => {
+      if (previewData?.institution === 'c6' && c6Cards) {
+        const results = await Promise.all(
+          c6Cards
+            .filter(card => c6AccountMap[card.card_last4])
+            .map(card =>
+              transactionsApi.import(
+                c6AccountMap[card.card_last4],
+                card.transactions,
+                fileName ?? '',
+                'pdf',
+              )
+            )
+        )
+        return results.reduce(
+          (acc, r) => ({ imported: acc.imported + r.imported, skipped: acc.skipped + r.skipped, import_log_id: r.import_log_id }),
+          { imported: 0, skipped: 0, import_log_id: '' }
+        )
+      }
+      return transactionsApi.import(
+        selectedAccount,
+        previewData!.transactions,
+        fileName ?? '',
+        previewData!.detected_format,
+        isCsvFile ? { detect_duplicates: csvDetectDuplicates } : undefined,
+      )
+    },
     onSuccess: (data) => {
       invalidateFinancialQueries(queryClient)
       queryClient.invalidateQueries({ queryKey: ['import-logs'] })
@@ -95,6 +134,9 @@ export default function ImportPage() {
       setFileName(null)
       setCurrentFile(null)
       resetCsvOptions()
+      setC6Cards(null)
+      setC6AccountMap({})
+      setPdfPassword('')
       if (fileInputRef.current) fileInputRef.current.value = ''
     },
     onError: (error: unknown) => {
@@ -122,10 +164,12 @@ export default function ImportPage() {
     setCsvHeaders([])
   }
 
-  function processFile(file: File) {
+  function processFile(file: File, passwordOverride?: string) {
     setFileName(file.name)
     setCurrentFile(file)
     resetCsvOptions()
+
+    const isPdf = file.name.toLowerCase().endsWith('.pdf')
 
     // Extract CSV headers for column mapping
     if (file.name.toLowerCase().endsWith('.csv')) {
@@ -140,7 +184,12 @@ export default function ImportPage() {
       reader.readAsText(file)
     }
 
-    previewMutation.mutate({ file })
+    const options: Parameters<typeof transactionsApi.previewImport>[1] = {}
+    if (isPdf && (passwordOverride ?? pdfPassword)) {
+      options.password = passwordOverride ?? pdfPassword
+    }
+
+    previewMutation.mutate({ file, options })
   }
 
   const rePreview = useCallback(() => {
@@ -173,10 +222,22 @@ export default function ImportPage() {
     setCurrentFile(null)
     setSelectedAccount('')
     resetCsvOptions()
+    setC6Cards(null)
+    setC6AccountMap({})
+    setPdfPassword('')
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   const isCsvFile = fileName?.toLowerCase().endsWith('.csv') ?? false
+  const isPdfFile = fileName?.toLowerCase().endsWith('.pdf') ?? false
+
+  const isImportDisabled = (() => {
+    if (!previewData) return true
+    if (previewData.institution === 'c6' && c6Cards) {
+      return c6Cards.some(card => !c6AccountMap[card.card_last4])
+    }
+    return !selectedAccount
+  })()
 
   const incomeCount = previewData?.transactions.filter(t => t.type === 'credit').length ?? 0
   const expenseCount = previewData?.transactions.filter(t => t.type === 'debit').length ?? 0
@@ -280,30 +341,59 @@ export default function ImportPage() {
             </div>
           </div>
 
-          {/* Account picker */}
-          <div className="px-4 sm:px-5 py-4 border-b border-border bg-muted/50">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-              <Label className="text-sm text-muted-foreground whitespace-nowrap shrink-0">
-                {t('import.importTo')}
-              </Label>
-              <select
-                className="flex-1 border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                value={selectedAccount}
-                onChange={(e) => setSelectedAccount(e.target.value)}
-              >
-                <option value="">{t('import.selectAccount')}</option>
-                {accountsList?.map((acc) => (
-                  <option key={acc.id} value={acc.id}>{getAccountName(acc)} ({t(TYPE_LABELS[acc.type] || acc.type)})</option>
-                ))}
-              </select>
-              {!selectedAccount && (
-                <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 border border-amber-100 px-2.5 py-1.5 rounded-lg shrink-0">
-                  <AlertCircle size={12} />
-                  {t('import.selectAccountWarning')}
-                </div>
-              )}
+          {/* Account picker (hidden for C6 multi-card — per-card selectors shown in tab view) */}
+          {!(previewData.institution === 'c6' && c6Cards) && (
+            <div className="px-4 sm:px-5 py-4 border-b border-border bg-muted/50">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                <Label className="text-sm text-muted-foreground whitespace-nowrap shrink-0">
+                  {t('import.importTo')}
+                </Label>
+                <select
+                  className="flex-1 border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  value={selectedAccount}
+                  onChange={(e) => setSelectedAccount(e.target.value)}
+                >
+                  <option value="">{t('import.selectAccount')}</option>
+                  {accountsList?.map((acc) => (
+                    <option key={acc.id} value={acc.id}>{getAccountName(acc)} ({t(TYPE_LABELS[acc.type] || acc.type)})</option>
+                  ))}
+                </select>
+                {!selectedAccount && (
+                  <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 border border-amber-100 px-2.5 py-1.5 rounded-lg shrink-0">
+                    <AlertCircle size={12} />
+                    {t('import.selectAccountWarning')}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* PDF Password */}
+          {isPdfFile && (
+            <div className="px-5 py-4 border-b border-border bg-muted/30">
+              <div className="space-y-2">
+                <Label htmlFor="pdf-password">{t('import.pdfPassword', 'Senha do PDF')}</Label>
+                <div className="flex gap-2">
+                  <input
+                    id="pdf-password"
+                    type="password"
+                    value={pdfPassword}
+                    onChange={(e) => setPdfPassword(e.target.value)}
+                    placeholder={t('import.pdfPasswordPlaceholder', 'Deixe vazio se não protegido')}
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => currentFile && processFile(currentFile, pdfPassword)}
+                    disabled={previewMutation.isPending}
+                  >
+                    {t('import.retry', 'Tentar novamente')}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* CSV Options */}
           {isCsvFile && previewData && (
@@ -401,42 +491,113 @@ export default function ImportPage() {
             </div>
           )}
 
-          {/* Table */}
-          <div className="max-h-96 overflow-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent bg-transparent border-b border-border">
-                  <TableHead className="text-xs font-medium text-muted-foreground py-3 pl-5 w-[110px]">
-                    {t('transactions.date')}
-                  </TableHead>
-                  <TableHead className="text-xs font-medium text-muted-foreground py-3">
-                    {t('transactions.description')}
-                  </TableHead>
-                  <TableHead className="text-xs font-medium text-muted-foreground py-3 pr-5 text-right w-[160px]">
-                    {t('transactions.amount')}
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {previewData.transactions.slice(0, 50).map((tx, i) => (
-                  <TableRow key={i} className="border-b border-border last:border-0 hover:bg-muted">
-                    <TableCell className="py-3 pl-5 text-xs text-muted-foreground whitespace-nowrap">
-                      {new Date(tx.date).toLocaleDateString(locale)}
-                    </TableCell>
-                    <TableCell className="py-3 text-sm text-foreground">{tx.description}</TableCell>
-                    <TableCell className={`py-3 pr-5 text-right text-sm font-bold tabular-nums ${tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
-                      {tx.type === 'credit' ? '+' : '−'}{formatCurrency(Math.abs(Number(tx.amount)), userCurrency, locale)}
-                    </TableCell>
-                  </TableRow>
+          {/* C6 tabbed preview or standard table */}
+          {previewData.institution === 'c6' && c6Cards ? (
+            <div className="px-5 py-4 space-y-4">
+              <div className="flex gap-2 border-b">
+                {c6Cards.map((card) => (
+                  <button
+                    key={card.card_last4}
+                    onClick={() => setActiveC6Tab(card.card_last4)}
+                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                      activeC6Tab === card.card_last4
+                        ? 'border-primary text-primary'
+                        : 'border-transparent text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {card.cardholder.split(' ')[0]} ({card.card_last4})
+                    <span className="ml-1 text-xs text-muted-foreground">
+                      {card.transactions.length} {t('import.transactions', 'transações')}
+                    </span>
+                  </button>
                 ))}
-              </TableBody>
-            </Table>
-            {previewData.transactions.length > 50 && (
-              <p className="text-xs text-muted-foreground text-center py-3 border-t border-border">
-                {t('import.showingPreview', { shown: 50, total: previewData.transactions.length })}
-              </p>
-            )}
-          </div>
+              </div>
+              {c6Cards.filter(card => card.card_last4 === activeC6Tab).map((card) => (
+                <div key={card.card_last4} className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <Label>{t('import.account', 'Conta')}: {card.cardholder}</Label>
+                    <select
+                      value={c6AccountMap[card.card_last4] ?? ''}
+                      onChange={(e) => setC6AccountMap(prev => ({ ...prev, [card.card_last4]: e.target.value }))}
+                      className="flex h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+                    >
+                      <option value="">{t('import.selectAccount', 'Selecione uma conta')}</option>
+                      {accountsList?.map((acc) => (
+                        <option key={acc.id} value={acc.id}>{acc.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="max-h-96 overflow-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{t('import.date', 'Data')}</TableHead>
+                          <TableHead>{t('import.description', 'Descrição')}</TableHead>
+                          <TableHead>{t('import.type', 'Tipo')}</TableHead>
+                          <TableHead className="text-right">{t('import.amount', 'Valor')}</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {card.transactions.map((txn, idx) => (
+                          <TableRow key={idx}>
+                            <TableCell>{txn.date}</TableCell>
+                            <TableCell>
+                              {txn.description}
+                              {txn.installment_number && txn.total_installments && (
+                                <span className="ml-1 text-xs text-muted-foreground">
+                                  ({txn.installment_number}/{txn.total_installments})
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell>{txn.type}</TableCell>
+                            <TableCell className="text-right">
+                              {formatCurrency(Number(txn.amount), 'BRL', 'pt-BR')}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="max-h-96 overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent bg-transparent border-b border-border">
+                    <TableHead className="text-xs font-medium text-muted-foreground py-3 pl-5 w-[110px]">
+                      {t('transactions.date')}
+                    </TableHead>
+                    <TableHead className="text-xs font-medium text-muted-foreground py-3">
+                      {t('transactions.description')}
+                    </TableHead>
+                    <TableHead className="text-xs font-medium text-muted-foreground py-3 pr-5 text-right w-[160px]">
+                      {t('transactions.amount')}
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {previewData.transactions.slice(0, 50).map((tx, i) => (
+                    <TableRow key={i} className="border-b border-border last:border-0 hover:bg-muted">
+                      <TableCell className="py-3 pl-5 text-xs text-muted-foreground whitespace-nowrap">
+                        {new Date(tx.date).toLocaleDateString(locale)}
+                      </TableCell>
+                      <TableCell className="py-3 text-sm text-foreground">{tx.description}</TableCell>
+                      <TableCell className={`py-3 pr-5 text-right text-sm font-bold tabular-nums ${tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
+                        {tx.type === 'credit' ? '+' : '−'}{formatCurrency(Math.abs(Number(tx.amount)), userCurrency, locale)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {previewData.transactions.length > 50 && (
+                <p className="text-xs text-muted-foreground text-center py-3 border-t border-border">
+                  {t('import.showingPreview', { shown: 50, total: previewData.transactions.length })}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Footer actions */}
           <div className="px-4 sm:px-5 py-4 border-t border-border flex items-center justify-between">
@@ -448,13 +609,13 @@ export default function ImportPage() {
             </button>
             <Button
               onClick={() => importMutation.mutate()}
-              disabled={!selectedAccount || importMutation.isPending}
+              disabled={isImportDisabled || importMutation.isPending}
               className="gap-2"
             >
               <Upload size={14} />
               {importMutation.isPending
                 ? t('common.loading')
-                : t('import.importButton', { count: previewData.transactions.length })}
+                : t('import.importButton', { count: previewData.institution === 'c6' && c6Cards ? c6Cards.reduce((s, c) => s + c.transactions.length, 0) : previewData.transactions.length })}
             </Button>
           </div>
         </div>
