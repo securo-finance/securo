@@ -20,6 +20,8 @@ import type {
   BudgetVsActual,
   Rule,
   ImportLog,
+  ImportPreview,
+  ImportPreviewCard,
   Asset,
   AssetGroup,
   AssetValue,
@@ -348,13 +350,15 @@ export const transactions = {
     flip_amount?: boolean
     inflow_column?: string
     outflow_column?: string
-  }): Promise<{ transactions: Transaction[]; detected_format: string }> => {
+    password?: string
+  }): Promise<ImportPreview> => {
     const formData = new FormData()
     formData.append('file', file)
     if (options?.date_format) formData.append('date_format', options.date_format)
     if (options?.flip_amount) formData.append('flip_amount', 'true')
     if (options?.inflow_column) formData.append('inflow_column', options.inflow_column)
     if (options?.outflow_column) formData.append('outflow_column', options.outflow_column)
+    if (options?.password) formData.append('password', options.password)
     const { data } = await api.post('/transactions/import/preview', formData)
     return data
   },

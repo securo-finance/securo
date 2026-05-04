@@ -305,6 +305,19 @@ export interface ImportLog {
   created_at: string
 }
 
+export interface ImportPreviewCard {
+  card_last4: string
+  cardholder: string
+  transactions: Transaction[]
+}
+
+export interface ImportPreview {
+  transactions: Transaction[]
+  detected_format: string
+  institution?: string
+  cards?: ImportPreviewCard[]
+}
+
 export interface RecurringTransaction {
   id: string
   user_id: string
