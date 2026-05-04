@@ -235,3 +235,99 @@ class TestPdfPreview:
                     resp = await client.post('/api/transactions/import/preview', files=files, headers=auth_headers)
         assert resp.status_code == 400
         assert 'password_required' in resp.json()['detail']
+
+    @pytest.mark.asyncio
+    async def test_invalid_password_returns_400(self, client: AsyncClient, auth_headers):
+        fake_pdf = b'%PDF-1.4'
+        files = {'file': ('fatura.pdf', fake_pdf, 'application/pdf')}
+        import pikepdf
+        with patch('app.services.import_service._extract_pdf_text', return_value='unknown content'):
+            with patch('app.services.import_service.detect_pdf_institution', return_value=None):
+                with patch('pikepdf.open', side_effect=pikepdf.PasswordError('password required')):
+                    with patch('app.services.import_service._extract_pdf_text_encrypted',
+                               side_effect=ValueError('invalid_password')):
+                        resp = await client.post(
+                            '/api/transactions/import/preview',
+                            files=files,
+                            data={'password': 'wrongpass'},
+                            headers=auth_headers,
+                        )
+        assert resp.status_code == 400
+        assert 'invalid_password' in resp.json()['detail']
+
+    @pytest.mark.asyncio
+    async def test_picpay_preview_returns_transactions(self, client: AsyncClient, auth_headers):
+        from app.schemas.transaction import TransactionImport
+        from datetime import date
+        from decimal import Decimal
+        fake_txn = TransactionImport(
+            description='Pix Enviado',
+            amount=Decimal('100.00'),
+            date=date(2026, 4, 30),
+            type='debit',
+            currency='BRL',
+        )
+        fake_pdf = b'%PDF-1.4 PicPay statement'
+        files = {'file': ('picpay.pdf', fake_pdf, 'application/pdf')}
+        with patch('app.services.import_service._extract_pdf_text', return_value='PicPay content'):
+            with patch('app.services.import_service.detect_pdf_institution', return_value='picpay'):
+                with patch('app.services.import_service._parse_picpay_text', return_value=[fake_txn]):
+                    resp = await client.post('/api/transactions/import/preview', files=files, headers=auth_headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body['institution'] == 'picpay'
+        assert body['detected_format'] == 'pdf'
+        assert len(body['transactions']) == 1
+
+    @pytest.mark.asyncio
+    async def test_c6_preview_returns_cards(self, client: AsyncClient, auth_headers):
+        from app.schemas.transaction import TransactionImport
+        from datetime import date
+        from decimal import Decimal
+        import pikepdf
+        fake_txn = TransactionImport(
+            description='QUINTAL DA MASSA',
+            amount=Decimal('63.50'),
+            date=date(2026, 4, 3),
+            type='debit',
+            currency='BRL',
+            raw_data={'institution': 'c6', 'card_last4': '3079', 'cardholder': 'LEANDRO NASCIMENTO'},
+        )
+        fake_pdf = b'%PDF-1.4'
+        files = {'file': ('fatura.pdf', fake_pdf, 'application/pdf')}
+        with patch('app.services.import_service._extract_pdf_text', return_value='unknown'):
+            with patch('app.services.import_service.detect_pdf_institution', side_effect=[None, 'c6']):
+                with patch('pikepdf.open', side_effect=pikepdf.PasswordError('encrypted')):
+                    with patch('app.services.import_service._extract_pdf_text_encrypted', return_value='C6 Carbon text'):
+                        with patch('app.services.import_service._parse_c6_text', return_value={'3079': [fake_txn]}):
+                            resp = await client.post(
+                                '/api/transactions/import/preview',
+                                files=files,
+                                data={'password': '023648'},
+                                headers=auth_headers,
+                            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body['institution'] == 'c6'
+        assert len(body['cards']) == 1
+        assert body['cards'][0]['card_last4'] == '3079'
+        assert body['cards'][0]['cardholder'] == 'LEANDRO NASCIMENTO'
+
+    @pytest.mark.asyncio
+    async def test_no_transactions_returns_400(self, client: AsyncClient, auth_headers):
+        import pikepdf
+        fake_pdf = b'%PDF-1.4'
+        files = {'file': ('fatura.pdf', fake_pdf, 'application/pdf')}
+        with patch('app.services.import_service._extract_pdf_text', return_value='unknown'):
+            with patch('app.services.import_service.detect_pdf_institution', side_effect=[None, 'c6']):
+                with patch('pikepdf.open', side_effect=pikepdf.PasswordError('encrypted')):
+                    with patch('app.services.import_service._extract_pdf_text_encrypted', return_value='C6 Carbon text'):
+                        with patch('app.services.import_service._parse_c6_text', return_value={}):
+                            resp = await client.post(
+                                '/api/transactions/import/preview',
+                                files=files,
+                                data={'password': '023648'},
+                                headers=auth_headers,
+                            )
+        assert resp.status_code == 400
+        assert 'no_transactions' in resp.json()['detail']

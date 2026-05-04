@@ -161,6 +161,11 @@ async def preview_import(
             content[:100], e,
             exc_info=True,
         )
+        if is_pdf:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail='pdf_parse_error',
+            )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Failed to parse file: {str(e)}",
