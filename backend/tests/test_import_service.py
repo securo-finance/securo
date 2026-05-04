@@ -11,6 +11,7 @@ from app.models.fx_rate import FxRate
 from app.models.user import User
 from app.services.import_service import parse_csv, parse_ofx, parse_qif, parse_camt, import_transactions
 from app.services.import_service import _parse_picpay_text
+from app.services.import_service import _parse_c6_text
 
 
 class TestParseCsv:
@@ -1551,3 +1552,104 @@ class TestCsvDuplicateDetectionToggle:
         )
         assert imported == 0
         assert skipped == 1
+
+
+class TestParseC6Pdf:
+    """Tests for C6 credit card PDF text parser."""
+
+    SAMPLE_TEXT = """
+Vencimento: 10 de Maio
+Valor da fatura: R$ 4.272,65
+Cartão C6 Carbon
+Compras e pagamentos feitos até o fechamento desta fatura em 29/04/26.
+
+C6 Carbon Final 3079 - LEANDRO NASCIMENTO
+
+Subtotal deste cartão R$ 1.598,08
+
+         03 abr QUINTAL DA MASSA
+
+         04 abr BOMBOCINE MARANGUAPE
+
+         06 abr
+
+      Inclusao de Pagamento
+
+         11 abr DISTRIBUIDORA DE ALIME
+
+         12 mar CARAJAS CONSTRUCOES - Parcela 2/5
+
+Valores em reais
+
+63,50
+
+75,00
+
+6.330,60
+
+41,87
+
+146,18
+
+C6 Carbon Virtual Final 8084 - LEANDRO
+
+Cartão Virtual
+
+Subtotal deste cartão R$ 200,00
+
+         04 abr
+
+APPLECOMBILL
+
+         24 abr GOOGLE YOUTUBEPREMIUM
+
+Valores em reais
+
+66,90
+
+53,90
+
+"""
+
+    def test_detects_two_cards(self):
+        cards = _parse_c6_text(self.SAMPLE_TEXT)
+        assert set(cards.keys()) == {'3079', '8084'}
+
+    def test_main_card_transaction_count(self):
+        cards = _parse_c6_text(self.SAMPLE_TEXT)
+        assert len(cards['3079']) == 5
+
+    def test_regular_debit(self):
+        cards = _parse_c6_text(self.SAMPLE_TEXT)
+        quintal = next(t for t in cards['3079'] if 'QUINTAL' in t.description)
+        assert quintal.amount == Decimal('63.50')
+        assert quintal.type == 'debit'
+        assert quintal.date == date(2026, 4, 3)
+        assert quintal.raw_data == {'institution': 'c6', 'card_last4': '3079', 'cardholder': 'LEANDRO NASCIMENTO'}
+
+    def test_payment_is_credit(self):
+        cards = _parse_c6_text(self.SAMPLE_TEXT)
+        payment = next(t for t in cards['3079'] if 'Pagamento' in t.description or 'pagamento' in t.description.lower())
+        assert payment.amount == Decimal('6330.60')
+        assert payment.type == 'credit'
+
+    def test_installment_fields(self):
+        cards = _parse_c6_text(self.SAMPLE_TEXT)
+        carajas = next(t for t in cards['3079'] if 'CARAJAS' in t.description)
+        assert carajas.installment_number == 2
+        assert carajas.total_installments == 5
+        assert carajas.date == date(2026, 3, 12)  # march(3) <= april(4) closing → same year 2026
+
+    def test_virtual_card_parsed(self):
+        cards = _parse_c6_text(self.SAMPLE_TEXT)
+        assert len(cards['8084']) == 2
+        apple = next(t for t in cards['8084'] if 'APPLE' in t.description)
+        assert apple.amount == Decimal('66.90')
+        assert apple.type == 'debit'
+
+    def test_year_inference_previous_year(self):
+        """Transaction month > closing month means it belongs to the prior year."""
+        text = self.SAMPLE_TEXT.replace('12 mar CARAJAS', '12 set CARAJAS')
+        cards = _parse_c6_text(text)
+        carajas = next(t for t in cards['3079'] if 'CARAJAS' in t.description)
+        assert carajas.date == date(2025, 9, 12)  # sept(9) > april(4) closing → prior year 2025

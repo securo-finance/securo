@@ -38,6 +38,11 @@ _PT_MONTH_NAMES = {
     'novembro': 11, 'dezembro': 12,
 }
 
+_PT_MONTH_ABBR = {
+    'jan': 1, 'fev': 2, 'mar': 3, 'abr': 4, 'mai': 5, 'jun': 6,
+    'jul': 7, 'ago': 8, 'set': 9, 'out': 10, 'nov': 11, 'dez': 12,
+}
+
 _PICPAY_DEBIT_TYPES = {
     'pix enviado', 'compra realizada', 'pagamento realizado', 'dinheiro guardado',
 }
@@ -569,6 +574,142 @@ def parse_picpay_pdf(file_bytes: bytes) -> list[TransactionImport]:
     """Parse PicPay statement PDF. Raises ValueError on parse failure."""
     text = _extract_pdf_text(file_bytes)
     return _parse_picpay_text(text)
+
+
+def _parse_c6_text(text: str) -> dict[str, list[TransactionImport]]:
+    """Parse C6 credit card statement text into a dict keyed by card last-4 digits."""
+    cards: dict[str, list[TransactionImport]] = {}
+
+    # Extract closing date for year inference: "fechamento desta fatura em DD/MM/YY"
+    closing_re = re.compile(r'fechamento desta fatura em (\d{2})/(\d{2})/(\d{2})', re.IGNORECASE)
+    closing_match = closing_re.search(text)
+    if closing_match:
+        close_month = int(closing_match.group(2))
+        close_year = 2000 + int(closing_match.group(3))
+    else:
+        from datetime import date as _date_cls
+        today = _date_cls.today()
+        close_month, close_year = today.month, today.year
+
+    def infer_year(txn_month: int) -> int:
+        return close_year - 1 if txn_month > close_month else close_year
+
+    card_section_re = re.compile(
+        r'C6 Carbon (?:Virtual )?Final (\d{4})\s*-\s*(.+?)(?=\n|$)', re.IGNORECASE
+    )
+    values_header_re = re.compile(r'Valores em reais', re.IGNORECASE)
+    desc_re = re.compile(
+        r'^\s*(\d{1,2})\s+([a-záéíóúãõç]{3})(?:\s+(.*?)(?:\s+-\s+Parcela\s+(\d+)/(\d+))?)?\s*$',
+        re.IGNORECASE
+    )
+    amount_re = re.compile(r'^\s*([\d.]+,\d{2})\s*$')
+    installment_standalone_re = re.compile(r'Parcela\s+(\d+)/(\d+)', re.IGNORECASE)
+
+    lines = text.splitlines()
+
+    # Find card section start indices
+    section_starts = []
+    for idx, line in enumerate(lines):
+        m = card_section_re.search(line)
+        if m:
+            section_starts.append((idx, m.group(1), m.group(2).strip()))
+
+    if not section_starts:
+        return cards
+
+    for sec_idx, (start, card_last4, cardholder) in enumerate(section_starts):
+        end = section_starts[sec_idx + 1][0] if sec_idx + 1 < len(section_starts) else len(lines)
+        section_lines = lines[start:end]
+
+        # Split at "Valores em reais" — descriptions before, amounts after
+        values_split = None
+        for j, sl in enumerate(section_lines):
+            if values_header_re.search(sl):
+                values_split = j
+                break
+
+        if values_split is None:
+            continue
+
+        desc_block = section_lines[:values_split]
+        amounts_block = section_lines[values_split + 1:]
+
+        # Collect description entries
+        desc_entries = []
+        pending_date = None
+
+        for sl in desc_block:
+            dm = desc_re.match(sl)
+            if dm:
+                day = int(dm.group(1))
+                month_str = dm.group(2).lower()
+                month = _PT_MONTH_ABBR.get(month_str)
+                if month is None:
+                    continue
+                txn_year = infer_year(month)
+                txn_date = date(txn_year, month, day)
+                raw_desc = dm.group(3).strip() if dm.group(3) else ''
+                inst_num = int(dm.group(4)) if dm.group(4) else None
+                inst_total = int(dm.group(5)) if dm.group(5) else None
+
+                if raw_desc:
+                    desc_entries.append((txn_date, raw_desc, inst_num, inst_total))
+                    pending_date = txn_date
+                else:
+                    pending_date = txn_date
+            elif pending_date and sl.strip():
+                stripped = sl.strip()
+                # Skip header/structural lines
+                lower_stripped = stripped.lower()
+                if (stripped.startswith('Subtotal') or
+                        stripped.startswith('C6') or
+                        lower_stripped.startswith('subtotal') or
+                        lower_stripped.startswith('cartão virtual')):
+                    pending_date = None
+                    continue
+                raw_desc = stripped
+                inst_match = installment_standalone_re.search(raw_desc)
+                inst_num = int(inst_match.group(1)) if inst_match else None
+                inst_total = int(inst_match.group(2)) if inst_match else None
+                if inst_match:
+                    raw_desc = installment_standalone_re.sub('', raw_desc).strip(' -')
+                desc_entries.append((pending_date, raw_desc, inst_num, inst_total))
+                pending_date = None
+
+        # Collect amount lines
+        amount_values = []
+        for sl in amounts_block:
+            am = amount_re.match(sl)
+            if am:
+                amount_values.append(Decimal(normalize_amount(am.group(1))))
+
+        # Zip descriptions with amounts 1:1
+        raw_data_base = {'institution': 'c6', 'card_last4': card_last4, 'cardholder': cardholder}
+        card_txns = []
+        for (txn_date, desc, inst_num, inst_total), amount in zip(desc_entries, amount_values):
+            is_payment = 'inclusao de pagamento' in desc.lower()
+            txn_type = 'credit' if is_payment else 'debit'
+            payee_raw = desc if txn_type == 'debit' else None
+            card_txns.append(TransactionImport(
+                description=desc,
+                amount=amount,
+                date=txn_date,
+                type=txn_type,
+                currency='BRL',
+                payee_raw=payee_raw,
+                raw_data=raw_data_base,
+                installment_number=inst_num,
+                total_installments=inst_total,
+            ))
+        cards[card_last4] = card_txns
+
+    return cards
+
+
+def parse_c6_pdf(file_bytes: bytes, password: str) -> dict[str, list[TransactionImport]]:
+    """Parse C6 credit card PDF. Raises ValueError('invalid_password') on wrong password."""
+    text = _extract_pdf_text_encrypted(file_bytes, password)
+    return _parse_c6_text(text)
 
 
 async def import_transactions(
