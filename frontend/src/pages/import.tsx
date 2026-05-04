@@ -97,19 +97,31 @@ export default function ImportPage() {
   const importMutation = useMutation({
     mutationFn: async () => {
       if (previewData?.institution === 'c6' && c6Cards) {
-        const results = await Promise.all(
-          c6Cards
-            .filter(card => c6AccountMap[card.card_last4])
-            .map(card =>
-              transactionsApi.import(
-                c6AccountMap[card.card_last4],
-                card.transactions,
-                fileName ?? '',
-                'pdf',
-              )
+        const cardsToImport = c6Cards.filter(card => c6AccountMap[card.card_last4])
+        const settled = await Promise.allSettled(
+          cardsToImport.map(card =>
+            transactionsApi.import(
+              c6AccountMap[card.card_last4],
+              card.transactions,
+              fileName ?? '',
+              'pdf',
             )
+          )
         )
-        return results.reduce(
+        const fulfilled = settled
+          .filter((r): r is PromiseFulfilledResult<{ imported: number; skipped: number; import_log_id: string }> => r.status === 'fulfilled')
+          .map(r => r.value)
+        const failed = settled.filter(r => r.status === 'rejected')
+
+        if (failed.length > 0) {
+          toast.error(`${failed.length} ${t('import.cardsFailedToImport', 'cartão(ões) falharam na importação')}`)
+        }
+
+        if (fulfilled.length === 0) {
+          throw new Error('All card imports failed')
+        }
+
+        return fulfilled.reduce(
           (acc, r) => ({ imported: acc.imported + r.imported, skipped: acc.skipped + r.skipped, import_log_id: r.import_log_id }),
           { imported: 0, skipped: 0, import_log_id: '' }
         )
@@ -239,8 +251,12 @@ export default function ImportPage() {
     return !selectedAccount
   })()
 
-  const incomeCount = previewData?.transactions.filter(t => t.type === 'credit').length ?? 0
-  const expenseCount = previewData?.transactions.filter(t => t.type === 'debit').length ?? 0
+  const previewTransactions = (previewData?.institution === 'c6' && c6Cards)
+    ? c6Cards.flatMap(card => card.transactions)
+    : previewData?.transactions ?? []
+
+  const incomeCount = previewTransactions.filter(t => t.type === 'credit').length
+  const expenseCount = previewTransactions.filter(t => t.type === 'debit').length
 
   return (
     <div className="space-y-6">
@@ -321,6 +337,33 @@ export default function ImportPage() {
         </div>
       </div>
 
+      {/* PDF Password — shown whenever a PDF file is selected, regardless of preview state */}
+      {isPdfFile && (
+        <div className="bg-card rounded-xl border border-border shadow-sm px-5 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="pdf-password">{t('import.pdfPassword', 'Senha do PDF')}</Label>
+            <div className="flex gap-2">
+              <input
+                id="pdf-password"
+                type="password"
+                value={pdfPassword}
+                onChange={(e) => setPdfPassword(e.target.value)}
+                placeholder={t('import.pdfPasswordPlaceholder', 'Deixe vazio se não protegido')}
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => currentFile && processFile(currentFile, pdfPassword)}
+                disabled={previewMutation.isPending}
+              >
+                {t('import.retry', 'Tentar novamente')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Preview section */}
       {previewData && (
         <div className="bg-card rounded-xl border border-border shadow-sm">
@@ -364,33 +407,6 @@ export default function ImportPage() {
                     {t('import.selectAccountWarning')}
                   </div>
                 )}
-              </div>
-            </div>
-          )}
-
-          {/* PDF Password */}
-          {isPdfFile && (
-            <div className="px-5 py-4 border-b border-border bg-muted/30">
-              <div className="space-y-2">
-                <Label htmlFor="pdf-password">{t('import.pdfPassword', 'Senha do PDF')}</Label>
-                <div className="flex gap-2">
-                  <input
-                    id="pdf-password"
-                    type="password"
-                    value={pdfPassword}
-                    onChange={(e) => setPdfPassword(e.target.value)}
-                    placeholder={t('import.pdfPasswordPlaceholder', 'Deixe vazio se não protegido')}
-                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm"
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => currentFile && processFile(currentFile, pdfPassword)}
-                    disabled={previewMutation.isPending}
-                  >
-                    {t('import.retry', 'Tentar novamente')}
-                  </Button>
-                </div>
               </div>
             </div>
           )}
@@ -533,14 +549,15 @@ export default function ImportPage() {
                         <TableRow>
                           <TableHead>{t('import.date', 'Data')}</TableHead>
                           <TableHead>{t('import.description', 'Descrição')}</TableHead>
-                          <TableHead>{t('import.type', 'Tipo')}</TableHead>
                           <TableHead className="text-right">{t('import.amount', 'Valor')}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {card.transactions.map((txn, idx) => (
                           <TableRow key={idx}>
-                            <TableCell>{txn.date}</TableCell>
+                            <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                              {new Date(txn.date).toLocaleDateString(locale)}
+                            </TableCell>
                             <TableCell>
                               {txn.description}
                               {txn.installment_number && txn.total_installments && (
@@ -549,9 +566,8 @@ export default function ImportPage() {
                                 </span>
                               )}
                             </TableCell>
-                            <TableCell>{txn.type}</TableCell>
-                            <TableCell className="text-right">
-                              {formatCurrency(Number(txn.amount), 'BRL', 'pt-BR')}
+                            <TableCell className={`text-right text-sm font-bold tabular-nums ${txn.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
+                              {txn.type === 'credit' ? '+' : '−'}{formatCurrency(Math.abs(Number(txn.amount)), txn.currency || 'BRL', locale)}
                             </TableCell>
                           </TableRow>
                         ))}
