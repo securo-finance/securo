@@ -532,6 +532,9 @@ async def import_transactions(
             payee=import_payee_raw,
             payee_id=import_payee_id,
             category_id=category_id,
+            raw_data=getattr(txn_data, 'raw_data', None),
+            installment_number=getattr(txn_data, 'installment_number', None),
+            total_installments=getattr(txn_data, 'total_installments', None),
         )
         apply_effective_date(transaction, account)
 
