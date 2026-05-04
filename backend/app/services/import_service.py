@@ -4,7 +4,7 @@ import io
 import re
 import uuid
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from ofxparse import OfxParser
@@ -31,6 +31,19 @@ _OFX_BALANCE_ROW_DESCRIPTIONS = (
     "saldo final",
     "s a l d o",
 )
+
+_PT_MONTH_NAMES = {
+    'janeiro': 1, 'fevereiro': 2, 'março': 3, 'abril': 4, 'maio': 5,
+    'junho': 6, 'julho': 7, 'agosto': 8, 'setembro': 9, 'outubro': 10,
+    'novembro': 11, 'dezembro': 12,
+}
+
+_PICPAY_DEBIT_TYPES = {
+    'pix enviado', 'compra realizada', 'pagamento realizado', 'dinheiro guardado',
+}
+_PICPAY_CREDIT_TYPES = {
+    'pix recebido', 'transferência recebida', 'dinheiro resgatado',
+}
 
 
 def _preprocess_ofx_for_empty_fitid(content: bytes) -> bytes:
@@ -426,6 +439,136 @@ def parse_csv(
         ))
 
     return transactions
+
+
+def _extract_pdf_text(file_bytes: bytes) -> str:
+    """Extract plain text from an unencrypted PDF using pdfminer."""
+    from pdfminer.high_level import extract_text_to_fp
+    from pdfminer.layout import LAParams
+    import io as _io
+    out = _io.StringIO()
+    extract_text_to_fp(_io.BytesIO(file_bytes), out, laparams=LAParams())
+    return out.getvalue()
+
+
+def _extract_pdf_text_encrypted(file_bytes: bytes, password: str) -> str:
+    """Decrypt PDF with pikepdf and extract text. Raises ValueError('invalid_password') on wrong password."""
+    import pikepdf
+    import io as _io
+    from pdfminer.high_level import extract_text_to_fp
+    from pdfminer.layout import LAParams
+    try:
+        pdf = pikepdf.open(_io.BytesIO(file_bytes), password=password)
+    except pikepdf.PasswordError:
+        raise ValueError('invalid_password')
+    buf = _io.BytesIO()
+    pdf.save(buf)
+    pdf.close()
+    buf.seek(0)
+    out = _io.StringIO()
+    extract_text_to_fp(buf, out, laparams=LAParams())
+    return out.getvalue()
+
+
+def _parse_picpay_text(text: str) -> list[TransactionImport]:
+    """Parse PicPay statement text (already extracted from PDF) into transactions."""
+    transactions = []
+    current_date = None
+    lines = text.splitlines()
+
+    day_re = re.compile(r'\b(\d{1,2})\s+de\s+(\w+)\s+(\d{4})\b', re.IGNORECASE)
+    time_re = re.compile(r'^(\d{2}:\d{2})\s+(.+)')
+    amount_re = re.compile(r'([−\-\+]?)R\$\s*([\d.]+,\d{2})')
+    cofrinho_keywords = ('cofrinho', 'só guardar', 'aqua terra', 'cashback', 'turbinado')
+
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+
+        day_match = day_re.search(line)
+        if day_match and 'Saldo ao final' in line:
+            day = int(day_match.group(1))
+            month_str = day_match.group(2).lower()
+            year = int(day_match.group(3))
+            month = _PT_MONTH_NAMES.get(month_str)
+            if month:
+                current_date = date(year, month, day)
+            i += 1
+            continue
+
+        time_match = time_re.match(line)
+        if time_match and current_date:
+            block_lines = [line]
+            j = i + 1
+            while j < len(lines):
+                next_line = lines[j].strip()
+                if (time_re.match(next_line) or
+                        day_re.search(next_line) or
+                        next_line.startswith('Hora') or
+                        next_line.startswith('Documento emitido')):
+                    break
+                if next_line:
+                    block_lines.append(next_line)
+                j += 1
+
+            block = ' '.join(block_lines)
+
+            amt_match = amount_re.search(block)
+            if not amt_match:
+                i = j
+                continue
+
+            sign_char = amt_match.group(1)
+            amount_str = amt_match.group(2)
+            amount = Decimal(normalize_amount(amount_str))
+            is_credit = sign_char == '+'
+
+            block_lower = block.lower()
+            tipo = None
+            for known in list(_PICPAY_DEBIT_TYPES) + list(_PICPAY_CREDIT_TYPES):
+                if known in block_lower:
+                    tipo = known
+                    break
+
+            if tipo is None:
+                i = j
+                continue
+
+            if tipo in _PICPAY_CREDIT_TYPES:
+                txn_type = 'credit'
+            else:
+                txn_type = 'debit'
+
+            if is_credit and txn_type == 'debit':
+                txn_type = 'credit'
+
+            is_cofrinho = any(k in block_lower for k in cofrinho_keywords)
+            payee_raw = 'Cofrinho PicPay' if is_cofrinho else None
+            # Preserve original casing from block text
+            tipo_match = re.search(re.escape(tipo), block, re.IGNORECASE)
+            description = tipo_match.group(0) if tipo_match else tipo.title()
+
+            transactions.append(TransactionImport(
+                description=description,
+                amount=amount,
+                date=current_date,
+                type=txn_type,
+                currency='BRL',
+                payee_raw=payee_raw,
+                raw_data={'institution': 'picpay'},
+            ))
+            i = j
+            continue
+
+        i += 1
+
+    return transactions
+
+
+def parse_picpay_pdf(file_bytes: bytes) -> list[TransactionImport]:
+    """Parse PicPay statement PDF. Raises ValueError on parse failure."""
+    text = _extract_pdf_text(file_bytes)
+    return _parse_picpay_text(text)
 
 
 async def import_transactions(

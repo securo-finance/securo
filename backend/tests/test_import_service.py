@@ -10,6 +10,7 @@ from app.models.account import Account
 from app.models.fx_rate import FxRate
 from app.models.user import User
 from app.services.import_service import parse_csv, parse_ofx, parse_qif, parse_camt, import_transactions
+from app.services.import_service import _parse_picpay_text
 
 
 class TestParseCsv:
@@ -1425,6 +1426,60 @@ class TestOfxInstallmentDedup:
         )
         assert imported == 0
         assert skipped == 1
+
+
+class TestParsePicpayPdf:
+    """Tests for PicPay PDF text parser."""
+
+    SAMPLE_TEXT = """
+Francisco Leandro Nascimento De Assis
+CPF: 023.648.383-80 Agência: 0001 Conta: 66194351-8
+30 de abril 2026 Saldo ao final do dia: R$ 301,07
+Hora Tipo Origem / Destino Forma de pagamento Valor
+13:29 Pix enviado −R$ 720,00 Francisco Leandro
+Nascimento De Assis Com saldo
+28 de abril 2026 Saldo ao final do dia: R$ 1.021,07
+Hora Tipo Origem / Destino Forma de pagamento Valor
+13:28 Compra realizada Rede Tetra Fortaleza Bra Com saldo −R$ 100,00
+20 de abril 2026 Saldo ao final do dia: R$ 1.204,07
+Hora Tipo Origem / Destino Forma de pagamento Valor
+05:31 Transferência recebida Conta Salário +R$ 1.451,61
+09:53 Dinheiro guardado −R$ 370,00 No cofrinho Só guardar
+dinheiro Com saldo
+"""
+
+    def test_parse_transactions_count(self):
+        txns = _parse_picpay_text(self.SAMPLE_TEXT)
+        assert len(txns) == 4
+
+    def test_debit_pix(self):
+        txns = _parse_picpay_text(self.SAMPLE_TEXT)
+        pix = next(t for t in txns if 'Pix enviado' in t.description)
+        assert pix.amount == Decimal('720.00')
+        assert pix.type == 'debit'
+        assert pix.date == date(2026, 4, 30)
+        assert pix.raw_data == {'institution': 'picpay'}
+
+    def test_debit_purchase(self):
+        txns = _parse_picpay_text(self.SAMPLE_TEXT)
+        compra = next(t for t in txns if 'Compra realizada' in t.description)
+        assert compra.amount == Decimal('100.00')
+        assert compra.type == 'debit'
+        assert compra.date == date(2026, 4, 28)
+
+    def test_credit_transfer(self):
+        txns = _parse_picpay_text(self.SAMPLE_TEXT)
+        credit = next(t for t in txns if 'Transferência recebida' in t.description)
+        assert credit.amount == Decimal('1451.61')
+        assert credit.type == 'credit'
+        assert credit.date == date(2026, 4, 20)
+
+    def test_cofrinho_debit(self):
+        txns = _parse_picpay_text(self.SAMPLE_TEXT)
+        cofrinho = next(t for t in txns if 'Dinheiro guardado' in t.description)
+        assert cofrinho.amount == Decimal('370.00')
+        assert cofrinho.type == 'debit'
+        assert cofrinho.payee_raw == 'Cofrinho PicPay'
 
 
 class TestCsvDuplicateDetectionToggle:
