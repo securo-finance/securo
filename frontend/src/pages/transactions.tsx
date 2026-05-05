@@ -3,7 +3,7 @@ import { getAccountName } from '@/lib/account-utils'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { transactions, categories as categoriesApi, accounts as accountsApi, recurring, payees as payeesApi, admin, groups as groupsApi } from '@/lib/api'
+import { transactions, categoryGroups as categoryGroupsApi, accounts as accountsApi, recurring, payees as payeesApi, admin, groups as groupsApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -241,9 +241,9 @@ export default function TransactionsPage() {
       }),
   })
 
-  const { data: categoriesList } = useQuery({
-    queryKey: ['categories'],
-    queryFn: categoriesApi.list,
+  const { data: categoryGroupsList } = useQuery({
+    queryKey: ['categoryGroups'],
+    queryFn: categoryGroupsApi.list,
   })
 
   const { data: accountsList } = useQuery({
@@ -601,7 +601,7 @@ export default function TransactionsPage() {
           setPage(1)
         }}
         accounts={accountsList ?? []}
-        categories={categoriesList ?? []}
+        categories={categoryGroupsList ?? []}
         payees={payeesList ?? []}
         groups={allGroups ?? []}
       />
@@ -907,7 +907,7 @@ export default function TransactionsPage() {
                   bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: next === 'uncategorized' ? null : next })
                 }
               }}
-              categories={categoriesList ?? []}
+              groups={categoryGroupsList ?? []}
               placeholder={t('transactions.selectCategory')}
               uncategorizedLabel={t('transactions.uncategorized')}
               disabled={bulkCategorizeMutation.isPending}
@@ -1013,7 +1013,7 @@ export default function TransactionsPage() {
         transaction={editingTx}
         duplicateDraft={duplicateDraft}
         formResetKey={formResetKey}
-        categories={categoriesList ?? []}
+        categoryGroups={categoryGroupsList ?? []}
         accounts={accountsList ?? []}
         recurringMatch={editingTx ? recurringList?.find(r => r.description === editingTx.description && r.type === editingTx.type) : undefined}
         onSave={handleTransactionSave}

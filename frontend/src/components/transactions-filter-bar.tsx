@@ -39,7 +39,7 @@ import {
 import { Calendar } from '@/components/ui/calendar'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import type { Account, Category, Group, Payee } from '@/types'
+import type { Account, Category, CategoryGroup, Group, Payee } from '@/types'
 
 interface TransactionsFilterBarProps {
   searchInput: string
@@ -62,7 +62,7 @@ interface TransactionsFilterBarProps {
   onDateRangeChange: (from: string, to: string) => void
   onClearAll: () => void
   accounts: Account[]
-  categories: Category[]
+  categories: CategoryGroup[]
   payees: Payee[]
   groups: Group[]
 }
@@ -149,7 +149,9 @@ export function TransactionsFilterBar({
 
   const categoryById = useMemo(() => {
     const map = new Map<string, Category>()
-    categories.forEach((c) => map.set(c.id, c))
+    categories.forEach((g) => {
+      g.categories.forEach((c) => map.set(c.id, c))
+    })
     return map
   }, [categories])
 
@@ -428,29 +430,36 @@ export function TransactionsFilterBar({
                           {t('transactions.filtersBar.noOptions')}
                         </div>
                       ) : (
-                        categories.map((c) => (
-                          <DropdownMenuCheckboxItem
-                            key={c.id}
-                            checked={filterCategoryIds.includes(c.id)}
-                            onSelect={(e) => {
-                              e.preventDefault()
-                              keepCategorySubOpenRef.current = true
-                              onCategoryIdsChange(
-                                toggleInArray(filterCategoryIds, c.id),
-                              )
-                            }}
-                            className="gap-2 rounded-sm py-1.5 text-[13px]"
-                          >
-                            {c.color ? (
-                              <span
-                                className="size-2.5 shrink-0 rounded-full border border-black/5"
-                                style={{ backgroundColor: c.color }}
-                              />
-                            ) : null}
-                            <span className="min-w-0 flex-1 truncate text-left">
-                              {c.name}
-                            </span>
-                          </DropdownMenuCheckboxItem>
+                        categories.map((group) => (
+                          <DropdownMenuGroup key={group.id}>
+                            <DropdownMenuLabel className="px-2 py-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
+                              {group.name}
+                            </DropdownMenuLabel>
+                            {group.categories.map((c) => (
+                              <DropdownMenuCheckboxItem
+                                key={c.id}
+                                checked={filterCategoryIds.includes(c.id)}
+                                onSelect={(e) => {
+                                  e.preventDefault()
+                                  keepCategorySubOpenRef.current = true
+                                  onCategoryIdsChange(
+                                    toggleInArray(filterCategoryIds, c.id),
+                                  )
+                                }}
+                                className="gap-2 rounded-sm py-1.5 text-[13px]"
+                              >
+                                {c.color ? (
+                                  <span
+                                    className="size-2.5 shrink-0 rounded-full border border-black/5"
+                                    style={{ backgroundColor: c.color }}
+                                  />
+                                ) : null}
+                                <span className="min-w-0 flex-1 truncate text-left">
+                                  {c.name}
+                                </span>
+                              </DropdownMenuCheckboxItem>
+                            ))}
+                          </DropdownMenuGroup>
                         ))
                       )}
                       {(filterCategoryIds.length > 0 || filterUncategorized) && (

@@ -27,7 +27,7 @@ import { CategorySelect } from '@/components/category-select'
 import { TransactionAttachments } from '@/components/transaction-attachments'
 import type { AttachmentPreview } from '@/components/transaction-attachments'
 import { TransactionSplitsSection } from '@/components/transaction-splits-section'
-import type { Transaction, RecurringTransaction, TransactionSplitsInput, Category } from '@/types'
+import type { Transaction, RecurringTransaction, TransactionSplitsInput, CategoryGroup } from '@/types'
 import { toast } from 'sonner'
 
 export type SaveAction = 'save' | 'saveAndNew' | 'saveAndDuplicate'
@@ -64,7 +64,7 @@ export function TransactionDialog({
   open,
   onClose,
   transaction,
-  categories,
+  categoryGroups,
   accounts,
   recurringMatch,
   onSave,
@@ -79,7 +79,7 @@ export function TransactionDialog({
   open: boolean
   onClose: () => void
   transaction: Transaction | null
-  categories: Category[]
+  categoryGroups: CategoryGroup[]
   accounts: { id: string; name: string; type?: string }[]
   recurringMatch?: RecurringTransaction
   onSave: (data: Partial<Transaction>, recurringData?: { frequency: string; end_date?: string }, pendingFiles?: File[], action?: SaveAction) => void
@@ -148,7 +148,7 @@ export function TransactionDialog({
               key={transaction?.id ?? `new-${formResetKey}`}
               transaction={transaction}
               duplicateDraft={duplicateDraft}
-              categories={categories}
+              categoryGroups={categoryGroups}
               accounts={accounts}
               recurringMatch={recurringMatch}
               onSave={onSave}
@@ -263,7 +263,7 @@ export function TransactionDialog({
 function TransactionForm({
   transaction,
   duplicateDraft,
-  categories,
+  categoryGroups,
   accounts,
   recurringMatch,
   onSave,
@@ -279,7 +279,7 @@ function TransactionForm({
 }: {
   transaction: Transaction | null
   duplicateDraft: Partial<Transaction> | null
-  categories: Category[]
+  categoryGroups: CategoryGroup[]
   accounts: { id: string; name: string; type?: string }[]
   recurringMatch?: RecurringTransaction
   onSave: (data: Partial<Transaction>, recurringData?: { frequency: string; end_date?: string }, pendingFiles?: File[], action?: SaveAction) => void
@@ -656,7 +656,7 @@ function TransactionForm({
           <CategorySelect
             value={categoryId}
             onChange={setCategoryId}
-            categories={categories}
+            groups={categoryGroups}
             uncategorizedLabel={t('transactions.noCategory')}
             disabled={isSynced}
           />
