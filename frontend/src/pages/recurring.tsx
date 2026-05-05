@@ -19,6 +19,7 @@ import type { Category, RecurringTransaction } from '@/types'
 import { Pencil, Trash2, Plus, RefreshCw, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
+import { CategorySelect } from '@/components/category-select'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
@@ -361,12 +362,13 @@ function RecurringForm({
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>{t('recurring.category')}</Label>
-          <select className={selectClass} value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-            <option value="">{t('transactions.noCategory')}</option>
-            {categories.map((cat) => (
-              <option key={cat.id} value={cat.id}>{cat.name}</option>
-            ))}
-          </select>
+          <CategorySelect
+            value={categoryId}
+            onChange={setCategoryId}
+            categories={categories}
+            uncategorizedLabel={t('transactions.noCategory')}
+            className={selectClass}
+          />
         </div>
         <div className="space-y-2">
           <Label>{t('recurring.account')}</Label>

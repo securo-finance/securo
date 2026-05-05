@@ -15,13 +15,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import {
   Table,
   TableBody,
   TableCell,
@@ -34,6 +27,7 @@ import { AlertTriangle, ArrowLeftRight, Check, Download, HelpCircle, Info, Paper
 import type { Transaction } from '@/types'
 import { PageHeader } from '@/components/page-header'
 import { CategoryIcon } from '@/components/category-icon'
+import { CategorySelect } from '@/components/category-select'
 import { TransactionDialog, extractApiError, type SaveAction } from '@/components/transaction-dialog'
 import { TransferDialog } from '@/components/transfer-dialog'
 import { LinkTransferDialog } from '@/components/link-transfer-dialog'
@@ -905,36 +899,21 @@ export default function TransactionsPage() {
             <div className="w-px bg-border/60 self-stretch" />
 
             {/* Categorize — fires on selection, no separate Apply button */}
-            <Select
+            <CategorySelect
               value={bulkCategory}
-              onValueChange={(next) => {
+              onChange={(next) => {
                 setBulkCategory(next)
                 if (next) {
                   bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: next === 'uncategorized' ? null : next })
                 }
               }}
+              categories={categoriesList ?? []}
+              placeholder={t('transactions.selectCategory')}
+              uncategorizedLabel={t('transactions.uncategorized')}
               disabled={bulkCategorizeMutation.isPending}
-            >
-              <SelectTrigger className="w-44 md:w-56 h-auto py-2 border-transparent bg-transparent hover:bg-muted/60 focus:bg-muted/60 focus-visible:ring-0">
-                <SelectValue placeholder={t('transactions.selectCategory')} />
-              </SelectTrigger>
-              <SelectContent position="popper" side="top" sideOffset={8}>
-                <SelectItem value="uncategorized" className="italic text-muted-foreground">
-                  {t('transactions.uncategorized')}
-                </SelectItem>
-                {categoriesList?.map((cat) => (
-                  <SelectItem key={cat.id} value={cat.id}>
-                    {cat.color ? (
-                      <span
-                        className="size-2.5 shrink-0 rounded-full border border-black/5"
-                        style={{ backgroundColor: cat.color }}
-                      />
-                    ) : null}
-                    <span>{cat.name}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              className="w-44 md:w-56 h-auto py-2 border-transparent bg-transparent hover:bg-muted/60 focus:bg-muted/60 focus-visible:ring-0"
+              contentProps={{ side: 'top', sideOffset: 8 }}
+            />
 
             <div className="w-px bg-border/60 self-stretch" />
 
