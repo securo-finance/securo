@@ -15,6 +15,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Table,
   TableBody,
   TableCell,
@@ -898,23 +905,36 @@ export default function TransactionsPage() {
             <div className="w-px bg-border/60 self-stretch" />
 
             {/* Categorize — fires on selection, no separate Apply button */}
-            <select
-              className="rounded-lg px-3 py-2 text-sm bg-transparent text-foreground hover:bg-muted/60 focus:outline-none focus-visible:bg-muted/60 cursor-pointer w-44 md:w-56"
+            <Select
               value={bulkCategory}
-              onChange={(e) => {
-                const next = e.target.value
+              onValueChange={(next) => {
                 setBulkCategory(next)
                 if (next) {
-                  bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: next })
+                  bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: next === 'uncategorized' ? null : next })
                 }
               }}
               disabled={bulkCategorizeMutation.isPending}
             >
-              <option value="">{t('transactions.selectCategory')}</option>
-              {categoriesList?.map((cat) => (
-                <option key={cat.id} value={cat.id}>{cat.name}</option>
-              ))}
-            </select>
+              <SelectTrigger className="w-44 md:w-56 h-auto py-2 border-transparent bg-transparent hover:bg-muted/60 focus:bg-muted/60 focus-visible:ring-0">
+                <SelectValue placeholder={t('transactions.selectCategory')} />
+              </SelectTrigger>
+              <SelectContent position="popper" side="top" sideOffset={8}>
+                <SelectItem value="uncategorized" className="italic text-muted-foreground">
+                  {t('transactions.uncategorized')}
+                </SelectItem>
+                {categoriesList?.map((cat) => (
+                  <SelectItem key={cat.id} value={cat.id}>
+                    {cat.color ? (
+                      <span
+                        className="size-2.5 shrink-0 rounded-full border border-black/5"
+                        style={{ backgroundColor: cat.color }}
+                      />
+                    ) : null}
+                    <span>{cat.name}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
             <div className="w-px bg-border/60 self-stretch" />
 
