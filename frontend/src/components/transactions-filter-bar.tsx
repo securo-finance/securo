@@ -19,6 +19,7 @@ import { ptBR, enUS } from 'date-fns/locale'
 
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
@@ -346,18 +347,27 @@ export function TransactionsFilterBar({
                         </div>
                       ) : (
                         accounts.map((a) => (
-                          <CheckRow
+                          <DropdownMenuCheckboxItem
                             key={a.id}
                             checked={filterAccountIds.includes(a.id)}
-                            onToggle={() => {
+                            onSelect={(e) => {
+                              e.preventDefault()
                               keepAccountSubOpenRef.current = true
                               onAccountIdsChange(
                                 toggleInArray(filterAccountIds, a.id),
                               )
                             }}
-                            label={getAccountName(a)}
-                            sublabel={a.currency}
-                          />
+                            className="gap-2 rounded-sm py-1.5 text-[13px]"
+                          >
+                            <span className="min-w-0 flex-1 truncate text-left">
+                              {getAccountName(a)}
+                            </span>
+                            {a.currency && (
+                              <span className="text-[10.5px] uppercase tracking-wide text-muted-foreground/70">
+                                {a.currency}
+                              </span>
+                            )}
+                          </DropdownMenuCheckboxItem>
                         ))
                       )}
                       {filterAccountIds.length > 0 && (
@@ -399,15 +409,19 @@ export function TransactionsFilterBar({
                       sideOffset={8}
                       className="max-h-[320px] w-[240px] overflow-y-auto p-1"
                     >
-                      <CheckRow
+                      <DropdownMenuCheckboxItem
                         checked={filterUncategorized}
-                        onToggle={() => {
+                        onSelect={(e) => {
+                          e.preventDefault()
                           keepCategorySubOpenRef.current = true
                           onUncategorizedChange(!filterUncategorized)
                         }}
-                        label={t('transactions.uncategorized')}
-                        italic
-                      />
+                        className="gap-2 rounded-sm py-1.5 text-[13px]"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-left italic text-muted-foreground">
+                          {t('transactions.uncategorized')}
+                        </span>
+                      </DropdownMenuCheckboxItem>
                       <div className="my-1 h-px bg-border/60" />
                       {categories.length === 0 ? (
                         <div className="px-2 py-3 text-center text-[12px] text-muted-foreground">
@@ -415,18 +429,28 @@ export function TransactionsFilterBar({
                         </div>
                       ) : (
                         categories.map((c) => (
-                          <CheckRow
+                          <DropdownMenuCheckboxItem
                             key={c.id}
                             checked={filterCategoryIds.includes(c.id)}
-                            onToggle={() => {
+                            onSelect={(e) => {
+                              e.preventDefault()
                               keepCategorySubOpenRef.current = true
                               onCategoryIdsChange(
                                 toggleInArray(filterCategoryIds, c.id),
                               )
                             }}
-                            label={c.name}
-                            swatchColor={c.color ?? undefined}
-                          />
+                            className="gap-2 rounded-sm py-1.5 text-[13px]"
+                          >
+                            {c.color ? (
+                              <span
+                                className="size-2.5 shrink-0 rounded-full border border-black/5"
+                                style={{ backgroundColor: c.color }}
+                              />
+                            ) : null}
+                            <span className="min-w-0 flex-1 truncate text-left">
+                              {c.name}
+                            </span>
+                          </DropdownMenuCheckboxItem>
                         ))
                       )}
                       {(filterCategoryIds.length > 0 || filterUncategorized) && (
@@ -917,69 +941,6 @@ function FilterChip({ icon, label, value, tint, onRemove }: FilterChipProps) {
     </button>
   )
 }
-
-interface CheckRowProps {
-  checked: boolean
-  onToggle: () => void
-  label: string
-  sublabel?: string
-  swatchColor?: string
-  italic?: boolean
-}
-
-function CheckRow({
-  checked,
-  onToggle,
-  label,
-  sublabel,
-  swatchColor,
-  italic,
-}: CheckRowProps) {
-  return (
-    <DropdownMenuItem
-      onSelect={(e) => {
-        // Keep the menu open so users can select multiple options.
-        e.preventDefault()
-        onToggle()
-      }}
-      className={cn(
-        'gap-2 rounded-sm px-2 py-1.5 text-[13px]',
-        checked && 'bg-primary/5 data-[highlighted]:bg-primary/10',
-      )}
-    >
-      <span
-        className={cn(
-          'flex size-[14px] shrink-0 items-center justify-center rounded-[4px] border transition-colors',
-          checked
-            ? 'border-primary bg-primary text-primary-foreground'
-            : 'border-border/80 bg-background',
-        )}
-      >
-        {checked && <Check size={10} strokeWidth={3} />}
-      </span>
-      {swatchColor ? (
-        <span
-          className="size-2.5 shrink-0 rounded-full border border-black/5"
-          style={{ backgroundColor: swatchColor }}
-        />
-      ) : null}
-      <span
-        className={cn(
-          'min-w-0 flex-1 truncate text-left',
-          italic && 'italic text-muted-foreground',
-        )}
-      >
-        {label}
-      </span>
-      {sublabel && (
-        <span className="text-[10.5px] uppercase tracking-wide text-muted-foreground/70">
-          {sublabel}
-        </span>
-      )}
-    </DropdownMenuItem>
-  )
-}
-
 
 // Search input with inline `#tag` chips. Free text is a normal input;
 // `#`-prefixed words become purple chips when committed via comma, space
