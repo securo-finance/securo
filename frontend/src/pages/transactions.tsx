@@ -426,19 +426,20 @@ export default function TransactionsPage() {
   // Tag filtering is now applied server-side, so the visible list and the
   // page count both reflect the same filtered total — issue #88.
   const filteredItems = data?.items ?? []
+  const selectableItems = filteredItems.filter(tx => !tx.is_shared)
 
   const toggleSelectAll = () => {
-    if (!filteredItems.length) return
-    const allSelected = filteredItems.every(tx => selectedIds.has(tx.id))
+    if (!selectableItems.length) return
+    const allSelected = selectableItems.every(tx => selectedIds.has(tx.id))
     if (allSelected) {
       setSelectedIds(new Set())
     } else {
-      setSelectedIds(new Set(filteredItems.map(tx => tx.id)))
+      setSelectedIds(new Set(selectableItems.map(tx => tx.id)))
     }
   }
 
-  const allSelected = filteredItems.length > 0 && filteredItems.every(tx => selectedIds.has(tx.id))
-  const someSelected = filteredItems.some(tx => selectedIds.has(tx.id)) && !allSelected
+  const allSelected = selectableItems.length > 0 && selectableItems.every(tx => selectedIds.has(tx.id))
+  const someSelected = selectableItems.some(tx => selectedIds.has(tx.id)) && !allSelected
 
   // Resolve the currently-selected transactions into a valid debit/credit pair
   // for the "Link as transfer" action. Returns null if the pair is invalid
