@@ -27,7 +27,7 @@ import { CategorySelect } from '@/components/category-select'
 import { TransactionAttachments } from '@/components/transaction-attachments'
 import type { AttachmentPreview } from '@/components/transaction-attachments'
 import { TransactionSplitsSection } from '@/components/transaction-splits-section'
-import type { Transaction, RecurringTransaction, TransactionSplitsInput, CategoryGroup } from '@/types'
+import type { Transaction, RecurringTransaction, TransactionSplitsInput, CategoryGroup, Category } from '@/types'
 import { toast } from 'sonner'
 
 export type SaveAction = 'save' | 'saveAndNew' | 'saveAndDuplicate'
@@ -64,6 +64,7 @@ export function TransactionDialog({
   open,
   onClose,
   transaction,
+  categories,
   categoryGroups,
   accounts,
   recurringMatch,
@@ -79,6 +80,7 @@ export function TransactionDialog({
   open: boolean
   onClose: () => void
   transaction: Transaction | null
+  categories: Category[]
   categoryGroups: CategoryGroup[]
   accounts: { id: string; name: string; type?: string }[]
   recurringMatch?: RecurringTransaction
@@ -148,6 +150,7 @@ export function TransactionDialog({
               key={transaction?.id ?? `new-${formResetKey}`}
               transaction={transaction}
               duplicateDraft={duplicateDraft}
+              categories={categories}
               categoryGroups={categoryGroups}
               accounts={accounts}
               recurringMatch={recurringMatch}
@@ -263,6 +266,7 @@ export function TransactionDialog({
 function TransactionForm({
   transaction,
   duplicateDraft,
+  categories,
   categoryGroups,
   accounts,
   recurringMatch,
@@ -279,6 +283,7 @@ function TransactionForm({
 }: {
   transaction: Transaction | null
   duplicateDraft: Partial<Transaction> | null
+  categories: Category[]
   categoryGroups: CategoryGroup[]
   accounts: { id: string; name: string; type?: string }[]
   recurringMatch?: RecurringTransaction
@@ -656,9 +661,9 @@ function TransactionForm({
           <CategorySelect
             value={categoryId}
             onChange={setCategoryId}
+            categories={categories}
             groups={categoryGroups}
-            uncategorizedLabel={t('transactions.noCategory')}
-            disabled={isSynced}
+            allowNone={true}
           />
         </div>
       </div>

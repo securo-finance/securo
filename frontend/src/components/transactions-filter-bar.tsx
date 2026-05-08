@@ -62,7 +62,8 @@ interface TransactionsFilterBarProps {
   onDateRangeChange: (from: string, to: string) => void
   onClearAll: () => void
   accounts: Account[]
-  categories: CategoryGroup[]
+  categories: Category[]
+  categoryGroups: CategoryGroup[]
   payees: Payee[]
   groups: Group[]
 }
@@ -97,6 +98,7 @@ export function TransactionsFilterBar({
   onClearAll,
   accounts,
   categories,
+  categoryGroups,
   payees,
   groups,
 }: TransactionsFilterBarProps) {
@@ -149,11 +151,23 @@ export function TransactionsFilterBar({
 
   const categoryById = useMemo(() => {
     const map = new Map<string, Category>()
-    categories.forEach((g) => {
-      g.categories.forEach((c) => map.set(c.id, c))
-    })
+    categories.forEach((c) => map.set(c.id, c))
     return map
   }, [categories])
+
+  const displayCategoryGroups = useMemo(() => {
+    const ungroupedCategories = categories.filter((c) => !c.group_id)
+    if (ungroupedCategories.length === 0) return categoryGroups
+
+    return [
+      ...categoryGroups,
+      {
+        id: 'ungrouped',
+        name: t('groups.noGroup'),
+        categories: ungroupedCategories,
+      } as CategoryGroup,
+    ]
+  }, [categories, categoryGroups, t])
 
   const selectedPayee = useMemo(
     () => payees.find((p) => p.id === filterPayee),
@@ -425,12 +439,12 @@ export function TransactionsFilterBar({
                         </span>
                       </DropdownMenuCheckboxItem>
                       <div className="my-1 h-px bg-border/60" />
-                      {categories.length === 0 ? (
+                      {displayCategoryGroups.length === 0 ? (
                         <div className="px-2 py-3 text-center text-[12px] text-muted-foreground">
                           {t('transactions.filtersBar.noOptions')}
                         </div>
                       ) : (
-                        categories.map((group) => (
+                        displayCategoryGroups.map((group) => (
                           <DropdownMenuGroup key={group.id}>
                             <DropdownMenuLabel className="px-2 py-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
                               {group.name}

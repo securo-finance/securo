@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { getAccountName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { categoryGroups as categoryGroupsApi, rules as rulesApi, accounts as accountsApi, payees as payeesApi } from '@/lib/api'
+import { categories as categoriesApi, categoryGroups as categoryGroupsApi, rules as rulesApi, accounts as accountsApi, payees as payeesApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -123,6 +123,11 @@ export default function RulesPage() {
     queryFn: rulesApi.list,
   })
 
+  const { data: categoriesList } = useQuery({
+    queryKey: ['categories'],
+    queryFn: categoriesApi.list,
+  })
+
   const { data: categoryGroupsList } = useQuery({
     queryKey: ['categoryGroups'],
     queryFn: categoryGroupsApi.list,
@@ -193,7 +198,7 @@ export default function RulesPage() {
     onError: () => toast.error(t('common.error')),
   })
 
-  const categories = useMemo(() => (categoryGroupsList ?? []).flatMap(g => g.categories), [categoryGroupsList])
+  const categories = categoriesList ?? []
   const payees = payeesList ?? []
 
   const [sortBy, setSortBy] = useState<'priority' | 'name' | 'category'>('priority')
@@ -330,6 +335,7 @@ export default function RulesPage() {
         open={dialogOpen}
         onClose={() => { setDialogOpen(false); setEditing(null) }}
         rule={editing}
+        categories={categories}
         categoryGroups={categoryGroupsList ?? []}
         accounts={accountsList ?? []}
         payees={payees}
@@ -415,11 +421,12 @@ function RulePacksDialog({ open, onClose }: { open: boolean; onClose: () => void
 }
 
 function RuleDialog({
-  open, onClose, rule, categoryGroups, accounts, payees, onSave, loading,
+  open, onClose, rule, categories, categoryGroups, accounts, payees, onSave, loading,
 }: {
   open: boolean
   onClose: () => void
   rule: Rule | null
+  categories: Category[]
   categoryGroups: CategoryGroup[]
   accounts: { id: string; name: string }[]
   payees: Payee[]
@@ -608,6 +615,7 @@ function RuleDialog({
                       <CategorySelect
                         value={action.value}
                         onChange={(val) => updateAction(i, 'value', val)}
+                        categories={categories}
                         groups={categoryGroups}
                         placeholder={t('rules.selectCategory')}
                         className={`${selectClass} w-full`}

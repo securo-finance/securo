@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { getAccountName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { categoryGroups as categoryGroupsApi, recurring as recurringApi, accounts as accountsApi, currencies as currenciesApi } from '@/lib/api'
+import { categories as categoriesApi, categoryGroups as categoryGroupsApi, recurring as recurringApi, accounts as accountsApi, currencies as currenciesApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -15,7 +15,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import type { CategoryGroup, RecurringTransaction } from '@/types'
+import type { Category, CategoryGroup, RecurringTransaction } from '@/types'
 import { Pencil, Trash2, Plus, RefreshCw, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
@@ -71,6 +71,11 @@ function RecurringTab() {
   const { data: recurringList } = useQuery({
     queryKey: ['recurring'],
     queryFn: recurringApi.list,
+  })
+
+  const { data: categoriesList } = useQuery({
+    queryKey: ['categories'],
+    queryFn: categoriesApi.list,
   })
 
   const { data: categoryGroupsList } = useQuery({
@@ -233,6 +238,7 @@ function RecurringTab() {
           <RecurringForm
             key={editing?.id ?? 'new'}
             recurring={editing}
+            categories={categoriesList ?? []}
             categoryGroups={categoryGroupsList ?? []}
             accounts={accountsList ?? []}
             onSave={(data) => {
@@ -253,6 +259,7 @@ function RecurringTab() {
 
 function RecurringForm({
   recurring,
+  categories,
   categoryGroups,
   accounts,
   onSave,
@@ -260,7 +267,8 @@ function RecurringForm({
   loading,
 }: {
   recurring: RecurringTransaction | null
-    categoryGroups: CategoryGroup[]
+  categories: Category[]
+  categoryGroups: CategoryGroup[]
   accounts: { id: string; name: string }[]
   onSave: (data: Partial<RecurringTransaction>) => void
   onCancel: () => void
@@ -365,8 +373,9 @@ function RecurringForm({
           <CategorySelect
             value={categoryId}
             onChange={setCategoryId}
+            categories={categories}
             groups={categoryGroups}
-            uncategorizedLabel={t('transactions.noCategory')}
+            allowNone={true}
             className={selectClass}
           />
         </div>

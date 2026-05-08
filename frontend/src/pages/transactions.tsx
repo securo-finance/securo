@@ -3,7 +3,7 @@ import { getAccountName } from '@/lib/account-utils'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { transactions, categoryGroups as categoryGroupsApi, accounts as accountsApi, recurring, payees as payeesApi, admin, groups as groupsApi } from '@/lib/api'
+import { transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, recurring, payees as payeesApi, admin, groups as groupsApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -239,6 +239,11 @@ export default function TransactionsPage() {
         q: searchQuery || undefined,
         tags: tagFilters.length > 0 ? tagFilters : undefined,
       }),
+  })
+
+  const { data: categoriesList } = useQuery({
+    queryKey: ['categories'],
+    queryFn: categoriesApi.list,
   })
 
   const { data: categoryGroupsList } = useQuery({
@@ -601,7 +606,8 @@ export default function TransactionsPage() {
           setPage(1)
         }}
         accounts={accountsList ?? []}
-        categories={categoryGroupsList ?? []}
+        categories={categoriesList ?? []}
+        categoryGroups={categoryGroupsList ?? []}
         payees={payeesList ?? []}
         groups={allGroups ?? []}
       />
@@ -904,12 +910,12 @@ export default function TransactionsPage() {
               onChange={(next) => {
                 setBulkCategory(next)
                 if (next) {
-                  bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: next === 'uncategorized' ? null : next })
+                  bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: next })
                 }
               }}
+              categories={categoriesList ?? []}
               groups={categoryGroupsList ?? []}
               placeholder={t('transactions.selectCategory')}
-              uncategorizedLabel={t('transactions.uncategorized')}
               disabled={bulkCategorizeMutation.isPending}
               className="w-44 md:w-56 h-auto py-2 border-transparent bg-transparent hover:bg-muted/60 focus:bg-muted/60 focus-visible:ring-0"
               contentProps={{ side: 'top', sideOffset: 8 }}
@@ -1013,6 +1019,7 @@ export default function TransactionsPage() {
         transaction={editingTx}
         duplicateDraft={duplicateDraft}
         formResetKey={formResetKey}
+        categories={categoriesList ?? []}
         categoryGroups={categoryGroupsList ?? []}
         accounts={accountsList ?? []}
         recurringMatch={editingTx ? recurringList?.find(r => r.description === editingTx.description && r.type === editingTx.type) : undefined}
