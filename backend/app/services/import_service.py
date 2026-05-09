@@ -11,12 +11,16 @@ from ofxparse import OfxParser
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from types import SimpleNamespace
+
 from app.core.config import get_settings
 from app.models.account import Account
 from app.models.category import Category
+from app.models.rule import Rule
 from app.models.transaction import Transaction
-from app.schemas.transaction import TransactionBase, TransactionImport
+from app.schemas.transaction import TransactionImport
 from app.services.credit_card_service import apply_effective_date
+from app.services.rule_engine import apply_rule_actions, evaluate_conditions
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.fx_rate_service import stamp_primary_amount
 from app.services.payee_service import get_or_create_payee
@@ -428,22 +432,69 @@ def parse_csv(
     return transactions
 
 
+async def enrich_with_category_suggestions(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    transactions: list[TransactionImport],
+) -> list[TransactionImport]:
+    result = await session.execute(
+        select(Rule)
+        .where(Rule.user_id == user_id, Rule.is_active == True)
+        .order_by(Rule.priority, Rule.id)
+    )
+    rules = result.scalars().all()
+
+    category_result = await session.execute(
+        select(Category).where(Category.user_id == user_id)
+    )
+    category_name_map = {str(c.id): c.name for c in category_result.scalars()}
+
+    if not rules:
+        return transactions
+
+    for txn in transactions:
+        proxy = SimpleNamespace(
+            description=txn.description,
+            amount=txn.amount,
+            date=txn.date,
+            type=txn.type,
+            account_id=None,
+            payee_id=None,
+            notes=None,
+            category_id=None,
+        )
+        category_set = False
+        for rule in rules:
+            conditions = rule.conditions or []
+            actions = rule.actions or []
+            if evaluate_conditions(rule.conditions_op, conditions, proxy):
+                category_set = apply_rule_actions(actions, proxy, category_set)
+        if proxy.category_id:
+            txn.suggested_category_id = proxy.category_id
+            txn.suggested_category_name = category_name_map.get(str(proxy.category_id))
+
+    return transactions
+
+
 async def import_transactions(
     session: AsyncSession,
     user_id: uuid.UUID,
     account_id: uuid.UUID,
-    transactions: list[TransactionBase],
+    transactions: list[TransactionImport],
     source: str,
     filename: str = "",
     detected_format: str = "",
     detect_duplicates: bool = True,
-) -> tuple[int, int, uuid.UUID]:
-    """Import transactions into an account. Returns (imported, skipped, import_log_id)."""
+) -> tuple[int, int, int, uuid.UUID]:
+    """Import transactions into an account. Returns (imported, skipped, excluded, import_log_id)."""
     from app.models.import_log import ImportLog
 
-    # Calculate summaries
-    total_credit = sum(t.amount for t in transactions if t.type == "credit")
-    total_debit = sum(t.amount for t in transactions if t.type == "debit")
+    included = [t for t in transactions if not t.excluded]
+    excluded_count = len(transactions) - len(included)
+
+    # Calculate summaries from included transactions only
+    total_credit = sum(t.amount for t in included if t.type == "credit")
+    total_debit = sum(t.amount for t in included if t.type == "debit")
 
     # Create import log first to get its ID
     import_log = ImportLog(
@@ -451,7 +502,7 @@ async def import_transactions(
         account_id=account_id,
         filename=filename,
         format=detected_format,
-        transaction_count=len(transactions),
+        transaction_count=len(included),
         total_credit=total_credit,
         total_debit=total_debit,
     )
@@ -476,7 +527,7 @@ async def import_transactions(
     effective_format = (detected_format or source or "").lower()
     should_detect_duplicates = detect_duplicates if effective_format == "csv" else True
 
-    for txn_data in transactions:
+    for txn_data in included:
         # Resolve currency: CSV value > account currency
         txn_currency = txn_data.currency or account_currency
 
@@ -516,7 +567,10 @@ async def import_transactions(
             import_payee_entity = await get_or_create_payee(session, user_id, import_payee_raw)
             import_payee_id = import_payee_entity.id
 
-        category_id = category_map.get(getattr(txn_data, "category_name", None)) if getattr(txn_data, "category_name", None) else None
+        user_category_id = txn_data.category_id
+        suggested_cat_id = txn_data.suggested_category_id
+        csv_category_id = category_map.get(txn_data.category_name) if txn_data.category_name else None
+        category_id = user_category_id or suggested_cat_id or csv_category_id
 
         transaction = Transaction(
             user_id=user_id,
@@ -535,14 +589,15 @@ async def import_transactions(
         )
         apply_effective_date(transaction, account)
 
-        # If CSV provided an fx_rate, use it directly
         if txn_data.fx_rate:
             transaction.fx_rate_used = txn_data.fx_rate
             transaction.amount_primary = txn_data.amount * txn_data.fx_rate
 
         session.add(transaction)
         await session.flush()
-        await apply_rules_to_transaction(session, user_id, transaction)
+
+        if not category_id:
+            await apply_rules_to_transaction(session, user_id, transaction)
 
         # Only auto-convert if no fx_rate was provided by the CSV
         if not txn_data.fx_rate:
@@ -554,7 +609,7 @@ async def import_transactions(
     import_log.transaction_count = imported
 
     await session.commit()
-    return imported, skipped, import_log.id
+    return imported, skipped, excluded_count, import_log.id
 
 def normalize_amount(amount_str: str) -> str:
     """

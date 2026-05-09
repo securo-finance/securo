@@ -20,6 +20,7 @@ import type {
   BudgetVsActual,
   Rule,
   ImportLog,
+  ImportPreviewTransaction,
   Asset,
   AssetGroup,
   AssetValue,
@@ -366,7 +367,7 @@ export const transactions = {
     flip_amount?: boolean
     inflow_column?: string
     outflow_column?: string
-  }): Promise<{ transactions: Transaction[]; detected_format: string }> => {
+  }): Promise<{ transactions: ImportPreviewTransaction[]; detected_format: string }> => {
     const formData = new FormData()
     formData.append('file', file)
     if (options?.date_format) formData.append('date_format', options.date_format)
@@ -378,14 +379,14 @@ export const transactions = {
   },
   import: async (
     account_id: string,
-    transactions: Transaction[],
+    transactions: ImportPreviewTransaction[],
     filename: string,
     detected_format: string,
     options?: { detect_duplicates?: boolean },
-  ): Promise<{ imported: number; skipped: number; import_log_id: string }> => {
+  ): Promise<{ imported: number; skipped: number; excluded: number; import_log_id: string }> => {
     const payload: {
       account_id: string
-      transactions: Transaction[]
+      transactions: ImportPreviewTransaction[]
       filename: string
       detected_format: string
       detect_duplicates?: boolean

@@ -208,3 +208,98 @@ async def test_delete_import_log(client: AsyncClient, auth_headers, test_account
     logs_resp = await client.get("/api/import-logs", headers=auth_headers)
     log_ids = [entry["id"] for entry in logs_resp.json()]
     assert import_log_id not in log_ids
+
+
+async def test_preview_returns_suggested_categories(
+    client: AsyncClient, auth_headers, test_account, test_categories, test_rules
+):
+    csv_content = b"data,descricao,valor\n10/02/2026,UBER TRIP,-25.50\n12/02/2026,UNKNOWN TX,150.00\n"
+    response = await client.post(
+        "/api/transactions/import/preview",
+        headers=auth_headers,
+        files={"file": ("extrato.csv", csv_content, "text/csv")},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    txns = data["transactions"]
+    assert len(txns) == 2
+
+    uber = txns[0]
+    assert uber["description"] == "UBER TRIP"
+    assert uber["suggested_category_id"] == str(test_categories[1].id)
+    assert uber["suggested_category_name"] == "Transporte"
+
+    unknown = txns[1]
+    assert unknown["description"] == "UNKNOWN TX"
+    assert unknown["suggested_category_id"] is None
+    assert unknown["suggested_category_name"] is None
+
+
+async def test_import_with_excluded_transactions(
+    client: AsyncClient, auth_headers, test_account: Account
+):
+    response = await client.post(
+        "/api/transactions/import",
+        headers=auth_headers,
+        json={
+            "account_id": str(test_account.id),
+            "transactions": [
+                {
+                    "description": "INCLUDED",
+                    "amount": "25.50",
+                    "date": "2026-02-10",
+                    "type": "debit",
+                    "excluded": False,
+                },
+                {
+                    "description": "EXCLUDED",
+                    "amount": "100.00",
+                    "date": "2026-02-11",
+                    "type": "debit",
+                    "excluded": True,
+                },
+                {
+                    "description": "ALSO_INCLUDED",
+                    "amount": "50.00",
+                    "date": "2026-02-12",
+                    "type": "credit",
+                    "excluded": False,
+                },
+            ],
+        },
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["imported"] == 2
+    assert data["excluded"] == 1
+    assert data["skipped"] == 0
+
+
+async def test_import_with_category_override(
+    client: AsyncClient, auth_headers, test_account: Account, test_categories: list
+):
+    override_cat_id = str(test_categories[0].id)
+    response = await client.post(
+        "/api/transactions/import",
+        headers=auth_headers,
+        json={
+            "account_id": str(test_account.id),
+            "transactions": [
+                {
+                    "description": "GROCERY",
+                    "amount": "25.50",
+                    "date": "2026-02-10",
+                    "type": "debit",
+                    "category_id": override_cat_id,
+                },
+            ],
+        },
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["imported"] == 1
+
+    import_log_id = data["import_log_id"]
+    logs_resp = await client.get("/api/import-logs", headers=auth_headers)
+    log = next(entry for entry in logs_resp.json() if entry["id"] == import_log_id)
+    assert log["transaction_count"] == 1

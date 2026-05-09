@@ -142,6 +142,10 @@ class TransferRead(BaseModel):
 class TransactionImport(TransactionBase):
     """TransactionBase extended with import-only fields not exposed in read responses."""
     category_name: Optional[str] = None
+    suggested_category_id: Optional[uuid.UUID] = None
+    suggested_category_name: Optional[str] = None
+    excluded: bool = False
+    category_id: Optional[uuid.UUID] = None
 
 
 class TransactionImportPreview(BaseModel):

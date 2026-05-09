@@ -305,6 +305,28 @@ export interface ImportLog {
   created_at: string
 }
 
+export interface ImportPreviewTransaction {
+  description: string
+  amount: number
+  date: string
+  type: 'debit' | 'credit'
+  external_id?: string | null
+  currency?: string | null
+  fx_rate?: number | null
+  payee_raw?: string | null
+  category_name?: string | null
+  suggested_category_id?: string | null
+  suggested_category_name?: string | null
+  excluded?: boolean
+  category_id?: string | null
+}
+
+export interface ImportReviewTransaction extends ImportPreviewTransaction {
+  _id: string
+  excluded: boolean
+  selected_category_id?: string | null
+}
+
 export interface RecurringTransaction {
   id: string
   user_id: string

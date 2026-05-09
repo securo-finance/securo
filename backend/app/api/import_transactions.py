@@ -23,6 +23,7 @@ async def preview_import(
     flip_amount: bool = Form(False),
     inflow_column: Optional[str] = Form(None),
     outflow_column: Optional[str] = Form(None),
+    session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
     content = await file.read()
@@ -86,6 +87,10 @@ async def preview_import(
         filename, detected_format, len(transactions),
     )
 
+    transactions = await import_service.enrich_with_category_suggestions(
+        session, user.id, transactions,
+    )
+
     return TransactionImportPreview(transactions=transactions, detected_format=detected_format)
 
 
@@ -100,10 +105,15 @@ async def import_transactions(
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
 
-    imported, skipped, import_log_id = await import_service.import_transactions(
+    imported, skipped, excluded, import_log_id = await import_service.import_transactions(
         session, user.id, data.account_id, data.transactions, "import",
         filename=data.filename, detected_format=data.detected_format,
         detect_duplicates=data.detect_duplicates,
     )
 
-    return {"imported": imported, "skipped": skipped, "import_log_id": str(import_log_id)}
+    return {
+        "imported": imported,
+        "skipped": skipped,
+        "excluded": excluded,
+        "import_log_id": str(import_log_id),
+    }
