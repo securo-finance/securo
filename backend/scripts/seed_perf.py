@@ -6,8 +6,8 @@ Must run inside the backend container (needs app module access):
 
 Options:
     --scale FLOAT    Data volume multiplier (default: 1.0; use 0.1 for a quick smoke run)
-    --email TEXT     Seed user email (default: perf@test.local)
-    --password TEXT  Seed user password (default: Perftest1!)
+    --email TEXT     Seed user email (default: test@securo.app)
+    --password TEXT  Seed user password (default: Securo123!)
     --no-reset       Skip wiping existing data (default: wipe and re-seed)
 
 At scale=1.0 seeds:
@@ -283,7 +283,7 @@ async def seed(email: str, password: str, scale: float, reset: bool) -> None:
                 "payee": rng.choice(PAYEES),
             })
 
-        chunk = 5000
+        chunk = 2000  # asyncpg limit: 32767 params / 14 cols per tx = 2340 max
         for i in range(0, len(tx_rows), chunk):
             await session.execute(pg_insert(Transaction).values(tx_rows[i : i + chunk]))
             done = min(i + chunk, n_tx)
@@ -369,8 +369,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Seed performance stress-test data")
     parser.add_argument("--scale", type=float, default=1.0,
                         help="Volume multiplier (default 1.0; 0.1 for quick smoke run)")
-    parser.add_argument("--email", default="perf@test.local")
-    parser.add_argument("--password", default="Perftest1!")
+    parser.add_argument("--email", default="test@securo.app")
+    parser.add_argument("--password", default="Securo123!")
     parser.add_argument("--no-reset", dest="reset", action="store_false", default=True,
                         help="Skip wiping existing seed data for this user")
     args = parser.parse_args()
