@@ -570,7 +570,10 @@ async def import_transactions(
         user_category_id = txn_data.category_id
         suggested_cat_id = txn_data.suggested_category_id
         csv_category_id = category_map.get(txn_data.category_name) if txn_data.category_name else None
-        category_id = user_category_id or suggested_cat_id or csv_category_id
+        if txn_data.force_uncategorized:
+            category_id = None
+        else:
+            category_id = user_category_id or suggested_cat_id or csv_category_id
 
         transaction = Transaction(
             user_id=user_id,
@@ -596,8 +599,7 @@ async def import_transactions(
         session.add(transaction)
         await session.flush()
 
-        if not category_id:
-            await apply_rules_to_transaction(session, user_id, transaction)
+        await apply_rules_to_transaction(session, user_id, transaction, skip_category_rules=txn_data.force_uncategorized)
 
         # Only auto-convert if no fx_rate was provided by the CSV
         if not txn_data.fx_rate:

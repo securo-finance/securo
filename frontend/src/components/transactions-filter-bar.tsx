@@ -16,7 +16,6 @@ import {
   X,
 } from 'lucide-react'
 import { ptBR, enUS } from 'date-fns/locale'
-
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -39,6 +38,7 @@ import {
 import { Calendar } from '@/components/ui/calendar'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { CategoryFilterContent } from '@/components/category-filter-content'
 import type { Account, Category, CategoryGroup, Group, Payee } from '@/types'
 
 interface TransactionsFilterBarProps {
@@ -154,20 +154,6 @@ export function TransactionsFilterBar({
     categories.forEach((c) => map.set(c.id, c))
     return map
   }, [categories])
-
-  const displayCategoryGroups = useMemo(() => {
-    const ungroupedCategories = categories.filter((c) => !c.group_id)
-    if (ungroupedCategories.length === 0) return categoryGroups
-
-    return [
-      ...categoryGroups,
-      {
-        id: 'ungrouped',
-        name: t('groups.noGroup'),
-        categories: ungroupedCategories,
-      } as CategoryGroup,
-    ]
-  }, [categories, categoryGroups, t])
 
   const selectedPayee = useMemo(
     () => payees.find((p) => p.id === filterPayee),
@@ -425,74 +411,15 @@ export function TransactionsFilterBar({
                       sideOffset={8}
                       className="max-h-[320px] w-[240px] overflow-y-auto p-1"
                     >
-                      <DropdownMenuCheckboxItem
-                        checked={filterUncategorized}
-                        onSelect={(e) => {
-                          e.preventDefault()
-                          keepCategorySubOpenRef.current = true
-                          onUncategorizedChange(!filterUncategorized)
-                        }}
-                        className="gap-2 rounded-sm py-1.5 text-[13px]"
-                      >
-                        <span className="min-w-0 flex-1 truncate text-left italic text-muted-foreground">
-                          {t('transactions.uncategorized')}
-                        </span>
-                      </DropdownMenuCheckboxItem>
-                      <div className="my-1 h-px bg-border/60" />
-                      {displayCategoryGroups.length === 0 ? (
-                        <div className="px-2 py-3 text-center text-[12px] text-muted-foreground">
-                          {t('transactions.filtersBar.noOptions')}
-                        </div>
-                      ) : (
-                        displayCategoryGroups.map((group) => (
-                          <DropdownMenuGroup key={group.id}>
-                            <DropdownMenuLabel className="px-2 py-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
-                              {group.name}
-                            </DropdownMenuLabel>
-                            {group.categories.map((c) => (
-                              <DropdownMenuCheckboxItem
-                                key={c.id}
-                                checked={filterCategoryIds.includes(c.id)}
-                                onSelect={(e) => {
-                                  e.preventDefault()
-                                  keepCategorySubOpenRef.current = true
-                                  onCategoryIdsChange(
-                                    toggleInArray(filterCategoryIds, c.id),
-                                  )
-                                }}
-                                className="gap-2 rounded-sm py-1.5 text-[13px]"
-                              >
-                                {c.color ? (
-                                  <span
-                                    className="size-2.5 shrink-0 rounded-full border border-black/5"
-                                    style={{ backgroundColor: c.color }}
-                                  />
-                                ) : null}
-                                <span className="min-w-0 flex-1 truncate text-left">
-                                  {c.name}
-                                </span>
-                              </DropdownMenuCheckboxItem>
-                            ))}
-                          </DropdownMenuGroup>
-                        ))
-                      )}
-                      {(filterCategoryIds.length > 0 || filterUncategorized) && (
-                        <>
-                          <div className="my-1 h-px bg-border/60" />
-                          <DropdownMenuItem
-                            onSelect={(e) => {
-                              e.preventDefault()
-                              keepCategorySubOpenRef.current = true
-                              onCategoryIdsChange([])
-                              onUncategorizedChange(false)
-                            }}
-                            className="gap-2 rounded-sm px-2 py-1.5 text-[12px] text-muted-foreground"
-                          >
-                            <X size={12} />
-                            {t('transactions.filtersBar.clearSelection')}
-                          </DropdownMenuItem>
-                        </>
-                      )}
+                      <CategoryFilterContent
+                        categoryIds={filterCategoryIds}
+                        onCategoryIdsChange={onCategoryIdsChange}
+                        filterUncategorized={filterUncategorized}
+                        onUncategorizedChange={onUncategorizedChange}
+                        categories={categories}
+                        groups={categoryGroups}
+                        onKeepOpen={() => { keepCategorySubOpenRef.current = true }}
+                      />
                     </DropdownMenuSubContent>
                   </DropdownMenuPortal>
                 </DropdownMenuSub>

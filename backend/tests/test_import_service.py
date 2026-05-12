@@ -1496,3 +1496,342 @@ class TestCsvDuplicateDetectionToggle:
         )
         assert imported == 0
         assert skipped == 1
+
+
+class TestApplyRuleEngineCorrectly:
+    @pytest.mark.asyncio
+    async def test_should_not_override_category(
+        self, session: AsyncSession, test_user: User, test_account: Account
+    ):
+        from app.schemas.transaction import TransactionImport
+        from app.schemas.rule import RuleCreate, RuleCondition, RuleAction
+        from app.services.rule_service import create_rule
+        from app.models.transaction import Transaction
+        from sqlalchemy import select
+        from app.services.category_service import create_default_categories
+
+        test_categories = await create_default_categories(session, test_user.id)
+
+        data = RuleCreate(
+            name="My Rule",
+            conditions_op="or",
+            conditions=[RuleCondition(field="description", op="contains", value="NOOVERRIDE")],
+            actions=[RuleAction(op="set_category", value=str(test_categories[2].id))],
+            priority=10,
+        )
+        await create_rule(session, test_user.id, data)
+
+        txn = TransactionImport(
+            description="NOOVERRIDE",
+            amount=Decimal("15.00"),
+            date=date(2026, 3, 11),
+            type="debit",
+            suggested_category_id = test_categories[1].id
+        )
+
+        imported, _, _, import_log_id = await import_transactions(
+            session,
+            test_user.id,
+            test_account.id,
+            [txn],
+            "ofx",
+            detected_format="ofx",
+            detect_duplicates=False,
+        )
+
+        result = await session.execute(
+            select(Transaction).where(Transaction.import_id == import_log_id)
+        )
+        txn = result.scalar_one()
+        assert imported == 1
+        assert txn.category_id == test_categories[1].id
+    
+    @pytest.mark.asyncio
+    async def test_should_set_category_from_rule_when_no_suggested(
+        self, session: AsyncSession, test_user: User, test_account: Account
+    ):
+        from app.schemas.transaction import TransactionImport
+        from app.schemas.rule import RuleCreate, RuleCondition, RuleAction
+        from app.services.rule_service import create_rule
+        from app.models.transaction import Transaction
+        from sqlalchemy import select
+        from app.services.category_service import create_default_categories
+
+        test_categories = await create_default_categories(session, test_user.id)
+        data = RuleCreate(
+            name="My Rule",
+            conditions_op="or",
+            conditions=[RuleCondition(field="description", op="contains", value="SETCAT")],
+            actions=[RuleAction(op="set_category", value=str(test_categories[1].id))],
+            priority=10,
+        )
+
+        await create_rule(session, test_user.id, data)
+
+        txn = TransactionImport(
+            description="SETCAT",
+            amount=Decimal("15.00"),
+            date=date(2026, 3, 11),
+            type="debit",
+            suggested_category_id = None
+        )
+
+        imported, _, _, import_log_id = await import_transactions(
+            session,
+            test_user.id,
+            test_account.id,
+            [txn],
+            "ofx",
+            detected_format="ofx",
+            detect_duplicates=False,
+        )
+
+        result = await session.execute(
+            select(Transaction).where(Transaction.import_id == import_log_id)
+        )
+        txn = result.scalar_one()
+
+        assert imported == 1
+        assert txn.category_id == test_categories[1].id
+    
+    @pytest.mark.asyncio
+    async def test_should_set_payee_but_not_override_category(
+        self, session: AsyncSession, test_user: User, test_account: Account
+    ):
+        from app.models.payee import Payee
+        from app.schemas.transaction import TransactionImport
+        from app.schemas.rule import RuleCreate, RuleCondition, RuleAction
+        from app.services.rule_service import create_rule
+        from app.models.transaction import Transaction
+        from sqlalchemy import select
+        from app.services.category_service import create_default_categories
+
+        test_categories = await create_default_categories(session, test_user.id)
+        payee = Payee(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            name="Uber",
+            type="merchant",
+        )
+
+        session.add(payee)
+        await session.commit()
+        await session.refresh(payee)
+
+        cat_rule = RuleCreate(
+            name="My Rule",
+            conditions_op="or",
+            conditions=[RuleCondition(field="description", op="contains", value="SETCAT")],
+            actions=[RuleAction(op="set_category", value=str(test_categories[1].id))],
+            priority=10,
+        )
+        data = RuleCreate(
+            name="Uber Payee Rule",
+            conditions_op="or",
+            conditions=[RuleCondition(field="description", op="contains", value="PAYEECAT")],
+            actions=[RuleAction(op="set_payee", value=str(payee.id))],
+            priority=10,
+        )
+        await create_rule(session, test_user.id, data)
+        await create_rule(session, test_user.id, cat_rule)
+
+
+        txn = TransactionImport(
+            description="PAYEECAT",
+            amount=Decimal("25.00"),
+            date=date(2026, 3, 12),
+            type="debit",
+            suggested_category_id=test_categories[2].id,
+        )
+        imported, _, _, import_log_id = await import_transactions(
+            session,
+            test_user.id,
+            test_account.id,
+            [txn],
+            "ofx",
+            detected_format="ofx",
+            detect_duplicates=False,
+        )
+
+        result = await session.execute(
+            select(Transaction).where(Transaction.import_id == import_log_id)
+        )
+        tx = result.scalar_one()
+
+        assert imported == 1
+        assert tx.payee_id == payee.id
+        assert tx.category_id == test_categories[2].id
+
+
+class TestForceUncategorized:
+    """Tests for force_uncategorized flag preventing category assignment."""
+
+    @pytest.mark.asyncio
+    async def test_force_uncategorized_ignores_suggestion(
+        self, session: AsyncSession, test_user: User, test_account: Account
+    ):
+        from app.schemas.transaction import TransactionImport
+        from app.models.transaction import Transaction
+        from app.models.category import Category
+        from sqlalchemy import select
+
+        cat = Category(
+            id=uuid.uuid4(), user_id=test_user.id,
+            name="Groceries", icon="cart", color="#16A34A",
+        )
+        session.add(cat)
+        await session.commit()
+
+        txn = TransactionImport(
+            description="FORCE UNCATEGORIZED",
+            amount=Decimal("50.00"),
+            date=date(2026, 4, 1),
+            type="debit",
+            suggested_category_id=cat.id,
+            force_uncategorized=True,
+        )
+
+        imported, _, _, import_log_id = await import_transactions(
+            session, test_user.id, test_account.id, [txn], "import",
+        )
+
+        assert imported == 1
+
+        tx = (await session.execute(
+            select(Transaction).where(Transaction.import_id == import_log_id)
+        )).scalar_one()
+        assert tx.category_id is None
+
+    @pytest.mark.asyncio
+    async def test_force_uncategorized_prevents_rule_override(
+        self, session: AsyncSession, test_user: User, test_account: Account
+    ):
+        from app.schemas.transaction import TransactionImport
+        from app.models.transaction import Transaction
+        from sqlalchemy import select
+        from app.services.category_service import create_default_categories
+        from app.schemas.rule import RuleCreate, RuleCondition, RuleAction
+        from app.services.rule_service import create_rule
+
+        test_categories = await create_default_categories(session, test_user.id)
+
+        data = RuleCreate(
+            name="Force Cat Rule",
+            conditions_op="or",
+            conditions=[RuleCondition(field="description", op="contains", value="FORCED")],
+            actions=[RuleAction(op="set_category", value=str(test_categories[1].id))],
+            priority=10,
+        )
+        await create_rule(session, test_user.id, data)
+
+        txn = TransactionImport(
+            description="FORCED NO CAT",
+            amount=Decimal("30.00"),
+            date=date(2026, 4, 2),
+            type="debit",
+            suggested_category_id=test_categories[0].id,
+            force_uncategorized=True,
+        )
+
+        imported, _, _, import_log_id = await import_transactions(
+            session, test_user.id, test_account.id, [txn], "import",
+        )
+
+        assert imported == 1
+
+        tx = (await session.execute(
+            select(Transaction).where(Transaction.import_id == import_log_id)
+        )).scalar_one()
+        assert tx.category_id is None
+
+    @pytest.mark.asyncio
+    async def test_force_uncategorized_still_applies_payee_rules(
+        self, session: AsyncSession, test_user: User, test_account: Account
+    ):
+        from app.models.payee import Payee
+        from app.schemas.transaction import TransactionImport
+        from app.models.transaction import Transaction
+        from sqlalchemy import select
+        from app.services.category_service import create_default_categories
+        from app.schemas.rule import RuleCreate, RuleCondition, RuleAction
+        from app.services.rule_service import create_rule
+
+        test_categories = await create_default_categories(session, test_user.id)
+
+        payee = Payee(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            name="Test Merchant",
+            type="merchant",
+        )
+        session.add(payee)
+        await session.commit()
+        await session.refresh(payee)
+
+        data = RuleCreate(
+            name="Payee + Cat Rule",
+            conditions_op="or",
+            conditions=[RuleCondition(field="description", op="contains", value="PAYEEFORCE")],
+            actions=[
+                RuleAction(op="set_payee", value=str(payee.id)),
+                RuleAction(op="set_category", value=str(test_categories[1].id)),
+            ],
+            priority=10,
+        )
+        await create_rule(session, test_user.id, data)
+
+        txn = TransactionImport(
+            description="PAYEEFORCE TXN",
+            amount=Decimal("75.00"),
+            date=date(2026, 4, 3),
+            type="debit",
+            suggested_category_id=test_categories[0].id,
+            force_uncategorized=True,
+        )
+
+        imported, _, _, import_log_id = await import_transactions(
+            session, test_user.id, test_account.id, [txn], "import",
+        )
+
+        assert imported == 1
+
+        tx = (await session.execute(
+            select(Transaction).where(Transaction.import_id == import_log_id)
+        )).scalar_one()
+        assert tx.category_id is None
+        assert tx.payee_id == payee.id
+
+    @pytest.mark.asyncio
+    async def test_without_force_uncategorized_suggestion_is_used(
+        self, session: AsyncSession, test_user: User, test_account: Account
+    ):
+        from app.schemas.transaction import TransactionImport
+        from app.models.transaction import Transaction
+        from app.models.category import Category
+        from sqlalchemy import select
+
+        cat = Category(
+            id=uuid.uuid4(), user_id=test_user.id,
+            name="Transport", icon="car", color="#3B82F6",
+        )
+        session.add(cat)
+        await session.commit()
+
+        txn = TransactionImport(
+            description="NORMAL TXN",
+            amount=Decimal("40.00"),
+            date=date(2026, 4, 4),
+            type="debit",
+            suggested_category_id=cat.id,
+        )
+
+        imported, _, _, import_log_id = await import_transactions(
+            session, test_user.id, test_account.id, [txn], "import",
+        )
+
+        assert imported == 1
+
+        tx = (await session.execute(
+            select(Transaction).where(Transaction.import_id == import_log_id)
+        )).scalar_one()
+        assert tx.category_id == cat.id

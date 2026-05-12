@@ -319,6 +319,7 @@ export interface ImportPreviewTransaction {
   suggested_category_name?: string | null
   excluded?: boolean
   category_id?: string | null
+  force_uncategorized?: boolean
 }
 
 export interface ImportReviewTransaction extends ImportPreviewTransaction {

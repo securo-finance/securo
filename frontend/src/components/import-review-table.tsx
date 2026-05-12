@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { ImportReviewTransaction } from '@/types'
+import type { ImportReviewTransaction, Category, CategoryGroup } from '@/types'
 import { formatCurrency } from '@/lib/format'
 import {
   Table,
@@ -11,22 +11,27 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Input } from '@/components/ui/input'
+import { CategorySelect } from '@/components/category-select'
+import { CategoryFilterDropdown } from '@/components/category-filter-dropdown'
 
 const PAGE_SIZE = 50
 
 interface ImportReviewTableProps {
   transactions: ImportReviewTransaction[]
-  categories: { id: string; name: string }[]
+  categories: Category[]
+  groups: CategoryGroup[]
   userCurrency: string
   locale: string
   searchQuery: string
-  categoryFilter: string | null
+  filterCategoryIds: string[]
+  filterUncategorized: boolean
   statusFilter: 'all' | 'included' | 'excluded'
   currentPage: number
   onToggleExcluded: (id: string) => void
   onChangeCategory: (id: string, categoryId: string | null) => void
   onSearchChange: (query: string) => void
-  onCategoryFilterChange: (filter: string | null) => void
+  onCategoryIdsChange: (ids: string[]) => void
+  onUncategorizedChange: (value: boolean) => void
   onStatusFilterChange: (filter: 'all' | 'included' | 'excluded') => void
   onPageChange: (page: number) => void
 }
@@ -34,20 +39,25 @@ interface ImportReviewTableProps {
 export function ImportReviewTable({
   transactions,
   categories,
+  groups,
   userCurrency,
   locale,
   searchQuery,
-  categoryFilter,
+  filterCategoryIds,
+  filterUncategorized,
   statusFilter,
   currentPage,
   onToggleExcluded,
   onChangeCategory,
   onSearchChange,
-  onCategoryFilterChange,
+  onCategoryIdsChange,
+  onUncategorizedChange,
   onStatusFilterChange,
   onPageChange,
 }: ImportReviewTableProps) {
   const { t } = useTranslation()
+
+  const hasCategoryFilter = filterCategoryIds.length > 0 || filterUncategorized
 
   const filtered = useMemo(() => {
     return transactions.filter(tx => {
@@ -55,18 +65,21 @@ export function ImportReviewTable({
         const q = searchQuery.toLowerCase()
         if (!tx.description.toLowerCase().includes(q)) return false
       }
-      if (categoryFilter === 'none') {
-        const catId = tx.selected_category_id ?? tx.suggested_category_id
-        if (catId) return false
-      } else if (categoryFilter) {
-        const catId = tx.selected_category_id ?? tx.suggested_category_id
-        if (catId !== categoryFilter) return false
+      if (hasCategoryFilter) {
+        const catId = tx.selected_category_id !== undefined ? tx.selected_category_id : tx.suggested_category_id
+        if (filterUncategorized && !filterCategoryIds.length) {
+          if (catId) return false
+        } else if (filterUncategorized) {
+          if (catId && !filterCategoryIds.includes(catId)) return false
+        } else {
+          if (!catId || !filterCategoryIds.includes(catId)) return false
+        }
       }
       if (statusFilter === 'included' && tx.excluded) return false
       if (statusFilter === 'excluded' && !tx.excluded) return false
       return true
     })
-  }, [transactions, searchQuery, categoryFilter, statusFilter])
+  }, [transactions, searchQuery, filterCategoryIds, filterUncategorized, hasCategoryFilter, statusFilter])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const safePage = Math.min(currentPage, totalPages)
@@ -82,17 +95,15 @@ export function ImportReviewTable({
           onChange={(e) => { onSearchChange(e.target.value); onPageChange(1) }}
           className="max-w-xs h-8 text-sm border border-border rounded-md px-3 bg-background focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
         />
-        <select
-          className="border border-border rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
-          value={categoryFilter ?? ''}
-          onChange={(e) => { onCategoryFilterChange(e.target.value || null); onPageChange(1) }}
-        >
-          <option value="">{t('import.filterCategory')}</option>
-          <option value="none">{t('import.noCategory')}</option>
-          {categories.map(c => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
+        <CategoryFilterDropdown
+          categoryIds={filterCategoryIds}
+          onCategoryIdsChange={(ids) => { onCategoryIdsChange(ids); onPageChange(1) }}
+          filterUncategorized={filterUncategorized}
+          onUncategorizedChange={(v) => { onUncategorizedChange(v); onPageChange(1) }}
+          categories={categories}
+          groups={groups}
+          label={t('import.filterCategory')}
+        />
         <select
           className="border border-border rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
           value={statusFilter}
@@ -154,16 +165,17 @@ export function ImportReviewTable({
                     {tx.type === 'credit' ? '+' : '−'}{formatCurrency(Math.abs(Number(tx.amount)), userCurrency, locale)}
                   </TableCell>
                   <TableCell className="py-2.5">
-                    <select
+                    <CategorySelect
+                      value={tx.selected_category_id !== undefined
+                        ? (tx.selected_category_id ?? '')
+                        : (tx.suggested_category_id ?? '')}
+                      onChange={(v) => onChangeCategory(tx._id, v || null)}
+                      categories={categories}
+                      groups={groups}
+                      placeholder={t('import.noCategory')}
+                      allowNone
                       className="w-full border border-border rounded-md px-2 py-1 text-xs bg-background focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
-                      value={tx.selected_category_id ?? tx.suggested_category_id ?? ''}
-                      onChange={(e) => onChangeCategory(tx._id, e.target.value || null)}
-                    >
-                      <option value="">{t('import.noCategory')}</option>
-                      {categories.map(c => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
+                    />
                   </TableCell>
                   <TableCell className="py-2.5 pr-4">
                     {tx.excluded ? (

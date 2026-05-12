@@ -146,6 +146,7 @@ class TransactionImport(TransactionBase):
     suggested_category_name: Optional[str] = None
     excluded: bool = False
     category_id: Optional[uuid.UUID] = None
+    force_uncategorized: bool = False
 
 
 class TransactionImportPreview(BaseModel):

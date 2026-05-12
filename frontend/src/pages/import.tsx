@@ -2,7 +2,7 @@ import { useState, useRef, useCallback } from 'react'
 import { getAccountName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { transactions as transactionsApi, accounts as accountsApi, importLogs as importLogsApi, categories as categoriesApi } from '@/lib/api'
+import { transactions as transactionsApi, accounts as accountsApi, importLogs as importLogsApi, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { formatCurrency } from '@/lib/format'
 import { toast } from 'sonner'
@@ -28,7 +28,7 @@ function toReviewTransactions(txns: ImportPreviewTransaction[]): ImportReviewTra
     ...tx,
     _id: tx.external_id ? `${tx.external_id}-${i}` : `idx-${i}`,
     excluded: false,
-    selected_category_id: null,
+    selected_category_id: undefined,
   }))
 }
 
@@ -49,7 +49,8 @@ export default function ImportPage() {
   const [csvHeaders, setCsvHeaders] = useState<string[]>([])
 
   const [searchQuery, setSearchQuery] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
+  const [filterCategoryIds, setFilterCategoryIds] = useState<string[]>([])
+  const [filterUncategorized, setFilterUncategorized] = useState(false)
   const [statusFilter, setStatusFilter] = useState<'all' | 'included' | 'excluded'>('all')
   const [currentPage, setCurrentPage] = useState(1)
 
@@ -70,6 +71,11 @@ export default function ImportPage() {
     queryFn: categoriesApi.list,
   })
 
+  const { data: categoryGroupsList = [] } = useQuery({
+    queryKey: ['category-groups'],
+    queryFn: categoryGroupsApi.list,
+  })
+
   const { data: importHistory = [] } = useQuery({
     queryKey: ['import-logs'],
     queryFn: importLogsApi.list,
@@ -82,7 +88,8 @@ export default function ImportPage() {
       setPreviewData(data)
       setReviewTransactions(toReviewTransactions(data.transactions))
       setSearchQuery('')
-      setCategoryFilter(null)
+      setFilterCategoryIds([])
+      setFilterUncategorized(false)
       setStatusFilter('all')
       setCurrentPage(1)
     },
@@ -105,7 +112,10 @@ export default function ImportPage() {
         payee_raw: rt.payee_raw ?? undefined,
         category_name: rt.category_name ?? undefined,
         excluded: rt.excluded,
-        category_id: rt.selected_category_id ?? rt.suggested_category_id ?? undefined,
+        category_id: rt.selected_category_id !== undefined
+          ? (rt.selected_category_id ?? undefined)
+          : (rt.suggested_category_id ?? undefined),
+        force_uncategorized: rt.selected_category_id === null,
       }))
       return transactionsApi.import(
         selectedAccount,
@@ -453,16 +463,19 @@ export default function ImportPage() {
           <ImportReviewTable
             transactions={reviewTransactions}
             categories={categoriesList}
+            groups={categoryGroupsList}
             userCurrency={userCurrency}
             locale={locale}
             searchQuery={searchQuery}
-            categoryFilter={categoryFilter}
+            filterCategoryIds={filterCategoryIds}
+            filterUncategorized={filterUncategorized}
             statusFilter={statusFilter}
             currentPage={currentPage}
             onToggleExcluded={handleToggleExcluded}
             onChangeCategory={handleChangeCategory}
             onSearchChange={setSearchQuery}
-            onCategoryFilterChange={setCategoryFilter}
+            onCategoryIdsChange={setFilterCategoryIds}
+            onUncategorizedChange={setFilterUncategorized}
             onStatusFilterChange={setStatusFilter}
             onPageChange={setCurrentPage}
           />
