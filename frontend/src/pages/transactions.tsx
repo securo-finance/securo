@@ -1176,6 +1176,7 @@ export default function TransactionsPage() {
 
             {/* Categorize — fires on selection, no separate Apply button */}
             <CategorySelect
+              key={bulkCategory}
               value={bulkCategory}
               onChange={(next) => {
                 setBulkCategory(next)
