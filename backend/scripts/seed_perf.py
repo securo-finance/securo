@@ -5,14 +5,16 @@ Must run inside the backend container (needs app module access):
     docker compose exec backend python scripts/seed_perf.py
 
 Options:
-    --scale FLOAT    Data volume multiplier (default: 1.0; use 0.1 for a quick smoke run)
-    --email TEXT     Seed user email (default: test@securo.app)
-    --password TEXT  Seed user password (default: Securo123!)
-    --no-reset       Skip wiping existing data (default: wipe and re-seed)
+    --scale FLOAT            Data volume multiplier (default: 1.0; use 0.1 for a quick smoke run)
+    --email TEXT             Seed user email (default: test@securo.app)
+    --password TEXT          Seed user password (default: Securo123!)
+    --no-reset               Skip wiping existing data (default: wipe and re-seed)
+    --start-date YYYY-MM-DD  Earliest date for seeded data (default: 2024-01-01)
 
 At scale=1.0 seeds:
-    5 accounts · 30 categories · 100 000 transactions (3 yrs) · 15 assets w/ daily values
-    FX rates for EUR + BRL (3 yrs) · 20 recurring transactions
+    5 accounts · 30 categories · 100 000 transactions · 15 assets w/ daily values
+    FX rates for EUR + BRL · 20 recurring transactions
+    (date range: --start-date through today)
 """
 import argparse
 import asyncio
@@ -153,7 +155,16 @@ async def _wipe_user_data(session, user_id: uuid.UUID) -> None:
 # Main seeder
 # ---------------------------------------------------------------------------
 
-async def seed(email: str, password: str, scale: float, reset: bool) -> None:
+async def seed(
+    email: str,
+    password: str,
+    scale: float,
+    reset: bool,
+    start_date: date,
+    n_accounts: int,
+    n_categories: int,
+    n_assets: int,
+) -> None:
     rng = random.Random(42)
     today = date.today()
 
@@ -191,7 +202,7 @@ async def seed(email: str, password: str, scale: float, reset: bool) -> None:
         # ── 2. Accounts ──────────────────────────────────────────────────────
         print("Creating accounts …")
         accounts: list[Account] = []
-        for tmpl in ACCOUNT_TEMPLATES:
+        for tmpl in ACCOUNT_TEMPLATES[:n_accounts]:
             acc = Account(
                 user_id=uid,
                 name=tmpl["name"],
@@ -208,18 +219,18 @@ async def seed(email: str, password: str, scale: float, reset: bool) -> None:
         # ── 3. Categories ────────────────────────────────────────────────────
         print("Creating categories …")
         categories: list[Category] = []
-        for name, color, icon in CATEGORY_TEMPLATES:
+        for name, color, icon in CATEGORY_TEMPLATES[:n_categories]:
             cat = Category(user_id=uid, name=name, color=color, icon=icon)
             session.add(cat)
             categories.append(cat)
         await session.flush()
         debit_cats = categories[:N_DEBIT_CATS]
-        credit_cats = categories[N_DEBIT_CATS:]
+        credit_cats = categories[N_DEBIT_CATS:] or debit_cats  # fallback if slice has no credit cats
         print(f"  {len(categories)} categories")
 
         # ── 4. FX Rates ──────────────────────────────────────────────────────
-        n_days = max(1, int(1095 * scale))
-        print(f"Seeding FX rates for {n_days} days …")
+        n_days = max(1, (today - start_date).days)
+        print(f"Seeding FX rates for {n_days} days ({start_date} → {today}) …")
         all_dates = _make_date_range(n_days)
 
         # rates are USD-quoted: how many of quote_currency per 1 USD
@@ -253,7 +264,6 @@ async def seed(email: str, password: str, scale: float, reset: bool) -> None:
         # ── 5. Transactions ──────────────────────────────────────────────────
         n_tx = max(1, int(100_000 * scale))
         print(f"Inserting {n_tx:,} transactions …")
-        start_date = today - timedelta(days=n_days)
         tx_rows = []
 
         for _ in range(n_tx):
@@ -292,10 +302,10 @@ async def seed(email: str, password: str, scale: float, reset: bool) -> None:
         print(f"  {n_tx:,} transactions done        ")
 
         # ── 6. Assets + AssetValues ──────────────────────────────────────────
-        print(f"Creating {len(ASSET_TEMPLATES)} assets with {n_days + 1} daily values each …")
+        print(f"Creating {len(ASSET_TEMPLATES[:n_assets])} assets with {n_days + 1} daily values each …")
         asset_days = _make_date_range(n_days)
 
-        for tmpl in ASSET_TEMPLATES:
+        for tmpl in ASSET_TEMPLATES[:n_assets]:
             asset = Asset(
                 user_id=uid,
                 name=tmpl["name"],
@@ -332,7 +342,7 @@ async def seed(email: str, password: str, scale: float, reset: bool) -> None:
                 await session.execute(pg_insert(AssetValue).values(value_rows[i : i + 2000]))
 
         await session.commit()
-        total_av = len(ASSET_TEMPLATES) * (n_days + 1)
+        total_av = len(ASSET_TEMPLATES[:n_assets]) * (n_days + 1)
         print(f"  {len(ASSET_TEMPLATES)} assets, {total_av:,} asset values")
 
         # ── 7. Recurring transactions ────────────────────────────────────────
@@ -373,8 +383,19 @@ def main() -> None:
     parser.add_argument("--password", default="Securo123!")
     parser.add_argument("--no-reset", dest="reset", action="store_false", default=True,
                         help="Skip wiping existing seed data for this user")
+    parser.add_argument("--start-date", type=date.fromisoformat, default=date(2024, 1, 1),
+                        metavar="YYYY-MM-DD", help="Earliest date for seeded data (default: 2024-01-01)")
+    parser.add_argument("--accounts", type=int, default=len(ACCOUNT_TEMPLATES),
+                        help=f"Number of accounts to create (default: {len(ACCOUNT_TEMPLATES)}, max: {len(ACCOUNT_TEMPLATES)})")
+    parser.add_argument("--categories", type=int, default=len(CATEGORY_TEMPLATES),
+                        help=f"Number of categories to create (default: {len(CATEGORY_TEMPLATES)}, max: {len(CATEGORY_TEMPLATES)})")
+    parser.add_argument("--assets", type=int, default=len(ASSET_TEMPLATES),
+                        help=f"Number of assets to create (default: {len(ASSET_TEMPLATES)}, max: {len(ASSET_TEMPLATES)})")
     args = parser.parse_args()
-    asyncio.run(seed(args.email, args.password, args.scale, args.reset))
+    asyncio.run(seed(
+        args.email, args.password, args.scale, args.reset, args.start_date,
+        args.accounts, args.categories, args.assets,
+    ))
 
 
 if __name__ == "__main__":
