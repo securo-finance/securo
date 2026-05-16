@@ -12,7 +12,7 @@ from app.models.asset import Asset
 from app.models.goal import Goal
 from app.models.user import User
 from app.schemas.goal import GoalCreate, GoalRead, GoalSummary, GoalUpdate
-from app.services.asset_service import _compute_current_value, _get_latest_value, get_total_asset_value
+from app.services.asset_service import _compute_current_value, _get_latest_value, get_asset_values_at
 from app.services.dashboard_service import _account_balance_at, _get_open_accounts
 from app.services.account_service import get_account_name
 from app.services.fx_rate_service import convert
@@ -73,7 +73,7 @@ async def _resolve_current_amount(
                 total += converted
 
         # Add asset values
-        assets_by_currency = await get_total_asset_value(session, user_id)
+        assets_by_currency, _ = await get_asset_values_at(session, user_id)
         for currency, amount in assets_by_currency.items():
             if currency == goal_currency:
                 total += Decimal(str(amount))
