@@ -207,6 +207,11 @@ export default function TransactionsPage() {
     setBulkCategory('')
   }, [page, filterAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterFrom, filterTo, searchQuery])
 
+  // Reset bulk category when selection changes so the same category can be re-applied
+  useEffect(() => {
+    setBulkCategory('')
+  }, [selectedIds])
+
   // Scroll to and flash a highlighted row after navigation (e.g. opened via
   // the command palette). Re-runs whenever highlightId or the current data
   // set changes so that when results finish loading we animate the row.
