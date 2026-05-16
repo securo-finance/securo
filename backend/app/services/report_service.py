@@ -30,6 +30,7 @@ from app.schemas.report import (
     ReportResponse,
     ReportSummary,
 )
+from app.services.asset_service import get_asset_values_at
 from app.services.dashboard_service import _get_open_accounts, _account_balance_at
 
 CATEGORY_TREND_TOP_N = 11
@@ -39,48 +40,10 @@ async def _asset_value_at(
     session: AsyncSession, user_id: uuid.UUID, cutoff: date,
     primary_currency: str = "USD",
 ) -> float:
-    """Sum of all active (non-archived, non-sold) asset values at a given date,
-    converted to primary currency.
-
-    For each asset, finds the most recent AssetValue with date <= cutoff.
-    Falls back to purchase_price if no value entries exist before the cutoff
-    (but only if purchase_date <= cutoff or purchase_date is None).
-    """
-    result = await session.execute(
-        select(Asset).where(
-            Asset.user_id == user_id,
-            Asset.is_archived == False,
-            Asset.sell_date.is_(None),
-        )
+    """Sum of all active asset values at a given date, converted to primary currency."""
+    _, total = await get_asset_values_at(
+        session, user_id, as_of_date=cutoff, primary_currency=primary_currency
     )
-    assets = list(result.scalars().all())
-
-    total = 0.0
-    for asset in assets:
-        # Find most recent value entry at or before the cutoff
-        val_result = await session.execute(
-            select(AssetValue.amount)
-            .where(
-                AssetValue.asset_id == asset.id,
-                AssetValue.date <= cutoff,
-            )
-            .order_by(desc(AssetValue.date), desc(AssetValue.id))
-            .limit(1)
-        )
-        row = val_result.scalar_one_or_none()
-        amount = 0.0
-        if row is not None:
-            amount = float(row)
-        elif asset.purchase_price is not None:
-            if asset.purchase_date is None or asset.purchase_date <= cutoff:
-                amount = float(asset.purchase_price)
-
-        if amount != 0.0:
-            converted, _ = await convert(
-                session, Decimal(str(amount)), asset.currency, primary_currency, cutoff
-            )
-            total += float(converted)
-
     return total
 
 
@@ -154,15 +117,18 @@ def _date_points(
             current += timedelta(weeks=1)
     elif interval == "monthly":
         while current <= end:
-            points.append(current)
-            # Advance by one month
+            # Snapshot at end-of-month so the bar for "May" reflects May's
+            # closing balance, not May 1st (which equals April's closing balance).
+            last_day = calendar.monthrange(current.year, current.month)[1]
+            eom = date(current.year, current.month, last_day)
+            points.append(min(eom, end))
+            # Advance to the 1st of the next month for loop control
             month = current.month + 1
             year = current.year
             if month > 12:
                 month = 1
                 year += 1
-            day = min(current.day, 28)
-            current = date(year, month, day)
+            current = date(year, month, 1)
     elif interval == "yearly":
         while current <= end:
             points.append(current)

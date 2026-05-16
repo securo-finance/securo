@@ -22,7 +22,7 @@ from app.services._query_filters import (
 )
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.recurring_transaction_service import get_occurrences_in_range
-from app.services.asset_service import get_total_asset_value
+from app.services.asset_service import get_asset_values_at
 from app.services.fx_rate_service import convert
 from app.models.user import User
 
@@ -199,15 +199,17 @@ async def get_summary(
         .where(*pending_cat_filters)
     ) or 0))
 
-    # Asset values
-    assets_value = await get_total_asset_value(session, user_id)
+    # Get user's primary currency (user already loaded above for reporting mode)
+    primary_currency = user.primary_currency if user else get_settings().default_currency
+
+    # Asset values — use cutoff so past months show historical values
+    assets_value, assets_value_primary = await get_asset_values_at(
+        session, user_id, as_of_date=cutoff, primary_currency=primary_currency
+    )
 
     # Add asset values to total balance
     for currency, amount in assets_value.items():
         total_balance[currency] = total_balance.get(currency, 0.0) + amount
-
-    # Get user's primary currency (user already loaded above for reporting mode)
-    primary_currency = user.primary_currency if user else get_settings().default_currency
 
     # Convert totals to primary currency
     total_balance_primary = 0.0
@@ -318,12 +320,6 @@ async def get_summary(
             monthly_income_primary += float(proj_converted)
         else:
             monthly_expenses_primary += float(proj_converted)
-
-    # Convert asset values to primary currency
-    assets_value_primary = 0.0
-    for currency, amount in assets_value.items():
-        converted, _ = await convert(session, Decimal(str(amount)), currency, primary_currency)
-        assets_value_primary += float(converted)
 
     # Aggregate the user's net pending balance across all groups they
     # participate in. We reuse the group balance computation so partial

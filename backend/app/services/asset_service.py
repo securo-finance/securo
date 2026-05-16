@@ -162,6 +162,19 @@ async def _get_latest_value(session: AsyncSession, asset_id: uuid.UUID) -> Optio
     return result.scalar_one_or_none()
 
 
+async def _get_value_as_of(
+    session: AsyncSession, asset_id: uuid.UUID, as_of_date: date
+) -> Optional[AssetValue]:
+    """Get the most recent AssetValue for an asset on or before as_of_date."""
+    result = await session.execute(
+        select(AssetValue)
+        .where(AssetValue.asset_id == asset_id, AssetValue.date <= as_of_date)
+        .order_by(desc(AssetValue.date), desc(AssetValue.id))
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
 async def _get_value_count(session: AsyncSession, asset_id: uuid.UUID) -> int:
     """Get the number of AssetValue entries for an asset."""
     result = await session.scalar(
@@ -633,11 +646,19 @@ async def get_portfolio_trend(
     return {"assets": asset_meta, "trend": trend, "total": round(total, 2)}
 
 
-async def get_total_asset_value(
-    session: AsyncSession, user_id: uuid.UUID
-) -> dict[str, float]:
-    """Get total asset value grouped by currency (for dashboard).
-    Only includes non-archived assets that haven't been sold."""
+async def get_asset_values_at(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    as_of_date: Optional[date] = None,
+    primary_currency: Optional[str] = None,
+) -> tuple[dict[str, float], float]:
+    """Return (per_currency_totals, primary_total) for all active assets.
+
+    - as_of_date=None: uses live prices (current view).
+    - as_of_date set: uses the latest AssetValue on or before that date,
+      falling back to purchase_price only if the asset existed by that date.
+    - primary_currency=None: primary_total is 0.0.
+    """
     result = await session.execute(
         select(Asset).where(
             Asset.user_id == user_id,
@@ -648,12 +669,35 @@ async def get_total_asset_value(
     assets = list(result.scalars().all())
 
     totals: dict[str, float] = {}
+    primary_total = 0.0
+
     for asset in assets:
-        latest = await _get_latest_value(session, asset.id)
-        current = _compute_current_value(asset, latest)
-        if current is not None:
-            totals[asset.currency] = totals.get(asset.currency, 0.0) + current
-    return totals
+        if as_of_date is not None:
+            value_entry = await _get_value_as_of(session, asset.id, as_of_date)
+            if value_entry is not None:
+                amount: Optional[float] = float(value_entry.amount)
+            elif asset.purchase_price is not None and (
+                asset.purchase_date is None or asset.purchase_date <= as_of_date
+            ):
+                amount = float(asset.purchase_price)
+            else:
+                amount = None
+        else:
+            latest = await _get_latest_value(session, asset.id)
+            amount = _compute_current_value(asset, latest)
+
+        if not amount:
+            continue
+
+        totals[asset.currency] = totals.get(asset.currency, 0.0) + amount
+
+        if primary_currency is not None:
+            converted, _ = await convert(
+                session, Decimal(str(amount)), asset.currency, primary_currency, as_of_date
+            )
+            primary_total += float(converted)
+
+    return totals, primary_total
 
 
 # ============================================================================
