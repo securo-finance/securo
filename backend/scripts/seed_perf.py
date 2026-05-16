@@ -318,7 +318,6 @@ async def seed(
             session.add(asset)
             await session.flush()
 
-            value = tmpl["base"]
             daily_pct = tmpl["daily_pct"]
             value_rows = []
             # Walk backwards so oldest value starts at base and grows to today
@@ -368,7 +367,7 @@ async def seed(
         await session.commit()
         print(f"  {n_rec} recurring transactions")
 
-    print(f"\nSeed complete.")
+    print("\nSeed complete.")
     print(f"  Login : {email}")
     print(f"  Passwd: {password}")
 
