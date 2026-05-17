@@ -242,7 +242,7 @@ async def test_get_asset_value_trend(session: AsyncSession, test_user: User, tes
 
 @pytest.mark.asyncio
 async def test_get_total_asset_value(session: AsyncSession, test_user: User, test_asset_with_values: Asset):
-    totals = await asset_service.get_total_asset_value(session, test_user.id)
+    totals, _ = await asset_service.get_asset_values_at(session, test_user.id)
     assert "BRL" in totals
     assert totals["BRL"] >= 550000.0  # latest value
 
@@ -272,7 +272,7 @@ async def test_total_asset_value_excludes_sold(session: AsyncSession, test_user:
     session.add(v)
     await session.commit()
 
-    totals = await asset_service.get_total_asset_value(session, test_user.id)
+    totals, _ = await asset_service.get_asset_values_at(session, test_user.id)
     assert isinstance(totals, dict)
 
 
@@ -565,7 +565,7 @@ async def test_total_asset_value_includes_purchase_fallback(session: AsyncSessio
     session.add(asset)
     await session.commit()
 
-    totals = await asset_service.get_total_asset_value(session, test_user.id)
+    totals, _ = await asset_service.get_asset_values_at(session, test_user.id)
     assert "BRL" in totals
     assert totals["BRL"] >= 200000.0
 
@@ -586,7 +586,7 @@ async def test_total_asset_value_excludes_archived(session: AsyncSession, test_u
     session.add(asset)
     await session.commit()
 
-    totals = await asset_service.get_total_asset_value(session, test_user.id)
+    totals, _ = await asset_service.get_asset_values_at(session, test_user.id)
     # If this is the only asset, BRL should not be in totals (or should not include 999999)
     assert totals.get("BRL", 0) < 999999.0
 
