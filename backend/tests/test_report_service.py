@@ -83,6 +83,28 @@ def test_date_points_monthly():
     assert points[-1] == end
 
 
+def test_date_points_monthly_end_of_month_snapshots():
+    """Monthly points: start date as boundary, then EOM snapshots for each subsequent month."""
+    start = date(2025, 1, 1)
+    end = date(2025, 4, 15)
+    points = _date_points(start, end, "monthly")
+    # start is the Jan boundary; loop begins from Feb, so Jan 31 is not emitted
+    assert points == [
+        date(2025, 1, 1),   # start boundary (Jan reference)
+        date(2025, 2, 28),  # end of Feb
+        date(2025, 3, 31),  # end of Mar
+        date(2025, 4, 15),  # capped at end (Apr 30 → Apr 15)
+    ]
+
+
+def test_date_points_monthly_feb_leap_year():
+    """End-of-month for February respects leap years."""
+    start = date(2024, 1, 1)
+    end = date(2024, 3, 1)
+    points = _date_points(start, end, "monthly")
+    assert date(2024, 2, 29) in points
+
+
 def test_date_points_yearly():
     start = date(2023, 1, 1)
     end = date(2025, 6, 15)
