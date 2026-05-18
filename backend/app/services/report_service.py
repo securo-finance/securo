@@ -116,12 +116,19 @@ def _date_points(
             points.append(current)
             current += timedelta(weeks=1)
     elif interval == "monthly":
+        # Always include the start date for period boundary and accurate change calculation
+        points.append(start)
+        # Generate end-of-month snapshots for each subsequent month
+        current = date(start.year, start.month + 1, 1)
         while current <= end:
-            # Snapshot at end-of-month so the bar for "May" reflects May's
-            # closing balance, not May 1st (which equals April's closing balance).
             last_day = calendar.monthrange(current.year, current.month)[1]
             eom = date(current.year, current.month, last_day)
-            points.append(min(eom, end))
+            # Snapshot at end-of-month, but capped at the period's end date
+            snapshot = min(eom, end)
+            points.append(snapshot)
+            # Stop when we've reached the end date
+            if snapshot >= end:
+                break
             # Advance to the 1st of the next month for loop control
             month = current.month + 1
             year = current.year
