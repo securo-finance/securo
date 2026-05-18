@@ -16,28 +16,31 @@ def _make_session_maker():
     """Create a fresh engine+session for the Celery worker event loop."""
     settings = get_settings()
     engine = create_async_engine(settings.database_url)
-    return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    return engine, async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
 async def _generate_all() -> int:
     """Generate pending recurring transactions for all users."""
-    session_maker = _make_session_maker()
-    total = 0
+    engine, session_maker = _make_session_maker()
+    try:
+        total = 0
 
-    async with session_maker() as session:
-        result = await session.execute(select(User.id))
-        user_ids = [row[0] for row in result.all()]
+        async with session_maker() as session:
+            result = await session.execute(select(User.id))
+            user_ids = [row[0] for row in result.all()]
 
-    for user_id in user_ids:
-        try:
-            async with session_maker() as session:
-                count = await recurring_transaction_service.generate_pending(session, user_id)
-                if count:
-                    logger.info("Generated %d recurring transactions for user %s", count, user_id)
-                    total += count
-        except Exception:
-            logger.exception("Failed to generate recurring transactions for user %s", user_id)
+        for user_id in user_ids:
+            try:
+                async with session_maker() as session:
+                    count = await recurring_transaction_service.generate_pending(session, user_id)
+                    if count:
+                        logger.info("Generated %d recurring transactions for user %s", count, user_id)
+                        total += count
+            except Exception:
+                logger.exception("Failed to generate recurring transactions for user %s", user_id)
 
+    finally:
+        await engine.dispose()
     return total
 
 

@@ -13,17 +13,20 @@ def _make_session_maker():
     """Create a fresh engine+session for the Celery worker event loop."""
     settings = get_settings()
     engine = create_async_engine(settings.database_url)
-    return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    return engine, async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
 async def _sync_fx_rates() -> int:
     """Fetch latest FX rates and store them."""
     from app.services.fx_rate_service import sync_rates
 
-    session_maker = _make_session_maker()
-    async with session_maker() as session:
-        count = await sync_rates(session)
-    return count
+    engine, session_maker = _make_session_maker()
+    try:
+        async with session_maker() as session:
+            count = await sync_rates(session)
+        return count
+    finally:
+        await engine.dispose()
 
 
 async def _restamp_recurring_fx() -> int:
@@ -34,9 +37,10 @@ async def _restamp_recurring_fx() -> int:
     from app.models.user import User
     from app.services.fx_rate_service import stamp_primary_amount
 
-    session_maker = _make_session_maker()
-    async with session_maker() as session:
-        users = (await session.execute(select(User))).scalars().all()
+    engine, session_maker = _make_session_maker()
+    try:
+        async with session_maker() as session:
+            users = (await session.execute(select(User))).scalars().all()
         count = 0
         for user in users:
             primary = user.primary_currency
@@ -53,6 +57,8 @@ async def _restamp_recurring_fx() -> int:
                 )
                 count += 1
         await session.commit()
+    finally:
+        await engine.dispose()
     return count
 
 

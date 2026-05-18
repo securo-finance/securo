@@ -67,7 +67,8 @@ services:
 
   celery-worker:
     <<: *backend-base
-    command: celery -A app.worker worker --loglevel=info
+    # Limit to 2 workers to save RAM (default = number of CPUs).
+    command: celery -A app.worker worker --loglevel=info --concurrency=2
 
   celery-beat:
     <<: *backend-base

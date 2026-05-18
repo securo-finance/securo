@@ -19,7 +19,7 @@ def _make_session_maker():
     """Create a fresh engine+session for the Celery worker event loop."""
     settings = get_settings()
     engine = create_async_engine(settings.database_url)
-    return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    return engine, async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
 def _next_due_date(last_date: date, frequency: str) -> date:
@@ -43,82 +43,85 @@ def _next_due_date(last_date: date, frequency: str) -> date:
 
 async def _apply_growth_rules() -> int:
     """Apply growth rules for all assets that have valuation_method='growth_rule'."""
-    session_maker = _make_session_maker()
-    today = date.today()
-    total = 0
+    engine, session_maker = _make_session_maker()
+    try:
+        today = date.today()
+        total = 0
 
-    async with session_maker() as session:
-        result = await session.execute(
-            select(Asset).where(
-                Asset.valuation_method == "growth_rule",
-                Asset.growth_type.isnot(None),
-                Asset.growth_rate.isnot(None),
-                Asset.growth_frequency.isnot(None),
-                Asset.is_archived == False,
-                Asset.sell_date.is_(None),
-            )
-        )
-        assets = list(result.scalars().all())
-
-    for asset in assets:
-        try:
-            async with session_maker() as session:
-                # Get latest value
-                val_result = await session.execute(
-                    select(AssetValue)
-                    .where(AssetValue.asset_id == asset.id)
-                    .order_by(AssetValue.date.desc(), AssetValue.id.desc())
-                    .limit(1)
+        async with session_maker() as session:
+            result = await session.execute(
+                select(Asset).where(
+                    Asset.valuation_method == "growth_rule",
+                    Asset.growth_type.isnot(None),
+                    Asset.growth_rate.isnot(None),
+                    Asset.growth_frequency.isnot(None),
+                    Asset.is_archived == False,
+                    Asset.sell_date.is_(None),
                 )
-                latest = val_result.scalar_one_or_none()
-                if not latest:
-                    continue
+            )
+            assets = list(result.scalars().all())
 
-                # Check if growth should start
-                if asset.growth_start_date and today < asset.growth_start_date:
-                    continue
-
-                # Generate all missed periods in a loop
-                current_date = latest.date
-                current_amount = float(latest.amount)
-                created = 0
-
-                while True:
-                    next_due = _next_due_date(current_date, asset.growth_frequency)
-                    if next_due > today:
-                        break
-
-                    if asset.growth_type == "percentage":
-                        current_amount = current_amount * (1 + float(asset.growth_rate) / 100)
-                    elif asset.growth_type == "absolute":
-                        current_amount = current_amount + float(asset.growth_rate)
-                    else:
-                        break
-
-                    new_value = AssetValue(
-                        asset_id=asset.id,
-                        amount=Decimal(str(round(current_amount, 6))),
-                        date=next_due,
-                        source="rule",
+        for asset in assets:
+            try:
+                async with session_maker() as session:
+                    # Get latest value
+                    val_result = await session.execute(
+                        select(AssetValue)
+                        .where(AssetValue.asset_id == asset.id)
+                        .order_by(AssetValue.date.desc(), AssetValue.id.desc())
+                        .limit(1)
                     )
-                    session.add(new_value)
-                    current_date = next_due
-                    created += 1
+                    latest = val_result.scalar_one_or_none()
+                    if not latest:
+                        continue
 
-                    # Safety limit to avoid infinite loops
-                    if created >= 1000:
-                        break
+                    # Check if growth should start
+                    if asset.growth_start_date and today < asset.growth_start_date:
+                        continue
 
-                if created > 0:
-                    await session.commit()
-                    total += created
-                    logger.info(
-                        "Growth rule applied for asset %s: %d values created, latest=%.2f",
-                        asset.id, created, current_amount,
-                    )
-        except Exception:
-            logger.exception("Failed to apply growth rule for asset %s", asset.id)
+                    # Generate all missed periods in a loop
+                    current_date = latest.date
+                    current_amount = float(latest.amount)
+                    created = 0
 
+                    while True:
+                        next_due = _next_due_date(current_date, asset.growth_frequency)
+                        if next_due > today:
+                            break
+
+                        if asset.growth_type == "percentage":
+                            current_amount = current_amount * (1 + float(asset.growth_rate) / 100)
+                        elif asset.growth_type == "absolute":
+                            current_amount = current_amount + float(asset.growth_rate)
+                        else:
+                            break
+
+                        new_value = AssetValue(
+                            asset_id=asset.id,
+                            amount=Decimal(str(round(current_amount, 6))),
+                            date=next_due,
+                            source="rule",
+                        )
+                        session.add(new_value)
+                        current_date = next_due
+                        created += 1
+
+                        # Safety limit to avoid infinite loops
+                        if created >= 1000:
+                            break
+
+                    if created > 0:
+                        await session.commit()
+                        total += created
+                        logger.info(
+                            "Growth rule applied for asset %s: %d values created, latest=%.2f",
+                            asset.id, created, current_amount,
+                        )
+            except Exception:
+                logger.exception("Failed to apply growth rule for asset %s", asset.id)
+
+    finally:
+        await engine.dispose()
     return total
 
 
@@ -136,9 +139,12 @@ async def _refresh_market_prices() -> dict[str, int]:
     Uses a fresh async session per task run (same pattern as the growth-rule
     task above) to avoid sharing engines with the FastAPI request lifecycle.
     """
-    session_maker = _make_session_maker()
-    async with session_maker() as session:
-        return await refresh_all_market_prices(session)
+    engine, session_maker = _make_session_maker()
+    try:
+        async with session_maker() as session:
+            return await refresh_all_market_prices(session)
+    finally:
+        await engine.dispose()
 
 
 @celery_app.task(name="app.tasks.asset_tasks.refresh_market_prices")
