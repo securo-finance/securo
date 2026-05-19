@@ -97,6 +97,16 @@ def test_date_points_monthly_end_of_month_snapshots():
     ]
 
 
+def test_date_points_monthly_december_start():
+    """December start must not crash with month=13."""
+    start = date(2024, 12, 1)
+    end = date(2025, 2, 15)
+    points = _date_points(start, end, "monthly")
+    assert points[0] == date(2024, 12, 1)
+    assert date(2025, 1, 31) in points
+    assert points[-1] == end
+
+
 def test_date_points_monthly_feb_leap_year():
     """End-of-month for February respects leap years."""
     start = date(2024, 1, 1)

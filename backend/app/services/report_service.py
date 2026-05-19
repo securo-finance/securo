@@ -119,7 +119,9 @@ def _date_points(
         # Always include the start date for period boundary and accurate change calculation
         points.append(start)
         # Generate end-of-month snapshots for each subsequent month
-        current = date(start.year, start.month + 1, 1)
+        next_month = start.month % 12 + 1
+        next_year = start.year + (1 if start.month == 12 else 0)
+        current = date(next_year, next_month, 1)
         while current <= end:
             last_day = calendar.monthrange(current.year, current.month)[1]
             eom = date(current.year, current.month, last_day)
