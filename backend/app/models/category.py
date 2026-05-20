@@ -31,5 +31,10 @@ class Category(Base):
     # the counterpart lives in Assets, not Accounts.
     treat_as_transfer: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
+    # Flag to exclude transactions in this category from reports and dashboard aggregations.
+    # When set to True, transactions with this category are treated as if they don't exist
+    # for income/expense calculations.
+    is_ignored: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
     user: Mapped["User"] = relationship(back_populates="categories")
     group: Mapped[Optional["CategoryGroup"]] = relationship(back_populates="categories")

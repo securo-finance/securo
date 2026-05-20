@@ -21,6 +21,8 @@ from app.services import split_service
 from app.services.credit_card_service import apply_effective_date
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.fx_rate_service import stamp_primary_amount, convert as fx_convert
+from app.services._query_filters import counts_as_pnl
+
 
 
 def _apply_fx_override(transaction, amount, amount_primary=None, fx_rate_used=None):
@@ -343,15 +345,22 @@ async def get_transactions(
     # rows). Computed before pagination so it covers the whole result set.
     summary: Optional[dict] = None
     if include_summary:
-        summary_subq = base_query.subquery()
+        ignored_category_ids = select(Category.id).where(Category.is_ignored == True)
+        pnl_subq = base_query.where(
+        Transaction.is_ignored == False,
+        or_(
+            Transaction.category_id.is_(None),
+            Transaction.category_id.not_in(ignored_category_ids),
+        ),
+    ).subquery()
         amount_norm = func.coalesce(
-            summary_subq.c.amount_primary, summary_subq.c.amount
+            pnl_subq.c.amount_primary, pnl_subq.c.amount
         )
         summary_rows = await session.execute(
             select(
-                summary_subq.c.type,
+                pnl_subq.c.type,
                 func.coalesce(func.sum(func.abs(amount_norm)), 0),
-            ).group_by(summary_subq.c.type)
+            ).group_by(pnl_subq.c.type)
         )
         income = Decimal("0")
         expense = Decimal("0")
@@ -419,7 +428,8 @@ async def get_transactions(
         for tx in transactions:
             tx.attachment_count = counts.get(tx.id, 0)
             tx.payee_name = tx.payee_entity.name if tx.payee_entity else None
-
+            if not tx.is_ignored and tx.category and tx.category.is_ignored:
+                tx.is_ignored = True
         # Tag shared rows with the viewer's share + the source group.
         # Owned rows stay as-is. We pre-compute the viewer's linked
         # member ids → group ids once, then look up each transaction's

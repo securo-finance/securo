@@ -13,6 +13,7 @@ from app.models.transaction import Transaction
 from app.schemas.account import AccountCreate, AccountUpdate
 from app.services._query_filters import counts_as_pnl
 from app.services.credit_card_service import apply_effective_date, compute_available_credit, get_cycle_dates
+from app.models.category import Category
 
 
 def get_account_name(account: Account) -> str:
@@ -38,6 +39,14 @@ async def get_accounts(session: AsyncSession, user_id: uuid.UUID, include_closed
             func.coalesce(func.sum(signed_amount), 0).label("current_balance"),
         )
         .join(Account, Transaction.account_id == Account.id)
+        .outerjoin(Category, Transaction.category_id == Category.id)
+        .where(
+            Transaction.is_ignored == False,
+            or_(
+                Transaction.category_id.is_(None),
+                Category.is_ignored == False,
+            ),
+        )
         .group_by(Transaction.account_id)
         .subquery()
     )
@@ -52,8 +61,15 @@ async def get_accounts(session: AsyncSession, user_id: uuid.UUID, include_closed
             Transaction.account_id,
             func.coalesce(func.sum(signed_amount), 0).label("previous_balance"),
         )
-        .join(Account, Transaction.account_id == Account.id)
-        .where(Transaction.date <= prev_month_end)
+        .outerjoin(Category, Transaction.category_id == Category.id)
+        .where(
+            Transaction.date <= prev_month_end,
+            Transaction.is_ignored == False,
+            or_(
+                Transaction.category_id.is_(None),
+                Category.is_ignored == False,
+            ),
+        )
         .group_by(Transaction.account_id)
         .subquery()
     )
@@ -79,11 +95,10 @@ async def get_accounts(session: AsyncSession, user_id: uuid.UUID, include_closed
         query = query.where(Account.is_closed == False)
     query = query.order_by(Account.name)
     result = await session.execute(query)
-
     return [
-        serialize_account(acc, current_balance, previous_balance)
-        for acc, current_balance, previous_balance in result.all()
-    ]
+            serialize_account(acc, current_balance, previous_balance)
+            for acc, current_balance, previous_balance in result.all()
+        ]
 
 
 def serialize_account(
@@ -556,7 +571,16 @@ async def get_account_summary(
                     ),
                     0,
                 )
-            ).where(Transaction.account_id == account_id)
+            ).where(
+                Transaction.account_id == account_id,
+                Transaction.is_ignored == False,
+                or_(
+                    Transaction.category_id.is_(None),
+                    Transaction.category_id.not_in(
+                        select(Category.id).where(Category.is_ignored == True)
+                    ),
+                ),
+            )
         )
         current_balance = float(balance_result.scalar())
 
@@ -698,12 +722,19 @@ async def _account_balance_at(
     session: AsyncSession, account_id: uuid.UUID, cutoff: _Date,
     account_currency: str = "",
 ) -> float:
-    """Get balance for a single account at a specific date."""
+    """Get balance for a single account at a specific date.
+    Excludes ignored transactions from the balance calculation."""
     result = await session.execute(
         select(func.coalesce(func.sum(_signed_amount_expr(account_currency)), 0))
+        .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
             Transaction.account_id == account_id,
             Transaction.date <= cutoff,
+            Transaction.is_ignored == False,
+            or_(
+                Transaction.category_id.is_(None),
+                Category.is_ignored == False,
+            ),
         )
     )
     return float(result.scalar() or 0)
@@ -714,20 +745,28 @@ async def _account_daily_balance_series(
     date_from: _Date, date_to: _Date,
     account_currency: str = "",
 ) -> list[dict]:
-    """Build daily balance series for [date_from, date_to] inclusive."""
+    """Build daily balance series for [date_from, date_to] inclusive.
+    Excludes ignored transactions from balance calculations."""
     # Get balance at end of day before range start
     start_balance = await _account_balance_at(session, account_id, date_from - timedelta(days=1), account_currency)
 
     # Get daily deltas within range: group by actual date
+    # Exclude ignored transactions from daily deltas
     result = await session.execute(
         select(
             Transaction.date,
             func.sum(_signed_amount_expr(account_currency)),
         )
+        .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
             Transaction.account_id == account_id,
             Transaction.date >= date_from,
             Transaction.date <= date_to,
+            Transaction.is_ignored == False,
+            or_(
+                Transaction.category_id.is_(None),
+                Category.is_ignored == False,
+            ),
         )
         .group_by(Transaction.date)
     )

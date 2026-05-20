@@ -13,6 +13,7 @@ class CategoryBase(BaseModel):
 class CategoryCreate(CategoryBase):
     group_id: Optional[uuid.UUID] = None
     treat_as_transfer: bool = False
+    is_ignored: bool = False
 
 
 class CategoryUpdate(BaseModel):
@@ -21,6 +22,7 @@ class CategoryUpdate(BaseModel):
     color: Optional[str] = None
     group_id: Optional[uuid.UUID] = None
     treat_as_transfer: Optional[bool] = None
+    is_ignored: Optional[bool] = None
 
 
 class CategoryRead(CategoryBase):
@@ -29,5 +31,6 @@ class CategoryRead(CategoryBase):
     group_id: Optional[uuid.UUID] = None
     is_system: bool
     treat_as_transfer: bool = False
+    is_ignored: bool = False
 
     model_config = ConfigDict(from_attributes=True)

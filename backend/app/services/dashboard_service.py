@@ -766,21 +766,25 @@ async def _account_balance_at(
         if account.type == "credit_card":
             current_bal = -current_bal
         # Subtract activity after cutoff to get the balance AT cutoff
+        # Exclude ignored transactions from balance calculation
         delta_after = await session.scalar(
             select(func.coalesce(func.sum(_signed_balance_expr(account.currency)), 0))
             .where(
                 Transaction.account_id == account.id,
                 Transaction.date > cutoff,
+                Transaction.is_ignored == False,
             )
         )
         return current_bal - float(delta_after or 0)
     else:
         # Manual: sum signed transactions up to cutoff
+        # Exclude ignored transactions from balance calculation
         result = await session.scalar(
             select(func.coalesce(func.sum(_signed_balance_expr(account.currency)), 0))
             .where(
                 Transaction.account_id == account.id,
                 Transaction.date <= cutoff,
+                Transaction.is_ignored == False,
             )
         )
         return float(result or 0)
@@ -842,11 +846,17 @@ async def _daily_deltas(
             func.sum(signed),
         )
         .join(Account, Transaction.account_id == Account.id)
+        .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
             Transaction.user_id == user_id,
             Account.is_closed == False,
             Transaction.date >= start,
             Transaction.date < end,
+            Transaction.is_ignored == False,
+            or_(
+                Transaction.category_id.is_(None),
+                Category.is_ignored == False,
+            ),
         )
         .group_by("day", Account.currency)
     )

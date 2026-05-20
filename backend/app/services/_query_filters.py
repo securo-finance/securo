@@ -22,7 +22,9 @@ def counts_as_pnl():
       - paired transfers (both legs were matched; already cancel out),
       - transactions in categories flagged `treat_as_transfer` (one-sided
         movements like investment applications where the counterpart is
-        an Asset/Holding, not another Account).
+        an Asset/Holding, not another Account),
+      - transactions flagged `is_ignored=True` (user-marked as not to be reported),
+      - transactions in categories flagged `is_ignored=True` (user-marked as not to be reported).
 
     Does NOT exclude `source='opening_balance'` — callers that already
     filter those keep doing so; this helper only handles the transfer-like
@@ -30,6 +32,7 @@ def counts_as_pnl():
     """
     return and_(
         Transaction.transfer_pair_id.is_(None),
+        Transaction.is_ignored.is_(False),
         # Settlement *debits* are repayments of debts that were already
         # booked as an expense via the share. Counting them would
         # double-count. Settlement *credits*, however, represent the
@@ -40,7 +43,12 @@ def counts_as_pnl():
         or_(
             Transaction.category_id.is_(None),
             Transaction.category_id.not_in(
-                select(Category.id).where(Category.treat_as_transfer.is_(True))
+                select(Category.id).where(
+                    or_(
+                        Category.treat_as_transfer.is_(True),
+                        Category.is_ignored.is_(True),
+                    )
+                )
             ),
         ),
     )
