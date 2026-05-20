@@ -540,6 +540,7 @@ async def get_portfolio_trend(
     # Collect all values per asset and all unique dates
     asset_meta = []
     asset_values_map: dict[str, list[tuple[date, float]]] = {}
+    asset_currency: dict[str, str] = {}
     sell_date_by_aid: dict[str, date] = {}
     all_dates: set[date] = set()
 
@@ -555,6 +556,7 @@ async def get_portfolio_trend(
             "type": asset.type,
             "group_id": str(asset.group_id) if asset.group_id else None,
         })
+        asset_currency[aid] = asset.currency
 
         rows = await session.execute(
             select(AssetValue.date, AssetValue.amount)
@@ -578,21 +580,9 @@ async def get_portfolio_trend(
                 if not vals or vals[-1][0] != asset.sell_date:
                     vals.append((asset.sell_date, float(asset.sell_price)))
 
-        # Convert every value to the primary currency at its own date so the
-        # stacked areas and the tooltip total are all in the same unit. Before
-        # this, a USD-quoted asset like AAPL contributed its raw $ value to
-        # `_total`, making the tooltip disagree with the header (which does
-        # FX-convert). `convert` falls back to the nearest available rate, so
-        # dates missing exact FX data still produce a sensible number.
-        if asset.currency != primary_currency:
-            converted_vals: list[tuple[date, float]] = []
-            for d, amt in vals:
-                converted, _ = await convert(
-                    session, Decimal(str(amt)), asset.currency, primary_currency, d,
-                )
-                converted_vals.append((d, float(converted)))
-            vals = converted_vals
-
+        # Values are stored in native currency; FX conversion happens per display
+        # date in the trend loop below so fill-forwarded values are always
+        # converted at the date being displayed — matching get_asset_values_at.
         asset_values_map[aid] = vals
         for d, _ in vals:
             all_dates.add(d)
@@ -610,9 +600,12 @@ async def get_portfolio_trend(
         if asset_values_map[aid]:
             first_date[aid] = asset_values_map[aid][0][0]
 
-    # Build trend with fill-forward; 0 before first date (for stacking)
+    # Build trend with fill-forward; 0 before first date (for stacking).
+    # Each native-currency amount is converted at the display date `d` so that
+    # fill-forwarded values reflect current FX rates — consistent with
+    # get_asset_values_at(as_of_date=d).
     trend = []
-    last_known: dict[str, float] = {}
+    last_known: dict[str, float] = {}  # native currency amounts
     for aid in [a["id"] for a in asset_meta]:
         last_known[aid] = 0.0
 
@@ -624,24 +617,33 @@ async def get_portfolio_trend(
                 last_known[aid] = value_lookup[aid][d]
             # Use 0 before asset exists (stacking needs numeric values)
             if aid in first_date and d >= first_date[aid]:
-                val = round(last_known[aid], 2)
+                native = last_known[aid]
             else:
-                val = 0
+                native = 0.0
             # After sell_date, the asset has been liquidated — drop to 0 so
             # it stops contributing to the portfolio total going forward.
             if aid in sell_date_by_aid and d > sell_date_by_aid[aid]:
-                val = 0
+                native = 0.0
                 last_known[aid] = 0.0
+
+            # Convert native amount to primary currency at this display date
+            currency = asset_currency[aid]
+            if native != 0.0 and currency != primary_currency:
+                converted, _ = await convert(
+                    session, Decimal(str(native)), currency, primary_currency, d
+                )
+                val = round(float(converted), 2)
+            else:
+                val = round(native, 2)
+
             row[aid] = val
             date_total += val
         row["_total"] = round(date_total, 2)
         trend.append(row)
 
-    # `last_known` already holds primary-currency values (we converted per-date
-    # above when building asset_values_map). Summing directly keeps the header
-    # total in lockstep with the tooltip's `_total` on the final row — any
-    # second conversion here would double-count for non-primary assets.
-    total = sum(last_known.values())
+    # The header total matches the last row's _total — both use the same
+    # per-display-date conversion so no second conversion is needed.
+    total = trend[-1]["_total"] if trend else 0.0
 
     return {"assets": asset_meta, "trend": trend, "total": round(total, 2)}
 
