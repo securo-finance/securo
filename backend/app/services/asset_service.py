@@ -175,6 +175,67 @@ async def _get_value_as_of(
     return result.scalar_one_or_none()
 
 
+async def _load_asset_native_values(
+    session: AsyncSession,
+    assets: list[Asset],
+    up_to_date: Optional[date] = None,
+) -> dict[str, list[tuple[date, float]]]:
+    """Bulk-load AssetValue rows for all assets in one query.
+
+    Returns {aid: [(date, amount), ...]} sorted ascending by (date, id).
+    When purchase_price and purchase_date are both set and purchase_date
+    predates the first recorded value, it is prepended as the earliest anchor.
+    """
+    if not assets:
+        return {}
+
+    asset_ids = [a.id for a in assets]
+    q = (
+        select(AssetValue.asset_id, AssetValue.date, AssetValue.amount)
+        .where(AssetValue.asset_id.in_(asset_ids))
+        .order_by(AssetValue.asset_id, AssetValue.date, AssetValue.id)
+    )
+    if up_to_date is not None:
+        q = q.where(AssetValue.date <= up_to_date)
+
+    rows = (await session.execute(q)).all()
+
+    values_map: dict[str, list[tuple[date, float]]] = {str(a.id): [] for a in assets}
+    for aid, d, amt in rows:
+        values_map[str(aid)].append((d, float(amt)))
+
+    for asset in assets:
+        aid = str(asset.id)
+        vals = values_map[aid]
+        if asset.purchase_price is not None and asset.purchase_date is not None:
+            if not vals or asset.purchase_date < vals[0][0]:
+                vals.insert(0, (asset.purchase_date, float(asset.purchase_price)))
+
+    return values_map
+
+
+def _fill_forward_at(
+    asset: Asset,
+    sorted_vals: list[tuple[date, float]],
+    as_of: date,
+) -> Optional[float]:
+    """Return the fill-forwarded native value of asset at as_of, or None.
+
+    Scans sorted_vals for the latest entry on or before as_of. Falls back
+    to purchase_price when purchase_date is None (asset predates any known
+    date) and no value history is available for the requested date.
+    """
+    result = None
+    for d, v in sorted_vals:
+        if d <= as_of:
+            result = v
+        else:
+            break
+    if result is None and asset.purchase_price is not None and asset.purchase_date is None:
+        result = float(asset.purchase_price)
+    return result
+
+
 async def _get_value_count(session: AsyncSession, asset_id: uuid.UUID) -> int:
     """Get the number of AssetValue entries for an asset."""
     result = await session.scalar(
@@ -537,16 +598,16 @@ async def get_portfolio_trend(
     if not active_assets:
         return {"assets": [], "trend": [], "total": 0.0}
 
-    # Collect all values per asset and all unique dates
-    asset_meta = []
-    asset_values_map: dict[str, list[tuple[date, float]]] = {}
-    asset_currency: dict[str, str] = {}
-    sell_date_by_aid: dict[str, date] = {}
-    all_dates: set[date] = set()
-
     # Get user's primary currency for conversion
     user = await session.get(User, user_id)
     primary_currency = user.primary_currency if user else get_settings().default_currency
+
+    values_map = await _load_asset_native_values(session, active_assets)
+
+    asset_meta = []
+    asset_currency: dict[str, str] = {}
+    sell_date_by_aid: dict[str, date] = {}
+    all_dates: set[date] = set()
 
     for asset in active_assets:
         aid = str(asset.id)
@@ -558,17 +619,7 @@ async def get_portfolio_trend(
         })
         asset_currency[aid] = asset.currency
 
-        rows = await session.execute(
-            select(AssetValue.date, AssetValue.amount)
-            .where(AssetValue.asset_id == asset.id)
-            .order_by(AssetValue.date)
-        )
-        vals = [(r[0], float(r[1])) for r in rows.all()]
-
-        # Prepend purchase_price as the first data point if it predates existing values
-        if asset.purchase_price is not None and asset.purchase_date is not None:
-            if not vals or asset.purchase_date < vals[0][0]:
-                vals.insert(0, (asset.purchase_date, float(asset.purchase_price)))
+        vals = values_map[aid]
 
         # If the asset was sold and a sell_price is recorded, treat it as the
         # asset's terminal value on sell_date so the chart reflects the
@@ -579,11 +630,8 @@ async def get_portfolio_trend(
                 vals = [(d, v) for d, v in vals if d <= asset.sell_date]
                 if not vals or vals[-1][0] != asset.sell_date:
                     vals.append((asset.sell_date, float(asset.sell_price)))
+                values_map[aid] = vals
 
-        # Values are stored in native currency; FX conversion happens per display
-        # date in the trend loop below so fill-forwarded values are always
-        # converted at the date being displayed — matching get_asset_values_at.
-        asset_values_map[aid] = vals
         for d, _ in vals:
             all_dates.add(d)
 
@@ -596,9 +644,9 @@ async def get_portfolio_trend(
     value_lookup: dict[str, dict[date, float]] = {}
     first_date: dict[str, date] = {}
     for aid in [a["id"] for a in asset_meta]:
-        value_lookup[aid] = {d: v for d, v in asset_values_map[aid]}
-        if asset_values_map[aid]:
-            first_date[aid] = asset_values_map[aid][0][0]
+        value_lookup[aid] = dict(values_map[aid])
+        if values_map[aid]:
+            first_date[aid] = values_map[aid][0][0]
 
     # Build trend with fill-forward; 0 before first date (for stacking).
     # Each native-currency amount is converted at the display date `d` so that
@@ -673,17 +721,12 @@ async def get_asset_values_at(
     totals: dict[str, float] = {}
     primary_total = 0.0
 
+    if as_of_date is not None:
+        values_map = await _load_asset_native_values(session, assets, up_to_date=as_of_date)
+
     for asset in assets:
         if as_of_date is not None:
-            value_entry = await _get_value_as_of(session, asset.id, as_of_date)
-            if value_entry is not None:
-                amount: Optional[float] = float(value_entry.amount)
-            elif asset.purchase_price is not None and (
-                asset.purchase_date is None or asset.purchase_date <= as_of_date
-            ):
-                amount = float(asset.purchase_price)
-            else:
-                amount = None
+            amount: Optional[float] = _fill_forward_at(asset, values_map[str(asset.id)], as_of_date)
         else:
             latest = await _get_latest_value(session, asset.id)
             amount = _compute_current_value(asset, latest)
