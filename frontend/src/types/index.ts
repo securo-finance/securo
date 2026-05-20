@@ -45,6 +45,7 @@ export interface Category {
   color: string
   is_system: boolean
   treat_as_transfer: boolean
+  is_ignored: boolean
 }
 
 export interface CategoryGroup {
@@ -165,6 +166,8 @@ export interface Transaction {
   // Display name of the parent's owner (the person who actually paid).
   // Derived per-request from the group's `is_self` member.
   parent_owner_name?: string | null
+  // Flag to exclude this transaction from reports and dashboard aggregations
+  is_ignored: boolean
 }
 
 export type ShareType = 'equal' | 'exact' | 'percent'
@@ -359,6 +362,7 @@ export interface ProjectedTransaction {
   category_name: string | null
   category_icon: string | null
   category_color: string | null
+  is_ignored: boolean
 }
 
 export interface DashboardSummary {

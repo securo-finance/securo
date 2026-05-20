@@ -27,7 +27,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts'
-import { CheckCircle2, CalendarIcon, Paperclip, Target, ArrowUpDown, HelpCircle } from 'lucide-react'
+import { CheckCircle2, CalendarIcon, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ICON_MAP } from '@/lib/category-icons'
 import { PageHeader } from '@/components/page-header'
@@ -306,6 +306,7 @@ export default function DashboardPage() {
     groupId: string | null
     parentOwnerName: string | null
     groupName: string | null
+    isIgnored: boolean
   }
 
   const TX_PER_PAGE = 10
@@ -344,6 +345,7 @@ export default function DashboardPage() {
         groupId,
         parentOwnerName: isShared ? tx.parent_owner_name ?? null : null,
         groupName: groupId ? groupNameById.get(groupId) ?? null : null,
+        isIgnored: tx.is_ignored
       })
     }
     for (const pt of projectedTxs ?? []) {
@@ -366,6 +368,7 @@ export default function DashboardPage() {
         groupId: null,
         parentOwnerName: null,
         groupName: null,
+        isIgnored: pt.is_ignored
       })
     }
     rows.sort((a, b) => txSortDesc ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date))
@@ -972,6 +975,13 @@ export default function DashboardPage() {
                                   {t('transactions.recurringBadge')}
                                 </span>
                               )}
+                              {row.isIgnored && (
+                                <span className="ml-2 inline-flex items-center gap-1 text-xs text-gray-600 font-normal bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
+                                <EyeClosed className="h-3 w-3" />
+                                {t('transactions.ignored')}
+                                <span title={t('transactions.ignoreTransferHint')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
+                                </span>
+                              )}
                               {row.attachmentCount > 0 && (
                                 <Paperclip size={12} className="text-muted-foreground shrink-0" />
                               )}
@@ -981,8 +991,8 @@ export default function DashboardPage() {
                         </div>
                       </TableCell>
                       <TableCell className="py-2.5 pr-5 text-right">
-                        <span className={`text-sm font-semibold tabular-nums ${row.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
-                          {mask(`${row.type === 'credit' ? '+' : '-'}${formatCurrency(Math.abs(row.amount), row.currency, locale)}`)}
+                        <span className={`text-sm font-semibold tabular-nums ${row.isIgnored ? 'text-gray-500' : row.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
+                          {mask(`${row.isIgnored ? ' ' : row.type === 'credit' ? '+' : '-'}${formatCurrency(Math.abs(row.amount), row.currency, locale)}`)}
                         </span>
                         {row.isShared && row.parentTotal != null && (
                           <span className="block text-[10px] text-muted-foreground tabular-nums">

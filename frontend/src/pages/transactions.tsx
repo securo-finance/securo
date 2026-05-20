@@ -24,7 +24,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Copy, Download, HelpCircle, Info, Paperclip, Users, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Copy, Download, HelpCircle, Info, Paperclip, Users, X, EyeClosed } from 'lucide-react'
 import type { Transaction } from '@/types'
 import { PageHeader } from '@/components/page-header'
 import { CategoryIcon } from '@/components/category-icon'
@@ -683,11 +683,11 @@ export default function TransactionsPage() {
       <>
         <span
           className={`text-xs md:text-sm font-bold tabular-nums ${
-            tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'
+            tx.is_ignored ? 'text-gray-500': tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'
           }`}
         >
           {mask(
-            `${tx.type === 'credit' ? '+' : '−'}${formatCurrency(
+            `${tx.is_ignored ? ' ' : tx.type === 'credit' ? '+' : '−'}${formatCurrency(
               Math.abs(displayAmount),
               tx.currency,
               locale,
@@ -757,6 +757,15 @@ export default function TransactionsPage() {
                 <span title={t('transactions.transferTooltip')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
               </span>
             )}
+            {tx.is_ignored && 
+              (
+              <span className="ml-2 inline-flex items-center gap-1 text-xs text-gray-600 font-normal bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
+                <EyeClosed className="h-3 w-3" />
+                {t('transactions.ignored')}
+                <span title={t('transactions.ignoreTransferHint')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
+              </span>
+                            )
+            }
             {recurringList?.some(r => r.description === tx.description && r.type === tx.type) && (
               <span className="text-[10px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1.5 py-0.5 rounded-full">
                 {t('transactions.recurringBadge')}

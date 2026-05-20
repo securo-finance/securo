@@ -11,7 +11,7 @@ import { toast } from 'sonner'
 import type { CreditCardBill, Transaction } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, HelpCircle, Paperclip, Pencil, X } from 'lucide-react'
+import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, EyeClosed, HelpCircle, Paperclip, Pencil, X } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
 import { TransactionDialog, extractApiError } from '@/components/transaction-dialog'
 import { TransferDialog } from '@/components/transfer-dialog'
@@ -1353,6 +1353,7 @@ export default function AccountDetailPage() {
                     const isOpening = tx.source === 'opening_balance'
                     const isTransfer = !!tx.transfer_pair_id
                     const isPending = tx.status === 'pending'
+                    const isIgnored = tx.is_ignored
                     return (
                       <tr
                         key={tx.id}
@@ -1386,6 +1387,13 @@ export default function AccountDetailPage() {
                               <span className="ml-2 inline-flex items-center gap-1 text-xs text-amber-600 font-normal bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
                                 <Clock className="h-3 w-3" />
                                 {t('transactions.pending')}
+                              </span>
+                            )}
+                            {isIgnored && (
+                              <span className="ml-2 inline-flex items-center gap-1 text-xs text-gray-600 font-normal bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
+                                <EyeClosed className="h-3 w-3" />
+                                {t('transactions.ignored')}
+                                <span title={t('transactions.ignoreTransferHint')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
                               </span>
                             )}
                             {tx.installment_number != null && tx.total_installments != null && (
@@ -1425,8 +1433,8 @@ export default function AccountDetailPage() {
                             <span className="text-muted-foreground">—</span>
                           )}
                         </td>
-                        <td className={`px-3 sm:px-4 py-3 text-right text-xs sm:text-sm font-semibold tabular-nums ${tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
-                          {mask(`${tx.type === 'credit' ? '+' : '-'}${formatCurrency(Math.abs(Number(tx.amount)), tx.currency, locale)}`)}
+                        <td className={`px-3 sm:px-4 py-3 text-right text-xs sm:text-sm font-semibold tabular-nums ${tx.is_ignored ? 'text-gray-500' : tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
+                          {mask(`${tx.is_ignored ? ' ' : tx.type === 'credit' ? '+' : '-'}${formatCurrency(Math.abs(Number(tx.amount)), tx.currency, locale)}`)}
                           {tx.currency !== userCurrency && tx.amount_primary != null && (
                             <span className="block text-[10px] text-muted-foreground tabular-nums">
                               {mask(formatCurrency(Math.abs(tx.amount_primary), userCurrency, locale))}

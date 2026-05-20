@@ -46,6 +46,7 @@ export default function CategoriesPage() {
   const [formIcon, setFormIcon] = useState('circle-help')
   const [formColor, setFormColor] = useState('#6366f1')
   const [formTreatAsTransfer, setFormTreatAsTransfer] = useState(false)
+  const [formIgnoreTransfer, setFormIgnoreTransfer] = useState(false)
   const [groupDialogOpen, setGroupDialogOpen] = useState(false)
   const [editingGroup, setEditingGroup] = useState<CategoryGroup | null>(null)
   const [groupFormIcon, setGroupFormIcon] = useState('folder')
@@ -131,6 +132,14 @@ export default function CategoriesPage() {
             title={t('categories.treatAsTransferDesc')}
           >
             {t('categories.treatAsTransferBadge')}
+          </span>
+        )}
+        {cat.is_ignored && (
+          <span
+            className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border shrink-0"
+            title={t('categories.ignoreTransferDesc')}
+          >
+            {t('categories.ignoreTransferBadge')}
           </span>
         )}
       </div>
@@ -262,6 +271,7 @@ export default function CategoriesPage() {
                 color: formData.get('color') as string,
                 group_id: (formData.get('group_id') as string) || null,
                 treat_as_transfer: formTreatAsTransfer,
+                is_ignored: formIgnoreTransfer
               }
               if (editingCat) {
                 updateCatMutation.mutate({ id: editingCat.id, ...data })
@@ -308,6 +318,18 @@ export default function CategoriesPage() {
                 <div className="flex-1 min-w-0">
                   <span className="text-sm font-medium text-foreground">{t('categories.treatAsTransfer')}</span>
                   <p className="text-xs text-muted-foreground mt-0.5">{t('categories.treatAsTransferDesc')}</p>
+                </div>
+              </label>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formIgnoreTransfer}
+                  onChange={(e) => setFormIgnoreTransfer(e.target.checked)}
+                  className="h-4 w-4 mt-0.5 rounded border-border shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-medium text-foreground">{t('categories.ignoreTransfer')}</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">{t('categories.ignoreTransferDesc')}</p>
                 </div>
               </label>
             </div>

@@ -300,6 +300,9 @@
     "confirmTransferCategoryDesc": "Transferências vêm em pares. Você pode atualizar só esta transação ou aplicar a mesma mudança de categoria aos dois lados.",
     "confirmTransferCategorySingle": "Só esta transação",
     "confirmTransferCategoryBoth": "Atualizar ambas",
+    "ignoreTransfer": "Ignorar esta transação",
+    "ignoreTransferHint": "Transações ignoradas não entram nos relatórios",
+    "ignored": "Ignorado",
     "filtersBar": {
       "filters": "Filtros",
       "filterBy": "Filtrar por",
@@ -616,7 +619,10 @@
     "collapseAll": "Recolher tudo",
     "treatAsTransfer": "Tratar como transferência",
     "treatAsTransferDesc": "Transações nesta categoria não contarão como receita ou despesa nos relatórios. Use para movimentações entre suas próprias contas (investimentos, depósitos em poupança, pagamentos de empréstimo).",
-    "treatAsTransferBadge": "Transferência"
+    "treatAsTransferBadge": "Transferência",
+    "ignoreTransfer": "Ignorar Transações",
+    "ignoreTransferDesc": "Transações ignoradas não contarão como receita ou despesa nos relatórios.",
+    "ignoreTransferBadge": "Ignorado"
   },
   "groups": {
     "title": "Grupos de Categorias",

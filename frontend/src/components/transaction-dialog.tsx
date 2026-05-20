@@ -16,7 +16,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { AlertTriangle, ChevronDown, ChevronLeft, Download, Paperclip, Upload, X, FileText, Plus, Unlink } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ChevronLeft, Download, Paperclip, Upload, X, FileText, Plus, Unlink, EyeClosed } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -364,6 +364,7 @@ function TransactionForm({
   const pendingFileInputRef = useRef<HTMLInputElement>(null)
   const pendingActionRef = useRef<SaveAction>('save')
   const formRef = useRef<HTMLFormElement>(null)
+  const [isIgnored, setIsIgnored] = useState(seed?.is_ignored ?? false)
 
   const triggerSubmit = (action: SaveAction) => {
     pendingActionRef.current = action
@@ -487,6 +488,7 @@ function TransactionForm({
               category_id: categoryId || null,
               payee_id: payeeId || null,
               notes: notes.trim() || null,
+              is_ignored: isIgnored,
               ...overridePayload,
               ...splitsPayload,
             } as Partial<Transaction>
@@ -500,6 +502,7 @@ function TransactionForm({
               payee_id: payeeId || null,
               account_id: accountId || undefined,
               notes: notes.trim() || null,
+              is_ignored: isIgnored,
               ...fxFields,
               ...overridePayload,
               ...splitsPayload,
@@ -710,6 +713,25 @@ function TransactionForm({
           onChange={(e) => setNotes(e.target.value)}
           placeholder={t('transactions.notesPlaceholder')}
         />
+      </div>
+
+      <div className="flex-col">
+        <div className="flex items-center gap-2"> 
+          <input
+          id="is-ignored"
+          type="checkbox"
+          checked={isIgnored}
+          onChange={(e) => setIsIgnored(e.target.checked)}
+          className="h-4 w-4 rounded border-border accent-primary"
+        />
+          <EyeClosed size={16}/>
+          <label htmlFor="is-ignored" className="text-sm font-medium inline-flex items-center gap-2 cursor-pointer">
+            {t('transactions.ignoreTransfer')}
+          </label>
+        </div>
+        <span className="text-xs text-muted-foreground">
+          ({t('transactions.ignoreTransferHint')})
+        </span>
       </div>
 
       {/* Manual bill-cycle override (issue #92). CC accounts only. Empty
