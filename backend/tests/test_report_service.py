@@ -78,19 +78,18 @@ def test_date_points_monthly():
     start = date(2025, 1, 1)
     end = date(2025, 6, 15)
     points = _date_points(start, end, "monthly")
-    assert points[0] == start
-    # Last point should be end (June 15), not June 1
-    assert points[-1] == end
+    assert points[0] == date(2025, 1, 31)  # end of first month
+    assert points[-1] == end               # last point capped at end
+    assert len(points) == 6
 
 
 def test_date_points_monthly_end_of_month_snapshots():
-    """Monthly points: start date as boundary, then EOM snapshots for each subsequent month."""
+    """Monthly points: one EOM snapshot per month, last one capped at end."""
     start = date(2025, 1, 1)
     end = date(2025, 4, 15)
     points = _date_points(start, end, "monthly")
-    # start is the Jan boundary; loop begins from Feb, so Jan 31 is not emitted
     assert points == [
-        date(2025, 1, 1),   # start boundary (Jan reference)
+        date(2025, 1, 31),  # end of Jan
         date(2025, 2, 28),  # end of Feb
         date(2025, 3, 31),  # end of Mar
         date(2025, 4, 15),  # capped at end (Apr 30 → Apr 15)
@@ -98,13 +97,15 @@ def test_date_points_monthly_end_of_month_snapshots():
 
 
 def test_date_points_monthly_december_start():
-    """December start must not crash with month=13."""
+    """December start must not crash with month rollover."""
     start = date(2024, 12, 1)
     end = date(2025, 2, 15)
     points = _date_points(start, end, "monthly")
-    assert points[0] == date(2024, 12, 1)
-    assert date(2025, 1, 31) in points
-    assert points[-1] == end
+    assert points == [
+        date(2024, 12, 31),
+        date(2025, 1, 31),
+        date(2025, 2, 15),
+    ]
 
 
 def test_date_points_monthly_feb_leap_year():
@@ -112,7 +113,11 @@ def test_date_points_monthly_feb_leap_year():
     start = date(2024, 1, 1)
     end = date(2024, 3, 1)
     points = _date_points(start, end, "monthly")
-    assert date(2024, 2, 29) in points
+    assert points == [
+        date(2024, 1, 31),
+        date(2024, 2, 29),
+        date(2024, 3, 1),
+    ]
 
 
 def test_date_points_yearly():
@@ -140,14 +145,16 @@ def test_date_points_unknown_interval_defaults_to_monthly():
 
 
 def test_date_points_last_point_replaces_same_period():
-    """When end falls in the same period as the last generated point, replace it."""
+    """End date mid-month caps the last snapshot; no duplicate month labels."""
     start = date(2025, 1, 1)
     end = date(2025, 3, 15)
     points = _date_points(start, end, "monthly")
-    # March 1 and March 15 share "2025-03" label, so March 15 replaces March 1
-    assert points[-1] == end
+    assert points == [
+        date(2025, 1, 31),
+        date(2025, 2, 28),
+        date(2025, 3, 15),  # Mar 31 capped at end
+    ]
     labels = [_format_date_label(p, "monthly") for p in points]
-    # No duplicates
     assert len(labels) == len(set(labels))
 
 

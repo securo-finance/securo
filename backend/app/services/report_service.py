@@ -116,28 +116,15 @@ def _date_points(
             points.append(current)
             current += timedelta(weeks=1)
     elif interval == "monthly":
-        # Always include the start date for period boundary and accurate change calculation
-        points.append(start)
-        # Generate end-of-month snapshots for each subsequent month
-        next_month = start.month % 12 + 1
-        next_year = start.year + (1 if start.month == 12 else 0)
-        current = date(next_year, next_month, 1)
+        # One snapshot per month: last day of the month, capped at end
+        current = date(start.year, start.month, 1)
         while current <= end:
             last_day = calendar.monthrange(current.year, current.month)[1]
-            eom = date(current.year, current.month, last_day)
-            # Snapshot at end-of-month, but capped at the period's end date
-            snapshot = min(eom, end)
-            points.append(snapshot)
-            # Stop when we've reached the end date
-            if snapshot >= end:
-                break
-            # Advance to the 1st of the next month for loop control
-            month = current.month + 1
-            year = current.year
-            if month > 12:
-                month = 1
-                year += 1
-            current = date(year, month, 1)
+            points.append(min(date(current.year, current.month, last_day), end))
+            if current.month == 12:
+                current = date(current.year + 1, 1, 1)
+            else:
+                current = date(current.year, current.month + 1, 1)
     elif interval == "yearly":
         while current <= end:
             points.append(current)
@@ -183,11 +170,12 @@ async def get_net_worth_report(
         dp.date = _format_date_label(point, interval)
         trend.append(dp)
 
-    # Current snapshot (last point) and previous (first point) for summary
+    # Current snapshot (last point) for summary; baseline at period start for delta
     current = trend[-1] if trend else ReportDataPoint(
         date="", value=0, breakdowns={"accounts": 0, "assets": 0, "liabilities": 0}
     )
-    previous = trend[0] if len(trend) > 1 else current
+    baseline = await _net_worth_at(session, user_id, start, primary_currency)
+    previous = baseline if trend else current
 
     change_amount = current.value - previous.value
     change_percent = (
