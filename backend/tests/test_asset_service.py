@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset
 from app.models.asset_value import AssetValue
+from app.models.fx_rate import FxRate
 from app.models.user import User
 from app.schemas.asset import AssetCreate, AssetUpdate, AssetValueCreate
 from app.services import asset_service
@@ -796,6 +797,72 @@ async def test_portfolio_trend_with_assets(session: AsyncSession, test_user: Use
     assert len(result["assets"]) == 2
     assert len(result["trend"]) > 0
     assert result["total"] > 0
+
+
+@pytest.mark.asyncio
+async def test_portfolio_trend_total_consistent_with_get_asset_values_at(
+    session: AsyncSession, test_user: User
+):
+    """portfolio trend _total must match get_asset_values_at at the same date.
+
+    Uses a USD asset whose value entry pre-dates the display date, so
+    it is fill-forwarded. Two different BRL/USD rates are inserted so the
+    old behavior (convert at value-entry date) and the new behavior
+    (convert at display date) produce different numbers — only the new
+    behavior matches get_asset_values_at.
+    """
+    date_jan = date(2025, 1, 31)  # USD asset gets its value here (rate 5.0)
+    date_mar = date(2025, 3, 31)  # display date — different rate (6.0)
+
+    # Two FX snapshots so convert() finds an exact match at each date
+    for fx_date, fx_rate in [(date_jan, "5.0"), (date_mar, "6.0")]:
+        session.add(FxRate(
+            id=uuid.uuid4(),
+            base_currency="USD",
+            quote_currency="BRL",
+            date=fx_date,
+            rate=Decimal(fx_rate),
+            source="test",
+        ))
+
+    # USD asset: one value entry in January, no subsequent entries (fill-forwarded in March)
+    usd_asset = Asset(
+        id=uuid.uuid4(), user_id=test_user.id, name="Stock",
+        type="investment", currency="USD", valuation_method="manual",
+        purchase_date=date_jan, purchase_price=Decimal("100"), position=0,
+    )
+    session.add(usd_asset)
+    await session.flush()
+    session.add(AssetValue(
+        id=uuid.uuid4(), asset_id=usd_asset.id,
+        amount=Decimal("100"), date=date_jan, source="manual",
+    ))
+
+    # BRL anchor asset: value in March so that date_mar appears in sorted_dates
+    brl_asset = Asset(
+        id=uuid.uuid4(), user_id=test_user.id, name="House",
+        type="real_estate", currency="BRL", valuation_method="manual",
+        purchase_date=date_mar, purchase_price=Decimal("1000"), position=1,
+    )
+    session.add(brl_asset)
+    await session.flush()
+    session.add(AssetValue(
+        id=uuid.uuid4(), asset_id=brl_asset.id,
+        amount=Decimal("1000"), date=date_mar, source="manual",
+    ))
+
+    await session.commit()
+
+    trend_result = await get_portfolio_trend(session, test_user.id)
+    _, values_at_total = await asset_service.get_asset_values_at(
+        session, test_user.id, as_of_date=date_mar,
+        primary_currency=test_user.primary_currency,
+    )
+
+    # At date_mar: USD 100 @ 6.0 = BRL 600, plus BRL 1000 = 1600
+    trend_at_mar = next(r for r in trend_result["trend"] if r["date"] == date_mar.isoformat())
+    assert trend_at_mar["_total"] == pytest.approx(1600.0, rel=1e-2)
+    assert trend_at_mar["_total"] == pytest.approx(values_at_total, rel=1e-2)
 
 
 @pytest.mark.asyncio
