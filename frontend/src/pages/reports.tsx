@@ -194,11 +194,43 @@ export default function ReportsPage() {
   const isCurrentNW = selectedNWBar == null || selectedNWBar.index === lastNWIndex
   const nwPeriodLabel = isCurrentNW ? t('reports.current') : selectedNWBar!.date
 
-  const nwDonutData = [
-    { name: t('reports.accounts'), value: selectedNWBar ? selectedNWBar.accounts : nwDetailTotalAccounts, color: colorMap['accounts'] || '#6366F1' },
-    { name: t('reports.assets'), value: selectedNWBar ? selectedNWBar.assets : nwDetailTotalAssets, color: colorMap['assets'] || '#F59E0B' },
-    { name: t('reports.liabilities'), value: selectedNWBar ? selectedNWBar.liabilities : nwDetailTotalLiabs, color: colorMap['liabilities'] || '#F43F5E' },
+  const selectedAccounts = selectedNWBar ? selectedNWBar.accounts : nwDetailTotalAccounts
+  const selectedAssets = selectedNWBar ? selectedNWBar.assets : nwDetailTotalAssets
+  const selectedLiabs = selectedNWBar ? selectedNWBar.liabilities : nwDetailTotalLiabs
+
+  type NWPieItem = { name: string; value: number; color: string }
+
+  // Inner ring: group-level totals for Accounts + Assets chart
+  const nwPieAInner: NWPieItem[] = [
+    { name: t('reports.accounts'), value: selectedAccounts, color: colorMap['accounts'] || '#6366F1' },
+    { name: t('reports.assets'), value: selectedAssets, color: colorMap['assets'] || '#F59E0B' },
   ].filter((d) => d.value > 0)
+
+  // Outer ring: individual items, proportionally scaled to the selected period
+  const nwPieAOuter: NWPieItem[] = [
+    ...nwDetailAccounts.map((item: ReportCompositionItem) => ({
+      name: item.label,
+      value: nwDetailTotalAccounts > 0 ? (item.value / nwDetailTotalAccounts) * selectedAccounts : 0,
+      color: item.color,
+    })),
+    ...nwDetailAssets.map((item: ReportCompositionItem) => ({
+      name: item.label,
+      value: nwDetailTotalAssets > 0 ? (item.value / nwDetailTotalAssets) * selectedAssets : 0,
+      color: item.color,
+    })),
+  ].filter((d) => d.value > 0)
+
+  // Inner ring: liabilities group total
+  const nwPieBInner: NWPieItem[] = [
+    { name: t('reports.liabilities'), value: selectedLiabs, color: colorMap['liabilities'] || '#F43F5E' },
+  ].filter((d) => d.value > 0)
+
+  // Outer ring: individual liability items, proportionally scaled
+  const nwPieBOuter: NWPieItem[] = nwDetailLiabs.map((item: ReportCompositionItem) => ({
+    name: item.label,
+    value: nwDetailTotalLiabs > 0 ? (item.value / nwDetailTotalLiabs) * selectedLiabs : 0,
+    color: item.color,
+  })).filter((d: NWPieItem) => d.value > 0)
 
   type NWBarState = { accounts: number; assets: number; liabilities: number; value: number; date: string; index: number } | null
 
@@ -630,75 +662,144 @@ export default function ReportsPage() {
 
       {meta?.type === 'net_worth' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          {/* Composition donut — mirrors selected bar or falls back to current snapshot */}
+          {/* Composition card — two nested pie charts, synced to selected bar */}
           <div className="bg-card rounded-xl border border-border shadow-sm">
-            <div className="px-5 pt-4 pb-2 flex items-baseline gap-2">
-              <p className="text-sm font-semibold text-foreground">{t('reports.composition')}</p>
-              <span className="text-xs text-muted-foreground">{nwPeriodLabel}</span>
+            <div className="px-5 pt-4 pb-3 flex items-start justify-between">
+              <div>
+                <p className="text-sm font-semibold text-foreground">{t('reports.composition')}</p>
+                <span className="text-xs text-muted-foreground">{nwPeriodLabel}</span>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] text-muted-foreground leading-tight">{t('reports.netWorth')}</p>
+                <p className="text-sm font-bold text-foreground tabular-nums">
+                  {mask(formatCompact(selectedNWBar ? selectedNWBar.value : (summary?.primary_value ?? 0), userCurrency, locale))}
+                </p>
+              </div>
             </div>
-            <div className="px-1 pb-4">
+            <div className="pb-4">
               {isLoading ? (
-                <div className="px-4" style={{ height: 200 }}>
+                <div className="px-4" style={{ height: 180 }}>
                   <Skeleton className="h-full w-full" />
                 </div>
-              ) : nwDonutData.length > 0 ? (
-                <div className="flex flex-col items-center">
-                  <div className="relative" style={{ width: 200, height: 200 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={nwDonutData}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={55}
-                          outerRadius={85}
-                          paddingAngle={3}
-                          dataKey="value"
-                          strokeWidth={0}
-                          animationBegin={50}
-                          animationDuration={500}
-                        >
-                          {nwDonutData.map((entry, idx) => (
-                            <Cell key={idx} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          formatter={(value?: number, name?: string) => {
-                            const v = value ?? 0
-                            const total = nwDonutData.reduce((s, d) => s + d.value, 0)
-                            const pct = total > 0 ? ((v / total) * 100).toFixed(1) : '0'
-                            return [
-                              privacyMode ? MASK : `${formatCurrency(v, userCurrency, locale)} (${pct}%)`,
-                              name,
-                            ]
-                          }}
-                          contentStyle={{ ...tooltipStyle, zIndex: 10 }}
-                          itemStyle={tooltipItemStyle}
-                          wrapperStyle={{ zIndex: 10 }}
-                          offset={20}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none" style={{ zIndex: 0 }}>
-                      <span className="text-[10px] text-muted-foreground">
-                        {selectedNWBar ? selectedNWBar.date : t('reports.netWorth')}
-                      </span>
-                      <span className="text-base font-bold text-foreground tabular-nums">
-                        {mask(formatCompact(selectedNWBar ? selectedNWBar.value : (summary?.primary_value ?? 0), userCurrency, locale))}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 px-3 mt-1">
-                    {nwDonutData.map((d) => (
-                      <div key={d.name} className="flex items-center gap-1.5">
-                        <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                        <span className="text-[11px] text-muted-foreground whitespace-nowrap">{d.name}</span>
+              ) : (
+                <div className="flex flex-row items-start justify-around px-1 gap-1">
+                  {/* Pie A: Accounts + Assets */}
+                  <div className="flex flex-col items-center gap-1">
+                    <p className="text-[11px] font-medium text-muted-foreground">{t('reports.accountsAndAssets')}</p>
+                    {nwPieAInner.length > 0 ? (
+                      <div className="relative" style={{ width: 148, height: 148 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={nwPieAOuter}
+                              innerRadius={52}
+                              outerRadius={70}
+                              paddingAngle={1}
+                              dataKey="value"
+                              strokeWidth={0}
+                              animationBegin={50}
+                              animationDuration={500}
+                            >
+                              {nwPieAOuter.map((entry, idx) => (
+                                <Cell key={idx} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Pie
+                              data={nwPieAInner}
+                              innerRadius={28}
+                              outerRadius={48}
+                              paddingAngle={2}
+                              dataKey="value"
+                              strokeWidth={0}
+                              animationBegin={50}
+                              animationDuration={500}
+                            >
+                              {nwPieAInner.map((entry, idx) => (
+                                <Cell key={idx} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip
+                              formatter={(value?: number, name?: string) => {
+                                const v = value ?? 0
+                                const total = selectedAccounts + selectedAssets
+                                const pct = total > 0 ? ((v / total) * 100).toFixed(1) : '0'
+                                return [privacyMode ? MASK : `${formatCurrency(v, userCurrency, locale)} (${pct}%)`, name]
+                              }}
+                              contentStyle={{ ...tooltipStyle, zIndex: 10 }}
+                              itemStyle={tooltipItemStyle}
+                              wrapperStyle={{ zIndex: 10 }}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <span className="text-[10px] font-bold text-foreground tabular-nums">
+                            {mask(formatCompact(selectedAccounts + selectedAssets, userCurrency, locale))}
+                          </span>
+                        </div>
                       </div>
-                    ))}
+                    ) : (
+                      <p className="text-muted-foreground text-xs text-center py-10">{t('reports.noData')}</p>
+                    )}
+                  </div>
+
+                  {/* Pie B: Liabilities */}
+                  <div className="flex flex-col items-center gap-1">
+                    <p className="text-[11px] font-medium text-muted-foreground">{t('reports.liabilities')}</p>
+                    {nwPieBInner.length > 0 ? (
+                      <div className="relative" style={{ width: 148, height: 148 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={nwPieBOuter}
+                              innerRadius={52}
+                              outerRadius={70}
+                              paddingAngle={1}
+                              dataKey="value"
+                              strokeWidth={0}
+                              animationBegin={50}
+                              animationDuration={500}
+                            >
+                              {nwPieBOuter.map((entry, idx) => (
+                                <Cell key={idx} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Pie
+                              data={nwPieBInner}
+                              innerRadius={28}
+                              outerRadius={48}
+                              paddingAngle={0}
+                              dataKey="value"
+                              strokeWidth={0}
+                              animationBegin={50}
+                              animationDuration={500}
+                            >
+                              {nwPieBInner.map((entry, idx) => (
+                                <Cell key={idx} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip
+                              formatter={(value?: number, name?: string) => {
+                                const v = value ?? 0
+                                const pct = selectedLiabs > 0 ? ((v / selectedLiabs) * 100).toFixed(1) : '0'
+                                return [privacyMode ? MASK : `${formatCurrency(v, userCurrency, locale)} (${pct}%)`, name]
+                              }}
+                              contentStyle={{ ...tooltipStyle, zIndex: 10 }}
+                              itemStyle={tooltipItemStyle}
+                              wrapperStyle={{ zIndex: 10 }}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <span className="text-[10px] font-bold text-foreground tabular-nums">
+                            {mask(formatCompact(selectedLiabs, userCurrency, locale))}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-muted-foreground text-xs text-center py-10">{t('reports.noData')}</p>
+                    )}
                   </div>
                 </div>
-              ) : (
-                <p className="text-muted-foreground text-sm text-center py-16">{t('reports.noData')}</p>
               )}
             </div>
           </div>
