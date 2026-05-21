@@ -195,9 +195,9 @@ export default function ReportsPage() {
   // Build donut data based on composition view
   const composition = data?.composition ?? []
 
-  const nwDetailAccounts = composition.filter((c: ReportCompositionItem) => c.group === 'accounts')
-  const nwDetailAssets = composition.filter((c: ReportCompositionItem) => c.group === 'assets')
-  const nwDetailLiabs = composition.filter((c: ReportCompositionItem) => c.group === 'liabilities')
+  const nwDetailAccounts = composition.filter((c: ReportCompositionItem) => c.group === 'accounts').sort((a, b) => b.value - a.value)
+  const nwDetailAssets = composition.filter((c: ReportCompositionItem) => c.group === 'assets').sort((a, b) => b.value - a.value)
+  const nwDetailLiabs = composition.filter((c: ReportCompositionItem) => c.group === 'liabilities').sort((a, b) => b.value - a.value)
   const nwDetailTotalAccounts = nwDetailAccounts.reduce((s: number, c: ReportCompositionItem) => s + c.value, 0)
   const nwDetailTotalAssets = nwDetailAssets.reduce((s: number, c: ReportCompositionItem) => s + c.value, 0)
   const nwDetailTotalLiabs = nwDetailLiabs.reduce((s: number, c: ReportCompositionItem) => s + c.value, 0)
@@ -944,6 +944,7 @@ export default function ReportsPage() {
                               <p className="text-xs font-medium mb-1">{label}</p>
                               {payload
                                 .filter((p) => p.dataKey !== 'liabilitiesNeg' && p.dataKey !== 'value' && (p.value as number) !== 0)
+                                .sort((a, b) => (b.value as number) - (a.value as number))
                                 .map((p) => (
                                   <p key={p.dataKey as string} className="text-xs" style={{ color: p.color }}>
                                     {t(`reports.${p.dataKey}`, { defaultValue: String(p.name) })}:{' '}
@@ -1034,35 +1035,48 @@ export default function ReportsPage() {
                           if (!active || !payload) return null
                           const findLabel = (dk: string) =>
                             composition.find((c: ReportCompositionItem) => c.key === dk.replace(/^(acct_|asset_|liab_)/, ''))?.label ?? dk
-                          const acctEntries = payload.filter((p) => String(p.dataKey).startsWith('acct_') && (p.value ?? 0) !== 0)
-                          const assetEntries = payload.filter((p) => String(p.dataKey).startsWith('asset_') && (p.value ?? 0) !== 0)
-                          const liabEntries = payload.filter((p) => String(p.dataKey).startsWith('liab_') && (p.value ?? 0) !== 0)
+                          const acctEntries = payload.filter((p) => String(p.dataKey).startsWith('acct_') && (p.value ?? 0) !== 0).sort((a, b) => Math.abs(b.value ?? 0) - Math.abs(a.value ?? 0))
+                          const assetEntries = payload.filter((p) => String(p.dataKey).startsWith('asset_') && (p.value ?? 0) !== 0).sort((a, b) => Math.abs(b.value ?? 0) - Math.abs(a.value ?? 0))
+                          const liabEntries = payload.filter((p) => String(p.dataKey).startsWith('liab_') && (p.value ?? 0) !== 0).sort((a, b) => Math.abs(b.value ?? 0) - Math.abs(a.value ?? 0))
                           const netEntry = payload.find((p) => p.dataKey === 'value')
                           return (
-                            <div style={tooltipStyle} className="px-3 py-2 max-w-[220px]">
+                            <div style={tooltipStyle} className="px-3 py-2">
                               <p className="text-xs font-medium mb-1">{label}</p>
                               {acctEntries.length > 0 && <p className="text-[10px] font-semibold text-muted-foreground mt-1 uppercase tracking-wide">{t('reports.accounts')}</p>}
                               {acctEntries.map((p) => (
-                                <p key={String(p.dataKey)} className="text-xs" style={{ color: p.color }}>
-                                  {findLabel(String(p.dataKey))}: {privacyMode ? MASK : formatCurrency(p.value ?? 0, userCurrency, locale)}
-                                </p>
+                                <div key={String(p.dataKey)} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginBottom: 2 }}>
+                                  <span className="text-xs flex items-center gap-1.5" style={{ color: p.color }}>
+                                    <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: p.color, flexShrink: 0, display: 'inline-block' }} />
+                                    {findLabel(String(p.dataKey))}
+                                  </span>
+                                  <span className="text-xs" style={{ fontVariantNumeric: 'tabular-nums', color: p.color }}>{privacyMode ? MASK : formatCurrency(p.value ?? 0, userCurrency, locale)}</span>
+                                </div>
                               ))}
                               {assetEntries.length > 0 && <p className="text-[10px] font-semibold text-muted-foreground mt-1 uppercase tracking-wide">{t('reports.assets')}</p>}
                               {assetEntries.map((p) => (
-                                <p key={String(p.dataKey)} className="text-xs" style={{ color: p.color }}>
-                                  {findLabel(String(p.dataKey))}: {privacyMode ? MASK : formatCurrency(p.value ?? 0, userCurrency, locale)}
-                                </p>
+                                <div key={String(p.dataKey)} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginBottom: 2 }}>
+                                  <span className="text-xs flex items-center gap-1.5" style={{ color: p.color }}>
+                                    <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: p.color, flexShrink: 0, display: 'inline-block' }} />
+                                    {findLabel(String(p.dataKey))}
+                                  </span>
+                                  <span className="text-xs" style={{ fontVariantNumeric: 'tabular-nums', color: p.color }}>{privacyMode ? MASK : formatCurrency(p.value ?? 0, userCurrency, locale)}</span>
+                                </div>
                               ))}
                               {liabEntries.length > 0 && <p className="text-[10px] font-semibold text-muted-foreground mt-1 uppercase tracking-wide">{t('reports.liabilities')}</p>}
                               {liabEntries.map((p) => (
-                                <p key={String(p.dataKey)} className="text-xs" style={{ color: p.color }}>
-                                  {findLabel(String(p.dataKey))}: {privacyMode ? MASK : formatCurrency(-(p.value ?? 0), userCurrency, locale)}
-                                </p>
+                                <div key={String(p.dataKey)} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginBottom: 2 }}>
+                                  <span className="text-xs flex items-center gap-1.5" style={{ color: p.color }}>
+                                    <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: p.color, flexShrink: 0, display: 'inline-block' }} />
+                                    {findLabel(String(p.dataKey))}
+                                  </span>
+                                  <span className="text-xs" style={{ fontVariantNumeric: 'tabular-nums', color: p.color }}>{privacyMode ? MASK : formatCurrency(-(p.value ?? 0), userCurrency, locale)}</span>
+                                </div>
                               ))}
                               {netEntry && (
-                                <p className="text-xs font-semibold mt-1 pt-1 border-t border-border" style={{ color: '#10B981' }}>
-                                  {t('reports.netWorth')}: {privacyMode ? MASK : formatCurrency(netEntry.value ?? 0, userCurrency, locale)}
-                                </p>
+                                <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6, display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+                                  <span className="text-xs font-semibold" style={{ color: '#10B981' }}>{t('reports.netWorth')}</span>
+                                  <span className="text-xs font-semibold" style={{ fontVariantNumeric: 'tabular-nums', color: '#10B981' }}>{privacyMode ? MASK : formatCurrency(netEntry.value ?? 0, userCurrency, locale)}</span>
+                                </div>
                               )}
                             </div>
                           )
