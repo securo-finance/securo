@@ -161,6 +161,18 @@ export default function ReportsPage() {
     liabilitiesNeg: -((d.liabilities as number) ?? 0),
   }))
 
+  const nwTrendData = chartData.map((d, i) => {
+    const current = d.value as number
+    const prev = i > 0 ? (chartData[i - 1].value as number) : current
+    const delta = current - prev
+    return {
+      ...d,
+      _deltaBase: i > 0 ? Math.min(prev, current) : current,
+      _deltaSize: i > 0 ? Math.abs(delta) : 0,
+      _delta: delta,
+    }
+  })
+
   const changePrefix = (summary?.change_amount ?? 0) >= 0 ? '+' : ''
   const changeColor = (summary?.change_amount ?? 0) >= 0 ? 'text-emerald-600' : 'text-rose-500'
 
@@ -452,24 +464,42 @@ export default function ReportsPage() {
           </p>
           {meta && (
             <div className="flex items-center gap-3">
-              {meta.series_keys.map((key) => (
-                <div key={key} className="flex items-center gap-1.5">
-                  <div
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: colorMap[key] || '#6366F1' }}
-                  />
-                  <span className="text-[11px] text-muted-foreground">
-                    {t(`reports.${key}`, { defaultValue: key })}
-                  </span>
-                </div>
-              ))}
-              {meta.type === 'income_expenses' && (
-                <div className="flex items-center gap-1.5">
-                  <div className="w-3 h-0 border-t-2 border-dashed" style={{ borderColor: '#6366F1' }} />
-                  <span className="text-[11px] text-muted-foreground">
-                    {t('reports.netIncome')}
-                  </span>
-                </div>
+              {meta.type === 'net_worth' ? (
+                <>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-0 border-t-2" style={{ borderColor: '#6366F1' }} />
+                    <span className="text-[11px] text-muted-foreground">{t('reports.netWorth')}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-sm overflow-hidden flex">
+                      <div className="flex-1" style={{ backgroundColor: '#10B981', opacity: 0.8 }} />
+                      <div className="flex-1" style={{ backgroundColor: '#F43F5E', opacity: 0.8 }} />
+                    </div>
+                    <span className="text-[11px] text-muted-foreground">{t('reports.change')}</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {meta.series_keys.map((key) => (
+                    <div key={key} className="flex items-center gap-1.5">
+                      <div
+                        className="w-2 h-2 rounded-full"
+                        style={{ backgroundColor: colorMap[key] || '#6366F1' }}
+                      />
+                      <span className="text-[11px] text-muted-foreground">
+                        {t(`reports.${key}`, { defaultValue: key })}
+                      </span>
+                    </div>
+                  ))}
+                  {meta.type === 'income_expenses' && (
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-0 border-t-2 border-dashed" style={{ borderColor: '#6366F1' }} />
+                      <span className="text-[11px] text-muted-foreground">
+                        {t('reports.netIncome')}
+                      </span>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -606,11 +636,11 @@ export default function ReportsPage() {
             </ResponsiveContainer>
             ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+              <ComposedChart data={nwTrendData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="netWorthGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366F1" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#6366F1" stopOpacity={0.02} />
+                    <stop offset="5%" stopColor="#6366F1" stopOpacity={0.15} />
+                    <stop offset="95%" stopColor="#6366F1" stopOpacity={0.01} />
                   </linearGradient>
                 </defs>
                 <XAxis
@@ -633,15 +663,38 @@ export default function ReportsPage() {
                   tickCount={5}
                 />
                 <Tooltip
-                  formatter={(value?: number, name?: string) => [
-                    privacyMode ? MASK : formatCurrency(value ?? 0, userCurrency, locale),
-                    name === 'value'
-                      ? t(currentTab.labelKey)
-                      : t(`reports.${name ?? ''}`, { defaultValue: name ?? '' }),
-                  ]}
-                  labelFormatter={(label) => label}
-                  contentStyle={tooltipStyle}
+                  content={({ active, payload, label }) => {
+                    if (!active || !payload || payload.length === 0) return null
+                    const point = payload[0]?.payload as (typeof nwTrendData)[0] | undefined
+                    if (!point) return null
+                    const nw = point.value as number
+                    const delta = point._delta as number
+                    return (
+                      <div style={tooltipStyle} className="px-3 py-2">
+                        <p className="text-xs font-medium mb-1">{label}</p>
+                        <p className="text-xs" style={{ color: '#6366F1' }}>
+                          {t('reports.netWorth')}: {privacyMode ? MASK : formatCurrency(nw, userCurrency, locale)}
+                        </p>
+                        {delta !== 0 && (
+                          <p className="text-xs" style={{ color: delta >= 0 ? '#10B981' : '#F43F5E' }}>
+                            {t('reports.change')}: {privacyMode ? MASK : `${delta >= 0 ? '+' : ''}${formatCurrency(delta, userCurrency, locale)}`}
+                          </p>
+                        )}
+                      </div>
+                    )
+                  }}
                 />
+                {/* Invisible base lifts delta bars to float from prev → current value */}
+                <Bar dataKey="_deltaBase" stackId="nwdelta" fillOpacity={0} stroke="none" maxBarSize={14} isAnimationActive={false} legendType="none" />
+                <Bar dataKey="_deltaSize" stackId="nwdelta" maxBarSize={14} radius={[2, 2, 2, 2]} isAnimationActive={false} legendType="none">
+                  {nwTrendData.map((entry, i) => (
+                    <Cell
+                      key={i}
+                      fill={(entry._delta as number) >= 0 ? '#10B981' : '#F43F5E'}
+                      fillOpacity={(entry._delta as number) === 0 ? 0 : 0.75}
+                    />
+                  ))}
+                </Bar>
                 <Area
                   type="monotone"
                   dataKey="value"
@@ -651,7 +704,7 @@ export default function ReportsPage() {
                   dot={false}
                   activeDot={{ r: 4, fill: '#6366F1' }}
                 />
-              </AreaChart>
+              </ComposedChart>
             </ResponsiveContainer>
             )
           ) : (

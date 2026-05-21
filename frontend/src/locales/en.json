@@ -865,7 +865,8 @@
     "uncategorized": "Uncategorized",
     "categoryTrends": "Category Trends",
     "current": "Current",
-    "accountsAndAssets": "Accounts and Assets"
+    "accountsAndAssets": "Accounts and Assets",
+    "change": "Change"
   },
   "payees": {
     "title": "Payees",

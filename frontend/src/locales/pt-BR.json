@@ -865,7 +865,8 @@
     "uncategorized": "Sem categoria",
     "categoryTrends": "Tendência por Categoria",
     "current": "Atual",
-    "accountsAndAssets": "Contas e Ativos"
+    "accountsAndAssets": "Contas e Ativos",
+    "change": "Variação"
   },
   "payees": {
     "title": "Beneficiários",
