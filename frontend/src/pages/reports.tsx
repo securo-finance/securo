@@ -210,7 +210,7 @@ export default function ReportsPage() {
   const netWorthSummaryData = chartData.map((d) => ({
     ...d,
     liabilitiesNeg: -((d.liabilities as number) ?? 0),
-  }))
+  })) as (Record<string, string | number> & { liabilitiesNeg: number })[]
 
   const nwTrendData = chartData.map((d, i) => {
     const current = d.value as number
@@ -222,7 +222,7 @@ export default function ReportsPage() {
       _deltaSize: i > 0 ? Math.abs(delta) : 0,
       _delta: delta,
     }
-  })
+  }) as (Record<string, string | number> & { _deltaBase: number; _deltaSize: number; _delta: number })[]
 
   const changePrefix = (summary?.change_amount ?? 0) >= 0 ? '+' : ''
   const changeColor = (summary?.change_amount ?? 0) >= 0 ? 'text-emerald-600' : 'text-rose-500'
@@ -1135,7 +1135,7 @@ export default function ReportsPage() {
                         tickCount={5}
                       />
                       <Tooltip
-                        content={({ active, payload, label }: { active?: boolean; payload?: { dataKey?: string | number; value?: number; color?: string }[]; label?: string }) => {
+                        content={({ active, payload, label }: { active?: boolean; payload?: readonly { dataKey?: string | number; value?: number; color?: string }[]; label?: string | number }) => {
                           if (!active || !payload) return null
                           const findLabel = (dk: string) => {
                             if (dk.endsWith('_others')) return t('reports.other')
