@@ -1070,6 +1070,10 @@ async def sync_connection(
                 )
                 existing_tx = existing.scalar_one_or_none()
                 if existing_tx:
+                    # User-flagged rows are frozen: skip status/bill drift so
+                    # a re-sync can't revive a transaction the user hid.
+                    if existing_tx.is_ignored:
+                        continue
                     if existing_tx.status == "pending" and txn_data.status == "posted":
                         existing_tx.status = "posted"
                     # Self-heal bill linkage: a tx that pre-dates the bills
@@ -1097,6 +1101,8 @@ async def sync_connection(
                 # Pass 2: Fuzzy match against manual transactions
                 fuzzy_match = await _fuzzy_match_manual(session, account.id, txn_data)
                 if fuzzy_match:
+                    if fuzzy_match.is_ignored:
+                        continue
                     fuzzy_match.external_id = txn_data.external_id
                     fuzzy_match.source = "sync"
                     fuzzy_match.raw_data = txn_data.raw_data

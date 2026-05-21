@@ -599,6 +599,64 @@ async def test_sync_connection_skips_pending(session: AsyncSession, test_user):
     assert result_conn.status == "active"
 
 
+@pytest.mark.asyncio
+async def test_sync_connection_does_not_revive_ignored_transaction(
+    session: AsyncSession, test_user,
+):
+    """Issue #200: a transaction the user flagged is_ignored=True must not be
+    mutated by a subsequent sync, even when Pluggy returns the same external_id
+    with different fields (e.g. pending → posted)."""
+    from app.models.account import Account
+
+    conn = await _make_connection(session, test_user.id, "Ignore Bank")
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, connection_id=conn.id,
+        name="Checking", type="checking",
+        external_id="ign-acc-1",
+        balance=Decimal("0"), currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+
+    session.add(Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, account_id=account.id,
+        external_id="ign-tx-1", description="DUPLICATE PAYMENT",
+        amount=Decimal("100"), date=date.today(), type="debit",
+        currency="BRL", source="sync", status="pending",
+        is_ignored=True,
+        created_at=datetime.now(timezone.utc),
+    ))
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="ign-acc-1", name="Checking",
+            type="checking", balance=Decimal("0"), currency="BRL",
+        ),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="ign-tx-1", description="DUPLICATE PAYMENT",
+            amount=Decimal("100"), date=date.today(), type="debit",
+            currency="BRL", status="posted",
+        ),
+    ])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(session, conn.id, test_user.id)
+
+    refreshed = (await session.execute(
+        select(Transaction).where(Transaction.external_id == "ign-tx-1")
+    )).scalar_one()
+    assert refreshed.is_ignored is True
+    assert refreshed.status == "pending"  # not flipped to posted
+
+
 # ---------------------------------------------------------------------------
 # Installment metadata persistence (issue #14 v1)
 # ---------------------------------------------------------------------------
