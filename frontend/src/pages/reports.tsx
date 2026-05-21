@@ -204,21 +204,23 @@ export default function ReportsPage() {
   const nwPieAInner: NWPieItem[] = [
     { name: t('reports.accounts'), value: selectedAccounts, color: colorMap['accounts'] || '#6366F1' },
     { name: t('reports.assets'), value: selectedAssets, color: colorMap['assets'] || '#F59E0B' },
-  ].filter((d) => d.value > 0)
+  ].filter((d) => d.value > 0).sort((a, b) => b.value - a.value)
 
-  // Outer ring: individual items, proportionally scaled to the selected period
-  const nwPieAOuter: NWPieItem[] = [
-    ...nwDetailAccounts.map((item: ReportCompositionItem) => ({
-      name: item.label,
-      value: nwDetailTotalAccounts > 0 ? (item.value / nwDetailTotalAccounts) * selectedAccounts : 0,
-      color: item.color,
-    })),
-    ...nwDetailAssets.map((item: ReportCompositionItem) => ({
-      name: item.label,
-      value: nwDetailTotalAssets > 0 ? (item.value / nwDetailTotalAssets) * selectedAssets : 0,
-      color: item.color,
-    })),
-  ].filter((d) => d.value > 0)
+  // Outer ring: items grouped to match inner ring order, sorted by value within each group
+  const nwPieAOuter: NWPieItem[] = nwPieAInner.flatMap((group) => {
+    const isAccounts = group.name === t('reports.accounts')
+    const items = isAccounts ? nwDetailAccounts : nwDetailAssets
+    const total = isAccounts ? nwDetailTotalAccounts : nwDetailTotalAssets
+    const selected = isAccounts ? selectedAccounts : selectedAssets
+    return items
+      .map((item: ReportCompositionItem) => ({
+        name: item.label,
+        value: total > 0 ? (item.value / total) * selected : 0,
+        color: item.color,
+      }))
+      .filter((d) => d.value > 0)
+      .sort((a, b) => b.value - a.value)
+  })
 
   // Inner ring: liabilities group total
   const nwPieBInner: NWPieItem[] = [
@@ -230,7 +232,7 @@ export default function ReportsPage() {
     name: item.label,
     value: nwDetailTotalLiabs > 0 ? (item.value / nwDetailTotalLiabs) * selectedLiabs : 0,
     color: item.color,
-  })).filter((d: NWPieItem) => d.value > 0)
+  })).filter((d: NWPieItem) => d.value > 0).sort((a: NWPieItem, b: NWPieItem) => b.value - a.value)
 
   type NWBarState = { accounts: number; assets: number; liabilities: number; value: number; date: string; index: number } | null
 
@@ -694,9 +696,10 @@ export default function ReportsPage() {
                               data={nwPieAOuter}
                               innerRadius={52}
                               outerRadius={70}
-                              paddingAngle={1}
+                              paddingAngle={0}
                               dataKey="value"
-                              strokeWidth={0}
+                              stroke="var(--card)"
+                              strokeWidth={1}
                               animationBegin={50}
                               animationDuration={500}
                             >
@@ -708,9 +711,10 @@ export default function ReportsPage() {
                               data={nwPieAInner}
                               innerRadius={28}
                               outerRadius={48}
-                              paddingAngle={2}
+                              paddingAngle={0}
                               dataKey="value"
-                              strokeWidth={0}
+                              stroke="var(--card)"
+                              strokeWidth={1}
                               animationBegin={50}
                               animationDuration={500}
                             >
@@ -753,9 +757,10 @@ export default function ReportsPage() {
                               data={nwPieBOuter}
                               innerRadius={52}
                               outerRadius={70}
-                              paddingAngle={1}
+                              paddingAngle={0}
                               dataKey="value"
-                              strokeWidth={0}
+                              stroke="var(--card)"
+                              strokeWidth={1}
                               animationBegin={50}
                               animationDuration={500}
                             >
@@ -769,7 +774,8 @@ export default function ReportsPage() {
                               outerRadius={48}
                               paddingAngle={0}
                               dataKey="value"
-                              strokeWidth={0}
+                              stroke="var(--card)"
+                              strokeWidth={1}
                               animationBegin={50}
                               animationDuration={500}
                             >
