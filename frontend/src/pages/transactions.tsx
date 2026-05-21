@@ -1407,6 +1407,7 @@ export default function TransactionsPage() {
         onSave={handleTransactionSave}
         onDelete={editingTx ? () => deleteMutation.mutate(editingTx.id) : undefined}
         onUnlinkTransfer={(pairId) => unlinkTransferMutation.mutate(pairId)}
+        onIgnoreChanged={invalidateAfterTxMutation}
         loading={createMutation.isPending || updateMutation.isPending || deleteMutation.isPending || unlinkTransferMutation.isPending}
         error={createMutation.error || updateMutation.error ? extractApiError(createMutation.error || updateMutation.error) : null}
         isSynced={editingTx?.source === 'sync'}

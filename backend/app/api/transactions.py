@@ -343,6 +343,19 @@ async def update_transaction(
     return _tag_fx_fallback(TransactionRead.model_validate(transaction, from_attributes=True), primary_currency)
 
 
+@router.patch("/{transaction_id}/ignore", response_model=TransactionRead)
+async def toggle_ignore_transaction(
+    transaction_id: uuid.UUID,
+    session: AsyncSession = Depends(get_async_session),
+    user: User = Depends(current_active_user),
+):
+    transaction = await transaction_service.toggle_ignore_transaction(session, transaction_id, user.id)
+    if not transaction:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+    primary_currency = user.primary_currency
+    return _tag_fx_fallback(TransactionRead.model_validate(transaction, from_attributes=True), primary_currency)
+
+
 @router.delete("/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_transaction(
     transaction_id: uuid.UUID,

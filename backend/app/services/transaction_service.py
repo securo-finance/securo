@@ -1258,6 +1258,22 @@ async def bulk_add_to_group(
     return {"updated": updated, "skipped": skipped}
 
 
+async def toggle_ignore_transaction(
+    session: AsyncSession, transaction_id: uuid.UUID, user_id: uuid.UUID
+) -> Optional[Transaction]:
+    """Flip the is_ignored flag on a transaction. Acts immediately (no
+    other field is touched) so the edit dialog can offer ignore as a
+    one-click action alongside delete, instead of bundling it into the
+    form's Salvar flow."""
+    transaction = await get_transaction(session, transaction_id, user_id)
+    if not transaction:
+        return None
+    transaction.is_ignored = not transaction.is_ignored
+    await session.commit()
+    await session.refresh(transaction)
+    return transaction
+
+
 async def delete_transaction(
     session: AsyncSession, transaction_id: uuid.UUID, user_id: uuid.UUID
 ) -> bool:

@@ -18,6 +18,7 @@ from app.services.transaction_service import (
     create_transaction,
     create_transfer,
     delete_transaction,
+    toggle_ignore_transaction,
     get_transaction,
     get_transactions,
     update_transaction,
@@ -496,6 +497,38 @@ async def test_delete_transaction(session: AsyncSession, test_user, txn_account)
 @pytest.mark.asyncio
 async def test_delete_transaction_not_found(session: AsyncSession, test_user):
     assert await delete_transaction(session, uuid.uuid4(), test_user.id) is False
+
+
+@pytest.mark.asyncio
+async def test_toggle_ignore_transaction(session: AsyncSession, test_user, txn_account):
+    txn = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=txn_account.id,
+        description="ToIgnore",
+        amount=Decimal("10"),
+        date=date(2025, 3, 1),
+        type="debit",
+        source="manual",
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(txn)
+    await session.commit()
+
+    # First toggle: false → true
+    result = await toggle_ignore_transaction(session, txn.id, test_user.id)
+    assert result is not None
+    assert result.is_ignored is True
+
+    # Second toggle: true → false
+    result = await toggle_ignore_transaction(session, txn.id, test_user.id)
+    assert result is not None
+    assert result.is_ignored is False
+
+
+@pytest.mark.asyncio
+async def test_toggle_ignore_transaction_not_found(session: AsyncSession, test_user):
+    assert await toggle_ignore_transaction(session, uuid.uuid4(), test_user.id) is None
 
 
 # ---------------------------------------------------------------------------

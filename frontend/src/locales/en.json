@@ -303,6 +303,10 @@
     "ignoreTransfer": "Ignore this transaction",
     "ignoreTransferHint": "Ignored transactions will not show on reports and balance",
     "ignored": "Ignored",
+    "ignoreAction": "Ignore",
+    "unignoreAction": "Restore",
+    "ignoreSuccess": "Transaction ignored",
+    "unignoreSuccess": "Transaction restored",
     "filtersBar": {
       "filters": "Filters",
       "filterBy": "Filter by",

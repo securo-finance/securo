@@ -303,6 +303,10 @@
     "ignoreTransfer": "Ignorar esta transação",
     "ignoreTransferHint": "Transações ignoradas não entram nos relatórios",
     "ignored": "Ignorado",
+    "ignoreAction": "Ignorar",
+    "unignoreAction": "Não ignorar",
+    "ignoreSuccess": "Transação ignorada",
+    "unignoreSuccess": "Transação reativada",
     "filtersBar": {
       "filters": "Filtros",
       "filterBy": "Filtrar por",

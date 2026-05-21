@@ -300,6 +300,10 @@ export const transactions = {
   delete: async (id: string): Promise<void> => {
     await api.delete(`/transactions/${id}`)
   },
+  toggleIgnore: async (id: string): Promise<Transaction> => {
+    const { data } = await api.patch(`/transactions/${id}/ignore`)
+    return data
+  },
   createTransfer: async (transfer: {
     from_account_id: string
     to_account_id: string
