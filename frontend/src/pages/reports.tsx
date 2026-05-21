@@ -833,6 +833,7 @@ export default function ReportsPage() {
                             transform: compositionView === 'detailed' ? 'scale(1)' : 'scale(1.458)',
                             transition: 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
                             transformOrigin: 'center',
+                            zIndex: 1,
                           }}
                         >
                           <ResponsiveContainer width="100%" height="100%">
@@ -903,6 +904,7 @@ export default function ReportsPage() {
                             transform: compositionView === 'detailed' ? 'scale(1)' : 'scale(1.458)',
                             transition: 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
                             transformOrigin: 'center',
+                            zIndex: 1,
                           }}
                         >
                           <ResponsiveContainer width="100%" height="100%">
