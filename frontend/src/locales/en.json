@@ -864,7 +864,8 @@
     "other": "Other",
     "uncategorized": "Uncategorized",
     "categoryTrends": "Category Trends",
-    "current": "Current"
+    "current": "Current",
+    "accountsAndAssets": "Accounts and Assets"
   },
   "payees": {
     "title": "Payees",
