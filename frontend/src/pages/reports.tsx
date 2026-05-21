@@ -768,51 +768,60 @@ export default function ReportsPage() {
                     <p className="text-[11px] font-medium text-muted-foreground">{t('reports.accountsAndAssets')}</p>
                     {nwPieAInner.length > 0 ? (
                       <div className="relative" style={{ width: 148, height: 148 }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={nwPieAOuter}
-                              innerRadius={52}
-                              outerRadius={70}
-                              paddingAngle={0}
-                              dataKey="value"
-                              stroke="var(--card)"
-                              strokeWidth={1}
-                              animationBegin={50}
-                              animationDuration={500}
-                            >
-                              {nwPieAOuter.map((entry, idx) => (
-                                <Cell key={idx} fill={entry.color} />
-                              ))}
-                            </Pie>
-                            <Pie
-                              data={nwPieAInner}
-                              innerRadius={28}
-                              outerRadius={48}
-                              paddingAngle={0}
-                              dataKey="value"
-                              stroke="var(--card)"
-                              strokeWidth={1}
-                              animationBegin={50}
-                              animationDuration={500}
-                            >
-                              {nwPieAInner.map((entry, idx) => (
-                                <Cell key={idx} fill={entry.color} />
-                              ))}
-                            </Pie>
-                            <Tooltip
-                              formatter={(value?: number, name?: string) => {
-                                const v = value ?? 0
-                                const total = selectedAccounts + selectedAssets
-                                const pct = total > 0 ? ((v / total) * 100).toFixed(1) : '0'
-                                return [privacyMode ? MASK : `${formatCurrency(v, userCurrency, locale)} (${pct}%)`, name]
-                              }}
-                              contentStyle={{ ...tooltipStyle, zIndex: 10 }}
-                              itemStyle={tooltipItemStyle}
-                              wrapperStyle={{ zIndex: 10 }}
-                            />
-                          </PieChart>
-                        </ResponsiveContainer>
+                        <div
+                          className="absolute inset-0"
+                          style={{
+                            transform: compositionView === 'detailed' ? 'scale(1)' : 'scale(1.458)',
+                            transition: 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+                            transformOrigin: 'center',
+                          }}
+                        >
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie
+                                data={compositionView === 'detailed' ? nwPieAOuter : []}
+                                innerRadius={52}
+                                outerRadius={70}
+                                paddingAngle={0}
+                                dataKey="value"
+                                stroke="var(--card)"
+                                strokeWidth={1}
+                                animationBegin={0}
+                                animationDuration={500}
+                              >
+                                {nwPieAOuter.map((entry, idx) => (
+                                  <Cell key={idx} fill={entry.color} />
+                                ))}
+                              </Pie>
+                              <Pie
+                                data={nwPieAInner}
+                                innerRadius={28}
+                                outerRadius={48}
+                                paddingAngle={0}
+                                dataKey="value"
+                                stroke="var(--card)"
+                                strokeWidth={1}
+                                animationBegin={50}
+                                animationDuration={500}
+                              >
+                                {nwPieAInner.map((entry, idx) => (
+                                  <Cell key={idx} fill={entry.color} />
+                                ))}
+                              </Pie>
+                              <Tooltip
+                                formatter={(value?: number, name?: string) => {
+                                  const v = value ?? 0
+                                  const total = selectedAccounts + selectedAssets
+                                  const pct = total > 0 ? ((v / total) * 100).toFixed(1) : '0'
+                                  return [privacyMode ? MASK : `${formatCurrency(v, userCurrency, locale)} (${pct}%)`, name]
+                                }}
+                                contentStyle={{ ...tooltipStyle, zIndex: 10 }}
+                                itemStyle={tooltipItemStyle}
+                                wrapperStyle={{ zIndex: 10 }}
+                              />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
                         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                           <span className="text-[10px] font-bold text-foreground tabular-nums">
                             {mask(formatCompact(selectedAccounts + selectedAssets, userCurrency, locale))}
@@ -829,50 +838,59 @@ export default function ReportsPage() {
                     <p className="text-[11px] font-medium text-muted-foreground">{t('reports.liabilities')}</p>
                     {nwPieBInner.length > 0 ? (
                       <div className="relative" style={{ width: 148, height: 148 }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={nwPieBOuter}
-                              innerRadius={52}
-                              outerRadius={70}
-                              paddingAngle={0}
-                              dataKey="value"
-                              stroke="var(--card)"
-                              strokeWidth={1}
-                              animationBegin={50}
-                              animationDuration={500}
-                            >
-                              {nwPieBOuter.map((entry, idx) => (
-                                <Cell key={idx} fill={entry.color} />
-                              ))}
-                            </Pie>
-                            <Pie
-                              data={nwPieBInner}
-                              innerRadius={28}
-                              outerRadius={48}
-                              paddingAngle={0}
-                              dataKey="value"
-                              stroke="var(--card)"
-                              strokeWidth={1}
-                              animationBegin={50}
-                              animationDuration={500}
-                            >
-                              {nwPieBInner.map((entry, idx) => (
-                                <Cell key={idx} fill={entry.color} />
-                              ))}
-                            </Pie>
-                            <Tooltip
-                              formatter={(value?: number, name?: string) => {
-                                const v = value ?? 0
-                                const pct = selectedLiabs > 0 ? ((v / selectedLiabs) * 100).toFixed(1) : '0'
-                                return [privacyMode ? MASK : `${formatCurrency(v, userCurrency, locale)} (${pct}%)`, name]
-                              }}
-                              contentStyle={{ ...tooltipStyle, zIndex: 10 }}
-                              itemStyle={tooltipItemStyle}
-                              wrapperStyle={{ zIndex: 10 }}
-                            />
-                          </PieChart>
-                        </ResponsiveContainer>
+                        <div
+                          className="absolute inset-0"
+                          style={{
+                            transform: compositionView === 'detailed' ? 'scale(1)' : 'scale(1.458)',
+                            transition: 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+                            transformOrigin: 'center',
+                          }}
+                        >
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie
+                                data={compositionView === 'detailed' ? nwPieBOuter : []}
+                                innerRadius={52}
+                                outerRadius={70}
+                                paddingAngle={0}
+                                dataKey="value"
+                                stroke="var(--card)"
+                                strokeWidth={1}
+                                animationBegin={0}
+                                animationDuration={500}
+                              >
+                                {nwPieBOuter.map((entry, idx) => (
+                                  <Cell key={idx} fill={entry.color} />
+                                ))}
+                              </Pie>
+                              <Pie
+                                data={nwPieBInner}
+                                innerRadius={28}
+                                outerRadius={48}
+                                paddingAngle={0}
+                                dataKey="value"
+                                stroke="var(--card)"
+                                strokeWidth={1}
+                                animationBegin={50}
+                                animationDuration={500}
+                              >
+                                {nwPieBInner.map((entry, idx) => (
+                                  <Cell key={idx} fill={entry.color} />
+                                ))}
+                              </Pie>
+                              <Tooltip
+                                formatter={(value?: number, name?: string) => {
+                                  const v = value ?? 0
+                                  const pct = selectedLiabs > 0 ? ((v / selectedLiabs) * 100).toFixed(1) : '0'
+                                  return [privacyMode ? MASK : `${formatCurrency(v, userCurrency, locale)} (${pct}%)`, name]
+                                }}
+                                contentStyle={{ ...tooltipStyle, zIndex: 10 }}
+                                itemStyle={tooltipItemStyle}
+                                wrapperStyle={{ zIndex: 10 }}
+                              />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
                         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                           <span className="text-[10px] font-bold text-foreground tabular-nums">
                             {mask(formatCompact(selectedLiabs, userCurrency, locale))}
