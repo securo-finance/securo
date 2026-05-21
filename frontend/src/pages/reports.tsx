@@ -38,6 +38,57 @@ function formatCompact(value: number, currency = 'USD', locale = 'en-US') {
   }).format(value)
 }
 
+function hexToHsl(hex: string): [number, number, number] {
+  const r = parseInt(hex.slice(1, 3), 16) / 255
+  const g = parseInt(hex.slice(3, 5), 16) / 255
+  const b = parseInt(hex.slice(5, 7), 16) / 255
+  const max = Math.max(r, g, b), min = Math.min(r, g, b)
+  let h = 0
+  const l = (max + min) / 2
+  const d = max - min
+  const s = d === 0 ? 0 : l > 0.5 ? d / (2 - max - min) : d / (max + min)
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6
+    else if (max === g) h = ((b - r) / d + 2) / 6
+    else h = ((r - g) / d + 4) / 6
+  }
+  return [h * 360, s * 100, l * 100]
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  h /= 360; s /= 100; l /= 100
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s
+  const p = 2 * l - q
+  const hue2rgb = (t: number) => {
+    if (t < 0) t += 1
+    if (t > 1) t -= 1
+    if (t < 1 / 6) return p + (q - p) * 6 * t
+    if (t < 1 / 2) return q
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6
+    return p
+  }
+  const rv = s === 0 ? l : hue2rgb(h + 1 / 3)
+  const gv = s === 0 ? l : hue2rgb(h)
+  const bv = s === 0 ? l : hue2rgb(h - 1 / 3)
+  return '#' + [rv, gv, bv].map((x) => Math.round(x * 255).toString(16).padStart(2, '0')).join('')
+}
+
+// Returns `count` colors from most vivid → most muted.
+// The endpoint shifts hue by +50° and retains half the saturation so each
+// group fades toward its own distinct soft color instead of a shared gray.
+function buildGroupGradient(baseHex: string, count: number): string[] {
+  if (count <= 0) return []
+  if (count === 1) return [baseHex]
+  const [h, s, l] = hexToHsl(baseHex)
+  const targetH = h + 50
+  const targetS = s * 0.50
+  const targetL = Math.min(l + 18, 80)
+  return Array.from({ length: count }, (_, i) => {
+    const t = i / (count - 1)
+    return hslToHex(h + (targetH - h) * t, s + (targetS - s) * t, l + (targetL - l) * t)
+  })
+}
+
 const COMPOSITION_TOP_N = 10
 
 type RangeOption = { key: string; months: number }
@@ -205,6 +256,10 @@ export default function ReportsPage() {
   const nwBarsAssets = nwDetailAssets.slice(0, COMPOSITION_TOP_N)
   const nwBarsLiabs = nwDetailLiabs.slice(0, COMPOSITION_TOP_N)
 
+  const accountsGradient = buildGroupGradient(colorMap['accounts'] || '#6366F1', COMPOSITION_TOP_N)
+  const assetsGradient = buildGroupGradient(colorMap['assets'] || '#F59E0B', COMPOSITION_TOP_N)
+  const liabsGradient = buildGroupGradient(colorMap['liabilities'] || '#F43F5E', COMPOSITION_TOP_N)
+
   const lastNWIndex = netWorthSummaryData.length - 1
   const isCurrentNW = selectedNWBar == null || selectedNWBar.index === lastNWIndex
   const nwPeriodLabel = isCurrentNW ? t('reports.current') : selectedNWBar!.date
@@ -225,19 +280,20 @@ export default function ReportsPage() {
   const nwPieAOuter: NWPieItem[] = nwPieAInner.flatMap((group) => {
     const isAccounts = group.name === t('reports.accounts')
     const items = isAccounts ? nwDetailAccounts : nwDetailAssets
+    const gradient = isAccounts ? accountsGradient : assetsGradient
     const total = isAccounts ? nwDetailTotalAccounts : nwDetailTotalAssets
     const selected = isAccounts ? selectedAccounts : selectedAssets
     const sorted = items
       .map((item: ReportCompositionItem) => ({
         name: item.label,
         value: total > 0 ? (item.value / total) * selected : 0,
-        color: item.color,
       }))
       .filter((d) => d.value > 0)
       .sort((a, b) => b.value - a.value)
+      .map((d, i) => ({ ...d, color: gradient[i] ?? gradient[gradient.length - 1] ?? '#6B7280' }))
     const top = sorted.slice(0, COMPOSITION_TOP_N)
     const otherValue = sorted.slice(COMPOSITION_TOP_N).reduce((s, d) => s + d.value, 0)
-    if (otherValue > 0) top.push({ name: t('reports.other'), value: otherValue, color: '#6B7280' })
+    if (otherValue > 0) top.push({ name: t('reports.other'), value: otherValue, color: gradient[gradient.length - 1] ?? '#6B7280' })
     return top
   })
 
@@ -247,15 +303,18 @@ export default function ReportsPage() {
   ].filter((d) => d.value > 0)
 
   // Outer ring: individual liability items, proportionally scaled
-  const nwPieBOuterSorted: NWPieItem[] = nwDetailLiabs.map((item: ReportCompositionItem) => ({
-    name: item.label,
-    value: nwDetailTotalLiabs > 0 ? (item.value / nwDetailTotalLiabs) * selectedLiabs : 0,
-    color: item.color,
-  })).filter((d: NWPieItem) => d.value > 0).sort((a: NWPieItem, b: NWPieItem) => b.value - a.value)
+  const nwPieBOuterSorted: NWPieItem[] = nwDetailLiabs
+    .map((item: ReportCompositionItem) => ({
+      name: item.label,
+      value: nwDetailTotalLiabs > 0 ? (item.value / nwDetailTotalLiabs) * selectedLiabs : 0,
+    }))
+    .filter((d) => d.value > 0)
+    .sort((a, b) => b.value - a.value)
+    .map((d, i) => ({ ...d, color: liabsGradient[i] ?? liabsGradient[liabsGradient.length - 1] ?? '#6B7280' }))
   const nwPieBOuter: NWPieItem[] = (() => {
     const top = nwPieBOuterSorted.slice(0, COMPOSITION_TOP_N)
     const otherValue = nwPieBOuterSorted.slice(COMPOSITION_TOP_N).reduce((s, d) => s + d.value, 0)
-    if (otherValue > 0) top.push({ name: t('reports.other'), value: otherValue, color: '#6B7280' })
+    if (otherValue > 0) top.push({ name: t('reports.other'), value: otherValue, color: liabsGradient[liabsGradient.length - 1] ?? '#6B7280' })
     return top
   })()
 
@@ -1129,48 +1188,66 @@ export default function ReportsPage() {
                         }}
                       />
                       <ReferenceLine y={0} stroke="var(--border)" strokeDasharray="3 3" />
-                      {nwBarsAccounts.map((item: ReportCompositionItem, idx: number) => (
-                        <Bar key={`acct_${item.key}`} dataKey={`acct_${item.key}`} stackId="stack" fill={item.color} maxBarSize={32} radius={[0, 0, 0, 0]} onClick={handleDetailedBarClick}>
-                          {netWorthDetailedData.map((_: unknown, i: number) => (
-                            <Cell key={i} fill={item.color} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
-                          ))}
-                        </Bar>
-                      ))}
-                      {nwDetailAccounts.length > COMPOSITION_TOP_N && (
-                        <Bar key="acct_others" dataKey="acct_others" stackId="stack" fill="#6B7280" maxBarSize={32} radius={nwBarsAssets.length === 0 && nwDetailLiabs.length === 0 ? [4, 4, 0, 0] : [0, 0, 0, 0]} onClick={handleDetailedBarClick}>
-                          {netWorthDetailedData.map((_: unknown, i: number) => (
-                            <Cell key={i} fill="#6B7280" opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
-                          ))}
-                        </Bar>
-                      )}
-                      {nwBarsAssets.map((item: ReportCompositionItem, idx: number) => (
-                        <Bar key={`asset_${item.key}`} dataKey={`asset_${item.key}`} stackId="stack" fill={item.color} maxBarSize={32} radius={[0, 0, 0, 0]} onClick={handleDetailedBarClick}>
-                          {netWorthDetailedData.map((_: unknown, i: number) => (
-                            <Cell key={i} fill={item.color} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
-                          ))}
-                        </Bar>
-                      ))}
-                      {nwDetailAssets.length > COMPOSITION_TOP_N && (
-                        <Bar key="asset_others" dataKey="asset_others" stackId="stack" fill="#6B7280" maxBarSize={32} radius={nwDetailLiabs.length === 0 ? [4, 4, 0, 0] : [0, 0, 0, 0]} onClick={handleDetailedBarClick}>
-                          {netWorthDetailedData.map((_: unknown, i: number) => (
-                            <Cell key={i} fill="#6B7280" opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
-                          ))}
-                        </Bar>
-                      )}
-                      {nwBarsLiabs.map((item: ReportCompositionItem, idx: number) => (
-                        <Bar key={`liab_${item.key}`} dataKey={`liab_${item.key}`} stackId="stack" fill={item.color} maxBarSize={32} radius={[0, 0, 0, 0]} onClick={handleDetailedBarClick}>
-                          {netWorthDetailedData.map((_: unknown, i: number) => (
-                            <Cell key={i} fill={item.color} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
-                          ))}
-                        </Bar>
-                      ))}
-                      {nwDetailLiabs.length > COMPOSITION_TOP_N && (
-                        <Bar key="liab_others" dataKey="liab_others" stackId="stack" fill="#6B7280" maxBarSize={32} radius={[4, 4, 0, 0]} onClick={handleDetailedBarClick}>
-                          {netWorthDetailedData.map((_: unknown, i: number) => (
-                            <Cell key={i} fill="#6B7280" opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
-                          ))}
-                        </Bar>
-                      )}
+                      {nwBarsAccounts.map((item: ReportCompositionItem, idx: number) => {
+                        const color = accountsGradient[idx] ?? accountsGradient[accountsGradient.length - 1]
+                        return (
+                          <Bar key={`acct_${item.key}`} dataKey={`acct_${item.key}`} stackId="stack" fill={color} maxBarSize={32} radius={[0, 0, 0, 0]} onClick={handleDetailedBarClick}>
+                            {netWorthDetailedData.map((_: unknown, i: number) => (
+                              <Cell key={i} fill={color} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
+                            ))}
+                          </Bar>
+                        )
+                      })}
+                      {nwDetailAccounts.length > COMPOSITION_TOP_N && (() => {
+                        const color = accountsGradient[accountsGradient.length - 1] ?? '#6B7280'
+                        return (
+                          <Bar key="acct_others" dataKey="acct_others" stackId="stack" fill={color} maxBarSize={32} radius={nwBarsAssets.length === 0 && nwDetailLiabs.length === 0 ? [4, 4, 0, 0] : [0, 0, 0, 0]} onClick={handleDetailedBarClick}>
+                            {netWorthDetailedData.map((_: unknown, i: number) => (
+                              <Cell key={i} fill={color} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
+                            ))}
+                          </Bar>
+                        )
+                      })()}
+                      {nwBarsAssets.map((item: ReportCompositionItem, idx: number) => {
+                        const color = assetsGradient[idx] ?? assetsGradient[assetsGradient.length - 1]
+                        return (
+                          <Bar key={`asset_${item.key}`} dataKey={`asset_${item.key}`} stackId="stack" fill={color} maxBarSize={32} radius={[0, 0, 0, 0]} onClick={handleDetailedBarClick}>
+                            {netWorthDetailedData.map((_: unknown, i: number) => (
+                              <Cell key={i} fill={color} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
+                            ))}
+                          </Bar>
+                        )
+                      })}
+                      {nwDetailAssets.length > COMPOSITION_TOP_N && (() => {
+                        const color = assetsGradient[assetsGradient.length - 1] ?? '#6B7280'
+                        return (
+                          <Bar key="asset_others" dataKey="asset_others" stackId="stack" fill={color} maxBarSize={32} radius={nwDetailLiabs.length === 0 ? [4, 4, 0, 0] : [0, 0, 0, 0]} onClick={handleDetailedBarClick}>
+                            {netWorthDetailedData.map((_: unknown, i: number) => (
+                              <Cell key={i} fill={color} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
+                            ))}
+                          </Bar>
+                        )
+                      })()}
+                      {nwBarsLiabs.map((item: ReportCompositionItem, idx: number) => {
+                        const color = liabsGradient[idx] ?? liabsGradient[liabsGradient.length - 1]
+                        return (
+                          <Bar key={`liab_${item.key}`} dataKey={`liab_${item.key}`} stackId="stack" fill={color} maxBarSize={32} radius={[0, 0, 0, 0]} onClick={handleDetailedBarClick}>
+                            {netWorthDetailedData.map((_: unknown, i: number) => (
+                              <Cell key={i} fill={color} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
+                            ))}
+                          </Bar>
+                        )
+                      })}
+                      {nwDetailLiabs.length > COMPOSITION_TOP_N && (() => {
+                        const color = liabsGradient[liabsGradient.length - 1] ?? '#6B7280'
+                        return (
+                          <Bar key="liab_others" dataKey="liab_others" stackId="stack" fill={color} maxBarSize={32} radius={[4, 4, 0, 0]} onClick={handleDetailedBarClick}>
+                            {netWorthDetailedData.map((_: unknown, i: number) => (
+                              <Cell key={i} fill={color} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
+                            ))}
+                          </Bar>
+                        )
+                      })()}
                       <Line
                         type="monotone"
                         dataKey="value"
