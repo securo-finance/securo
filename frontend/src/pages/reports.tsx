@@ -108,6 +108,7 @@ export default function ReportsPage() {
   const [compositionView, setCompositionView] = useState<string>('summary')
   const [sparklineView, setSparklineView] = useState<'byExpenses' | 'byIncome'>('byExpenses')
   const [sparklinePage, setSparklinePage] = useState(0)
+  const [selectedNWBar, setSelectedNWBar] = useState<{ accounts: number; assets: number; liabilities: number; value: number; date: string; index: number } | null>(null)
 
   const currentTab = REPORT_TABS.find((tab) => tab.key === activeTab) ?? REPORT_TABS[0]
 
@@ -119,6 +120,7 @@ export default function ReportsPage() {
     setActiveTab(key)
     setCompositionView('summary')
     setSparklinePage(0)
+    setSelectedNWBar(null)
     // Clamp months/interval to options supported by the new tab
     const nextRanges = key === 'cash_flow' ? FORWARD_RANGE_OPTIONS : HISTORICAL_RANGE_OPTIONS
     if (!nextRanges.some((r) => r.months === months)) {
@@ -187,6 +189,45 @@ export default function ReportsPage() {
   const nwDetailTotalAccounts = nwDetailAccounts.reduce((s: number, c: ReportCompositionItem) => s + c.value, 0)
   const nwDetailTotalAssets = nwDetailAssets.reduce((s: number, c: ReportCompositionItem) => s + c.value, 0)
   const nwDetailTotalLiabs = nwDetailLiabs.reduce((s: number, c: ReportCompositionItem) => s + c.value, 0)
+
+  const lastNWIndex = netWorthSummaryData.length - 1
+  const isCurrentNW = selectedNWBar == null || selectedNWBar.index === lastNWIndex
+  const nwPeriodLabel = isCurrentNW ? t('reports.current') : selectedNWBar!.date
+
+  const nwDonutData = [
+    { name: t('reports.accounts'), value: selectedNWBar ? selectedNWBar.accounts : nwDetailTotalAccounts, color: colorMap['accounts'] || '#6366F1' },
+    { name: t('reports.assets'), value: selectedNWBar ? selectedNWBar.assets : nwDetailTotalAssets, color: colorMap['assets'] || '#F59E0B' },
+    { name: t('reports.liabilities'), value: selectedNWBar ? selectedNWBar.liabilities : nwDetailTotalLiabs, color: colorMap['liabilities'] || '#F43F5E' },
+  ].filter((d) => d.value > 0)
+
+  type NWBarState = { accounts: number; assets: number; liabilities: number; value: number; date: string; index: number } | null
+
+  const handleSummaryBarClick = (_data: unknown, index: number) => {
+    const row = netWorthSummaryData[index]
+    if (!row) return
+    setSelectedNWBar((prev: NWBarState) =>
+      prev?.index === index ? null : {
+        accounts: (row.accounts as number) ?? 0,
+        assets: (row.assets as number) ?? 0,
+        liabilities: Math.abs((row.liabilitiesNeg as number) ?? 0),
+        value: (row.value as number) ?? 0,
+        date: row.date as string,
+        index,
+      }
+    )
+  }
+
+  const handleDetailedBarClick = (_data: unknown, index: number) => {
+    const row = netWorthDetailedData[index]
+    if (!row) return
+    setSelectedNWBar((prev: NWBarState) => {
+      if (prev?.index === index) return null
+      const accounts = nwDetailAccounts.reduce((s: number, it: ReportCompositionItem) => s + ((row[`acct_${it.key}`] as number) ?? 0), 0)
+      const assets = nwDetailAssets.reduce((s: number, it: ReportCompositionItem) => s + ((row[`asset_${it.key}`] as number) ?? 0), 0)
+      const liabilities = Math.abs(nwDetailLiabs.reduce((s: number, it: ReportCompositionItem) => s + ((row[`liab_${it.key}`] as number) ?? 0), 0))
+      return { accounts, assets, liabilities, value: (row.value as number) ?? 0, date: row.date as string, index }
+    })
+  }
 
   const netWorthDetailedData: Record<string, string | number>[] = meta?.type !== 'net_worth' ? [] : chartData.map((d: Record<string, string | number>) => {
     const aTotal = (d.accounts as number) ?? 0
@@ -588,235 +629,348 @@ export default function ReportsPage() {
       </div>
 
       {meta?.type === 'net_worth' && (
-        <div className="bg-card rounded-xl border border-border shadow-sm">
-          <div className="px-5 pt-4 pb-2 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <p className="text-sm font-semibold text-foreground">{t('reports.evolution')}</p>
-              {compositionView === 'summary' && (
-                <div className="hidden sm:flex items-center gap-3">
-                  {[
-                    { key: 'accounts', color: colorMap['accounts'] || '#6366F1' },
-                    { key: 'assets', color: colorMap['assets'] || '#F59E0B' },
-                    { key: 'liabilities', color: colorMap['liabilities'] || '#F43F5E' },
-                  ].map(({ key, color }) => (
-                    <div key={key} className="flex items-center gap-1.5">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
-                      <span className="text-[11px] text-muted-foreground">{t(`reports.${key}`)}</span>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          {/* Composition donut — mirrors selected bar or falls back to current snapshot */}
+          <div className="bg-card rounded-xl border border-border shadow-sm">
+            <div className="px-5 pt-4 pb-2 flex items-baseline gap-2">
+              <p className="text-sm font-semibold text-foreground">{t('reports.composition')}</p>
+              <span className="text-xs text-muted-foreground">{nwPeriodLabel}</span>
+            </div>
+            <div className="px-1 pb-4">
+              {isLoading ? (
+                <div className="px-4" style={{ height: 200 }}>
+                  <Skeleton className="h-full w-full" />
+                </div>
+              ) : nwDonutData.length > 0 ? (
+                <div className="flex flex-col items-center">
+                  <div className="relative" style={{ width: 200, height: 200 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={nwDonutData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={55}
+                          outerRadius={85}
+                          paddingAngle={3}
+                          dataKey="value"
+                          strokeWidth={0}
+                          animationBegin={50}
+                          animationDuration={500}
+                        >
+                          {nwDonutData.map((entry, idx) => (
+                            <Cell key={idx} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(value?: number, name?: string) => {
+                            const v = value ?? 0
+                            const total = nwDonutData.reduce((s, d) => s + d.value, 0)
+                            const pct = total > 0 ? ((v / total) * 100).toFixed(1) : '0'
+                            return [
+                              privacyMode ? MASK : `${formatCurrency(v, userCurrency, locale)} (${pct}%)`,
+                              name,
+                            ]
+                          }}
+                          contentStyle={{ ...tooltipStyle, zIndex: 10 }}
+                          itemStyle={tooltipItemStyle}
+                          wrapperStyle={{ zIndex: 10 }}
+                          offset={20}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none" style={{ zIndex: 0 }}>
+                      <span className="text-[10px] text-muted-foreground">
+                        {selectedNWBar ? selectedNWBar.date : t('reports.netWorth')}
+                      </span>
+                      <span className="text-base font-bold text-foreground tabular-nums">
+                        {mask(formatCompact(selectedNWBar ? selectedNWBar.value : (summary?.primary_value ?? 0), userCurrency, locale))}
+                      </span>
                     </div>
-                  ))}
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-3 h-0 border-t-2 border-dashed" style={{ borderColor: '#10B981' }} />
-                    <span className="text-[11px] text-muted-foreground">{t('reports.netWorth')}</span>
+                  </div>
+                  <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 px-3 mt-1">
+                    {nwDonutData.map((d) => (
+                      <div key={d.name} className="flex items-center gap-1.5">
+                        <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                        <span className="text-[11px] text-muted-foreground whitespace-nowrap">{d.name}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
+              ) : (
+                <p className="text-muted-foreground text-sm text-center py-16">{t('reports.noData')}</p>
               )}
-            </div>
-            <div className="flex items-center rounded-lg border border-border bg-muted/30 overflow-hidden">
-              {(['summary', 'detailed'] as const).map((opt) => (
-                <button
-                  key={opt}
-                  onClick={() => setCompositionView(opt)}
-                  className={`px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                    compositionView === opt
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                  }`}
-                >
-                  {t(`reports.${opt}`)}
-                </button>
-              ))}
             </div>
           </div>
-          {compositionView === 'summary' ? (
-            <div className="px-1 pb-4" style={{ height: 320 }}>
-              {isLoading ? (
-                <div className="px-4"><Skeleton className="h-full w-full" /></div>
-              ) : netWorthSummaryData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={netWorthSummaryData} stackOffset="sign" margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
-                      axisLine={false}
-                      tickLine={false}
-                      interval="preserveStartEnd"
-                    />
-                    <YAxis
-                      tickFormatter={(v) => {
-                        if (privacyMode) return ''
-                        if (v === 0) return '0'
-                        return formatCompact(v, userCurrency, locale)
-                      }}
-                      tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
-                      axisLine={false}
-                      tickLine={false}
-                      width={64}
-                      tickCount={5}
-                    />
-                    <Tooltip
-                      content={({ active, payload, label }) => {
-                        if (!active || !payload) return null
-                        const liabEntry = payload.find((p) => p.dataKey === 'liabilitiesNeg')
-                        const netEntry = payload.find((p) => p.dataKey === 'value')
-                        return (
-                          <div style={tooltipStyle} className="px-3 py-2">
-                            <p className="text-xs font-medium mb-1">{label}</p>
-                            {payload
-                              .filter((p) => p.dataKey !== 'liabilitiesNeg' && p.dataKey !== 'value' && (p.value as number) !== 0)
-                              .map((p) => (
-                                <p key={p.dataKey as string} className="text-xs" style={{ color: p.color }}>
-                                  {t(`reports.${p.dataKey}`, { defaultValue: String(p.name) })}:{' '}
-                                  {privacyMode ? MASK : formatCurrency(p.value as number, userCurrency, locale)}
+
+          {/* Evolution chart */}
+          <div className="lg:col-span-2 bg-card rounded-xl border border-border shadow-sm">
+            <div className="px-5 pt-4 pb-2 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <p className="text-sm font-semibold text-foreground">{t('reports.evolution')}</p>
+                {compositionView === 'summary' && (
+                  <div className="hidden sm:flex items-center gap-3">
+                    {[
+                      { key: 'accounts', color: colorMap['accounts'] || '#6366F1' },
+                      { key: 'assets', color: colorMap['assets'] || '#F59E0B' },
+                      { key: 'liabilities', color: colorMap['liabilities'] || '#F43F5E' },
+                    ].map(({ key, color }) => (
+                      <div key={key} className="flex items-center gap-1.5">
+                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
+                        <span className="text-[11px] text-muted-foreground">{t(`reports.${key}`)}</span>
+                      </div>
+                    ))}
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-0 border-t-2 border-dashed" style={{ borderColor: '#10B981' }} />
+                      <span className="text-[11px] text-muted-foreground">{t('reports.netWorth')}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center rounded-lg border border-border bg-muted/30 overflow-hidden">
+                {(['summary', 'detailed'] as const).map((opt) => (
+                  <button
+                    key={opt}
+                    onClick={() => setCompositionView(opt)}
+                    className={`px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                      compositionView === opt
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                    }`}
+                  >
+                    {t(`reports.${opt}`)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {compositionView === 'summary' ? (
+              <div className="px-1 pb-4" style={{ height: 320 }}>
+                {isLoading ? (
+                  <div className="px-4"><Skeleton className="h-full w-full" /></div>
+                ) : netWorthSummaryData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart
+                      data={netWorthSummaryData}
+                      stackOffset="sign"
+                      margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <XAxis
+                        dataKey="date"
+                        tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
+                        axisLine={false}
+                        tickLine={false}
+                        interval="preserveStartEnd"
+                      />
+                      <YAxis
+                        tickFormatter={(v) => {
+                          if (privacyMode) return ''
+                          if (v === 0) return '0'
+                          return formatCompact(v, userCurrency, locale)
+                        }}
+                        tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
+                        axisLine={false}
+                        tickLine={false}
+                        width={64}
+                        tickCount={5}
+                      />
+                      <Tooltip
+                        content={({ active, payload, label }) => {
+                          if (!active || !payload) return null
+                          const liabEntry = payload.find((p) => p.dataKey === 'liabilitiesNeg')
+                          const netEntry = payload.find((p) => p.dataKey === 'value')
+                          return (
+                            <div style={tooltipStyle} className="px-3 py-2">
+                              <p className="text-xs font-medium mb-1">{label}</p>
+                              {payload
+                                .filter((p) => p.dataKey !== 'liabilitiesNeg' && p.dataKey !== 'value' && (p.value as number) !== 0)
+                                .map((p) => (
+                                  <p key={p.dataKey as string} className="text-xs" style={{ color: p.color }}>
+                                    {t(`reports.${p.dataKey}`, { defaultValue: String(p.name) })}:{' '}
+                                    {privacyMode ? MASK : formatCurrency(p.value as number, userCurrency, locale)}
+                                  </p>
+                                ))
+                              }
+                              {liabEntry && (liabEntry.value as number) !== 0 && (
+                                <p className="text-xs" style={{ color: '#F43F5E' }}>
+                                  {t('reports.liabilities')}:{' '}
+                                  {privacyMode ? MASK : formatCurrency(-(liabEntry.value as number), userCurrency, locale)}
                                 </p>
-                              ))
-                            }
-                            {liabEntry && (liabEntry.value as number) !== 0 && (
-                              <p className="text-xs" style={{ color: '#F43F5E' }}>
-                                {t('reports.liabilities')}:{' '}
-                                {privacyMode ? MASK : formatCurrency(-(liabEntry.value as number), userCurrency, locale)}
-                              </p>
-                            )}
-                            {netEntry && (
-                              <p className="text-xs font-semibold mt-1" style={{ color: '#10B981' }}>
-                                {t('reports.netWorth')}:{' '}
-                                {privacyMode ? MASK : formatCurrency(netEntry.value as number, userCurrency, locale)}
-                              </p>
-                            )}
-                          </div>
-                        )
-                      }}
-                    />
-                    <ReferenceLine y={0} stroke="var(--border)" strokeDasharray="3 3" />
-                    <Bar dataKey="accounts" stackId="stack" fill={colorMap['accounts'] || '#6366F1'} maxBarSize={32} radius={[0, 0, 0, 0]} />
-                    <Bar dataKey="assets" stackId="stack" fill={colorMap['assets'] || '#F59E0B'} maxBarSize={32} radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="liabilitiesNeg" stackId="stack" fill={colorMap['liabilities'] || '#F43F5E'} maxBarSize={32} radius={[4, 4, 0, 0]} />
-                    <Line
-                      type="monotone"
-                      dataKey="value"
-                      stroke="#10B981"
-                      strokeWidth={2}
-                      strokeDasharray="6 3"
-                      dot={false}
-                      activeDot={{ r: 4, fill: '#10B981' }}
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              ) : (
-                <p className="text-muted-foreground text-sm text-center py-16">{t('reports.noData')}</p>
-              )}
-            </div>
-          ) : (
-            <div className="px-1 pb-4" style={{ height: 320 }}>
-              {isLoading ? (
-                <div className="px-4"><Skeleton className="h-full w-full" /></div>
-              ) : netWorthDetailedData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={netWorthDetailedData} stackOffset="sign" margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
-                      axisLine={false}
-                      tickLine={false}
-                      interval="preserveStartEnd"
-                    />
-                    <YAxis
-                      tickFormatter={(v) => {
-                        if (privacyMode) return ''
-                        if (v === 0) return '0'
-                        return formatCompact(v, userCurrency, locale)
-                      }}
-                      tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
-                      axisLine={false}
-                      tickLine={false}
-                      width={64}
-                      tickCount={5}
-                    />
-                    <Tooltip
-                      content={({ active, payload, label }: { active?: boolean; payload?: { dataKey?: string | number; value?: number; color?: string }[]; label?: string }) => {
-                        if (!active || !payload) return null
-                        const findLabel = (dk: string) =>
-                          composition.find((c: ReportCompositionItem) => c.key === dk.replace(/^(acct_|asset_|liab_)/, ''))?.label ?? dk
-                        const acctEntries = payload.filter((p) => String(p.dataKey).startsWith('acct_') && (p.value ?? 0) !== 0)
-                        const assetEntries = payload.filter((p) => String(p.dataKey).startsWith('asset_') && (p.value ?? 0) !== 0)
-                        const liabEntries = payload.filter((p) => String(p.dataKey).startsWith('liab_') && (p.value ?? 0) !== 0)
-                        const netEntry = payload.find((p) => p.dataKey === 'value')
-                        return (
-                          <div style={tooltipStyle} className="px-3 py-2 max-w-[220px]">
-                            <p className="text-xs font-medium mb-1">{label}</p>
-                            {acctEntries.length > 0 && <p className="text-[10px] font-semibold text-muted-foreground mt-1 uppercase tracking-wide">{t('reports.accounts')}</p>}
-                            {acctEntries.map((p) => (
-                              <p key={String(p.dataKey)} className="text-xs" style={{ color: p.color }}>
-                                {findLabel(String(p.dataKey))}: {privacyMode ? MASK : formatCurrency(p.value ?? 0, userCurrency, locale)}
-                              </p>
-                            ))}
-                            {assetEntries.length > 0 && <p className="text-[10px] font-semibold text-muted-foreground mt-1 uppercase tracking-wide">{t('reports.assets')}</p>}
-                            {assetEntries.map((p) => (
-                              <p key={String(p.dataKey)} className="text-xs" style={{ color: p.color }}>
-                                {findLabel(String(p.dataKey))}: {privacyMode ? MASK : formatCurrency(p.value ?? 0, userCurrency, locale)}
-                              </p>
-                            ))}
-                            {liabEntries.length > 0 && <p className="text-[10px] font-semibold text-muted-foreground mt-1 uppercase tracking-wide">{t('reports.liabilities')}</p>}
-                            {liabEntries.map((p) => (
-                              <p key={String(p.dataKey)} className="text-xs" style={{ color: p.color }}>
-                                {findLabel(String(p.dataKey))}: {privacyMode ? MASK : formatCurrency(-(p.value ?? 0), userCurrency, locale)}
-                              </p>
-                            ))}
-                            {netEntry && (
-                              <p className="text-xs font-semibold mt-1 pt-1 border-t border-border" style={{ color: '#10B981' }}>
-                                {t('reports.netWorth')}: {privacyMode ? MASK : formatCurrency(netEntry.value ?? 0, userCurrency, locale)}
-                              </p>
-                            )}
-                          </div>
-                        )
-                      }}
-                    />
-                    <ReferenceLine y={0} stroke="var(--border)" strokeDasharray="3 3" />
-                    {nwDetailAccounts.map((item: ReportCompositionItem, idx: number) => (
-                      <Bar
-                        key={`acct_${item.key}`}
-                        dataKey={`acct_${item.key}`}
-                        stackId="stack"
-                        fill={item.color}
-                        maxBarSize={32}
-                        radius={idx === nwDetailAccounts.length - 1 && nwDetailAssets.length === 0 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                              )}
+                              {netEntry && (
+                                <p className="text-xs font-semibold mt-1" style={{ color: '#10B981' }}>
+                                  {t('reports.netWorth')}:{' '}
+                                  {privacyMode ? MASK : formatCurrency(netEntry.value as number, userCurrency, locale)}
+                                </p>
+                              )}
+                            </div>
+                          )
+                        }}
                       />
-                    ))}
-                    {nwDetailAssets.map((item: ReportCompositionItem, idx: number) => (
-                      <Bar
-                        key={`asset_${item.key}`}
-                        dataKey={`asset_${item.key}`}
-                        stackId="stack"
-                        fill={item.color}
-                        maxBarSize={32}
-                        radius={idx === nwDetailAssets.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                      <ReferenceLine y={0} stroke="var(--border)" strokeDasharray="3 3" />
+                      <Bar dataKey="accounts" stackId="stack" fill={colorMap['accounts'] || '#6366F1'} maxBarSize={32} radius={[0, 0, 0, 0]} onClick={handleSummaryBarClick}>
+                        {netWorthSummaryData.map((_: unknown, i: number) => (
+                          <Cell key={i} fill={colorMap['accounts'] || '#6366F1'} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
+                        ))}
+                      </Bar>
+                      <Bar dataKey="assets" stackId="stack" fill={colorMap['assets'] || '#F59E0B'} maxBarSize={32} radius={[4, 4, 0, 0]} onClick={handleSummaryBarClick}>
+                        {netWorthSummaryData.map((_: unknown, i: number) => (
+                          <Cell key={i} fill={colorMap['assets'] || '#F59E0B'} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
+                        ))}
+                      </Bar>
+                      <Bar dataKey="liabilitiesNeg" stackId="stack" fill={colorMap['liabilities'] || '#F43F5E'} maxBarSize={32} radius={[4, 4, 0, 0]} onClick={handleSummaryBarClick}>
+                        {netWorthSummaryData.map((_: unknown, i: number) => (
+                          <Cell key={i} fill={colorMap['liabilities'] || '#F43F5E'} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
+                        ))}
+                      </Bar>
+                      <Line
+                        type="monotone"
+                        dataKey="value"
+                        stroke="#10B981"
+                        strokeWidth={2}
+                        strokeDasharray="6 3"
+                        dot={false}
+                        activeDot={{ r: 4, fill: '#10B981' }}
                       />
-                    ))}
-                    {nwDetailLiabs.map((item: ReportCompositionItem, idx: number) => (
-                      <Bar
-                        key={`liab_${item.key}`}
-                        dataKey={`liab_${item.key}`}
-                        stackId="stack"
-                        fill={item.color}
-                        maxBarSize={32}
-                        radius={idx === nwDetailLiabs.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="text-muted-foreground text-sm text-center py-16">{t('reports.noData')}</p>
+                )}
+              </div>
+            ) : (
+              <div className="px-1 pb-4" style={{ height: 320 }}>
+                {isLoading ? (
+                  <div className="px-4"><Skeleton className="h-full w-full" /></div>
+                ) : netWorthDetailedData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ComposedChart
+                      data={netWorthDetailedData}
+                      stackOffset="sign"
+                      margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <XAxis
+                        dataKey="date"
+                        tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
+                        axisLine={false}
+                        tickLine={false}
+                        interval="preserveStartEnd"
                       />
-                    ))}
-                    <Line
-                      type="monotone"
-                      dataKey="value"
-                      stroke="#10B981"
-                      strokeWidth={2}
-                      strokeDasharray="6 3"
-                      dot={false}
-                      activeDot={{ r: 4, fill: '#10B981' }}
-                    />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              ) : (
-                <p className="text-muted-foreground text-sm text-center py-16">{t('reports.noData')}</p>
-              )}
-            </div>
-          )}
+                      <YAxis
+                        tickFormatter={(v) => {
+                          if (privacyMode) return ''
+                          if (v === 0) return '0'
+                          return formatCompact(v, userCurrency, locale)
+                        }}
+                        tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
+                        axisLine={false}
+                        tickLine={false}
+                        width={64}
+                        tickCount={5}
+                      />
+                      <Tooltip
+                        content={({ active, payload, label }: { active?: boolean; payload?: { dataKey?: string | number; value?: number; color?: string }[]; label?: string }) => {
+                          if (!active || !payload) return null
+                          const findLabel = (dk: string) =>
+                            composition.find((c: ReportCompositionItem) => c.key === dk.replace(/^(acct_|asset_|liab_)/, ''))?.label ?? dk
+                          const acctEntries = payload.filter((p) => String(p.dataKey).startsWith('acct_') && (p.value ?? 0) !== 0)
+                          const assetEntries = payload.filter((p) => String(p.dataKey).startsWith('asset_') && (p.value ?? 0) !== 0)
+                          const liabEntries = payload.filter((p) => String(p.dataKey).startsWith('liab_') && (p.value ?? 0) !== 0)
+                          const netEntry = payload.find((p) => p.dataKey === 'value')
+                          return (
+                            <div style={tooltipStyle} className="px-3 py-2 max-w-[220px]">
+                              <p className="text-xs font-medium mb-1">{label}</p>
+                              {acctEntries.length > 0 && <p className="text-[10px] font-semibold text-muted-foreground mt-1 uppercase tracking-wide">{t('reports.accounts')}</p>}
+                              {acctEntries.map((p) => (
+                                <p key={String(p.dataKey)} className="text-xs" style={{ color: p.color }}>
+                                  {findLabel(String(p.dataKey))}: {privacyMode ? MASK : formatCurrency(p.value ?? 0, userCurrency, locale)}
+                                </p>
+                              ))}
+                              {assetEntries.length > 0 && <p className="text-[10px] font-semibold text-muted-foreground mt-1 uppercase tracking-wide">{t('reports.assets')}</p>}
+                              {assetEntries.map((p) => (
+                                <p key={String(p.dataKey)} className="text-xs" style={{ color: p.color }}>
+                                  {findLabel(String(p.dataKey))}: {privacyMode ? MASK : formatCurrency(p.value ?? 0, userCurrency, locale)}
+                                </p>
+                              ))}
+                              {liabEntries.length > 0 && <p className="text-[10px] font-semibold text-muted-foreground mt-1 uppercase tracking-wide">{t('reports.liabilities')}</p>}
+                              {liabEntries.map((p) => (
+                                <p key={String(p.dataKey)} className="text-xs" style={{ color: p.color }}>
+                                  {findLabel(String(p.dataKey))}: {privacyMode ? MASK : formatCurrency(-(p.value ?? 0), userCurrency, locale)}
+                                </p>
+                              ))}
+                              {netEntry && (
+                                <p className="text-xs font-semibold mt-1 pt-1 border-t border-border" style={{ color: '#10B981' }}>
+                                  {t('reports.netWorth')}: {privacyMode ? MASK : formatCurrency(netEntry.value ?? 0, userCurrency, locale)}
+                                </p>
+                              )}
+                            </div>
+                          )
+                        }}
+                      />
+                      <ReferenceLine y={0} stroke="var(--border)" strokeDasharray="3 3" />
+                      {nwDetailAccounts.map((item: ReportCompositionItem, idx: number) => (
+                        <Bar
+                          key={`acct_${item.key}`}
+                          dataKey={`acct_${item.key}`}
+                          stackId="stack"
+                          fill={item.color}
+                          maxBarSize={32}
+                          radius={idx === nwDetailAccounts.length - 1 && nwDetailAssets.length === 0 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                          onClick={handleDetailedBarClick}
+                        >
+                          {netWorthDetailedData.map((_: unknown, i: number) => (
+                            <Cell key={i} fill={item.color} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
+                          ))}
+                        </Bar>
+                      ))}
+                      {nwDetailAssets.map((item: ReportCompositionItem, idx: number) => (
+                        <Bar
+                          key={`asset_${item.key}`}
+                          dataKey={`asset_${item.key}`}
+                          stackId="stack"
+                          fill={item.color}
+                          maxBarSize={32}
+                          radius={idx === nwDetailAssets.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                          onClick={handleDetailedBarClick}
+                        >
+                          {netWorthDetailedData.map((_: unknown, i: number) => (
+                            <Cell key={i} fill={item.color} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
+                          ))}
+                        </Bar>
+                      ))}
+                      {nwDetailLiabs.map((item: ReportCompositionItem, idx: number) => (
+                        <Bar
+                          key={`liab_${item.key}`}
+                          dataKey={`liab_${item.key}`}
+                          stackId="stack"
+                          fill={item.color}
+                          maxBarSize={32}
+                          radius={idx === nwDetailLiabs.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                          onClick={handleDetailedBarClick}
+                        >
+                          {netWorthDetailedData.map((_: unknown, i: number) => (
+                            <Cell key={i} fill={item.color} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
+                          ))}
+                        </Bar>
+                      ))}
+                      <Line
+                        type="monotone"
+                        dataKey="value"
+                        stroke="#10B981"
+                        strokeWidth={2}
+                        strokeDasharray="6 3"
+                        dot={false}
+                        activeDot={{ r: 4, fill: '#10B981' }}
+                      />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="text-muted-foreground text-sm text-center py-16">{t('reports.noData')}</p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
       {!isLoading && meta?.type !== 'net_worth' && (

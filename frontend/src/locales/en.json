@@ -863,7 +863,8 @@
     "byExpenses": "By Expenses",
     "other": "Other",
     "uncategorized": "Uncategorized",
-    "categoryTrends": "Category Trends"
+    "categoryTrends": "Category Trends",
+    "current": "Current"
   },
   "payees": {
     "title": "Payees",

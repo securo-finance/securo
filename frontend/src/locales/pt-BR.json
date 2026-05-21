@@ -863,7 +863,8 @@
     "byExpenses": "Por Despesa",
     "other": "Outros",
     "uncategorized": "Sem categoria",
-    "categoryTrends": "Tendência por Categoria"
+    "categoryTrends": "Tendência por Categoria",
+    "current": "Atual"
   },
   "payees": {
     "title": "Beneficiários",
