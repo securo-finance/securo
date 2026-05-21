@@ -164,6 +164,13 @@ def test_append_notes_no_duplicate():
     assert tx.notes.count("#work") == 1
 
 
+def test_ignore_action_sets_flag():
+    actions = [{"op": "ignore"}]
+    tx = make_tx(is_ignored=False)
+    apply_rule_actions(actions, tx, category_already_set=False)
+    assert tx.is_ignored is True
+
+
 # --- Edge-case: evaluate_conditions ---
 
 def test_not_equals():

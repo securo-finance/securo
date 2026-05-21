@@ -112,4 +112,7 @@ def apply_rule_actions(
             if new_tags not in existing:
                 tx.notes = (existing + " " + new_tags).strip() if existing else new_tags
 
+        elif op == "ignore":
+            tx.is_ignored = True
+
     return category_already_set
