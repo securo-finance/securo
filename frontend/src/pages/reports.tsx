@@ -823,7 +823,7 @@ export default function ReportsPage() {
               ) : (
                 <div className="flex flex-row items-start justify-around px-1 gap-1">
                   {/* Pie A: Accounts + Assets */}
-                  <div className="flex flex-col items-center gap-1">
+                  <div className="relative flex flex-col items-center gap-1 hover:z-10">
                     <p className="text-[11px] font-medium text-muted-foreground">{t('reports.accountsAndAssets')}</p>
                     {nwPieAInner.length > 0 ? (
                       <div className="relative" style={{ width: 148, height: 148 }}>
@@ -894,7 +894,7 @@ export default function ReportsPage() {
                   </div>
 
                   {/* Pie B: Liabilities */}
-                  <div className="flex flex-col items-center gap-1">
+                  <div className="relative flex flex-col items-center gap-1 hover:z-10">
                     <p className="text-[11px] font-medium text-muted-foreground">{t('reports.liabilities')}</p>
                     {nwPieBInner.length > 0 ? (
                       <div className="relative" style={{ width: 148, height: 148 }}>
