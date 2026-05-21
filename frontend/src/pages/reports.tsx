@@ -38,7 +38,7 @@ function formatCompact(value: number, currency = 'USD', locale = 'en-US') {
   }).format(value)
 }
 
-const COMPOSITION_TOP_N = 6
+const COMPOSITION_TOP_N = 10
 
 type RangeOption = { key: string; months: number }
 
@@ -201,6 +201,9 @@ export default function ReportsPage() {
   const nwDetailTotalAccounts = nwDetailAccounts.reduce((s: number, c: ReportCompositionItem) => s + c.value, 0)
   const nwDetailTotalAssets = nwDetailAssets.reduce((s: number, c: ReportCompositionItem) => s + c.value, 0)
   const nwDetailTotalLiabs = nwDetailLiabs.reduce((s: number, c: ReportCompositionItem) => s + c.value, 0)
+  const nwBarsAccounts = nwDetailAccounts.slice(0, COMPOSITION_TOP_N)
+  const nwBarsAssets = nwDetailAssets.slice(0, COMPOSITION_TOP_N)
+  const nwBarsLiabs = nwDetailLiabs.slice(0, COMPOSITION_TOP_N)
 
   const lastNWIndex = netWorthSummaryData.length - 1
   const isCurrentNW = selectedNWBar == null || selectedNWBar.index === lastNWIndex
@@ -224,7 +227,7 @@ export default function ReportsPage() {
     const items = isAccounts ? nwDetailAccounts : nwDetailAssets
     const total = isAccounts ? nwDetailTotalAccounts : nwDetailTotalAssets
     const selected = isAccounts ? selectedAccounts : selectedAssets
-    return items
+    const sorted = items
       .map((item: ReportCompositionItem) => ({
         name: item.label,
         value: total > 0 ? (item.value / total) * selected : 0,
@@ -232,6 +235,10 @@ export default function ReportsPage() {
       }))
       .filter((d) => d.value > 0)
       .sort((a, b) => b.value - a.value)
+    const top = sorted.slice(0, COMPOSITION_TOP_N)
+    const otherValue = sorted.slice(COMPOSITION_TOP_N).reduce((s, d) => s + d.value, 0)
+    if (otherValue > 0) top.push({ name: t('reports.other'), value: otherValue, color: '#6B7280' })
+    return top
   })
 
   // Inner ring: liabilities group total
@@ -240,11 +247,17 @@ export default function ReportsPage() {
   ].filter((d) => d.value > 0)
 
   // Outer ring: individual liability items, proportionally scaled
-  const nwPieBOuter: NWPieItem[] = nwDetailLiabs.map((item: ReportCompositionItem) => ({
+  const nwPieBOuterSorted: NWPieItem[] = nwDetailLiabs.map((item: ReportCompositionItem) => ({
     name: item.label,
     value: nwDetailTotalLiabs > 0 ? (item.value / nwDetailTotalLiabs) * selectedLiabs : 0,
     color: item.color,
   })).filter((d: NWPieItem) => d.value > 0).sort((a: NWPieItem, b: NWPieItem) => b.value - a.value)
+  const nwPieBOuter: NWPieItem[] = (() => {
+    const top = nwPieBOuterSorted.slice(0, COMPOSITION_TOP_N)
+    const otherValue = nwPieBOuterSorted.slice(COMPOSITION_TOP_N).reduce((s, d) => s + d.value, 0)
+    if (otherValue > 0) top.push({ name: t('reports.other'), value: otherValue, color: '#6B7280' })
+    return top
+  })()
 
   type NWBarState = { accounts: number; assets: number; liabilities: number; value: number; date: string; index: number } | null
 
@@ -268,9 +281,9 @@ export default function ReportsPage() {
     if (!row) return
     setSelectedNWBar((prev: NWBarState) => {
       if (prev?.index === index) return null
-      const accounts = nwDetailAccounts.reduce((s: number, it: ReportCompositionItem) => s + ((row[`acct_${it.key}`] as number) ?? 0), 0)
-      const assets = nwDetailAssets.reduce((s: number, it: ReportCompositionItem) => s + ((row[`asset_${it.key}`] as number) ?? 0), 0)
-      const liabilities = Math.abs(nwDetailLiabs.reduce((s: number, it: ReportCompositionItem) => s + ((row[`liab_${it.key}`] as number) ?? 0), 0))
+      const accounts = nwBarsAccounts.reduce((s: number, it: ReportCompositionItem) => s + ((row[`acct_${it.key}`] as number) ?? 0), 0) + ((row['acct_others'] as number) ?? 0)
+      const assets = nwBarsAssets.reduce((s: number, it: ReportCompositionItem) => s + ((row[`asset_${it.key}`] as number) ?? 0), 0) + ((row['asset_others'] as number) ?? 0)
+      const liabilities = Math.abs(nwBarsLiabs.reduce((s: number, it: ReportCompositionItem) => s + ((row[`liab_${it.key}`] as number) ?? 0), 0) + ((row['liab_others'] as number) ?? 0))
       return { accounts, assets, liabilities, value: (row.value as number) ?? 0, date: row.date as string, index }
     })
   }
@@ -280,18 +293,30 @@ export default function ReportsPage() {
     const sTotal = (d.assets as number) ?? 0
     const lTotal = (d.liabilities as number) ?? 0
     const row: Record<string, string | number> = { date: d.date as string, value: d.value as number }
-    nwDetailAccounts.forEach((item) => {
+    nwBarsAccounts.forEach((item) => {
       const p = nwDetailTotalAccounts > 0 ? item.value / nwDetailTotalAccounts : 0
       row[`acct_${item.key}`] = Math.round(aTotal * p * 100) / 100
     })
-    nwDetailAssets.forEach((item) => {
+    if (nwDetailAccounts.length > COMPOSITION_TOP_N) {
+      const topSum = nwBarsAccounts.reduce((s, item) => s + Math.round(aTotal * (nwDetailTotalAccounts > 0 ? item.value / nwDetailTotalAccounts : 0) * 100) / 100, 0)
+      row['acct_others'] = Math.round((aTotal - topSum) * 100) / 100
+    }
+    nwBarsAssets.forEach((item) => {
       const p = nwDetailTotalAssets > 0 ? item.value / nwDetailTotalAssets : 0
       row[`asset_${item.key}`] = Math.round(sTotal * p * 100) / 100
     })
-    nwDetailLiabs.forEach((item) => {
+    if (nwDetailAssets.length > COMPOSITION_TOP_N) {
+      const topSum = nwBarsAssets.reduce((s, item) => s + Math.round(sTotal * (nwDetailTotalAssets > 0 ? item.value / nwDetailTotalAssets : 0) * 100) / 100, 0)
+      row['asset_others'] = Math.round((sTotal - topSum) * 100) / 100
+    }
+    nwBarsLiabs.forEach((item) => {
       const p = nwDetailTotalLiabs > 0 ? item.value / nwDetailTotalLiabs : 0
       row[`liab_${item.key}`] = -Math.round(lTotal * p * 100) / 100
     })
+    if (nwDetailLiabs.length > COMPOSITION_TOP_N) {
+      const topSum = nwBarsLiabs.reduce((s, item) => s + Math.round(lTotal * (nwDetailTotalLiabs > 0 ? item.value / nwDetailTotalLiabs : 0) * 100) / 100, 0)
+      row['liab_others'] = -Math.round((lTotal - topSum) * 100) / 100
+    }
     return row
   })
 
@@ -1033,8 +1058,11 @@ export default function ReportsPage() {
                       <Tooltip
                         content={({ active, payload, label }: { active?: boolean; payload?: { dataKey?: string | number; value?: number; color?: string }[]; label?: string }) => {
                           if (!active || !payload) return null
-                          const findLabel = (dk: string) =>
-                            composition.find((c: ReportCompositionItem) => c.key === dk.replace(/^(acct_|asset_|liab_)/, ''))?.label ?? dk
+                          const findLabel = (dk: string) => {
+                            if (dk.endsWith('_others')) return t('reports.other')
+                            const label = composition.find((c: ReportCompositionItem) => c.key === dk.replace(/^(acct_|asset_|liab_)/, ''))?.label ?? dk
+                            return label.length > 40 ? label.slice(0, 40) + '…' : label
+                          }
                           const acctEntries = payload.filter((p) => String(p.dataKey).startsWith('acct_') && (p.value ?? 0) !== 0).sort((a, b) => Math.abs(b.value ?? 0) - Math.abs(a.value ?? 0))
                           const assetEntries = payload.filter((p) => String(p.dataKey).startsWith('asset_') && (p.value ?? 0) !== 0).sort((a, b) => Math.abs(b.value ?? 0) - Math.abs(a.value ?? 0))
                           const liabEntries = payload.filter((p) => String(p.dataKey).startsWith('liab_') && (p.value ?? 0) !== 0).sort((a, b) => Math.abs(b.value ?? 0) - Math.abs(a.value ?? 0))
@@ -1083,51 +1111,48 @@ export default function ReportsPage() {
                         }}
                       />
                       <ReferenceLine y={0} stroke="var(--border)" strokeDasharray="3 3" />
-                      {nwDetailAccounts.map((item: ReportCompositionItem, idx: number) => (
-                        <Bar
-                          key={`acct_${item.key}`}
-                          dataKey={`acct_${item.key}`}
-                          stackId="stack"
-                          fill={item.color}
-                          maxBarSize={32}
-                          radius={idx === nwDetailAccounts.length - 1 && nwDetailAssets.length === 0 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
-                          onClick={handleDetailedBarClick}
-                        >
+                      {nwBarsAccounts.map((item: ReportCompositionItem, idx: number) => (
+                        <Bar key={`acct_${item.key}`} dataKey={`acct_${item.key}`} stackId="stack" fill={item.color} maxBarSize={32} radius={[0, 0, 0, 0]} onClick={handleDetailedBarClick}>
                           {netWorthDetailedData.map((_: unknown, i: number) => (
                             <Cell key={i} fill={item.color} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
                           ))}
                         </Bar>
                       ))}
-                      {nwDetailAssets.map((item: ReportCompositionItem, idx: number) => (
-                        <Bar
-                          key={`asset_${item.key}`}
-                          dataKey={`asset_${item.key}`}
-                          stackId="stack"
-                          fill={item.color}
-                          maxBarSize={32}
-                          radius={idx === nwDetailAssets.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
-                          onClick={handleDetailedBarClick}
-                        >
+                      {nwDetailAccounts.length > COMPOSITION_TOP_N && (
+                        <Bar key="acct_others" dataKey="acct_others" stackId="stack" fill="#6B7280" maxBarSize={32} radius={nwBarsAssets.length === 0 && nwDetailLiabs.length === 0 ? [4, 4, 0, 0] : [0, 0, 0, 0]} onClick={handleDetailedBarClick}>
+                          {netWorthDetailedData.map((_: unknown, i: number) => (
+                            <Cell key={i} fill="#6B7280" opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
+                          ))}
+                        </Bar>
+                      )}
+                      {nwBarsAssets.map((item: ReportCompositionItem, idx: number) => (
+                        <Bar key={`asset_${item.key}`} dataKey={`asset_${item.key}`} stackId="stack" fill={item.color} maxBarSize={32} radius={[0, 0, 0, 0]} onClick={handleDetailedBarClick}>
                           {netWorthDetailedData.map((_: unknown, i: number) => (
                             <Cell key={i} fill={item.color} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
                           ))}
                         </Bar>
                       ))}
-                      {nwDetailLiabs.map((item: ReportCompositionItem, idx: number) => (
-                        <Bar
-                          key={`liab_${item.key}`}
-                          dataKey={`liab_${item.key}`}
-                          stackId="stack"
-                          fill={item.color}
-                          maxBarSize={32}
-                          radius={idx === nwDetailLiabs.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
-                          onClick={handleDetailedBarClick}
-                        >
+                      {nwDetailAssets.length > COMPOSITION_TOP_N && (
+                        <Bar key="asset_others" dataKey="asset_others" stackId="stack" fill="#6B7280" maxBarSize={32} radius={nwDetailLiabs.length === 0 ? [4, 4, 0, 0] : [0, 0, 0, 0]} onClick={handleDetailedBarClick}>
+                          {netWorthDetailedData.map((_: unknown, i: number) => (
+                            <Cell key={i} fill="#6B7280" opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
+                          ))}
+                        </Bar>
+                      )}
+                      {nwBarsLiabs.map((item: ReportCompositionItem, idx: number) => (
+                        <Bar key={`liab_${item.key}`} dataKey={`liab_${item.key}`} stackId="stack" fill={item.color} maxBarSize={32} radius={[0, 0, 0, 0]} onClick={handleDetailedBarClick}>
                           {netWorthDetailedData.map((_: unknown, i: number) => (
                             <Cell key={i} fill={item.color} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
                           ))}
                         </Bar>
                       ))}
+                      {nwDetailLiabs.length > COMPOSITION_TOP_N && (
+                        <Bar key="liab_others" dataKey="liab_others" stackId="stack" fill="#6B7280" maxBarSize={32} radius={[4, 4, 0, 0]} onClick={handleDetailedBarClick}>
+                          {netWorthDetailedData.map((_: unknown, i: number) => (
+                            <Cell key={i} fill="#6B7280" opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
+                          ))}
+                        </Bar>
+                      )}
                       <Line
                         type="monotone"
                         dataKey="value"
