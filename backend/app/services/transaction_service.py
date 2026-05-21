@@ -21,8 +21,6 @@ from app.services import split_service
 from app.services.credit_card_service import apply_effective_date
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.fx_rate_service import stamp_primary_amount, convert as fx_convert
-from app.services._query_filters import counts_as_pnl
-
 
 
 def _apply_fx_override(transaction, amount, amount_primary=None, fx_rate_used=None):
