@@ -575,6 +575,8 @@
     "setPayee": "Definir beneficiário",
     "selectPayee": "Selecionar beneficiário...",
     "appendNotes": "Adicionar tags/notas",
+    "ignoreAction": "Ignorar transação",
+    "ignoreActionHint": "(sem valor necessário)",
     "selectCategory": "Selecionar categoria...",
     "selectAccount": "Selecionar conta...",
     "ruleActive": "Regra ativa",

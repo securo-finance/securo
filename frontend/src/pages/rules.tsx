@@ -107,6 +107,7 @@ function actionSummary(actions: RuleAction[], categories: Category[], payeesList
       return p ? `→ ${t('payees.payee')}: ${p.name}` : `→ ${t('payees.payee')}`
     }
     if (a.op === 'append_notes') return `→ ${t('rules.fieldNotes')}: ${a.value}`
+    if (a.op === 'ignore') return `→ ${t('rules.ignoreAction')}`
     return a.op
   }).join('  ') || t('rules.noActions')
 }
@@ -490,7 +491,13 @@ function RuleDialog({
   }
 
   function updateAction(i: number, field: keyof RuleAction, val: string) {
-    setActions(prev => prev.map((a, idx) => idx === i ? { ...a, [field]: val } : a))
+    setActions(prev => prev.map((a, idx) => {
+      if (idx !== i) return a
+      const next = { ...a, [field]: val }
+      // Switching op clears any stale value (e.g. category UUID → ignore).
+      if (field === 'op') next.value = ''
+      return next
+    }))
   }
 
   function removeAction(i: number) {
@@ -639,8 +646,13 @@ function RuleDialog({
                     <option value="set_category">{t('rules.setCategory')}</option>
                     <option value="set_payee">{t('rules.setPayee')}</option>
                     <option value="append_notes">{t('rules.appendNotes')}</option>
+                    <option value="ignore">{t('rules.ignoreAction')}</option>
                   </select>
-                  {action.op === 'set_category' ? (
+                  {action.op === 'ignore' ? (
+                    <span className="w-0 flex-1 min-w-0 text-sm text-muted-foreground italic">
+                      {t('rules.ignoreActionHint')}
+                    </span>
+                  ) : action.op === 'set_category' ? (
                     <div className="w-0 flex-1 min-w-0">
                       <CategorySelect
                         value={action.value}

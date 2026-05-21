@@ -575,6 +575,8 @@
     "setPayee": "Set payee",
     "selectPayee": "Select payee...",
     "appendNotes": "Append tags/notes",
+    "ignoreAction": "Ignore transaction",
+    "ignoreActionHint": "(no value needed)",
     "selectCategory": "Select category...",
     "selectAccount": "Select account...",
     "ruleActive": "Active rule",
