@@ -866,6 +866,8 @@
     "categoryTrends": "Tendência por Categoria",
     "current": "Atual",
     "accountsAndAssets": "Contas e Ativos",
+    "whatYouHave": "Você tem",
+    "whatYouOwe": "Você deve",
     "change": "Variação"
   },
   "payees": {

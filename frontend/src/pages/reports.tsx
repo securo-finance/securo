@@ -89,7 +89,7 @@ function buildGroupGradient(baseHex: string, count: number): string[] {
   })
 }
 
-const COMPOSITION_TOP_N = 10
+const COMPOSITION_MIN_PCT = 0.03
 
 type RangeOption = { key: string; months: number }
 
@@ -160,6 +160,7 @@ export default function ReportsPage() {
   const [sparklineView, setSparklineView] = useState<'byExpenses' | 'byIncome'>('byExpenses')
   const [sparklinePage, setSparklinePage] = useState(0)
   const [selectedNWBar, setSelectedNWBar] = useState<{ accounts: number; assets: number; liabilities: number; value: number; date: string; index: number } | null>(null)
+  const [nwPieView, setNwPieView] = useState<'accountsAssets' | 'liabilities'>('accountsAssets')
 
   const currentTab = REPORT_TABS.find((tab) => tab.key === activeTab) ?? REPORT_TABS[0]
 
@@ -252,13 +253,13 @@ export default function ReportsPage() {
   const nwDetailTotalAccounts = nwDetailAccounts.reduce((s: number, c: ReportCompositionItem) => s + c.value, 0)
   const nwDetailTotalAssets = nwDetailAssets.reduce((s: number, c: ReportCompositionItem) => s + c.value, 0)
   const nwDetailTotalLiabs = nwDetailLiabs.reduce((s: number, c: ReportCompositionItem) => s + c.value, 0)
-  const nwBarsAccounts = nwDetailAccounts.slice(0, COMPOSITION_TOP_N)
-  const nwBarsAssets = nwDetailAssets.slice(0, COMPOSITION_TOP_N)
-  const nwBarsLiabs = nwDetailLiabs.slice(0, COMPOSITION_TOP_N)
+  const nwBarsAccounts = nwDetailAccounts.filter((c: ReportCompositionItem) => nwDetailTotalAccounts > 0 && c.value / nwDetailTotalAccounts >= COMPOSITION_MIN_PCT)
+  const nwBarsAssets = nwDetailAssets.filter((c: ReportCompositionItem) => nwDetailTotalAssets > 0 && c.value / nwDetailTotalAssets >= COMPOSITION_MIN_PCT)
+  const nwBarsLiabs = nwDetailLiabs.filter((c: ReportCompositionItem) => nwDetailTotalLiabs > 0 && c.value / nwDetailTotalLiabs >= COMPOSITION_MIN_PCT)
 
-  const accountsGradient = buildGroupGradient(colorMap['accounts'] || '#6366F1', COMPOSITION_TOP_N)
-  const assetsGradient = buildGroupGradient(colorMap['assets'] || '#F59E0B', COMPOSITION_TOP_N)
-  const liabsGradient = buildGroupGradient(colorMap['liabilities'] || '#F43F5E', COMPOSITION_TOP_N)
+  const accountsGradient = buildGroupGradient(colorMap['accounts'] || '#6366F1', Math.max(1, nwBarsAccounts.length))
+  const assetsGradient = buildGroupGradient(colorMap['assets'] || '#F59E0B', Math.max(1, nwBarsAssets.length))
+  const liabsGradient = buildGroupGradient(colorMap['liabilities'] || '#F43F5E', Math.max(1, nwBarsLiabs.length))
 
   const lastNWIndex = netWorthSummaryData.length - 1
   const isCurrentNW = selectedNWBar == null || selectedNWBar.index === lastNWIndex
@@ -291,8 +292,8 @@ export default function ReportsPage() {
       .filter((d) => d.value > 0)
       .sort((a, b) => b.value - a.value)
       .map((d, i) => ({ ...d, color: gradient[i] ?? gradient[gradient.length - 1] ?? '#6B7280' }))
-    const top = sorted.slice(0, COMPOSITION_TOP_N)
-    const otherValue = sorted.slice(COMPOSITION_TOP_N).reduce((s, d) => s + d.value, 0)
+    const top = sorted.filter((d) => selected > 0 && d.value / selected >= COMPOSITION_MIN_PCT)
+    const otherValue = sorted.filter((d) => selected <= 0 || d.value / selected < COMPOSITION_MIN_PCT).reduce((s, d) => s + d.value, 0)
     if (otherValue > 0) top.push({ name: t('reports.other'), value: otherValue, color: gradient[gradient.length - 1] ?? '#6B7280' })
     return top
   })
@@ -312,8 +313,8 @@ export default function ReportsPage() {
     .sort((a, b) => b.value - a.value)
     .map((d, i) => ({ ...d, color: liabsGradient[i] ?? liabsGradient[liabsGradient.length - 1] ?? '#6B7280' }))
   const nwPieBOuter: NWPieItem[] = (() => {
-    const top = nwPieBOuterSorted.slice(0, COMPOSITION_TOP_N)
-    const otherValue = nwPieBOuterSorted.slice(COMPOSITION_TOP_N).reduce((s, d) => s + d.value, 0)
+    const top = nwPieBOuterSorted.filter((d) => selectedLiabs > 0 && d.value / selectedLiabs >= COMPOSITION_MIN_PCT)
+    const otherValue = nwPieBOuterSorted.filter((d) => selectedLiabs <= 0 || d.value / selectedLiabs < COMPOSITION_MIN_PCT).reduce((s, d) => s + d.value, 0)
     if (otherValue > 0) top.push({ name: t('reports.other'), value: otherValue, color: liabsGradient[liabsGradient.length - 1] ?? '#6B7280' })
     return top
   })()
@@ -356,7 +357,7 @@ export default function ReportsPage() {
       const p = nwDetailTotalAccounts > 0 ? item.value / nwDetailTotalAccounts : 0
       row[`acct_${item.key}`] = Math.round(aTotal * p * 100) / 100
     })
-    if (nwDetailAccounts.length > COMPOSITION_TOP_N) {
+    if (nwDetailAccounts.length > nwBarsAccounts.length) {
       const topSum = nwBarsAccounts.reduce((s, item) => s + Math.round(aTotal * (nwDetailTotalAccounts > 0 ? item.value / nwDetailTotalAccounts : 0) * 100) / 100, 0)
       row['acct_others'] = Math.round((aTotal - topSum) * 100) / 100
     }
@@ -364,7 +365,7 @@ export default function ReportsPage() {
       const p = nwDetailTotalAssets > 0 ? item.value / nwDetailTotalAssets : 0
       row[`asset_${item.key}`] = Math.round(sTotal * p * 100) / 100
     })
-    if (nwDetailAssets.length > COMPOSITION_TOP_N) {
+    if (nwDetailAssets.length > nwBarsAssets.length) {
       const topSum = nwBarsAssets.reduce((s, item) => s + Math.round(sTotal * (nwDetailTotalAssets > 0 ? item.value / nwDetailTotalAssets : 0) * 100) / 100, 0)
       row['asset_others'] = Math.round((sTotal - topSum) * 100) / 100
     }
@@ -372,7 +373,7 @@ export default function ReportsPage() {
       const p = nwDetailTotalLiabs > 0 ? item.value / nwDetailTotalLiabs : 0
       row[`liab_${item.key}`] = -Math.round(lTotal * p * 100) / 100
     })
-    if (nwDetailLiabs.length > COMPOSITION_TOP_N) {
+    if (nwDetailLiabs.length > nwBarsLiabs.length) {
       const topSum = nwBarsLiabs.reduce((s, item) => s + Math.round(lTotal * (nwDetailTotalLiabs > 0 ? item.value / nwDetailTotalLiabs : 0) * 100) / 100, 0)
       row['liab_others'] = -Math.round((lTotal - topSum) * 100) / 100
     }
@@ -398,10 +399,11 @@ export default function ReportsPage() {
       items = composition.filter((c) => c.group === 'expenses')
     }
 
-    // Sort descending, take top N, bucket the rest into "Other"
+    // Sort descending, group items below threshold into "Other"
     const sorted = [...items].sort((a, b) => b.value - a.value)
-    const top = sorted.slice(0, COMPOSITION_TOP_N)
-    const rest = sorted.slice(COMPOSITION_TOP_N)
+    const donutTotal = sorted.reduce((sum, c) => sum + c.value, 0)
+    const top = sorted.filter((c) => donutTotal > 0 && c.value / donutTotal >= COMPOSITION_MIN_PCT)
+    const rest = sorted.filter((c) => donutTotal <= 0 || c.value / donutTotal < COMPOSITION_MIN_PCT)
     const otherValue = rest.reduce((sum, c) => sum + c.value, 0)
 
     const result = top.map((c) => ({
@@ -769,8 +771,8 @@ export default function ReportsPage() {
                   }}
                 />
                 {/* Invisible base lifts delta bars to float from prev → current value */}
-                <Bar dataKey="_deltaBase" stackId="nwdelta" fillOpacity={0} stroke="none" maxBarSize={14} isAnimationActive={false} legendType="none" />
-                <Bar dataKey="_deltaSize" stackId="nwdelta" maxBarSize={14} radius={[2, 2, 2, 2]} isAnimationActive={false} legendType="none">
+                <Bar dataKey="_deltaBase" stackId="nwdelta" fillOpacity={0} stroke="none" maxBarSize={28} isAnimationActive={false} legendType="none" />
+                <Bar dataKey="_deltaSize" stackId="nwdelta" maxBarSize={28} radius={[2, 2, 2, 2]} isAnimationActive={false} legendType="none">
                   {nwTrendData.map((entry, i) => (
                     <Cell
                       key={i}
@@ -800,79 +802,106 @@ export default function ReportsPage() {
       </div>
 
       {meta?.type === 'net_worth' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          {/* Composition card — two nested pie charts, synced to selected bar */}
-          <div className="bg-card rounded-xl border border-border shadow-sm">
-            <div className="px-5 pt-4 pb-3 flex items-start justify-between">
+        <div className="bg-card rounded-xl border border-border shadow-sm">
+          {/* Merged header */}
+          <div className="px-5 pt-4 pb-2 flex items-center justify-between">
+            <div className="flex items-center gap-4">
               <div>
-                <p className="text-sm font-semibold text-foreground">{t('reports.composition')}</p>
+                <p className="text-sm font-semibold text-foreground">{t('reports.evolution')}</p>
                 <span className="text-xs text-muted-foreground">{nwPeriodLabel}</span>
               </div>
-              <div className="text-right">
-                <p className="text-[10px] text-muted-foreground leading-tight">{t('reports.netWorth')}</p>
-                <p className="text-sm font-bold text-foreground tabular-nums">
-                  {mask(formatCompact(selectedNWBar ? selectedNWBar.value : (summary?.primary_value ?? 0), userCurrency, locale))}
-                </p>
-              </div>
             </div>
-            <div className="pb-4">
-              {isLoading ? (
-                <div className="px-4" style={{ height: 180 }}>
-                  <Skeleton className="h-full w-full" />
-                </div>
-              ) : (
-                <div className="flex flex-row items-start justify-around px-1 gap-1">
-                  {/* Pie A: Accounts + Assets */}
-                  <div className="relative flex flex-col items-center gap-1 hover:z-10">
-                    <p className="text-[11px] font-medium text-muted-foreground">{t('reports.accountsAndAssets')}</p>
-                    {nwPieAInner.length > 0 ? (
-                      <div className="relative" style={{ width: 148, height: 148 }}>
-                        <div
-                          className="absolute inset-0"
-                          style={{
-                            transform: compositionView === 'detailed' ? 'scale(1)' : 'scale(1.458)',
-                            transition: 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
-                            transformOrigin: 'center',
-                            zIndex: 1,
-                          }}
+            <div className="text-right">
+              <p className="text-[10px] text-muted-foreground leading-tight uppercase tracking-wider">{t('reports.netWorth')}</p>
+              <p className="text-xl font-bold text-foreground tabular-nums">
+                {mask(formatCurrency(selectedNWBar ? selectedNWBar.value : (summary?.primary_value ?? 0), userCurrency, locale))}
+              </p>
+            </div>
+          </div>
+          {/* Inner grid: pies right (col-start-3), evolution left (col-span-2 col-start-1) */}
+          <div className="grid grid-cols-1 lg:grid-cols-3">
+            {/* Pies — right 1 col */}
+            <div className="lg:col-start-3 lg:row-start-1 lg:border-l lg:border-border">
+              <div className="pb-4">
+                {isLoading ? (
+                  <div className="px-4" style={{ height: 180 }}>
+                    <Skeleton className="h-full w-full" />
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-2 pt-3 px-4">
+                    <div className="relative z-10 inline-flex flex-col gap-2">
+                      {/* Summary / Detailed toggle */}
+                      <div className="flex rounded-lg border border-border bg-muted/30 overflow-hidden">
+                        {(['summary', 'detailed'] as const).map((opt) => (
+                          <button
+                            key={opt}
+                            onClick={() => setCompositionView(opt)}
+                            className={`flex-1 px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                              compositionView === opt
+                                ? 'bg-primary text-primary-foreground'
+                                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                            }`}
+                          >
+                            {t(`reports.${opt}`)}
+                          </button>
+                        ))}
+                      </div>
+                      {/* What you have / What you owe toggle */}
+                      <div className="flex rounded-lg border border-border bg-muted/30 overflow-hidden">
+                        <button
+                          onClick={() => setNwPieView('accountsAssets')}
+                          className={`flex-1 px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                            nwPieView === 'accountsAssets'
+                              ? 'bg-primary text-primary-foreground'
+                              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                          }`}
                         >
+                          {t('reports.whatYouHave')}
+                        </button>
+                        <button
+                          onClick={() => setNwPieView('liabilities')}
+                          className={`flex-1 px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                            nwPieView === 'liabilities'
+                              ? 'bg-primary text-primary-foreground'
+                              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                          }`}
+                        >
+                          {t('reports.whatYouOwe')}
+                        </button>
+                      </div>
+                    </div>
+                    {/* Single pie with center value */}
+                    {(() => {
+                      const isAccAssets = nwPieView === 'accountsAssets'
+                      const innerData = isAccAssets ? nwPieAInner : nwPieBInner
+                      const outerData = isAccAssets ? nwPieAOuter : nwPieBOuter
+                      const centerValue = isAccAssets ? selectedAccounts + selectedAssets : selectedLiabs
+                      if (innerData.length === 0) return (
+                        <p className="text-muted-foreground text-xs text-center py-10">{t('reports.noData')}</p>
+                      )
+                      return (
+                        <div className="relative" style={{ width: 190, height: 190 }}>
                           <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                               <Pie
-                                data={compositionView === 'detailed' ? nwPieAOuter : []}
-                                innerRadius={52}
-                                outerRadius={70}
-                                paddingAngle={0}
+                                data={compositionView === 'detailed' ? outerData : innerData}
+                                innerRadius={55}
+                                outerRadius={85}
+                                paddingAngle={2}
                                 dataKey="value"
                                 stroke="var(--card)"
                                 strokeWidth={1}
                                 animationBegin={0}
                                 animationDuration={500}
                               >
-                                {nwPieAOuter.map((entry, idx) => (
-                                  <Cell key={idx} fill={entry.color} />
-                                ))}
-                              </Pie>
-                              <Pie
-                                data={nwPieAInner}
-                                innerRadius={28}
-                                outerRadius={48}
-                                paddingAngle={0}
-                                dataKey="value"
-                                stroke="var(--card)"
-                                strokeWidth={1}
-                                animationBegin={50}
-                                animationDuration={500}
-                              >
-                                {nwPieAInner.map((entry, idx) => (
+                                {(compositionView === 'detailed' ? outerData : innerData).map((entry, idx) => (
                                   <Cell key={idx} fill={entry.color} />
                                 ))}
                               </Pie>
                               <Tooltip
                                 formatter={(value?: number, name?: string) => {
                                   const v = value ?? 0
-                                  const total = selectedAccounts + selectedAssets
-                                  const pct = total > 0 ? ((v / total) * 100).toFixed(1) : '0'
+                                  const pct = centerValue > 0 ? ((v / centerValue) * 100).toFixed(1) : '0'
                                   return [privacyMode ? MASK : `${formatCurrency(v, userCurrency, locale)} (${pct}%)`, name]
                                 }}
                                 contentStyle={{ ...tooltipStyle, zIndex: 10 }}
@@ -881,133 +910,26 @@ export default function ReportsPage() {
                               />
                             </PieChart>
                           </ResponsiveContainer>
+                          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none" style={{ zIndex: 2 }}>
+                            <span className="text-[10px] text-muted-foreground leading-tight">
+                              {isAccAssets ? t('reports.whatYouHave') : t('reports.whatYouOwe')}
+                            </span>
+                            <span className="text-base font-bold text-foreground tabular-nums">
+                              {mask(formatCompact(centerValue, userCurrency, locale))}
+                            </span>
+                          </div>
                         </div>
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                          <span className="text-[10px] font-bold text-foreground tabular-nums">
-                            {mask(formatCompact(selectedAccounts + selectedAssets, userCurrency, locale))}
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-muted-foreground text-xs text-center py-10">{t('reports.noData')}</p>
-                    )}
+                      )
+                    })()}
                   </div>
-
-                  {/* Pie B: Liabilities */}
-                  <div className="relative flex flex-col items-center gap-1 hover:z-10">
-                    <p className="text-[11px] font-medium text-muted-foreground">{t('reports.liabilities')}</p>
-                    {nwPieBInner.length > 0 ? (
-                      <div className="relative" style={{ width: 148, height: 148 }}>
-                        <div
-                          className="absolute inset-0"
-                          style={{
-                            transform: compositionView === 'detailed' ? 'scale(1)' : 'scale(1.458)',
-                            transition: 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
-                            transformOrigin: 'center',
-                            zIndex: 1,
-                          }}
-                        >
-                          <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                              <Pie
-                                data={compositionView === 'detailed' ? nwPieBOuter : []}
-                                innerRadius={52}
-                                outerRadius={70}
-                                paddingAngle={0}
-                                dataKey="value"
-                                stroke="var(--card)"
-                                strokeWidth={1}
-                                animationBegin={0}
-                                animationDuration={500}
-                              >
-                                {nwPieBOuter.map((entry, idx) => (
-                                  <Cell key={idx} fill={entry.color} />
-                                ))}
-                              </Pie>
-                              <Pie
-                                data={nwPieBInner}
-                                innerRadius={28}
-                                outerRadius={48}
-                                paddingAngle={0}
-                                dataKey="value"
-                                stroke="var(--card)"
-                                strokeWidth={1}
-                                animationBegin={50}
-                                animationDuration={500}
-                              >
-                                {nwPieBInner.map((entry, idx) => (
-                                  <Cell key={idx} fill={entry.color} />
-                                ))}
-                              </Pie>
-                              <Tooltip
-                                formatter={(value?: number, name?: string) => {
-                                  const v = value ?? 0
-                                  const pct = selectedLiabs > 0 ? ((v / selectedLiabs) * 100).toFixed(1) : '0'
-                                  return [privacyMode ? MASK : `${formatCurrency(v, userCurrency, locale)} (${pct}%)`, name]
-                                }}
-                                contentStyle={{ ...tooltipStyle, zIndex: 10 }}
-                                itemStyle={tooltipItemStyle}
-                                wrapperStyle={{ zIndex: 10 }}
-                              />
-                            </PieChart>
-                          </ResponsiveContainer>
-                        </div>
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                          <span className="text-[10px] font-bold text-foreground tabular-nums">
-                            {mask(formatCompact(selectedLiabs, userCurrency, locale))}
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-muted-foreground text-xs text-center py-10">{t('reports.noData')}</p>
-                    )}
-                  </div>
-                </div>
               )}
             </div>
           </div>
 
-          {/* Evolution chart */}
-          <div className="lg:col-span-2 bg-card rounded-xl border border-border shadow-sm">
-            <div className="px-5 pt-4 pb-2 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <p className="text-sm font-semibold text-foreground">{t('reports.evolution')}</p>
-                {compositionView === 'summary' && (
-                  <div className="hidden sm:flex items-center gap-3">
-                    {[
-                      { key: 'accounts', color: colorMap['accounts'] || '#6366F1' },
-                      { key: 'assets', color: colorMap['assets'] || '#F59E0B' },
-                      { key: 'liabilities', color: colorMap['liabilities'] || '#F43F5E' },
-                    ].map(({ key, color }) => (
-                      <div key={key} className="flex items-center gap-1.5">
-                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
-                        <span className="text-[11px] text-muted-foreground">{t(`reports.${key}`)}</span>
-                      </div>
-                    ))}
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-3 h-0 border-t-2 border-dashed" style={{ borderColor: '#10B981' }} />
-                      <span className="text-[11px] text-muted-foreground">{t('reports.netWorth')}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="flex items-center rounded-lg border border-border bg-muted/30 overflow-hidden">
-                {(['summary', 'detailed'] as const).map((opt) => (
-                  <button
-                    key={opt}
-                    onClick={() => setCompositionView(opt)}
-                    className={`px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                      compositionView === opt
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                    }`}
-                  >
-                    {t(`reports.${opt}`)}
-                  </button>
-                ))}
-              </div>
-            </div>
+          {/* Evolution chart — left 2 cols */}
+          <div className="lg:col-span-2 lg:row-start-1 lg:col-start-1">
             {compositionView === 'summary' ? (
+              <>
               <div className="px-1 pb-4" style={{ height: 320 }}>
                 {isLoading ? (
                   <div className="px-4"><Skeleton className="h-full w-full" /></div>
@@ -1073,17 +995,17 @@ export default function ReportsPage() {
                         }}
                       />
                       <ReferenceLine y={0} stroke="var(--border)" strokeDasharray="3 3" />
-                      <Bar dataKey="accounts" stackId="stack" fill={colorMap['accounts'] || '#6366F1'} maxBarSize={32} radius={[0, 0, 0, 0]} onClick={handleSummaryBarClick}>
+                      <Bar dataKey="accounts" stackId="stack" fill={colorMap['accounts'] || '#6366F1'} maxBarSize={64} radius={[0, 0, 0, 0]} onClick={handleSummaryBarClick}>
                         {netWorthSummaryData.map((_: unknown, i: number) => (
                           <Cell key={i} fill={colorMap['accounts'] || '#6366F1'} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
                         ))}
                       </Bar>
-                      <Bar dataKey="assets" stackId="stack" fill={colorMap['assets'] || '#F59E0B'} maxBarSize={32} radius={[4, 4, 0, 0]} onClick={handleSummaryBarClick}>
+                      <Bar dataKey="assets" stackId="stack" fill={colorMap['assets'] || '#F59E0B'} maxBarSize={64} radius={[4, 4, 0, 0]} onClick={handleSummaryBarClick}>
                         {netWorthSummaryData.map((_: unknown, i: number) => (
                           <Cell key={i} fill={colorMap['assets'] || '#F59E0B'} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
                         ))}
                       </Bar>
-                      <Bar dataKey="liabilitiesNeg" stackId="stack" fill={colorMap['liabilities'] || '#F43F5E'} maxBarSize={32} radius={[4, 4, 0, 0]} onClick={handleSummaryBarClick}>
+                      <Bar dataKey="liabilitiesNeg" stackId="stack" fill={colorMap['liabilities'] || '#F43F5E'} maxBarSize={64} radius={[4, 4, 0, 0]} onClick={handleSummaryBarClick}>
                         {netWorthSummaryData.map((_: unknown, i: number) => (
                           <Cell key={i} fill={colorMap['liabilities'] || '#F43F5E'} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
                         ))}
@@ -1103,8 +1025,28 @@ export default function ReportsPage() {
                   <p className="text-muted-foreground text-sm text-center py-16">{t('reports.noData')}</p>
                 )}
               </div>
+              {!isLoading && netWorthSummaryData.length > 0 && (
+                <div className="px-5 pb-4 flex flex-wrap gap-x-3 gap-y-1.5">
+                  {[
+                    { key: 'accounts', color: colorMap['accounts'] || '#6366F1' },
+                    { key: 'assets', color: colorMap['assets'] || '#F59E0B' },
+                    { key: 'liabilities', color: colorMap['liabilities'] || '#F43F5E' },
+                  ].map(({ key, color }) => (
+                    <div key={key} className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                      <span className="text-[11px] text-muted-foreground">{t(`reports.${key}`)}</span>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-0 border-t-2 border-dashed shrink-0" style={{ borderColor: '#10B981' }} />
+                    <span className="text-[11px] text-muted-foreground">{t('reports.netWorth')}</span>
+                  </div>
+                </div>
+              )}
+              </>
             ) : (
-              <div className="px-1 pb-4" style={{ height: 320 }}>
+              <>
+              <div className="px-1 pb-2" style={{ height: 300 }}>
                 {isLoading ? (
                   <div className="px-4"><Skeleton className="h-full w-full" /></div>
                 ) : netWorthDetailedData.length > 0 ? (
@@ -1193,17 +1135,17 @@ export default function ReportsPage() {
                       {nwBarsAccounts.map((item: ReportCompositionItem, idx: number) => {
                         const color = accountsGradient[idx] ?? accountsGradient[accountsGradient.length - 1]
                         return (
-                          <Bar key={`acct_${item.key}`} dataKey={`acct_${item.key}`} stackId="stack" fill={color} maxBarSize={32} radius={[0, 0, 0, 0]} onClick={handleDetailedBarClick}>
+                          <Bar key={`acct_${item.key}`} dataKey={`acct_${item.key}`} stackId="stack" fill={color} maxBarSize={64} radius={[0, 0, 0, 0]} onClick={handleDetailedBarClick}>
                             {netWorthDetailedData.map((_: unknown, i: number) => (
                               <Cell key={i} fill={color} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
                             ))}
                           </Bar>
                         )
                       })}
-                      {nwDetailAccounts.length > COMPOSITION_TOP_N && (() => {
+                      {nwDetailAccounts.length > nwBarsAccounts.length && (() => {
                         const color = accountsGradient[accountsGradient.length - 1] ?? '#6B7280'
                         return (
-                          <Bar key="acct_others" dataKey="acct_others" stackId="stack" fill={color} maxBarSize={32} radius={nwBarsAssets.length === 0 && nwDetailLiabs.length === 0 ? [4, 4, 0, 0] : [0, 0, 0, 0]} onClick={handleDetailedBarClick}>
+                          <Bar key="acct_others" dataKey="acct_others" stackId="stack" fill={color} maxBarSize={64} radius={nwBarsAssets.length === 0 && nwDetailLiabs.length === 0 ? [4, 4, 0, 0] : [0, 0, 0, 0]} onClick={handleDetailedBarClick}>
                             {netWorthDetailedData.map((_: unknown, i: number) => (
                               <Cell key={i} fill={color} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
                             ))}
@@ -1213,17 +1155,17 @@ export default function ReportsPage() {
                       {nwBarsAssets.map((item: ReportCompositionItem, idx: number) => {
                         const color = assetsGradient[idx] ?? assetsGradient[assetsGradient.length - 1]
                         return (
-                          <Bar key={`asset_${item.key}`} dataKey={`asset_${item.key}`} stackId="stack" fill={color} maxBarSize={32} radius={[0, 0, 0, 0]} onClick={handleDetailedBarClick}>
+                          <Bar key={`asset_${item.key}`} dataKey={`asset_${item.key}`} stackId="stack" fill={color} maxBarSize={64} radius={[0, 0, 0, 0]} onClick={handleDetailedBarClick}>
                             {netWorthDetailedData.map((_: unknown, i: number) => (
                               <Cell key={i} fill={color} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
                             ))}
                           </Bar>
                         )
                       })}
-                      {nwDetailAssets.length > COMPOSITION_TOP_N && (() => {
+                      {nwDetailAssets.length > nwBarsAssets.length && (() => {
                         const color = assetsGradient[assetsGradient.length - 1] ?? '#6B7280'
                         return (
-                          <Bar key="asset_others" dataKey="asset_others" stackId="stack" fill={color} maxBarSize={32} radius={nwDetailLiabs.length === 0 ? [4, 4, 0, 0] : [0, 0, 0, 0]} onClick={handleDetailedBarClick}>
+                          <Bar key="asset_others" dataKey="asset_others" stackId="stack" fill={color} maxBarSize={64} radius={nwDetailLiabs.length === 0 ? [4, 4, 0, 0] : [0, 0, 0, 0]} onClick={handleDetailedBarClick}>
                             {netWorthDetailedData.map((_: unknown, i: number) => (
                               <Cell key={i} fill={color} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
                             ))}
@@ -1233,17 +1175,17 @@ export default function ReportsPage() {
                       {nwBarsLiabs.map((item: ReportCompositionItem, idx: number) => {
                         const color = liabsGradient[idx] ?? liabsGradient[liabsGradient.length - 1]
                         return (
-                          <Bar key={`liab_${item.key}`} dataKey={`liab_${item.key}`} stackId="stack" fill={color} maxBarSize={32} radius={[0, 0, 0, 0]} onClick={handleDetailedBarClick}>
+                          <Bar key={`liab_${item.key}`} dataKey={`liab_${item.key}`} stackId="stack" fill={color} maxBarSize={64} radius={[0, 0, 0, 0]} onClick={handleDetailedBarClick}>
                             {netWorthDetailedData.map((_: unknown, i: number) => (
                               <Cell key={i} fill={color} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
                             ))}
                           </Bar>
                         )
                       })}
-                      {nwDetailLiabs.length > COMPOSITION_TOP_N && (() => {
+                      {nwDetailLiabs.length > nwBarsLiabs.length && (() => {
                         const color = liabsGradient[liabsGradient.length - 1] ?? '#6B7280'
                         return (
-                          <Bar key="liab_others" dataKey="liab_others" stackId="stack" fill={color} maxBarSize={32} radius={[4, 4, 0, 0]} onClick={handleDetailedBarClick}>
+                          <Bar key="liab_others" dataKey="liab_others" stackId="stack" fill={color} maxBarSize={64} radius={[4, 4, 0, 0]} onClick={handleDetailedBarClick}>
                             {netWorthDetailedData.map((_: unknown, i: number) => (
                               <Cell key={i} fill={color} opacity={selectedNWBar == null || selectedNWBar.index === i ? 1 : 0.35} />
                             ))}
@@ -1265,7 +1207,53 @@ export default function ReportsPage() {
                   <p className="text-muted-foreground text-sm text-center py-16">{t('reports.noData')}</p>
                 )}
               </div>
+              {!isLoading && netWorthDetailedData.length > 0 && (
+                <div className="px-5 pb-4 flex flex-wrap gap-x-3 gap-y-1.5">
+                  {nwBarsAccounts.map((item, idx) => (
+                    <div key={`acct_${item.key}`} className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: accountsGradient[idx] ?? accountsGradient[accountsGradient.length - 1] }} />
+                      <span className="text-[11px] text-muted-foreground">{item.label.length > 22 ? item.label.slice(0, 22) + '…' : item.label}</span>
+                    </div>
+                  ))}
+                  {nwDetailAccounts.length > nwBarsAccounts.length && (
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: accountsGradient[accountsGradient.length - 1] ?? '#6B7280' }} />
+                      <span className="text-[11px] text-muted-foreground">{t('reports.other')}</span>
+                    </div>
+                  )}
+                  {nwBarsAssets.map((item, idx) => (
+                    <div key={`asset_${item.key}`} className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: assetsGradient[idx] ?? assetsGradient[assetsGradient.length - 1] }} />
+                      <span className="text-[11px] text-muted-foreground">{item.label.length > 22 ? item.label.slice(0, 22) + '…' : item.label}</span>
+                    </div>
+                  ))}
+                  {nwDetailAssets.length > nwBarsAssets.length && (
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: assetsGradient[assetsGradient.length - 1] ?? '#6B7280' }} />
+                      <span className="text-[11px] text-muted-foreground">{t('reports.other')}</span>
+                    </div>
+                  )}
+                  {nwBarsLiabs.map((item, idx) => (
+                    <div key={`liab_${item.key}`} className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: liabsGradient[idx] ?? liabsGradient[liabsGradient.length - 1] }} />
+                      <span className="text-[11px] text-muted-foreground">{item.label.length > 22 ? item.label.slice(0, 22) + '…' : item.label}</span>
+                    </div>
+                  ))}
+                  {nwDetailLiabs.length > nwBarsLiabs.length && (
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: liabsGradient[liabsGradient.length - 1] ?? '#6B7280' }} />
+                      <span className="text-[11px] text-muted-foreground">{t('reports.other')}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-0 border-t-2 border-dashed" style={{ borderColor: '#10B981' }} />
+                    <span className="text-[11px] text-muted-foreground">{t('reports.netWorth')}</span>
+                  </div>
+                </div>
+              )}
+              </>
             )}
+          </div>
           </div>
         </div>
       )}

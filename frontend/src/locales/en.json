@@ -866,6 +866,8 @@
     "categoryTrends": "Category Trends",
     "current": "Current",
     "accountsAndAssets": "Accounts and Assets",
+    "whatYouHave": "You own",
+    "whatYouOwe": "You owe",
     "change": "Change"
   },
   "payees": {
