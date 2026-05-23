@@ -821,17 +821,17 @@ export default function ReportsPage() {
           {/* Inner grid: pies right (col-start-3), evolution left (col-span-2 col-start-1) */}
           <div className="grid grid-cols-1 lg:grid-cols-3">
             {/* Pies — right 1 col */}
-            <div className="lg:col-start-3 lg:row-start-1 lg:border-l lg:border-border">
-              <div className="pb-4">
+            <div className="lg:col-start-3 lg:row-start-1 lg:border-l lg:border-border flex flex-col">
+              <div className="flex flex-col flex-1 pb-4">
                 {isLoading ? (
                   <div className="px-4" style={{ height: 180 }}>
                     <Skeleton className="h-full w-full" />
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center gap-2 pt-3 px-4">
-                    <div className="relative z-10 inline-flex flex-col gap-2 self-end">
-                      {/* Summary / Detailed toggle */}
-                      <div className="flex rounded-lg border border-border bg-muted/30 overflow-hidden">
+                  <div className="flex flex-col flex-1 items-center gap-2 pt-3 px-4">
+                    <div className="relative z-10 self-end inline-flex flex-row rounded-lg border border-border bg-muted/30 overflow-hidden">
+                      {/* Summary / Detailed group */}
+                      <div className="flex">
                         {(['summary', 'detailed'] as const).map((opt) => (
                           <button
                             key={opt}
@@ -846,8 +846,10 @@ export default function ReportsPage() {
                           </button>
                         ))}
                       </div>
-                      {/* What you have / What you owe toggle */}
-                      <div className="flex rounded-lg border border-border bg-muted/30 overflow-hidden">
+                      {/* Divider */}
+                      <div className="w-px bg-border" />
+                      {/* You own / You owe group */}
+                      <div className="flex">
                         <button
                           onClick={() => setNwPieView('accountsAssets')}
                           className={`flex-1 px-2.5 py-1 text-[11px] font-semibold transition-colors ${
@@ -880,7 +882,7 @@ export default function ReportsPage() {
                         <p className="text-muted-foreground text-xs text-center py-10">{t('reports.noData')}</p>
                       )
                       return (
-                        <div className="relative" style={{ width: 190, height: 190 }}>
+                        <div className="relative flex-1 w-full min-h-[160px]">
                           <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                               <Pie
