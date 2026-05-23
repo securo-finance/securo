@@ -1,7 +1,9 @@
 import calendar
 import uuid
+from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import Optional
 
 from sqlalchemy import String, select, desc, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +12,7 @@ from app.core.config import get_settings
 from app.models.account import Account
 from app.models.asset import Asset
 from app.models.asset_value import AssetValue
+from app.models.fx_rate import FxRate
 from app.models.transaction import Transaction
 from app.models.category import Category
 from app.models.user import User
@@ -30,7 +33,11 @@ from app.schemas.report import (
     ReportResponse,
     ReportSummary,
 )
-from app.services.asset_service import get_asset_values_at
+from app.services.asset_service import (
+    get_asset_values_at,
+    _load_asset_native_values,
+    _fill_forward_at,
+)
 from app.services.dashboard_service import _get_open_accounts, _account_balance_at
 
 CATEGORY_TREND_TOP_N = 11
@@ -81,6 +88,290 @@ async def _net_worth_at(
             "liabilities": round(liabilities_total, 2),
         },
     )
+
+
+def _compute_signed_amount(
+    tx_type: str,
+    tx_amount: Decimal,
+    tx_currency: str,
+    tx_amount_primary: Optional[Decimal],
+    account_currency: str,
+) -> Decimal:
+    """Python equivalent of _signed_balance_expr(account_currency): credit→+, debit→−.
+    Uses amount_primary when tx currency differs from account currency."""
+    effective = (
+        tx_amount
+        if tx_currency == account_currency
+        else (tx_amount_primary if tx_amount_primary is not None else tx_amount)
+    )
+    return effective if tx_type == "credit" else -effective
+
+
+async def _preload_fx_rates_bulk(
+    session: AsyncSession,
+    currencies: set[str],
+    max_date: date,
+) -> dict[str, list[tuple[date, Decimal]]]:
+    """Load USD-based FX rates for all needed currencies up to max_date in one query.
+    Returns {quote_currency: [(date, rate), ...]} sorted ascending by date."""
+    needed = {c for c in currencies if c != "USD"}
+    if not needed:
+        return {}
+    rows = (await session.execute(
+        select(FxRate.quote_currency, FxRate.date, FxRate.rate)
+        .where(
+            FxRate.base_currency == "USD",
+            FxRate.quote_currency.in_(needed),
+            FxRate.date <= max_date,
+        )
+        .order_by(FxRate.quote_currency, FxRate.date)
+    )).all()
+    cache: dict[str, list[tuple[date, Decimal]]] = {}
+    for ccy, d, rate in rows:
+        cache.setdefault(ccy, []).append((d, rate))
+    return cache
+
+
+def _fx_rate_at_from_cache(
+    cache: dict[str, list[tuple[date, Decimal]]],
+    from_currency: str,
+    to_currency: str,
+    target: date,
+) -> Decimal:
+    """Fill-forward cross-rate lookup from preloaded cache.
+    Uses the same cross-rate formula as fx_rate_service: rate = usd_to_target / usd_to_source.
+    Falls back to 1:1 when no rate is available."""
+    if from_currency == to_currency:
+        return Decimal("1")
+
+    def _usd_to(ccy: str) -> Decimal:
+        if ccy == "USD":
+            return Decimal("1")
+        result = None
+        for d, r in cache.get(ccy, []):
+            if d <= target:
+                result = r
+            else:
+                break
+        return result if result is not None else Decimal("1")
+
+    usd_to_from = _usd_to(from_currency)
+    usd_to_to = _usd_to(to_currency)
+    if usd_to_from == 0:
+        return Decimal("1")
+    return usd_to_to / usd_to_from
+
+
+async def _bulk_account_balances(
+    session: AsyncSession,
+    accounts: list[Account],
+    all_dates: list[date],
+) -> dict[uuid.UUID, dict[date, float]]:
+    """Compute balances for all accounts at all date points using two bulk queries.
+
+    Manual accounts: one query for all transactions up to max_date, then a single
+    pass per account that accumulates a running signed sum as date points advance.
+
+    Connected accounts: one query for transactions after min_date, then backtrack
+    from the provider's authoritative balance using the same running-sum trick.
+
+    Returns {account_id: {date: balance}}.
+    """
+    if not accounts or not all_dates:
+        return {}
+
+    all_dates_sorted = sorted(set(all_dates))
+    min_date = all_dates_sorted[0]
+    max_date = all_dates_sorted[-1]
+
+    manual_accounts = [a for a in accounts if not a.connection_id]
+    connected_accounts = [a for a in accounts if a.connection_id]
+
+    result: dict[uuid.UUID, dict[date, float]] = {a.id: {} for a in accounts}
+
+    # ---- Manual accounts: forward cumulative sum ----
+    if manual_accounts:
+        manual_ids = [a.id for a in manual_accounts]
+        acct_currency = {a.id: a.currency for a in manual_accounts}
+
+        rows = (await session.execute(
+            select(
+                Transaction.account_id,
+                Transaction.date,
+                Transaction.type,
+                Transaction.amount,
+                Transaction.currency,
+                Transaction.amount_primary,
+            )
+            .where(
+                Transaction.account_id.in_(manual_ids),
+                Transaction.date <= max_date,
+                Transaction.is_ignored == False,
+            )
+            .order_by(Transaction.account_id, Transaction.date)
+        )).all()
+
+        txns_by_acct: dict[uuid.UUID, list] = defaultdict(list)
+        for row in rows:
+            txns_by_acct[row[0]].append(row)
+
+        for acct in manual_accounts:
+            txns = txns_by_acct.get(acct.id, [])
+            ccy = acct_currency[acct.id]
+            txn_idx = 0
+            running = Decimal("0")
+            for d in all_dates_sorted:
+                while txn_idx < len(txns) and txns[txn_idx][1] <= d:
+                    row = txns[txn_idx]
+                    running += _compute_signed_amount(row[2], row[3], row[4], row[5], ccy)
+                    txn_idx += 1
+                result[acct.id][d] = float(running)
+
+    # ---- Connected accounts: backtrack from authoritative current balance ----
+    # For any date point P >= min_date, sum(date > P) = total_loaded - running_up_to_P
+    # since all loaded txns satisfy date > min_date, and P >= min_date guarantees
+    # date <= min_date implies date <= P (so no earlier txns are missed).
+    if connected_accounts:
+        connected_ids = [a.id for a in connected_accounts]
+
+        rows = (await session.execute(
+            select(
+                Transaction.account_id,
+                Transaction.date,
+                Transaction.type,
+                Transaction.amount,
+                Transaction.currency,
+                Transaction.amount_primary,
+            )
+            .where(
+                Transaction.account_id.in_(connected_ids),
+                Transaction.date > min_date,
+                Transaction.is_ignored == False,
+            )
+            .order_by(Transaction.account_id, Transaction.date)
+        )).all()
+
+        txns_by_acct2: dict[uuid.UUID, list] = defaultdict(list)
+        for row in rows:
+            txns_by_acct2[row[0]].append(row)
+
+        for acct in connected_accounts:
+            txns = txns_by_acct2.get(acct.id, [])
+            ccy = acct.currency
+            current_bal = float(acct.balance)
+            if acct.type == "credit_card":
+                current_bal = -current_bal
+
+            total_delta = sum(
+                _compute_signed_amount(row[2], row[3], row[4], row[5], ccy)
+                for row in txns
+            )
+
+            txn_idx = 0
+            running_up_to = Decimal("0")
+            for d in all_dates_sorted:
+                while txn_idx < len(txns) and txns[txn_idx][1] <= d:
+                    row = txns[txn_idx]
+                    running_up_to += _compute_signed_amount(row[2], row[3], row[4], row[5], ccy)
+                    txn_idx += 1
+                result[acct.id][d] = current_bal - float(total_delta - running_up_to)
+
+    return result
+
+
+async def _bulk_asset_totals_by_date(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    all_dates: list[date],
+    primary_currency: str,
+    fx_cache: dict[str, list[tuple[date, Decimal]]],
+) -> dict[date, float]:
+    """Compute total asset value (in primary currency) at each date using one bulk query.
+    Returns {date: total}."""
+    asset_result = await session.execute(
+        select(Asset).where(
+            Asset.user_id == user_id,
+            Asset.is_archived == False,
+            Asset.sell_date.is_(None),
+        )
+    )
+    assets = list(asset_result.scalars().all())
+    if not assets:
+        return {d: 0.0 for d in all_dates}
+
+    max_date = max(all_dates)
+    values_map = await _load_asset_native_values(session, assets, up_to_date=max_date)
+
+    totals: dict[date, float] = {}
+    for d in all_dates:
+        total = 0.0
+        for asset in assets:
+            native_val = _fill_forward_at(asset, values_map.get(str(asset.id), []), d)
+            if native_val is None or native_val <= 0:
+                continue
+            rate = _fx_rate_at_from_cache(fx_cache, asset.currency, primary_currency, d)
+            total += float(Decimal(str(native_val)) * rate)
+        totals[d] = total
+    return totals
+
+
+async def _build_net_worth_snapshots_bulk(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    accounts: list[Account],
+    all_dates: list[date],
+    primary_currency: str,
+) -> dict[date, ReportDataPoint]:
+    """Compute net worth snapshots for all dates in a fixed number of queries.
+
+    Replaces the previous O(N_dates × N_accounts) loop with:
+      - 1 FX rates query
+      - 2 transaction queries (manual + connected)
+      - 1 asset values query
+
+    Returns {date: ReportDataPoint}.
+    """
+    if not all_dates:
+        return {}
+
+    currencies: set[str] = {primary_currency}
+    for acct in accounts:
+        currencies.add(acct.currency)
+
+    max_date = max(all_dates)
+    fx_cache = await _preload_fx_rates_bulk(session, currencies, max_date)
+    acct_balances = await _bulk_account_balances(session, accounts, all_dates)
+    asset_totals = await _bulk_asset_totals_by_date(
+        session, user_id, all_dates, primary_currency, fx_cache
+    )
+
+    snapshots: dict[date, ReportDataPoint] = {}
+    for d in all_dates:
+        accounts_total = 0.0
+        liabilities_total = 0.0
+
+        for acct in accounts:
+            bal = acct_balances[acct.id].get(d, 0.0)
+            rate = _fx_rate_at_from_cache(fx_cache, acct.currency, primary_currency, d)
+            converted_val = float(Decimal(str(abs(bal))) * rate)
+            if acct.type == "credit_card" or bal < 0:
+                liabilities_total += converted_val
+            else:
+                accounts_total += converted_val
+
+        assets_total = asset_totals.get(d, 0.0)
+        net_worth = accounts_total + assets_total - liabilities_total
+
+        snapshots[d] = ReportDataPoint(
+            date=d.isoformat(),
+            value=round(net_worth, 2),
+            breakdowns={
+                "accounts": round(accounts_total, 2),
+                "assets": round(assets_total, 2),
+                "liabilities": round(liabilities_total, 2),
+            },
+        )
+    return snapshots
 
 
 def _format_date_label(d: date, interval: str) -> str:
@@ -158,21 +449,29 @@ async def get_net_worth_report(
     user = await session.get(User, user_id)
     primary_currency = user.primary_currency if user else get_settings().default_currency
 
+    accounts = await _get_open_accounts(session, user_id)
     points = _date_points(start, today, interval)
 
-    # Compute snapshot at each date point
+    # Build all snapshots in bulk (includes period start for delta baseline).
+    all_dates = sorted({start} | set(points))
+    snapshots = await _build_net_worth_snapshots_bulk(
+        session, user_id, accounts, all_dates, primary_currency
+    )
+
     trend: list[ReportDataPoint] = []
     for point in points:
-        dp = await _net_worth_at(session, user_id, point, primary_currency)
-        dp.date = _format_date_label(point, interval)
-        trend.append(dp)
+        snap = snapshots[point]
+        trend.append(ReportDataPoint(
+            date=_format_date_label(point, interval),
+            value=snap.value,
+            breakdowns=dict(snap.breakdowns),
+        ))
 
-    # Current snapshot (last point) for summary; baseline at period start for delta
-    current = trend[-1] if trend else ReportDataPoint(
+    _empty = ReportDataPoint(
         date="", value=0, breakdowns={"accounts": 0, "assets": 0, "liabilities": 0}
     )
-    baseline = await _net_worth_at(session, user_id, start, primary_currency)
-    previous = baseline if trend else current
+    current = trend[-1] if trend else _empty
+    previous = snapshots.get(start, _empty) if trend else current
 
     change_amount = current.value - previous.value
     change_percent = (
@@ -230,7 +529,6 @@ async def get_net_worth_report(
         "other": "#6B7280",
     }
     composition: list[ReportCompositionItem] = []
-    accounts = await _get_open_accounts(session, user_id)
     for account in accounts:
         bal = await _account_balance_at(session, account, today)
         converted, _ = await convert(

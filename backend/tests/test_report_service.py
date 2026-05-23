@@ -15,8 +15,12 @@ from app.schemas.report import CategoryTrendItem, ReportDataPoint, ReportRespons
 from app.services.report_service import (
     _add_months,
     _asset_value_at,
+    _bulk_account_balances,
+    _build_net_worth_snapshots_bulk,
+    _compute_signed_amount,
     _date_points,
     _format_date_label,
+    _fx_rate_at_from_cache,
     _net_worth_at,
     get_cash_flow_report,
     get_net_worth_report,
@@ -748,11 +752,14 @@ async def test_net_worth_with_assets(session: AsyncSession, test_user: User):
 
 @pytest.mark.asyncio
 async def test_net_worth_negative_manual_balance(session: AsyncSession, test_user: User):
+    """Overdraft (negative manual balance) is routed to liabilities, not accounts."""
     acct = await _make_manual_account(session, test_user.id, "NW Negative")
     await _add_txn(session, test_user.id, acct.id, 1000, "debit", date.today())
 
     dp = await _net_worth_at(session, test_user.id, date.today(), "BRL")
-    assert dp.breakdowns["accounts"] == -1000.0
+    assert dp.breakdowns["accounts"] == 0.0
+    assert dp.breakdowns["liabilities"] == 1000.0
+    assert dp.value == -1000.0
 
 
 # ---------------------------------------------------------------------------
@@ -2104,3 +2111,368 @@ async def test_cash_flow_running_balance_arithmetic(
         assert abs(pt.value - expected) < 0.01, (
             f"Day {d}: got {pt.value}, expected {expected}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Bulk optimization — helper functions
+# ---------------------------------------------------------------------------
+
+
+def test_compute_signed_amount_credit_same_currency():
+    from decimal import Decimal
+    result = _compute_signed_amount("credit", Decimal("100"), "BRL", None, "BRL")
+    assert result == Decimal("100")
+
+
+def test_compute_signed_amount_debit_same_currency():
+    from decimal import Decimal
+    result = _compute_signed_amount("debit", Decimal("100"), "BRL", None, "BRL")
+    assert result == Decimal("-100")
+
+
+def test_compute_signed_amount_foreign_uses_amount_primary():
+    from decimal import Decimal
+    result = _compute_signed_amount("credit", Decimal("100"), "USD", Decimal("500"), "BRL")
+    assert result == Decimal("500")
+
+
+def test_compute_signed_amount_foreign_fallback_to_amount():
+    from decimal import Decimal
+    result = _compute_signed_amount("debit", Decimal("100"), "USD", None, "BRL")
+    assert result == Decimal("-100")
+
+
+def test_fx_rate_at_from_cache_same_currency():
+    from decimal import Decimal
+    assert _fx_rate_at_from_cache({}, "BRL", "BRL", date.today()) == Decimal("1")
+
+
+def test_fx_rate_at_from_cache_fill_forward():
+    from decimal import Decimal
+    cache = {"BRL": [(date(2025, 1, 1), Decimal("5.0")), (date(2025, 6, 1), Decimal("6.0"))]}
+    # On 2025-03-15: fill-forward gives 5.0 (2025-01-01 is the latest on or before)
+    rate = _fx_rate_at_from_cache(cache, "USD", "BRL", date(2025, 3, 15))
+    assert rate == Decimal("5.0")
+    # On 2025-07-01: fill-forward gives 6.0
+    rate2 = _fx_rate_at_from_cache(cache, "USD", "BRL", date(2025, 7, 1))
+    assert rate2 == Decimal("6.0")
+
+
+def test_fx_rate_at_from_cache_cross_rate():
+    from decimal import Decimal
+    # USD→BRL = 5.0, USD→EUR = 0.5  →  EUR→BRL = 5.0/0.5 = 10.0
+    cache = {
+        "BRL": [(date(2025, 1, 1), Decimal("5.0"))],
+        "EUR": [(date(2025, 1, 1), Decimal("0.5"))],
+    }
+    rate = _fx_rate_at_from_cache(cache, "EUR", "BRL", date(2025, 6, 1))
+    assert rate == Decimal("10.0")
+
+
+def test_fx_rate_at_from_cache_no_rate_falls_back_to_1():
+    from decimal import Decimal
+    rate = _fx_rate_at_from_cache({}, "EUR", "BRL", date(2025, 1, 1))
+    assert rate == Decimal("1")
+
+
+# ---------------------------------------------------------------------------
+# Bulk optimization — _bulk_account_balances
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_bulk_balances_manual_account_forward_sum(
+    session: AsyncSession, test_user: User
+):
+    """Manual account: running sum matches sequential _account_balance_at at each point."""
+    acct = await _make_manual_account(session, test_user.id, "Bulk Manual")
+    today = date.today()
+    d1 = today - timedelta(days=60)
+    d2 = today - timedelta(days=30)
+    await _add_txn(session, test_user.id, acct.id, 1000, "credit", d1)
+    await _add_txn(session, test_user.id, acct.id, 500, "debit", d2)
+    await _add_txn(session, test_user.id, acct.id, 200, "credit", today)
+
+    date_points = [d1 - timedelta(days=1), d1, d2, today]
+    bulk = await _bulk_account_balances(session, [acct], date_points)
+
+    # Before any transactions: 0
+    assert bulk[acct.id][d1 - timedelta(days=1)] == 0.0
+    assert bulk[acct.id][d1] == pytest.approx(1000.0)
+    assert bulk[acct.id][d2] == pytest.approx(500.0)
+    assert bulk[acct.id][today] == pytest.approx(700.0)
+
+
+@pytest.mark.asyncio
+async def test_bulk_balances_connected_account_backtrack(
+    session: AsyncSession, test_user: User
+):
+    """Connected account: bulk backtrack matches sequential _account_balance_at."""
+    conn = BankConnection(
+        id=uuid.uuid4(), user_id=test_user.id, provider="test",
+        external_id="ext-bulk-conn", institution_name="Test",
+        credentials={}, status="active",
+        last_sync_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.flush()
+
+    acct = Account(
+        id=uuid.uuid4(), user_id=test_user.id, connection_id=conn.id,
+        name="Bulk Connected", type="checking",
+        balance=Decimal("3000"),  # authoritative current balance
+        currency="BRL",
+    )
+    session.add(acct)
+    await session.commit()
+
+    today = date.today()
+    d_start = today - timedelta(days=60)
+    d_mid = today - timedelta(days=30)
+
+    # Transaction after d_start: +500 credit
+    await _add_txn(session, test_user.id, acct.id, 500, "credit", d_mid)
+    # Transaction after d_mid: -200 debit
+    await _add_txn(session, test_user.id, acct.id, 200, "debit", today)
+
+    date_points = [d_start, d_mid, today]
+    bulk = await _bulk_account_balances(session, [acct], date_points)
+
+    # Compare with sequential
+    from app.services.dashboard_service import _account_balance_at
+    for d in date_points:
+        seq_bal = await _account_balance_at(session, acct, d)
+        assert abs(bulk[acct.id][d] - seq_bal) < 0.01, f"Mismatch at {d}: bulk={bulk[acct.id][d]}, seq={seq_bal}"
+
+
+@pytest.mark.asyncio
+async def test_bulk_balances_connected_credit_card(
+    session: AsyncSession, test_user: User
+):
+    """Connected CC: balance is negated from account.balance and backtracked."""
+    conn = BankConnection(
+        id=uuid.uuid4(), user_id=test_user.id, provider="test",
+        external_id="ext-bulk-cc", institution_name="CC Bank",
+        credentials={}, status="active",
+        last_sync_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.flush()
+
+    cc = Account(
+        id=uuid.uuid4(), user_id=test_user.id, connection_id=conn.id,
+        name="Bulk CC", type="credit_card",
+        balance=Decimal("1000"),  # bank says $1000 outstanding
+        currency="BRL",
+    )
+    session.add(cc)
+    await session.commit()
+
+    today = date.today()
+    d_start = today - timedelta(days=30)
+    # A purchase 10 days ago (debit → more debt)
+    await _add_txn(session, test_user.id, cc.id, 200, "debit", today - timedelta(days=10))
+
+    date_points = [d_start, today]
+    bulk = await _bulk_account_balances(session, [cc], date_points)
+
+    from app.services.dashboard_service import _account_balance_at
+    for d in date_points:
+        seq_bal = await _account_balance_at(session, cc, d)
+        assert abs(bulk[cc.id][d] - seq_bal) < 0.01
+
+
+@pytest.mark.asyncio
+async def test_bulk_balances_ignored_transactions_excluded(
+    session: AsyncSession, test_user: User
+):
+    """is_ignored transactions must not affect balance."""
+    acct = await _make_manual_account(session, test_user.id, "Bulk Ignored")
+    today = date.today()
+    await _add_txn(session, test_user.id, acct.id, 1000, "credit", today)
+
+    # Add an ignored transaction directly
+    txn = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, account_id=acct.id,
+        description="Ignored", amount=Decimal("999"),
+        date=today, type="credit", source="manual", currency="BRL",
+        is_ignored=True,
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(txn)
+    await session.commit()
+
+    bulk = await _bulk_account_balances(session, [acct], [today])
+    assert bulk[acct.id][today] == pytest.approx(1000.0)
+
+
+# ---------------------------------------------------------------------------
+# Bulk optimization — _build_net_worth_snapshots_bulk vs sequential parity
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_bulk_snapshots_parity_manual_account(
+    session: AsyncSession, test_user: User
+):
+    """Bulk snapshots match sequential _net_worth_at for a simple manual account."""
+    acct = await _make_manual_account(session, test_user.id, "Parity Manual")
+    today = date.today()
+    d_past = today - timedelta(days=45)
+    await _add_txn(session, test_user.id, acct.id, 5000, "credit", d_past)
+    await _add_txn(session, test_user.id, acct.id, 1000, "debit", today - timedelta(days=10))
+
+    from app.services.dashboard_service import _get_open_accounts
+    accounts = await _get_open_accounts(session, test_user.id)
+    date_points = [d_past - timedelta(days=1), d_past, today - timedelta(days=10), today]
+
+    bulk = await _build_net_worth_snapshots_bulk(session, test_user.id, accounts, date_points, "BRL")
+    for d in date_points:
+        seq = await _net_worth_at(session, test_user.id, d, "BRL")
+        assert abs(bulk[d].value - seq.value) < 0.01, f"value mismatch at {d}"
+        assert abs(bulk[d].breakdowns["accounts"] - seq.breakdowns["accounts"]) < 0.01
+        assert abs(bulk[d].breakdowns["liabilities"] - seq.breakdowns["liabilities"]) < 0.01
+
+
+@pytest.mark.asyncio
+async def test_bulk_snapshots_parity_credit_card(
+    session: AsyncSession, test_user: User
+):
+    """Bulk snapshots match sequential for CC (always in liabilities)."""
+    checking = await _make_manual_account(session, test_user.id, "Parity Check")
+    await _add_txn(session, test_user.id, checking.id, 8000, "credit", date.today() - timedelta(days=5))
+
+    conn = BankConnection(
+        id=uuid.uuid4(), user_id=test_user.id, provider="test",
+        external_id="ext-par-cc", institution_name="CCBank",
+        credentials={}, status="active",
+        last_sync_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.flush()
+    cc = Account(
+        id=uuid.uuid4(), user_id=test_user.id, connection_id=conn.id,
+        name="Parity CC", type="credit_card",
+        balance=Decimal("1500"), currency="BRL",
+    )
+    session.add(cc)
+    await session.commit()
+
+    await _add_txn(session, test_user.id, cc.id, 300, "debit", date.today())
+
+    from app.services.dashboard_service import _get_open_accounts
+    accounts = await _get_open_accounts(session, test_user.id)
+    today = date.today()
+    date_points = [today - timedelta(days=7), today]
+
+    bulk = await _build_net_worth_snapshots_bulk(session, test_user.id, accounts, date_points, "BRL")
+    for d in date_points:
+        seq = await _net_worth_at(session, test_user.id, d, "BRL")
+        assert abs(bulk[d].value - seq.value) < 0.01, f"net worth mismatch at {d}"
+        assert abs(bulk[d].breakdowns["liabilities"] - seq.breakdowns["liabilities"]) < 0.01
+
+
+@pytest.mark.asyncio
+async def test_bulk_snapshots_parity_overdraft(
+    session: AsyncSession, test_user: User
+):
+    """Bulk correctly routes overdraft checking account to liabilities."""
+    acct = await _make_manual_account(session, test_user.id, "Parity Overdraft")
+    today = date.today()
+    await _add_txn(session, test_user.id, acct.id, 500, "debit", today)
+
+    from app.services.dashboard_service import _get_open_accounts
+    accounts = await _get_open_accounts(session, test_user.id)
+    bulk = await _build_net_worth_snapshots_bulk(session, test_user.id, accounts, [today], "BRL")
+    seq = await _net_worth_at(session, test_user.id, today, "BRL")
+
+    assert bulk[today].breakdowns["accounts"] == 0.0
+    assert abs(bulk[today].breakdowns["liabilities"] - seq.breakdowns["liabilities"]) < 0.01
+    assert abs(bulk[today].value - seq.value) < 0.01
+
+
+@pytest.mark.asyncio
+async def test_bulk_snapshots_parity_with_asset(
+    session: AsyncSession, test_user: User
+):
+    """Bulk asset totals match sequential for a simple asset with a value entry."""
+    acct = await _make_manual_account(session, test_user.id, "Parity Asset Check")
+    await _add_txn(session, test_user.id, acct.id, 2000, "credit", date.today() - timedelta(days=5))
+
+    asset = Asset(
+        id=uuid.uuid4(), user_id=test_user.id, name="Parity House",
+        type="real_estate", currency="BRL",
+        purchase_price=Decimal("100000"),
+        purchase_date=date.today() - timedelta(days=30),
+    )
+    session.add(asset)
+    await session.commit()
+
+    from app.services.dashboard_service import _get_open_accounts
+    accounts = await _get_open_accounts(session, test_user.id)
+    today = date.today()
+    date_points = [today - timedelta(days=30), today]
+
+    bulk = await _build_net_worth_snapshots_bulk(session, test_user.id, accounts, date_points, "BRL")
+    for d in date_points:
+        seq = await _net_worth_at(session, test_user.id, d, "BRL")
+        assert abs(bulk[d].breakdowns["assets"] - seq.breakdowns["assets"]) < 0.01
+        assert abs(bulk[d].value - seq.value) < 0.01
+
+
+@pytest.mark.asyncio
+async def test_bulk_snapshots_multi_point_parity(
+    session: AsyncSession, test_user: User
+):
+    """Bulk results match sequential across many date points (monthly over 6 months)."""
+    from app.services.report_service import _date_points
+    from app.services.dashboard_service import _get_open_accounts
+
+    acct = await _make_manual_account(session, test_user.id, "Multi Point")
+    today = date.today()
+    # Seed a handful of transactions spread over 6 months
+    for offset_days, amt, typ in [
+        (150, 3000, "credit"),
+        (120, 500, "debit"),
+        (90, 1000, "credit"),
+        (60, 200, "debit"),
+        (30, 800, "credit"),
+        (0, 100, "debit"),
+    ]:
+        await _add_txn(session, test_user.id, acct.id, amt, typ, today - timedelta(days=offset_days))
+
+    start = today.replace(day=1) - timedelta(days=6 * 30)
+    start = start.replace(day=1)
+    points = _date_points(start, today, "monthly")
+    all_dates = sorted({start} | set(points))
+
+    accounts = await _get_open_accounts(session, test_user.id)
+    bulk = await _build_net_worth_snapshots_bulk(session, test_user.id, accounts, all_dates, "BRL")
+
+    for d in all_dates:
+        seq = await _net_worth_at(session, test_user.id, d, "BRL")
+        assert abs(bulk[d].value - seq.value) < 0.01, f"Mismatch at {d}: bulk={bulk[d].value}, seq={seq.value}"
+
+
+@pytest.mark.asyncio
+async def test_get_net_worth_report_uses_bulk_path(
+    session: AsyncSession, test_user: User
+):
+    """get_net_worth_report produces the same results as the sequential approach."""
+    acct = await _make_manual_account(session, test_user.id, "Report Bulk")
+    today = date.today()
+    await _add_txn(session, test_user.id, acct.id, 10000, "credit", today - timedelta(days=60), source="opening_balance")
+    await _add_txn(session, test_user.id, acct.id, 2000, "debit", today - timedelta(days=30))
+    await _add_txn(session, test_user.id, acct.id, 1500, "credit", today)
+
+    report = await get_net_worth_report(session, test_user.id, months=3, interval="monthly")
+
+    assert report.meta.type == "net_worth"
+    assert len(report.trend) > 0
+    # Last point should reflect 10000 - 2000 + 1500 = 9500
+    last_point = report.trend[-1]
+    assert abs(last_point.value - 9500.0) < 0.01
+    assert abs(report.summary.primary_value - 9500.0) < 0.01
