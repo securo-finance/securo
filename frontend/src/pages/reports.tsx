@@ -829,7 +829,7 @@ export default function ReportsPage() {
                   </div>
                 ) : (
                   <div className="flex flex-col items-center gap-2 pt-3 px-4">
-                    <div className="relative z-10 inline-flex flex-col gap-2">
+                    <div className="relative z-10 inline-flex flex-col gap-2 self-end">
                       {/* Summary / Detailed toggle */}
                       <div className="flex rounded-lg border border-border bg-muted/30 overflow-hidden">
                         {(['summary', 'detailed'] as const).map((opt) => (
