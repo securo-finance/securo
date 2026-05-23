@@ -868,6 +868,8 @@
     "accountsAndAssets": "Accounts and Assets",
     "whatYouHave": "You own",
     "whatYouOwe": "You owe",
+    "whatYouOwned": "You owned",
+    "whatYouOwed": "You owed",
     "change": "Change"
   },
   "payees": {

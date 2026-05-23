@@ -805,14 +805,11 @@ export default function ReportsPage() {
         <div className="bg-card rounded-xl border border-border shadow-sm">
           {/* Merged header */}
           <div className="px-5 pt-4 pb-2 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div>
-                <p className="text-sm font-semibold text-foreground">{t('reports.evolution')}</p>
-                <span className="text-xs text-muted-foreground">{nwPeriodLabel}</span>
-              </div>
-            </div>
+            <p className="text-sm font-semibold text-foreground">{t('reports.evolution')}</p>
             <div className="text-right">
-              <p className="text-[10px] text-muted-foreground leading-tight uppercase tracking-wider">{t('reports.netWorth')}</p>
+              <p className="text-[10px] text-muted-foreground leading-tight uppercase tracking-wider">
+                {`${t('reports.netWorth')} · ${nwPeriodLabel}`}
+              </p>
               <p className="text-xl font-bold text-foreground tabular-nums">
                 {mask(formatCurrency(selectedNWBar ? selectedNWBar.value : (summary?.primary_value ?? 0), userCurrency, locale))}
               </p>
@@ -858,7 +855,7 @@ export default function ReportsPage() {
                               : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
                           }`}
                         >
-                          {t('reports.whatYouHave')}
+                          {isCurrentNW ? t('reports.whatYouHave') : t('reports.whatYouOwned')}
                         </button>
                         <button
                           onClick={() => setNwPieView('liabilities')}
@@ -868,7 +865,7 @@ export default function ReportsPage() {
                               : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
                           }`}
                         >
-                          {t('reports.whatYouOwe')}
+                          {isCurrentNW ? t('reports.whatYouOwe') : t('reports.whatYouOwed')}
                         </button>
                       </div>
                     </div>
@@ -914,7 +911,9 @@ export default function ReportsPage() {
                           </ResponsiveContainer>
                           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none" style={{ zIndex: 2 }}>
                             <span className="text-[10px] text-muted-foreground leading-tight">
-                              {isAccAssets ? t('reports.whatYouHave') : t('reports.whatYouOwe')}
+                              {isAccAssets
+                                ? (isCurrentNW ? t('reports.whatYouHave') : t('reports.whatYouOwned'))
+                                : (isCurrentNW ? t('reports.whatYouOwe') : t('reports.whatYouOwed'))}
                             </span>
                             <span className="text-base font-bold text-foreground tabular-nums">
                               {mask(formatCompact(centerValue, userCurrency, locale))}
@@ -1027,25 +1026,7 @@ export default function ReportsPage() {
                   <p className="text-muted-foreground text-sm text-center py-16">{t('reports.noData')}</p>
                 )}
               </div>
-              {!isLoading && netWorthSummaryData.length > 0 && (
-                <div className="px-5 pb-4 flex flex-wrap gap-x-3 gap-y-1.5">
-                  {[
-                    { key: 'accounts', color: colorMap['accounts'] || '#6366F1' },
-                    { key: 'assets', color: colorMap['assets'] || '#F59E0B' },
-                    { key: 'liabilities', color: colorMap['liabilities'] || '#F43F5E' },
-                  ].map(({ key, color }) => (
-                    <div key={key} className="flex items-center gap-1.5">
-                      <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                      <span className="text-[11px] text-muted-foreground">{t(`reports.${key}`)}</span>
-                    </div>
-                  ))}
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-3 h-0 border-t-2 border-dashed shrink-0" style={{ borderColor: '#10B981' }} />
-                    <span className="text-[11px] text-muted-foreground">{t('reports.netWorth')}</span>
-                  </div>
-                </div>
-              )}
-              </>
+</>
             ) : (
               <>
               <div className="px-1 pb-2" style={{ height: 300 }}>
@@ -1209,8 +1190,32 @@ export default function ReportsPage() {
                   <p className="text-muted-foreground text-sm text-center py-16">{t('reports.noData')}</p>
                 )}
               </div>
-              {!isLoading && netWorthDetailedData.length > 0 && (
-                <div className="px-5 pb-4 flex flex-wrap gap-x-3 gap-y-1.5">
+</>
+            )}
+          </div>
+
+          {/* Legend — spans full widget width */}
+          {!isLoading && (compositionView === 'summary' ? netWorthSummaryData.length > 0 : netWorthDetailedData.length > 0) && (
+            <div className="lg:col-span-3 px-5 pt-3 pb-4 border-t border-border flex flex-wrap gap-x-3 gap-y-1.5">
+              {compositionView === 'summary' ? (
+                <>
+                  {[
+                    { key: 'accounts', color: colorMap['accounts'] || '#6366F1' },
+                    { key: 'assets', color: colorMap['assets'] || '#F59E0B' },
+                    { key: 'liabilities', color: colorMap['liabilities'] || '#F43F5E' },
+                  ].map(({ key, color }) => (
+                    <div key={key} className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                      <span className="text-[11px] text-muted-foreground">{t(`reports.${key}`)}</span>
+                    </div>
+                  ))}
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-0 border-t-2 border-dashed shrink-0" style={{ borderColor: '#10B981' }} />
+                    <span className="text-[11px] text-muted-foreground">{t('reports.netWorth')}</span>
+                  </div>
+                </>
+              ) : (
+                <>
                   {nwBarsAccounts.map((item, idx) => (
                     <div key={`acct_${item.key}`} className="flex items-center gap-1.5">
                       <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: accountsGradient[idx] ?? accountsGradient[accountsGradient.length - 1] }} />
@@ -1248,14 +1253,13 @@ export default function ReportsPage() {
                     </div>
                   )}
                   <div className="flex items-center gap-1.5">
-                    <div className="w-3 h-0 border-t-2 border-dashed" style={{ borderColor: '#10B981' }} />
+                    <div className="w-3 h-0 border-t-2 border-dashed shrink-0" style={{ borderColor: '#10B981' }} />
                     <span className="text-[11px] text-muted-foreground">{t('reports.netWorth')}</span>
                   </div>
-                </div>
+                </>
               )}
-              </>
-            )}
-          </div>
+            </div>
+          )}
           </div>
         </div>
       )}

@@ -868,6 +868,8 @@
     "accountsAndAssets": "Contas e Ativos",
     "whatYouHave": "Você tem",
     "whatYouOwe": "Você deve",
+    "whatYouOwned": "Você tinha",
+    "whatYouOwed": "Você devia",
     "change": "Variação"
   },
   "payees": {
