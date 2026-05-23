@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -194,36 +194,42 @@ export default function ReportsPage() {
   const trend = data?.trend ?? []
   const meta = data?.meta
 
-  const chartData = trend.map((dp) => ({
-    date: dp.date,
-    value: dp.value,
-    ...dp.breakdowns,
-  } as Record<string, string | number>))
+  const chartData = useMemo(
+    () => trend.map((dp) => ({ date: dp.date, value: dp.value, ...dp.breakdowns } as Record<string, string | number>)),
+    [trend]
+  )
 
   const allBreakdowns = summary?.breakdowns ?? []
-  const breakdownData = allBreakdowns.filter((b) => b.value > 0)
+  const breakdownData = useMemo(() => allBreakdowns.filter((b) => b.value > 0), [allBreakdowns])
 
-  const colorMap: Record<string, string> = {}
-  for (const b of allBreakdowns) {
-    colorMap[b.key] = b.color
-  }
+  const colorMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const b of allBreakdowns) map[b.key] = b.color
+    return map
+  }, [allBreakdowns])
 
-  const netWorthSummaryData = chartData.map((d) => ({
-    ...d,
-    liabilitiesNeg: -((d.liabilities as number) ?? 0),
-  })) as (Record<string, string | number> & { liabilitiesNeg: number })[]
-
-  const nwTrendData = chartData.map((d, i) => {
-    const current = d.value as number
-    const prev = i > 0 ? (chartData[i - 1].value as number) : current
-    const delta = current - prev
-    return {
+  const netWorthSummaryData = useMemo(
+    () => chartData.map((d) => ({
       ...d,
-      _deltaBase: i > 0 ? Math.min(prev, current) : current,
-      _deltaSize: i > 0 ? Math.abs(delta) : 0,
-      _delta: delta,
-    }
-  }) as (Record<string, string | number> & { _deltaBase: number; _deltaSize: number; _delta: number })[]
+      liabilitiesNeg: -((d.liabilities as number) ?? 0),
+    })) as (Record<string, string | number> & { liabilitiesNeg: number })[],
+    [chartData]
+  )
+
+  const nwTrendData = useMemo(
+    () => chartData.map((d, i) => {
+      const current = d.value as number
+      const prev = i > 0 ? (chartData[i - 1].value as number) : current
+      const delta = current - prev
+      return {
+        ...d,
+        _deltaBase: i > 0 ? Math.min(prev, current) : current,
+        _deltaSize: i > 0 ? Math.abs(delta) : 0,
+        _delta: delta,
+      }
+    }) as (Record<string, string | number> & { _deltaBase: number; _deltaSize: number; _delta: number })[],
+    [chartData]
+  )
 
   const changePrefix = (summary?.change_amount ?? 0) >= 0 ? '+' : ''
   const changeColor = (summary?.change_amount ?? 0) >= 0 ? 'text-emerald-600' : 'text-rose-500'
@@ -244,22 +250,70 @@ export default function ReportsPage() {
     ? ['summary', 'byIncome', 'byExpenses'] as const
     : ['summary', 'detailed'] as const
 
-  // Build donut data based on composition view
   const composition = data?.composition ?? []
 
-  const nwDetailAccounts = composition.filter((c: ReportCompositionItem) => c.group === 'accounts').sort((a, b) => b.value - a.value)
-  const nwDetailAssets = composition.filter((c: ReportCompositionItem) => c.group === 'assets').sort((a, b) => b.value - a.value)
-  const nwDetailLiabs = composition.filter((c: ReportCompositionItem) => c.group === 'liabilities').sort((a, b) => b.value - a.value)
-  const nwDetailTotalAccounts = nwDetailAccounts.reduce((s: number, c: ReportCompositionItem) => s + c.value, 0)
-  const nwDetailTotalAssets = nwDetailAssets.reduce((s: number, c: ReportCompositionItem) => s + c.value, 0)
-  const nwDetailTotalLiabs = nwDetailLiabs.reduce((s: number, c: ReportCompositionItem) => s + c.value, 0)
-  const nwBarsAccounts = nwDetailAccounts.filter((c: ReportCompositionItem) => nwDetailTotalAccounts > 0 && c.value / nwDetailTotalAccounts >= COMPOSITION_MIN_PCT)
-  const nwBarsAssets = nwDetailAssets.filter((c: ReportCompositionItem) => nwDetailTotalAssets > 0 && c.value / nwDetailTotalAssets >= COMPOSITION_MIN_PCT)
-  const nwBarsLiabs = nwDetailLiabs.filter((c: ReportCompositionItem) => nwDetailTotalLiabs > 0 && c.value / nwDetailTotalLiabs >= COMPOSITION_MIN_PCT)
+  // All composition-derived values — only recompute when composition or colorMap changes
+  const {
+    nwDetailAccounts, nwDetailAssets, nwDetailLiabs,
+    nwDetailTotalAccounts, nwDetailTotalAssets, nwDetailTotalLiabs,
+    nwBarsAccounts, nwBarsAssets, nwBarsLiabs,
+    accountsGradient, assetsGradient, liabsGradient,
+  } = useMemo(() => {
+    const nwDetailAccounts = composition.filter((c: ReportCompositionItem) => c.group === 'accounts').sort((a, b) => b.value - a.value)
+    const nwDetailAssets = composition.filter((c: ReportCompositionItem) => c.group === 'assets').sort((a, b) => b.value - a.value)
+    const nwDetailLiabs = composition.filter((c: ReportCompositionItem) => c.group === 'liabilities').sort((a, b) => b.value - a.value)
+    const nwDetailTotalAccounts = nwDetailAccounts.reduce((s: number, c: ReportCompositionItem) => s + c.value, 0)
+    const nwDetailTotalAssets = nwDetailAssets.reduce((s: number, c: ReportCompositionItem) => s + c.value, 0)
+    const nwDetailTotalLiabs = nwDetailLiabs.reduce((s: number, c: ReportCompositionItem) => s + c.value, 0)
+    const nwBarsAccounts = nwDetailAccounts.filter((c: ReportCompositionItem) => nwDetailTotalAccounts > 0 && c.value / nwDetailTotalAccounts >= COMPOSITION_MIN_PCT)
+    const nwBarsAssets = nwDetailAssets.filter((c: ReportCompositionItem) => nwDetailTotalAssets > 0 && c.value / nwDetailTotalAssets >= COMPOSITION_MIN_PCT)
+    const nwBarsLiabs = nwDetailLiabs.filter((c: ReportCompositionItem) => nwDetailTotalLiabs > 0 && c.value / nwDetailTotalLiabs >= COMPOSITION_MIN_PCT)
+    const accountsGradient = buildGroupGradient(colorMap['accounts'] || '#6366F1', Math.max(1, nwBarsAccounts.length))
+    const assetsGradient = buildGroupGradient(colorMap['assets'] || '#F59E0B', Math.max(1, nwBarsAssets.length))
+    const liabsGradient = buildGroupGradient(colorMap['liabilities'] || '#F43F5E', Math.max(1, nwBarsLiabs.length))
+    return {
+      nwDetailAccounts, nwDetailAssets, nwDetailLiabs,
+      nwDetailTotalAccounts, nwDetailTotalAssets, nwDetailTotalLiabs,
+      nwBarsAccounts, nwBarsAssets, nwBarsLiabs,
+      accountsGradient, assetsGradient, liabsGradient,
+    }
+  }, [composition, colorMap])
 
-  const accountsGradient = buildGroupGradient(colorMap['accounts'] || '#6366F1', Math.max(1, nwBarsAccounts.length))
-  const assetsGradient = buildGroupGradient(colorMap['assets'] || '#F59E0B', Math.max(1, nwBarsAssets.length))
-  const liabsGradient = buildGroupGradient(colorMap['liabilities'] || '#F43F5E', Math.max(1, nwBarsLiabs.length))
+  // Detailed chart data — O(points × accounts), does NOT depend on selectedNWBar
+  const netWorthDetailedData = useMemo(
+    (): Record<string, string | number>[] => meta?.type !== 'net_worth' ? [] : chartData.map((d: Record<string, string | number>) => {
+      const aTotal = (d.accounts as number) ?? 0
+      const sTotal = (d.assets as number) ?? 0
+      const lTotal = (d.liabilities as number) ?? 0
+      const row: Record<string, string | number> = { date: d.date as string, value: d.value as number }
+      nwBarsAccounts.forEach((item) => {
+        const p = nwDetailTotalAccounts > 0 ? item.value / nwDetailTotalAccounts : 0
+        row[`acct_${item.key}`] = Math.round(aTotal * p * 100) / 100
+      })
+      if (nwDetailAccounts.length > nwBarsAccounts.length) {
+        const topSum = nwBarsAccounts.reduce((s, item) => s + Math.round(aTotal * (nwDetailTotalAccounts > 0 ? item.value / nwDetailTotalAccounts : 0) * 100) / 100, 0)
+        row['acct_others'] = Math.round((aTotal - topSum) * 100) / 100
+      }
+      nwBarsAssets.forEach((item) => {
+        const p = nwDetailTotalAssets > 0 ? item.value / nwDetailTotalAssets : 0
+        row[`asset_${item.key}`] = Math.round(sTotal * p * 100) / 100
+      })
+      if (nwDetailAssets.length > nwBarsAssets.length) {
+        const topSum = nwBarsAssets.reduce((s, item) => s + Math.round(sTotal * (nwDetailTotalAssets > 0 ? item.value / nwDetailTotalAssets : 0) * 100) / 100, 0)
+        row['asset_others'] = Math.round((sTotal - topSum) * 100) / 100
+      }
+      nwBarsLiabs.forEach((item) => {
+        const p = nwDetailTotalLiabs > 0 ? item.value / nwDetailTotalLiabs : 0
+        row[`liab_${item.key}`] = -Math.round(lTotal * p * 100) / 100
+      })
+      if (nwDetailLiabs.length > nwBarsLiabs.length) {
+        const topSum = nwBarsLiabs.reduce((s, item) => s + Math.round(lTotal * (nwDetailTotalLiabs > 0 ? item.value / nwDetailTotalLiabs : 0) * 100) / 100, 0)
+        row['liab_others'] = -Math.round((lTotal - topSum) * 100) / 100
+      }
+      return row
+    }),
+    [chartData, meta?.type, nwBarsAccounts, nwBarsAssets, nwBarsLiabs, nwDetailAccounts, nwDetailAssets, nwDetailLiabs, nwDetailTotalAccounts, nwDetailTotalAssets, nwDetailTotalLiabs]
+  )
 
   const lastNWIndex = netWorthSummaryData.length - 1
   const isCurrentNW = selectedNWBar == null || selectedNWBar.index === lastNWIndex
@@ -270,58 +324,56 @@ export default function ReportsPage() {
   const selectedLiabs = selectedNWBar ? selectedNWBar.liabilities : nwDetailTotalLiabs
 
   type NWPieItem = { name: string; value: number; color: string }
+  type NWBarState = { accounts: number; assets: number; liabilities: number; value: number; date: string; index: number } | null
 
-  // Inner ring: group-level totals for Accounts + Assets chart
-  const nwPieAInner: NWPieItem[] = [
-    { name: t('reports.accounts'), value: selectedAccounts, color: colorMap['accounts'] || '#6366F1' },
-    { name: t('reports.assets'), value: selectedAssets, color: colorMap['assets'] || '#F59E0B' },
-  ].filter((d) => d.value > 0).sort((a, b) => b.value - a.value)
+  // Pie data — only recomputes when selected period or composition changes
+  const { nwPieAInner, nwPieAOuter, nwPieBInner, nwPieBOuter } = useMemo(() => {
+    const nwPieAInner: NWPieItem[] = [
+      { name: t('reports.accounts'), value: selectedAccounts, color: colorMap['accounts'] || '#6366F1' },
+      { name: t('reports.assets'), value: selectedAssets, color: colorMap['assets'] || '#F59E0B' },
+    ].filter((d) => d.value > 0).sort((a, b) => b.value - a.value)
 
-  // Outer ring: items grouped to match inner ring order, sorted by value within each group
-  const nwPieAOuter: NWPieItem[] = nwPieAInner.flatMap((group) => {
-    const isAccounts = group.name === t('reports.accounts')
-    const items = isAccounts ? nwDetailAccounts : nwDetailAssets
-    const gradient = isAccounts ? accountsGradient : assetsGradient
-    const total = isAccounts ? nwDetailTotalAccounts : nwDetailTotalAssets
-    const selected = isAccounts ? selectedAccounts : selectedAssets
-    const sorted = items
+    const nwPieAOuter: NWPieItem[] = nwPieAInner.flatMap((group) => {
+      const isAccounts = group.name === t('reports.accounts')
+      const items = isAccounts ? nwDetailAccounts : nwDetailAssets
+      const gradient = isAccounts ? accountsGradient : assetsGradient
+      const total = isAccounts ? nwDetailTotalAccounts : nwDetailTotalAssets
+      const selected = isAccounts ? selectedAccounts : selectedAssets
+      const sorted = items
+        .map((item: ReportCompositionItem) => ({
+          name: item.label,
+          value: total > 0 ? (item.value / total) * selected : 0,
+        }))
+        .filter((d) => d.value > 0)
+        .sort((a, b) => b.value - a.value)
+        .map((d, i) => ({ ...d, color: gradient[i] ?? gradient[gradient.length - 1] ?? '#6B7280' }))
+      const top = sorted.filter((d) => selected > 0 && d.value / selected >= COMPOSITION_MIN_PCT)
+      const otherValue = sorted.filter((d) => selected <= 0 || d.value / selected < COMPOSITION_MIN_PCT).reduce((s, d) => s + d.value, 0)
+      if (otherValue > 0) top.push({ name: t('reports.other'), value: otherValue, color: gradient[gradient.length - 1] ?? '#6B7280' })
+      return top
+    })
+
+    const nwPieBInner: NWPieItem[] = [
+      { name: t('reports.liabilities'), value: selectedLiabs, color: colorMap['liabilities'] || '#F43F5E' },
+    ].filter((d) => d.value > 0)
+
+    const sorted: NWPieItem[] = nwDetailLiabs
       .map((item: ReportCompositionItem) => ({
         name: item.label,
-        value: total > 0 ? (item.value / total) * selected : 0,
+        value: nwDetailTotalLiabs > 0 ? (item.value / nwDetailTotalLiabs) * selectedLiabs : 0,
       }))
       .filter((d) => d.value > 0)
       .sort((a, b) => b.value - a.value)
-      .map((d, i) => ({ ...d, color: gradient[i] ?? gradient[gradient.length - 1] ?? '#6B7280' }))
-    const top = sorted.filter((d) => selected > 0 && d.value / selected >= COMPOSITION_MIN_PCT)
-    const otherValue = sorted.filter((d) => selected <= 0 || d.value / selected < COMPOSITION_MIN_PCT).reduce((s, d) => s + d.value, 0)
-    if (otherValue > 0) top.push({ name: t('reports.other'), value: otherValue, color: gradient[gradient.length - 1] ?? '#6B7280' })
-    return top
-  })
-
-  // Inner ring: liabilities group total
-  const nwPieBInner: NWPieItem[] = [
-    { name: t('reports.liabilities'), value: selectedLiabs, color: colorMap['liabilities'] || '#F43F5E' },
-  ].filter((d) => d.value > 0)
-
-  // Outer ring: individual liability items, proportionally scaled
-  const nwPieBOuterSorted: NWPieItem[] = nwDetailLiabs
-    .map((item: ReportCompositionItem) => ({
-      name: item.label,
-      value: nwDetailTotalLiabs > 0 ? (item.value / nwDetailTotalLiabs) * selectedLiabs : 0,
-    }))
-    .filter((d) => d.value > 0)
-    .sort((a, b) => b.value - a.value)
-    .map((d, i) => ({ ...d, color: liabsGradient[i] ?? liabsGradient[liabsGradient.length - 1] ?? '#6B7280' }))
-  const nwPieBOuter: NWPieItem[] = (() => {
-    const top = nwPieBOuterSorted.filter((d) => selectedLiabs > 0 && d.value / selectedLiabs >= COMPOSITION_MIN_PCT)
-    const otherValue = nwPieBOuterSorted.filter((d) => selectedLiabs <= 0 || d.value / selectedLiabs < COMPOSITION_MIN_PCT).reduce((s, d) => s + d.value, 0)
+      .map((d, i) => ({ ...d, color: liabsGradient[i] ?? liabsGradient[liabsGradient.length - 1] ?? '#6B7280' }))
+    const top = sorted.filter((d) => selectedLiabs > 0 && d.value / selectedLiabs >= COMPOSITION_MIN_PCT)
+    const otherValue = sorted.filter((d) => selectedLiabs <= 0 || d.value / selectedLiabs < COMPOSITION_MIN_PCT).reduce((s, d) => s + d.value, 0)
     if (otherValue > 0) top.push({ name: t('reports.other'), value: otherValue, color: liabsGradient[liabsGradient.length - 1] ?? '#6B7280' })
-    return top
-  })()
+    const nwPieBOuter = top
 
-  type NWBarState = { accounts: number; assets: number; liabilities: number; value: number; date: string; index: number } | null
+    return { nwPieAInner, nwPieAOuter, nwPieBInner, nwPieBOuter }
+  }, [selectedAccounts, selectedAssets, selectedLiabs, nwDetailAccounts, nwDetailAssets, nwDetailLiabs, nwDetailTotalAccounts, nwDetailTotalAssets, nwDetailTotalLiabs, accountsGradient, assetsGradient, liabsGradient, colorMap, t])
 
-  const handleSummaryBarClick = (_data: unknown, index: number) => {
+  const handleSummaryBarClick = useCallback((_data: unknown, index: number) => {
     const row = netWorthSummaryData[index]
     if (!row) return
     setSelectedNWBar((prev: NWBarState) =>
@@ -334,9 +386,9 @@ export default function ReportsPage() {
         index,
       }
     )
-  }
+  }, [netWorthSummaryData])
 
-  const handleDetailedBarClick = (_data: unknown, index: number) => {
+  const handleDetailedBarClick = useCallback((_data: unknown, index: number) => {
     const row = netWorthDetailedData[index]
     if (!row) return
     setSelectedNWBar((prev: NWBarState) => {
@@ -346,41 +398,9 @@ export default function ReportsPage() {
       const liabilities = Math.abs(nwBarsLiabs.reduce((s: number, it: ReportCompositionItem) => s + ((row[`liab_${it.key}`] as number) ?? 0), 0) + ((row['liab_others'] as number) ?? 0))
       return { accounts, assets, liabilities, value: (row.value as number) ?? 0, date: row.date as string, index }
     })
-  }
+  }, [netWorthDetailedData, nwBarsAccounts, nwBarsAssets, nwBarsLiabs])
 
-  const netWorthDetailedData: Record<string, string | number>[] = meta?.type !== 'net_worth' ? [] : chartData.map((d: Record<string, string | number>) => {
-    const aTotal = (d.accounts as number) ?? 0
-    const sTotal = (d.assets as number) ?? 0
-    const lTotal = (d.liabilities as number) ?? 0
-    const row: Record<string, string | number> = { date: d.date as string, value: d.value as number }
-    nwBarsAccounts.forEach((item) => {
-      const p = nwDetailTotalAccounts > 0 ? item.value / nwDetailTotalAccounts : 0
-      row[`acct_${item.key}`] = Math.round(aTotal * p * 100) / 100
-    })
-    if (nwDetailAccounts.length > nwBarsAccounts.length) {
-      const topSum = nwBarsAccounts.reduce((s, item) => s + Math.round(aTotal * (nwDetailTotalAccounts > 0 ? item.value / nwDetailTotalAccounts : 0) * 100) / 100, 0)
-      row['acct_others'] = Math.round((aTotal - topSum) * 100) / 100
-    }
-    nwBarsAssets.forEach((item) => {
-      const p = nwDetailTotalAssets > 0 ? item.value / nwDetailTotalAssets : 0
-      row[`asset_${item.key}`] = Math.round(sTotal * p * 100) / 100
-    })
-    if (nwDetailAssets.length > nwBarsAssets.length) {
-      const topSum = nwBarsAssets.reduce((s, item) => s + Math.round(sTotal * (nwDetailTotalAssets > 0 ? item.value / nwDetailTotalAssets : 0) * 100) / 100, 0)
-      row['asset_others'] = Math.round((sTotal - topSum) * 100) / 100
-    }
-    nwBarsLiabs.forEach((item) => {
-      const p = nwDetailTotalLiabs > 0 ? item.value / nwDetailTotalLiabs : 0
-      row[`liab_${item.key}`] = -Math.round(lTotal * p * 100) / 100
-    })
-    if (nwDetailLiabs.length > nwBarsLiabs.length) {
-      const topSum = nwBarsLiabs.reduce((s, item) => s + Math.round(lTotal * (nwDetailTotalLiabs > 0 ? item.value / nwDetailTotalLiabs : 0) * 100) / 100, 0)
-      row['liab_others'] = -Math.round((lTotal - topSum) * 100) / 100
-    }
-    return row
-  })
-
-  const donutData = (() => {
+  const donutData = useMemo(() => {
     if (compositionView === 'summary' || composition.length === 0) {
       const excludedKeys = new Set(['netIncome', 'startingBalance', 'endingBalance'])
       return breakdownData
@@ -399,7 +419,6 @@ export default function ReportsPage() {
       items = composition.filter((c) => c.group === 'expenses')
     }
 
-    // Sort descending, group items below threshold into "Other"
     const sorted = [...items].sort((a, b) => b.value - a.value)
     const donutTotal = sorted.reduce((sum, c) => sum + c.value, 0)
     const top = sorted.filter((c) => donutTotal > 0 && c.value / donutTotal >= COMPOSITION_MIN_PCT)
@@ -415,7 +434,7 @@ export default function ReportsPage() {
       result.push({ name: t('reports.other'), value: Math.round(otherValue * 100) / 100, color: '#6B7280' })
     }
     return result
-  })()
+  }, [compositionView, composition, breakdownData, t])
 
   return (
     <div>
