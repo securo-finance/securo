@@ -22,6 +22,7 @@ CURRENCY_META = {
     "UYU": {"symbol": "$U", "name": "Peso Uruguayo", "flag": "\U0001F1FA\U0001F1FE"},
     "INR": {"symbol": "\u20B9", "name": "Indian Rupee", "flag": "\U0001F1EE\U0001F1F3"},
     "SEK": {"symbol": "kr", "name": "Swedish Krona", "flag": "\U0001F1F8\U0001F1EA"},
+    "CRC": {"symbol": "₡", "name": "Costa Rican Colón", "flag": "\U0001F1E8\U0001F1F7"},
 }
 
 

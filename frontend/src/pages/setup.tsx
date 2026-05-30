@@ -149,6 +149,7 @@ export default function SetupPage() {
                   { code: 'AUD', flag: '\u{1F1E6}\u{1F1FA}', symbol: 'A$' },
                   { code: 'CHF', flag: '\u{1F1E8}\u{1F1ED}', symbol: 'Fr' },
                   { code: 'ARS', flag: '\u{1F1E6}\u{1F1F7}', symbol: '$' },
+                  { code: 'CRC', flag: '\u{1F1E8}\u{1F1F7}', symbol: '₡' },
                 ] as const).map(({ code, flag, symbol }) => (
                   <button
                     key={code}
