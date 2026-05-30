@@ -22,6 +22,12 @@ CURRENCY_META = {
     "UYU": {"symbol": "$U", "name": "Peso Uruguayo", "flag": "\U0001F1FA\U0001F1FE"},
     "INR": {"symbol": "\u20B9", "name": "Indian Rupee", "flag": "\U0001F1EE\U0001F1F3"},
     "SEK": {"symbol": "kr", "name": "Swedish Krona", "flag": "\U0001F1F8\U0001F1EA"},
+    "DKK": {"symbol": "kr", "name": "Danish Krone", "flag": "\U0001F1E9\U0001F1F0"},
+    "NOK": {"symbol": "kr", "name": "Norwegian Krone", "flag": "\U0001F1F3\U0001F1F4"},
+    "PLN": {"symbol": "zł", "name": "Polish Złoty", "flag": "\U0001F1F5\U0001F1F1"},
+    "CZK": {"symbol": "Kč", "name": "Czech Koruna", "flag": "\U0001F1E8\U0001F1FF"},
+    "HUF": {"symbol": "Ft", "name": "Hungarian Forint", "flag": "\U0001F1ED\U0001F1FA"},
+    "RON": {"symbol": "lei", "name": "Romanian Leu", "flag": "\U0001F1F7\U0001F1F4"},
     "CRC": {"symbol": "₡", "name": "Costa Rican Colón", "flag": "\U0001F1E8\U0001F1F7"},
 }
 
