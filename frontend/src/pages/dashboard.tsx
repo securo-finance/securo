@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { getAccountName } from '@/lib/account-utils'
+import { currentMonth, shiftMonth, monthLastDay, monthLabel, monthRange } from '@/lib/month-utils'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
@@ -42,26 +43,6 @@ function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
   return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
 }
 
-function currentMonth() {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-}
-
-function shiftMonth(yearMonth: string, delta: number) {
-  const [y, m] = yearMonth.split('-').map(Number)
-  const d = new Date(y, m - 1 + delta, 1)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
-
-function monthLastDay(yearMonth: string) {
-  const [y, m] = yearMonth.split('-').map(Number)
-  return new Date(y, m, 0).getDate()
-}
-
-function monthLabel(yearMonth: string, locale = 'pt-BR') {
-  const [y, m] = yearMonth.split('-').map(Number)
-  return new Date(y, m - 1, 2).toLocaleDateString(locale, { month: 'long', year: 'numeric' })
-}
 
 function formatDate(dateStr: string, locale = 'pt-BR') {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString(locale)
@@ -91,9 +72,8 @@ export default function DashboardPage() {
   const [headerCalOpen, setHeaderCalOpen] = useState(false)
   const [hoveredDay, setHoveredDay] = useState<number | null>(null)
   const dateFnsLocale = i18n.language === 'pt-BR' ? ptBR : enUS
-  const monthParam = `${selectedMonth}-01`
-  const monthStart = `${selectedMonth}-01`
-  const monthEnd = `${selectedMonth}-${String(monthLastDay(selectedMonth)).padStart(2, '0')}`
+  const { from: monthStart, to: monthEnd } = monthRange(selectedMonth)
+  const monthParam = monthStart
   const monthLabelStr = monthLabel(selectedMonth, locale)
 
   const handleMonthChange = (newMonth: string) => {
@@ -120,8 +100,8 @@ export default function DashboardPage() {
   const { data: currentMonthTxs, isLoading: currentTxLoading } = useQuery({
     queryKey: ['transactions', 'cumulative', selectedMonth],
     queryFn: () => transactions.list({
-      from: `${selectedMonth}-01`,
-      to: `${selectedMonth}-${String(monthLastDay(selectedMonth)).padStart(2, '0')}`,
+      from: monthStart,
+      to: monthEnd,
       limit: 500,
       exclude_transfers: true,
     }),

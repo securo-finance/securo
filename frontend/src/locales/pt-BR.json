@@ -222,6 +222,8 @@
   "transactions": {
     "title": "Transações",
     "section": "Financeiro",
+    "monthPrevious": "Mês anterior",
+    "monthNext": "Próximo mês",
     "description": "Descrição",
     "amount": "Valor",
     "status": "Status",

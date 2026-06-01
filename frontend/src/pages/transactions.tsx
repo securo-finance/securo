@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRegisterPageChatContext } from '@/lib/page-chat-context'
 import { getAccountName } from '@/lib/account-utils'
+import { currentMonth, monthRange, monthFromRange } from '@/lib/month-utils'
+import { MonthStepper } from '@/components/month-stepper'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -78,6 +80,15 @@ export default function TransactionsPage() {
   const [filterUncategorized, setFilterUncategorized] = useState<boolean>(false)
   const [filterFrom, setFilterFrom] = useState<string>('')
   const [filterTo, setFilterTo] = useState<string>('')
+  // Month reflected by the stepper: the active range when it spans exactly one
+  // full month, otherwise the current month (custom ranges still navigable).
+  const steppedMonth = monthFromRange(filterFrom, filterTo) ?? currentMonth()
+  const handleMonthChange = (ym: string) => {
+    const { from, to } = monthRange(ym)
+    setFilterFrom(from)
+    setFilterTo(to)
+    setPage(1)
+  }
   const [searchInput, setSearchInput] = useState(() => searchParams.get('q') ?? '')
   const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') ?? '')
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -137,6 +148,9 @@ export default function TransactionsPage() {
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null)
   const highlightId = searchParams.get('highlight')
   const highlightedRowRef = useRef<HTMLTableRowElement | null>(null)
+  // True until the URL→state sync has run once. Lets us default to the current
+  // month on initial load (no ?from/?to) without overriding it afterwards.
+  const initialUrlSyncRef = useRef(true)
 
   // Sync state from URL when navigating (e.g. from the command palette) while
   // the page is already mounted. Typing in the search box does not touch the
@@ -155,8 +169,23 @@ export default function TransactionsPage() {
     setFilterUncategorized(searchParams.get('uncategorized') === '1');
     const accounts = searchParams.get('account_id');
     setFilterAccountIds(accounts ? accounts.split(',') : []);
-    setFilterFrom(searchParams.get('from') ?? '');
-    setFilterTo(searchParams.get('to') ?? '');
+    const urlFrom = searchParams.get('from')
+    const urlTo = searchParams.get('to')
+    if (urlFrom || urlTo) {
+      // Explicit range in the URL (shared/bookmarked link) wins.
+      setFilterFrom(urlFrom ?? '')
+      setFilterTo(urlTo ?? '')
+    } else if (initialUrlSyncRef.current) {
+      // Initial load with no range: default to the current month.
+      const { from, to } = monthRange(currentMonth())
+      setFilterFrom(from)
+      setFilterTo(to)
+    } else {
+      // Later navigation that cleared the range (e.g. Clear filters): show all.
+      setFilterFrom('')
+      setFilterTo('')
+    }
+    initialUrlSyncRef.current = false
     setFilterMinAmount(searchParams.get('min_amount') ?? '');
     setFilterMaxAmount(searchParams.get('max_amount') ?? '');
     setPage(1)
@@ -955,6 +984,13 @@ export default function TransactionsPage() {
         title={t('transactions.title')}
         action={
           <div className="flex items-center gap-2">
+            <MonthStepper
+              value={steppedMonth}
+              onChange={handleMonthChange}
+              locale={i18n.language === 'en' ? 'en-US' : i18n.language}
+              prevLabel={t('transactions.monthPrevious')}
+              nextLabel={t('transactions.monthNext')}
+            />
             <TransactionsColumnPicker state={grid} />
             <Button
               variant="outline"

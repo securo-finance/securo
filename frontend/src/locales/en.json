@@ -222,6 +222,8 @@
   "transactions": {
     "title": "Transactions",
     "section": "Financial",
+    "monthPrevious": "Previous month",
+    "monthNext": "Next month",
     "description": "Description",
     "amount": "Amount",
     "status": "Status",
