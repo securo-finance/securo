@@ -283,6 +283,7 @@
     "summaryIncome": "Receitas",
     "summaryExpenses": "Despesas",
     "summaryNet": "Saldo",
+    "summaryInvestments": "Investimentos",
     "bulkCategorize": "Aplicar",
     "bulkSuccess": "{{count}} transações categorizadas",
     "selectCategory": "Selecionar categoria...",

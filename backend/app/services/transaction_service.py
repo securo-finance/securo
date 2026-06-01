@@ -386,10 +386,33 @@ async def get_transactions(
                 income = Decimal(str(row_total or 0))
             elif row_type == "debit":
                 expense = Decimal(str(row_total or 0))
+        # Investments contributed in the period: debits in the seeded
+        # "Investments" category. Only contributions (debits) count — redemptions
+        # (credits) and ignored transactions are left out — so users can see
+        # "how much did I invest" at a glance. Matched against the seeded category
+        # (treat_as_transfer + localized name); a renamed category won't match.
+        investment_category_ids = select(Category.id).where(
+            Category.workspace_id == workspace_id,
+            Category.treat_as_transfer == True,
+            Category.is_ignored == False,
+            Category.name.in_(["Investments", "Investimentos"]),
+        )
+        inv_subq = base_query.where(
+            Transaction.is_ignored == False,
+            Transaction.type == "debit",
+            Transaction.transfer_pair_id.is_(None),
+            Transaction.category_id.in_(investment_category_ids),
+        ).subquery()
+        inv_amount_norm = func.coalesce(inv_subq.c.amount_primary, inv_subq.c.amount)
+        investments_total = await session.scalar(
+            select(func.coalesce(func.sum(func.abs(inv_amount_norm)), 0))
+        )
+        investments = Decimal(str(investments_total or 0))
         summary = {
             "income": income,
             "expense": expense,
             "net": income - expense,
+            "investments": investments,
         }
 
     # Apply ordering (and pagination unless skipped). Bill-view callers

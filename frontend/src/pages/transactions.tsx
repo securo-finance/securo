@@ -1276,6 +1276,12 @@ export default function TransactionsPage() {
                 {mask(formatCurrency(data.summary.net, data.summary.currency, locale))}
               </span>
             </span>
+            <span className="flex items-baseline gap-1.5 text-xs">
+              <span className="text-muted-foreground">{t('transactions.summaryInvestments')}</span>
+              <span className="text-sm font-semibold tabular-nums text-blue-600">
+                {mask(formatCurrency(data.summary.investments, data.summary.currency, locale))}
+              </span>
+            </span>
           </div>
         )}
       </div>

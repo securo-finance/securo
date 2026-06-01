@@ -18,6 +18,7 @@ from app.models.account import Account
 from app.models.credit_card_bill import CreditCardBill
 from app.models.group import Group, GroupMember
 from app.models.transaction import Transaction
+from app.models.category import Category
 from app.schemas.transaction import (
     TransactionCreate,
     TransactionUpdate,
@@ -246,6 +247,93 @@ async def test_get_transactions_summary_excludes_ignored(session, test_user, tes
         session, test_workspace.id, test_user.id, include_summary=True
     )
     assert summary["expense"] == Decimal("100")
+
+
+async def _mk_investments_category(session, test_user, test_workspace, name="Investimentos"):
+    cat = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name=name,
+        treat_as_transfer=True,
+    )
+    session.add(cat)
+    await session.flush()
+    return cat
+
+
+async def test_get_transactions_summary_investments_counts_only_contributions(
+    session, test_user, test_workspace, acct
+):
+    """Investments aggregate sums only contributions (debits) in the period,
+    excluding redemptions (credits) and ignored transactions."""
+    inv = await _mk_investments_category(session, test_user, test_workspace)
+    # Contribution (money going into investments) — counts.
+    await _mk_txn(session, test_user, acct, description="Aplicacao CDB",
+                  amount=Decimal("500"), type="debit", category_id=inv.id)
+    await _mk_txn(session, test_user, acct, description="Tesouro Direto",
+                  amount=Decimal("250"), type="debit", category_id=inv.id)
+    # Redemption (money coming back) — must NOT count.
+    await _mk_txn(session, test_user, acct, description="Resgate",
+                  amount=Decimal("999"), type="credit", category_id=inv.id)
+    # Ignored contribution — must NOT count.
+    await _mk_txn(session, test_user, acct, description="Aplicacao ignorada",
+                  amount=Decimal("777"), type="debit", category_id=inv.id, is_ignored=True)
+    # A normal expense in another (non-investment) category — must NOT leak in.
+    await _mk_txn(session, test_user, acct, description="Mercado",
+                  amount=Decimal("80"), type="debit")
+
+    _, _, summary = await get_transactions(
+        session, test_workspace.id, test_user.id, include_summary=True
+    )
+    assert summary["investments"] == Decimal("750")  # 500 + 250 only
+
+
+async def test_get_transactions_summary_investments_zero_when_none(
+    session, test_user, test_workspace, acct
+):
+    """Investments aggregate is 0 when there are no investment transactions."""
+    await _mk_txn(session, test_user, acct, description="Exp", amount=Decimal("10"), type="debit")
+    _, _, summary = await get_transactions(
+        session, test_workspace.id, test_user.id, include_summary=True
+    )
+    assert summary["investments"] == Decimal("0")
+
+
+async def test_get_transactions_summary_investments_excludes_transfer_pairs(
+    session, test_user, test_workspace, acct
+):
+    """A debit in the Investments category that is part of a transfer pair is
+    not counted as a contribution (transfers are flows, not new investment)."""
+    inv = await _mk_investments_category(session, test_user, test_workspace)
+    await _mk_txn(session, test_user, acct, description="Aplicacao",
+                  amount=Decimal("300"), type="debit", category_id=inv.id)
+    await _mk_txn(session, test_user, acct, description="Transfer leg",
+                  amount=Decimal("900"), type="debit", category_id=inv.id,
+                  transfer_pair_id=uuid.uuid4())
+    _, _, summary = await get_transactions(
+        session, test_workspace.id, test_user.id, include_summary=True
+    )
+    assert summary["investments"] == Decimal("300")
+
+
+async def test_get_transactions_summary_investments_uses_primary_amount(
+    session, test_user, test_workspace, acct
+):
+    """Cross-currency contributions are summed using amount_primary when set,
+    falling back to amount otherwise (consistent with income/expense)."""
+    inv = await _mk_investments_category(session, test_user, test_workspace)
+    # Native amount 100 (USD) but stamped primary 520 (BRL) — primary wins.
+    await _mk_txn(session, test_user, acct, description="USD aporte",
+                  amount=Decimal("100"), amount_primary=Decimal("520"),
+                  type="debit", category_id=inv.id)
+    # No primary stamped — falls back to amount.
+    await _mk_txn(session, test_user, acct, description="BRL aporte",
+                  amount=Decimal("80"), type="debit", category_id=inv.id)
+    _, _, summary = await get_transactions(
+        session, test_workspace.id, test_user.id, include_summary=True
+    )
+    assert summary["investments"] == Decimal("600")  # 520 + 80
 
 
 async def test_get_transactions_sorting(session, test_user, test_workspace, acct):

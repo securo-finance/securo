@@ -589,6 +589,7 @@ export interface TransactionsSummary {
   income: number
   expense: number
   net: number
+  investments: number
   currency: string
 }
 

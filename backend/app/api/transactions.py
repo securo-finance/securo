@@ -37,6 +37,7 @@ class TransactionsSummary(BaseModel):
     income: float
     expense: float
     net: float
+    investments: float
     currency: str
 
 
