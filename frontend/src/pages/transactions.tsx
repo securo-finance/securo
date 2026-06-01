@@ -78,8 +78,19 @@ export default function TransactionsPage() {
     return initial ? [initial] : []
   })
   const [filterUncategorized, setFilterUncategorized] = useState<boolean>(false)
-  const [filterFrom, setFilterFrom] = useState<string>('')
-  const [filterTo, setFilterTo] = useState<string>('')
+  // Seed the date range from the URL, or default to the current month on first
+  // open (no ?from/?to). Done in the initializer so it survives effect re-runs
+  // (e.g. React StrictMode's double-invoke in development).
+  const [filterFrom, setFilterFrom] = useState<string>(() => {
+    const f = searchParams.get('from')
+    const t = searchParams.get('to')
+    return f || t ? (f ?? '') : monthRange(currentMonth()).from
+  })
+  const [filterTo, setFilterTo] = useState<string>(() => {
+    const f = searchParams.get('from')
+    const t = searchParams.get('to')
+    return f || t ? (t ?? '') : monthRange(currentMonth()).to
+  })
   // Month reflected by the stepper: the active range when it spans exactly one
   // full month, otherwise the current month (custom ranges still navigable).
   const steppedMonth = monthFromRange(filterFrom, filterTo) ?? currentMonth()
@@ -148,14 +159,22 @@ export default function TransactionsPage() {
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null)
   const highlightId = searchParams.get('highlight')
   const highlightedRowRef = useRef<HTMLTableRowElement | null>(null)
-  // True until the URL→state sync has run once. Lets us default to the current
-  // month on initial load (no ?from/?to) without overriding it afterwards.
-  const initialUrlSyncRef = useRef(true)
+  // Last URL query we synced from, to tell a genuine navigation apart from the
+  // initial mount (and from StrictMode's double-invoke, which repeats the same
+  // value). Starts null so the first run is recognized as the initial mount.
+  const prevSearchRef = useRef<string | null>(null)
 
   // Sync state from URL when navigating (e.g. from the command palette) while
   // the page is already mounted. Typing in the search box does not touch the
   // URL, so this effect only fires on genuine navigation events.
   useEffect(() => {
+    const search = searchParams.toString()
+    // Skip re-runs with an unchanged query (e.g. StrictMode's second mount),
+    // so they can't override the initial current-month default.
+    if (prevSearchRef.current === search) return
+    const isInitial = prevSearchRef.current === null
+    prevSearchRef.current = search
+
     const nextQ = searchParams.get('q') ?? ''
     setSearchInput(nextQ)
     setSearchQuery(nextQ)
@@ -175,17 +194,12 @@ export default function TransactionsPage() {
       // Explicit range in the URL (shared/bookmarked link) wins.
       setFilterFrom(urlFrom ?? '')
       setFilterTo(urlTo ?? '')
-    } else if (initialUrlSyncRef.current) {
-      // Initial load with no range: default to the current month.
-      const { from, to } = monthRange(currentMonth())
-      setFilterFrom(from)
-      setFilterTo(to)
-    } else {
-      // Later navigation that cleared the range (e.g. Clear filters): show all.
+    } else if (!isInitial) {
+      // A genuine navigation cleared the range (e.g. Clear filters): show all.
+      // On the initial mount we keep the current-month default seeded above.
       setFilterFrom('')
       setFilterTo('')
     }
-    initialUrlSyncRef.current = false
     setFilterMinAmount(searchParams.get('min_amount') ?? '');
     setFilterMaxAmount(searchParams.get('max_amount') ?? '');
     setPage(1)
