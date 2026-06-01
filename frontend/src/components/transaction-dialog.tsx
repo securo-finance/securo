@@ -16,7 +16,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { AlertTriangle, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Paperclip, Upload, X, FileText, Plus, Unlink } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -72,6 +72,7 @@ export function TransactionDialog({
   onDelete,
   onUnlinkTransfer,
   onIgnoreChanged,
+  onCreateRule,
   loading,
   error,
   isSynced = false,
@@ -89,6 +90,7 @@ export function TransactionDialog({
   onDelete?: () => void
   onUnlinkTransfer?: (pairId: string) => void
   onIgnoreChanged?: () => void
+  onCreateRule?: (tx: Transaction) => void
   loading: boolean
   error: string | null
   isSynced?: boolean
@@ -160,6 +162,7 @@ export function TransactionDialog({
               onDelete={onDelete}
               onUnlinkTransfer={onUnlinkTransfer}
               onIgnoreChanged={onIgnoreChanged}
+              onCreateRule={onCreateRule}
               onCancel={onClose}
               loading={loading}
               error={error}
@@ -277,6 +280,7 @@ function TransactionForm({
   onDelete,
   onUnlinkTransfer,
   onIgnoreChanged,
+  onCreateRule,
   onCancel,
   loading,
   error,
@@ -295,6 +299,7 @@ function TransactionForm({
   onDelete?: () => void
   onUnlinkTransfer?: (pairId: string) => void
   onIgnoreChanged?: () => void
+  onCreateRule?: (tx: Transaction) => void
   onCancel: () => void
   loading: boolean
   error: string | null
@@ -872,6 +877,18 @@ function TransactionForm({
             >
               {isIgnored ? <Eye size={16} /> : <EyeClosed size={16} />}
               {isIgnored ? t('transactions.unignoreAction') : t('transactions.ignoreAction')}
+            </Button>
+          )}
+          {transaction && onCreateRule && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onCreateRule(transaction)}
+              className="gap-1.5"
+              title={t('transactions.createRule')}
+            >
+              <SlidersHorizontal size={16} />
+              {t('transactions.createRule')}
             </Button>
           )}
         </div>

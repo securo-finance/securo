@@ -6,7 +6,7 @@ import { MonthStepper } from '@/components/month-stepper'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, recurring, payees as payeesApi, admin, groups as groupsApi } from '@/lib/api'
+import { transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, recurring, payees as payeesApi, admin, groups as groupsApi, rules as rulesApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -26,8 +26,9 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Copy, Download, HelpCircle, Info, Paperclip, Users, X, EyeClosed } from 'lucide-react'
-import type { Transaction } from '@/types'
+import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Copy, Download, HelpCircle, Info, Paperclip, Users, X, EyeClosed, SlidersHorizontal } from 'lucide-react'
+import type { Transaction, Rule } from '@/types'
+import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { PageHeader } from '@/components/page-header'
 import { CategoryIcon } from '@/components/category-icon'
 import { CategorySelect } from '@/components/category-select'
@@ -156,6 +157,8 @@ export default function TransactionsPage() {
   const [bulkCategory, setBulkCategory] = useState<string>('')
   const [bulkAddToGroupOpen, setBulkAddToGroupOpen] = useState(false)
   const [bulkTagInput, setBulkTagInput] = useState<string>('')
+  const [createRuleOpen, setCreateRuleOpen] = useState(false)
+  const [createRuleInitialData, setCreateRuleInitialData] = useState<RuleDialogInitialData | undefined>(undefined)
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null)
   const highlightId = searchParams.get('highlight')
   const highlightedRowRef = useRef<HTMLTableRowElement | null>(null)
@@ -556,6 +559,42 @@ export default function TransactionsPage() {
       toast.error(extractApiError(error))
     },
   })
+
+  const createRuleMutation = useMutation({
+    mutationFn: (data: Omit<Rule, 'id' | 'user_id'>) => rulesApi.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rules'] })
+      setCreateRuleOpen(false)
+      setCreateRuleInitialData(undefined)
+      toast.success(t('rules.created'))
+    },
+    onError: (error: unknown) => {
+      const err = error as { response?: { status?: number } }
+      if (err?.response?.status === 409) {
+        toast.error(t('rules.duplicateName'))
+      } else {
+        toast.error(t('common.error'))
+      }
+    },
+  })
+
+  const handleCreateRuleFromTransaction = (tx: Transaction) => {
+    const conditions = [
+      { field: 'description', op: 'contains', value: tx.description },
+    ]
+    if (tx.payee_id) {
+      conditions.push({ field: 'payee_id', op: 'equals', value: tx.payee_id })
+    }
+    const actions: { op: string; value: string }[] = tx.category_id
+      ? [{ op: 'set_category', value: tx.category_id }]
+      : [{ op: 'set_category', value: '' }]
+    const tags = parseHashtags(tx.notes)
+    if (tags.length > 0) {
+      actions.push({ op: 'append_notes', value: tags.join(' ') })
+    }
+    setCreateRuleInitialData({ conditions, actions })
+    setCreateRuleOpen(true)
+  }
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => {
@@ -1427,6 +1466,26 @@ export default function TransactionsPage() {
               <span className="hidden lg:inline">{t('transactions.linkAsTransfer')}</span>
             </Button>
 
+            <div className="w-px bg-border/60 self-stretch" />
+
+            {/* Create Rule — only when exactly one non-shared transaction is selected */}
+            {selectedIds.size === 1 && (() => {
+              const selectedTx = filteredItems.find(tx => selectedIds.has(tx.id))
+              if (!selectedTx || selectedTx.is_shared) return null
+              return (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => handleCreateRuleFromTransaction(selectedTx)}
+                  className="h-8 px-3 shrink-0 text-sm"
+                  title={t('transactions.createRule')}
+                >
+                  <SlidersHorizontal size={15} className="lg:mr-1.5" />
+                  <span className="hidden lg:inline">{t('transactions.createRule')}</span>
+                </Button>
+              )
+            })()}
+
             <div className="ml-auto" />
 
             {/* Close */}
@@ -1502,6 +1561,11 @@ export default function TransactionsPage() {
         onDelete={editingTx ? () => deleteMutation.mutate(editingTx.id) : undefined}
         onUnlinkTransfer={(pairId) => unlinkTransferMutation.mutate(pairId)}
         onIgnoreChanged={invalidateAfterTxMutation}
+        onCreateRule={(tx) => {
+          setDialogOpen(false)
+          setEditingTx(null)
+          handleCreateRuleFromTransaction(tx)
+        }}
         loading={createMutation.isPending || updateMutation.isPending || deleteMutation.isPending || unlinkTransferMutation.isPending}
         error={createMutation.error || updateMutation.error ? extractApiError(createMutation.error || updateMutation.error) : null}
         isSynced={editingTx?.source === 'sync'}
@@ -1548,6 +1612,21 @@ export default function TransactionsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Create Rule from Transaction Dialog */}
+      <RuleDialog
+        key={createRuleOpen ? 'rule-open' : 'rule-closed'}
+        open={createRuleOpen}
+        onClose={() => { setCreateRuleOpen(false); setCreateRuleInitialData(undefined) }}
+        rule={null}
+        categories={categoriesList ?? []}
+        categoryGroups={categoryGroupsList ?? []}
+        accounts={accountsList ?? []}
+        payees={payeesList ?? []}
+        onSave={(data) => createRuleMutation.mutate(data as Omit<Rule, 'id' | 'user_id'>)}
+        loading={createRuleMutation.isPending}
+        initialData={createRuleInitialData}
+      />
     </div>
   )
 }
