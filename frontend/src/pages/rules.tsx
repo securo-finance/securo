@@ -5,6 +5,7 @@ import { categories as categoriesApi, categoryGroups as categoryGroupsApi, rules
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 import {
   Dialog,
   DialogContent,
