@@ -11,6 +11,7 @@ import {
   Music, Film, Coffee, Beer, Pizza, Salad,
   Stethoscope, Syringe, Cross,
   PartyPopper, TreePine, Umbrella, Globe, Sparkles
+  , Camera, Headphones, Monitor, Laptop, PawPrint, Leaf, Cannabis
 } from 'lucide-react'
 
 export interface CategoryIconEntry {
@@ -57,8 +58,13 @@ export const CATEGORY_ICONS: CategoryIconEntry[] = [
   { name: 'music', label: 'Música', icon: Music },
   { name: 'film', label: 'Cinema / Filme', icon: Film },
   { name: 'party-popper', label: 'Festa / Evento', icon: PartyPopper },
+  { name: 'gamepad', label: 'Games / Videogame', icon: Gamepad2 },
+  { name: 'headphones', label: 'Fones / Áudio', icon: Headphones },
+  { name: 'camera', label: 'Câmera / Foto', icon: Camera },
   // Tecnologia & Assinaturas
   { name: 'smartphone', label: 'Celular / Telefone', icon: Smartphone },
+  { name: 'monitor', label: 'Monitor / Tela', icon: Monitor },
+  { name: 'laptop', label: 'Notebook / Laptop', icon: Laptop },
   { name: 'credit-card', label: 'Cartão de Crédito', icon: CreditCard },
   // Educação
   { name: 'book-open', label: 'Livro / Leitura', icon: BookOpen },
@@ -79,6 +85,7 @@ export const CATEGORY_ICONS: CategoryIconEntry[] = [
   { name: 'baby', label: 'Bebê / Criança', icon: Baby },
   { name: 'dog', label: 'Pet / Cachorro', icon: Dog },
   { name: 'cat', label: 'Pet / Gato', icon: Cat },
+  { name: 'paw', label: 'Pet / Acessórios', icon: PawPrint },
   // Serviços & Manutenção
   { name: 'scissors', label: 'Cabelo / Beleza', icon: Scissors },
   { name: 'wrench', label: 'Manutenção / Reparo', icon: Wrench },
@@ -88,6 +95,8 @@ export const CATEGORY_ICONS: CategoryIconEntry[] = [
   { name: 'umbrella', label: 'Seguro', icon: Umbrella },
   { name: 'globe', label: 'Internacional', icon: Globe },
   { name: 'sparkles', label: 'Especial', icon: Sparkles },
+  { name: 'leaf', label: 'planta ', icon: Leaf },
+  { name: 'cannabis', label: 'cannabis / maconha', icon: Cannabis },
   { name: 'circle-help', label: 'Outros / Indefinido', icon: CircleHelp },
 ]
 
