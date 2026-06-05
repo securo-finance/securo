@@ -222,3 +222,119 @@ async def test_oidc_callback_sync_roles_can_revoke_admin(
     me = await client.get("/api/users/me", headers={"Authorization": f"Bearer {token}"})
     assert me.status_code == 200
     assert me.json()["is_superuser"] is False
+
+
+@pytest.mark.asyncio
+async def test_oidc_callback_signed_claims_override_userinfo_roles(
+    client: AsyncClient, clean_db, oidc_settings, monkeypatch
+):
+    oidc_settings.oidc_sync_roles = True
+    oidc_settings.oidc_admin_roles = "securo-admins"
+    fake_redis = FakeRedis()
+    await fake_redis.set("oidc_state:state123", json.dumps({"nonce": "nonce123"}))
+
+    async def fake_discover():
+        return {"issuer": "https://id.example.com"}
+
+    async def fake_exchange(discovery, code):
+        return {"id_token": "id-token", "access_token": "provider-token"}
+
+    async def fake_decode(discovery, id_token, nonce):
+        return {
+            "sub": "signed-sub",
+            "email": "userinfo-override@example.com",
+            "email_verified": True,
+            "groups": ["securo-users"],
+        }
+
+    async def fake_userinfo(discovery, access_token):
+        return {
+            "sub": "signed-sub",
+            "email": "attacker@example.com",
+            "email_verified": True,
+            "groups": ["securo-admins"],
+        }
+
+    async def fake_get_redis():
+        return fake_redis
+
+    monkeypatch.setattr(oidc_auth, "get_redis", fake_get_redis)
+    monkeypatch.setattr(oidc_auth, "_discover", fake_discover)
+    monkeypatch.setattr(oidc_auth, "_exchange_code", fake_exchange)
+    monkeypatch.setattr(oidc_auth, "_decode_id_token", fake_decode)
+    monkeypatch.setattr(oidc_auth, "_fetch_userinfo", fake_userinfo)
+
+    response = await client.get("/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False)
+    assert response.status_code == 307
+    token = parse_qs(urlparse(response.headers["location"]).fragment)["access_token"][0]
+
+    me = await client.get("/api/users/me", headers={"Authorization": f"Bearer {token}"})
+    assert me.status_code == 200
+    assert me.json()["email"] == "userinfo-override@example.com"
+    assert me.json()["is_superuser"] is False
+
+
+@pytest.mark.asyncio
+async def test_oidc_callback_rejects_userinfo_subject_mismatch(
+    client: AsyncClient, clean_db, oidc_settings, monkeypatch
+):
+    fake_redis = FakeRedis()
+    await fake_redis.set("oidc_state:state123", json.dumps({"nonce": "nonce123"}))
+
+    async def fake_discover():
+        return {"issuer": "https://id.example.com"}
+
+    async def fake_exchange(discovery, code):
+        return {"id_token": "id-token", "access_token": "provider-token"}
+
+    async def fake_decode(discovery, id_token, nonce):
+        return {"sub": "signed-sub", "email": "oidc@example.com", "email_verified": True}
+
+    async def fake_userinfo(discovery, access_token):
+        return {"sub": "different-sub", "email": "oidc@example.com", "email_verified": True}
+
+    async def fake_get_redis():
+        return fake_redis
+
+    monkeypatch.setattr(oidc_auth, "get_redis", fake_get_redis)
+    monkeypatch.setattr(oidc_auth, "_discover", fake_discover)
+    monkeypatch.setattr(oidc_auth, "_exchange_code", fake_exchange)
+    monkeypatch.setattr(oidc_auth, "_decode_id_token", fake_decode)
+    monkeypatch.setattr(oidc_auth, "_fetch_userinfo", fake_userinfo)
+
+    response = await client.get("/api/auth/oidc/callback?code=abc&state=state123")
+    assert response.status_code == 400
+    assert response.json()["detail"] == "OIDC userinfo subject does not match id_token subject"
+
+
+@pytest.mark.asyncio
+async def test_oidc_callback_requires_verified_email_claim_when_enabled(
+    client: AsyncClient, clean_db, oidc_settings, monkeypatch
+):
+    fake_redis = FakeRedis()
+    await fake_redis.set("oidc_state:state123", json.dumps({"nonce": "nonce123"}))
+
+    async def fake_discover():
+        return {"issuer": "https://id.example.com"}
+
+    async def fake_exchange(discovery, code):
+        return {"id_token": "id-token", "access_token": "provider-token"}
+
+    async def fake_decode(discovery, id_token, nonce):
+        return {"sub": "signed-sub", "email": "oidc@example.com"}
+
+    async def fake_userinfo(discovery, access_token):
+        return {}
+
+    async def fake_get_redis():
+        return fake_redis
+
+    monkeypatch.setattr(oidc_auth, "get_redis", fake_get_redis)
+    monkeypatch.setattr(oidc_auth, "_discover", fake_discover)
+    monkeypatch.setattr(oidc_auth, "_exchange_code", fake_exchange)
+    monkeypatch.setattr(oidc_auth, "_decode_id_token", fake_decode)
+    monkeypatch.setattr(oidc_auth, "_fetch_userinfo", fake_userinfo)
+
+    response = await client.get("/api/auth/oidc/callback?code=abc&state=state123")
+    assert response.status_code == 400
+    assert response.json()["detail"] == "OIDC email is not verified"

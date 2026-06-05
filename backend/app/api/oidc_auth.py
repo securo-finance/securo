@@ -232,13 +232,18 @@ async def _get_or_create_oidc_user(
     user_manager: UserManager,
 ) -> User:
     settings = get_settings()
-    merged = {**claims, **userinfo}
+    if userinfo.get("sub") is not None and userinfo.get("sub") != claims.get("sub"):
+        raise HTTPException(status_code=400, detail="OIDC userinfo subject does not match id_token subject")
+    # Userinfo is fetched with a bearer token, but the id_token is the signed,
+    # audience-validated source of truth. Let signed claims win for overlapping
+    # identity and authorization fields such as email, email_verified, and groups.
+    merged = {**userinfo, **claims}
     email = merged.get("email")
     if not email:
         raise HTTPException(status_code=400, detail="OIDC provider did not return an email claim")
     email = str(EmailStr._validate(email)).lower()
     email_verified = merged.get("email_verified")
-    if settings.oidc_require_verified_email and email_verified is False:
+    if settings.oidc_require_verified_email and email_verified not in (True, "true"):
         raise HTTPException(status_code=400, detail="OIDC email is not verified")
 
     existing = await session.execute(select(User).where(func.lower(User.email) == email))
