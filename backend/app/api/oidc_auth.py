@@ -185,6 +185,9 @@ def _desired_workspace_role(provider_roles: set[str], role_map: dict[str, str]) 
     return max(matches, key=lambda role: role_rank[role])
 
 
+OIDC_EXISTING_USER_LINK_MODES = {"disabled", "verified_email"}
+
+
 async def _sync_oidc_roles(user: User, merged_claims: dict[str, Any], session: AsyncSession) -> None:
     settings = get_settings()
     if not settings.oidc_sync_roles:
@@ -221,6 +224,8 @@ async def _sync_oidc_roles(user: User, merged_claims: dict[str, Any], session: A
     )
     member = member_result.scalar_one_or_none()
     if member is not None and member.role != desired_role:
+        if workspace.kind == "personal" and member.role == "owner" and desired_role != "owner":
+            return
         member.role = desired_role
         session.add(member)
 
@@ -228,6 +233,7 @@ async def _sync_oidc_roles(user: User, merged_claims: dict[str, Any], session: A
 async def _get_or_create_oidc_user(
     claims: dict[str, Any],
     userinfo: dict[str, Any],
+    issuer: str,
     session: AsyncSession,
     user_manager: UserManager,
 ) -> User:
@@ -245,10 +251,37 @@ async def _get_or_create_oidc_user(
     email_verified = merged.get("email_verified")
     if settings.oidc_require_verified_email and email_verified not in (True, "true"):
         raise HTTPException(status_code=400, detail="OIDC email is not verified")
+    subject = merged.get("sub")
+    if not subject:
+        raise HTTPException(status_code=400, detail="OIDC provider did not return a subject claim")
+    subject = str(subject)
+    if not issuer:
+        raise HTTPException(status_code=500, detail="OIDC discovery is missing issuer")
+
+    linked = await session.execute(select(User).where(User.oidc_issuer == issuer, User.oidc_subject == subject))
+    user = linked.scalar_one_or_none()
+    if user is not None:
+        await _sync_oidc_roles(user, merged, session)
+        await session.commit()
+        await session.refresh(user)
+        return user
+
+    link_mode = settings.oidc_existing_user_link_mode
+    if link_mode not in OIDC_EXISTING_USER_LINK_MODES:
+        raise HTTPException(status_code=500, detail="OIDC_EXISTING_USER_LINK_MODE must be disabled or verified_email")
 
     existing = await session.execute(select(User).where(func.lower(User.email) == email))
     user = existing.scalar_one_or_none()
     if user is not None:
+        if user.oidc_issuer or user.oidc_subject:
+            raise HTTPException(status_code=403, detail="OIDC identity is linked to a different account")
+        if link_mode != "verified_email":
+            raise HTTPException(status_code=403, detail="Existing account is not linked to this OIDC identity")
+        if email_verified not in (True, "true"):
+            raise HTTPException(status_code=400, detail="OIDC email is not verified")
+        user.oidc_issuer = issuer
+        user.oidc_subject = subject
+        session.add(user)
         await _sync_oidc_roles(user, merged, session)
         await session.commit()
         await session.refresh(user)
@@ -264,7 +297,6 @@ async def _get_or_create_oidc_user(
         "currency_display": settings.default_currency,
         "display_name": display_name,
         "auth_provider": settings.oidc_provider_name,
-        "oidc_subject": merged.get("sub"),
     }
     provider_roles = _claim_values(merged, settings.oidc_roles_claim)
     admin_roles = {role.strip() for role in settings.oidc_admin_roles.split(",") if role.strip()}
@@ -280,7 +312,11 @@ async def _get_or_create_oidc_user(
         user = (await session.execute(select(User).where(func.lower(User.email) == email))).scalar_one()
 
     db_session = user_manager.user_db.session
-    await db_session.execute(sql_update(User).where(User.id == user.id).values(preferences=preferences))
+    await db_session.execute(
+        sql_update(User)
+        .where(User.id == user.id)
+        .values(preferences=preferences, oidc_issuer=issuer, oidc_subject=str(merged.get("sub")))
+    )
     await db_session.refresh(user)
     workspace = await create_personal_workspace_for_user(db_session, user)
     wallet = Account(
@@ -325,7 +361,7 @@ async def oidc_callback(
         raise HTTPException(status_code=400, detail="OIDC provider did not return an id_token")
     claims = await _decode_id_token(discovery, id_token, state_data["nonce"])
     userinfo = await _fetch_userinfo(discovery, token_response.get("access_token", ""))
-    user = await _get_or_create_oidc_user(claims, userinfo, session, user_manager)
+    user = await _get_or_create_oidc_user(claims, userinfo, discovery.get("issuer", ""), session, user_manager)
     if not user.is_active:
         raise HTTPException(status_code=403, detail="User is inactive")
     token = await get_jwt_strategy().write_token(user)

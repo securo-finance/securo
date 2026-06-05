@@ -70,6 +70,7 @@ class Settings(BaseSettings):
     oidc_redirect_uri: str = ""  # defaults to {FRONTEND_URL}/api/auth/oidc/callback
     oidc_scopes: str = "openid email profile"
     oidc_auto_register: bool = True
+    oidc_existing_user_link_mode: str = "disabled"  # disabled|verified_email
     oidc_require_verified_email: bool = True
     oidc_sync_roles: bool = False
     oidc_roles_claim: str = "groups"

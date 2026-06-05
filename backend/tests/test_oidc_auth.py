@@ -126,6 +126,10 @@ async def test_oidc_callback_syncs_existing_user_admin_and_workspace_role(
 ):
     oidc_settings.oidc_sync_roles = True
     oidc_settings.oidc_admin_roles = "securo-admins"
+    test_user.oidc_issuer = "https://id.example.com"
+    test_user.oidc_subject = "user-sub"
+    session.add(test_user)
+    await session.commit()
     oidc_settings.oidc_workspace_role_map = json.dumps(
         {
             "securo-viewers": "viewer",
@@ -172,12 +176,12 @@ async def test_oidc_callback_syncs_existing_user_admin_and_workspace_role(
 
     workspace = await client.get("/api/workspaces/current", headers={"Authorization": f"Bearer {token}"})
     assert workspace.status_code == 200
-    assert workspace.json()["role"] == "editor"
+    assert workspace.json()["role"] == "owner"
 
     member = (
         await session.execute(select(WorkspaceMember).where(WorkspaceMember.user_id == test_user.id))
     ).scalars().first()
-    assert member.role == "editor"
+    assert member.role == "owner"
 
 
 @pytest.mark.asyncio
@@ -186,6 +190,10 @@ async def test_oidc_callback_sync_roles_can_revoke_admin(
 ):
     oidc_settings.oidc_sync_roles = True
     oidc_settings.oidc_admin_roles = "securo-admins"
+    test_superuser.oidc_issuer = "https://id.example.com"
+    test_superuser.oidc_subject = "user-sub"
+    session.add(test_superuser)
+    await session.commit()
     fake_redis = FakeRedis()
     await fake_redis.set("oidc_state:state123", json.dumps({"nonce": "nonce123"}))
 
@@ -338,3 +346,113 @@ async def test_oidc_callback_requires_verified_email_claim_when_enabled(
     response = await client.get("/api/auth/oidc/callback?code=abc&state=state123")
     assert response.status_code == 400
     assert response.json()["detail"] == "OIDC email is not verified"
+
+
+@pytest.mark.asyncio
+async def test_oidc_callback_rejects_unlinked_existing_user_by_default(
+    client: AsyncClient, test_user, oidc_settings, monkeypatch
+):
+    fake_redis = FakeRedis()
+    await fake_redis.set("oidc_state:state123", json.dumps({"nonce": "nonce123"}))
+
+    async def fake_discover():
+        return {"issuer": "https://id.example.com"}
+
+    async def fake_exchange(discovery, code):
+        return {"id_token": "id-token", "access_token": "provider-token"}
+
+    async def fake_decode(discovery, id_token, nonce):
+        return {"sub": "new-sub", "email": "test@example.com", "email_verified": True}
+
+    async def fake_userinfo(discovery, access_token):
+        return {}
+
+    async def fake_get_redis():
+        return fake_redis
+
+    monkeypatch.setattr(oidc_auth, "get_redis", fake_get_redis)
+    monkeypatch.setattr(oidc_auth, "_discover", fake_discover)
+    monkeypatch.setattr(oidc_auth, "_exchange_code", fake_exchange)
+    monkeypatch.setattr(oidc_auth, "_decode_id_token", fake_decode)
+    monkeypatch.setattr(oidc_auth, "_fetch_userinfo", fake_userinfo)
+
+    response = await client.get("/api/auth/oidc/callback?code=abc&state=state123")
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Existing account is not linked to this OIDC identity"
+
+
+@pytest.mark.asyncio
+async def test_oidc_callback_verified_email_link_mode_links_existing_user(
+    client: AsyncClient, session, test_user, oidc_settings, monkeypatch
+):
+    oidc_settings.oidc_existing_user_link_mode = "verified_email"
+    fake_redis = FakeRedis()
+    await fake_redis.set("oidc_state:state123", json.dumps({"nonce": "nonce123"}))
+
+    async def fake_discover():
+        return {"issuer": "https://id.example.com"}
+
+    async def fake_exchange(discovery, code):
+        return {"id_token": "id-token", "access_token": "provider-token"}
+
+    async def fake_decode(discovery, id_token, nonce):
+        return {"sub": "linked-sub", "email": "test@example.com", "email_verified": True}
+
+    async def fake_userinfo(discovery, access_token):
+        return {}
+
+    async def fake_get_redis():
+        return fake_redis
+
+    monkeypatch.setattr(oidc_auth, "get_redis", fake_get_redis)
+    monkeypatch.setattr(oidc_auth, "_discover", fake_discover)
+    monkeypatch.setattr(oidc_auth, "_exchange_code", fake_exchange)
+    monkeypatch.setattr(oidc_auth, "_decode_id_token", fake_decode)
+    monkeypatch.setattr(oidc_auth, "_fetch_userinfo", fake_userinfo)
+
+    response = await client.get("/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False)
+
+    assert response.status_code == 307
+    await session.refresh(test_user)
+    assert test_user.oidc_issuer == "https://id.example.com"
+    assert test_user.oidc_subject == "linked-sub"
+
+
+@pytest.mark.asyncio
+async def test_oidc_callback_rejects_existing_user_with_different_linked_subject(
+    client: AsyncClient, session, test_user, oidc_settings, monkeypatch
+):
+    oidc_settings.oidc_existing_user_link_mode = "verified_email"
+    test_user.oidc_issuer = "https://id.example.com"
+    test_user.oidc_subject = "original-sub"
+    session.add(test_user)
+    await session.commit()
+    fake_redis = FakeRedis()
+    await fake_redis.set("oidc_state:state123", json.dumps({"nonce": "nonce123"}))
+
+    async def fake_discover():
+        return {"issuer": "https://id.example.com"}
+
+    async def fake_exchange(discovery, code):
+        return {"id_token": "id-token", "access_token": "provider-token"}
+
+    async def fake_decode(discovery, id_token, nonce):
+        return {"sub": "different-sub", "email": "test@example.com", "email_verified": True}
+
+    async def fake_userinfo(discovery, access_token):
+        return {}
+
+    async def fake_get_redis():
+        return fake_redis
+
+    monkeypatch.setattr(oidc_auth, "get_redis", fake_get_redis)
+    monkeypatch.setattr(oidc_auth, "_discover", fake_discover)
+    monkeypatch.setattr(oidc_auth, "_exchange_code", fake_exchange)
+    monkeypatch.setattr(oidc_auth, "_decode_id_token", fake_decode)
+    monkeypatch.setattr(oidc_auth, "_fetch_userinfo", fake_userinfo)
+
+    response = await client.get("/api/auth/oidc/callback?code=abc&state=state123")
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "OIDC identity is linked to a different account"
