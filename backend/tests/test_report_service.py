@@ -11,13 +11,21 @@ from app.models.asset_value import AssetValue
 from app.models.bank_connection import BankConnection
 from app.models.transaction import Transaction
 from app.models.user import User
-from app.schemas.report import CategoryTrendItem, ReportDataPoint, ReportResponse
+from app.schemas.report import (
+    CategoryTrendItem,
+    ReportDataPoint,
+    ReportMeta,
+    ReportResponse,
+    ReportSummary,
+)
+from app.services import report_service
 from app.services.report_service import (
     _add_months,
     _asset_value_at,
     _date_points,
     _format_date_label,
     _net_worth_at,
+    _report_start_date,
     get_cash_flow_report,
     get_net_worth_report,
 )
@@ -156,6 +164,19 @@ def test_date_points_last_point_replaces_same_period():
     ]
     labels = [_format_date_label(p, "monthly") for p in points]
     assert len(labels) == len(set(labels))
+
+
+# ---------------------------------------------------------------------------
+# Pure-function tests: _report_start_date
+# ---------------------------------------------------------------------------
+
+
+def test_report_start_date_month_range_aligns_to_month_start():
+    assert _report_start_date(date(2025, 6, 15), 6) == date(2024, 12, 1)
+
+
+def test_report_start_date_ytd_uses_current_year_start():
+    assert _report_start_date(date(2025, 6, 15), 24, period="ytd") == date(2025, 1, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -320,6 +341,19 @@ async def test_net_worth_report_intervals(session: AsyncSession, test_user, test
         assert len(report.trend) > 0
 
 
+@pytest.mark.asyncio
+async def test_net_worth_report_ytd_starts_at_current_year(
+    session: AsyncSession, test_user, test_workspace
+):
+    """YTD report window starts at Jan 1 while preserving granularity."""
+    report = await get_net_worth_report(
+        session, test_workspace.id, test_user.id, months=24, interval="monthly", period="ytd"
+    )
+
+    assert report.trend[0].date == f"{date.today().year}-01"
+    assert all(point.date.startswith(str(date.today().year)) for point in report.trend)
+
+
 # ---------------------------------------------------------------------------
 # API-level tests: /reports/net-worth
 # ---------------------------------------------------------------------------
@@ -344,12 +378,34 @@ async def test_net_worth_api_endpoint(client, auth_headers, test_transactions):
 
 
 @pytest.mark.asyncio
+async def test_net_worth_api_accepts_ytd_period(client, auth_headers):
+    """GET /reports/net-worth accepts period=ytd."""
+    response = await client.get(
+        "/api/reports/net-worth",
+        params={"period": "ytd", "interval": "monthly"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["trend"][0]["date"] == f"{date.today().year}-01"
+
+
+@pytest.mark.asyncio
 async def test_net_worth_api_validation(client, auth_headers):
     """GET /reports/net-worth validates query params."""
     # Invalid interval
     resp = await client.get(
         "/api/reports/net-worth",
         params={"interval": "invalid"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+    # Invalid period
+    resp = await client.get(
+        "/api/reports/net-worth",
+        params={"period": "rolling"},
         headers=auth_headers,
     )
     assert resp.status_code == 422
@@ -465,6 +521,49 @@ async def test_income_expenses_api_validation(client, auth_headers):
         headers=auth_headers,
     )
     assert resp.status_code == 422
+
+    resp = await client.get(
+        "/api/reports/income-expenses",
+        params={"period": "rolling"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_income_expenses_api_accepts_ytd_period(client, auth_headers, monkeypatch):
+    """GET /reports/income-expenses passes period=ytd to service."""
+
+    async def fake_report(session, workspace_id, user_id, months, interval, currency, period=None):
+        assert months == 12
+        assert interval == "monthly"
+        assert period == "ytd"
+        return ReportResponse(
+            summary=ReportSummary(
+                primary_value=0,
+                change_amount=0,
+                change_percent=None,
+                breakdowns=[],
+            ),
+            trend=[],
+            meta=ReportMeta(
+                type="income_expenses",
+                series_keys=["income", "expenses"],
+                currency=currency,
+                interval=interval,
+            ),
+            composition=[],
+            category_trend=[],
+        )
+
+    monkeypatch.setattr(report_service, "get_income_expenses_report", fake_report)
+
+    resp = await client.get(
+        "/api/reports/income-expenses",
+        params={"period": "ytd", "interval": "monthly"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
 
 
 @pytest.mark.asyncio

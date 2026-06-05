@@ -931,12 +931,12 @@ export const assetGroups = {
 
 // Reports
 export const reports = {
-  netWorth: async (months = 12, interval = 'monthly'): Promise<ReportResponse> => {
-    const { data } = await api.get('/reports/net-worth', { params: { months, interval } })
+  netWorth: async (months = 12, interval = 'monthly', period?: 'ytd'): Promise<ReportResponse> => {
+    const { data } = await api.get('/reports/net-worth', { params: { months, interval, period } })
     return data
   },
-  incomeExpenses: async (months = 12, interval = 'monthly'): Promise<ReportResponse> => {
-    const { data } = await api.get('/reports/income-expenses', { params: { months, interval } })
+  incomeExpenses: async (months = 12, interval = 'monthly', period?: 'ytd'): Promise<ReportResponse> => {
+    const { data } = await api.get('/reports/income-expenses', { params: { months, interval, period } })
     return data
   },
   cashFlow: async (months = 6, interval = 'daily', baseline = false): Promise<ReportResponse> => {

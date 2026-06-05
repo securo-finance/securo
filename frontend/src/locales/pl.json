@@ -1009,6 +1009,7 @@
     "range3m": "3M",
     "range6m": "6M",
     "range1y": "1R",
+    "rangeYtd": "YTD",
     "range12m": "12M",
     "range2y": "2L",
     "intervalDaily": "D",

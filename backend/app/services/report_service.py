@@ -36,6 +36,15 @@ from app.services.dashboard_service import _get_open_accounts, _account_balance_
 CATEGORY_TREND_TOP_N = 11
 
 
+def _report_start_date(today: date, months: int, period: str | None = None) -> date:
+    """Resolve historical report start date."""
+    if period == "ytd":
+        return date(today.year, 1, 1)
+
+    start = date(today.year, today.month, 1) - timedelta(days=months * 30)
+    return start.replace(day=1)
+
+
 async def _asset_value_at(
     session: AsyncSession, workspace_id: uuid.UUID, cutoff: date,
     primary_currency: str = "USD",
@@ -153,11 +162,11 @@ async def get_net_worth_report(
     months: int = 12,
     interval: str = "monthly",
     currency: str = "USD",
+    period: str | None = None,
 ) -> ReportResponse:
     """Build a full ReportResponse for net worth over time."""
     today = date.today()
-    start = date(today.year, today.month, 1) - timedelta(days=months * 30)
-    start = start.replace(day=1)  # Align to month start
+    start = _report_start_date(today, months, period)
 
     # Get user's primary currency
     user = await session.get(User, user_id)
@@ -323,11 +332,11 @@ async def get_income_expenses_report(
     months: int = 12,
     interval: str = "monthly",
     currency: str = "USD",
+    period: str | None = None,
 ) -> ReportResponse:
     """Build a ReportResponse for income vs expenses over time."""
     today = date.today()
-    start = date(today.year, today.month, 1) - timedelta(days=months * 30)
-    start = start.replace(day=1)
+    start = _report_start_date(today, months, period)
 
     # Get user's primary currency + global reporting mode
     user = await session.get(User, user_id)
