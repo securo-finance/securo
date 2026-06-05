@@ -160,7 +160,9 @@
     "disable2fa": "Wyłącz 2FA",
     "disable2faDescription": "Wprowadź hasło i kod weryfikacyjny, aby wyłączyć uwierzytelnianie dwuskładnikowe.",
     "twoFactorEnabled": "Włączono uwierzytelnianie dwuskładnikowe",
-    "twoFactorDisabled": "Wyłączono uwierzytelnianie dwuskładnikowe"
+    "twoFactorDisabled": "Wyłączono uwierzytelnianie dwuskładnikowe",
+    "or": "lub",
+    "loginWithProvider": "Kontynuuj z {{provider}}"
   },
   "dashboard": {
     "title": "Pulpit",

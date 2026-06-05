@@ -185,6 +185,10 @@ export const auth = {
     const { data } = await api.post('/auth/2fa/verify', { temp_token: tempToken, code })
     return data
   },
+  oidcConfig: async (): Promise<{ enabled: boolean; provider_name: string }> => {
+    const { data } = await api.get('/auth/oidc/config')
+    return data
+  },
 }
 
 // Categories

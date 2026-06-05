@@ -160,7 +160,9 @@
     "disable2fa": "Desativar 2FA",
     "disable2faDescription": "Digite sua senha e um código de verificação para desativar a autenticação em dois fatores.",
     "twoFactorEnabled": "Autenticação em dois fatores ativada",
-    "twoFactorDisabled": "Autenticação em dois fatores desativada"
+    "twoFactorDisabled": "Autenticação de dois fatores desativada",
+    "or": "ou",
+    "loginWithProvider": "Continuar com {{provider}}"
   },
   "dashboard": {
     "title": "Painel",

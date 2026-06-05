@@ -160,7 +160,9 @@
     "disable2fa": "Disable 2FA",
     "disable2faDescription": "Enter your password and a verification code to disable two-factor authentication.",
     "twoFactorEnabled": "Two-factor authentication enabled",
-    "twoFactorDisabled": "Two-factor authentication disabled"
+    "twoFactorDisabled": "Two-factor authentication disabled",
+    "or": "or",
+    "loginWithProvider": "Continue with {{provider}}"
   },
   "dashboard": {
     "title": "Dashboard",
