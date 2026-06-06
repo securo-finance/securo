@@ -42,6 +42,7 @@ from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.schemas.user import UserCreate
+from app.services.workspace_service import create_personal_workspace_for_user
 from fastapi_users.db import SQLAlchemyUserDatabase
 from fastapi_users.exceptions import UserAlreadyExists
 
@@ -199,12 +200,18 @@ async def seed(
 
         uid = user.id
 
+        # Ensure the user has a personal workspace (on_after_register skips this
+        # for programmatic calls where request=None, so we create it here).
+        workspace = await create_personal_workspace_for_user(session, user, commit=True)
+        wid = workspace.id
+
         # ── 2. Accounts ──────────────────────────────────────────────────────
         print("Creating accounts …")
         accounts: list[Account] = []
         for tmpl in ACCOUNT_TEMPLATES[:n_accounts]:
             acc = Account(
                 user_id=uid,
+                workspace_id=wid,
                 name=tmpl["name"],
                 type=tmpl["type"],
                 currency=tmpl["currency"],
@@ -220,7 +227,7 @@ async def seed(
         print("Creating categories …")
         categories: list[Category] = []
         for name, color, icon in CATEGORY_TEMPLATES[:n_categories]:
-            cat = Category(user_id=uid, name=name, color=color, icon=icon)
+            cat = Category(user_id=uid, workspace_id=wid, name=name, color=color, icon=icon)
             session.add(cat)
             categories.append(cat)
         await session.flush()
@@ -280,6 +287,7 @@ async def seed(
             tx_rows.append({
                 "id": uuid.uuid4(),
                 "user_id": uid,
+                "workspace_id": wid,
                 "account_id": acc.id,
                 "category_id": cat.id,
                 "description": rng.choice(PAYEES),
@@ -308,6 +316,7 @@ async def seed(
         for tmpl in ASSET_TEMPLATES[:n_assets]:
             asset = Asset(
                 user_id=uid,
+                workspace_id=wid,
                 name=tmpl["name"],
                 type=tmpl["type"],
                 currency=tmpl["currency"],
@@ -332,6 +341,7 @@ async def seed(
                 value_rows.append({
                     "id": uuid.uuid4(),
                     "asset_id": asset.id,
+                    "workspace_id": wid,
                     "amount": v,
                     "date": d,
                     "source": "manual",
@@ -352,6 +362,7 @@ async def seed(
             cat = debit_cats[i % len(debit_cats)]
             session.add(RecurringTransaction(
                 user_id=uid,
+                workspace_id=wid,
                 account_id=acc.id,
                 category_id=cat.id,
                 description=desc,
