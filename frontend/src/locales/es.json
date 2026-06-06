@@ -122,7 +122,8 @@
     "groupAdmin": "Administración",
     "groupAgents": "IA",
     "agents": "Agentes",
-    "aiAgents": "Agentes IA"
+    "aiAgents": "Agentes IA",
+    "installments": "Cuotas"
   },
   "auth": {
     "login": "Iniciar sesión",
@@ -1467,6 +1468,54 @@
         "title": "Aún no hay conexiones",
         "subtitle": "Añade una conexión para apuntar Securo a tu Ollama local, OpenAI, Anthropic o cualquier endpoint compatible con OpenAI."
       }
+    }
+  },
+  "installments": {
+    "title": "Cuotas",
+    "add": "Añadir Cuota",
+    "empty": "No se encontraron cuotas",
+    "created": "Cuota creada",
+    "updated": "Cuota actualizada",
+    "deleted": "Cuota eliminada",
+    "paid": "Cuota marcada como pagada",
+    "confirmDelete": "¿Eliminar esta cuota?",
+    "summary": {
+      "title": "Resumen de Cuotas",
+      "active": "activas",
+      "total": "Total",
+      "paid": "Pagado",
+      "remaining": "Restante",
+      "progress": "Progreso",
+      "maturity": "Última cuota"
+    },
+    "dialog": {
+      "create": "Nueva Cuota",
+      "edit": "Editar Cuota",
+      "merchant": "Comercio",
+      "account": "Cuenta",
+      "selectAccount": "Seleccionar cuenta",
+      "totalAmount": "Monto Total",
+      "installments": "Cuotas",
+      "purchaseDate": "Fecha de Compra",
+      "monthlyAmount": "Monto Mensual",
+      "notes": "Notas"
+    },
+    "filter": {
+      "all": "Todas",
+      "active": "Activas",
+      "finished": "Finalizadas",
+      "allAccounts": "Todas las cuentas"
+    },
+    "sort": {
+      "date": "Fecha",
+      "amount": "Monto",
+      "remaining": "Restante"
+    },
+    "pay": {
+      "title": "Marcar como Pagada",
+      "installment": "Cuota #",
+      "amount": "Monto",
+      "date": "Fecha"
     }
   }
 }

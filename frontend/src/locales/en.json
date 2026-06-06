@@ -122,7 +122,8 @@
     "groupAdmin": "Administration",
     "groupAgents": "AI",
     "agents": "Agents",
-    "aiAgents": "AI Agents"
+    "aiAgents": "AI Agents",
+    "installments": "Installments"
   },
   "auth": {
     "login": "Login",
@@ -1469,6 +1470,61 @@
         "title": "No connections yet",
         "subtitle": "Add a connection to point Securo at your local Ollama, OpenAI, Anthropic, or any OpenAI-compatible endpoint."
       }
+    }
+  },
+  "installments": {
+    "title": "Installments",
+    "add": "Add Installment",
+    "empty": "No installments found",
+    "created": "Installment created",
+    "updated": "Installment updated",
+    "deleted": "Installment deleted",
+    "paid": "Installment marked as paid",
+    "confirmDelete": "Delete this installment?",
+    "summary": {
+      "title": "Installment Overview",
+      "active": "active",
+      "total": "Total",
+      "paid": "Paid",
+      "remaining": "Remaining",
+      "progress": "Progress",
+      "maturity": "Last installment"
+    },
+    "dialog": {
+      "create": "New Installment",
+      "edit": "Edit Installment",
+      "merchant": "Merchant",
+      "account": "Account",
+      "selectAccount": "Select account",
+      "totalAmount": "Total Amount",
+      "installments": "Installments",
+      "purchaseDate": "Purchase Date",
+      "monthlyAmount": "Monthly Amount",
+      "notes": "Notes"
+    },
+    "filter": {
+      "all": "All",
+      "active": "Active",
+      "finished": "Finished",
+      "allAccounts": "All accounts"
+    },
+    "sort": {
+      "date": "Date",
+      "amount": "Amount",
+      "remaining": "Remaining"
+    },
+    "pay": {
+      "title": "Mark as Paid",
+      "installment": "Installment #",
+      "amount": "Amount",
+      "date": "Date"
+    },
+    "category": {
+      "uncategorized": "Sem categoria"
+    },
+    "chart": {
+      "title": "Remaining by Category",
+      "remaining": "Remaining"
     }
   }
 }

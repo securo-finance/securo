@@ -34,6 +34,7 @@ const AgentDetailPage = lazy(() => import('@/pages/agent-detail'))
 const AgentConnectionsPage = lazy(() => import('@/pages/agent-connections'))
 const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace-settings'))
 const OAuthCallbackPage = lazy(() => import('@/pages/oauth-callback'))
+const InstallmentsPage = lazy(() => import('@/pages/installments'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -83,6 +84,7 @@ function App() {
                   <Route path="/budgets" element={<BudgetsPage />} />
                   <Route path="/goals" element={<GoalsPage />} />
                   <Route path="/recurring" element={<RecurringPage />} />
+                  <Route path="/installments" element={<InstallmentsPage />} />
                   <Route path="/assets" element={<AssetsPage />} />
                   <Route path="/reports" element={<ReportsPage />} />
                   <Route path="/payees" element={<PayeesPage />} />

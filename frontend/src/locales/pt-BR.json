@@ -122,7 +122,8 @@
     "groupAdmin": "Administração",
     "groupAgents": "IA",
     "agents": "Agentes",
-    "aiAgents": "Agentes IA"
+    "aiAgents": "Agentes IA",
+    "installments": "Parcelamentos"
   },
   "auth": {
     "login": "Entrar",
@@ -1469,6 +1470,61 @@
         "title": "Nenhuma conexão ainda",
         "subtitle": "Adicione uma conexão para apontar o Securo para seu Ollama local, OpenAI, Anthropic ou qualquer endpoint compatível com OpenAI."
       }
+    }
+  },
+  "installments": {
+    "title": "Parcelamentos",
+    "add": "Adicionar Parcelamento",
+    "empty": "Nenhum parcelamento encontrado",
+    "created": "Parcelamento criado",
+    "updated": "Parcelamento atualizado",
+    "deleted": "Parcelamento excluído",
+    "paid": "Parcelamento marcado como pago",
+    "confirmDelete": "Excluir este parcelamento?",
+    "summary": {
+      "title": "Visão Geral dos Parcelamentos",
+      "active": "ativos",
+      "total": "Total",
+      "paid": "Pago",
+      "remaining": "Restante",
+      "progress": "Progresso",
+      "maturity": "Última parcela"
+    },
+    "dialog": {
+      "create": "Novo Parcelamento",
+      "edit": "Editar Parcelamento",
+      "merchant": "Comerciante",
+      "account": "Conta",
+      "selectAccount": "Selecionar conta",
+      "totalAmount": "Valor Total",
+      "installments": "Parcelas",
+      "purchaseDate": "Data da Compra",
+      "monthlyAmount": "Valor Mensal",
+      "notes": "Notas"
+    },
+    "filter": {
+      "all": "Todos",
+      "active": "Ativos",
+      "finished": "Finalizados",
+      "allAccounts": "Todas as contas"
+    },
+    "sort": {
+      "date": "Data",
+      "amount": "Valor",
+      "remaining": "Restante"
+    },
+    "pay": {
+      "title": "Marcar como Pago",
+      "installment": "Parcela #",
+      "amount": "Valor",
+      "date": "Data"
+    },
+    "category": {
+      "uncategorized": "Sem categoria"
+    },
+    "chart": {
+      "title": "Restante por Categoria",
+      "remaining": "Restante"
     }
   }
 }

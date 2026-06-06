@@ -1327,4 +1327,35 @@ export const agents = {
   },
 }
 
+// Installments (parcelamentos)
+export const installments = {
+  summary: async (): Promise<import('@/types').InstallmentSummary> => {
+    const { data } = await api.get('/installments/summary')
+    return data
+  },
+  list: async (params?: { status?: string; account_id?: string; sort?: string }): Promise<import('@/types').InstallmentPurchase[]> => {
+    const { data } = await api.get('/installments/purchases', { params })
+    return data
+  },
+  details: async (id: string): Promise<import('@/types').InstallmentPurchaseDetail> => {
+    const { data } = await api.get(`/installments/purchases/${id}/details`)
+    return data
+  },
+  create: async (payload: import('@/types').ManualInstallmentCreate): Promise<import('@/types').InstallmentPurchase> => {
+    const { data } = await api.post('/installments/purchases', payload)
+    return data
+  },
+  update: async (id: string, payload: Partial<import('@/types').ManualInstallmentCreate>): Promise<import('@/types').InstallmentPurchase> => {
+    const { data } = await api.patch(`/installments/purchases/${id}`, payload)
+    return data
+  },
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/installments/purchases/${id}`)
+  },
+  markPaid: async (id: string, payload: { installment_number: number; amount: number; date: string }): Promise<import('@/types').InstallmentPurchase> => {
+    const { data } = await api.post(`/installments/purchases/${id}/pay`, payload)
+    return data
+  },
+}
+
 export default api

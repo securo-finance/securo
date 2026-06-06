@@ -122,7 +122,8 @@
     "groupAdmin": "Administracja",
     "groupAgents": "AI",
     "agents": "Agenci",
-    "aiAgents": "Agenci AI"
+    "aiAgents": "Agenci AI",
+    "installments": "Raty"
   },
   "auth": {
     "login": "Zaloguj się",
@@ -1536,6 +1537,54 @@
         "title": "Brak połączeń",
         "subtitle": "Dodaj połączenie, aby skierować Securo do swojego lokalnego Ollamy, OpenAI, Anthropic lub dowolnego endpointu zgodnego z OpenAI."
       }
+    }
+  },
+  "installments": {
+    "title": "Raty",
+    "add": "Dodaj Ratę",
+    "empty": "Nie znaleziono rat",
+    "created": "Rata utworzona",
+    "updated": "Rata zaktualizowana",
+    "deleted": "Rata usunięta",
+    "paid": "Rata oznaczona jako zapłacona",
+    "confirmDelete": "Usunąć tę ratę?",
+    "summary": {
+      "title": "Przegląd Rat",
+      "active": "aktywne",
+      "total": "Suma",
+      "paid": "Zapłacono",
+      "remaining": "Pozostało",
+      "progress": "Postęp",
+      "maturity": "Ostatnia rata"
+    },
+    "dialog": {
+      "create": "Nowa Rata",
+      "edit": "Edytuj Ratę",
+      "merchant": "Sklep",
+      "account": "Konto",
+      "selectAccount": "Wybierz konto",
+      "totalAmount": "Kwota Całkowita",
+      "installments": "Raty",
+      "purchaseDate": "Data Zakupu",
+      "monthlyAmount": "Kwota Miesięczna",
+      "notes": "Notatki"
+    },
+    "filter": {
+      "all": "Wszystkie",
+      "active": "Aktywne",
+      "finished": "Zakończone",
+      "allAccounts": "Wszystkie konta"
+    },
+    "sort": {
+      "date": "Data",
+      "amount": "Kwota",
+      "remaining": "Pozostało"
+    },
+    "pay": {
+      "title": "Oznacz jako Zapłaconą",
+      "installment": "Rata #",
+      "amount": "Kwota",
+      "date": "Data"
     }
   }
 }

@@ -582,6 +582,15 @@ async def handle_oauth_callback(
                             apply_effective_date(
                                 synced_dup, account, bill_due_date=bill.due_date
                             )
+                    # Copy installment metadata from posted version
+                    if txn_data.installment_number is not None:
+                        synced_dup.installment_number = txn_data.installment_number
+                    if txn_data.total_installments is not None:
+                        synced_dup.total_installments = txn_data.total_installments
+                    if txn_data.installment_total_amount is not None:
+                        synced_dup.installment_total_amount = txn_data.installment_total_amount
+                    if txn_data.installment_purchase_date is not None:
+                        synced_dup.installment_purchase_date = txn_data.installment_purchase_date
                 continue
 
             category_id = await _match_pluggy_category(
@@ -620,6 +629,20 @@ async def handle_oauth_callback(
                 installment_purchase_date=txn_data.installment_purchase_date,
                 bill_id=bill.id if bill else None,
             )
+            # Fallback: detect installment patterns from description when
+            # provider didn't supply creditCardMetadata (e.g. "3/10", "03/12")
+            if transaction.installment_number is None and transaction.type == "debit":
+                from app.services.installment_service import detect_installment, _add_months
+
+                detected = detect_installment(transaction.description)
+                if detected:
+                    current, total = detected
+                    transaction.installment_number = current
+                    transaction.total_installments = total
+                    # Don't compute installment_total_amount here — leave as NULL
+                    # so the aggregation engine groups consistently by (account, date, NULL)
+                    # Backdate by (current - 1) months so all installments share the same purchase_date
+                    transaction.installment_purchase_date = _add_months(transaction.date, -(current - 1))
             apply_effective_date(
                 transaction, account, bill_due_date=bill.due_date if bill else None
             )
@@ -1242,6 +1265,16 @@ async def sync_connection(
                             apply_effective_date(
                                 existing_tx, account, bill_due_date=bill.due_date
                             )
+                    # Backfill installment fields from provider metadata
+                    # (e.g. Pluggy creditCardMetadata) on re-sync.
+                    if txn_data.installment_number is not None:
+                        existing_tx.installment_number = txn_data.installment_number
+                    if txn_data.total_installments is not None:
+                        existing_tx.total_installments = txn_data.total_installments
+                    if txn_data.installment_total_amount is not None:
+                        existing_tx.installment_total_amount = txn_data.installment_total_amount
+                    if txn_data.installment_purchase_date is not None:
+                        existing_tx.installment_purchase_date = txn_data.installment_purchase_date
                     continue
 
                 # Pass 2: Fuzzy match against manual transactions
@@ -1282,6 +1315,15 @@ async def sync_connection(
                                 apply_effective_date(
                                     synced_dup, account, bill_due_date=bill.due_date
                                 )
+                        # Copy installment metadata from posted version
+                        if txn_data.installment_number is not None:
+                            synced_dup.installment_number = txn_data.installment_number
+                        if txn_data.total_installments is not None:
+                            synced_dup.total_installments = txn_data.total_installments
+                        if txn_data.installment_total_amount is not None:
+                            synced_dup.installment_total_amount = txn_data.installment_total_amount
+                        if txn_data.installment_purchase_date is not None:
+                            synced_dup.installment_purchase_date = txn_data.installment_purchase_date
                     continue
 
                 category_id = await _match_pluggy_category(
@@ -1320,6 +1362,19 @@ async def sync_connection(
                     installment_purchase_date=txn_data.installment_purchase_date,
                     bill_id=bill.id if bill else None,
                 )
+                # Fallback: detect installment patterns from description when
+                # provider didn't supply creditCardMetadata (e.g. "3/10", "03/12")
+                if transaction.installment_number is None and transaction.type == "debit":
+                    from app.services.installment_service import detect_installment, _add_months
+
+                    detected = detect_installment(transaction.description)
+                    if detected:
+                        current, total = detected
+                        transaction.installment_number = current
+                        transaction.total_installments = total
+                        # Don't compute installment_total_amount here — leave as NULL
+                        # Backdate by (current - 1) months so all installments share the same purchase_date
+                        transaction.installment_purchase_date = _add_months(transaction.date, -(current - 1))
                 apply_effective_date(
                     transaction, account, bill_due_date=bill.due_date if bill else None
                 )

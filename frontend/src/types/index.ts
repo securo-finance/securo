@@ -660,3 +660,92 @@ export interface ReportResponse {
   composition: ReportCompositionItem[]
   category_trend: CategoryTrendItem[]
 }
+
+// Installments
+export interface InstallmentItem {
+  number: number
+  due_date: string
+  amount: number
+  status: 'PAID' | 'PENDING'
+  transaction_id: string | null
+}
+
+export interface InstallmentTimelineItem {
+  number: number
+  due_date: string
+  is_paid: boolean
+  paid_date: string | null
+  amount: number
+}
+
+export interface InstallmentSummary {
+  active_purchases_count: number
+  total_estimated_amount: number
+  total_paid_amount: number
+  total_remaining_amount: number
+  overall_progress_percentage: number
+  final_maturity_date: string | null
+}
+
+export interface InstallmentCategory {
+  id: string
+  name: string
+  icon: string
+  color: string
+}
+
+export interface InstallmentPurchase {
+  id: string
+  merchant_name: string
+  status: 'ACTIVE' | 'FINISHED'
+  current_installment: number
+  paid_count: number
+  total_installments: number
+  installment_monthly_amount: number
+  institution_name: string
+  total_amount: number
+  paid_amount: number
+  remaining_amount: number
+  progress_percentage: number
+  purchase_date: string
+  final_due_date: string | null
+  is_manual: boolean
+  category: InstallmentCategory | null
+  next_due_date: string | null
+  start_date: string | null
+  end_date: string | null
+  total_amount_estimated: boolean
+  rounding_delta: number
+  has_partial_sync_data: boolean
+  installments: InstallmentItem[]
+}
+
+export interface InstallmentMetrics {
+  paid_amount: number
+  remaining_amount: number
+  last_installment_date: string | null
+}
+
+export interface InstallmentPurchaseDetail {
+  id: string
+  merchant_name: string
+  purchase_date: string
+  total_amount: number
+  total_installments: number
+  institution_name: string
+  is_manual: boolean
+  account_id: string
+  metrics: InstallmentMetrics
+  installments_timeline: InstallmentItem[]
+}
+
+export interface ManualInstallmentCreate {
+  merchant_name: string
+  account_id: string
+  total_amount: number
+  total_installments: number
+  purchase_date: string
+  monthly_amount?: number | null
+  category_id?: string | null
+  notes?: string | null
+}
