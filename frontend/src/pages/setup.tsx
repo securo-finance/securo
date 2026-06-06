@@ -140,6 +140,18 @@ export default function SetupPage() {
                   </button>
                   <button
                     type="button"
+                    onClick={() => i18n.changeLanguage('it')}
+                    className={cn(
+                      'px-2.5 py-1 rounded text-[11px] font-semibold transition-colors',
+                      currentLang === 'it'
+                        ? 'bg-primary/15 text-primary'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    IT
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => i18n.changeLanguage('pt-BR')}
                     className={cn(
                       'px-2.5 py-1 rounded text-[11px] font-semibold transition-colors',

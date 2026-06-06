@@ -13,12 +13,12 @@ from app.schemas.category_group import CategoryGroupCreate, CategoryGroupUpdate
 # Language-keyed translations for default groups
 # Keys are internal identifiers, values are {lang: display_name}
 DEFAULT_GROUPS_I18N = {
-    "housing":   {"pl": "Mieszkanie", "es": "Alojamiento", "en": "Housing",       "pt-BR": "Moradia",         "icon": "house",            "color": "#8B5CF6", "position": 0},
-    "food":      {"pl": "Jedzenie", "es": "Comida y Cena", "en": "Food & Dining", "pt-BR": "Alimentação",     "icon": "utensils-crossed", "color": "#F59E0B", "position": 1},
-    "transport":  {"pl": "Transport", "es": "Transporte",     "en": "Transport",     "pt-BR": "Transporte",      "icon": "car",              "color": "#3B82F6", "position": 2},
-    "lifestyle": {"pl": "Styl życia", "es": "Estilo de Vida", "en": "Lifestyle",     "pt-BR": "Estilo de Vida",  "icon": "sparkles",         "color": "#EC4899", "position": 3},
-    "income":    {"pl": "Przychody", "es": "Ingresos",        "en": "Income",        "pt-BR": "Renda",           "icon": "trending-up",      "color": "#16A34A", "position": 5},
-    "other":     {"pl": "Inne", "es": "Otros",            "en": "Other",         "pt-BR": "Outros",          "icon": "circle-help",      "color": "#64748B", "position": 4},
+    "housing":   {"it": "Casa", "pl": "Mieszkanie", "es": "Alojamiento", "en": "Housing",       "pt-BR": "Moradia",         "icon": "house",            "color": "#8B5CF6", "position": 0},
+    "food":      {"it": "Cibo e Ristoranti", "pl": "Jedzenie", "es": "Comida y Cena", "en": "Food & Dining", "pt-BR": "Alimentação",     "icon": "utensils-crossed", "color": "#F59E0B", "position": 1},
+    "transport":  {"it": "Trasporti", "pl": "Transport", "es": "Transporte",     "en": "Transport",     "pt-BR": "Transporte",      "icon": "car",              "color": "#3B82F6", "position": 2},
+    "lifestyle": {"it": "Stile di Vita", "pl": "Styl życia", "es": "Estilo de Vida", "en": "Lifestyle",     "pt-BR": "Estilo de Vida",  "icon": "sparkles",         "color": "#EC4899", "position": 3},
+    "income":    {"it": "Entrate", "pl": "Przychody", "es": "Ingresos",        "en": "Income",        "pt-BR": "Renda",           "icon": "trending-up",      "color": "#16A34A", "position": 5},
+    "other":     {"it": "Altro", "pl": "Inne", "es": "Otros",            "en": "Other",         "pt-BR": "Outros",          "icon": "circle-help",      "color": "#64748B", "position": 4},
 }
 
 # Maps category internal key -> group internal key
