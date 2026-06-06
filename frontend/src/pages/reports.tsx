@@ -5,7 +5,6 @@ import { useQuery } from '@tanstack/react-query'
 import {
   AreaChart,
   Area,
-  BarChart,
   Bar,
   ComposedChart,
   Line,
@@ -923,7 +922,7 @@ export default function ReportsPage() {
               </div>
             ) : chartData.length > 0 && meta ? (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }} stackOffset="sign">
+                <ComposedChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }} stackOffset="sign">
                   <XAxis
                     dataKey="date"
                     tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
@@ -1002,7 +1001,20 @@ export default function ReportsPage() {
                       )
                     })
                   })()}
-                </BarChart>
+                  {meta.type === 'net_worth' && (
+                    <Line
+                      type="monotone"
+                      dataKey="value"
+                      name={t('reports.netWorth', { defaultValue: 'Net Worth' })}
+                      stroke="#10B981"
+                      strokeWidth={2}
+                      strokeDasharray="6 3"
+                      dot={false}
+                      activeDot={{ r: 4, fill: '#10B981' }}
+                      isAnimationActive={false}
+                    />
+                  )}
+                </ComposedChart>
               </ResponsiveContainer>
             ) : (
               <p className="text-muted-foreground text-sm text-center py-16">
