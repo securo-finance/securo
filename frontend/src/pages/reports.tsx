@@ -40,6 +40,8 @@ function formatCompact(value: number, currency = 'USD', locale = 'en-US') {
 }
 
 
+const COMPOSITION_TOP_N = 6
+
 type RangeOption = { key: string; months: number; period?: 'ytd' }
 
 const HISTORICAL_RANGE_OPTIONS: readonly RangeOption[] = [
@@ -107,6 +109,7 @@ export default function ReportsPage() {
   const [rangeKey, setRangeKey] = useState('1y')
   const [interval, setInterval] = useState('monthly')
   const [activeTab, setActiveTab] = useState('net_worth')
+  const [compositionView, setCompositionView] = useState<string>('summary')
   const [sparklineView, setSparklineView] = useState<'byExpenses' | 'byIncome'>('byExpenses')
   const [sparklinePage, setSparklinePage] = useState(0)
   const [cashFlowBaseline, setCashFlowBaseline] = useState(false)
@@ -122,6 +125,7 @@ export default function ReportsPage() {
 
   const handleSelectTab = (key: string) => {
     setActiveTab(key)
+    setCompositionView('summary')
     setSparklinePage(0)
     // Clamp months/interval to options supported by the new tab
     const nextRanges = key === 'cash_flow' ? FORWARD_RANGE_OPTIONS : HISTORICAL_RANGE_OPTIONS
@@ -193,6 +197,40 @@ export default function ReportsPage() {
   const tooltipItemStyle = { color: 'var(--foreground)' }
 
   const composition = data?.composition ?? []
+
+  // Composition toggle options — only used for income_expenses / cash_flow
+  const compositionOptions = meta?.type === 'income_expenses' || meta?.type === 'cash_flow'
+    ? ['summary', 'byIncome', 'byExpenses'] as const
+    : ['summary', 'detailed'] as const
+
+  // Legacy single-ring donut data for income_expenses / cash_flow
+  const legacyDonutData = (() => {
+    if (compositionView === 'summary' || composition.length === 0) {
+      const excludedKeys = new Set(['netIncome', 'startingBalance', 'endingBalance'])
+      return breakdownData
+        .filter((b) => b.value > 0 && !excludedKeys.has(b.key))
+        .map((b) => ({
+          name: t(`reports.${b.key}`, { defaultValue: b.label }),
+          value: b.value,
+          color: b.color,
+        }))
+    }
+    let items = composition
+    if (compositionView === 'byIncome') items = composition.filter((c) => c.group === 'income')
+    else if (compositionView === 'byExpenses') items = composition.filter((c) => c.group === 'expenses')
+    const sorted = [...items].sort((a, b) => b.value - a.value)
+    const top = sorted.slice(0, COMPOSITION_TOP_N)
+    const rest = sorted.slice(COMPOSITION_TOP_N)
+    const otherValue = rest.reduce((sum, c) => sum + c.value, 0)
+    const result = top.map((c) => {
+      let name = c.label
+      if (c.key === 'uncategorized') name = t('reports.uncategorized')
+      else if (c.key === 'baseline') name = t('reports.baseline')
+      return { name, value: c.value, color: c.color }
+    })
+    if (otherValue > 0) result.push({ name: t('reports.other'), value: Math.round(otherValue * 100) / 100, color: '#6B7280' })
+    return result
+  })()
 
   // Inner ring — summary view (high-level breakdown)
   const innerDonutData = (() => {
@@ -685,146 +723,244 @@ export default function ReportsPage() {
 
       {/* Breakdown: Donut + Grouped Bar */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Double-ring Donut Chart — Composition */}
+        {/* Composition widget — double ring for net_worth, toggled single ring for others */}
         <div className="bg-card rounded-xl border border-border shadow-sm">
-          <div className="px-5 pt-4 pb-2">
+          <div className="px-5 pt-4 pb-2 flex items-center justify-between">
             <p className="text-sm font-semibold text-foreground">{t('reports.composition')}</p>
+            {meta?.type !== 'net_worth' && (
+              <div className="flex items-center rounded-lg border border-border bg-muted/30 overflow-hidden">
+                {compositionOptions.map((opt) => (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => setCompositionView(opt)}
+                    className={`px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                      compositionView === opt
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                    }`}
+                  >
+                    {t(`reports.${opt}`)}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="px-1 pb-4">
             {isLoading ? (
               <div className="px-4" style={{ height: 200 }}>
                 <Skeleton className="h-full w-full" />
               </div>
-            ) : innerDonutData.length > 0 ? (
-              (() => {
-                const hasOuter = outerDonutData.length > 0
-                const donutTotal = innerDonutData.reduce((s, d) => s + d.value, 0)
-                const centerLabel = meta?.type === 'income_expenses'
-                  ? t('reports.netIncome')
-                  : meta?.type === 'cash_flow'
-                    ? t('reports.vsToday')
-                    : t(currentTab.labelKey)
-                const centerValue = meta?.type === 'cash_flow'
-                  ? (summary?.change_amount ?? 0)
-                  : (summary?.primary_value ?? 0)
-                return (
-                  <div className="flex flex-col items-center">
-                    <div className="relative" style={{ width: 200, height: 200 }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          {/* Inner ring — summary */}
-                          <Pie
-                            data={innerDonutData}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={55}
-                            outerRadius={hasOuter ? 63 : 85}
-                            paddingAngle={hasOuter ? 0 : 3}
-                            dataKey="value"
-                            stroke="var(--card)"
-                            strokeWidth={hasOuter ? 2 : 0}
-                          >
-                            {innerDonutData.map((entry, idx) => (
-                              <Cell key={idx} fill={entry.color} />
-                            ))}
-                          </Pie>
-                          {/* Outer ring — detailed */}
-                          {hasOuter && (
+            ) : meta?.type === 'net_worth' ? (
+              /* ── Net worth: double-ring chart ── */
+              innerDonutData.length > 0 ? (
+                (() => {
+                  const hasOuter = outerDonutData.length > 0
+                  const donutTotal = innerDonutData.reduce((s, d) => s + d.value, 0)
+                  return (
+                    <div className="flex flex-col items-center">
+                      <div className="relative" style={{ width: 200, height: 200 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
                             <Pie
-                              data={outerDonutData}
+                              data={innerDonutData}
                               cx="50%"
                               cy="50%"
-                              innerRadius={64}
-                              outerRadius={90}
-                              paddingAngle={0}
+                              innerRadius={55}
+                              outerRadius={hasOuter ? 63 : 85}
+                              paddingAngle={hasOuter ? 0 : 3}
                               dataKey="value"
                               stroke="var(--card)"
-                              strokeWidth={2}
+                              strokeWidth={hasOuter ? 2 : 0}
                             >
-                              {outerDonutData.map((entry, idx) => (
+                              {innerDonutData.map((entry, idx) => (
                                 <Cell key={idx} fill={entry.color} />
                               ))}
                             </Pie>
-                          )}
-                          <Tooltip
-                            content={({ active, payload }) => {
-                              if (!active || !payload?.length) return null
-                              const entry = payload[0]
-                              const v = (entry.value as number) ?? 0
-                              const pct = donutTotal > 0 ? ((v / donutTotal) * 100).toFixed(1) : '0'
-                              const rawName = (entry.name as string) ?? ''
-                              const displayName = rawName.length > 45 ? rawName.slice(0, 42) + '…' : rawName
-                              const subItems = (entry.payload as { subItems?: { name: string; value: number }[] }).subItems
-                              return (
-                                <div style={{ ...tooltipStyle, padding: '8px 12px', zIndex: 10 }}>
-                                  <p className="text-xs font-semibold mb-1">{displayName}</p>
-                                  <p className="text-xs">
-                                    {privacyMode ? MASK : `${formatCurrency(v, userCurrency, locale)} (${pct}%)`}
-                                  </p>
-                                  {subItems && subItems.length > 0 && (
-                                    <div className="mt-2 pt-1.5 border-t border-border space-y-0.5">
-                                      {subItems.slice(0, 10).map((item) => {
-                                        const itemPct = donutTotal > 0 ? ((item.value / donutTotal) * 100).toFixed(1) : '0'
-                                        const itemName = item.name.length > 45 ? item.name.slice(0, 42) + '…' : item.name
-                                        return (
-                                          <div key={item.name} className="flex justify-between gap-4 text-xs">
-                                            <span className="text-muted-foreground">{itemName}</span>
-                                            <span className="tabular-nums">
-                                              {privacyMode ? MASK : `${formatCurrency(item.value, userCurrency, locale)} (${itemPct}%)`}
-                                            </span>
-                                          </div>
-                                        )
-                                      })}
-                                      {subItems.length > 10 && (() => {
-                                        const restValue = subItems.slice(10).reduce((s, i) => s + i.value, 0)
-                                        const restPct = donutTotal > 0 ? ((restValue / donutTotal) * 100).toFixed(1) : '0'
-                                        return (
-                                          <div className="flex justify-between gap-4 text-xs pt-0.5 border-t border-border/50">
-                                            <span className="text-muted-foreground/60 italic">
-                                              +{subItems.length - 10} {t('reports.other').toLowerCase()}
-                                            </span>
-                                            <span className="tabular-nums text-muted-foreground/60">
-                                              {privacyMode ? MASK : `${formatCurrency(restValue, userCurrency, locale)} (${restPct}%)`}
-                                            </span>
-                                          </div>
-                                        )
-                                      })()}
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            }}
-                            wrapperStyle={{ zIndex: 10 }}
-                            offset={20}
-                          />
-                        </PieChart>
-                      </ResponsiveContainer>
-                      {/* Center label — positioned absolutely over the SVG */}
-                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none" style={{ zIndex: 0 }}>
-                        <span className="text-[10px] text-muted-foreground">{centerLabel}</span>
-                        <span className="text-base font-bold text-foreground tabular-nums">
-                          {mask(formatCompact(centerValue, userCurrency, locale))}
-                        </span>
-                      </div>
-                    </div>
-                    {/* Legend — inner ring (summary) then outer ring (detailed) */}
-                    <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 px-3 mt-1">
-                      {[...innerDonutData, ...outerDonutData].map((d) => (
-                        <div key={d.name} className="flex items-center gap-1.5">
-                          <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                          <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-                            {d.name.length > 30 ? d.name.slice(0, 27) + '…' : d.name}
+                            {hasOuter && (
+                              <Pie
+                                data={outerDonutData}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={64}
+                                outerRadius={90}
+                                paddingAngle={0}
+                                dataKey="value"
+                                stroke="var(--card)"
+                                strokeWidth={2}
+                              >
+                                {outerDonutData.map((entry, idx) => (
+                                  <Cell key={idx} fill={entry.color} />
+                                ))}
+                              </Pie>
+                            )}
+                            <Tooltip
+                              content={({ active, payload }) => {
+                                if (!active || !payload?.length) return null
+                                const entry = payload[0]
+                                const v = (entry.value as number) ?? 0
+                                const pct = donutTotal > 0 ? ((v / donutTotal) * 100).toFixed(1) : '0'
+                                const rawName = (entry.name as string) ?? ''
+                                const displayName = rawName.length > 50 ? rawName.slice(0, 47) + '…' : rawName
+                                const subItems = (entry.payload as { subItems?: { name: string; value: number }[] }).subItems
+                                return (
+                                  <div style={{ ...tooltipStyle, padding: '8px 12px', zIndex: 10, minWidth: 260 }}>
+                                    <p className="text-xs font-semibold mb-1">{displayName}</p>
+                                    <p className="text-xs">
+                                      {privacyMode ? MASK : `${formatCurrency(v, userCurrency, locale)} (${pct}%)`}
+                                    </p>
+                                    {subItems && subItems.length > 0 && (
+                                      <div className="mt-2 pt-1.5 border-t border-border space-y-0.5">
+                                        {subItems.slice(0, 10).map((item) => {
+                                          const itemPct = donutTotal > 0 ? ((item.value / donutTotal) * 100).toFixed(1) : '0'
+                                          const itemName = item.name.length > 20 ? item.name.slice(0, 17) + '…' : item.name
+                                          return (
+                                            <div key={item.name} className="flex justify-between gap-4 text-xs">
+                                              <span className="text-muted-foreground">{itemName}</span>
+                                              <span className="tabular-nums">
+                                                {privacyMode ? MASK : `${formatCurrency(item.value, userCurrency, locale)} (${itemPct}%)`}
+                                              </span>
+                                            </div>
+                                          )
+                                        })}
+                                        {subItems.length > 10 && (() => {
+                                          const restValue = subItems.slice(10).reduce((s, i) => s + i.value, 0)
+                                          const restPct = donutTotal > 0 ? ((restValue / donutTotal) * 100).toFixed(1) : '0'
+                                          return (
+                                            <div className="flex justify-between gap-4 text-xs pt-0.5 border-t border-border/50">
+                                              <span className="text-muted-foreground/60 italic">
+                                                +{subItems.length - 10} {t('reports.other').toLowerCase()}
+                                              </span>
+                                              <span className="tabular-nums text-muted-foreground/60">
+                                                {privacyMode ? MASK : `${formatCurrency(restValue, userCurrency, locale)} (${restPct}%)`}
+                                              </span>
+                                            </div>
+                                          )
+                                        })()}
+                                      </div>
+                                    )}
+                                  </div>
+                                )
+                              }}
+                              wrapperStyle={{ zIndex: 10 }}
+                              offset={20}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none" style={{ zIndex: 0 }}>
+                          <span className="text-[10px] text-muted-foreground">{t(currentTab.labelKey)}</span>
+                          <span className="text-base font-bold text-foreground tabular-nums">
+                            {mask(formatCompact(summary?.primary_value ?? 0, userCurrency, locale))}
                           </span>
                         </div>
-                      ))}
+                      </div>
+                      <div className="flex flex-col items-center gap-1 px-3 mt-1 w-full">
+                        <div className="flex flex-wrap justify-center gap-x-3 gap-y-1">
+                          {innerDonutData.map((d) => (
+                            <div key={d.name} className="flex items-center gap-1.5">
+                              <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                              <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                                {d.name.length > 30 ? d.name.slice(0, 27) + '…' : d.name}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        {hasOuter && (
+                          <div className="flex flex-wrap justify-center gap-x-3 gap-y-1">
+                            {outerDonutData.map((d) => (
+                              <div key={d.name} className="flex items-center gap-1.5">
+                                <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                                <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                                  {d.name.length > 30 ? d.name.slice(0, 27) + '…' : d.name}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )
-              })()
+                  )
+                })()
+              ) : (
+                <p className="text-muted-foreground text-sm text-center py-16">{t('reports.noData')}</p>
+              )
             ) : (
-              <p className="text-muted-foreground text-sm text-center py-16">
-                {t('reports.noData')}
-              </p>
+              /* ── Income/expenses & cash flow: original single-ring with toggle ── */
+              legacyDonutData.length > 0 ? (
+                (() => {
+                  const donutTotal = legacyDonutData.reduce((s, d) => s + d.value, 0)
+                  const centerLabel = compositionView === 'byIncome'
+                    ? t('reports.income')
+                    : compositionView === 'byExpenses'
+                      ? t('reports.expenses')
+                      : meta?.type === 'income_expenses'
+                        ? t('reports.netIncome')
+                        : t('reports.vsToday')
+                  const centerValue = compositionView === 'byIncome'
+                    ? (summary?.breakdowns.find((b) => b.key === 'income' || b.key === 'projectedIncome')?.value ?? 0)
+                    : compositionView === 'byExpenses'
+                      ? (summary?.breakdowns.find((b) => b.key === 'expenses' || b.key === 'projectedExpenses')?.value ?? 0)
+                      : meta?.type === 'cash_flow'
+                        ? (summary?.change_amount ?? 0)
+                        : (summary?.primary_value ?? 0)
+                  return (
+                    <div className="flex flex-col items-center">
+                      <div className="relative" style={{ width: 200, height: 200 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={legacyDonutData}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={55}
+                              outerRadius={85}
+                              paddingAngle={3}
+                              dataKey="value"
+                              strokeWidth={0}
+                            >
+                              {legacyDonutData.map((entry, idx) => (
+                                <Cell key={idx} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip
+                              formatter={(value?: number, name?: string) => {
+                                const v = value ?? 0
+                                const pct = donutTotal > 0 ? ((v / donutTotal) * 100).toFixed(1) : '0'
+                                return [
+                                  privacyMode ? MASK : `${formatCurrency(v, userCurrency, locale)} (${pct}%)`,
+                                  name,
+                                ]
+                              }}
+                              contentStyle={{ ...tooltipStyle, zIndex: 10 }}
+                              itemStyle={tooltipItemStyle}
+                              wrapperStyle={{ zIndex: 10 }}
+                              offset={20}
+                            />
+                          </PieChart>
+                        </ResponsiveContainer>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none" style={{ zIndex: 0 }}>
+                          <span className="text-[10px] text-muted-foreground">{centerLabel}</span>
+                          <span className="text-base font-bold text-foreground tabular-nums">
+                            {mask(formatCompact(centerValue, userCurrency, locale))}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 px-3 mt-1">
+                        {legacyDonutData.map((d) => (
+                          <div key={d.name} className="flex items-center gap-1.5">
+                            <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                            <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                              {d.name.length > 30 ? d.name.slice(0, 27) + '…' : d.name}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })()
+              ) : (
+                <p className="text-muted-foreground text-sm text-center py-16">{t('reports.noData')}</p>
+              )
             )}
           </div>
         </div>
