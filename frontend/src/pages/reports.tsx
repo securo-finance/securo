@@ -227,20 +227,28 @@ export default function ReportsPage() {
     const grandTotal = innerDonutData.reduce((s, d) => s + d.value, 0)
     const threshold = grandTotal * 0.01
 
-    const result: { name: string; value: number; color: string }[] = []
+    const itemLabel = (c: { label: string; key: string }) => {
+      if (c.key === 'uncategorized') return t('reports.uncategorized')
+      if (c.key === 'baseline') return t('reports.baseline')
+      return c.label
+    }
+
+    const result: { name: string; value: number; color: string; subItems?: { name: string; value: number }[] }[] = []
     for (const group of innerGroups) {
       const sorted = [...(byGroup.get(group) ?? [])].sort((a, b) => b.value - a.value)
       const significant = sorted.filter((c) => c.value >= threshold)
       const small = sorted.filter((c) => c.value < threshold)
       const otherValue = small.reduce((sum, c) => sum + c.value, 0)
       for (const c of significant) {
-        let name = c.label
-        if (c.key === 'uncategorized') name = t('reports.uncategorized')
-        else if (c.key === 'baseline') name = t('reports.baseline')
-        result.push({ name, value: c.value, color: c.color })
+        result.push({ name: itemLabel(c), value: c.value, color: c.color })
       }
       if (otherValue > 0) {
-        result.push({ name: t('reports.other'), value: Math.round(otherValue * 100) / 100, color: '#6B7280' })
+        result.push({
+          name: t('reports.other'),
+          value: Math.round(otherValue * 100) / 100,
+          color: '#6B7280',
+          subItems: small.map((c) => ({ name: itemLabel(c), value: c.value })),
+        })
       }
     }
     return result
@@ -739,16 +747,53 @@ export default function ReportsPage() {
                             </Pie>
                           )}
                           <Tooltip
-                            formatter={(value?: number, name?: string) => {
-                              const v = value ?? 0
+                            content={({ active, payload }) => {
+                              if (!active || !payload?.length) return null
+                              const entry = payload[0]
+                              const v = (entry.value as number) ?? 0
                               const pct = donutTotal > 0 ? ((v / donutTotal) * 100).toFixed(1) : '0'
-                              return [
-                                privacyMode ? MASK : `${formatCurrency(v, userCurrency, locale)} (${pct}%)`,
-                                name,
-                              ]
+                              const rawName = (entry.name as string) ?? ''
+                              const displayName = rawName.length > 45 ? rawName.slice(0, 42) + '…' : rawName
+                              const subItems = (entry.payload as { subItems?: { name: string; value: number }[] }).subItems
+                              return (
+                                <div style={{ ...tooltipStyle, padding: '8px 12px', zIndex: 10 }}>
+                                  <p className="text-xs font-semibold mb-1">{displayName}</p>
+                                  <p className="text-xs">
+                                    {privacyMode ? MASK : `${formatCurrency(v, userCurrency, locale)} (${pct}%)`}
+                                  </p>
+                                  {subItems && subItems.length > 0 && (
+                                    <div className="mt-2 pt-1.5 border-t border-border space-y-0.5">
+                                      {subItems.slice(0, 10).map((item) => {
+                                        const itemPct = donutTotal > 0 ? ((item.value / donutTotal) * 100).toFixed(1) : '0'
+                                        const itemName = item.name.length > 45 ? item.name.slice(0, 42) + '…' : item.name
+                                        return (
+                                          <div key={item.name} className="flex justify-between gap-4 text-xs">
+                                            <span className="text-muted-foreground">{itemName}</span>
+                                            <span className="tabular-nums">
+                                              {privacyMode ? MASK : `${formatCurrency(item.value, userCurrency, locale)} (${itemPct}%)`}
+                                            </span>
+                                          </div>
+                                        )
+                                      })}
+                                      {subItems.length > 10 && (() => {
+                                        const restValue = subItems.slice(10).reduce((s, i) => s + i.value, 0)
+                                        const restPct = donutTotal > 0 ? ((restValue / donutTotal) * 100).toFixed(1) : '0'
+                                        return (
+                                          <div className="flex justify-between gap-4 text-xs pt-0.5 border-t border-border/50">
+                                            <span className="text-muted-foreground/60 italic">
+                                              +{subItems.length - 10} {t('reports.other').toLowerCase()}
+                                            </span>
+                                            <span className="tabular-nums text-muted-foreground/60">
+                                              {privacyMode ? MASK : `${formatCurrency(restValue, userCurrency, locale)} (${restPct}%)`}
+                                            </span>
+                                          </div>
+                                        )
+                                      })()}
+                                    </div>
+                                  )}
+                                </div>
+                              )
                             }}
-                            contentStyle={{ ...tooltipStyle, zIndex: 10 }}
-                            itemStyle={tooltipItemStyle}
                             wrapperStyle={{ zIndex: 10 }}
                             offset={20}
                           />
@@ -768,7 +813,7 @@ export default function ReportsPage() {
                         <div key={d.name} className="flex items-center gap-1.5">
                           <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
                           <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-                            {d.name}
+                            {d.name.length > 30 ? d.name.slice(0, 27) + '…' : d.name}
                           </span>
                         </div>
                       ))}
