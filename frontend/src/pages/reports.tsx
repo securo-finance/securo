@@ -198,10 +198,21 @@ export default function ReportsPage() {
 
   const composition = data?.composition ?? []
 
-  // Composition toggle options — only used for income_expenses / cash_flow
-  const compositionOptions = meta?.type === 'income_expenses' || meta?.type === 'cash_flow'
-    ? ['summary', 'byIncome', 'byExpenses'] as const
-    : ['summary', 'detailed'] as const
+  // Composition toggle options per report type
+  const compositionOptions = meta?.type === 'net_worth'
+    ? ['net', 'assets', 'liabilities'] as const
+    : meta?.type === 'income_expenses' || meta?.type === 'cash_flow'
+      ? ['summary', 'byIncome', 'byExpenses'] as const
+      : ['summary', 'detailed'] as const
+
+  // For net_worth: which breakdown groups are visible in each toggle state.
+  // null means "show all" (the Net state).
+  const netWorthActiveGroups: Set<string> | null =
+    meta?.type === 'net_worth'
+      ? compositionView === 'assets' ? new Set(['accounts', 'assets'])
+        : compositionView === 'liabilities' ? new Set(['liabilities'])
+        : null
+      : null
 
   // Legacy single-ring donut data for income_expenses / cash_flow
   const legacyDonutData = (() => {
@@ -232,11 +243,11 @@ export default function ReportsPage() {
     return result
   })()
 
-  // Inner ring — summary view (high-level breakdown)
+  // Inner ring — summary view (high-level breakdown), filtered by toggle state for net_worth
   const innerDonutData = (() => {
     const excludedKeys = new Set(['netIncome', 'startingBalance', 'endingBalance'])
     return breakdownData
-      .filter((b) => !excludedKeys.has(b.key))
+      .filter((b) => !excludedKeys.has(b.key) && (!netWorthActiveGroups || netWorthActiveGroups.has(b.key)))
       .map((b) => ({
         name: t(`reports.${b.key}`, { defaultValue: b.label }),
         value: b.value,
@@ -252,7 +263,7 @@ export default function ReportsPage() {
 
     const excludedKeys = new Set(['netIncome', 'startingBalance', 'endingBalance'])
     const innerGroups = breakdownData
-      .filter((b) => !excludedKeys.has(b.key))
+      .filter((b) => !excludedKeys.has(b.key) && (!netWorthActiveGroups || netWorthActiveGroups.has(b.key)))
       .map((b) => b.key)
 
     const byGroup = new Map<string, typeof composition>()
@@ -281,8 +292,13 @@ export default function ReportsPage() {
         result.push({ name: itemLabel(c), value: c.value, color: c.color })
       }
       if (otherValue > 0) {
+        const otherGroupLabel: Record<string, string> = {
+          accounts: t('reports.otherAccounts', { defaultValue: 'Other Accounts' }),
+          assets: t('reports.otherAssets', { defaultValue: 'Other Assets' }),
+          liabilities: t('reports.otherLiabilities', { defaultValue: 'Other Liabilities' }),
+        }
         result.push({
-          name: t('reports.other'),
+          name: otherGroupLabel[group] ?? t('reports.other'),
           value: Math.round(otherValue * 100) / 100,
           color: '#6B7280',
           subItems: small.map((c) => ({ name: itemLabel(c), value: c.value })),
@@ -727,7 +743,7 @@ export default function ReportsPage() {
         <div className="bg-card rounded-xl border border-border shadow-sm">
           <div className="px-5 pt-4 pb-2 flex items-center justify-between">
             <p className="text-sm font-semibold text-foreground">{t('reports.composition')}</p>
-            {meta?.type !== 'net_worth' && (
+            {(
               <div className="flex items-center rounded-lg border border-border bg-muted/30 overflow-hidden">
                 {compositionOptions.map((opt) => (
                   <button
@@ -848,16 +864,25 @@ export default function ReportsPage() {
                           </PieChart>
                         </ResponsiveContainer>
                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none" style={{ zIndex: 0 }}>
-                          <span className="text-[10px] text-muted-foreground">{t(currentTab.labelKey)}</span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {compositionView === 'assets' ? t('reports.youOwn', { defaultValue: 'You Own' })
+                              : compositionView === 'liabilities' ? t('reports.youOwe', { defaultValue: 'You Owe' })
+                              : t(currentTab.labelKey)}
+                          </span>
                           <span className="text-base font-bold text-foreground tabular-nums">
-                            {mask(formatCompact(summary?.primary_value ?? 0, userCurrency, locale))}
+                            {mask(formatCompact(
+                              compositionView === 'net' || !compositionView
+                                ? (summary?.primary_value ?? 0)
+                                : innerDonutData.reduce((s, d) => s + d.value, 0),
+                              userCurrency, locale
+                            ))}
                           </span>
                         </div>
                       </div>
-                      <div className="flex flex-col items-center gap-1 px-3 mt-1 w-full">
+                      <div key={compositionView} className="flex flex-col items-center gap-1 px-3 mt-1 w-full">
                         <div className="flex flex-wrap justify-center gap-x-3 gap-y-1">
-                          {innerDonutData.map((d) => (
-                            <div key={d.name} className="flex items-center gap-1.5">
+                          {innerDonutData.map((d, i) => (
+                            <div key={`${i}-${d.name}`} className="flex items-center gap-1.5">
                               <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
                               <span className="text-[11px] text-muted-foreground whitespace-nowrap">
                                 {d.name.length > 30 ? d.name.slice(0, 27) + '…' : d.name}
@@ -867,8 +892,8 @@ export default function ReportsPage() {
                         </div>
                         {hasOuter && (
                           <div className="flex flex-wrap justify-center gap-x-3 gap-y-1">
-                            {outerDonutData.map((d) => (
-                              <div key={d.name} className="flex items-center gap-1.5">
+                            {outerDonutData.map((d, i) => (
+                              <div key={`${i}-${d.name}`} className="flex items-center gap-1.5">
                                 <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
                                 <span className="text-[11px] text-muted-foreground whitespace-nowrap">
                                   {d.name.length > 30 ? d.name.slice(0, 27) + '…' : d.name}
