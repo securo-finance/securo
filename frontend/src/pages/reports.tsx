@@ -710,7 +710,7 @@ export default function ReportsPage() {
                             cx="50%"
                             cy="50%"
                             innerRadius={55}
-                            outerRadius={hasOuter ? 59 : 85}
+                            outerRadius={hasOuter ? 63 : 85}
                             paddingAngle={hasOuter ? 0 : 3}
                             dataKey="value"
                             stroke="var(--card)"
