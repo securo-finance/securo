@@ -200,7 +200,7 @@ export default function ReportsPage() {
 
   // Composition toggle options per report type
   const compositionOptions = meta?.type === 'net_worth'
-    ? ['net', 'assets', 'liabilities'] as const
+    ? ['net', 'assetsAndAccounts', 'liabilities'] as const
     : meta?.type === 'income_expenses' || meta?.type === 'cash_flow'
       ? ['summary', 'byIncome', 'byExpenses'] as const
       : ['summary', 'detailed'] as const
@@ -209,7 +209,7 @@ export default function ReportsPage() {
   // null means "show all" (the Net state).
   const netWorthActiveGroups: Set<string> | null =
     meta?.type === 'net_worth'
-      ? compositionView === 'assets' ? new Set(['accounts', 'assets'])
+      ? compositionView === 'assetsAndAccounts' ? new Set(['accounts', 'assets'])
         : compositionView === 'liabilities' ? new Set(['liabilities'])
         : null
       : null
@@ -865,7 +865,7 @@ export default function ReportsPage() {
                         </ResponsiveContainer>
                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none" style={{ zIndex: 0 }}>
                           <span className="text-[10px] text-muted-foreground">
-                            {compositionView === 'assets' ? t('reports.youOwn', { defaultValue: 'You Own' })
+                            {compositionView === 'assetsAndAccounts' ? t('reports.youOwn', { defaultValue: 'You Own' })
                               : compositionView === 'liabilities' ? t('reports.youOwe', { defaultValue: 'You Owe' })
                               : t(currentTab.labelKey)}
                           </span>
