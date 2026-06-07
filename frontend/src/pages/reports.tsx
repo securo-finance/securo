@@ -108,7 +108,6 @@ export default function ReportsPage() {
   const [rangeKey, setRangeKey] = useState('1y')
   const [interval, setInterval] = useState('monthly')
   const [activeTab, setActiveTab] = useState('net_worth')
-  const [compositionView, setCompositionView] = useState<string>('summary')
   const [sparklineView, setSparklineView] = useState<'byExpenses' | 'byIncome'>('byExpenses')
   const [sparklinePage, setSparklinePage] = useState(0)
   const [cashFlowBaseline, setCashFlowBaseline] = useState(false)
@@ -124,7 +123,6 @@ export default function ReportsPage() {
 
   const handleSelectTab = (key: string) => {
     setActiveTab(key)
-    setCompositionView('summary')
     setSparklinePage(0)
     // Clamp months/interval to options supported by the new tab
     const nextRanges = key === 'cash_flow' ? FORWARD_RANGE_OPTIONS : HISTORICAL_RANGE_OPTIONS
@@ -195,37 +193,45 @@ export default function ReportsPage() {
 
   const tooltipItemStyle = { color: 'var(--foreground)' }
 
-  // Composition view options per report type
-  const compositionOptions = meta?.type === 'income_expenses' || meta?.type === 'cash_flow'
-    ? ['summary', 'byIncome', 'byExpenses'] as const
-    : ['summary', 'detailed'] as const
-
-  // Build donut data based on composition view
   const composition = data?.composition ?? []
 
-  const donutData = (() => {
-    if (compositionView === 'summary' || composition.length === 0) {
-      const excludedKeys = new Set(['netIncome', 'startingBalance', 'endingBalance'])
-      return breakdownData
-        .filter((b) => b.value > 0 && !excludedKeys.has(b.key))
-        .map((b) => ({
-          name: t(`reports.${b.key}`, { defaultValue: b.label }),
-          value: b.value,
-          color: b.color,
-        }))
+  // Inner ring — summary view (high-level breakdown)
+  const innerDonutData = (() => {
+    const excludedKeys = new Set(['netIncome', 'startingBalance', 'endingBalance'])
+    return breakdownData
+      .filter((b) => !excludedKeys.has(b.key))
+      .map((b) => ({
+        name: t(`reports.${b.key}`, { defaultValue: b.label }),
+        value: b.value,
+        color: b.color,
+      }))
+  })()
+
+  // Outer ring — detailed view, ordered to align with inner ring
+  const outerDonutData = (() => {
+    if (composition.length === 0) return []
+
+    const isIncomeExpenses = meta?.type === 'income_expenses' || meta?.type === 'cash_flow'
+    let orderedItems: typeof composition
+
+    if (isIncomeExpenses) {
+      const income = [...composition.filter((c) => c.group === 'income')].sort((a, b) => b.value - a.value)
+      const expenses = [...composition.filter((c) => c.group === 'expenses')].sort((a, b) => b.value - a.value)
+      orderedItems = [...income, ...expenses]
+    } else {
+      const innerGroupOrder = breakdownData
+        .filter((b) => !new Set(['netIncome', 'startingBalance', 'endingBalance']).has(b.key))
+        .map((b) => b.key)
+      orderedItems = [...composition].sort((a, b) => {
+        const ai = innerGroupOrder.indexOf(a.group)
+        const bi = innerGroupOrder.indexOf(b.group)
+        if (ai !== bi) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi)
+        return b.value - a.value
+      })
     }
 
-    let items = composition
-    if (compositionView === 'byIncome') {
-      items = composition.filter((c) => c.group === 'income')
-    } else if (compositionView === 'byExpenses') {
-      items = composition.filter((c) => c.group === 'expenses')
-    }
-
-    // Sort descending, take top N, bucket the rest into "Other"
-    const sorted = [...items].sort((a, b) => b.value - a.value)
-    const top = sorted.slice(0, COMPOSITION_TOP_N)
-    const rest = sorted.slice(COMPOSITION_TOP_N)
+    const top = orderedItems.slice(0, COMPOSITION_TOP_N)
+    const rest = orderedItems.slice(COMPOSITION_TOP_N)
     const otherValue = rest.reduce((sum, c) => sum + c.value, 0)
 
     const result = top.map((c) => {
@@ -671,69 +677,65 @@ export default function ReportsPage() {
 
       {/* Breakdown: Donut + Grouped Bar */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Donut Chart — Current Composition */}
+        {/* Double-ring Donut Chart — Composition */}
         <div className="bg-card rounded-xl border border-border shadow-sm">
-          <div className="px-5 pt-4 pb-2 flex items-center justify-between">
+          <div className="px-5 pt-4 pb-2">
             <p className="text-sm font-semibold text-foreground">{t('reports.composition')}</p>
-            <div className="flex items-center rounded-lg border border-border bg-muted/30 overflow-hidden">
-              {compositionOptions.map((opt) => (
-                <button
-                  key={opt}
-                  onClick={() => setCompositionView(opt)}
-                  className={`px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                    compositionView === opt
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                  }`}
-                >
-                  {t(`reports.${opt}`)}
-                </button>
-              ))}
-            </div>
           </div>
           <div className="px-1 pb-4">
             {isLoading ? (
               <div className="px-4" style={{ height: 200 }}>
                 <Skeleton className="h-full w-full" />
               </div>
-            ) : donutData.length > 0 ? (
+            ) : innerDonutData.length > 0 ? (
               (() => {
-                const donutTotal = donutData.reduce((s, d) => s + d.value, 0)
-                const centerLabel = compositionView === 'byIncome'
-                  ? t('reports.income')
-                  : compositionView === 'byExpenses'
-                    ? t('reports.expenses')
-                    : meta?.type === 'income_expenses'
-                      ? t('reports.netIncome')
-                      : meta?.type === 'cash_flow'
-                        ? t('reports.vsToday')
-                        : t(currentTab.labelKey)
-                const centerValue = compositionView === 'byIncome'
-                  ? (summary?.breakdowns.find((b) => b.key === 'income' || b.key === 'projectedIncome')?.value ?? 0)
-                  : compositionView === 'byExpenses'
-                    ? (summary?.breakdowns.find((b) => b.key === 'expenses' || b.key === 'projectedExpenses')?.value ?? 0)
-                    : meta?.type === 'cash_flow'
-                      ? (summary?.change_amount ?? 0)
-                      : (summary?.primary_value ?? 0)
+                const hasOuter = outerDonutData.length > 0
+                const donutTotal = innerDonutData.reduce((s, d) => s + d.value, 0)
+                const centerLabel = meta?.type === 'income_expenses'
+                  ? t('reports.netIncome')
+                  : meta?.type === 'cash_flow'
+                    ? t('reports.vsToday')
+                    : t(currentTab.labelKey)
+                const centerValue = meta?.type === 'cash_flow'
+                  ? (summary?.change_amount ?? 0)
+                  : (summary?.primary_value ?? 0)
                 return (
                   <div className="flex flex-col items-center">
                     <div className="relative" style={{ width: 200, height: 200 }}>
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
+                          {/* Inner ring — summary */}
                           <Pie
-                            data={donutData}
+                            data={innerDonutData}
                             cx="50%"
                             cy="50%"
                             innerRadius={55}
-                            outerRadius={85}
-                            paddingAngle={3}
+                            outerRadius={hasOuter ? 59 : 85}
+                            paddingAngle={hasOuter ? 1 : 3}
                             dataKey="value"
                             strokeWidth={0}
                           >
-                            {donutData.map((entry, idx) => (
+                            {innerDonutData.map((entry, idx) => (
                               <Cell key={idx} fill={entry.color} />
                             ))}
                           </Pie>
+                          {/* Outer ring — detailed */}
+                          {hasOuter && (
+                            <Pie
+                              data={outerDonutData}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={64}
+                              outerRadius={90}
+                              paddingAngle={2}
+                              dataKey="value"
+                              strokeWidth={0}
+                            >
+                              {outerDonutData.map((entry, idx) => (
+                                <Cell key={idx} fill={entry.color} />
+                              ))}
+                            </Pie>
+                          )}
                           <Tooltip
                             formatter={(value?: number, name?: string) => {
                               const v = value ?? 0
@@ -758,9 +760,9 @@ export default function ReportsPage() {
                         </span>
                       </div>
                     </div>
-                    {/* Custom legend */}
+                    {/* Legend — inner ring (summary) then outer ring (detailed) */}
                     <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 px-3 mt-1">
-                      {donutData.map((d) => (
+                      {[...innerDonutData, ...outerDonutData].map((d) => (
                         <div key={d.name} className="flex items-center gap-1.5">
                           <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
                           <span className="text-[11px] text-muted-foreground whitespace-nowrap">
