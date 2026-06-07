@@ -207,41 +207,39 @@ export default function ReportsPage() {
       }))
   })()
 
-  // Outer ring — detailed view, ordered to align with inner ring
+  // Outer ring — detailed view, grouped per inner segment to preserve angular alignment.
+  // Each inner group (e.g. assets, liabilities) gets its own top-N + "Other" bucket so
+  // that group subtotals in the outer ring exactly match the inner ring arc widths.
   const outerDonutData = (() => {
     if (composition.length === 0) return []
 
-    const isIncomeExpenses = meta?.type === 'income_expenses' || meta?.type === 'cash_flow'
-    let orderedItems: typeof composition
+    const excludedKeys = new Set(['netIncome', 'startingBalance', 'endingBalance'])
+    const innerGroups = breakdownData
+      .filter((b) => !excludedKeys.has(b.key))
+      .map((b) => b.key)
 
-    if (isIncomeExpenses) {
-      const income = [...composition.filter((c) => c.group === 'income')].sort((a, b) => b.value - a.value)
-      const expenses = [...composition.filter((c) => c.group === 'expenses')].sort((a, b) => b.value - a.value)
-      orderedItems = [...income, ...expenses]
-    } else {
-      const innerGroupOrder = breakdownData
-        .filter((b) => !new Set(['netIncome', 'startingBalance', 'endingBalance']).has(b.key))
-        .map((b) => b.key)
-      orderedItems = [...composition].sort((a, b) => {
-        const ai = innerGroupOrder.indexOf(a.group)
-        const bi = innerGroupOrder.indexOf(b.group)
-        if (ai !== bi) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi)
-        return b.value - a.value
-      })
+    const byGroup = new Map<string, typeof composition>()
+    for (const group of innerGroups) byGroup.set(group, [])
+    for (const item of composition) {
+      const bucket = byGroup.get(item.group)
+      if (bucket) bucket.push(item)
     }
 
-    const top = orderedItems.slice(0, COMPOSITION_TOP_N)
-    const rest = orderedItems.slice(COMPOSITION_TOP_N)
-    const otherValue = rest.reduce((sum, c) => sum + c.value, 0)
-
-    const result = top.map((c) => {
-      let name = c.label
-      if (c.key === 'uncategorized') name = t('reports.uncategorized')
-      else if (c.key === 'baseline') name = t('reports.baseline')
-      return { name, value: c.value, color: c.color }
-    })
-    if (otherValue > 0) {
-      result.push({ name: t('reports.other'), value: Math.round(otherValue * 100) / 100, color: '#6B7280' })
+    const result: { name: string; value: number; color: string }[] = []
+    for (const group of innerGroups) {
+      const sorted = [...(byGroup.get(group) ?? [])].sort((a, b) => b.value - a.value)
+      const top = sorted.slice(0, COMPOSITION_TOP_N)
+      const rest = sorted.slice(COMPOSITION_TOP_N)
+      const otherValue = rest.reduce((sum, c) => sum + c.value, 0)
+      for (const c of top) {
+        let name = c.label
+        if (c.key === 'uncategorized') name = t('reports.uncategorized')
+        else if (c.key === 'baseline') name = t('reports.baseline')
+        result.push({ name, value: c.value, color: c.color })
+      }
+      if (otherValue > 0) {
+        result.push({ name: t('reports.other'), value: Math.round(otherValue * 100) / 100, color: '#6B7280' })
+      }
     }
     return result
   })()
@@ -711,9 +709,10 @@ export default function ReportsPage() {
                             cy="50%"
                             innerRadius={55}
                             outerRadius={hasOuter ? 59 : 85}
-                            paddingAngle={hasOuter ? 1 : 3}
+                            paddingAngle={hasOuter ? 0 : 3}
                             dataKey="value"
-                            strokeWidth={0}
+                            stroke="var(--card)"
+                            strokeWidth={hasOuter ? 2 : 0}
                           >
                             {innerDonutData.map((entry, idx) => (
                               <Cell key={idx} fill={entry.color} />
@@ -727,9 +726,10 @@ export default function ReportsPage() {
                               cy="50%"
                               innerRadius={64}
                               outerRadius={90}
-                              paddingAngle={2}
+                              paddingAngle={0}
                               dataKey="value"
-                              strokeWidth={0}
+                              stroke="var(--card)"
+                              strokeWidth={2}
                             >
                               {outerDonutData.map((entry, idx) => (
                                 <Cell key={idx} fill={entry.color} />
