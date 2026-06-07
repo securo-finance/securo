@@ -40,7 +40,6 @@ function formatCompact(value: number, currency = 'USD', locale = 'en-US') {
 }
 
 
-const COMPOSITION_TOP_N = 6
 
 type RangeOption = { key: string; months: number; period?: 'ytd' }
 
@@ -109,7 +108,7 @@ export default function ReportsPage() {
   const [rangeKey, setRangeKey] = useState('1y')
   const [interval, setInterval] = useState('monthly')
   const [activeTab, setActiveTab] = useState('net_worth')
-  const [compositionView, setCompositionView] = useState<string>('summary')
+  const [compositionView, setCompositionView] = useState<string>('net')
   const [sparklineView, setSparklineView] = useState<'byExpenses' | 'byIncome'>('byExpenses')
   const [sparklinePage, setSparklinePage] = useState(0)
   const [cashFlowBaseline, setCashFlowBaseline] = useState(false)
@@ -125,7 +124,7 @@ export default function ReportsPage() {
 
   const handleSelectTab = (key: string) => {
     setActiveTab(key)
-    setCompositionView('summary')
+    setCompositionView('net')
     setSparklinePage(0)
     // Clamp months/interval to options supported by the new tab
     const nextRanges = key === 'cash_flow' ? FORWARD_RANGE_OPTIONS : HISTORICAL_RANGE_OPTIONS
@@ -194,60 +193,30 @@ export default function ReportsPage() {
     fontSize: '12px',
   }
 
-  const tooltipItemStyle = { color: 'var(--foreground)' }
-
   const composition = data?.composition ?? []
 
   // Composition toggle options per report type
   const compositionOptions = meta?.type === 'net_worth'
-    ? ['net', 'assetsAndAccounts', 'liabilities'] as const
+    ? ['netWorth', 'assetsAndAccounts', 'liabilities'] as const
     : meta?.type === 'income_expenses' || meta?.type === 'cash_flow'
-      ? ['summary', 'byIncome', 'byExpenses'] as const
+      ? ['net', 'byIncome', 'byExpenses'] as const
       : ['summary', 'detailed'] as const
 
-  // For net_worth: which breakdown groups are visible in each toggle state.
-  // null means "show all" (the Net state).
-  const netWorthActiveGroups: Set<string> | null =
-    meta?.type === 'net_worth'
-      ? compositionView === 'assetsAndAccounts' ? new Set(['accounts', 'assets'])
-        : compositionView === 'liabilities' ? new Set(['liabilities'])
-        : null
-      : null
-
-  // Legacy single-ring donut data for income_expenses / cash_flow
-  const legacyDonutData = (() => {
-    if (compositionView === 'summary' || composition.length === 0) {
-      const excludedKeys = new Set(['netIncome', 'startingBalance', 'endingBalance'])
-      return breakdownData
-        .filter((b) => b.value > 0 && !excludedKeys.has(b.key))
-        .map((b) => ({
-          name: t(`reports.${b.key}`, { defaultValue: b.label }),
-          value: b.value,
-          color: b.color,
-        }))
-    }
-    let items = composition
-    if (compositionView === 'byIncome') items = composition.filter((c) => c.group === 'income')
-    else if (compositionView === 'byExpenses') items = composition.filter((c) => c.group === 'expenses')
-    const sorted = [...items].sort((a, b) => b.value - a.value)
-    const top = sorted.slice(0, COMPOSITION_TOP_N)
-    const rest = sorted.slice(COMPOSITION_TOP_N)
-    const otherValue = rest.reduce((sum, c) => sum + c.value, 0)
-    const result = top.map((c) => {
-      let name = c.label
-      if (c.key === 'uncategorized') name = t('reports.uncategorized')
-      else if (c.key === 'baseline') name = t('reports.baseline')
-      return { name, value: c.value, color: c.color }
-    })
-    if (otherValue > 0) result.push({ name: t('reports.other'), value: Math.round(otherValue * 100) / 100, color: '#6B7280' })
-    return result
+  // Which breakdown groups are visible in each toggle state. null = show all.
+  const activeCompositionGroups: Set<string> | null = (() => {
+    if (compositionView === 'assetsAndAccounts') return new Set(['accounts', 'assets'])
+    if (compositionView === 'liabilities') return new Set(['liabilities'])
+    if (compositionView === 'byIncome') return new Set(['income'])
+    if (compositionView === 'byExpenses') return new Set(['expenses'])
+    return null
   })()
+
 
   // Inner ring — summary view (high-level breakdown), filtered by toggle state for net_worth
   const innerDonutData = (() => {
     const excludedKeys = new Set(['netIncome', 'startingBalance', 'endingBalance'])
     return breakdownData
-      .filter((b) => !excludedKeys.has(b.key) && (!netWorthActiveGroups || netWorthActiveGroups.has(b.key)))
+      .filter((b) => !excludedKeys.has(b.key) && (!activeCompositionGroups || activeCompositionGroups.has(b.key)))
       .map((b) => ({
         name: t(`reports.${b.key}`, { defaultValue: b.label }),
         value: b.value,
@@ -263,7 +232,7 @@ export default function ReportsPage() {
 
     const excludedKeys = new Set(['netIncome', 'startingBalance', 'endingBalance'])
     const innerGroups = breakdownData
-      .filter((b) => !excludedKeys.has(b.key) && (!netWorthActiveGroups || netWorthActiveGroups.has(b.key)))
+      .filter((b) => !excludedKeys.has(b.key) && (!activeCompositionGroups || activeCompositionGroups.has(b.key)))
       .map((b) => b.key)
 
     const byGroup = new Map<string, typeof composition>()
@@ -296,6 +265,8 @@ export default function ReportsPage() {
           accounts: t('reports.otherAccounts', { defaultValue: 'Other Accounts' }),
           assets: t('reports.otherAssets', { defaultValue: 'Other Assets' }),
           liabilities: t('reports.otherLiabilities', { defaultValue: 'Other Liabilities' }),
+          income: t('reports.otherIncome', { defaultValue: 'Other Income' }),
+          expenses: t('reports.otherExpenses', { defaultValue: 'Other Expenses' }),
         }
         result.push({
           name: otherGroupLabel[group] ?? t('reports.other'),
@@ -767,9 +738,7 @@ export default function ReportsPage() {
               <div className="px-4" style={{ height: 200 }}>
                 <Skeleton className="h-full w-full" />
               </div>
-            ) : meta?.type === 'net_worth' ? (
-              /* ── Net worth: double-ring chart ── */
-              innerDonutData.length > 0 ? (
+            ) : innerDonutData.length > 0 ? (
                 (() => {
                   const hasOuter = outerDonutData.length > 0
                   const donutTotal = innerDonutData.reduce((s, d) => s + d.value, 0)
@@ -867,12 +836,17 @@ export default function ReportsPage() {
                           <span className="text-[10px] text-muted-foreground">
                             {compositionView === 'assetsAndAccounts' ? t('reports.youOwn', { defaultValue: 'You Own' })
                               : compositionView === 'liabilities' ? t('reports.youOwe', { defaultValue: 'You Owe' })
+                              : compositionView === 'byIncome' ? t('reports.income')
+                              : compositionView === 'byExpenses' ? t('reports.expenses')
+                              : meta?.type === 'income_expenses' ? t('reports.netIncome')
                               : t(currentTab.labelKey)}
                           </span>
                           <span className="text-base font-bold text-foreground tabular-nums">
                             {mask(formatCompact(
-                              compositionView === 'net' || !compositionView
-                                ? (summary?.primary_value ?? 0)
+                              compositionView === 'netWorth' || compositionView === 'net' || !compositionView
+                                ? meta?.type === 'cash_flow'
+                                  ? (summary?.change_amount ?? 0)
+                                  : (summary?.primary_value ?? 0)
                                 : innerDonutData.reduce((s, d) => s + d.value, 0),
                               userCurrency, locale
                             ))}
@@ -909,84 +883,7 @@ export default function ReportsPage() {
               ) : (
                 <p className="text-muted-foreground text-sm text-center py-16">{t('reports.noData')}</p>
               )
-            ) : (
-              /* ── Income/expenses & cash flow: original single-ring with toggle ── */
-              legacyDonutData.length > 0 ? (
-                (() => {
-                  const donutTotal = legacyDonutData.reduce((s, d) => s + d.value, 0)
-                  const centerLabel = compositionView === 'byIncome'
-                    ? t('reports.income')
-                    : compositionView === 'byExpenses'
-                      ? t('reports.expenses')
-                      : meta?.type === 'income_expenses'
-                        ? t('reports.netIncome')
-                        : t('reports.vsToday')
-                  const centerValue = compositionView === 'byIncome'
-                    ? (summary?.breakdowns.find((b) => b.key === 'income' || b.key === 'projectedIncome')?.value ?? 0)
-                    : compositionView === 'byExpenses'
-                      ? (summary?.breakdowns.find((b) => b.key === 'expenses' || b.key === 'projectedExpenses')?.value ?? 0)
-                      : meta?.type === 'cash_flow'
-                        ? (summary?.change_amount ?? 0)
-                        : (summary?.primary_value ?? 0)
-                  return (
-                    <div className="flex flex-col items-center">
-                      <div className="relative" style={{ width: 200, height: 200 }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie
-                              data={legacyDonutData}
-                              cx="50%"
-                              cy="50%"
-                              innerRadius={55}
-                              outerRadius={85}
-                              paddingAngle={3}
-                              dataKey="value"
-                              strokeWidth={0}
-                            >
-                              {legacyDonutData.map((entry, idx) => (
-                                <Cell key={idx} fill={entry.color} />
-                              ))}
-                            </Pie>
-                            <Tooltip
-                              formatter={(value?: number, name?: string) => {
-                                const v = value ?? 0
-                                const pct = donutTotal > 0 ? ((v / donutTotal) * 100).toFixed(1) : '0'
-                                return [
-                                  privacyMode ? MASK : `${formatCurrency(v, userCurrency, locale)} (${pct}%)`,
-                                  name,
-                                ]
-                              }}
-                              contentStyle={{ ...tooltipStyle, zIndex: 10 }}
-                              itemStyle={tooltipItemStyle}
-                              wrapperStyle={{ zIndex: 10 }}
-                              offset={20}
-                            />
-                          </PieChart>
-                        </ResponsiveContainer>
-                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none" style={{ zIndex: 0 }}>
-                          <span className="text-[10px] text-muted-foreground">{centerLabel}</span>
-                          <span className="text-base font-bold text-foreground tabular-nums">
-                            {mask(formatCompact(centerValue, userCurrency, locale))}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 px-3 mt-1">
-                        {legacyDonutData.map((d) => (
-                          <div key={d.name} className="flex items-center gap-1.5">
-                            <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                            <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-                              {d.name.length > 30 ? d.name.slice(0, 27) + '…' : d.name}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )
-                })()
-              ) : (
-                <p className="text-muted-foreground text-sm text-center py-16">{t('reports.noData')}</p>
-              )
-            )}
+            }
           </div>
         </div>
 
