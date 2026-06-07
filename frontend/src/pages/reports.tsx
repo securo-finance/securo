@@ -39,7 +39,6 @@ function formatCompact(value: number, currency = 'USD', locale = 'en-US') {
   }).format(value)
 }
 
-const COMPOSITION_TOP_N = 6
 
 type RangeOption = { key: string; months: number; period?: 'ytd' }
 
@@ -225,13 +224,16 @@ export default function ReportsPage() {
       if (bucket) bucket.push(item)
     }
 
+    const grandTotal = innerDonutData.reduce((s, d) => s + d.value, 0)
+    const threshold = grandTotal * 0.01
+
     const result: { name: string; value: number; color: string }[] = []
     for (const group of innerGroups) {
       const sorted = [...(byGroup.get(group) ?? [])].sort((a, b) => b.value - a.value)
-      const top = sorted.slice(0, COMPOSITION_TOP_N)
-      const rest = sorted.slice(COMPOSITION_TOP_N)
-      const otherValue = rest.reduce((sum, c) => sum + c.value, 0)
-      for (const c of top) {
+      const significant = sorted.filter((c) => c.value >= threshold)
+      const small = sorted.filter((c) => c.value < threshold)
+      const otherValue = small.reduce((sum, c) => sum + c.value, 0)
+      for (const c of significant) {
         let name = c.label
         if (c.key === 'uncategorized') name = t('reports.uncategorized')
         else if (c.key === 'baseline') name = t('reports.baseline')
