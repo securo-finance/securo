@@ -185,7 +185,7 @@ def _desired_workspace_role(provider_roles: set[str], role_map: dict[str, str]) 
     return max(matches, key=lambda role: role_rank[role])
 
 
-OIDC_EXISTING_USER_LINK_MODES = {"disabled", "verified_email"}
+OIDC_EXISTING_USER_LINK_MODES = {"disabled", "verified_email", "email"}
 
 
 async def _sync_oidc_roles(user: User, merged_claims: dict[str, Any], session: AsyncSession) -> None:
@@ -249,8 +249,6 @@ async def _get_or_create_oidc_user(
         raise HTTPException(status_code=400, detail="OIDC provider did not return an email claim")
     email = str(EmailStr._validate(email)).lower()
     email_verified = merged.get("email_verified")
-    if settings.oidc_require_verified_email and email_verified not in (True, "true"):
-        raise HTTPException(status_code=400, detail="OIDC email is not verified")
     subject = merged.get("sub")
     if not subject:
         raise HTTPException(status_code=400, detail="OIDC provider did not return a subject claim")
@@ -258,26 +256,28 @@ async def _get_or_create_oidc_user(
     if not issuer:
         raise HTTPException(status_code=500, detail="OIDC discovery is missing issuer")
 
+    link_mode = settings.oidc_existing_user_link_mode
+    if link_mode not in OIDC_EXISTING_USER_LINK_MODES:
+        raise HTTPException(status_code=500, detail="OIDC_EXISTING_USER_LINK_MODE must be disabled, verified_email, or email")
+
     linked = await session.execute(select(User).where(User.oidc_issuer == issuer, User.oidc_subject == subject))
     user = linked.scalar_one_or_none()
     if user is not None:
+        if settings.oidc_require_verified_email and link_mode != "email" and email_verified not in (True, "true"):
+            raise HTTPException(status_code=400, detail="OIDC email is not verified")
         await _sync_oidc_roles(user, merged, session)
         await session.commit()
         await session.refresh(user)
         return user
-
-    link_mode = settings.oidc_existing_user_link_mode
-    if link_mode not in OIDC_EXISTING_USER_LINK_MODES:
-        raise HTTPException(status_code=500, detail="OIDC_EXISTING_USER_LINK_MODE must be disabled or verified_email")
 
     existing = await session.execute(select(User).where(func.lower(User.email) == email))
     user = existing.scalar_one_or_none()
     if user is not None:
         if user.oidc_issuer or user.oidc_subject:
             raise HTTPException(status_code=403, detail="OIDC identity is linked to a different account")
-        if link_mode != "verified_email":
+        if link_mode == "disabled":
             raise HTTPException(status_code=403, detail="Existing account is not linked to this OIDC identity")
-        if email_verified not in (True, "true"):
+        if link_mode == "verified_email" and email_verified not in (True, "true"):
             raise HTTPException(status_code=400, detail="OIDC email is not verified")
         user.oidc_issuer = issuer
         user.oidc_subject = subject
@@ -286,6 +286,10 @@ async def _get_or_create_oidc_user(
         await session.commit()
         await session.refresh(user)
         return user
+    if settings.oidc_require_verified_email and email_verified not in (True, "true"):
+        raise HTTPException(status_code=400, detail="OIDC email is not verified")
+    if not settings.registration_enabled:
+        raise HTTPException(status_code=403, detail="Registration is disabled")
     if not settings.oidc_auto_register:
         raise HTTPException(status_code=403, detail="No local account is linked to this OIDC identity")
 

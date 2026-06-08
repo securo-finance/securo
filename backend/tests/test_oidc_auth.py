@@ -456,3 +456,76 @@ async def test_oidc_callback_rejects_existing_user_with_different_linked_subject
 
     assert response.status_code == 403
     assert response.json()["detail"] == "OIDC identity is linked to a different account"
+
+
+@pytest.mark.asyncio
+async def test_oidc_callback_respects_disabled_registration_setting(
+    client: AsyncClient, clean_db, oidc_settings, monkeypatch
+):
+    oidc_settings.registration_enabled = False
+    oidc_settings.oidc_auto_register = True
+    fake_redis = FakeRedis()
+    await fake_redis.set("oidc_state:state123", json.dumps({"nonce": "nonce123"}))
+
+    async def fake_discover():
+        return {"issuer": "https://id.example.com"}
+
+    async def fake_exchange(discovery, code):
+        return {"id_token": "id-token", "access_token": "provider-token"}
+
+    async def fake_decode(discovery, id_token, nonce):
+        return {"sub": "new-sub", "email": "new@example.com", "email_verified": True}
+
+    async def fake_userinfo(discovery, access_token):
+        return {}
+
+    async def fake_get_redis():
+        return fake_redis
+
+    monkeypatch.setattr(oidc_auth, "get_redis", fake_get_redis)
+    monkeypatch.setattr(oidc_auth, "_discover", fake_discover)
+    monkeypatch.setattr(oidc_auth, "_exchange_code", fake_exchange)
+    monkeypatch.setattr(oidc_auth, "_decode_id_token", fake_decode)
+    monkeypatch.setattr(oidc_auth, "_fetch_userinfo", fake_userinfo)
+
+    response = await client.get("/api/auth/oidc/callback?code=abc&state=state123")
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Registration is disabled"
+
+
+@pytest.mark.asyncio
+async def test_oidc_callback_email_link_mode_links_existing_user_without_verified_email(
+    client: AsyncClient, session, test_user, oidc_settings, monkeypatch
+):
+    oidc_settings.oidc_existing_user_link_mode = "email"
+    fake_redis = FakeRedis()
+    await fake_redis.set("oidc_state:state123", json.dumps({"nonce": "nonce123"}))
+
+    async def fake_discover():
+        return {"issuer": "https://id.example.com"}
+
+    async def fake_exchange(discovery, code):
+        return {"id_token": "id-token", "access_token": "provider-token"}
+
+    async def fake_decode(discovery, id_token, nonce):
+        return {"sub": "unverified-linked-sub", "email": "test@example.com"}
+
+    async def fake_userinfo(discovery, access_token):
+        return {}
+
+    async def fake_get_redis():
+        return fake_redis
+
+    monkeypatch.setattr(oidc_auth, "get_redis", fake_get_redis)
+    monkeypatch.setattr(oidc_auth, "_discover", fake_discover)
+    monkeypatch.setattr(oidc_auth, "_exchange_code", fake_exchange)
+    monkeypatch.setattr(oidc_auth, "_decode_id_token", fake_decode)
+    monkeypatch.setattr(oidc_auth, "_fetch_userinfo", fake_userinfo)
+
+    response = await client.get("/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False)
+
+    assert response.status_code == 307
+    await session.refresh(test_user)
+    assert test_user.oidc_issuer == "https://id.example.com"
+    assert test_user.oidc_subject == "unverified-linked-sub"
