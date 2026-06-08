@@ -52,6 +52,7 @@ import { PageHeader } from '@/components/page-header'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
+import { useCollectionFilter } from '@/contexts/collection-filter-context'
 
 function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
   try {
@@ -228,15 +229,49 @@ export default function AssetsPage() {
   const [formUnits, setFormUnits] = useState('')
   const [quoteLoading, setQuoteLoading] = useState(false)
 
-  const { data: assetsList, isLoading } = useQuery({
+  const { data: rawAssetsList, isLoading } = useQuery({
     queryKey: ['assets'],
     queryFn: () => assets.list(false),
   })
 
-  const { data: portfolioData } = useQuery({
+  // Active Collection filter (issue #105): when a collection is active, scope
+  // the Assets page to the assets in its wallets (asset_groups). A collection
+  // with no wallets → no assets shown. "All accounts" (null) → show everything.
+  const { activeWalletIds } = useCollectionFilter()
+  const assetsList = useMemo(() => {
+    if (!activeWalletIds) return rawAssetsList
+    const allowed = new Set(activeWalletIds)
+    return (rawAssetsList ?? []).filter((a) => a.group_id && allowed.has(a.group_id))
+  }, [rawAssetsList, activeWalletIds])
+
+  const { data: rawPortfolioData } = useQuery({
     queryKey: ['portfolio-trend'],
     queryFn: () => assets.portfolioTrend(),
   })
+  // Scope the portfolio chart + total to the active collection's wallets too.
+  // Trend rows are keyed by asset id, so we keep only the in-collection asset
+  // columns and recompute each row's `_total`.
+  const portfolioData = useMemo(() => {
+    if (!activeWalletIds || !rawPortfolioData) return rawPortfolioData
+    const allowed = new Set(activeWalletIds)
+    const keptAssets = rawPortfolioData.assets.filter((a) => a.group_id && allowed.has(a.group_id))
+    const keptIds = new Set(keptAssets.map((a) => a.id))
+    const trend = rawPortfolioData.trend.map((row) => {
+      const next: Record<string, unknown> = { date: (row as { date: unknown }).date }
+      let total = 0
+      for (const [k, v] of Object.entries(row)) {
+        if (k === 'date' || k === '_total') continue
+        if (keptIds.has(k)) {
+          next[k] = v
+          total += Number(v) || 0
+        }
+      }
+      next._total = total
+      return next
+    })
+    const lastTotal = trend.length ? Number((trend[trend.length - 1] as { _total?: number })._total) || 0 : 0
+    return { ...rawPortfolioData, assets: keptAssets, trend, total: lastTotal }
+  }, [rawPortfolioData, activeWalletIds])
 
   // Publish a snapshot of what's on the Assets page so the global chat
   // (⌘J) can answer "what does this chart mean / what are these
@@ -332,10 +367,15 @@ export default function AssetsPage() {
     onError: () => toast.error(t('common.error')),
   })
 
-  const { data: walletsList } = useQuery({
+  const { data: rawWalletsList } = useQuery({
     queryKey: ['asset-groups'],
     queryFn: () => assetGroups.list(),
   })
+  const walletsList = useMemo(() => {
+    if (!activeWalletIds) return rawWalletsList
+    const allowed = new Set(activeWalletIds)
+    return (rawWalletsList ?? []).filter((w) => allowed.has(w.id))
+  }, [rawWalletsList, activeWalletIds])
 
   const createWalletMutation = useMutation({
     mutationFn: (data: { name: string; color: string }) =>

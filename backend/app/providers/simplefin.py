@@ -29,6 +29,7 @@ from typing import Any, Optional
 import httpx
 
 from app.agents.services.crypto import decrypt, encrypt
+from app.providers.favicon import favicon_url_for
 from app.providers.base import (
     AccountData,
     BankProvider,
@@ -247,7 +248,34 @@ class SimpleFinProvider(BankProvider):
             institution_name=institution_name,
             credentials=credentials,
             accounts=accounts,
+            # SimpleFIN has no logo image, but its org metadata carries the
+            # bank's website — derive a favicon from it (same approach as
+            # asset logos).
+            logo_url=favicon_url_for(self._org_website(payload)),
         )
+
+    @staticmethod
+    def _org_website(payload: dict) -> Optional[str]:
+        """Best-effort bank website from a SimpleFIN /accounts payload.
+
+        Checks the connection metadata first, then each account's ``org``
+        (the SimpleFIN spec attaches ``url``/``domain`` to the institution
+        org). Returns None when nothing usable is present.
+        """
+        for src in (payload.get("connections") or []):
+            url = src.get("url") or src.get("domain")
+            if url:
+                return url
+        for acc in (payload.get("accounts") or []):
+            org = acc.get("org") or {}
+            url = org.get("url") or org.get("domain")
+            if url:
+                return url
+        return None
+
+    async def get_institution_logo(self, credentials: dict) -> Optional[str]:
+        payload = await self._fetch_accounts(credentials, pending=False)
+        return favicon_url_for(self._org_website(payload))
 
     @staticmethod
     def _stable_external_id(payload: dict, fallback: str) -> str:

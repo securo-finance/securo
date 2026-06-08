@@ -716,6 +716,7 @@ async def get_asset_values_at(
     primary_currency: Optional[str] = None,
     *,
     by_workspace: bool = False,
+    group_ids: Optional[list[uuid.UUID]] = None,
 ) -> tuple[dict[str, float], float]:
     """Return (per_currency_totals, primary_total) for all active assets.
 
@@ -732,13 +733,18 @@ async def get_asset_values_at(
     scope_filter = (
         Asset.workspace_id == scope_id if by_workspace else Asset.user_id == scope_id
     )
-    result = await session.execute(
-        select(Asset).where(
-            scope_filter,
-            Asset.is_archived == False,
-            Asset.sell_date.is_(None),
-        )
+    # `group_ids` restricts to assets in a Collection's wallets (issue #105).
+    # An empty list means "no wallets in this collection" → no assets.
+    if group_ids is not None and len(group_ids) == 0:
+        return {}, 0.0
+    stmt = select(Asset).where(
+        scope_filter,
+        Asset.is_archived == False,
+        Asset.sell_date.is_(None),
     )
+    if group_ids:
+        stmt = stmt.where(Asset.group_id.in_(group_ids))
+    result = await session.execute(stmt)
     assets = list(result.scalars().all())
 
     totals: dict[str, float] = {}

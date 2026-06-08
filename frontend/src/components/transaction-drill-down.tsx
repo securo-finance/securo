@@ -14,6 +14,8 @@ export type DrillDownFilter = {
   category_id?: string
   uncategorized?: boolean
   account_id?: string
+  // Scope to a set of accounts (e.g. the active collection's accounts).
+  account_ids?: string[]
   type?: 'credit' | 'debit'
   from?: string
   to?: string
@@ -63,6 +65,7 @@ export function TransactionDrillDown({
         category_id: filter?.category_id,
         uncategorized: filter?.uncategorized,
         account_id: filter?.account_id,
+        account_ids: filter?.account_ids,
         type: filter?.type,
         from: filter?.from,
         to: filter?.to,

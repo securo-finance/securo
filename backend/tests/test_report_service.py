@@ -534,7 +534,7 @@ async def test_income_expenses_api_validation(client, auth_headers):
 async def test_income_expenses_api_accepts_ytd_period(client, auth_headers, monkeypatch):
     """GET /reports/income-expenses passes period=ytd to service."""
 
-    async def fake_report(session, workspace_id, user_id, months, interval, currency, period=None):
+    async def fake_report(session, workspace_id, user_id, months, interval, currency, account_ids=None, period=None):
         assert months == 12
         assert interval == "monthly"
         assert period == "ytd"

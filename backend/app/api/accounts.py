@@ -133,7 +133,7 @@ async def get_account(
     account = await account_service.get_account(session, account_id, ctx.workspace.id)
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
-    return account_service.serialize_account(account, None, None)
+    return account_service.serialize_account(account, None, None, account.connection)
 
 
 @router.post("", response_model=AccountRead, status_code=status.HTTP_201_CREATED)

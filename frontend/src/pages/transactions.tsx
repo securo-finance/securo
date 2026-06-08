@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRegisterPageChatContext } from '@/lib/page-chat-context'
 import { getAccountName } from '@/lib/account-utils'
+import { AccountIcon } from '@/components/account-icon'
 import { currentMonth, monthRange, monthFromRange } from '@/lib/month-utils'
 import { MonthStepper } from '@/components/month-stepper'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -49,6 +50,7 @@ import { TransactionsFilterBar } from '@/components/transactions-filter-bar'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
+import { useCollectionFilter } from '@/contexts/collection-filter-context'
 
 type TransactionUpdatePayload = Partial<Transaction> & {
   apply_to_transfer_pair?: boolean
@@ -77,6 +79,7 @@ export default function TransactionsPage() {
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
+  const { activeAccountIds } = useCollectionFilter()
   const { canWrite } = useWorkspace()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
@@ -297,13 +300,26 @@ export default function TransactionsPage() {
     }
   }, [highlightId, searchQuery, filterPayee, filterCategoryIds, page])
 
+  // Merge the global active-collection filter with the page's own account
+  // filter (issue #105): an explicit on-page account selection wins; otherwise
+  // scope to the active collection's accounts. null collection = all accounts.
+  const effectiveAccountIds = filterAccountIds.length > 0
+    ? filterAccountIds
+    : (activeAccountIds ?? [])
+  // Wallet-only collection active (zero accounts) and no explicit on-page
+  // account filter → there are no matching transactions; show empty rather
+  // than falling back to all accounts.
+  const noAccounts = filterAccountIds.length === 0
+    && activeAccountIds !== null && activeAccountIds.length === 0
+
   const { data, isLoading } = useQuery({
-    queryKey: ['transactions', page, filterAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery, tagFilters, grid.sortBy, grid.sortDir],
+    queryKey: ['transactions', page, effectiveAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery, tagFilters, grid.sortBy, grid.sortDir],
+    enabled: !noAccounts,
     queryFn: () =>
       transactions.list({
         page,
         limit: 20,
-        account_ids: filterAccountIds.length > 0 ? filterAccountIds : undefined,
+        account_ids: effectiveAccountIds.length > 0 ? effectiveAccountIds : undefined,
         category_ids: filterCategoryIds.length > 0 ? filterCategoryIds : undefined,
         payee_id: filterPayee || undefined,
         group_id: filterGroupId || undefined,
@@ -325,7 +341,7 @@ export default function TransactionsPage() {
   // entire history. Free-form blob — backend turns it into a primer.
   const ctxFilters = {
     search: searchQuery || undefined,
-    account_ids: filterAccountIds.length ? filterAccountIds : undefined,
+    account_ids: effectiveAccountIds.length ? effectiveAccountIds : undefined,
     category_ids: filterCategoryIds.length ? filterCategoryIds : undefined,
     payee_id: filterPayee || undefined,
     group_id: filterGroupId || undefined,
@@ -749,7 +765,7 @@ export default function TransactionsPage() {
         await transactions.export({ transaction_ids: Array.from(selectedIds) })
       } else {
         await transactions.export({
-          account_ids: filterAccountIds.length > 0 ? filterAccountIds : undefined,
+          account_ids: effectiveAccountIds.length > 0 ? effectiveAccountIds : undefined,
           category_ids: filterCategoryIds.length > 0 ? filterCategoryIds : undefined,
           uncategorized: filterUncategorized ? true : undefined,
           from: filterFrom || undefined,
@@ -984,14 +1000,21 @@ export default function TransactionsPage() {
             )}
           </TableCell>
         )
-      case 'account':
+      case 'account': {
+        const acc = accountsList?.find((a) => a.id === tx.account_id)
         return (
           <TableCell key={col.id} style={widthStyle} className={`${baseClass} text-sm text-muted-foreground`}>
-            {getAccountName(accountsList?.find((a) => a.id === tx.account_id) ?? { name: '', display_name: null }) || (
+            {acc ? (
+              <span className="flex items-center gap-2 min-w-0">
+                <AccountIcon account={acc} size="sm" />
+                <span className="truncate">{getAccountName(acc)}</span>
+              </span>
+            ) : (
               <span className="text-muted-foreground">—</span>
             )}
           </TableCell>
         )
+      }
       case 'amount':
         return (
           <TableCell key={col.id} style={widthStyle} className={`${baseClass} pr-5`}>
@@ -1340,6 +1363,16 @@ export default function TransactionsPage() {
             <span className="mr-auto text-xs text-muted-foreground">
               {t('transactions.summaryCount', { count: data.total })}
             </span>
+            {/* Excluded (#242): transfers / investments / ignored, kept out of
+                income/expense. Hidden when nothing was excluded in range. */}
+            {data.summary.excluded > 0 && (
+              <span className="flex items-baseline gap-1.5 text-xs">
+                <span className="text-muted-foreground">{t('transactions.summaryExcluded')}</span>
+                <span className="text-sm font-semibold tabular-nums text-muted-foreground">
+                  {mask(formatCurrency(data.summary.excluded, data.summary.currency, locale))}
+                </span>
+              </span>
+            )}
             <span className="flex items-baseline gap-1.5 text-xs">
               <span className="text-muted-foreground">{t('transactions.summaryIncome')}</span>
               <span className="text-sm font-semibold tabular-nums text-emerald-600">

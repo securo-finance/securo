@@ -62,6 +62,10 @@ class ConnectionData:
     institution_name: str
     credentials: dict
     accounts: list[AccountData]
+    # Fully-formed institution logo URL when the provider exposes one
+    # (Pluggy connector.imageUrl, Enable Banking ASPSP logo). None for
+    # providers/institutions without a logo (e.g. SimpleFin).
+    logo_url: Optional[str] = None
 
 
 @dataclass
@@ -289,6 +293,16 @@ class BankProvider(ABC):
         already serve live data on every read don't need to override.
         """
         return "skipped"
+
+    async def get_institution_logo(self, credentials: dict) -> Optional[str]:
+        """Return the institution logo URL for an existing connection, or None.
+
+        Used to backfill connections that were linked before logo capture
+        existed (the sync layer calls this only when a connection has no
+        stored logo). Default is no-op so providers without institution
+        logos (e.g. SimpleFin) don't need to implement it.
+        """
+        return None
 
     async def get_holdings(self, credentials: dict) -> list[HoldingData]:
         """Fetch investment holdings for a connection.

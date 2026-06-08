@@ -30,9 +30,8 @@ import logging
 from abc import ABC, abstractmethod
 from decimal import Decimal
 from typing import Optional
-from urllib.parse import urlparse
 
-from app.core.config import get_settings
+from app.providers.favicon import favicon_url_for
 from app.schemas.asset import MarketSymbolMatch, MarketSymbolQuote
 
 logger = logging.getLogger(__name__)
@@ -363,42 +362,9 @@ class YFinanceProvider(MarketPriceProvider):
             return None
 
 
-def _extract_domain(url: Optional[str]) -> Optional[str]:
-    """Extract the bare domain from a URL, stripping ``www.`` and scheme.
-
-    Returns None for blanks / unparseable inputs. Used as the identifier
-    Brandfetch (or any logo-by-domain service) expects.
-    """
-    if not url:
-        return None
-    try:
-        parsed = urlparse(url if "://" in url else f"https://{url}")
-    except ValueError:
-        return None
-    host = (parsed.hostname or "").strip().lower()
-    if not host:
-        return None
-    return host[4:] if host.startswith("www.") else host
-
-
-def _logo_url_for(website: Optional[str]) -> Optional[str]:
-    """Build a logo URL for a company website, or None if unavailable.
-
-    Uses Google's free favicon service — no API key, no third-party sign-up,
-    works for any public domain. Quality caps at 128×128 and can be lower
-    for older sites; when Google doesn't have a favicon it returns a
-    generic globe, which the frontend treats as "good enough" (falling
-    back to the type icon is reserved for image-load failures).
-
-    Returns None when the upstream quote didn't include a website (most
-    crypto tickers), which is the signal for the frontend to show the
-    type icon instead.
-    """
-    domain = _extract_domain(website)
-    if not domain:
-        return None
-    size = get_settings().logo_size
-    return f"https://www.google.com/s2/favicons?domain={domain}&sz={size}"
+# Asset logos reuse the shared favicon helper. Kept as a module-local alias so
+# existing call sites stay untouched.
+_logo_url_for = favicon_url_for
 
 
 def _last_decimal_close(series) -> Optional[Decimal]:

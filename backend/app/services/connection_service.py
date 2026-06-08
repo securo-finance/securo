@@ -40,6 +40,16 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
+
+def _clean_logo_url(value: object) -> Optional[str]:
+    """Normalize a provider-supplied logo to a non-empty string or None.
+
+    Guards the DB column against anything a provider hands back that isn't a
+    usable URL (None, empty string, or a non-string), so a misbehaving
+    integration can never write junk into ``bank_connections.logo_url``.
+    """
+    return value if isinstance(value, str) and value.strip() else None
+
 PLUGGY_CATEGORY_MAP = {
     "Eating out": "Alimentação",
     "Restaurants": "Alimentação",
@@ -505,6 +515,7 @@ async def handle_oauth_callback(
         existing.institution_name = (
             connection_data.institution_name or existing.institution_name
         )
+        existing.logo_url = _clean_logo_url(connection_data.logo_url) or existing.logo_url
         existing.credentials = connection_data.credentials
         existing.status = "active"
         # Re-sync from current data on next sync cycle.
@@ -519,6 +530,7 @@ async def handle_oauth_callback(
         provider=provider_name,
         external_id=connection_data.external_id,
         institution_name=connection_data.institution_name,
+        logo_url=_clean_logo_url(connection_data.logo_url),
         credentials=connection_data.credentials,
         settings={"flow_params": state_payload.get("flow_params") or {}},
         status="active",
@@ -1098,6 +1110,19 @@ async def sync_connection(
         # Refresh credentials if needed
         credentials = await provider.refresh_credentials(connection.credentials)
         connection.credentials = credentials
+
+        # Backfill the institution logo for connections linked before logo
+        # capture existed. Best-effort: a failure here must never break sync.
+        if not connection.logo_url:
+            try:
+                logo = _clean_logo_url(await provider.get_institution_logo(credentials))
+                if logo:
+                    connection.logo_url = logo
+            except Exception:
+                logger.warning(
+                    "Failed to backfill logo for connection %s", connection.id,
+                    exc_info=True,
+                )
 
         # When the caller asks for fresh data (typically a user-initiated
         # manual sync), ask the provider to pull from the bank before we
