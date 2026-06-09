@@ -285,7 +285,7 @@ export default function ReportsPage() {
     }
 
     const grandTotal = innerDonutData.reduce((s, d) => s + d.value, 0)
-    const threshold = grandTotal * 0.01
+    const threshold = grandTotal * 0.02
 
     const itemLabel = (c: { label: string; key: string }) => {
       if (c.key === 'uncategorized') return t('reports.uncategorized')
