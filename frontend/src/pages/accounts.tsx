@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getAccountName } from '@/lib/account-utils'
 import { getConnectionName } from '@/lib/connection-utils'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -23,11 +23,6 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { Account, BankConnection } from '@/types'
 import {
-  Building2,
-  PiggyBank,
-  CreditCard,
-  TrendingUp,
-  Wallet,
   Pencil,
   Trash2,
   RefreshCw,
@@ -35,7 +30,9 @@ import {
   Plus,
   Settings,
   Archive,
+  Layers,
 } from 'lucide-react'
+import { AccountIcon, ConnectionLogo, getAccountTypeConfig } from '@/components/account-icon'
 import { PageHeader } from '@/components/page-header'
 import { BankConnectDialog } from '@/components/bank-connect-dialog'
 import { ConnectorSelectDialog, type Provider } from '@/components/connector-select-dialog'
@@ -58,20 +55,9 @@ function daysUntil(dateStr: string | null): number | null {
   return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }
 
-const ACCOUNT_TYPE_CONFIG: Record<string, { icon: React.ElementType; color: string; bg: string; label: string }> = {
-  checking:    { icon: Building2,   color: 'text-indigo-600',    bg: 'bg-indigo-100',    label: 'accounts.typeChecking' },
-  savings:     { icon: PiggyBank,   color: 'text-emerald-600', bg: 'bg-emerald-100', label: 'accounts.typeSavings' },
-  credit_card: { icon: CreditCard,  color: 'text-violet-600', bg: 'bg-violet-100', label: 'accounts.typeCreditCard' },
-  investment:  { icon: TrendingUp,  color: 'text-amber-600',  bg: 'bg-amber-100',  label: 'accounts.typeInvestment' },
-  wallet:      { icon: Wallet,      color: 'text-rose-600',   bg: 'bg-rose-100',   label: 'accounts.typeWallet' },
-}
-
-function getTypeConfig(type: string) {
-  return ACCOUNT_TYPE_CONFIG[type] ?? ACCOUNT_TYPE_CONFIG['checking']
-}
-
 export default function AccountsPage() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
@@ -225,18 +211,24 @@ export default function AccountsPage() {
         section={t('accounts.title')}
         title={t('accounts.title')}
         action={
-          canWrite ? (
-            <div className="flex gap-2">
-              <Button variant="outline" className="gap-1.5" onClick={() => setConnectorSelectOpen(true)}>
-                <Plus size={16} />
-                {t('accounts.connectBank')}
-              </Button>
-              <Button onClick={() => { setEditingAccount(null); setDialogOpen(true) }} className="gap-1.5">
-                <Plus size={16} />
-                {t('accounts.addManual')}
-              </Button>
-            </div>
-          ) : undefined
+          <div className="flex gap-2">
+            <Button variant="outline" className="gap-1.5" onClick={() => navigate('/collections')}>
+              <Layers size={16} />
+              {t('collections.title')}
+            </Button>
+            {canWrite && (
+              <>
+                <Button variant="outline" className="gap-1.5" onClick={() => setConnectorSelectOpen(true)}>
+                  <Plus size={16} />
+                  {t('accounts.connectBank')}
+                </Button>
+                <Button onClick={() => { setEditingAccount(null); setDialogOpen(true) }} className="gap-1.5">
+                  <Plus size={16} />
+                  {t('accounts.addManual')}
+                </Button>
+              </>
+            )}
+          </div>
         }
       />
 
@@ -254,8 +246,7 @@ export default function AccountsPage() {
             {manualAccounts.length > 0 ? (
               <div className="divide-y divide-muted">
                 {manualAccounts.map((acc) => {
-                  const cfg = getTypeConfig(acc.type)
-                  const Icon = cfg.icon
+                  const cfg = getAccountTypeConfig(acc.type)
                   const bal = Number(acc.current_balance)
                   const isCC = acc.type === 'credit_card'
                   const dueIn = isCC ? daysUntil(acc.next_due_date) : null
@@ -268,9 +259,7 @@ export default function AccountsPage() {
                   return (
                     <div key={acc.id} className="group flex items-center px-5 py-3 hover:bg-muted/50 transition-colors">
                       <Link to={`/accounts/${acc.id}`} className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className={`w-8 h-8 rounded-lg ${cfg.bg} flex items-center justify-center shrink-0`}>
-                          <Icon size={14} className={cfg.color} />
-                        </div>
+                        <AccountIcon account={acc} />
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-foreground truncate">{getAccountName(acc)}</p>
                           <p className="text-xs text-muted-foreground">
@@ -340,9 +329,7 @@ export default function AccountsPage() {
                     {/* Connection header */}
                     <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center">
-                          <Building2 size={14} className="text-muted-foreground" />
-                        </div>
+                        <ConnectionLogo logoUrl={conn.logo_url} />
                         <div>
                           <div className="flex items-center gap-2">
                             <p className="text-sm font-semibold text-foreground">{getConnectionName(conn)}</p>
@@ -416,8 +403,7 @@ export default function AccountsPage() {
                     {connAccounts.length > 0 ? (
                       <div className="divide-y divide-muted">
                         {connAccounts.map((acc) => {
-                          const cfg = getTypeConfig(acc.type)
-                          const Icon = cfg.icon
+                          const cfg = getAccountTypeConfig(acc.type)
                           const bal = Number(acc.current_balance)
                           const isCC = acc.type === 'credit_card'
                           const dueIn = isCC ? daysUntil(acc.next_due_date) : null
@@ -430,9 +416,7 @@ export default function AccountsPage() {
                           return (
                             <div key={acc.id} className="group flex items-center px-5 py-3 hover:bg-muted/50 transition-colors">
                               <Link to={`/accounts/${acc.id}`} className="flex items-center gap-3 flex-1 min-w-0">
-                                <div className={`w-8 h-8 rounded-lg ${cfg.bg} flex items-center justify-center shrink-0`}>
-                                  <Icon size={14} className={cfg.color} />
-                                </div>
+                                <AccountIcon account={acc} />
                                 <div className="min-w-0 flex-1">
                                   <p className="text-sm font-medium text-foreground truncate">{getAccountName(acc)}</p>
                                   <p className="text-xs text-muted-foreground">
@@ -500,14 +484,10 @@ export default function AccountsPage() {
               </div>
               <div className="divide-y divide-muted">
                 {closedAccounts.map((acc) => {
-                  const cfg = getTypeConfig(acc.type)
-                  const Icon = cfg.icon
                   return (
                     <div key={acc.id} className="flex items-center px-5 py-3">
                       <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <div className={`w-8 h-8 rounded-lg ${cfg.bg} flex items-center justify-center shrink-0`}>
-                          <Icon size={14} className={cfg.color} />
-                        </div>
+                        <AccountIcon account={acc} />
                         <p className="text-sm font-medium text-muted-foreground truncate">{getAccountName(acc)}</p>
                       </div>
                       {canWrite && (

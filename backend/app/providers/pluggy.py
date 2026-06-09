@@ -299,7 +299,8 @@ class PluggyProvider(BankProvider):
             accounts_resp.raise_for_status()
             accounts_data = accounts_resp.json()
 
-        institution_name = item_data.get("connector", {}).get("name", "Unknown Bank")
+        connector = item_data.get("connector", {})
+        institution_name = connector.get("name", "Unknown Bank")
 
         account_list = []
         for acc in accounts_data.get("results", []):
@@ -310,7 +311,18 @@ class PluggyProvider(BankProvider):
             institution_name=institution_name,
             credentials={"item_id": item_id},
             accounts=account_list,
+            logo_url=connector.get("imageUrl"),
         )
+
+    async def get_institution_logo(self, credentials: dict) -> Optional[str]:
+        item_id = credentials["item_id"]
+        headers = await self._headers()
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                f"{PLUGGY_API_BASE}/items/{item_id}", headers=headers
+            )
+            resp.raise_for_status()
+            return resp.json().get("connector", {}).get("imageUrl")
 
     async def get_accounts(self, credentials: dict) -> list[AccountData]:
         item_id = credentials["item_id"]

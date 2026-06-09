@@ -284,6 +284,7 @@
     "summaryIncome": "Entrate",
     "summaryExpenses": "Spese",
     "summaryNet": "Netto",
+    "summaryExcluded": "Escluso",
     "bulkCategorize": "Applica",
     "bulkSuccess": "{{count}} transazioni categorizzate",
     "selectCategory": "Seleziona categoria...",

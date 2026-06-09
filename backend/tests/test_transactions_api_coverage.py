@@ -35,7 +35,7 @@ async def test_list_with_summary(client: AsyncClient, auth_headers, test_transac
     assert resp.status_code == 200
     data = resp.json()
     assert data["summary"] is not None
-    assert {"income", "expense", "net", "currency"} <= data["summary"].keys()
+    assert {"income", "expense", "net", "excluded", "currency"} <= data["summary"].keys()
 
 
 @pytest.mark.asyncio

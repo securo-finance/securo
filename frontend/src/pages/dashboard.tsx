@@ -34,10 +34,12 @@ import { Link, useNavigate } from 'react-router-dom'
 import { ICON_MAP } from '@/lib/category-icons'
 import { PageHeader } from '@/components/page-header'
 import { CategoryIcon } from '@/components/category-icon'
+import { AccountIcon } from '@/components/account-icon'
 import { TransactionDrillDown, type DrillDownFilter } from '@/components/transaction-drill-down'
 import { TransactionDialog, extractApiError } from '@/components/transaction-dialog'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
+import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import type { Transaction } from '@/types'
 
 function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
@@ -82,31 +84,45 @@ export default function DashboardPage() {
     setSelectedMonth(newMonth)
 }
 
+  // Active Collection filter (issue #105): scope dashboard cards to its
+  // accounts. undefined when "All accounts".
+  const { activeAccountIds, activeWalletIds } = useCollectionFilter()
+  const acctIds = activeAccountIds ?? undefined
+  const walletIds = activeWalletIds ?? undefined
+  // A wallet-only collection (active, but with zero accounts) has no account
+  // data — skip the account-only cards so they render empty instead of
+  // silently falling back to "all accounts".
+  const noAccounts = activeAccountIds !== null && activeAccountIds.length === 0
+
   const { data: summary, isLoading: summaryLoading } = useQuery({
-    queryKey: ['dashboard', 'summary', selectedMonth],
-    queryFn: () => dashboard.summary(monthParam),
+    queryKey: ['dashboard', 'summary', selectedMonth, activeAccountIds, activeWalletIds],
+    queryFn: () => dashboard.summary(monthParam, undefined, acctIds, walletIds),
   })
 
   const { data: spending, isLoading: spendingLoading } = useQuery({
-    queryKey: ['dashboard', 'spending', selectedMonth],
-    queryFn: () => dashboard.spendingByCategory(monthParam),
+    queryKey: ['dashboard', 'spending', selectedMonth, activeAccountIds],
+    queryFn: () => dashboard.spendingByCategory(monthParam, acctIds),
+    enabled: !noAccounts,
   })
 
   const prevMonth = shiftMonth(selectedMonth, -1)
 
   const { data: balanceHistory, isLoading: balanceHistoryLoading } = useQuery({
-    queryKey: ['dashboard', 'balance-history', selectedMonth],
-    queryFn: () => dashboard.balanceHistory(monthParam),
+    queryKey: ['dashboard', 'balance-history', selectedMonth, activeAccountIds],
+    queryFn: () => dashboard.balanceHistory(monthParam, acctIds),
+    enabled: !noAccounts,
   })
 
   const { data: currentMonthTxs, isLoading: currentTxLoading } = useQuery({
-    queryKey: ['transactions', 'cumulative', selectedMonth],
+    queryKey: ['transactions', 'cumulative', selectedMonth, activeAccountIds],
     queryFn: () => transactions.list({
       from: monthStart,
       to: monthEnd,
       limit: 500,
       exclude_transfers: true,
+      account_ids: acctIds,
     }),
+    enabled: !noAccounts,
   })
 
   // Resolve group_id → name for the badge on split transactions.
@@ -277,6 +293,7 @@ export default function DashboardPage() {
     categoryIcon: string | null
     categoryName: string | null
     categoryColor: string | null
+    accountId: string | null
     isProjected: boolean
     attachmentCount: number
     isShared: boolean
@@ -319,6 +336,7 @@ export default function DashboardPage() {
         categoryIcon: tx.category?.icon ?? null,
         categoryName: tx.category?.name ?? null,
         categoryColor: tx.category?.color ?? null,
+        accountId: tx.account_id ?? null,
         isProjected: false,
         attachmentCount: tx.attachment_count ?? 0,
         isShared,
@@ -342,6 +360,7 @@ export default function DashboardPage() {
         categoryIcon: pt.category_icon,
         categoryName: pt.category_name,
         categoryColor: pt.category_color ?? null,
+        accountId: null,
         isProjected: true,
         attachmentCount: 0,
         isShared: false,
@@ -912,7 +931,9 @@ export default function DashboardPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="border-b border-border hover:bg-transparent">
-                    <TableHead className="pl-5 text-xs font-medium text-muted-foreground">{t('transactions.description')}</TableHead>
+                    <TableHead className="pl-5 text-xs font-medium text-muted-foreground hidden sm:table-cell">{t('transactions.date')}</TableHead>
+                    <TableHead className="text-xs font-medium text-muted-foreground">{t('transactions.description')}</TableHead>
+                    <TableHead className="text-xs font-medium text-muted-foreground hidden sm:table-cell">{t('transactions.account')}</TableHead>
                     <TableHead className="pr-5 text-right text-xs font-medium text-muted-foreground">{t('transactions.amount')}</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -939,7 +960,10 @@ export default function DashboardPage() {
                         if (tx) { setEditingTx(tx); setDialogOpen(true) }
                       }}
                     >
-                      <TableCell className="py-2.5 pl-5">
+                      <TableCell className="py-2.5 pl-5 text-sm text-muted-foreground tabular-nums whitespace-nowrap hidden sm:table-cell">
+                        {formatDate(row.date, dateLocale)}
+                      </TableCell>
+                      <TableCell className="py-2.5 pl-5 sm:pl-0">
                         <div className="flex items-center gap-3">
                           <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="lg" />
                           <div className="min-w-0">
@@ -968,9 +992,23 @@ export default function DashboardPage() {
                                 <Paperclip size={12} className="text-muted-foreground shrink-0" />
                               )}
                             </div>
-                            <p className="text-xs text-muted-foreground">{formatDate(row.date, dateLocale)}</p>
+                            <p className="text-xs text-muted-foreground sm:hidden">{formatDate(row.date, dateLocale)}</p>
                           </div>
                         </div>
+                      </TableCell>
+                      <TableCell className="py-2.5 text-sm text-muted-foreground hidden sm:table-cell">
+                        {(() => {
+                          const acc = row.accountId
+                            ? accountsList?.find((a) => a.id === row.accountId)
+                            : undefined
+                          if (!acc) return <span className="text-muted-foreground">—</span>
+                          return (
+                            <span className="flex items-center gap-2 min-w-0">
+                              <AccountIcon account={acc} size="sm" />
+                              <span className="truncate">{getAccountName(acc)}</span>
+                            </span>
+                          )
+                        })()}
                       </TableCell>
                       <TableCell className="py-2.5 pr-5 text-right">
                         <span className={`text-sm font-semibold tabular-nums ${row.isIgnored ? 'text-gray-500' : row.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
@@ -1031,7 +1069,17 @@ export default function DashboardPage() {
       </div>
 
       <TransactionDrillDown
-        filter={drillDown}
+        filter={
+          drillDown
+            ? {
+                ...drillDown,
+                // Keep drill-downs consistent with the collection-scoped cards
+                // they open from (e.g. "Categorize now").
+                account_ids:
+                  drillDown.account_ids ?? (acctIds && acctIds.length > 0 ? acctIds : undefined),
+              }
+            : null
+        }
         onClose={() => setDrillDown(null)}
         onTransactionClick={(tx) => { setEditingTx(tx); setDialogOpen(true) }}
       />

@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
+import { useCollectionFilter } from '@/contexts/collection-filter-context'
+import { CollectionSelector } from '@/components/collection-selector'
 import { auth as authApi, backup as backupApi, admin as adminApi } from '@/lib/api'
 import { resolveSupportedLang } from '@/lib/i18n'
 import { toast } from 'sonner'
@@ -102,6 +104,7 @@ function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
 export function AppLayout() {
   const { t } = useTranslation()
   const { user, logout, updateUser } = useAuth()
+  const { activeAccountIds } = useCollectionFilter()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
   const { theme, setTheme, resolvedTheme } = useTheme()
@@ -181,7 +184,12 @@ export function AppLayout() {
   })
 
   const allAccounts = accountsList ?? []
-  const totalBalance = allAccounts.reduce((sum, a) => {
+  // When a collection is active, the sidebar list + total reflect only its
+  // accounts (issue #105). null = all accounts.
+  const visibleAccounts = activeAccountIds
+    ? allAccounts.filter((a) => activeAccountIds.includes(a.id))
+    : allAccounts
+  const totalBalance = visibleAccounts.reduce((sum, a) => {
     return sum + Number(a.balance_primary ?? a.current_balance)
   }, 0)
   const versionA11yLabel = t('app.versionAriaLabel', { version: APP_VERSION })
@@ -437,7 +445,7 @@ export function AppLayout() {
               </button>
               {accountsExpanded && (
                 <div className="mt-1 space-y-0.5">
-                  {[...allAccounts].sort((a, b) => Math.abs(Number(b.current_balance)) - Math.abs(Number(a.current_balance))).slice(0, accountsShowAll ? allAccounts.length : 3).map((acc) => {
+                  {[...visibleAccounts].sort((a, b) => Math.abs(Number(b.current_balance)) - Math.abs(Number(a.current_balance))).slice(0, accountsShowAll ? visibleAccounts.length : 3).map((acc) => {
                     const balance = Number(acc.current_balance)
                     const prevBalance = acc.previous_balance ?? 0
                     const pctChange = prevBalance !== 0
@@ -471,7 +479,7 @@ export function AppLayout() {
                       </Link>
                     )
                   })}
-                  {allAccounts.length > 3 && (
+                  {visibleAccounts.length > 3 && (
                     <button
                       onClick={() => setAccountsShowAll(!accountsShowAll)}
                       className="w-full px-3 py-1.5 text-[11px] font-medium text-sidebar-muted/70 hover:text-sidebar-foreground transition-colors text-center"
@@ -479,8 +487,8 @@ export function AppLayout() {
                       {accountsShowAll
                         ? t('common.showLess', { defaultValue: 'Show less' })
                         : t('common.showMore', {
-                            count: allAccounts.length - 3,
-                            defaultValue: `+${allAccounts.length - 3} more`,
+                            count: visibleAccounts.length - 3,
+                            defaultValue: `+${visibleAccounts.length - 3} more`,
                           })}
                     </button>
                   )}
@@ -534,6 +542,9 @@ export function AppLayout() {
         {/* Main content */}
         <main className="flex-1 min-h-screen overflow-x-hidden lg:ml-60">
           <div className="p-6 max-w-7xl mx-auto">
+            {/* Active-collection filter (issue #105): sticky bar above the
+                content so the scope is visible right where the data is. */}
+            <CollectionSelector variant="header" />
             <Outlet />
           </div>
         </main>

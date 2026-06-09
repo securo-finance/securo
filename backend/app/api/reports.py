@@ -1,3 +1,6 @@
+import uuid
+from typing import Optional
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,18 +16,15 @@ router = APIRouter(prefix="/api/reports", tags=["reports"])
 async def get_net_worth(
     months: int = Query(12, ge=1, le=24),
     interval: str = Query("monthly", pattern="^(daily|weekly|monthly|yearly)$"),
+    account_ids: Optional[list[uuid.UUID]] = Query(None),
+    asset_group_ids: Optional[list[uuid.UUID]] = Query(None),
     period: str | None = Query(None, pattern="^ytd$"),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
     return await report_service.get_net_worth_report(
-        session,
-        ctx.workspace.id,
-        ctx.user_id,
-        months,
-        interval,
-        ctx.user.primary_currency,
-        period=period,
+        session, ctx.workspace.id, ctx.user_id, months, interval, ctx.user.primary_currency,
+        account_ids=account_ids, asset_group_ids=asset_group_ids, period=period,
     )
 
 
@@ -32,18 +32,14 @@ async def get_net_worth(
 async def get_income_expenses(
     months: int = Query(12, ge=1, le=24),
     interval: str = Query("monthly", pattern="^(daily|weekly|monthly|yearly)$"),
+    account_ids: Optional[list[uuid.UUID]] = Query(None),
     period: str | None = Query(None, pattern="^ytd$"),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
     return await report_service.get_income_expenses_report(
-        session,
-        ctx.workspace.id,
-        ctx.user_id,
-        months,
-        interval,
-        ctx.user.primary_currency,
-        period=period,
+        session, ctx.workspace.id, ctx.user_id, months, interval, ctx.user.primary_currency,
+        account_ids=account_ids, period=period,
     )
 
 
@@ -52,9 +48,11 @@ async def get_cash_flow(
     months: int = Query(6, ge=1, le=12),
     interval: str = Query("daily", pattern="^(daily|weekly|monthly)$"),
     baseline: bool = Query(False),
+    account_ids: Optional[list[uuid.UUID]] = Query(None),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
     return await report_service.get_cash_flow_report(
-        session, ctx.workspace.id, ctx.user_id, months, interval, ctx.user.primary_currency, baseline=baseline,
+        session, ctx.workspace.id, ctx.user_id, months, interval, ctx.user.primary_currency,
+        baseline=baseline, account_ids=account_ids,
     )

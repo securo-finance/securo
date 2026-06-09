@@ -234,6 +234,8 @@ async def test_get_transactions_include_summary(session, test_user, test_workspa
     assert summary["income"] == Decimal("1000")
     assert summary["expense"] == Decimal("300")
     assert summary["net"] == Decimal("700")
+    # Nothing transfer-like / ignored in range, so nothing is excluded (#242).
+    assert summary["excluded"] == Decimal("0")
 
 
 async def test_get_transactions_summary_excludes_ignored(session, test_user, test_workspace, acct):
@@ -246,6 +248,46 @@ async def test_get_transactions_summary_excludes_ignored(session, test_user, tes
         session, test_workspace.id, test_user.id, include_summary=True
     )
     assert summary["expense"] == Decimal("100")
+    # The ignored row leaves income/expense but surfaces in `excluded` (#242).
+    assert summary["excluded"] == Decimal("999")
+
+
+async def test_get_transactions_summary_excludes_transfers_and_treat_as_transfer(
+    session, test_user, test_workspace, acct
+):
+    """income/expense use counts_as_pnl(); paired transfers and
+    treat_as_transfer categories are kept out of P/L and surface in
+    `excluded` instead (#242)."""
+    from app.models.category import Category
+
+    invest = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Investments",
+        treat_as_transfer=True,
+    )
+    session.add(invest)
+    await session.commit()
+
+    # Real P/L
+    await _mk_txn(session, test_user, acct, description="Salary", amount=Decimal("2000"), type="credit")
+    await _mk_txn(session, test_user, acct, description="Rent", amount=Decimal("800"), type="debit")
+    # Paired transfer (both legs excluded from P/L, both counted in excluded)
+    pair = uuid.uuid4()
+    await _mk_txn(session, test_user, acct, description="Xfer out", amount=Decimal("500"), type="debit", transfer_pair_id=pair)
+    await _mk_txn(session, test_user, acct, description="Xfer in", amount=Decimal("500"), type="credit", transfer_pair_id=pair)
+    # treat_as_transfer category contribution (one-sided, excluded from P/L)
+    await _mk_txn(session, test_user, acct, description="Buy ETF", amount=Decimal("300"), type="debit", category_id=invest.id)
+
+    _, _, summary = await get_transactions(
+        session, test_workspace.id, test_user.id, include_summary=True
+    )
+    assert summary["income"] == Decimal("2000")
+    assert summary["expense"] == Decimal("800")
+    assert summary["net"] == Decimal("1200")
+    # 500 (out) + 500 (in) + 300 (investment) — absolute totals.
+    assert summary["excluded"] == Decimal("1300")
 
 
 async def test_get_transactions_sorting(session, test_user, test_workspace, acct):

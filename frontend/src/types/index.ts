@@ -91,6 +91,7 @@ export interface BankConnection {
   provider: string
   institution_name: string
   display_name: string | null
+  logo_url: string | null
   external_id: string
   status: string
   settings: ConnectionSettings | null
@@ -110,6 +111,10 @@ export interface Account {
   external_id: string | null
   name: string
   display_name: string | null
+  // Denormalized bank identity from the linked connection (null for manual
+  // accounts). Used to render the institution logo next to the account.
+  institution_name: string | null
+  institution_logo_url: string | null
   type: string
   balance: number
   current_balance: number
@@ -137,6 +142,19 @@ export interface CreditCardBill {
   total_amount: number
   currency: string
   minimum_payment: number | null
+}
+
+export interface Collection {
+  id: string
+  user_id: string
+  name: string
+  icon: string
+  color: string
+  position: number
+  account_ids: string[]
+  account_count: number
+  wallet_ids: string[]
+  wallet_count: number
 }
 
 export interface AccountSummary {
@@ -589,6 +607,9 @@ export interface TransactionsSummary {
   income: number
   expense: number
   net: number
+  // Absolute total of everything excluded from income/expense for the same
+  // rows — transfers, treat_as_transfer categories and ignored items (#242).
+  excluded: number
   currency: string
 }
 

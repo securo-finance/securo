@@ -15,6 +15,7 @@ class BankConnectionRead(BankConnectionBase):
     user_id: uuid.UUID
     external_id: str
     display_name: Optional[str] = None
+    logo_url: Optional[str] = None
     settings: Optional[dict] = None
     status: str
     last_sync_at: Optional[datetime] = None

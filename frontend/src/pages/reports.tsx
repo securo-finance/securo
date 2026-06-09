@@ -24,6 +24,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/page-header'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
+import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import type { ReportResponse, CategoryTrendItem } from '@/types'
 
 function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
@@ -88,14 +89,13 @@ const RANGE_LABELS: Record<string, string> = {
 interface ReportTab {
   key: string
   labelKey: string
-  fetch: (months: number, interval: string, period?: 'ytd') => Promise<ReportResponse>
   enabled: boolean
 }
 
 const REPORT_TABS: ReportTab[] = [
-  { key: 'net_worth', labelKey: 'reports.netWorth', fetch: (m, i, p) => reports.netWorth(m, i, p), enabled: true },
-  { key: 'income_expenses', labelKey: 'reports.incomeExpenses', fetch: (m, i, p) => reports.incomeExpenses(m, i, p), enabled: true },
-  { key: 'cash_flow', labelKey: 'reports.cashFlow', fetch: (m, i) => reports.cashFlow(m, i), enabled: true },
+  { key: 'net_worth', labelKey: 'reports.netWorth', enabled: true },
+  { key: 'income_expenses', labelKey: 'reports.incomeExpenses', enabled: true },
+  { key: 'cash_flow', labelKey: 'reports.cashFlow', enabled: true },
 ]
 
 export default function ReportsPage() {
@@ -112,6 +112,15 @@ export default function ReportsPage() {
   const [sparklineView, setSparklineView] = useState<'byExpenses' | 'byIncome'>('byExpenses')
   const [sparklinePage, setSparklinePage] = useState(0)
   const [cashFlowBaseline, setCashFlowBaseline] = useState(false)
+  // Active Collection filter (issue #105): scope all report tabs to its
+  // accounts; net worth also includes the collection's wallets' assets.
+  const { activeAccountIds, activeWalletIds } = useCollectionFilter()
+  const acctIds = activeAccountIds ?? undefined
+  const walletIds = activeWalletIds ?? undefined
+  // Wallet-only collection (active, zero accounts): the account-based reports
+  // (income/expenses, cash flow) have no data — only net worth (which includes
+  // the wallets' assets) is meaningful.
+  const noAccounts = activeAccountIds !== null && activeAccountIds.length === 0
 
   const currentTab = REPORT_TABS.find((tab) => tab.key === activeTab) ?? REPORT_TABS[0]
 
@@ -138,12 +147,14 @@ export default function ReportsPage() {
   }
 
   const { data, isLoading } = useQuery<ReportResponse>({
-    queryKey: ['reports', activeTab, rangeKey, months, period ?? null, interval, isCashFlow ? cashFlowBaseline : false],
+    queryKey: ['reports', activeTab, rangeKey, months, period ?? null, interval, isCashFlow ? cashFlowBaseline : false, activeAccountIds, activeWalletIds],
     queryFn: () =>
       isCashFlow
-        ? reports.cashFlow(months, interval, cashFlowBaseline)
-        : currentTab.fetch(months, interval, period),
-    enabled: currentTab.enabled,
+        ? reports.cashFlow(months, interval, cashFlowBaseline, acctIds)
+        : activeTab === 'income_expenses'
+          ? reports.incomeExpenses(months, interval, acctIds, period)
+          : reports.netWorth(months, interval, acctIds, walletIds, period),
+    enabled: currentTab.enabled && !(noAccounts && activeTab !== 'net_worth'),
   })
 
   const summary = data?.summary

@@ -5,6 +5,7 @@ from typing import Optional
 
 from sqlalchemy import case, func, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import contains_eager
 
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
@@ -78,6 +79,7 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
     query = (
         select(
             Account,
+            BankConnection,
             func.coalesce(balance_sq.c.current_balance, 0).label("current_balance"),
             func.coalesce(prev_balance_sq.c.previous_balance, 0).label("previous_balance"),
         )
@@ -96,15 +98,22 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
     query = query.order_by(Account.name)
     result = await session.execute(query)
     return [
-            serialize_account(acc, current_balance, previous_balance)
-            for acc, current_balance, previous_balance in result.all()
+            serialize_account(acc, current_balance, previous_balance, connection)
+            for acc, connection, current_balance, previous_balance in result.all()
         ]
+
+
+def _institution_name(connection: Optional[BankConnection]) -> Optional[str]:
+    if not connection:
+        return None
+    return connection.display_name or connection.institution_name
 
 
 def serialize_account(
     acc: Account,
     current_balance: Optional[Decimal],
     previous_balance: Optional[Decimal],
+    connection: Optional[BankConnection] = None,
 ) -> dict:
     # Connected CC: provider stores positive for debt → negate.
     # Manual accounts: transaction math already gives correct sign.
@@ -133,6 +142,8 @@ def serialize_account(
         "minimum_payment": float(acc.minimum_payment) if acc.minimum_payment is not None else None,
         "card_brand": acc.card_brand,
         "card_level": acc.card_level,
+        "institution_name": _institution_name(connection),
+        "institution_logo_url": connection.logo_url if connection else None,
         "available_credit": None,
         "next_close_date": None,
         "next_due_date": None,
@@ -180,6 +191,7 @@ async def get_account(session: AsyncSession, account_id: uuid.UUID, workspace_id
     result = await session.execute(
         select(Account)
         .outerjoin(BankConnection)
+        .options(contains_eager(Account.connection))
         .where(
             Account.id == account_id,
             or_(

@@ -11,6 +11,7 @@ import type {
   ConnectionSettings,
   Account,
   AccountSummary,
+  Collection,
   CreditCardBill,
   Transaction,
   Payee,
@@ -831,25 +832,43 @@ export const goals = {
 }
 
 // Dashboard
+// Repeated `account_ids=a&account_ids=b` (no [] brackets) so FastAPI's
+// list[UUID] query param parses them. Only attached when a filter is active.
+const acctIdsParam = (accountIds?: string[]) =>
+  accountIds && accountIds.length > 0
+    ? { params: { account_ids: accountIds }, paramsSerializer: { indexes: null as null } }
+    : {}
+
 export const dashboard = {
-  summary: async (month?: string, balanceDate?: string): Promise<DashboardSummary> => {
-    const { data } = await api.get('/dashboard/summary', { params: { month, balance_date: balanceDate } })
+  summary: async (month?: string, balanceDate?: string, accountIds?: string[], assetGroupIds?: string[]): Promise<DashboardSummary> => {
+    const hasFilter = (accountIds && accountIds.length > 0) || (assetGroupIds && assetGroupIds.length > 0)
+    const { data } = await api.get('/dashboard/summary', {
+      params: {
+        month, balance_date: balanceDate,
+        ...(accountIds && accountIds.length > 0 ? { account_ids: accountIds } : {}),
+        ...(assetGroupIds && assetGroupIds.length > 0 ? { asset_group_ids: assetGroupIds } : {}),
+      },
+      ...(hasFilter ? { paramsSerializer: { indexes: null as null } } : {}),
+    })
     return data
   },
-  spendingByCategory: async (month?: string): Promise<SpendingByCategory[]> => {
-    const { data } = await api.get('/dashboard/spending-by-category', { params: { month } })
+  spendingByCategory: async (month?: string, accountIds?: string[]): Promise<SpendingByCategory[]> => {
+    const extra = acctIdsParam(accountIds)
+    const { data } = await api.get('/dashboard/spending-by-category', { params: { month, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
     return data
   },
-  monthlyTrend: async (months = 6): Promise<MonthlyTrend[]> => {
-    const { data } = await api.get('/dashboard/monthly-trend', { params: { months } })
+  monthlyTrend: async (months = 6, accountIds?: string[]): Promise<MonthlyTrend[]> => {
+    const extra = acctIdsParam(accountIds)
+    const { data } = await api.get('/dashboard/monthly-trend', { params: { months, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
     return data
   },
   projectedTransactions: async (month?: string): Promise<ProjectedTransaction[]> => {
     const { data } = await api.get('/dashboard/projected-transactions', { params: { month } })
     return data
   },
-  balanceHistory: async (month?: string): Promise<BalanceHistory> => {
-    const { data } = await api.get('/dashboard/balance-history', { params: { month } })
+  balanceHistory: async (month?: string, accountIds?: string[]): Promise<BalanceHistory> => {
+    const extra = acctIdsParam(accountIds)
+    const { data } = await api.get('/dashboard/balance-history', { params: { month, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
     return data
   },
 }
@@ -929,18 +948,47 @@ export const assetGroups = {
   },
 }
 
+// Collections — user-defined account groups for filtering (issue #105)
+export const collections = {
+  list: async (): Promise<Collection[]> => {
+    const { data } = await api.get('/collections')
+    return data
+  },
+  create: async (payload: { name: string; icon?: string; color?: string; account_ids?: string[]; wallet_ids?: string[] }): Promise<Collection> => {
+    const { data } = await api.post('/collections', payload)
+    return data
+  },
+  update: async (id: string, payload: Partial<{ name: string; icon: string; color: string; position: number; account_ids: string[]; wallet_ids: string[] }>): Promise<Collection> => {
+    const { data } = await api.patch(`/collections/${id}`, payload)
+    return data
+  },
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/collections/${id}`)
+  },
+}
+
 // Reports
 export const reports = {
-  netWorth: async (months = 12, interval = 'monthly', period?: 'ytd'): Promise<ReportResponse> => {
-    const { data } = await api.get('/reports/net-worth', { params: { months, interval, period } })
+  netWorth: async (months = 12, interval = 'monthly', accountIds?: string[], assetGroupIds?: string[], period?: 'ytd'): Promise<ReportResponse> => {
+    const hasFilter = (accountIds && accountIds.length > 0) || (assetGroupIds && assetGroupIds.length > 0)
+    const { data } = await api.get('/reports/net-worth', {
+      params: {
+        months, interval, period,
+        ...(accountIds && accountIds.length > 0 ? { account_ids: accountIds } : {}),
+        ...(assetGroupIds && assetGroupIds.length > 0 ? { asset_group_ids: assetGroupIds } : {}),
+      },
+      ...(hasFilter ? { paramsSerializer: { indexes: null as null } } : {}),
+    })
     return data
   },
-  incomeExpenses: async (months = 12, interval = 'monthly', period?: 'ytd'): Promise<ReportResponse> => {
-    const { data } = await api.get('/reports/income-expenses', { params: { months, interval, period } })
+  incomeExpenses: async (months = 12, interval = 'monthly', accountIds?: string[], period?: 'ytd'): Promise<ReportResponse> => {
+    const extra = acctIdsParam(accountIds)
+    const { data } = await api.get('/reports/income-expenses', { params: { months, interval, period, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
     return data
   },
-  cashFlow: async (months = 6, interval = 'daily', baseline = false): Promise<ReportResponse> => {
-    const { data } = await api.get('/reports/cash-flow', { params: { months, interval, baseline } })
+  cashFlow: async (months = 6, interval = 'daily', baseline = false, accountIds?: string[]): Promise<ReportResponse> => {
+    const extra = acctIdsParam(accountIds)
+    const { data } = await api.get('/reports/cash-flow', { params: { months, interval, baseline, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
     return data
   },
 }

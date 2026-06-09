@@ -47,6 +47,11 @@ class AccountRead(AccountBase):
     connection_id: Optional[uuid.UUID] = None
     external_id: Optional[str] = None
     display_name: Optional[str] = None
+    # Denormalized from the linked BankConnection so every surface that shows
+    # an account (transactions list, accounts page, dashboard) can render the
+    # bank identity without a separate join. Null for manual accounts.
+    institution_name: Optional[str] = None
+    institution_logo_url: Optional[str] = None
     current_balance: float = 0.0
     previous_balance: Optional[float] = None
     balance_primary: Optional[float] = None

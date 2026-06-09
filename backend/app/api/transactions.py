@@ -33,10 +33,16 @@ class TransactionsSummary(BaseModel):
     """Income / expense / net totals across all rows matching the active
     filters (issue #185). Amounts are in the user's primary currency.
     Floats (not Decimal) so the JSON payload matches `amount_primary`
-    and the frontend gets plain numbers."""
+    and the frontend gets plain numbers.
+
+    `excluded` (issue #242) is the absolute total of everything filtered
+    out of income/expense for the same rows — paired transfers,
+    `treat_as_transfer` categories (transfers, investments, custom) and
+    ignored items — i.e. the complement of `counts_as_pnl()`."""
     income: float
     expense: float
     net: float
+    excluded: float
     currency: str
 
 

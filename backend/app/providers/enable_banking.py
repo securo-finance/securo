@@ -405,7 +405,22 @@ class EnableBankingProvider(BankProvider):
             institution_name=institution_name,
             credentials=credentials,
             accounts=accounts,
+            # The session payload sometimes carries the ASPSP logo; when it
+            # doesn't, the sync layer backfills it via get_institution_logo.
+            logo_url=aspsp.get("logo"),
         )
+
+    async def get_institution_logo(self, credentials: dict) -> Optional[str]:
+        aspsp = credentials.get("aspsp") or {}
+        name = aspsp.get("name")
+        country = aspsp.get("country")
+        if not name:
+            return None
+        institutions = await self.list_institutions(country)
+        for inst in institutions.institutions:
+            if inst.name == name:
+                return inst.logo
+        return None
 
     async def _build_account(self, raw: dict) -> AccountData:
         uid = raw.get("uid") or raw.get("account_uid") or ""

@@ -140,12 +140,19 @@ export function TransactionDialog({
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className={cn(
-        'transition-[max-width] duration-300',
+        // Bound the dialog to the viewport (dvh accounts for mobile browser
+        // chrome) and make it a flex column so the inner scroll region works
+        // on small screens, not just at the sm: breakpoint (issue #286).
+        'transition-[max-width] duration-300 flex flex-col max-h-[calc(100dvh-2rem)] overflow-hidden',
         hasPreview ? 'sm:max-w-5xl max-w-2xl' : 'sm:max-w-2xl max-w-2xl'
       )}>
-        <div className={isEditing ? 'sm:flex sm:gap-0 sm:h-[80vh]' : ''}>
+        <div className={isEditing
+          ? 'flex flex-col min-h-0 flex-1 sm:flex-row sm:flex-none sm:gap-0 sm:h-[80vh]'
+          : 'flex flex-col min-h-0 flex-1'}>
           {/* Left column: form */}
-          <div className={isEditing ? 'sm:flex-1 sm:min-w-0 sm:flex sm:flex-col sm:overflow-hidden sm:pr-6' : ''}>
+          <div className={isEditing
+            ? 'flex flex-col min-w-0 min-h-0 flex-1 overflow-hidden sm:pr-6'
+            : 'flex flex-col min-h-0 flex-1'}>
             <DialogHeader className="mb-4">
               <DialogTitle>
                 {transaction ? t('common.edit') : t('transactions.addManual')}
@@ -554,8 +561,9 @@ function TransactionForm({
         onSave(txData, recurringData, isCreating && pendingFiles.length > 0 ? pendingFiles : undefined, action)
       }}
       className={cn(
-        'flex flex-col',
-        !isCreating ? 'flex-1 min-h-0' : 'max-h-[85vh]',
+        // Always a bounded flex column; the DialogContent caps the overall
+        // height and this lets the body below scroll within it (issue #286).
+        'flex flex-col flex-1 min-h-0',
         hasPreview && 'mt-4'
       )}
     >

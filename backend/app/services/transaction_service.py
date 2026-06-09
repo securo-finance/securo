@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import select, func, or_, update
+from sqlalchemy import select, func, or_, not_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -21,6 +21,7 @@ from app.services import split_service
 from app.services.credit_card_service import apply_effective_date
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.fx_rate_service import stamp_primary_amount, convert as fx_convert
+from app.services._query_filters import counts_as_pnl
 
 
 def _apply_fx_override(transaction, amount, amount_primary=None, fx_rate_used=None):
@@ -362,14 +363,12 @@ async def get_transactions(
     # rows). Computed before pagination so it covers the whole result set.
     summary: Optional[dict] = None
     if include_summary:
-        ignored_category_ids = select(Category.id).where(Category.is_ignored == True)
-        pnl_subq = base_query.where(
-        Transaction.is_ignored == False,
-        or_(
-            Transaction.category_id.is_(None),
-            Transaction.category_id.not_in(ignored_category_ids),
-        ),
-    ).subquery()
+        # Income / expense / net use the shared `counts_as_pnl()` definition
+        # (issue #242) so the footer matches the dashboard & reports: paired
+        # transfers, `treat_as_transfer` categories (transfers, investments,
+        # custom) and ignored items are kept OUT of income/expense.
+        pnl_filter = counts_as_pnl()
+        pnl_subq = base_query.where(pnl_filter).subquery()
         amount_norm = func.coalesce(
             pnl_subq.c.amount_primary, pnl_subq.c.amount
         )
@@ -386,10 +385,25 @@ async def get_transactions(
                 income = Decimal(str(row_total or 0))
             elif row_type == "debit":
                 expense = Decimal(str(row_total or 0))
+
+        # Excluded: the absolute total of everything filtered out of P/L for
+        # the same rows — the complement of `counts_as_pnl()`. Surfaces
+        # transfer-like movement (e.g. how much was moved/invested) without
+        # distorting income/expense/net.
+        excl_subq = base_query.where(not_(pnl_filter)).subquery()
+        excl_amount_norm = func.coalesce(
+            excl_subq.c.amount_primary, excl_subq.c.amount
+        )
+        excluded_total = await session.scalar(
+            select(func.coalesce(func.sum(func.abs(excl_amount_norm)), 0))
+        )
+        excluded = Decimal(str(excluded_total or 0))
+
         summary = {
             "income": income,
             "expense": expense,
             "net": income - expense,
+            "excluded": excluded,
         }
 
     # Apply ordering (and pagination unless skipped). Bill-view callers

@@ -42,10 +42,16 @@ async def _get_recurring_projections(
     workspace_id: uuid.UUID,
     month_start: date,
     month_end: date,
+    account_ids: Optional[list[uuid.UUID]] = None,
 ) -> list[dict]:
     """Compute virtual recurring transaction projections for a month.
-    Pure read — no DB writes. Returns list of dicts with category_id, amount, type, currency."""
-    result = await session.execute(
+    Pure read — no DB writes. Returns list of dicts with category_id, amount, type, currency.
+
+    When ``account_ids`` is given (Collection filter), only recurring rules on
+    those accounts are projected. Empty list → no projections."""
+    if account_ids is not None and len(account_ids) == 0:
+        return []
+    stmt = (
         select(RecurringTransaction)
         .where(
             RecurringTransaction.workspace_id == workspace_id,
@@ -53,6 +59,9 @@ async def _get_recurring_projections(
             RecurringTransaction.start_date < month_end,
         )
     )
+    if account_ids:
+        stmt = stmt.where(RecurringTransaction.account_id.in_(account_ids))
+    result = await session.execute(stmt)
     recurring_list = list(result.scalars().all())
 
     projections = []
@@ -83,12 +92,24 @@ async def get_summary(
     user_id: uuid.UUID,
     month: Optional[date] = None,
     balance_date: Optional[date] = None,
+    account_ids: Optional[list[uuid.UUID]] = None,
+    asset_group_ids: Optional[list[uuid.UUID]] = None,
 ) -> DashboardSummary:
     if not month:
         month = date.today().replace(day=1)
 
     month_start, month_end = _month_range(month)
     today = date.today()
+
+    # Collection filter (issue #105): show the *raw* P&L/balances of the
+    # collection's accounts, plus the assets in its wallets (asset_group_ids);
+    # group-split redistribution and cross-group shares are gated off so the
+    # filtered numbers stay self-consistent. A wallet-only collection (wallets
+    # but no accounts) still filters — coerce accounts to empty.
+    if asset_group_ids is not None and account_ids is None:
+        account_ids = []
+    filtered = account_ids is not None
+    acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
 
     # Reporting mode is a global app setting (admin-controlled). When "accrual",
     # aggregation queries bucket credit card transactions by the bill's due
@@ -110,14 +131,14 @@ async def get_summary(
         # Current or future month: today
         cutoff = today
 
-    total_balance = await _total_balance_by_currency(session, workspace_id, cutoff)
+    total_balance = await _total_balance_by_currency(session, workspace_id, cutoff, account_ids)
 
     # For current/future months, project the total balance by adding recurring
     # projections from cutoff+1 through month_end.
     if month_end > cutoff:
         projection_start = cutoff + timedelta(days=1)
         balance_projections = await _get_recurring_projections(
-            session, workspace_id, projection_start, month_end
+            session, workspace_id, projection_start, month_end, account_ids
         )
         for proj in balance_projections:
             signed = proj["amount"] if proj["type"] == "credit" else -proj["amount"]
@@ -140,52 +161,60 @@ async def get_summary(
             report_date < month_end,
             Transaction.source != "opening_balance",
             counts_as_user_pnl(),
+            *acct_filter,
         )
     )
     monthly_row = monthly_result.one()
     monthly_income = float(monthly_row[0] or 0)
     monthly_expenses = float(monthly_row[1] or 0)
 
-    # Subtract non-owner shares of the user's own split txs — they paid
-    # for the others, so those amounts aren't their actual cost.
-    own_offset_inc, own_offset_exp = await owner_split_offset_pnl(
-        session,
-        user_id,
-        month_start,
-        month_end,
-        use_effective_date=False,
-        workspace_id=workspace_id,
-    )
-    monthly_income -= own_offset_inc
-    monthly_expenses -= own_offset_exp
+    if not filtered:
+        # Subtract non-owner shares of the user's own split txs — they paid
+        # for the others, so those amounts aren't their actual cost.
+        own_offset_inc, own_offset_exp = await owner_split_offset_pnl(
+            session,
+            user_id,
+            month_start,
+            month_end,
+            use_effective_date=False,
+            workspace_id=workspace_id,
+        )
+        monthly_income -= own_offset_inc
+        monthly_expenses -= own_offset_exp
 
-    # Add the viewer's share from group splits where they're a linked
-    # member but not the owner. Their concert ticket paid by a friend
-    # is a real expense in their P/L picture.
-    shared_income, shared_expenses = await viewer_shared_pnl(
-        session, user_id, month_start, month_end, use_effective_date=False
-    )
-    monthly_income += shared_income
-    monthly_expenses += shared_expenses
+        # Add the viewer's share from group splits where they're a linked
+        # member but not the owner. Their concert ticket paid by a friend
+        # is a real expense in their P/L picture.
+        shared_income, shared_expenses = await viewer_shared_pnl(
+            session, user_id, month_start, month_end, use_effective_date=False
+        )
+        monthly_income += shared_income
+        monthly_expenses += shared_expenses
 
     # Save real-only totals before adding projections (used for primary init)
     real_monthly_income = monthly_income
     real_monthly_expenses = monthly_expenses
 
     # Add virtual recurring projections
-    projections = await _get_recurring_projections(session, workspace_id, month_start, month_end)
+    projections = await _get_recurring_projections(
+        session, workspace_id, month_start, month_end, account_ids
+    )
     for proj in projections:
         if proj["type"] == "credit":
             monthly_income += proj["amount"]
         else:
             monthly_expenses += proj["amount"]
 
-    # Account count — all accounts in this workspace (manual + bank-connected)
-    accounts_count = await session.scalar(
-        select(func.count())
-        .select_from(Account)
-        .where(Account.workspace_id == workspace_id)
-    ) or 0
+    # Account count — the active collection's accounts when filtered, else all
+    # accounts in this workspace (manual + bank-connected).
+    if filtered:
+        accounts_count = len(account_ids)
+    else:
+        accounts_count = await session.scalar(
+            select(func.count())
+            .select_from(Account)
+            .where(Account.workspace_id == workspace_id)
+        ) or 0
 
     # Pending categorization — exclude opening_balance and transfer pairs
     pending_cat_filters = [
@@ -197,6 +226,7 @@ async def get_summary(
         # income that need a category, so exclude them.
         Transaction.source != "settlement",
         Transaction.transfer_pair_id.is_(None),
+        *acct_filter,
     ]
     pending_categorization = await session.scalar(
         select(func.count())
@@ -213,10 +243,13 @@ async def get_summary(
     # Get user's primary currency (user already loaded above for reporting mode)
     primary_currency = user.primary_currency if user else get_settings().default_currency
 
-    # Asset values — use cutoff so past months show historical values
+    # Asset values — use cutoff so past months show historical values. Under a
+    # collection filter, include only assets in the collection's wallets
+    # (asset_group_ids); a collection with no wallets → no assets.
     assets_value, assets_value_primary = await get_asset_values_at(
         session, workspace_id, as_of_date=cutoff, primary_currency=primary_currency,
         by_workspace=True,
+        group_ids=(asset_group_ids or []) if filtered else None,
     )
 
     # Add asset values to total balance
@@ -250,6 +283,7 @@ async def get_summary(
             Transaction.source != "opening_balance",
             counts_as_user_pnl(),
             Transaction.amount_primary.isnot(None),
+            *acct_filter,
         )
     )
     primary_row = primary_result.one()
@@ -257,72 +291,76 @@ async def get_summary(
         monthly_income_primary = float(primary_row[0] or 0)
         monthly_expenses_primary = abs(float(primary_row[1] or 0))
 
-    # Apply share-only offset in primary currency (FX-converted).
-    own_offset_inc_pri, own_offset_exp_pri = await owner_split_offset_pnl(
-        session,
-        user_id,
-        month_start,
-        month_end,
-        use_effective_date=False,
-        primary_currency=primary_currency,
-        workspace_id=workspace_id,
-    )
-    monthly_income_primary -= own_offset_inc_pri
-    monthly_expenses_primary -= own_offset_exp_pri
+    if not filtered:
+        # Apply share-only offset in primary currency (FX-converted).
+        own_offset_inc_pri, own_offset_exp_pri = await owner_split_offset_pnl(
+            session,
+            user_id,
+            month_start,
+            month_end,
+            use_effective_date=False,
+            primary_currency=primary_currency,
+            workspace_id=workspace_id,
+        )
+        monthly_income_primary -= own_offset_inc_pri
+        monthly_expenses_primary -= own_offset_exp_pri
 
     # Add the viewer's shared shares to primary totals too. The shares
     # are stored in the parent transaction's currency, so we convert
     # each currency bucket separately rather than re-using shared_income
     # / shared_expenses (which were summed without conversion).
-    from app.models.group import GroupMember
-    from app.models.transaction_split import TransactionSplit
+    # Gated under a collection filter — those parent transactions live in
+    # other users'/workspaces' accounts, outside the filtered account set.
+    if not filtered:
+        from app.models.group import GroupMember
+        from app.models.transaction_split import TransactionSplit
 
-    viewer_member_ids = select(GroupMember.id).where(
-        GroupMember.linked_user_id == user_id,
-        GroupMember.is_self.is_(False),
-    )
-    shared_currency_rows = await session.execute(
-        select(
-            Transaction.currency,
-            func.sum(
-                case(
-                    (Transaction.type == "credit", TransactionSplit.share_amount),
-                    else_=0,
-                )
-            ),
-            func.sum(
-                case(
-                    (Transaction.type == "debit", TransactionSplit.share_amount),
-                    else_=0,
-                )
-            ),
+        viewer_member_ids = select(GroupMember.id).where(
+            GroupMember.linked_user_id == user_id,
+            GroupMember.is_self.is_(False),
         )
-        .select_from(TransactionSplit)
-        .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
-        .where(
-            TransactionSplit.group_member_id.in_(viewer_member_ids),
-            Transaction.user_id != user_id,
-            Transaction.source != "opening_balance",
-            report_date >= month_start,
-            report_date < month_end,
-            counts_as_user_pnl(),
+        shared_currency_rows = await session.execute(
+            select(
+                Transaction.currency,
+                func.sum(
+                    case(
+                        (Transaction.type == "credit", TransactionSplit.share_amount),
+                        else_=0,
+                    )
+                ),
+                func.sum(
+                    case(
+                        (Transaction.type == "debit", TransactionSplit.share_amount),
+                        else_=0,
+                    )
+                ),
+            )
+            .select_from(TransactionSplit)
+            .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
+            .where(
+                TransactionSplit.group_member_id.in_(viewer_member_ids),
+                Transaction.user_id != user_id,
+                Transaction.source != "opening_balance",
+                report_date >= month_start,
+                report_date < month_end,
+                counts_as_user_pnl(),
+            )
+            .group_by(Transaction.currency)
         )
-        .group_by(Transaction.currency)
-    )
-    for row in shared_currency_rows.all():
-        cur = row[0]
-        in_credit = float(row[1] or 0)
-        in_debit = float(row[2] or 0)
-        if in_credit:
-            credit_pri, _ = await convert(
-                session, Decimal(str(in_credit)), cur, primary_currency
-            )
-            monthly_income_primary += float(credit_pri)
-        if in_debit:
-            debit_pri, _ = await convert(
-                session, Decimal(str(in_debit)), cur, primary_currency
-            )
-            monthly_expenses_primary += abs(float(debit_pri))
+        for row in shared_currency_rows.all():
+            cur = row[0]
+            in_credit = float(row[1] or 0)
+            in_debit = float(row[2] or 0)
+            if in_credit:
+                credit_pri, _ = await convert(
+                    session, Decimal(str(in_credit)), cur, primary_currency
+                )
+                monthly_income_primary += float(credit_pri)
+            if in_debit:
+                debit_pri, _ = await convert(
+                    session, Decimal(str(in_debit)), cur, primary_currency
+                )
+                monthly_expenses_primary += abs(float(debit_pri))
 
     # Add recurring projections to primary totals (convert each)
     for proj in projections:
@@ -338,8 +376,12 @@ async def get_summary(
     # Aggregate the user's net pending balance across all groups they
     # participate in. We reuse the group balance computation so partial
     # settlements are already netted out.
-    pending_shares_net = await _compute_pending_shares_net(
-        session, workspace_id, user_id, primary_currency
+    pending_shares_net = (
+        0.0
+        if filtered
+        else await _compute_pending_shares_net(
+            session, workspace_id, user_id, primary_currency
+        )
     )
 
     return DashboardSummary(
@@ -432,11 +474,14 @@ async def get_spending_by_category(
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
     month: Optional[date] = None,
+    account_ids: Optional[list[uuid.UUID]] = None,
 ) -> list[SpendingByCategory]:
     if not month:
         month = date.today().replace(day=1)
 
     month_start, month_end = _month_range(month)
+    filtered = account_ids is not None
+    acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
 
     user = await session.get(User, user_id)
     accounting_mode = await get_credit_card_accounting_mode(session)
@@ -465,6 +510,7 @@ async def get_spending_by_category(
             report_date >= month_start,
             report_date < month_end,
             counts_as_user_pnl(),
+            *acct_filter,
         )
         .group_by(Category.id, Category.name, Category.icon, Category.color)
         .order_by(func.sum(_primary_amount_expr()).desc())
@@ -483,7 +529,7 @@ async def get_spending_by_category(
 
     # Subtract non-owner shares per category — owner-side splits should
     # contribute only the owner's share, not the full amount.
-    owner_offset = await owner_split_offset_by_category(
+    owner_offset = {} if filtered else await owner_split_offset_by_category(
         session,
         user_id,
         month_start,
@@ -502,7 +548,7 @@ async def get_spending_by_category(
     # Add shared shares — the viewer's portion of group-split debits
     # they participate in but don't own. The category comes from the
     # parent transaction.
-    shared_by_cat = await viewer_shared_spending_by_category(
+    shared_by_cat = {} if filtered else await viewer_shared_spending_by_category(
         session, user_id, month_start, month_end,
         use_effective_date=accounting_mode == "accrual",
         primary_currency=primary_currency,
@@ -540,7 +586,9 @@ async def get_spending_by_category(
                 }
 
     # Add virtual recurring projections (debit only), converted to primary currency
-    projections = await _get_recurring_projections(session, workspace_id, month_start, month_end)
+    projections = await _get_recurring_projections(
+        session, workspace_id, month_start, month_end, account_ids
+    )
     # We need category info for recurring projections — fetch categories
     cat_cache: dict[str, dict] = {}
     for proj in projections:
@@ -597,7 +645,10 @@ async def get_monthly_trend(
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
     months: int = 6,
+    account_ids: Optional[list[uuid.UUID]] = None,
 ) -> list[MonthlyTrend]:
+    filtered = account_ids is not None
+    acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
     accounting_mode = await get_credit_card_accounting_mode(session)
     report_date = (
         Transaction.effective_date if accounting_mode == "accrual" else Transaction.date
@@ -616,6 +667,7 @@ async def get_monthly_trend(
             Account.is_closed == False,
             Transaction.source != "opening_balance",
             counts_as_user_pnl(),
+            *acct_filter,
         )
         .group_by(month_label)
         .order_by(month_label.desc())
@@ -640,17 +692,20 @@ async def get_monthly_trend(
             if int(mnum) < 12
             else date(int(year) + 1, 1, 1)
         )
-        own_inc, own_exp = await owner_split_offset_pnl(
-            session, user_id, m_start, m_end,
-            use_effective_date=accounting_mode == "accrual",
-            primary_currency=primary_currency,
-            workspace_id=workspace_id,
-        )
-        shared_inc, shared_exp = await viewer_shared_pnl(
-            session, user_id, m_start, m_end,
-            use_effective_date=accounting_mode == "accrual",
-            primary_currency=primary_currency,
-        )
+        if filtered:
+            own_inc, own_exp, shared_inc, shared_exp = 0.0, 0.0, 0.0, 0.0
+        else:
+            own_inc, own_exp = await owner_split_offset_pnl(
+                session, user_id, m_start, m_end,
+                use_effective_date=accounting_mode == "accrual",
+                primary_currency=primary_currency,
+                workspace_id=workspace_id,
+            )
+            shared_inc, shared_exp = await viewer_shared_pnl(
+                session, user_id, m_start, m_end,
+                use_effective_date=accounting_mode == "accrual",
+                primary_currency=primary_currency,
+            )
         adjusted.append(
             MonthlyTrend(
                 month=month_str,
@@ -769,10 +824,19 @@ def _signed_primary_expr():
 
 
 async def _get_open_accounts(
-    session: AsyncSession, workspace_id: uuid.UUID
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    account_ids: Optional[list[uuid.UUID]] = None,
 ) -> list[Account]:
-    """Get all non-closed accounts for a workspace."""
-    result = await session.execute(
+    """Get all non-closed accounts for a workspace.
+
+    When ``account_ids`` is provided (an active Collection filter, issue #105),
+    restrict to that subset. An empty list returns no accounts — a collection
+    with no members shows nothing rather than everything.
+    """
+    if account_ids is not None and len(account_ids) == 0:
+        return []
+    stmt = (
         select(Account)
         .outerjoin(BankConnection)
         .where(
@@ -783,6 +847,9 @@ async def _get_open_accounts(
             Account.is_closed == False,
         )
     )
+    if account_ids:
+        stmt = stmt.where(Account.id.in_(account_ids))
+    result = await session.execute(stmt)
     return [row[0] for row in result.all()]
 
 
@@ -826,10 +893,11 @@ async def _account_balance_at(
 
 
 async def _total_balance_by_currency(
-    session: AsyncSession, workspace_id: uuid.UUID, cutoff: date
+    session: AsyncSession, workspace_id: uuid.UUID, cutoff: date,
+    account_ids: Optional[list[uuid.UUID]] = None,
 ) -> dict[str, float]:
     """Get total balance across all open accounts at a date, grouped by currency."""
-    accounts = await _get_open_accounts(session, workspace_id)
+    accounts = await _get_open_accounts(session, workspace_id, account_ids)
     totals: dict[str, float] = {}
     for account in accounts:
         bal = await _account_balance_at(session, account, cutoff)
@@ -840,13 +908,14 @@ async def _total_balance_by_currency(
 async def _balance_at(
     session: AsyncSession, workspace_id: uuid.UUID, cutoff: date,
     *, primary_currency_hint: Optional[str] = None,
+    account_ids: Optional[list[uuid.UUID]] = None,
 ) -> float:
     """Get total balance across all open accounts at a specific date, converted to primary currency.
 
     `primary_currency_hint` lets callers avoid an extra User lookup when they
     already know the workspace's primary currency.
     """
-    totals = await _total_balance_by_currency(session, workspace_id, cutoff)
+    totals = await _total_balance_by_currency(session, workspace_id, cutoff, account_ids)
 
     # If all same currency, just sum
     if len(totals) <= 1:
@@ -868,6 +937,7 @@ async def _daily_deltas(
     end: date,
     *,
     primary_currency_hint: Optional[str] = None,
+    account_ids: Optional[list[uuid.UUID]] = None,
 ) -> dict[int, float]:
     """Get daily balance deltas for a date range [start, end).
     Computes per-account in native currency (using amount_primary only for
@@ -900,6 +970,7 @@ async def _daily_deltas(
                 Transaction.category_id.is_(None),
                 Category.is_ignored == False,
             ),
+            *( [Transaction.account_id.in_(account_ids)] if account_ids is not None else [] ),
         )
         .group_by("day", Account.currency)
     )
@@ -930,6 +1001,7 @@ async def get_balance_history(
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
     month: Optional[date] = None,
+    account_ids: Optional[list[uuid.UUID]] = None,
 ) -> BalanceHistory:
     if not month:
         month = date.today().replace(day=1)
@@ -953,28 +1025,30 @@ async def get_balance_history(
     # Starting balances
     current_start = await _balance_at(
         session, workspace_id, month_start - timedelta(days=1),
-        primary_currency_hint=primary_currency,
+        primary_currency_hint=primary_currency, account_ids=account_ids,
     )
     prev_start = await _balance_at(
         session, workspace_id, prev_month_start - timedelta(days=1),
-        primary_currency_hint=primary_currency,
+        primary_currency_hint=primary_currency, account_ids=account_ids,
     )
 
     # Daily deltas from real transactions
     current_deltas = await _daily_deltas(
         session, workspace_id, month_start, month_end,
-        primary_currency_hint=primary_currency,
+        primary_currency_hint=primary_currency, account_ids=account_ids,
     )
     prev_deltas = await _daily_deltas(
         session, workspace_id, prev_month_start, prev_month_end,
-        primary_currency_hint=primary_currency,
+        primary_currency_hint=primary_currency, account_ids=account_ids,
     )
 
     # Recurring projections for future days of current month (converted to primary currency)
     proj_deltas: dict[int, float] = {}
     if month_end > today:
         proj_start = max(month_start, today + timedelta(days=1))
-        projections = await _get_recurring_projections(session, workspace_id, proj_start, month_end)
+        projections = await _get_recurring_projections(
+            session, workspace_id, proj_start, month_end, account_ids
+        )
         for proj in projections:
             day = proj["date"].day
             proj_converted, _ = await convert(
