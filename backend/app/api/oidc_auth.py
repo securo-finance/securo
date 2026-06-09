@@ -20,6 +20,7 @@ from app.core.redis import get_redis
 from app.models.account import Account
 from app.models.user import User
 from app.models.workspace import WORKSPACE_ROLES, Workspace, WorkspaceMember
+from app.services import admin_service
 from app.services.category_service import create_default_categories
 from app.services.rule_service import create_default_rules
 from app.services.workspace_service import create_personal_workspace_for_user
@@ -244,11 +245,6 @@ async def _get_or_create_oidc_user(
     # audience-validated source of truth. Let signed claims win for overlapping
     # identity and authorization fields such as email, email_verified, and groups.
     merged = {**userinfo, **claims}
-    email = merged.get("email")
-    if not email:
-        raise HTTPException(status_code=400, detail="OIDC provider did not return an email claim")
-    email = str(EmailStr._validate(email)).lower()
-    email_verified = merged.get("email_verified")
     subject = merged.get("sub")
     if not subject:
         raise HTTPException(status_code=400, detail="OIDC provider did not return a subject claim")
@@ -263,12 +259,16 @@ async def _get_or_create_oidc_user(
     linked = await session.execute(select(User).where(User.oidc_issuer == issuer, User.oidc_subject == subject))
     user = linked.scalar_one_or_none()
     if user is not None:
-        if settings.oidc_require_verified_email and link_mode != "email" and email_verified not in (True, "true"):
-            raise HTTPException(status_code=400, detail="OIDC email is not verified")
         await _sync_oidc_roles(user, merged, session)
         await session.commit()
         await session.refresh(user)
         return user
+
+    email = merged.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="OIDC provider did not return an email claim")
+    email = str(EmailStr._validate(email)).lower()
+    email_verified = merged.get("email_verified")
 
     existing = await session.execute(select(User).where(func.lower(User.email) == email))
     user = existing.scalar_one_or_none()
@@ -288,7 +288,7 @@ async def _get_or_create_oidc_user(
         return user
     if settings.oidc_require_verified_email and email_verified not in (True, "true"):
         raise HTTPException(status_code=400, detail="OIDC email is not verified")
-    if not settings.registration_enabled:
+    if not await admin_service.is_registration_enabled(session):
         raise HTTPException(status_code=403, detail="Registration is disabled")
     if not settings.oidc_auto_register:
         raise HTTPException(status_code=403, detail="No local account is linked to this OIDC identity")

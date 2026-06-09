@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from app.api import oidc_auth
 from app.core.config import get_settings
+from app.models.app_settings import AppSetting
 from app.models.workspace import WorkspaceMember
 
 
@@ -460,10 +461,12 @@ async def test_oidc_callback_rejects_existing_user_with_different_linked_subject
 
 @pytest.mark.asyncio
 async def test_oidc_callback_respects_disabled_registration_setting(
-    client: AsyncClient, clean_db, oidc_settings, monkeypatch
+    client: AsyncClient, session, clean_db, oidc_settings, monkeypatch
 ):
-    oidc_settings.registration_enabled = False
+    oidc_settings.registration_enabled = True
     oidc_settings.oidc_auto_register = True
+    session.add(AppSetting(key="registration_enabled", value="false"))
+    await session.commit()
     fake_redis = FakeRedis()
     await fake_redis.set("oidc_state:state123", json.dumps({"nonce": "nonce123"}))
 
@@ -529,3 +532,118 @@ async def test_oidc_callback_email_link_mode_links_existing_user_without_verifie
     await session.refresh(test_user)
     assert test_user.oidc_issuer == "https://id.example.com"
     assert test_user.oidc_subject == "unverified-linked-sub"
+
+
+@pytest.mark.asyncio
+async def test_oidc_callback_linked_user_can_login_without_verified_email_when_required(
+    client: AsyncClient, session, test_user, oidc_settings, monkeypatch
+):
+    oidc_settings.oidc_require_verified_email = True
+    oidc_settings.oidc_existing_user_link_mode = "verified_email"
+    test_user.oidc_issuer = "https://id.example.com"
+    test_user.oidc_subject = "linked-sub"
+    session.add(test_user)
+    await session.commit()
+    fake_redis = FakeRedis()
+    await fake_redis.set("oidc_state:state123", json.dumps({"nonce": "nonce123"}))
+
+    async def fake_discover():
+        return {"issuer": "https://id.example.com"}
+
+    async def fake_exchange(discovery, code):
+        return {"id_token": "id-token", "access_token": "provider-token"}
+
+    async def fake_decode(discovery, id_token, nonce):
+        return {"sub": "linked-sub", "email": "test@example.com"}
+
+    async def fake_userinfo(discovery, access_token):
+        return {}
+
+    async def fake_get_redis():
+        return fake_redis
+
+    monkeypatch.setattr(oidc_auth, "get_redis", fake_get_redis)
+    monkeypatch.setattr(oidc_auth, "_discover", fake_discover)
+    monkeypatch.setattr(oidc_auth, "_exchange_code", fake_exchange)
+    monkeypatch.setattr(oidc_auth, "_decode_id_token", fake_decode)
+    monkeypatch.setattr(oidc_auth, "_fetch_userinfo", fake_userinfo)
+
+    response = await client.get("/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False)
+
+    assert response.status_code == 307
+
+
+@pytest.mark.asyncio
+async def test_oidc_callback_linked_user_can_login_without_email_claim(
+    client: AsyncClient, session, test_user, oidc_settings, monkeypatch
+):
+    oidc_settings.oidc_require_verified_email = True
+    test_user.oidc_issuer = "https://id.example.com"
+    test_user.oidc_subject = "linked-sub"
+    session.add(test_user)
+    await session.commit()
+    fake_redis = FakeRedis()
+    await fake_redis.set("oidc_state:state123", json.dumps({"nonce": "nonce123"}))
+
+    async def fake_discover():
+        return {"issuer": "https://id.example.com"}
+
+    async def fake_exchange(discovery, code):
+        return {"id_token": "id-token", "access_token": "provider-token"}
+
+    async def fake_decode(discovery, id_token, nonce):
+        return {"sub": "linked-sub"}
+
+    async def fake_userinfo(discovery, access_token):
+        return {}
+
+    async def fake_get_redis():
+        return fake_redis
+
+    monkeypatch.setattr(oidc_auth, "get_redis", fake_get_redis)
+    monkeypatch.setattr(oidc_auth, "_discover", fake_discover)
+    monkeypatch.setattr(oidc_auth, "_exchange_code", fake_exchange)
+    monkeypatch.setattr(oidc_auth, "_decode_id_token", fake_decode)
+    monkeypatch.setattr(oidc_auth, "_fetch_userinfo", fake_userinfo)
+
+    response = await client.get("/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False)
+
+    assert response.status_code == 307
+
+
+@pytest.mark.asyncio
+async def test_oidc_callback_registration_disabled_does_not_block_existing_email_link(
+    client: AsyncClient, session, test_user, oidc_settings, monkeypatch
+):
+    oidc_settings.oidc_existing_user_link_mode = "email"
+    session.add(AppSetting(key="registration_enabled", value="false"))
+    await session.commit()
+    fake_redis = FakeRedis()
+    await fake_redis.set("oidc_state:state123", json.dumps({"nonce": "nonce123"}))
+
+    async def fake_discover():
+        return {"issuer": "https://id.example.com"}
+
+    async def fake_exchange(discovery, code):
+        return {"id_token": "id-token", "access_token": "provider-token"}
+
+    async def fake_decode(discovery, id_token, nonce):
+        return {"sub": "linked-with-registration-disabled", "email": "test@example.com"}
+
+    async def fake_userinfo(discovery, access_token):
+        return {}
+
+    async def fake_get_redis():
+        return fake_redis
+
+    monkeypatch.setattr(oidc_auth, "get_redis", fake_get_redis)
+    monkeypatch.setattr(oidc_auth, "_discover", fake_discover)
+    monkeypatch.setattr(oidc_auth, "_exchange_code", fake_exchange)
+    monkeypatch.setattr(oidc_auth, "_decode_id_token", fake_decode)
+    monkeypatch.setattr(oidc_auth, "_fetch_userinfo", fake_userinfo)
+
+    response = await client.get("/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False)
+
+    assert response.status_code == 307
+    await session.refresh(test_user)
+    assert test_user.oidc_subject == "linked-with-registration-disabled"
