@@ -207,9 +207,9 @@ export default function ReportsPage() {
   const composition = data?.composition ?? []
 
   // Composition toggle options per report type
-  const compositionOptions = meta?.type === 'net_worth'
+  const compositionOptions = activeTab === 'net_worth'
     ? ['netWorth', 'assetsAndAccounts', 'liabilities'] as const
-    : meta?.type === 'income_expenses' || meta?.type === 'cash_flow'
+    : activeTab === 'income_expenses' || activeTab === 'cash_flow'
       ? ['net', 'byIncome', 'byExpenses'] as const
       : ['summary', 'detailed'] as const
 
@@ -746,8 +746,25 @@ export default function ReportsPage() {
           </div>
           <div className="px-1 pb-4">
             {isLoading ? (
-              <div className="px-4" style={{ height: 200 }}>
-                <Skeleton className="h-full w-full" />
+              <div className="flex flex-col items-center px-4 py-2">
+                <div className="relative" style={{ width: 200, height: 200 }}>
+                  <Skeleton className="w-full h-full rounded-full" />
+                  <div
+                    className="absolute flex flex-col items-center justify-center gap-1 rounded-full bg-card"
+                    style={{ width: 110, height: 110, top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
+                  >
+                    <Skeleton className="h-2 w-12" />
+                    <Skeleton className="h-4 w-16" />
+                  </div>
+                </div>
+                <div className="flex flex-wrap justify-center gap-x-3 gap-y-1.5 mt-3">
+                  {Array.from({ length: activeTab === 'net_worth' ? 3 : 2 }).map((_, i) => (
+                    <div key={i} className="flex items-center gap-1.5">
+                      <Skeleton className="w-2 h-2 rounded-full shrink-0" />
+                      <Skeleton className="h-2 w-14" />
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : innerDonutData.length > 0 ? (
                 (() => {
