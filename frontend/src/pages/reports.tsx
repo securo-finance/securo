@@ -724,16 +724,16 @@ export default function ReportsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Composition widget — double ring for net_worth, toggled single ring for others */}
         <div className="bg-card rounded-xl border border-border shadow-sm">
-          <div className="px-5 pt-4 pb-2 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-semibold text-foreground">{t('reports.composition')}</p>
+          <div className="px-5 pt-4 pb-2 flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-foreground shrink-0">{t('reports.composition')}</p>
             {(
-              <div className="flex shrink-0 items-stretch rounded-lg border border-border bg-muted/30 overflow-hidden">
+              <div className="flex min-w-40 items-stretch rounded-lg border border-border bg-muted/30 overflow-hidden">
                 {compositionOptions.map((opt) => (
                   <button
                     key={opt}
                     type="button"
                     onClick={() => setCompositionView(opt)}
-                    className={`px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                    className={`flex-1 min-w-0 px-2.5 py-1 text-[11px] font-semibold text-center leading-tight whitespace-normal transition-colors ${
                       compositionView === opt
                         ? 'bg-primary text-primary-foreground'
                         : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
