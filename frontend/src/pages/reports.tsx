@@ -108,7 +108,7 @@ export default function ReportsPage() {
   const [rangeKey, setRangeKey] = useState('1y')
   const [interval, setInterval] = useState('monthly')
   const [activeTab, setActiveTab] = useState('net_worth')
-  const [compositionView, setCompositionView] = useState<string>('net')
+  const [compositionView, setCompositionView] = useState<string>('netWorth')
   const [sparklineView, setSparklineView] = useState<'byExpenses' | 'byIncome'>('byExpenses')
   const [sparklinePage, setSparklinePage] = useState(0)
   const [cashFlowBaseline, setCashFlowBaseline] = useState(false)
@@ -133,7 +133,7 @@ export default function ReportsPage() {
 
   const handleSelectTab = (key: string) => {
     setActiveTab(key)
-    setCompositionView('net')
+    setCompositionView(key === 'net_worth' ? 'netWorth' : 'net')
     setSparklinePage(0)
     // Clamp months/interval to options supported by the new tab
     const nextRanges = key === 'cash_flow' ? FORWARD_RANGE_OPTIONS : HISTORICAL_RANGE_OPTIONS
