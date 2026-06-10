@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import json
 import secrets
 from typing import Any
@@ -72,8 +74,16 @@ async def oidc_login():
 
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)
+    code_verifier = secrets.token_urlsafe(64)
+    code_challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(code_verifier.encode()).digest()
+    ).rstrip(b"=").decode()
     r = await get_redis()
-    await r.set(f"oidc_state:{state}", json.dumps({"nonce": nonce}), ex=OIDC_STATE_TTL)
+    await r.set(
+        f"oidc_state:{state}",
+        json.dumps({"nonce": nonce, "code_verifier": code_verifier}),
+        ex=OIDC_STATE_TTL,
+    )
 
     params = {
         "client_id": settings.oidc_client_id,
@@ -82,11 +92,13 @@ async def oidc_login():
         "scope": settings.oidc_scopes,
         "state": state,
         "nonce": nonce,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
     }
     return RedirectResponse(f"{authorization_endpoint}?{urlencode(params)}")
 
 
-async def _exchange_code(discovery: dict[str, Any], code: str) -> dict[str, Any]:
+async def _exchange_code(discovery: dict[str, Any], code: str, code_verifier: str) -> dict[str, Any]:
     settings = get_settings()
     token_endpoint = discovery.get("token_endpoint")
     if not token_endpoint:
@@ -97,6 +109,7 @@ async def _exchange_code(discovery: dict[str, Any], code: str) -> dict[str, Any]
         "client_secret": settings.oidc_client_secret,
         "code": code,
         "redirect_uri": _redirect_uri(),
+        "code_verifier": code_verifier,
     }
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.post(token_endpoint, data=data)
@@ -359,7 +372,7 @@ async def oidc_callback(
     state_data = json.loads(raw_state)
 
     discovery = await _discover()
-    token_response = await _exchange_code(discovery, code)
+    token_response = await _exchange_code(discovery, code, state_data.get("code_verifier", ""))
     id_token = token_response.get("id_token")
     if not id_token:
         raise HTTPException(status_code=400, detail="OIDC provider did not return an id_token")

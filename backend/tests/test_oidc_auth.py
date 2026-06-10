@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import json
 from urllib.parse import parse_qs, urlparse
 
@@ -75,7 +77,15 @@ async def test_oidc_login_redirects_to_provider(client: AsyncClient, clean_db, o
     assert params["client_id"] == ["securo"]
     assert params["scope"] == ["openid email profile"]
     assert params["redirect_uri"] == ["http://test/api/auth/oidc/callback"]
-    assert f"oidc_state:{params['state'][0]}" in fake_redis.store
+    assert params["code_challenge_method"] == ["S256"]
+    assert params["code_challenge"][0]
+    stored = json.loads(fake_redis.store[f"oidc_state:{params['state'][0]}"])
+    expected_challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(stored["code_verifier"].encode()).digest())
+        .rstrip(b"=")
+        .decode()
+    )
+    assert params["code_challenge"][0] == expected_challenge
 
 
 @pytest.mark.asyncio
@@ -88,7 +98,7 @@ async def test_oidc_callback_creates_user_and_redirects_with_securo_token(
     async def fake_discover():
         return {"issuer": "https://id.example.com"}
 
-    async def fake_exchange(discovery, code):
+    async def fake_exchange(discovery, code, code_verifier=""):
         assert code == "abc"
         return {"id_token": "id-token", "access_token": "provider-token"}
 
@@ -144,7 +154,7 @@ async def test_oidc_callback_syncs_existing_user_admin_and_workspace_role(
     async def fake_discover():
         return {"issuer": "https://id.example.com"}
 
-    async def fake_exchange(discovery, code):
+    async def fake_exchange(discovery, code, code_verifier=""):
         return {"id_token": "id-token", "access_token": "provider-token"}
 
     async def fake_decode(discovery, id_token, nonce):
@@ -201,7 +211,7 @@ async def test_oidc_callback_sync_roles_can_revoke_admin(
     async def fake_discover():
         return {"issuer": "https://id.example.com"}
 
-    async def fake_exchange(discovery, code):
+    async def fake_exchange(discovery, code, code_verifier=""):
         return {"id_token": "id-token", "access_token": "provider-token"}
 
     async def fake_decode(discovery, id_token, nonce):
@@ -245,7 +255,7 @@ async def test_oidc_callback_signed_claims_override_userinfo_roles(
     async def fake_discover():
         return {"issuer": "https://id.example.com"}
 
-    async def fake_exchange(discovery, code):
+    async def fake_exchange(discovery, code, code_verifier=""):
         return {"id_token": "id-token", "access_token": "provider-token"}
 
     async def fake_decode(discovery, id_token, nonce):
@@ -293,7 +303,7 @@ async def test_oidc_callback_rejects_userinfo_subject_mismatch(
     async def fake_discover():
         return {"issuer": "https://id.example.com"}
 
-    async def fake_exchange(discovery, code):
+    async def fake_exchange(discovery, code, code_verifier=""):
         return {"id_token": "id-token", "access_token": "provider-token"}
 
     async def fake_decode(discovery, id_token, nonce):
@@ -326,7 +336,7 @@ async def test_oidc_callback_requires_verified_email_claim_when_enabled(
     async def fake_discover():
         return {"issuer": "https://id.example.com"}
 
-    async def fake_exchange(discovery, code):
+    async def fake_exchange(discovery, code, code_verifier=""):
         return {"id_token": "id-token", "access_token": "provider-token"}
 
     async def fake_decode(discovery, id_token, nonce):
@@ -359,7 +369,7 @@ async def test_oidc_callback_rejects_unlinked_existing_user_by_default(
     async def fake_discover():
         return {"issuer": "https://id.example.com"}
 
-    async def fake_exchange(discovery, code):
+    async def fake_exchange(discovery, code, code_verifier=""):
         return {"id_token": "id-token", "access_token": "provider-token"}
 
     async def fake_decode(discovery, id_token, nonce):
@@ -394,7 +404,7 @@ async def test_oidc_callback_verified_email_link_mode_links_existing_user(
     async def fake_discover():
         return {"issuer": "https://id.example.com"}
 
-    async def fake_exchange(discovery, code):
+    async def fake_exchange(discovery, code, code_verifier=""):
         return {"id_token": "id-token", "access_token": "provider-token"}
 
     async def fake_decode(discovery, id_token, nonce):
@@ -435,7 +445,7 @@ async def test_oidc_callback_rejects_existing_user_with_different_linked_subject
     async def fake_discover():
         return {"issuer": "https://id.example.com"}
 
-    async def fake_exchange(discovery, code):
+    async def fake_exchange(discovery, code, code_verifier=""):
         return {"id_token": "id-token", "access_token": "provider-token"}
 
     async def fake_decode(discovery, id_token, nonce):
@@ -473,7 +483,7 @@ async def test_oidc_callback_respects_disabled_registration_setting(
     async def fake_discover():
         return {"issuer": "https://id.example.com"}
 
-    async def fake_exchange(discovery, code):
+    async def fake_exchange(discovery, code, code_verifier=""):
         return {"id_token": "id-token", "access_token": "provider-token"}
 
     async def fake_decode(discovery, id_token, nonce):
@@ -508,7 +518,7 @@ async def test_oidc_callback_email_link_mode_links_existing_user_without_verifie
     async def fake_discover():
         return {"issuer": "https://id.example.com"}
 
-    async def fake_exchange(discovery, code):
+    async def fake_exchange(discovery, code, code_verifier=""):
         return {"id_token": "id-token", "access_token": "provider-token"}
 
     async def fake_decode(discovery, id_token, nonce):
@@ -550,7 +560,7 @@ async def test_oidc_callback_linked_user_can_login_without_verified_email_when_r
     async def fake_discover():
         return {"issuer": "https://id.example.com"}
 
-    async def fake_exchange(discovery, code):
+    async def fake_exchange(discovery, code, code_verifier=""):
         return {"id_token": "id-token", "access_token": "provider-token"}
 
     async def fake_decode(discovery, id_token, nonce):
@@ -588,7 +598,7 @@ async def test_oidc_callback_linked_user_can_login_without_email_claim(
     async def fake_discover():
         return {"issuer": "https://id.example.com"}
 
-    async def fake_exchange(discovery, code):
+    async def fake_exchange(discovery, code, code_verifier=""):
         return {"id_token": "id-token", "access_token": "provider-token"}
 
     async def fake_decode(discovery, id_token, nonce):
@@ -624,7 +634,7 @@ async def test_oidc_callback_registration_disabled_does_not_block_existing_email
     async def fake_discover():
         return {"issuer": "https://id.example.com"}
 
-    async def fake_exchange(discovery, code):
+    async def fake_exchange(discovery, code, code_verifier=""):
         return {"id_token": "id-token", "access_token": "provider-token"}
 
     async def fake_decode(discovery, id_token, nonce):
