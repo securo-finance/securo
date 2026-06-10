@@ -21,6 +21,7 @@ import {
 import { HelpCircle } from 'lucide-react'
 import { reports } from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { PageHeader } from '@/components/page-header'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
@@ -892,18 +893,57 @@ export default function ReportsPage() {
                             </div>
                           ))}
                         </div>
-                        {hasOuter && (
-                          <div className="flex flex-wrap justify-center gap-x-3 gap-y-1">
-                            {outerDonutData.map((d, i) => (
-                              <div key={`${i}-${d.name}`} className="flex items-center gap-1.5">
-                                <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                                <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-                                  {d.name.length > 30 ? d.name.slice(0, 27) + '…' : d.name}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                        {hasOuter && (() => {
+                          const LIMIT = 6
+                          const visible = outerDonutData.slice(0, LIMIT)
+                          const hiddenCount = outerDonutData.length - LIMIT
+                          return (
+                            <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 items-center">
+                              {visible.map((d, i) => (
+                                <div key={`${i}-${d.name}`} className="flex items-center gap-1.5">
+                                  <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                                  <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                                    {d.name.length > 30 ? d.name.slice(0, 27) + '…' : d.name}
+                                  </span>
+                                </div>
+                              ))}
+                              {hiddenCount > 0 && (
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <button
+                                      type="button"
+                                      className="text-[11px] font-semibold text-primary hover:text-primary/80 transition-colors"
+                                    >
+                                      +{hiddenCount} more
+                                    </button>
+                                  </PopoverTrigger>
+                                  <PopoverContent align="center" className="w-64 p-3">
+                                    <p className="text-xs font-semibold text-foreground mb-2">
+                                      {t('reports.composition')}
+                                    </p>
+                                    <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto pr-2">
+                                      {outerDonutData.map((d, i) => {
+                                        const pct = donutTotal > 0 ? ((d.value / donutTotal) * 100).toFixed(1) : '0'
+                                        return (
+                                          <div key={i} className="flex items-center gap-2">
+                                            <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                                            <span className="text-[11px] text-muted-foreground flex-1 truncate">
+                                              {d.name.length > 25 ? d.name.slice(0, 22) + '…' : d.name}
+                                            </span>
+                                            <span className="text-[11px] tabular-nums text-foreground whitespace-nowrap">
+                                              {mask(formatCompact(d.value, userCurrency, locale))}
+                                              <span className="text-muted-foreground ml-1">({pct}%)</span>
+                                            </span>
+                                          </div>
+                                        )
+                                      })}
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+                              )}
+                            </div>
+                          )
+                        })()}
                       </div>
                     </div>
                   )
