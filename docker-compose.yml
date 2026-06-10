@@ -66,6 +66,7 @@ x-backend-base: &backend-base
 services:
   redis:
     image: docker.io/library/redis:7-alpine
+    restart: unless-stopped
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
@@ -77,6 +78,7 @@ services:
     # that ships the `vector` extension. Required for the agents
     # knowledge base; harmless when AGENTS_ENABLED=false.
     image: ${DB_IMAGE:-docker.io/pgvector/pgvector:pg16}
+    restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
