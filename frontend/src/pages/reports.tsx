@@ -724,10 +724,10 @@ export default function ReportsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Composition widget — double ring for net_worth, toggled single ring for others */}
         <div className="bg-card rounded-xl border border-border shadow-sm">
-          <div className="px-5 pt-4 pb-2 flex items-center justify-between">
+          <div className="px-5 pt-4 pb-2 flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-semibold text-foreground">{t('reports.composition')}</p>
             {(
-              <div className="flex items-center rounded-lg border border-border bg-muted/30 overflow-hidden">
+              <div className="flex shrink-0 items-stretch rounded-lg border border-border bg-muted/30 overflow-hidden">
                 {compositionOptions.map((opt) => (
                   <button
                     key={opt}
