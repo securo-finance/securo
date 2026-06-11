@@ -483,17 +483,26 @@ export default function ReportsPage() {
           </p>
           {meta && (
             <div className="flex items-center gap-3">
-              {meta.series_keys.map((key) => (
-                <div key={key} className="flex items-center gap-1.5">
-                  <div
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: colorMap[key] || '#6366F1' }}
-                  />
+              {meta.type === 'net_worth' ? (
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#6366F1' }} />
                   <span className="text-[11px] text-muted-foreground">
-                    {t(`reports.${key}`, { defaultValue: key })}
+                    {t('reports.netWorth')}
                   </span>
                 </div>
-              ))}
+              ) : (
+                meta.series_keys.map((key) => (
+                  <div key={key} className="flex items-center gap-1.5">
+                    <div
+                      className="w-2 h-2 rounded-full"
+                      style={{ backgroundColor: colorMap[key] || '#6366F1' }}
+                    />
+                    <span className="text-[11px] text-muted-foreground">
+                      {t(`reports.${key}`, { defaultValue: key })}
+                    </span>
+                  </div>
+                ))
+              )}
               {meta.type === 'income_expenses' && (
                 <div className="flex items-center gap-1.5">
                   <div className="w-3 h-0 border-t-2 border-dashed" style={{ borderColor: '#6366F1' }} />
