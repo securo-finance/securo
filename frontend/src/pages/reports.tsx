@@ -28,6 +28,27 @@ import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import type { ReportResponse, CategoryTrendItem } from '@/types'
 
+const GROUP_HUE_BAND: Record<string, { center: number; spread: number }> = {
+  accounts:    { center: 235, spread: 70 }, // blues → purples
+  assets:      { center: 50,  spread: 70 }, // oranges → yellow-greens
+  liabilities: { center: 345, spread: 60 }, // pinks → reds
+}
+const LIGHTNESS_MIN = 38
+const LIGHTNESS_MAX = 69
+
+function colorFromId(id: string, group: string): string {
+  let hash = 5381
+  for (let i = 0; i < id.length; i++) {
+    hash = ((hash << 5) + hash) ^ id.charCodeAt(i)
+    hash = hash >>> 0
+  }
+  const hash2 = (hash ^ (hash >>> 16)) >>> 0
+  const { center, spread } = GROUP_HUE_BAND[group] ?? { center: 0, spread: 360 }
+  const hue = ((center - spread / 2 + (hash % spread)) + 360) % 360
+  const lightness = LIGHTNESS_MIN + (hash2 % (LIGHTNESS_MAX - LIGHTNESS_MIN + 1))
+  return `hsl(${Math.round(hue)}, 65%, ${lightness}%)`
+}
+
 function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
   return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
 }
@@ -205,7 +226,9 @@ export default function ReportsPage() {
     fontSize: '12px',
   }
 
-  const composition = data?.composition ?? []
+  const composition = (data?.composition ?? []).map((item) =>
+    activeTab === 'net_worth' ? { ...item, color: colorFromId(item.key, item.group) } : item
+  )
 
   // Composition toggle options per report type
   const compositionOptions = activeTab === 'net_worth'
