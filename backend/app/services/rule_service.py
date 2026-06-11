@@ -866,6 +866,46 @@ async def apply_rules_to_transaction(
             category_set = apply_rule_actions(actions, transaction, category_set)
 
 
+async def apply_single_rule(
+    session: AsyncSession, workspace_id: uuid.UUID, rule: Rule
+) -> int:
+    """Apply one rule to all existing workspace transactions. Returns the number
+    of transactions actually modified.
+
+    Used right after a rule is created so it takes effect on history without the
+    user having to hit "Reapply all". Unlike `apply_all_rules` this is
+    non-destructive: a transaction that already has a category keeps it (same
+    semantics used when new transactions arrive), so creating a rule never
+    silently overwrites manual categorizations. Payee/notes/ignore actions still
+    apply on a match. Only transactions whose fields actually change are counted.
+    """
+    if not rule.is_active:
+        return 0
+
+    result = await session.execute(
+        select(Transaction).where(
+            Transaction.workspace_id == workspace_id,
+            Transaction.source != "opening_balance",
+        )
+    )
+    transactions = result.scalars().all()
+
+    conditions = rule.conditions or []
+    actions = rule.actions or []
+
+    count = 0
+    for tx in transactions:
+        if not evaluate_conditions(rule.conditions_op, conditions, tx):
+            continue
+        before = (tx.category_id, tx.payee_id, tx.notes, tx.is_ignored)
+        apply_rule_actions(actions, tx, category_already_set=tx.category_id is not None)
+        if before != (tx.category_id, tx.payee_id, tx.notes, tx.is_ignored):
+            count += 1
+
+    await session.commit()
+    return count
+
+
 async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int:
     """Re-apply all active rules to all workspace transactions. Returns count of affected transactions."""
     from app.models.account import Account

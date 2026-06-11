@@ -15,6 +15,7 @@ from app.api.connections import router as connections_router
 from app.api.custom_auth import router as custom_auth_router
 from app.api.dashboard import router as dashboard_router
 from app.api.import_logs import router as import_logs_router
+from app.api.oidc_auth import router as oidc_auth_router
 from app.api.import_transactions import router as import_router
 from app.api.info import router as info_router
 from app.api.recurring_transactions import router as recurring_router
@@ -88,6 +89,7 @@ app.include_router(
     prefix="/api/auth",
     tags=["auth"],
 )
+app.include_router(oidc_auth_router)
 app.include_router(
     fastapi_users.get_register_router(UserRead, UserCreate),
     prefix="/api/auth",

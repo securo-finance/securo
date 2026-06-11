@@ -28,6 +28,7 @@ import type {
   WorkspaceRole,
   Asset,
   AssetGroup,
+  AssetTransaction,
   AssetValue,
   MarketSymbolMatch,
   MarketSymbolQuote,
@@ -184,6 +185,10 @@ export const auth = {
   },
   verify2fa: async (tempToken: string, code: string): Promise<{ access_token: string; token_type: string }> => {
     const { data } = await api.post('/auth/2fa/verify', { temp_token: tempToken, code })
+    return data
+  },
+  oidcConfig: async (): Promise<{ enabled: boolean; provider_name: string }> => {
+    const { data } = await api.get('/auth/oidc/config')
     return data
   },
 }
@@ -728,7 +733,7 @@ export const rules = {
     const { data } = await api.get('/rules')
     return data
   },
-  create: async (rule: Omit<Rule, 'id' | 'user_id'>): Promise<Rule> => {
+  create: async (rule: Omit<Rule, 'id' | 'user_id'>): Promise<Rule & { applied_count: number }> => {
     const { data } = await api.post('/rules', rule)
     return data
   },
@@ -925,6 +930,39 @@ export const assets = {
   },
   refreshPrice: async (id: string): Promise<Asset> => {
     const { data } = await api.post(`/assets/${id}/refresh-price`)
+    return data
+  },
+  // Transaction ledger (issue #235)
+  transactions: async (id: string): Promise<AssetTransaction[]> => {
+    const { data } = await api.get(`/assets/${id}/transactions`)
+    return data
+  },
+  allTransactions: async (params?: { ticker?: string; kind?: 'buy' | 'sell' }): Promise<AssetTransaction[]> => {
+    const { data } = await api.get('/assets/transactions', { params })
+    return data
+  },
+  addTransaction: async (
+    id: string,
+    tx: { kind: 'buy' | 'sell'; quantity: number; price: number; fee?: number; date: string; notes?: string },
+  ): Promise<Asset> => {
+    const { data } = await api.post(`/assets/${id}/transactions`, tx)
+    return data
+  },
+  updateTransaction: async (
+    txId: string,
+    tx: Partial<{ kind: 'buy' | 'sell'; quantity: number; price: number; fee: number; date: string; notes: string }>,
+  ): Promise<Asset> => {
+    const { data } = await api.patch(`/assets/transactions/${txId}`, tx)
+    return data
+  },
+  deleteTransaction: async (txId: string): Promise<Asset> => {
+    const { data } = await api.delete(`/assets/transactions/${txId}`)
+    return data
+  },
+  buy: async (
+    tx: { ticker: string; quantity: number; price: number; fee?: number; date: string; name?: string; group_id?: string | null; notes?: string },
+  ): Promise<Asset> => {
+    const { data } = await api.post('/assets/buy', tx)
     return data
   },
 }

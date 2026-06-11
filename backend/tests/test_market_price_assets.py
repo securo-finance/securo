@@ -130,6 +130,50 @@ async def test_create_market_price_asset_seeds_quote_and_initial_value(
 
 
 @pytest.mark.asyncio
+async def test_create_market_price_seeds_opening_buy_at_unit_price(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """The opening buy uses the user's unit price (preço médio), not the quote."""
+    provider = FakeMarketProvider({"AAPL": _quote("AAPL", 200.0)})  # market = 200
+    data = AssetCreate(
+        name="Apple",
+        type="stock",
+        valuation_method="market_price",
+        ticker="AAPL",
+        units=Decimal("10"),
+        unit_price=Decimal("150"),  # bought cheaper than today's price
+    )
+    created = await asset_service.create_asset(
+        session, test_workspace.id, test_user.id, data, market_provider=provider
+    )
+    assert created.average_price == pytest.approx(150.0)   # cost, not the quote
+    assert created.total_invested == pytest.approx(1500.0)  # 10 × 150
+    assert created.current_value == pytest.approx(2000.0)   # 10 × 200 (live)
+    assert created.gain_loss == pytest.approx(500.0)        # unrealized
+    assert created.transaction_count == 1
+
+
+@pytest.mark.asyncio
+async def test_create_market_price_without_unit_price_uses_quote(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """Omitting the unit price falls back to the live quote (bought at market)."""
+    provider = FakeMarketProvider({"AAPL": _quote("AAPL", 180.0)})
+    data = AssetCreate(
+        name="Apple",
+        type="stock",
+        valuation_method="market_price",
+        ticker="AAPL",
+        units=Decimal("10"),
+    )
+    created = await asset_service.create_asset(
+        session, test_workspace.id, test_user.id, data, market_provider=provider
+    )
+    assert created.average_price == pytest.approx(180.0)
+    assert created.gain_loss == pytest.approx(0.0)  # cost == current value
+
+
+@pytest.mark.asyncio
 async def test_create_market_price_asset_rejects_missing_ticker(
     session: AsyncSession, test_user: User, test_workspace
 ):

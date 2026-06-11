@@ -52,8 +52,8 @@ class GoalUpdate(BaseModel):
     @field_validator("tracking_type")
     @classmethod
     def validate_tracking_type(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and v not in ("manual", "account", "net_worth"):
-            raise ValueError("tracking_type must be manual, account, or net_worth")
+        if v is not None and v not in ("manual", "account", "asset", "net_worth"):
+            raise ValueError("tracking_type must be manual, account, asset, or net_worth")
         return v
 
 

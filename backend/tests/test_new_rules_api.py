@@ -54,6 +54,79 @@ async def test_create_rule(client: AsyncClient, auth_headers, test_categories):
     data = response.json()
     assert data["name"] == "Test Rule"
     assert data["conditions"][0]["value"] == "IFOOD"
+    assert "applied_count" in data
+
+
+@pytest.mark.asyncio
+async def test_create_rule_applies_to_existing_transactions(
+    client: AsyncClient, auth_headers, test_transactions, test_categories,
+):
+    """Creating a rule immediately applies it to existing transactions and
+    reports how many were affected, without needing apply-all.
+
+    NETFLIX starts uncategorised in the fixture, so the new rule categorises it.
+    """
+    cat_food = str(test_categories[0].id)
+    payload = {
+        "name": "Netflix",
+        "conditions_op": "and",
+        "conditions": [{"field": "description", "op": "contains", "value": "NETFLIX"}],
+        "actions": [{"op": "set_category", "value": cat_food}],
+        "priority": 5,
+        "is_active": True,
+    }
+    response = await client.post("/api/rules", json=payload, headers=auth_headers)
+    assert response.status_code == 201
+    assert response.json()["applied_count"] >= 1
+
+    # The matching transaction is categorised without an explicit apply-all call.
+    items = (await client.get("/api/transactions", headers=auth_headers)).json()["items"]
+    netflix = {t["description"]: t for t in items}.get("NETFLIX")
+    assert netflix is not None
+    assert netflix["category_id"] == cat_food
+
+
+@pytest.mark.asyncio
+async def test_create_rule_does_not_overwrite_existing_category(
+    client: AsyncClient, auth_headers, test_transactions, test_categories,
+):
+    """Auto-apply on create is non-destructive: an already-categorised
+    transaction keeps its category instead of being clobbered."""
+    original = str(test_categories[0].id)  # IFOOD RESTAURANTE is pre-set to this
+    other = str(test_categories[1].id)
+    payload = {
+        "name": "iFood recat",
+        "conditions_op": "and",
+        "conditions": [{"field": "description", "op": "contains", "value": "IFOOD"}],
+        "actions": [{"op": "set_category", "value": other}],
+        "priority": 5,
+        "is_active": True,
+    }
+    response = await client.post("/api/rules", json=payload, headers=auth_headers)
+    assert response.status_code == 201
+    assert response.json()["applied_count"] == 0
+
+    items = (await client.get("/api/transactions", headers=auth_headers)).json()["items"]
+    ifood = {t["description"]: t for t in items}.get("IFOOD RESTAURANTE")
+    assert ifood["category_id"] == original
+
+
+@pytest.mark.asyncio
+async def test_create_rule_no_match_reports_zero(
+    client: AsyncClient, auth_headers, test_transactions, test_categories,
+):
+    """A rule that matches nothing reports applied_count == 0."""
+    payload = {
+        "name": "No match",
+        "conditions_op": "and",
+        "conditions": [{"field": "description", "op": "contains", "value": "ZZZ_NOMATCH"}],
+        "actions": [{"op": "set_category", "value": str(test_categories[0].id)}],
+        "priority": 5,
+        "is_active": True,
+    }
+    response = await client.post("/api/rules", json=payload, headers=auth_headers)
+    assert response.status_code == 201
+    assert response.json()["applied_count"] == 0
 
 
 @pytest.mark.asyncio

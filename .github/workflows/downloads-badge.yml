@@ -1,0 +1,47 @@
+name: Downloads Badge
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+jobs:
+  update-badge:
+    name: Update Downloads Badge
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch GHCR download counts
+        id: downloads
+        run: |
+          count() {
+            curl -sfL "https://github.com/securo-finance/securo/pkgs/container/$1" \
+              | grep -A1 'Total downloads' \
+              | grep -oE 'title="[0-9]+"' \
+              | grep -oE '[0-9]+'
+          }
+          backend=$(count securo-backend)
+          frontend=$(count securo-frontend)
+          if [ -z "$backend" ] || [ -z "$frontend" ]; then
+            echo "Failed to parse download counts (backend='$backend', frontend='$frontend')" >&2
+            exit 1
+          fi
+          # Both images are required to run Securo, so the smaller count is
+          # the closest proxy for real installs.
+          min=$(( backend < frontend ? backend : frontend ))
+          if [ "$min" -ge 1000 ]; then
+            pretty=$(awk -v n="$min" 'BEGIN { printf "%.1fk", n / 1000 }')
+          else
+            pretty=$min
+          fi
+          echo "Backend: $backend, Frontend: $frontend, Badge: $pretty"
+          echo "count=$pretty" >> "$GITHUB_OUTPUT"
+
+      - name: Update gist badge
+        uses: schneegans/dynamic-badges-action@v1.7.0
+        with:
+          auth: ${{ secrets.GIST_TOKEN }}
+          gistID: ae627b744aaa2ba89d850ea541c311be
+          filename: downloads.json
+          label: downloads
+          message: ${{ steps.downloads.outputs.count }}
+          color: blue

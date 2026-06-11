@@ -45,3 +45,9 @@ class RuleRead(BaseModel):
     is_active: bool
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class RuleCreateResponse(RuleRead):
+    """A created rule plus how many existing transactions it just affected."""
+
+    applied_count: int = 0

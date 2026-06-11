@@ -280,6 +280,44 @@ async def test_update_bank_connected_raises(session: AsyncSession, test_user, te
 
 
 @pytest.mark.asyncio
+async def test_update_bank_connected_type_override(
+    session: AsyncSession, test_user, test_workspace, test_connection
+):
+    """The account type can be overridden on a bank-connected account (issue #271)."""
+    account = await _make_account(
+        session, test_user.id, "mBank Savings", acc_type="checking",
+        connection_id=test_connection.id, external_id="ext-type",
+    )
+    updated = await update_account(
+        session, account.id, test_workspace.id, AccountUpdate(type="savings")
+    )
+    assert updated is not None
+    assert updated.type == "savings"
+
+
+@pytest.mark.asyncio
+async def test_update_bank_connected_type_override_clears_card_metadata(
+    session: AsyncSession, test_user, test_workspace, test_connection
+):
+    """Overriding a connected card to a non-card type drops stale card metadata."""
+    account = await _make_account(
+        session, test_user.id, "Was a card", acc_type="credit_card",
+        connection_id=test_connection.id, external_id="ext-card",
+    )
+    account.credit_limit = Decimal("5000.00")
+    account.statement_close_day = 10
+    await session.commit()
+
+    updated = await update_account(
+        session, account.id, test_workspace.id, AccountUpdate(type="checking")
+    )
+    assert updated is not None
+    assert updated.type == "checking"
+    assert updated.credit_limit is None
+    assert updated.statement_close_day is None
+
+
+@pytest.mark.asyncio
 async def test_update_account_not_found(session: AsyncSession, test_user, test_workspace):
     """Updating nonexistent account returns None."""
     data = AccountUpdate(name="Ghost")

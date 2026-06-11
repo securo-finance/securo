@@ -28,6 +28,10 @@ class AssetCreate(BaseModel):
     # fetches the live quote on create and seeds the first AssetValue.
     ticker: Optional[str] = None
     ticker_exchange: Optional[str] = None
+    # Per-unit price for the opening buy of a market-priced holding (preço
+    # médio model, consistent with the transaction ledger). When omitted, the
+    # service seeds the buy at the live quote ("bought at market now").
+    unit_price: Optional[Decimal] = None
 
 
 class AssetUpdate(BaseModel):
@@ -86,6 +90,65 @@ class AssetRead(BaseModel):
     ticker_exchange: Optional[str] = None
     last_price: Optional[float] = None
     last_price_at: Optional[datetime] = None
+    logo_url: Optional[str] = None
+    # Ledger-derived fields (issue #235). average_price = weighted-average cost
+    # per unit (preço médio); total_invested = cost basis of the held units;
+    # realized_gain = cumulative gain/loss from sells; transaction_count lets
+    # the UI know whether a holding is ledger-backed.
+    average_price: Optional[float] = None
+    total_invested: Optional[float] = None
+    realized_gain: Optional[float] = None
+    transaction_count: int = 0
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AssetTransactionCreate(BaseModel):
+    kind: str  # buy | sell
+    quantity: Decimal
+    price: Decimal
+    fee: Decimal = Decimal("0")
+    date: date
+    notes: Optional[str] = None
+
+
+class AssetTransactionUpdate(BaseModel):
+    kind: Optional[str] = None
+    quantity: Optional[Decimal] = None
+    price: Optional[Decimal] = None
+    fee: Optional[Decimal] = None
+    date: Optional[date] = None
+    notes: Optional[str] = None
+
+
+class AssetBuyCreate(BaseModel):
+    """Find-or-create a ticker holding (in `group_id`) and record a buy."""
+
+    ticker: str
+    quantity: Decimal
+    price: Decimal
+    fee: Decimal = Decimal("0")
+    date: date
+    name: Optional[str] = None
+    group_id: Optional[uuid.UUID] = None
+    notes: Optional[str] = None
+
+
+class AssetTransactionRead(BaseModel):
+    id: uuid.UUID
+    asset_id: uuid.UUID
+    kind: str
+    quantity: float
+    price: float
+    fee: float
+    date: date
+    source: str
+    notes: Optional[str] = None
+    # Denormalized holding context so the global transactions tab can render
+    # rows without an extra per-row asset lookup.
+    asset_name: Optional[str] = None
+    ticker: Optional[str] = None
+    currency: Optional[str] = None
     logo_url: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)

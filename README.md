@@ -5,6 +5,7 @@
 <p align="center">
   <a href="https://github.com/securo-finance/securo/actions/workflows/ci.yml"><img src="https://github.com/securo-finance/securo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <img src="https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/tassionoronha/ae627b744aaa2ba89d850ea541c311be/raw/coverage.json" alt="Coverage" />
+  <a href="https://github.com/securo-finance/securo/pkgs/container/securo-frontend"><img src="https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/tassionoronha/ae627b744aaa2ba89d850ea541c311be/raw/downloads.json" alt="Downloads" /></a>
   <a href="https://www.gnu.org/licenses/agpl-3.0"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg" alt="License: AGPL-3.0" /></a>
   <a href="https://discord.gg/rUqTKtQ9S4"><img src="https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white" alt="Join our Discord" /></a>
   <br />
@@ -52,6 +53,7 @@ Open [http://localhost:3000](http://localhost:3000) and create an account. That'
 - Multi-currency support with automatic FX conversion
 - Multi-user support with admin panel and registration controls
 - Two-factor authentication (TOTP) with brute-force protection
+- OIDC login support for Authentik, Pocket ID, and other standard providers
 - AI Agents (optional): self-hosted LLM chat with tool-use over your data, plus a per-agent RAG knowledge base
 
 ## Bank Sync (Optional)
@@ -91,6 +93,41 @@ SIMPLEFIN_API_URL=https://beta-bridge.simplefin.org   # sandbox; use bridge.simp
 ```
 
 Then in Securo: **Accounts → Connect Bank → SimpleFIN**, and paste the token. The [developer page](https://beta-bridge.simplefin.org/info/developers) gives out free demo tokens if you want to try it without a real bank.
+
+## OIDC Login (Optional)
+
+Securo can delegate login to any standard OIDC provider, including Authentik and Pocket ID. Create a confidential/web application in your provider and register this redirect URI:
+
+```
+https://your-securo-host/api/auth/oidc/callback
+```
+
+Then add the provider settings to `.env` and restart:
+
+```
+OIDC_ENABLED=true
+OIDC_PROVIDER_NAME=Pocket ID
+OIDC_DISCOVERY_URL=https://id.example.com/.well-known/openid-configuration
+OIDC_CLIENT_ID=securo
+OIDC_CLIENT_SECRET=your-client-secret
+# Optional; defaults to ${FRONTEND_URL}/api/auth/oidc/callback
+OIDC_REDIRECT_URI=https://your-securo-host/api/auth/oidc/callback
+```
+
+New OIDC users are auto-provisioned by default (`OIDC_AUTO_REGISTER=true`) using verified email addresses. Set `OIDC_AUTO_REGISTER=false` to allow only existing Securo users whose email matches the provider claim.
+
+### Optional OIDC role sync
+
+Securo can also synchronize provider roles/groups into its built-in permissions when `OIDC_SYNC_ROLES=true`. The default claim is `groups`, which works well with Authentik group mappings and Pocket ID role/group assignments.
+
+```
+OIDC_SYNC_ROLES=true
+OIDC_ROLES_CLAIM=groups
+OIDC_ADMIN_ROLES=securo-admins
+OIDC_WORKSPACE_ROLE_MAP={"securo-owners":"owner","securo-editors":"editor","securo-viewers":"viewer"}
+```
+
+`OIDC_ADMIN_ROLES` grants or revokes Securo admin (`is_superuser`) on each OIDC login. `OIDC_WORKSPACE_ROLE_MAP` maps provider roles/groups to the user's Personal workspace role (`owner`, `editor`, or `viewer`); if multiple mapped roles are present, Securo applies the highest permission. Leave `OIDC_SYNC_ROLES=false` to keep all Securo roles managed locally.
 
 ## Exchange Rates (Optional)
 

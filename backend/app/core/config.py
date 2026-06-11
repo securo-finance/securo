@@ -61,6 +61,22 @@ class Settings(BaseSettings):
     # Registration
     registration_enabled: bool = True
 
+    # OIDC login (works with Authentik, Pocket ID, and other standard OIDC providers)
+    oidc_enabled: bool = False
+    oidc_provider_name: str = "OIDC"
+    oidc_discovery_url: str = ""  # e.g. https://auth.example.com/application/o/securo/.well-known/openid-configuration
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    oidc_redirect_uri: str = ""  # defaults to {FRONTEND_URL}/api/auth/oidc/callback
+    oidc_scopes: str = "openid email profile"
+    oidc_auto_register: bool = True
+    oidc_existing_user_link_mode: str = "disabled"  # disabled|verified_email|email
+    oidc_require_verified_email: bool = True
+    oidc_sync_roles: bool = False
+    oidc_roles_claim: str = "groups"
+    oidc_admin_roles: str = ""  # comma-separated provider roles/groups that grant Securo admin
+    oidc_workspace_role_map: str = ""  # JSON: {"provider-role": "owner|editor|viewer"}
+
     # Celery
     redis_url: str = "redis://localhost:6379/0"
 

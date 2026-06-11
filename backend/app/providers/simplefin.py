@@ -258,17 +258,19 @@ class SimpleFinProvider(BankProvider):
     def _org_website(payload: dict) -> Optional[str]:
         """Best-effort bank website from a SimpleFIN /accounts payload.
 
-        Checks the connection metadata first, then each account's ``org``
-        (the SimpleFIN spec attaches ``url``/``domain`` to the institution
-        org). Returns None when nothing usable is present.
+        The Bridge returns the institution on a top-level ``connections``
+        entry as ``org_url`` (e.g. ``"https://beta-bridge.simplefin.org"``),
+        with ``sfin_url`` as a backup. Older/spec-style servers instead attach
+        an ``org`` object (``url``/``domain``) to each account, so we check
+        that too. Returns None when nothing usable is present.
         """
         for src in (payload.get("connections") or []):
-            url = src.get("url") or src.get("domain")
+            url = src.get("org_url") or src.get("url") or src.get("sfin_url")
             if url:
                 return url
         for acc in (payload.get("accounts") or []):
             org = acc.get("org") or {}
-            url = org.get("url") or org.get("domain")
+            url = org.get("url") or org.get("domain") or org.get("sfin-url")
             if url:
                 return url
         return None

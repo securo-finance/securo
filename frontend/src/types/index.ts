@@ -511,6 +511,29 @@ export interface Asset {
   last_price: number | null
   last_price_at: string | null
   logo_url: string | null
+  // Ledger-derived (issue #235): weighted-average cost per unit (preço médio),
+  // cost basis of held units, cumulative realized gain, and whether the holding
+  // is driven by the transactions ledger.
+  average_price: number | null
+  total_invested: number | null
+  realized_gain: number | null
+  transaction_count: number
+}
+
+export interface AssetTransaction {
+  id: string
+  asset_id: string
+  kind: 'buy' | 'sell'
+  quantity: number
+  price: number
+  fee: number
+  date: string
+  source: string
+  notes: string | null
+  asset_name: string | null
+  ticker: string | null
+  currency: string | null
+  logo_url: string | null
 }
 
 export interface MarketSymbolMatch {

@@ -16,8 +16,53 @@ from app.services.asset_service import (
     _compute_current_value,
     _generate_growth_values,
     _next_due_date,
+    build_market_value_series,
     get_portfolio_trend,
 )
+
+
+def test_build_market_value_series_reflects_quantity_over_time():
+    """A backdated buy steps the value up from its date, not just today."""
+    rows = [
+        (date(2026, 5, 12), Decimal("9286"), Decimal("46.43")),
+        (date(2026, 5, 17), Decimal("9094"), Decimal("45.47")),
+        (date(2026, 6, 11), Decimal("8330"), Decimal("41.65")),
+    ]
+    txs = [
+        (date(2025, 12, 1), "buy", Decimal("200")),
+        (date(2026, 5, 15), "buy", Decimal("50")),  # backdated, between the value points
+    ]
+    out = dict(build_market_value_series(rows, txs))
+    assert round(out[date(2026, 5, 12)]) == round(200 * 46.43)   # before the buy → 200 units
+    assert round(out[date(2026, 5, 17)]) == round(250 * 45.47)   # after → 250 units
+    assert round(out[date(2026, 6, 11)]) == round(250 * 41.65)
+
+
+def test_build_market_value_series_handles_sell_and_missing_price():
+    rows = [
+        (date(2026, 1, 1), Decimal("1000"), Decimal("10")),   # 100 units
+        (date(2026, 2, 1), Decimal("0"), Decimal("12")),      # after selling 40 → 60 units
+        (date(2026, 3, 1), Decimal("777"), None),             # no price → fall back to amount
+    ]
+    txs = [
+        (date(2026, 1, 1), "buy", Decimal("100")),
+        (date(2026, 1, 20), "sell", Decimal("40")),
+    ]
+    out = dict(build_market_value_series(rows, txs))
+    assert out[date(2026, 1, 1)] == 1000.0   # 100 × 10
+    assert out[date(2026, 2, 1)] == 720.0    # 60 × 12
+    assert out[date(2026, 3, 1)] == 777.0    # fallback to stored amount
+
+
+def test_build_market_value_series_no_ledger_keeps_amounts():
+    """A holding with no transactions must not be zeroed — keep stored amounts."""
+    rows = [
+        (date(2026, 1, 1), Decimal("500"), Decimal("5")),
+        (date(2026, 2, 1), Decimal("600"), Decimal("6")),
+    ]
+    out = dict(build_market_value_series(rows, []))
+    assert out[date(2026, 1, 1)] == 500.0
+    assert out[date(2026, 2, 1)] == 600.0
 
 
 @pytest_asyncio.fixture

@@ -230,6 +230,42 @@ async def test_update_goal_status(client: AsyncClient, auth_headers: dict, test_
 
 
 @pytest.mark.asyncio
+async def test_update_goal_tracking_type(client: AsyncClient, auth_headers: dict, test_user: User):
+    resp = await client.post(
+        "/api/goals",
+        json={"name": "Tracking Goal", "target_amount": "1000.00", "tracking_type": "manual"},
+        headers=auth_headers,
+    )
+    goal_id = resp.json()["id"]
+
+    for tracking_type in ("manual", "account", "asset", "net_worth"):
+        response = await client.patch(
+            f"/api/goals/{goal_id}",
+            json={"tracking_type": tracking_type},
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        assert response.json()["tracking_type"] == tracking_type
+
+
+@pytest.mark.asyncio
+async def test_update_goal_invalid_tracking_type(client: AsyncClient, auth_headers: dict, test_user: User):
+    resp = await client.post(
+        "/api/goals",
+        json={"name": "Bad Tracking", "target_amount": "1000.00", "tracking_type": "manual"},
+        headers=auth_headers,
+    )
+    goal_id = resp.json()["id"]
+
+    response = await client.patch(
+        f"/api/goals/{goal_id}",
+        json={"tracking_type": "invalid"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_update_goal_invalid_status(client: AsyncClient, auth_headers: dict, test_user: User):
     resp = await client.post(
         "/api/goals",

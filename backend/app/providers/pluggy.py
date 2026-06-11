@@ -19,6 +19,7 @@ from app.providers.base import (
     RefreshOutcome,
     TransactionData,
 )
+from app.providers.pluggy_constants import pluggy_icon_for_compe
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,38 @@ _PLUGGY_REFRESH_USER_ACTION_CODES = {
 }
 
 PLUGGY_API_BASE = "https://api.pluggy.ai"
+
+
+def _compe_from_transfer_number(transfer_number) -> Optional[str]:
+    """Extract the 3-digit COMPE bank code from a Pluggy ``transferNumber``.
+
+    Format is ``"<compe>/<branch>/<account>"`` (e.g. ``"260/0001/06809695-5"``).
+    Returns the zero-padded code, or None when absent/unparseable.
+    """
+    if not isinstance(transfer_number, str) or "/" not in transfer_number:
+        return None
+    code = transfer_number.split("/", 1)[0].strip()
+    return code.zfill(3) if code.isdigit() else None
+
+
+def _resolve_connector_logo(connector: dict, accounts: list[dict]) -> Optional[str]:
+    """Institution logo URL for a Pluggy connection, or None.
+
+    Real connectors expose the bank logo directly in ``imageUrl`` (e.g.
+    Nubank -> ``.../212.svg``). The demo "MeuPluggy" connector returns the
+    generic ``sandbox.svg`` placeholder instead — in that case fall back to
+    the real bank's icon resolved from an account's COMPE code. If neither is
+    available, return None so the frontend shows the account-type icon.
+    """
+    image = connector.get("imageUrl")
+    if image and not image.rstrip("/").endswith("/sandbox.svg"):
+        return image
+    for acc in accounts:
+        compe = _compe_from_transfer_number((acc.get("bankData") or {}).get("transferNumber"))
+        icon = pluggy_icon_for_compe(compe)
+        if icon:
+            return icon
+    return None
 
 
 def _parse_day(value) -> Optional[int]:
@@ -302,8 +335,9 @@ class PluggyProvider(BankProvider):
         connector = item_data.get("connector", {})
         institution_name = connector.get("name", "Unknown Bank")
 
+        raw_accounts = accounts_data.get("results", [])
         account_list = []
-        for acc in accounts_data.get("results", []):
+        for acc in raw_accounts:
             account_list.append(_build_account_data(acc, self._map_account_type))
 
         return ConnectionData(
@@ -311,7 +345,7 @@ class PluggyProvider(BankProvider):
             institution_name=institution_name,
             credentials={"item_id": item_id},
             accounts=account_list,
-            logo_url=connector.get("imageUrl"),
+            logo_url=_resolve_connector_logo(connector, raw_accounts),
         )
 
     async def get_institution_logo(self, credentials: dict) -> Optional[str]:
@@ -322,7 +356,16 @@ class PluggyProvider(BankProvider):
                 f"{PLUGGY_API_BASE}/items/{item_id}", headers=headers
             )
             resp.raise_for_status()
-            return resp.json().get("connector", {}).get("imageUrl")
+            connector = resp.json().get("connector", {})
+            # The connector logo may be the demo placeholder; fetch accounts so
+            # the COMPE-code fallback can recover the real bank icon.
+            accts_resp = await client.get(
+                f"{PLUGGY_API_BASE}/accounts", headers=headers,
+                params={"itemId": item_id},
+            )
+            accts_resp.raise_for_status()
+            raw_accounts = accts_resp.json().get("results", [])
+        return _resolve_connector_logo(connector, raw_accounts)
 
     async def get_accounts(self, credentials: dict) -> list[AccountData]:
         item_id = credentials["item_id"]

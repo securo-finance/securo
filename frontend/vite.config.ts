@@ -24,6 +24,15 @@ export default defineConfig(async ({ mode }) => {
     define: {
       __APP_VERSION__: JSON.stringify(appVersion),
     },
+    build: {
+      // Emit hashed JS/CSS into `static/` instead of Vite's default `assets/`.
+      // The default collides with our `/assets` SPA route: nginx's
+      // `try_files $uri $uri/ /index.html` matches the real `dist/assets/`
+      // directory before falling back to index.html, so a direct load or
+      // refresh of `/assets` 301s into the build dir and renders a blank
+      // page instead of booting the app (issue #295).
+      assetsDir: 'static',
+    },
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

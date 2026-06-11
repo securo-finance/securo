@@ -43,6 +43,17 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 
+// Account types offered in the create/edit dialog. Shared between the manual
+// type selector and the connected-account override selector so the list stays
+// in one place.
+const ACCOUNT_TYPE_OPTIONS = [
+  { value: 'checking', labelKey: 'accounts.typeChecking' },
+  { value: 'savings', labelKey: 'accounts.typeSavings' },
+  { value: 'credit_card', labelKey: 'accounts.typeCreditCard' },
+  { value: 'investment', labelKey: 'accounts.typeInvestment' },
+  { value: 'wallet', labelKey: 'accounts.typeWallet' },
+] as const
+
 function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
   return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
 }
@@ -723,7 +734,8 @@ function AccountDialog({
             }
             const isConnected = !!account?.connection_id
             onSave({
-              ...(!isConnected && { name, type, balance: parseFloat(balance), balance_date: balanceDate, currency }),
+              ...(!isConnected && { name, balance: parseFloat(balance), balance_date: balanceDate, currency }),
+              type,
               display_name: displayName.trim() || null,
               ...(isCC && {
                 credit_limit: creditLimit !== '' ? parseFloat(creditLimit) : null,
@@ -749,6 +761,21 @@ function AccountDialog({
               <p className="text-xs text-muted-foreground">{t('accounts.displayNameHint')}</p>
             </div>
           )}
+          {account?.connection_id && (
+            <div className="space-y-2">
+              <Label>{t('accounts.accountType')}</Label>
+              <select
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                value={type}
+                onChange={(e) => setType(e.target.value)}
+              >
+                {ACCOUNT_TYPE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">{t('accounts.typeOverrideHint')}</p>
+            </div>
+          )}
           {!account?.connection_id && (
             <>
               <div className="grid grid-cols-2 gap-4">
@@ -759,11 +786,9 @@ function AccountDialog({
                     value={type}
                     onChange={(e) => setType(e.target.value)}
                   >
-                    <option value="checking">{t('accounts.typeChecking')}</option>
-                    <option value="savings">{t('accounts.typeSavings')}</option>
-                    <option value="credit_card">{t('accounts.typeCreditCard')}</option>
-                    <option value="investment">{t('accounts.typeInvestment')}</option>
-                    <option value="wallet">{t('accounts.typeWallet')}</option>
+                    {ACCOUNT_TYPE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
+                    ))}
                   </select>
                 </div>
                 <div className="space-y-2">

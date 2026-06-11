@@ -9,7 +9,7 @@ from app.core.workspace_context import (
     current_workspace,
     current_writable_workspace,
 )
-from app.schemas.rule import RuleCreate, RuleRead, RuleUpdate
+from app.schemas.rule import RuleCreate, RuleCreateResponse, RuleRead, RuleUpdate
 from app.services import rule_service
 from app.services.rule_service import DuplicateRuleError
 
@@ -24,19 +24,25 @@ async def list_rules(
     return await rule_service.get_rules(session, ctx.workspace.id)
 
 
-@router.post("", response_model=RuleRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=RuleCreateResponse, status_code=status.HTTP_201_CREATED)
 async def create_rule(
     data: RuleCreate,
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        return await rule_service.create_rule(session, ctx.workspace.id, ctx.user_id, data)
+        rule = await rule_service.create_rule(session, ctx.workspace.id, ctx.user_id, data)
     except DuplicateRuleError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="A rule with this name already exists",
         )
+    # Apply the new rule to existing transactions so it takes effect on history
+    # immediately, and report how many were touched for a transparent toast.
+    applied_count = await rule_service.apply_single_rule(session, ctx.workspace.id, rule)
+    response = RuleCreateResponse.model_validate(rule)
+    response.applied_count = applied_count
+    return response
 
 
 @router.patch("/{rule_id}", response_model=RuleRead)

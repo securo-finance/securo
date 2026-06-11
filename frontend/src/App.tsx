@@ -36,6 +36,7 @@ const AgentDetailPage = lazy(() => import('@/pages/agent-detail'))
 const AgentConnectionsPage = lazy(() => import('@/pages/agent-connections'))
 const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace-settings'))
 const OAuthCallbackPage = lazy(() => import('@/pages/oauth-callback'))
+const OIDCCallbackPage = lazy(() => import('@/pages/oidc-callback'))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -65,6 +66,7 @@ function App() {
               <Routes>
                 <Route path="/setup" element={<SetupPage />} />
                 <Route path="/login" element={<LoginPage />} />
+                <Route path="/auth/oidc/callback" element={<OIDCCallbackPage />} />
                 <Route path="/register" element={<RegisterPage />} />
                 <Route
                   element={

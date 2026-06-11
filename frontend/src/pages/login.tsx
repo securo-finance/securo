@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useAuth } from '@/contexts/auth-context'
-import { setup, admin as adminApi } from '@/lib/api'
+import { setup, auth as authApi, admin as adminApi } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -22,6 +22,7 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [registrationEnabled, setRegistrationEnabled] = useState(true)
+  const [oidcConfig, setOidcConfig] = useState<{ enabled: boolean; provider_name: string }>({ enabled: false, provider_name: 'OIDC' })
 
   // 2FA state
   const [requires2fa, setRequires2fa] = useState(false)
@@ -41,6 +42,7 @@ export default function LoginPage() {
     adminApi.registrationStatus().then(({ enabled }) => {
       setRegistrationEnabled(enabled)
     }).catch(() => {})
+    authApi.oidcConfig().then(setOidcConfig).catch(() => {})
     adminApi.defaultColors().then(({ light, dark }) => {
       setThemeBasedOnSystem(light, dark, resolvedTheme)
     }).catch(() => {})
@@ -68,6 +70,10 @@ export default function LoginPage() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const handleOIDCLogin = () => {
+    window.location.href = '/api/auth/oidc/login'
   }
 
   const handleVerify2fa = async (e: React.FormEvent) => {
@@ -194,6 +200,18 @@ export default function LoginPage() {
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? t('common.loading') : t('auth.login')}
             </Button>
+            {oidcConfig.enabled && (
+              <>
+                <div className="flex items-center gap-3 w-full">
+                  <div className="h-px flex-1 bg-border" />
+                  <span className="text-xs text-muted-foreground">{t('auth.or')}</span>
+                  <div className="h-px flex-1 bg-border" />
+                </div>
+                <Button type="button" variant="outline" className="w-full" onClick={handleOIDCLogin}>
+                  {t('auth.loginWithProvider', { provider: oidcConfig.provider_name })}
+                </Button>
+              </>
+            )}
             {registrationEnabled && (
               <p className="text-sm text-muted-foreground">
                 {t('auth.noAccount')}{' '}

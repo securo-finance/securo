@@ -267,12 +267,17 @@ async def update_account(
         k in update_data for k in ("statement_close_day", "payment_due_day")
     )
 
-    # Bank-connected accounts are managed by the sync pipeline. Only credit card
-    # metadata (limit + cycle days) can be user-edited, since providers often don't
-    # expose those — users fill them in to unlock cycle-aware filtering.
+    # Bank-connected accounts are managed by the sync pipeline. Beyond display
+    # name and credit card metadata (limit + cycle days, which providers often
+    # don't expose), users may also override the account `type` — providers
+    # sometimes misreport it (e.g. Enable Banking labels an mBank savings
+    # account as "checking"; issue #271). Sync only writes `type` on initial
+    # account creation and never overwrites it afterwards, so the override
+    # survives subsequent syncs without a separate field.
     if account.connection_id is not None:
         editable_fields = {
             "display_name",
+            "type",
             "credit_limit",
             "statement_close_day",
             "payment_due_day",
@@ -283,12 +288,22 @@ async def update_account(
         disallowed = set(update_data.keys()) - editable_fields
         if disallowed:
             raise ValueError("Cannot edit bank-connected accounts")
-        cc_fields = editable_fields - {"display_name"}
+        new_type = update_data.get("type", account.type)
+        cc_fields = editable_fields - {"display_name", "type"}
         cc_update = {k: v for k, v in update_data.items() if k in cc_fields}
-        if cc_update and account.type != "credit_card":
+        if cc_update and new_type != "credit_card":
             raise ValueError("Credit card fields can only be set on credit card accounts")
         for key, value in update_data.items():
             setattr(account, key, value)
+        # If the override moves the account away from credit_card, drop any
+        # stale card metadata so it isn't left half credit-card.
+        if new_type != "credit_card":
+            account.credit_limit = None
+            account.statement_close_day = None
+            account.payment_due_day = None
+            account.minimum_payment = None
+            account.card_brand = None
+            account.card_level = None
         if cycle_fields_changed:
             await _recompute_effective_dates(session, account)
         await session.commit()
