@@ -114,7 +114,7 @@ services:
   frontend:
     image: ghcr.io/securo-finance/securo-frontend:latest
     ports:
-      - "${FRONTEND_PORT:-3000}:80"
+      - "${FRONTEND_PORT:-3000}:8080"
     environment:
       BACKEND_URL: http://backend:8000
       FRONTEND_URL: http://localhost:3000
