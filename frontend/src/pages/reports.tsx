@@ -28,26 +28,23 @@ import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import type { ReportResponse, CategoryTrendItem } from '@/types'
 
-const GROUP_HUE_BAND: Record<string, { center: number; spread: number }> = {
-  accounts:    { center: 235, spread: 70 }, // blues → purples
-  assets:      { center: 50,  spread: 70 }, // oranges → yellow-greens
-  liabilities: { center: 345, spread: 60 }, // pinks → reds
-}
-const LIGHTNESS_MIN = 38
-const LIGHTNESS_MAX = 69
-
-function colorFromId(id: string, group: string): string {
-  let hash = 5381
-  for (let i = 0; i < id.length; i++) {
-    hash = ((hash << 5) + hash) ^ id.charCodeAt(i)
-    hash = hash >>> 0
-  }
-  const hash2 = (hash ^ (hash >>> 16)) >>> 0
-  const { center, spread } = GROUP_HUE_BAND[group] ?? { center: 0, spread: 360 }
-  const hue = ((center - spread / 2 + (hash % spread)) + 360) % 360
-  const lightness = LIGHTNESS_MIN + (hash2 % (LIGHTNESS_MAX - LIGHTNESS_MIN + 1))
-  return `hsl(${Math.round(hue)}, 65%, ${lightness}%)`
-}
+// A small qualitative palette of well-separated hues for the composition
+// detail ring. Capped to a handful of slices, distinct colours make each
+// holding easy to match against its legend entry (which a same-hue ramp
+// across 15+ near-identical slices never could).
+const SLICE_COLORS = [
+  '#6366F1', // indigo
+  '#F59E0B', // amber
+  '#10B981', // emerald
+  '#EC4899', // pink
+  '#0EA5E9', // sky
+  '#8B5CF6', // violet
+  '#F97316', // orange
+  '#14B8A6', // teal
+  '#84CC16', // lime
+  '#D946EF', // fuchsia
+]
+const OTHER_SLICE_COLOR = '#9CA3AF'
 
 function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
   return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
@@ -226,9 +223,7 @@ export default function ReportsPage() {
     fontSize: '12px',
   }
 
-  const composition = (data?.composition ?? []).map((item) =>
-    activeTab === 'net_worth' ? { ...item, color: colorFromId(item.key, item.group) } : item
-  )
+  const composition = data?.composition ?? []
 
   // Composition toggle options per report type
   const compositionOptions = activeTab === 'net_worth'
@@ -247,11 +242,19 @@ export default function ReportsPage() {
   })()
 
 
+  // Normalize a breakdown key to its composition group. Cash flow exposes its
+  // income/expense breakdowns under projected* keys, but composition items are
+  // tagged with the plain group, so the two must be reconciled to line up.
+  const groupOf = (key: string) =>
+    key === 'projectedIncome' ? 'income'
+      : key === 'projectedExpenses' ? 'expenses'
+        : key
+
   // Inner ring — summary view (high-level breakdown), filtered by toggle state for net_worth
   const innerDonutData = (() => {
     const excludedKeys = new Set(['netIncome', 'startingBalance', 'endingBalance'])
     return breakdownData
-      .filter((b) => !excludedKeys.has(b.key) && (!activeCompositionGroups || activeCompositionGroups.has(b.key)))
+      .filter((b) => !excludedKeys.has(b.key) && (!activeCompositionGroups || activeCompositionGroups.has(groupOf(b.key))))
       .map((b) => ({
         name: t(`reports.${b.key}`, { defaultValue: b.label }),
         value: b.value,
@@ -259,57 +262,59 @@ export default function ReportsPage() {
       }))
   })()
 
-  // Outer ring — detailed view, grouped per inner segment to preserve angular alignment.
-  // Each inner group (e.g. assets, liabilities) gets its own top-N + "Other" bucket so
-  // that group subtotals in the outer ring exactly match the inner ring arc widths.
-  const outerDonutData = (() => {
+  // Full detail — every holding in the active group(s), largest first, labelled
+  // and coloured. The donut draws only the top slice of this; the legend popover
+  // lists all of it. Net worth items get a distinct palette (the long tail falls
+  // back to the neutral colour); income/expense items keep the user's category colour.
+  const compositionDetail = (() => {
     if (composition.length === 0) return []
 
     const excludedKeys = new Set(['netIncome', 'startingBalance', 'endingBalance'])
-    const innerGroups = breakdownData
-      .filter((b) => !excludedKeys.has(b.key) && (!activeCompositionGroups || activeCompositionGroups.has(b.key)))
-      .map((b) => b.key)
+    const activeGroups = new Set(
+      breakdownData
+        .filter((b) => !excludedKeys.has(b.key) && (!activeCompositionGroups || activeCompositionGroups.has(groupOf(b.key))))
+        .map((b) => groupOf(b.key))
+    )
 
-    const byGroup = new Map<string, typeof composition>()
-    for (const group of innerGroups) byGroup.set(group, [])
-    for (const item of composition) {
-      const bucket = byGroup.get(item.group)
-      if (bucket) bucket.push(item)
-    }
-
-    const grandTotal = innerDonutData.reduce((s, d) => s + d.value, 0)
-    const threshold = grandTotal * 0.02
-
-    const itemLabel = (c: { label: string; key: string }) => {
-      if (c.key === 'uncategorized') return t('reports.uncategorized')
+    const itemLabel = (c: { label: string; key: string; group: string }) => {
+      if (c.key === 'uncategorized') {
+        // Uncategorized income and uncategorized expenses are distinct buckets
+        // that share a label — qualify them by group so they don't look duplicated.
+        const g = c.group === 'income' ? t('reports.income')
+          : c.group === 'expenses' ? t('reports.expenses')
+          : null
+        return g ? `${t('reports.uncategorized')} · ${g}` : t('reports.uncategorized')
+      }
       if (c.key === 'baseline') return t('reports.baseline')
       return c.label
     }
 
-    const result: { name: string; value: number; color: string; subItems?: { name: string; value: number }[] }[] = []
-    for (const group of innerGroups) {
-      const sorted = [...(byGroup.get(group) ?? [])].sort((a, b) => b.value - a.value)
-      const significant = sorted.filter((c) => c.value >= threshold)
-      const small = sorted.filter((c) => c.value < threshold)
-      const otherValue = small.reduce((sum, c) => sum + c.value, 0)
-      for (const c of significant) {
-        result.push({ name: itemLabel(c), value: c.value, color: c.color })
-      }
-      if (otherValue > 0) {
-        const otherGroupLabel: Record<string, string> = {
-          accounts: t('reports.otherAccounts', { defaultValue: 'Other Accounts' }),
-          assets: t('reports.otherAssets', { defaultValue: 'Other Assets' }),
-          liabilities: t('reports.otherLiabilities', { defaultValue: 'Other Liabilities' }),
-          income: t('reports.otherIncome', { defaultValue: 'Other Income' }),
-          expenses: t('reports.otherExpenses', { defaultValue: 'Other Expenses' }),
-        }
-        result.push({
-          name: otherGroupLabel[group] ?? t('reports.other'),
-          value: Math.round(otherValue * 100) / 100,
-          color: '#6B7280',
-          subItems: small.map((c) => ({ name: itemLabel(c), value: c.value })),
-        })
-      }
+    return composition
+      .filter((c) => activeGroups.has(c.group))
+      .sort((a, b) => b.value - a.value)
+      .map((c, i) => ({
+        name: itemLabel(c),
+        value: c.value,
+        color: activeTab === 'net_worth' ? (SLICE_COLORS[i] ?? OTHER_SLICE_COLOR) : c.color,
+      }))
+  })()
+
+  // Outer ring — the top slices individually, with the long tail folded into a
+  // single "Other". Capping the slice count is what keeps them tellable apart;
+  // the full breakdown stays one click away in the legend's "+N more" popover.
+  const outerDonutData = (() => {
+    if (compositionDetail.length === 0) return []
+    const LIMIT = SLICE_COLORS.length
+    const top = compositionDetail.slice(0, LIMIT)
+    const rest = compositionDetail.slice(LIMIT)
+    const result: { name: string; value: number; color: string }[] =
+      top.map((d) => ({ name: d.name, value: d.value, color: d.color }))
+    if (rest.length > 0) {
+      result.push({
+        name: t('reports.other'),
+        value: Math.round(rest.reduce((s, d) => s + d.value, 0) * 100) / 100,
+        color: OTHER_SLICE_COLOR,
+      })
     }
     return result
   })()
@@ -753,29 +758,27 @@ export default function ReportsPage() {
       </div>
 
       {/* Breakdown: Donut + Grouped Bar */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Composition widget — double ring for net_worth, toggled single ring for others */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+        {/* Composition widget — summary ring + ranked, labelled detail bars */}
         <div className="bg-card rounded-xl border border-border shadow-sm">
           <div className="px-5 pt-4 pb-2 flex items-center justify-between gap-2">
             <p className="text-sm font-semibold text-foreground shrink-0">{t('reports.composition')}</p>
-            {(
-              <div className="flex min-w-40 items-stretch rounded-lg border border-border bg-muted/30 overflow-hidden">
-                {compositionOptions.map((opt) => (
-                  <button
-                    key={opt}
-                    type="button"
-                    onClick={() => setCompositionView(opt)}
-                    className={`flex-1 min-w-0 px-2.5 py-1 text-[11px] font-semibold text-center leading-tight whitespace-normal transition-colors ${
-                      compositionView === opt
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                    }`}
-                  >
-                    {t(`reports.${opt}`)}
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="flex items-stretch rounded-lg border border-border bg-muted/30 overflow-hidden">
+              {compositionOptions.map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => setCompositionView(opt)}
+                  className={`px-2 py-1 text-[11px] font-semibold text-center whitespace-nowrap transition-colors ${
+                    compositionView === opt
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                  }`}
+                >
+                  {t(`reports.${opt}`)}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="px-1 pb-4">
             {isLoading ? (
@@ -806,8 +809,7 @@ export default function ReportsPage() {
                   return (
                     <div className="flex flex-col items-center">
                       <div className="relative" style={{ width: 200, height: 200 }}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
+                        <PieChart width={200} height={200}>
                             <Pie
                               data={innerDonutData}
                               cx="50%"
@@ -848,51 +850,19 @@ export default function ReportsPage() {
                                 const pct = donutTotal > 0 ? ((v / donutTotal) * 100).toFixed(1) : '0'
                                 const rawName = (entry.name as string) ?? ''
                                 const displayName = rawName.length > 50 ? rawName.slice(0, 47) + '…' : rawName
-                                const subItems = (entry.payload as { subItems?: { name: string; value: number }[] }).subItems
                                 return (
-                                  <div style={{ ...tooltipStyle, padding: '8px 12px', zIndex: 10, minWidth: 260 }}>
+                                  <div style={{ ...tooltipStyle, padding: '8px 12px', zIndex: 10 }}>
                                     <p className="text-xs font-semibold mb-1">{displayName}</p>
                                     <p className="text-xs">
                                       {privacyMode ? MASK : `${formatCurrency(v, userCurrency, locale)} (${pct}%)`}
                                     </p>
-                                    {subItems && subItems.length > 0 && (
-                                      <div className="mt-2 pt-1.5 border-t border-border space-y-0.5">
-                                        {subItems.slice(0, 10).map((item) => {
-                                          const itemPct = donutTotal > 0 ? ((item.value / donutTotal) * 100).toFixed(1) : '0'
-                                          const itemName = item.name.length > 20 ? item.name.slice(0, 17) + '…' : item.name
-                                          return (
-                                            <div key={item.name} className="flex justify-between gap-4 text-xs">
-                                              <span className="text-muted-foreground">{itemName}</span>
-                                              <span className="tabular-nums">
-                                                {privacyMode ? MASK : `${formatCurrency(item.value, userCurrency, locale)} (${itemPct}%)`}
-                                              </span>
-                                            </div>
-                                          )
-                                        })}
-                                        {subItems.length > 10 && (() => {
-                                          const restValue = subItems.slice(10).reduce((s, i) => s + i.value, 0)
-                                          const restPct = donutTotal > 0 ? ((restValue / donutTotal) * 100).toFixed(1) : '0'
-                                          return (
-                                            <div className="flex justify-between gap-4 text-xs pt-0.5 border-t border-border/50">
-                                              <span className="text-muted-foreground/60 italic">
-                                                +{subItems.length - 10} {t('reports.other').toLowerCase()}
-                                              </span>
-                                              <span className="tabular-nums text-muted-foreground/60">
-                                                {privacyMode ? MASK : `${formatCurrency(restValue, userCurrency, locale)} (${restPct}%)`}
-                                              </span>
-                                            </div>
-                                          )
-                                        })()}
-                                      </div>
-                                    )}
                                   </div>
                                 )
                               }}
                               wrapperStyle={{ zIndex: 10 }}
                               offset={20}
                             />
-                          </PieChart>
-                        </ResponsiveContainer>
+                        </PieChart>
                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none" style={{ zIndex: 0 }}>
                           <span className="text-[10px] text-muted-foreground">
                             {compositionView === 'assetsAndAccounts' ? t('reports.youOwn', { defaultValue: 'You Own' })
@@ -915,20 +885,24 @@ export default function ReportsPage() {
                         </div>
                       </div>
                       <div key={compositionView} className="flex flex-col items-center gap-1 px-3 mt-1 w-full">
-                        <div className="flex flex-wrap justify-center gap-x-3 gap-y-1">
-                          {innerDonutData.map((d, i) => (
-                            <div key={`${i}-${d.name}`} className="flex items-center gap-1.5">
-                              <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                              <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-                                {d.name.length > 30 ? d.name.slice(0, 27) + '…' : d.name}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
+                        {/* Inner-ring (summary) legend only when there is no detailed
+                            outer ring — otherwise the toggle + center label already
+                            name it, and the detailed legend below carries the colours. */}
+                        {!hasOuter && (
+                          <div className="flex flex-wrap justify-center gap-x-3 gap-y-1">
+                            {innerDonutData.map((d, i) => (
+                              <div key={`${i}-${d.name}`} className="flex items-center gap-1.5">
+                                <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                                <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                                  {d.name.length > 30 ? d.name.slice(0, 27) + '…' : d.name}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         {hasOuter && (() => {
-                          const LIMIT = 6
-                          const visible = outerDonutData.slice(0, LIMIT)
-                          const hiddenCount = outerDonutData.length - LIMIT
+                          const visible = outerDonutData.slice(0, 6)
+                          const hiddenCount = compositionDetail.length - visible.length
                           return (
                             <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 items-center">
                               {visible.map((d, i) => (
@@ -949,15 +923,15 @@ export default function ReportsPage() {
                                       +{hiddenCount} more
                                     </button>
                                   </PopoverTrigger>
-                                  <PopoverContent align="center" className="w-64 p-3">
+                                  <PopoverContent align="center" side="top" sideOffset={8} className="w-64 p-3">
                                     <p className="text-xs font-semibold text-foreground mb-2">
                                       {t('reports.composition')}
                                     </p>
-                                    <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto pr-2">
-                                      {outerDonutData.map((d, i) => {
+                                    <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto pr-2">
+                                      {compositionDetail.map((d, i) => {
                                         const pct = donutTotal > 0 ? ((d.value / donutTotal) * 100).toFixed(1) : '0'
                                         return (
-                                          <div key={i} className="flex items-center gap-2">
+                                          <div key={`${i}-${d.name}`} className="flex items-center gap-2">
                                             <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
                                             <span className="text-[11px] text-muted-foreground flex-1 truncate">
                                               {d.name.length > 25 ? d.name.slice(0, 22) + '…' : d.name}
