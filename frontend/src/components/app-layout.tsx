@@ -671,6 +671,15 @@ function UserMenu({
                 {t('setup.language')}
               </DropdownMenuLabel>
               <DropdownMenuItem
+                onClick={() => i18n.changeLanguage('ru')}
+                className="flex items-center gap-2"
+              >
+                <span className="flex-1">Русский</span>
+                {currentLang === 'ru' && (
+                  <Check size={13} className="text-primary" />
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuItem
                 onClick={() => i18n.changeLanguage('pt-BR')}
                 className="flex items-center gap-2"
               >

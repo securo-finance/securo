@@ -104,6 +104,18 @@ export default function SetupPage() {
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
+                    onClick={() => i18n.changeLanguage('ru')}
+                    className={cn(
+                      'px-2.5 py-1 rounded text-[11px] font-semibold transition-colors',
+                      currentLang === 'ru'
+                        ? 'bg-primary/15 text-primary'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    RU
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => i18n.changeLanguage('en')}
                     className={cn(
                       'px-2.5 py-1 rounded text-[11px] font-semibold transition-colors',

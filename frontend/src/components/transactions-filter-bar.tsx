@@ -17,7 +17,6 @@ import {
   Wallet,
   X,
 } from 'lucide-react'
-import { ptBR, enUS } from 'date-fns/locale'
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -40,6 +39,7 @@ import {
 import { Calendar } from '@/components/ui/calendar'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import { CategoryFilterContent } from '@/components/category-filter-content'
 import type { Account, Category, CategoryGroup, Group, Payee } from '@/types'
 
@@ -113,7 +113,7 @@ export function TransactionsFilterBar({
   const { t, i18n } = useTranslation()
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
-  const dateFnsLocale = i18n.language === 'pt-BR' ? ptBR : enUS
+  const dateFnsLocale = resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language)
   const [menuOpen, setMenuOpen] = useState(false)
   const [accountSubOpen, setAccountSubOpen] = useState(false)
   const [categorySubOpen, setCategorySubOpen] = useState(false)

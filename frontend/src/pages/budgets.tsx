@@ -17,7 +17,6 @@ import {
 import type { Budget } from '@/types'
 import { Pencil, Trash2, Plus, Repeat, CalendarIcon } from 'lucide-react'
 import { format } from 'date-fns'
-import { ptBR, enUS } from 'date-fns/locale'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { Calendar } from '@/components/ui/calendar'
 import { PageHeader } from '@/components/page-header'
@@ -25,6 +24,7 @@ import { CategoryIcon } from '@/components/category-icon'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
+import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 
 function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
   return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
@@ -64,7 +64,7 @@ export default function BudgetsPage() {
   const queryClient = useQueryClient()
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
   const [monthCalOpen, setMonthCalOpen] = useState(false)
-  const dateFnsLocale = i18n.language === 'pt-BR' ? ptBR : enUS
+  const dateFnsLocale = resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language)
   const monthParam = `${selectedMonth}-01`
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Budget | null>(null)

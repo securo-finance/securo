@@ -7,6 +7,7 @@ import en from '@/locales/en.json'
 import es from '@/locales/es.json'
 import pl from '@/locales/pl.json'
 import it from '@/locales/it.json'
+import ru from '@/locales/ru.json'
 
 function syncHtmlLang(lng: string) {
   document.documentElement.lang = lng
@@ -22,6 +23,7 @@ i18n
       es: { translation: es },
       pl: { translation: pl },
       it: { translation: it },
+      ru: { translation: ru },
     },
     fallbackLng: 'en',
     // English is the default. Honour an explicit, persisted choice
@@ -40,7 +42,7 @@ i18n
 syncHtmlLang(i18n.language)
 i18n.on('languageChanged', syncHtmlLang)
 
-export type SupportedLang = 'pt-BR' | 'en' | 'es' | 'pl' | 'it'
+export type SupportedLang = 'pt-BR' | 'en' | 'es' | 'pl' | 'it' | 'ru'
 
 // Normalise any browser/i18n language tag to one of our supported keys. The
 // backend and resource bundles key Portuguese as the region-tagged 'pt-BR'
@@ -53,6 +55,7 @@ export function resolveSupportedLang(lng?: string | null): SupportedLang {
   if (tag.startsWith('es')) return 'es'
   if (tag.startsWith('pl')) return 'pl'
   if (tag.startsWith('it')) return 'it'
+  if (tag.startsWith('ru')) return 'ru'
   return 'en'
 }
 

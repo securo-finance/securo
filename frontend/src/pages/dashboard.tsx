@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
-import { ptBR, enUS } from 'date-fns/locale'
 import { dashboard, transactions, budgets, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, goals as goalsApi, groups as groupsApi, payees as payeesApi, rules as rulesApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
@@ -42,6 +41,7 @@ import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
+import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import type { Rule, Transaction } from '@/types'
 
 function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
@@ -85,7 +85,7 @@ export default function DashboardPage() {
   const queryClient = useQueryClient()
   const [headerCalOpen, setHeaderCalOpen] = useState(false)
   const [hoveredDay, setHoveredDay] = useState<number | null>(null)
-  const dateFnsLocale = i18n.language === 'pt-BR' ? ptBR : enUS
+  const dateFnsLocale = resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language)
   const { from: monthStart, to: monthEnd } = monthRange(selectedMonth)
   const monthParam = monthStart
   const monthLabelStr = monthLabel(selectedMonth, dateLocale)

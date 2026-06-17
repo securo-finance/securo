@@ -324,6 +324,8 @@
     "bulkAddToGroupExactHint": "Exact amounts must be set per transaction. Use Equal or Percent to apply the same rule across all selected.",
     "bulkAddToGroupSuccess": "{{count}} transactions added to group",
     "bulkAddToGroupPartial": "{{added}} added to group, {{skipped}} skipped (transfers or already split)",
+    "bulkAddTags": "Add tags",
+    "addTagsPlaceholder": "#tag…",
     "noResults": "No transactions found",
     "previous": "Previous",
     "next": "Next",
@@ -369,6 +371,7 @@
     "effectiveBillDate": "Effective bill date",
     "effectiveBillDateHint": "manual, overrides the automatic cycle",
     "effectiveBillDatePlaceholder": "Bill due date (optional)",
+    "clearOverride": "Clear override",
     "linkAsTransfer": "Link as transfer",
     "linkTransferTitle": "Link as transfer",
     "linkTransferDescription": "Mark these two transactions as a single inter-account transfer. They will be excluded from spending and income reports.",
@@ -1111,7 +1114,9 @@
     "noIconsFound": "No icons found",
     "primaryCurrency": "Primary Currency",
     "showLess": "Show less",
-    "showMore": "+{{count}} more"
+    "showMore": "+{{count}} more",
+    "previous": "Previous",
+    "next": "Next"
   },
   "splitGroups": {
     "title": "Groups",
@@ -1360,6 +1365,11 @@
     "title": "Agents",
     "subtitle": "Build conversational assistants on top of your Securo data. Each agent can have its own knowledge base, tools, and provider.",
     "newAgent": "New agent",
+    "newConversation": "New conversation",
+    "conversationsCount": "Conversations",
+    "knowledgeCount": "Knowledge files",
+    "defaultBadge": "Default",
+    "defaultLabel": "Default",
     "loading": "Loading…",
     "instanceDefault": "instance default",
     "emptyState": {
@@ -1385,6 +1395,16 @@
     },
     "card": {
       "chat": "Chat"
+    },
+    "globalChat": {
+      "title": "Chat",
+      "openHint": "Open chat",
+      "history": "Recent conversations",
+      "selectAgent": "Select agent",
+      "openSettings": "Agent settings",
+      "empty": "Choose an agent and start a conversation with your financial data.",
+      "openAgents": "Go to Agents",
+      "noConversations": "No conversations yet."
     },
     "form": {
       "createTitle": "New agent",
@@ -1416,7 +1436,9 @@
       "manageConnections": "manage",
       "willUseConnectionDefault": "Will use the connection's default: {{model}}",
       "autoContext": "Auto-inject account context",
-      "autoContextHint": "Prepend a small primer with your name, currency, today's date, and account list at the start of every conversation. Saves the agent from having to ask. Turn off for pure knowledge-base agents."
+      "autoContextHint": "Prepend a small primer with your name, currency, today's date, and account list at the start of every conversation. Saves the agent from having to ask. Turn off for pure knowledge-base agents.",
+      "isDefault": "Default agent",
+      "isDefaultHint": "Used by the global slide-over chat (⌘J). Only one agent can be the default — turning this on clears it on others."
     },
     "detail": {
       "notFound": "Agent not found.",
@@ -1505,6 +1527,28 @@
       "deleteFailed": "Failed to delete conversation",
       "renameFailed": "Failed to rename conversation",
       "deleteConfirm": "Delete \"{{name}}\"? This will also remove all messages."
+    },
+    "mcpExternal": {
+      "title": "External MCP access",
+      "subtitle": "Plug an external agent (Claude Desktop, ChatGPT, n8n, a custom client) into Securo's built-in MCP server. The token below is scoped to your user and expires in {{days}} days.",
+      "copy": "Copy",
+      "copied": "Copied",
+      "copyFailed": "Copy failed",
+      "mint": "Generate token",
+      "minting": "Generating…",
+      "mintFailed": "Could not mint token",
+      "warning": "Copy now — Securo does not store the token, so we can't show it again. Revoke by rotating AGENTS_MCP_JWT_SECRET.",
+      "regenerate": "Generate another",
+      "snippets": {
+        "token": "Token",
+        "url": "MCP endpoint",
+        "curl": "curl example",
+        "clientConfig": "Client integration"
+      },
+      "clients": {
+        "claude": "Claude Desktop / Code / Cursor",
+        "openai": "OpenAI Responses API"
+      }
     },
     "connections": {
       "title": "LLM Connections",

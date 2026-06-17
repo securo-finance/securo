@@ -929,12 +929,12 @@ function TransactionForm({
       </div>
 
       <DialogFooter className={cn(
-        'shrink-0 border-t pt-4 mt-2',
-        (onDelete || seed?.id) ? 'flex justify-between sm:justify-between' : ''
+        'shrink-0 border-t pt-4 mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between',
+        !(onDelete || seed?.id) ? 'sm:justify-end' : ''
       )}>
-        <div className="flex gap-2 items-center">
+        <div className="flex min-w-0 flex-wrap gap-2 items-center">
           {onDelete && (
-            <Button type="button" variant="destructive" onClick={onDelete} disabled={loading}>
+            <Button type="button" variant="destructive" onClick={onDelete} disabled={loading} className="whitespace-nowrap">
               {t('common.delete')}
             </Button>
           )}
@@ -945,7 +945,7 @@ function TransactionForm({
               onClick={handleToggleIgnore}
               disabled={loading || togglingIgnore}
               title={t('transactions.ignoreTransferHint')}
-              className="gap-1.5"
+              className="gap-1.5 whitespace-nowrap"
             >
               {isIgnored ? <Eye size={16} /> : <EyeClosed size={16} />}
               {isIgnored ? t('transactions.unignoreAction') : t('transactions.ignoreAction')}
@@ -956,7 +956,7 @@ function TransactionForm({
               type="button"
               variant="outline"
               onClick={() => onCreateRule(transaction)}
-              className="gap-1.5"
+              className="gap-1.5 whitespace-nowrap"
               title={t('transactions.createRule')}
             >
               <SlidersHorizontal size={16} />
@@ -964,8 +964,8 @@ function TransactionForm({
             </Button>
           )}
         </div>
-        <div className="flex gap-2">
-          <Button type="button" variant="outline" onClick={onCancel}>
+        <div className="flex flex-wrap gap-2 justify-end sm:ml-auto">
+          <Button type="button" variant="outline" onClick={onCancel} className="whitespace-nowrap">
             {t('common.cancel')}
           </Button>
           {showSaveVariants ? (
@@ -973,7 +973,7 @@ function TransactionForm({
               <Button
                 type="submit"
                 disabled={loading || !splitsValid}
-                className="rounded-r-none"
+                className="rounded-r-none whitespace-nowrap"
               >
                 {loading ? t('common.loading') : t('common.save')}
               </Button>
@@ -999,7 +999,7 @@ function TransactionForm({
               </DropdownMenu>
             </div>
           ) : (
-            <Button type="submit" disabled={loading || !splitsValid}>
+            <Button type="submit" disabled={loading || !splitsValid} className="whitespace-nowrap">
               {loading ? t('common.loading') : t('common.save')}
             </Button>
           )}
