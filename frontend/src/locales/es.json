@@ -460,7 +460,10 @@
         "last90": "Últimos 90 días",
         "thisYear": "Este año"
       }
-    }
+    },
+    "bulkAddTags": "Añadir etiquetas",
+    "addTagsPlaceholder": "#etiqueta…",
+    "clearOverride": "Borrar anulación"
   },
   "accounts": {
     "title": "Cuentas",
@@ -1159,7 +1162,9 @@
     "noIconsFound": "No se encontraron iconos",
     "primaryCurrency": "Moneda principal",
     "showLess": "Mostrar menos",
-    "showMore": "+{{count}} más"
+    "showMore": "+{{count}} más",
+    "previous": "Anterior",
+    "next": "Siguiente"
   },
   "splitGroups": {
     "title": "Grupos",
@@ -1464,7 +1469,9 @@
       "manageConnections": "gestionar",
       "willUseConnectionDefault": "Usará el valor predeterminado de la conexión: {{model}}",
       "autoContext": "Inyectar automáticamente contexto de cuenta",
-      "autoContextHint": "Antepone una pequeña introducción con tu nombre, moneda, la fecha de hoy y la lista de cuentas al inicio de cada conversación. Evita que el agente tenga que preguntarlo. Desactívalo para agentes puramente basados en conocimiento."
+      "autoContextHint": "Antepone una pequeña introducción con tu nombre, moneda, la fecha de hoy y la lista de cuentas al inicio de cada conversación. Evita que el agente tenga que preguntarlo. Desactívalo para agentes puramente basados en conocimiento.",
+      "isDefault": "Agente predeterminado",
+      "isDefaultHint": "Usado por el chat lateral global (⌘J). Solo un agente puede ser el predeterminado: al activar esto se desactiva en los demás."
     },
     "detail": {
       "notFound": "Agente no encontrado.",
@@ -1593,6 +1600,43 @@
       "empty": {
         "title": "Aún no hay conexiones",
         "subtitle": "Añade una conexión para apuntar Securo a tu Ollama local, OpenAI, Anthropic o cualquier endpoint compatible con OpenAI."
+      }
+    },
+    "newConversation": "Nueva conversación",
+    "conversationsCount": "Conversaciones",
+    "knowledgeCount": "Archivos de conocimiento",
+    "defaultBadge": "Predeterminado",
+    "defaultLabel": "Predeterminado",
+    "globalChat": {
+      "title": "Chat",
+      "openHint": "Abrir chat",
+      "history": "Conversaciones recientes",
+      "selectAgent": "Seleccionar agente",
+      "openSettings": "Ajustes del agente",
+      "empty": "Elige un agente y empieza una conversación con tus datos financieros.",
+      "openAgents": "Ir a Agentes",
+      "noConversations": "Aún no hay conversaciones."
+    },
+    "mcpExternal": {
+      "title": "Acceso MCP externo",
+      "subtitle": "Conecta un agente externo (Claude Desktop, ChatGPT, n8n, un cliente personalizado) al servidor MCP integrado de Securo. El token de abajo está limitado a tu usuario y caduca en {{days}} días.",
+      "copy": "Copiar",
+      "copied": "Copiado",
+      "copyFailed": "Error al copiar",
+      "mint": "Generar token",
+      "minting": "Generando…",
+      "mintFailed": "No se pudo generar el token",
+      "warning": "Cópialo ahora: Securo no almacena el token, así que no podremos volver a mostrarlo. Revócalo rotando AGENTS_MCP_JWT_SECRET.",
+      "regenerate": "Generar otro",
+      "snippets": {
+        "token": "Token",
+        "url": "Endpoint MCP",
+        "curl": "Ejemplo con curl",
+        "clientConfig": "Integración con el cliente"
+      },
+      "clients": {
+        "claude": "Claude Desktop / Code / Cursor",
+        "openai": "OpenAI Responses API"
       }
     }
   }

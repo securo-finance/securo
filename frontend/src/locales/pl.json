@@ -487,7 +487,10 @@
         "last90": "Ostatnie 90 dni",
         "thisYear": "Bieżący rok"
       }
-    }
+    },
+    "bulkAddTags": "Dodaj tagi",
+    "addTagsPlaceholder": "#tag…",
+    "clearOverride": "Wyczyść nadpisanie"
   },
   "accounts": {
     "title": "Konta",
@@ -1237,7 +1240,9 @@
     "showMore_one": "+{{count}} więcej",
     "showMore_few": "+{{count}} więcej",
     "showMore_many": "+{{count}} więcej",
-    "showMore_other": "+{{count}} więcej"
+    "showMore_other": "+{{count}} więcej",
+    "previous": "Poprzedni",
+    "next": "Następny"
   },
   "splitGroups": {
     "title": "Grupy",
@@ -1548,7 +1553,9 @@
       "manageConnections": "zarządzaj",
       "willUseConnectionDefault": "Zostanie użyty domyślny model połączenia: {{model}}",
       "autoContext": "Automatycznie dołączaj kontekst kont",
-      "autoContextHint": "Dołącza na początku każdej rozmowy krótkie wprowadzenie z Twoim imieniem, walutą, dzisiejszą datą i listą kont. Oszczędza agentowi konieczności dopytywania. Wyłącz dla agentów działających wyłącznie na bazie wiedzy."
+      "autoContextHint": "Dołącza na początku każdej rozmowy krótkie wprowadzenie z Twoim imieniem, walutą, dzisiejszą datą i listą kont. Oszczędza agentowi konieczności dopytywania. Wyłącz dla agentów działających wyłącznie na bazie wiedzy.",
+      "isDefault": "Domyślny agent",
+      "isDefaultHint": "Używany przez globalny czat wysuwany (⌘J). Tylko jeden agent może być domyślny — włączenie tej opcji wyłącza ją u pozostałych."
     },
     "detail": {
       "notFound": "Nie znaleziono agenta.",
@@ -1683,6 +1690,43 @@
       "empty": {
         "title": "Brak połączeń",
         "subtitle": "Dodaj połączenie, aby skierować Securo do swojego lokalnego Ollamy, OpenAI, Anthropic lub dowolnego endpointu zgodnego z OpenAI."
+      }
+    },
+    "newConversation": "Nowa rozmowa",
+    "conversationsCount": "Rozmowy",
+    "knowledgeCount": "Pliki wiedzy",
+    "defaultBadge": "Domyślny",
+    "defaultLabel": "Domyślny",
+    "globalChat": {
+      "title": "Czat",
+      "openHint": "Otwórz czat",
+      "history": "Ostatnie rozmowy",
+      "selectAgent": "Wybierz agenta",
+      "openSettings": "Ustawienia agenta",
+      "empty": "Wybierz agenta i rozpocznij rozmowę na podstawie swoich danych finansowych.",
+      "openAgents": "Przejdź do Agentów",
+      "noConversations": "Brak rozmów."
+    },
+    "mcpExternal": {
+      "title": "Zewnętrzny dostęp MCP",
+      "subtitle": "Podłącz zewnętrznego agenta (Claude Desktop, ChatGPT, n8n, własnego klienta) do wbudowanego serwera MCP Securo. Poniższy token jest przypisany do Twojego użytkownika i wygasa za {{days}} dni.",
+      "copy": "Kopiuj",
+      "copied": "Skopiowano",
+      "copyFailed": "Kopiowanie nie powiodło się",
+      "mint": "Generuj token",
+      "minting": "Generowanie…",
+      "mintFailed": "Nie udało się utworzyć tokenu",
+      "warning": "Skopiuj teraz — Securo nie przechowuje tokenu, więc nie możemy go ponownie wyświetlić. Aby unieważnić, zmień AGENTS_MCP_JWT_SECRET.",
+      "regenerate": "Generuj kolejny",
+      "snippets": {
+        "token": "Token",
+        "url": "Punkt końcowy MCP",
+        "curl": "Przykład curl",
+        "clientConfig": "Integracja klienta"
+      },
+      "clients": {
+        "claude": "Claude Desktop / Code / Cursor",
+        "openai": "OpenAI Responses API"
       }
     }
   }
