@@ -46,6 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from app.core.database import Base, get_async_session  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.user import User  # noqa: E402
+from app.models.passkey import UserPasskey  # noqa: E402,F401
 from app.models.category import Category  # noqa: E402
 from app.models.bank_connection import BankConnection  # noqa: E402
 from app.models.account import Account  # noqa: E402

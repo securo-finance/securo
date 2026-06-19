@@ -2,13 +2,13 @@
 import uuid
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.rule import Rule
 from app.models.category import Category
 from app.models.transaction import Transaction
-from app.schemas.rule import RuleCreate, RuleUpdate
+from app.schemas.rule import RuleCreate, RuleExportPayload, RuleImportResponse, RuleUpdate
 from app.services.rule_engine import evaluate_conditions, apply_rule_actions
 from app.services.category_service import DEFAULT_CATEGORIES_I18N
 
@@ -755,6 +755,113 @@ async def get_rules(session: AsyncSession, workspace_id: uuid.UUID) -> list[Rule
         .order_by(Rule.priority, Rule.id)
     )
     return list(result.scalars().all())
+
+
+
+
+async def export_rules(session: AsyncSession, workspace_id: uuid.UUID) -> RuleExportPayload:
+    """Return a portable JSON export of rules for a workspace.
+
+    Category actions are serialized by category name rather than UUID so the
+    file can be imported into another instance/workspace that has equivalent
+    category names but different database IDs.
+    """
+    rules = await get_rules(session, workspace_id)
+    category_result = await session.execute(
+        select(Category).where(Category.workspace_id == workspace_id)
+    )
+    category_names = {str(cat.id): cat.name for cat in category_result.scalars().all()}
+
+    exported_rules = []
+    for rule in rules:
+        actions = []
+        for action in rule.actions or []:
+            if action.get("op") == "set_category":
+                category_name = category_names.get(str(action.get("value")))
+                if not category_name:
+                    continue
+                actions.append({**action, "value": category_name})
+            else:
+                actions.append(action)
+        exported_rules.append({
+            "name": rule.name,
+            "conditions_op": rule.conditions_op,
+            "conditions": rule.conditions or [],
+            "actions": actions,
+            "priority": rule.priority,
+            "is_active": rule.is_active,
+        })
+    return RuleExportPayload(rules=exported_rules)
+
+
+async def import_rules(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    payload: RuleExportPayload,
+    overwrite: bool = False,
+) -> RuleImportResponse:
+    """Import a portable rules payload into a workspace.
+
+    Existing rules are only replaced when the caller explicitly passes
+    `overwrite=True`. Rules whose `set_category` target cannot be matched by
+    category name are skipped.
+    """
+    existing = await get_rules(session, workspace_id)
+    if existing and not overwrite:
+        raise DuplicateRuleError("Import would overwrite existing rules")
+
+    category_result = await session.execute(
+        select(Category).where(Category.workspace_id == workspace_id)
+    )
+    categories_by_name = {cat.name: str(cat.id) for cat in category_result.scalars().all()}
+
+    imported = 0
+    skipped = 0
+    rules_to_create: list[Rule] = []
+    seen_names: set[str] = set()
+
+    for incoming in payload.rules:
+        if incoming.name in seen_names:
+            skipped += 1
+            continue
+        seen_names.add(incoming.name)
+        resolved_actions = []
+        missing_required_reference = False
+        for action in incoming.actions:
+            action_data = action.model_dump()
+            if action_data["op"] == "set_category":
+                category_id = categories_by_name.get(str(action_data["value"]))
+                if not category_id:
+                    missing_required_reference = True
+                    break
+                action_data["value"] = category_id
+            resolved_actions.append(action_data)
+        if missing_required_reference:
+            skipped += 1
+            continue
+        rules_to_create.append(Rule(
+            user_id=user_id,
+            workspace_id=workspace_id,
+            name=incoming.name,
+            conditions_op=incoming.conditions_op,
+            conditions=[condition.model_dump() for condition in incoming.conditions],
+            actions=resolved_actions,
+            priority=incoming.priority,
+            is_active=incoming.is_active,
+        ))
+
+    overwritten = 0
+    if overwrite and existing and rules_to_create:
+        overwritten = len(existing)
+        await session.execute(delete(Rule).where(Rule.workspace_id == workspace_id))
+
+    for rule in rules_to_create:
+        session.add(rule)
+        imported += 1
+
+    await session.commit()
+    return RuleImportResponse(imported=imported, skipped=skipped, overwritten=overwritten)
 
 
 async def get_rule(session: AsyncSession, rule_id: uuid.UUID, workspace_id: uuid.UUID) -> Optional[Rule]:

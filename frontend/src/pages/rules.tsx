@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useRef, useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { categories as categoriesApi, categoryGroups as categoryGroupsApi, rules as rulesApi, accounts as accountsApi, payees as payeesApi } from '@/lib/api'
@@ -12,8 +12,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import type { Category, Payee, Rule, RuleAction, RuleCondition } from '@/types'
-import { Trash2, Plus, RefreshCw, Package, Check, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import type { Category, Payee, Rule, RuleAction, RuleCondition, RuleExportPayload } from '@/types'
+import { Trash2, Plus, RefreshCw, Package, Check, ArrowUpDown, ArrowUp, ArrowDown, Download, Upload } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
 import { useWorkspace } from '@/contexts/workspace-context'
@@ -116,6 +116,10 @@ export default function RulesPage() {
   const { canWrite } = useWorkspace()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [packsDialogOpen, setPacksDialogOpen] = useState(false)
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
+  const [pendingImport, setPendingImport] = useState<RuleExportPayload | null>(null)
+  const [pendingImportName, setPendingImportName] = useState('')
+  const importInputRef = useRef<HTMLInputElement | null>(null)
   const [editing, setEditing] = useState<Rule | null>(null)
   // Bumped on every open so the dialog remounts with fresh state instead of
   // retaining the previously entered rule (issue #306).
@@ -221,8 +225,44 @@ export default function RulesPage() {
     onError: () => toast.error(t('common.error')),
   })
 
-  const categories = categoriesList ?? []
-  const payees = payeesList ?? []
+  const exportMutation = useMutation({
+    mutationFn: () => rulesApi.exportFile(),
+    onSuccess: () => toast.success(t('rules.exported')),
+    onError: () => toast.error(t('common.error')),
+  })
+
+  const importMutation = useMutation({
+    mutationFn: (payload: RuleExportPayload) => rulesApi.importFile(payload, true),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['rules'] })
+      queryClient.invalidateQueries({ queryKey: ['rule-packs'] })
+      setImportDialogOpen(false)
+      setPendingImport(null)
+      setPendingImportName('')
+      toast.success(t('rules.imported', { imported: data.imported, skipped: data.skipped }))
+    },
+    onError: () => toast.error(t('common.error')),
+  })
+
+  async function handleImportFile(file: File) {
+    try {
+      const parsed = JSON.parse(await file.text()) as RuleExportPayload
+      if (parsed.format !== 'securo-categorization-rules' || !Array.isArray(parsed.rules)) {
+        toast.error(t('rules.invalidImportFile'))
+        return
+      }
+      setPendingImport(parsed)
+      setPendingImportName(file.name)
+      setImportDialogOpen(true)
+    } catch {
+      toast.error(t('rules.invalidImportFile'))
+    } finally {
+      if (importInputRef.current) importInputRef.current.value = ''
+    }
+  }
+
+  const categories = useMemo(() => categoriesList ?? [], [categoriesList])
+  const payees = useMemo(() => payeesList ?? [], [payeesList])
 
   const [sortBy, setSortBy] = useState<'priority' | 'name' | 'category'>('priority')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
@@ -255,6 +295,36 @@ export default function RulesPage() {
           action={
             canWrite ? (
               <div className="flex gap-2">
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0]
+                    if (file) void handleImportFile(file)
+                  }}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 h-8"
+                  onClick={() => exportMutation.mutate()}
+                  disabled={exportMutation.isPending}
+                >
+                  <Download size={12} />
+                  <span className="hidden sm:inline">{t('rules.export')}</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5 h-8"
+                  onClick={() => importInputRef.current?.click()}
+                  disabled={importMutation.isPending}
+                >
+                  <Upload size={12} />
+                  <span className="hidden sm:inline">{t('rules.import')}</span>
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -359,6 +429,36 @@ export default function RulesPage() {
         open={packsDialogOpen}
         onClose={() => setPacksDialogOpen(false)}
       />
+
+      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('rules.importConfirmTitle')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>{t('rules.importConfirmDescription', { count: pendingImport?.rules.length ?? 0, file: pendingImportName })}</p>
+            <p className="font-medium text-amber-600">{t('rules.importOverwriteWarning')}</p>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => { setImportDialogOpen(false); setPendingImport(null); setPendingImportName('') }}
+              disabled={importMutation.isPending}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => { if (pendingImport) importMutation.mutate(pendingImport) }}
+              disabled={!pendingImport || importMutation.isPending}
+            >
+              {t('rules.confirmOverwriteImport')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <RuleDialog
         key={dialogInstance}

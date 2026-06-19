@@ -1,4 +1,5 @@
 from app.models.user import User
+from app.models.passkey import UserPasskey
 from app.models.workspace import Workspace, WorkspaceMember
 from app.models.category import Category
 from app.models.category_group import CategoryGroup
@@ -31,6 +32,7 @@ from app.core import workspace_autostamp  # noqa: F401, E402
 
 __all__ = [
     "User",
+    "UserPasskey",
     "Workspace",
     "WorkspaceMember",
     "Category",

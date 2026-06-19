@@ -12,7 +12,8 @@ Options:
     --start-date YYYY-MM-DD  Earliest date for seeded data (default: 2024-01-01)
 
 At scale=1.0 seeds:
-    5 accounts · 30 categories · 100 000 transactions · 15 assets w/ daily values
+    8 accounts (4 credit cards) · 30 categories · 100 000 transactions
+    3 asset wallet groups · 15 assets w/ daily values (10 grouped into wallets)
     FX rates for EUR + BRL · 20 recurring transactions
     (date range: --start-date through today)
 """
@@ -35,6 +36,7 @@ from app.core.auth import UserManager
 from app.core.database import async_session_maker
 from app.models.account import Account
 from app.models.asset import Asset
+from app.models.asset_group import AssetGroup
 from app.models.asset_value import AssetValue
 from app.models.category import Category
 from app.models.fx_rate import FxRate
@@ -54,8 +56,11 @@ ACCOUNT_TEMPLATES = [
     {"name": "Main Checking", "type": "checking", "currency": "USD", "balance": Decimal("5000.00")},
     {"name": "Savings", "type": "savings", "currency": "USD", "balance": Decimal("25000.00")},
     {"name": "Visa Credit", "type": "credit_card", "currency": "USD", "balance": Decimal("0.00"), "credit_limit": Decimal("10000.00")},
+    {"name": "Mastercard Platinum", "type": "credit_card", "currency": "USD", "balance": Decimal("0.00"), "credit_limit": Decimal("15000.00")},
+    {"name": "Amex Gold", "type": "credit_card", "currency": "USD", "balance": Decimal("0.00"), "credit_limit": Decimal("20000.00")},
     {"name": "Euro Account", "type": "checking", "currency": "EUR", "balance": Decimal("3000.00")},
     {"name": "BRL Account", "type": "checking", "currency": "BRL", "balance": Decimal("15000.00")},
+    {"name": "Euro Visa", "type": "credit_card", "currency": "EUR", "balance": Decimal("0.00"), "credit_limit": Decimal("8000.00")},
 ]
 
 # (name, color, icon)  — first 22 are debit, last 8 are credit
@@ -103,22 +108,29 @@ PAYEES = [
     "PG&E", "Comcast", "AT&T", "Verizon", "State Farm", "Geico",
 ]
 
+# Wallet groups to create. Each asset below can reference one by the "group" key.
+ASSET_GROUP_TEMPLATES = [
+    {"name": "Stock Portfolio",  "icon": "trending-up", "color": "#22c55e"},
+    {"name": "Real Estate",      "icon": "home",        "color": "#f97316"},
+    {"name": "Collectibles",     "icon": "gem",         "color": "#a855f7"},
+]
+
 ASSET_TEMPLATES = [
-    {"name": "Primary Residence",   "type": "real_estate",  "currency": "USD", "purchase": Decimal("450000"), "base": Decimal("520000"), "daily_pct": Decimal("0.00110")},
-    {"name": "Investment Property", "type": "real_estate",  "currency": "USD", "purchase": Decimal("280000"), "base": Decimal("310000"), "daily_pct": Decimal("0.00082")},
+    {"name": "Primary Residence",   "type": "real_estate",  "currency": "USD", "purchase": Decimal("450000"), "base": Decimal("520000"), "daily_pct": Decimal("0.00110"),  "group": "Real Estate"},
+    {"name": "Investment Property", "type": "real_estate",  "currency": "USD", "purchase": Decimal("280000"), "base": Decimal("310000"), "daily_pct": Decimal("0.00082"),  "group": "Real Estate"},
     {"name": "Tesla Model 3",       "type": "vehicle",      "currency": "USD", "purchase": Decimal("45000"),  "base": Decimal("28000"),  "daily_pct": Decimal("-0.00219")},
-    {"name": "Rolex Watch",         "type": "valuable",     "currency": "USD", "purchase": Decimal("8000"),   "base": Decimal("9500"),   "daily_pct": Decimal("0.00055")},
-    {"name": "S&P 500 Index",       "type": "investment",   "currency": "USD", "purchase": Decimal("50000"),  "base": Decimal("75000"),  "daily_pct": Decimal("0.00219")},
-    {"name": "Tech Stock Portfolio","type": "investment",   "currency": "USD", "purchase": Decimal("30000"),  "base": Decimal("42000"),  "daily_pct": Decimal("0.00274")},
-    {"name": "Bond Portfolio",      "type": "investment",   "currency": "USD", "purchase": Decimal("20000"),  "base": Decimal("22000"),  "daily_pct": Decimal("0.00082")},
+    {"name": "Rolex Watch",         "type": "valuable",     "currency": "USD", "purchase": Decimal("8000"),   "base": Decimal("9500"),   "daily_pct": Decimal("0.00055"),  "group": "Collectibles"},
+    {"name": "S&P 500 Index",       "type": "investment",   "currency": "USD", "purchase": Decimal("50000"),  "base": Decimal("75000"),  "daily_pct": Decimal("0.00219"),  "group": "Stock Portfolio"},
+    {"name": "Tech Stock Portfolio","type": "investment",   "currency": "USD", "purchase": Decimal("30000"),  "base": Decimal("42000"),  "daily_pct": Decimal("0.00274"),  "group": "Stock Portfolio"},
+    {"name": "Bond Portfolio",      "type": "investment",   "currency": "USD", "purchase": Decimal("20000"),  "base": Decimal("22000"),  "daily_pct": Decimal("0.00082"),  "group": "Stock Portfolio"},
     {"name": "Crypto Portfolio",    "type": "investment",   "currency": "USD", "purchase": Decimal("10000"),  "base": Decimal("15000"),  "daily_pct": Decimal("0.00548")},
-    {"name": "Vacation Cabin",      "type": "real_estate",  "currency": "USD", "purchase": Decimal("180000"), "base": Decimal("210000"), "daily_pct": Decimal("0.00137")},
+    {"name": "Vacation Cabin",      "type": "real_estate",  "currency": "USD", "purchase": Decimal("180000"), "base": Decimal("210000"), "daily_pct": Decimal("0.00137"),  "group": "Real Estate"},
     {"name": "BMW 5 Series",        "type": "vehicle",      "currency": "USD", "purchase": Decimal("55000"),  "base": Decimal("35000"),  "daily_pct": Decimal("-0.00247")},
-    {"name": "Art Collection",      "type": "valuable",     "currency": "USD", "purchase": Decimal("15000"),  "base": Decimal("18000"),  "daily_pct": Decimal("0.00082")},
-    {"name": "Gold Bars",           "type": "valuable",     "currency": "USD", "purchase": Decimal("25000"),  "base": Decimal("30000"),  "daily_pct": Decimal("0.00110")},
-    {"name": "EU Real Estate",      "type": "real_estate",  "currency": "EUR", "purchase": Decimal("300000"), "base": Decimal("340000"), "daily_pct": Decimal("0.00110")},
-    {"name": "Emerging Markets ETF","type": "investment",   "currency": "USD", "purchase": Decimal("15000"),  "base": Decimal("18000"),  "daily_pct": Decimal("0.00164")},
-    {"name": "Private Equity Fund", "type": "investment",   "currency": "USD", "purchase": Decimal("100000"), "base": Decimal("125000"), "daily_pct": Decimal("0.00192")},
+    {"name": "Art Collection",      "type": "valuable",     "currency": "USD", "purchase": Decimal("15000"),  "base": Decimal("18000"),  "daily_pct": Decimal("0.00082"),  "group": "Collectibles"},
+    {"name": "Gold Bars",           "type": "valuable",     "currency": "USD", "purchase": Decimal("25000"),  "base": Decimal("30000"),  "daily_pct": Decimal("0.00110"),  "group": "Collectibles"},
+    {"name": "EU Real Estate",      "type": "real_estate",  "currency": "EUR", "purchase": Decimal("300000"), "base": Decimal("340000"), "daily_pct": Decimal("0.00110"),  "group": "Real Estate"},
+    {"name": "Emerging Markets ETF","type": "investment",   "currency": "USD", "purchase": Decimal("15000"),  "base": Decimal("18000"),  "daily_pct": Decimal("0.00164"),  "group": "Stock Portfolio"},
+    {"name": "Private Equity Fund", "type": "investment",   "currency": "USD", "purchase": Decimal("100000"), "base": Decimal("125000"), "daily_pct": Decimal("0.00192"),  "group": "Stock Portfolio"},
 ]
 
 RECURRING_DESCRIPTIONS = [
@@ -146,6 +158,7 @@ async def _wipe_user_data(session, user_id: uuid.UUID) -> None:
         )
     )
     await session.execute(delete(Asset).where(Asset.user_id == user_id))
+    await session.execute(delete(AssetGroup).where(AssetGroup.user_id == user_id))
     await session.execute(delete(Transaction).where(Transaction.user_id == user_id))
     await session.execute(delete(Category).where(Category.user_id == user_id))
     await session.execute(delete(Account).where(Account.user_id == user_id))
@@ -309,11 +322,30 @@ async def seed(
         await session.commit()
         print(f"  {n_tx:,} transactions done        ")
 
-        # ── 6. Assets + AssetValues ──────────────────────────────────────────
+        # ── 6. Asset Groups (wallets) ────────────────────────────────────────
+        print("Creating asset groups (wallets) …")
+        asset_groups: dict[str, AssetGroup] = {}
+        for i, gtmpl in enumerate(ASSET_GROUP_TEMPLATES):
+            grp = AssetGroup(
+                user_id=uid,
+                workspace_id=wid,
+                name=gtmpl["name"],
+                icon=gtmpl["icon"],
+                color=gtmpl["color"],
+                position=i,
+                source="manual",
+            )
+            session.add(grp)
+            asset_groups[gtmpl["name"]] = grp
+        await session.flush()
+        print(f"  {len(asset_groups)} asset groups")
+
+        # ── 7. Assets + AssetValues ──────────────────────────────────────────
         print(f"Creating {len(ASSET_TEMPLATES[:n_assets])} assets with {n_days + 1} daily values each …")
         asset_days = _make_date_range(n_days)
 
         for tmpl in ASSET_TEMPLATES[:n_assets]:
+            grp = asset_groups.get(tmpl.get("group", ""))
             asset = Asset(
                 user_id=uid,
                 workspace_id=wid,
@@ -323,6 +355,7 @@ async def seed(
                 purchase_price=tmpl["purchase"],
                 purchase_date=asset_days[0],
                 valuation_method="manual",
+                group_id=grp.id if grp else None,
             )
             session.add(asset)
             await session.flush()
@@ -354,7 +387,7 @@ async def seed(
         total_av = len(ASSET_TEMPLATES[:n_assets]) * (n_days + 1)
         print(f"  {len(ASSET_TEMPLATES)} assets, {total_av:,} asset values")
 
-        # ── 7. Recurring transactions ────────────────────────────────────────
+        # ── 8. Recurring transactions ────────────────────────────────────────
         n_rec = max(1, int(20 * scale))
         print(f"Creating {n_rec} recurring transactions …")
         for i, desc in enumerate(RECURRING_DESCRIPTIONS[:n_rec]):

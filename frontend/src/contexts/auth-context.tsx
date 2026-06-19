@@ -6,6 +6,7 @@ import type { User } from '@/types'
 interface LoginResult {
   requires_2fa: boolean
   temp_token?: string
+  available_methods?: Array<'totp' | 'passkey'>
 }
 
 interface AuthContextType {
@@ -58,7 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const data = await auth.login(email, password)
 
     if (data.requires_2fa) {
-      return { requires_2fa: true, temp_token: data.temp_token }
+      return { requires_2fa: true, temp_token: data.temp_token, available_methods: data.available_methods }
     }
 
     const accessToken = data.access_token

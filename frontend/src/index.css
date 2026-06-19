@@ -131,6 +131,18 @@
   }
 }
 
+/* Recharts focuses its wrapper/surface on click; on macOS this draws a
+   browser focus ring around the whole chart. Suppress it — the chart conveys
+   selection via bar opacity, not a focus outline. */
+.recharts-wrapper:focus,
+.recharts-wrapper:focus-visible,
+.recharts-surface:focus,
+.recharts-surface:focus-visible,
+.recharts-wrapper *:focus,
+.recharts-wrapper *:focus-visible {
+  outline: none;
+}
+
 @keyframes securo-highlight-flash {
   0% {
     background-color: color-mix(in srgb, var(--primary) 22%, transparent);

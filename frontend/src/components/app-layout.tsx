@@ -58,10 +58,12 @@ import {
   HardDriveDownload,
   Shield,
   ShieldCheck,
+  Fingerprint,
 } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { ChangePasswordDialog } from '@/components/change-password-dialog'
 import { TwoFactorSetup } from '@/components/two-factor-setup'
+import { PasskeyManagementDialog } from '@/components/passkey-management-dialog'
 import { CommandPalette } from '@/components/command-palette'
 import { useCommandPaletteHotkey } from '@/hooks/use-command-palette-hotkey'
 import { GlobalChatPanel } from '@/components/global-chat-panel'
@@ -115,6 +117,7 @@ export function AppLayout() {
   const { privacyMode, togglePrivacyMode, mask } = usePrivacyMode()
   const [changePasswordOpen, setChangePasswordOpen] = useState(false)
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
+  const [passkeysOpen, setPasskeysOpen] = useState(false)
   const [backingUp, setBackingUp] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
@@ -260,6 +263,7 @@ export function AppLayout() {
             logout={logout}
             onChangePassword={() => setChangePasswordOpen(true)}
             onTwoFactor={() => setTwoFactorOpen(true)}
+            onPasskeys={() => setPasskeysOpen(true)}
             agentsEnabled={agentsEnabled}
             backingUp={backingUp}
             onBackup={async () => {
@@ -510,6 +514,7 @@ export function AppLayout() {
               backingUp={backingUp}
               onChangePassword={() => setChangePasswordOpen(true)}
               onTwoFactor={() => setTwoFactorOpen(true)}
+              onPasskeys={() => setPasskeysOpen(true)}
               onBackup={async () => {
                 setBackingUp(true)
                 try {
@@ -559,6 +564,10 @@ export function AppLayout() {
         open={twoFactorOpen}
         onClose={() => setTwoFactorOpen(false)}
       />
+      <PasskeyManagementDialog
+        open={passkeysOpen}
+        onClose={() => setPasskeysOpen(false)}
+      />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       {/* Slide-over global chat — opened from the sidebar pill or via
           ⌘J. The previous floating bottom-right button was removed
@@ -577,6 +586,7 @@ function UserMenu({
   logout,
   onChangePassword,
   onTwoFactor,
+  onPasskeys,
   onBackup,
   backingUp,
   dark,
@@ -587,6 +597,7 @@ function UserMenu({
   logout: () => void
   onChangePassword: () => void
   onTwoFactor: () => void
+  onPasskeys: () => void
   onBackup: () => void
   backingUp: boolean
   dark?: boolean
@@ -639,6 +650,13 @@ function UserMenu({
         >
           <ShieldCheck size={14} />
           {t('auth.twoFactorTitle')}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={onPasskeys}
+          className="flex items-center gap-2"
+        >
+          <Fingerprint size={14} />
+          {t('auth.passkeysTitle')}
         </DropdownMenuItem>
         <DropdownMenuItem
           disabled={backingUp}

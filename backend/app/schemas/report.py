@@ -15,11 +15,20 @@ class ReportSummary(BaseModel):
     breakdowns: list[ReportBreakdown]
 
 
+class ReportCompositionItem(BaseModel):
+    key: str
+    label: str
+    value: float
+    color: str
+    group: str
+
+
 class ReportDataPoint(BaseModel):
     date: str
     value: float
     breakdowns: dict[str, float]
     change: float | None = None
+    composition: list[ReportCompositionItem] = []
 
 
 class ReportMeta(BaseModel):
@@ -30,14 +39,6 @@ class ReportMeta(BaseModel):
     forecast_start_date: str | None = None
     baseline_active: bool = False
     baseline_lookback_days: int | None = None
-
-
-class ReportCompositionItem(BaseModel):
-    key: str
-    label: str
-    value: float
-    color: str
-    group: str
 
 
 class CategoryTrendItem(BaseModel):

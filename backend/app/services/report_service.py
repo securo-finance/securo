@@ -32,10 +32,24 @@ from app.schemas.report import (
     ReportResponse,
     ReportSummary,
 )
-from app.services.asset_service import get_asset_values_at
 from app.services.dashboard_service import _get_open_accounts, _account_balance_at
 
 CATEGORY_TREND_TOP_N = 11
+
+_ACCOUNT_TYPE_COLORS: dict[str, str] = {
+    "checking": "#6366F1",
+    "savings": "#3B82F6",
+    "credit_card": "#F43F5E",
+    "investment": "#8B5CF6",
+    "wallet": "#F59E0B",
+}
+_ASSET_TYPE_COLORS: dict[str, str] = {
+    "real_estate": "#0EA5E9",
+    "vehicle": "#14B8A6",
+    "valuable": "#F59E0B",
+    "investment": "#8B5CF6",
+    "other": "#6B7280",
+}
 
 
 def _report_start_date(today: date, months: int, period: str | None = None) -> date:
@@ -53,11 +67,36 @@ async def _asset_value_at(
     group_ids: Optional[list[uuid.UUID]] = None,
 ) -> float:
     """Sum of all active asset values at a given date, converted to primary currency."""
-    _, total = await get_asset_values_at(
-        session, workspace_id, as_of_date=cutoff,
-        primary_currency=primary_currency, by_workspace=True,
-        group_ids=group_ids,
+    asset_stmt = select(Asset).where(
+        Asset.workspace_id == workspace_id,
+        Asset.is_archived == False,
+        Asset.sell_date.is_(None),
     )
+    if group_ids is not None:
+        asset_stmt = asset_stmt.where(Asset.group_id.in_(group_ids))
+    asset_result = await session.execute(asset_stmt)
+    total = 0.0
+    for asset in asset_result.scalars().all():
+        val_result = await session.execute(
+            select(AssetValue.amount)
+            .where(AssetValue.asset_id == asset.id, AssetValue.date <= cutoff)
+            .order_by(desc(AssetValue.date), desc(AssetValue.id))
+            .limit(1)
+        )
+        val = val_result.scalar_one_or_none()
+        if val is not None:
+            amount = float(val)
+        elif asset.purchase_price is not None and (
+            asset.purchase_date is None or asset.purchase_date <= cutoff
+        ):
+            amount = float(asset.purchase_price)
+        else:
+            amount = 0.0
+        if amount > 0:
+            converted, _ = await convert(
+                session, Decimal(str(amount)), asset.currency, primary_currency, cutoff
+            )
+            total += float(converted)
     return total
 
 
@@ -76,23 +115,76 @@ async def _net_worth_at(
 
     accounts_total = 0.0
     liabilities_total = 0.0
+    composition: list[ReportCompositionItem] = []
 
     for account in accounts:
         bal = await _account_balance_at(session, account, cutoff)
-        # Convert to primary currency
         converted, _ = await convert(
             session, Decimal(str(abs(bal))), account.currency, primary_currency, cutoff
         )
         converted_val = float(converted)
         if account.type == "credit_card" or bal < 0:
             liabilities_total += converted_val
+            if converted_val > 0:
+                composition.append(ReportCompositionItem(
+                    key=str(account.id),
+                    label=get_account_name(account),
+                    value=round(converted_val, 2),
+                    color=_ACCOUNT_TYPE_COLORS.get(account.type, "#6B7280"),
+                    group="liabilities",
+                ))
         else:
             accounts_total += converted_val
+            if converted_val > 0:
+                composition.append(ReportCompositionItem(
+                    key=str(account.id),
+                    label=get_account_name(account),
+                    value=round(converted_val, 2),
+                    color=_ACCOUNT_TYPE_COLORS.get(account.type, "#6B7280"),
+                    group="accounts",
+                ))
 
-    assets_total = await _asset_value_at(
-        session, workspace_id, cutoff, primary_currency,
-        group_ids=(asset_group_ids or []) if account_ids is not None else None,
+    # Per-asset composition at the cutoff date
+    filtered = account_ids is not None
+    asset_stmt = select(Asset).where(
+        Asset.workspace_id == workspace_id,
+        Asset.is_archived == False,
+        Asset.sell_date.is_(None),
     )
+    if filtered:
+        asset_stmt = asset_stmt.where(Asset.group_id.in_(asset_group_ids or []))
+    asset_result = await session.execute(asset_stmt)
+    assets_total = 0.0
+    for asset in asset_result.scalars().all():
+        val_result = await session.execute(
+            select(AssetValue.amount)
+            .where(AssetValue.asset_id == asset.id, AssetValue.date <= cutoff)
+            .order_by(desc(AssetValue.date), desc(AssetValue.id))
+            .limit(1)
+        )
+        val = val_result.scalar_one_or_none()
+        if val is not None:
+            amount = float(val)
+        elif asset.purchase_price is not None and (
+            asset.purchase_date is None or asset.purchase_date <= cutoff
+        ):
+            amount = float(asset.purchase_price)
+        else:
+            amount = 0.0
+        if amount > 0:
+            converted, _ = await convert(
+                session, Decimal(str(amount)), asset.currency, primary_currency, cutoff
+            )
+            converted_val = round(float(converted), 2)
+            assets_total += converted_val
+            composition.append(ReportCompositionItem(
+                key=str(asset.id),
+                label=asset.name,
+                value=converted_val,
+                color=_ASSET_TYPE_COLORS.get(asset.type, "#6B7280"),
+                group="assets",
+            ))
+
     net_worth = accounts_total + assets_total - liabilities_total
 
     return ReportDataPoint(
@@ -103,6 +195,7 @@ async def _net_worth_at(
             "assets": round(assets_total, 2),
             "liabilities": round(liabilities_total, 2),
         },
+        composition=composition,
     )
 
 
@@ -180,7 +273,6 @@ async def get_net_worth_report(
     # A wallet-only collection (wallets, no accounts) still filters.
     if asset_group_ids is not None and account_ids is None:
         account_ids = []
-    filtered = account_ids is not None
     today = date.today()
     start = _report_start_date(today, months, period)
 
@@ -245,92 +337,9 @@ async def get_net_worth_report(
         interval=interval,
     )
 
-    # Build per-item composition from current snapshot
-    account_type_colors = {
-        "checking": "#6366F1",
-        "savings": "#3B82F6",
-        "credit_card": "#F43F5E",
-        "investment": "#8B5CF6",
-        "wallet": "#F59E0B",
-    }
-    asset_type_colors = {
-        "real_estate": "#0EA5E9",
-        "vehicle": "#14B8A6",
-        "valuable": "#F59E0B",
-        "investment": "#8B5CF6",
-        "other": "#6B7280",
-    }
-    composition: list[ReportCompositionItem] = []
-    accounts = await _get_open_accounts(session, workspace_id, account_ids)
-    for account in accounts:
-        bal = await _account_balance_at(session, account, today)
-        converted, _ = await convert(
-            session, Decimal(str(abs(bal))), account.currency, primary_currency, today
-        )
-        converted_val = float(converted)
-        if account.type == "credit_card":
-            composition.append(ReportCompositionItem(
-                key=str(account.id),
-                label=get_account_name(account),
-                value=round(converted_val, 2),
-                color=account_type_colors.get(account.type, "#6B7280"),
-                group="liabilities",
-            ))
-        else:
-            if bal > 0:
-                composition.append(ReportCompositionItem(
-                    key=str(account.id),
-                    label=get_account_name(account),
-                    value=round(converted_val, 2),
-                    color=account_type_colors.get(account.type, "#6B7280"),
-                    group="accounts",
-                ))
-            elif bal < 0:
-                composition.append(ReportCompositionItem(
-                    key=str(account.id),
-                    label=get_account_name(account),
-                    value=round(converted_val, 2),
-                    color="#F43F5E",
-                    group="liabilities",
-                ))
-
-    # Assets — scoped to workspace, or (under a collection filter) to the
-    # assets in the collection's wallets. An empty wallet set → no assets.
-    asset_stmt = select(Asset).where(
-        Asset.workspace_id == workspace_id,
-        Asset.is_archived == False,
-        Asset.sell_date.is_(None),
-    )
-    if filtered:
-        asset_stmt = asset_stmt.where(Asset.group_id.in_(asset_group_ids or []))
-    asset_result = await session.execute(asset_stmt)
-    for asset in asset_result.scalars().all():
-        val_result = await session.execute(
-            select(AssetValue.amount)
-            .where(AssetValue.asset_id == asset.id, AssetValue.date <= today)
-            .order_by(desc(AssetValue.date), desc(AssetValue.id))
-            .limit(1)
-        )
-        val = val_result.scalar_one_or_none()
-        if val is not None:
-            amount = float(val)
-        elif asset.purchase_price is not None and (
-            asset.purchase_date is None or asset.purchase_date <= today
-        ):
-            amount = float(asset.purchase_price)
-        else:
-            amount = 0.0
-        if amount > 0:
-            converted, _ = await convert(
-                session, Decimal(str(amount)), asset.currency, primary_currency, today
-            )
-            composition.append(ReportCompositionItem(
-                key=str(asset.id),
-                label=asset.name,
-                value=round(float(converted), 2),
-                color=asset_type_colors.get(asset.type, "#6B7280"),
-                group="assets",
-            ))
+    # The last trend point is always today — reuse its per-item composition for
+    # the response-level `composition` field (current snapshot for the donut).
+    composition = trend[-1].composition if trend else []
 
     return ReportResponse(summary=summary, trend=trend, meta=meta, composition=composition)
 
@@ -684,6 +693,49 @@ async def get_income_expenses_report(
             if comp_map[comp_key]["value"] <= 0:
                 comp_map.pop(comp_key)
 
+    # Investment-style outflows: transactions in `treat_as_transfer` categories
+    # are excluded from P&L by counts_as_user_pnl (an investment application's
+    # counterpart is an Asset/Holding, not spending). But for the cashflow Sankey
+    # we surface them as their own "investments" group — money set aside, distinct
+    # from spending and from leftover surplus (mirrors how Sure shows an
+    # "Investment Contributions" node). Paired account transfers stay excluded via
+    # the transfer_pair_id filter, so only one-sided movements (contributions)
+    # appear here.
+    inv_result = await session.execute(
+        select(
+            Category.id,
+            Category.name,
+            Category.color,
+            func.sum(amount_expr),
+        )
+        .select_from(Transaction)
+        .join(Account, Transaction.account_id == Account.id)
+        .join(Category, Transaction.category_id == Category.id)
+        .where(
+            Transaction.workspace_id == workspace_id,
+            Account.is_closed == False,
+            report_date >= start,
+            report_date <= today,
+            Transaction.source != "opening_balance",
+            Transaction.type == "debit",
+            Transaction.transfer_pair_id.is_(None),
+            Transaction.is_ignored.is_(False),
+            Category.treat_as_transfer.is_(True),
+            Category.is_ignored.is_(False),
+            *acct_filter,
+        )
+        .group_by(Category.id, Category.name, Category.color)
+    )
+    for cat_id, cat_name, cat_color, total_amount in inv_result.all():
+        amount = abs(float(total_amount or 0))
+        if amount <= 0:
+            continue
+        comp_map[(str(cat_id), "investments")] = {
+            "label": cat_name or "Investments",
+            "color": cat_color or "#0EA5E9",
+            "value": amount,
+        }
+
     # Build per-category trend (sparklines) for the full date range
     cat_trend_result = await session.execute(
         select(
@@ -901,6 +953,20 @@ async def get_income_expenses_report(
                 group=group,
                 series=series,
             ))
+
+    # Populate each trend point's composition from the per-period category data,
+    # so the frontend can show a per-period donut when a bar is clicked.
+    for dp in trend:
+        for (cat_key, group), info in cat_trend_map.items():
+            v = info["periods"].get(dp.date, 0.0)
+            if v > 0:
+                dp.composition.append(ReportCompositionItem(
+                    key=cat_key,
+                    label=info["label"],
+                    value=round(v, 2),
+                    color=info["color"],
+                    group=group,
+                ))
 
     return ReportResponse(
         summary=summary, trend=trend, meta=meta,

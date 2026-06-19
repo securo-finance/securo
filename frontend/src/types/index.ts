@@ -22,6 +22,22 @@ export interface AdminUserList {
   total: number
 }
 
+export interface Passkey {
+  id: string
+  name: string
+  transports: string[] | null
+  aaguid: string | null
+  device_type: string | null
+  backed_up: boolean | null
+  created_at: string
+  last_used_at: string | null
+}
+
+export interface PasskeyOptionsResponse {
+  challenge_id: string
+  options: Record<string, unknown>
+}
+
 export interface AppSetting {
   key: string
   value: string
@@ -338,6 +354,27 @@ export interface Rule {
   actions: RuleAction[]
   priority: number
   is_active: boolean
+}
+
+export interface RuleExportItem {
+  name: string
+  conditions_op: 'and' | 'or'
+  conditions: RuleCondition[]
+  actions: RuleAction[]
+  priority: number
+  is_active: boolean
+}
+
+export interface RuleExportPayload {
+  format: 'securo-categorization-rules'
+  version: number
+  rules: RuleExportItem[]
+}
+
+export interface RuleImportResponse {
+  imported: number
+  skipped: number
+  overwritten: number
 }
 
 export interface ImportLog {
@@ -660,6 +697,7 @@ export interface ReportDataPoint {
   value: number
   breakdowns: Record<string, number>
   change: number | null
+  composition?: ReportCompositionItem[]
 }
 
 export interface ReportMeta {

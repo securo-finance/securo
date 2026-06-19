@@ -1,3 +1,4 @@
+import json
 import uuid
 
 import pyotp
@@ -17,6 +18,19 @@ from app.schemas.two_factor import (
 )
 
 router = APIRouter()
+
+
+def _parse_temp_token_payload(raw: str | bytes) -> dict[str, object] | None:
+    if isinstance(raw, bytes):
+        raw = raw.decode()
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        # Backward compatibility with existing temp tokens that only stored user_id.
+        return {"user_id": raw, "available_methods": ["totp"]}
+    if not isinstance(payload, dict) or not isinstance(payload.get("user_id"), str):
+        return None
+    return payload
 
 
 @router.post("/2fa/setup", response_model=TwoFactorSetupResponse)
@@ -95,15 +109,20 @@ async def verify_2fa(
 ):
     r = await get_redis()
     redis_key = f"2fa_temp:{body.temp_token}"
-    user_id_str = await r.get(redis_key)
+    raw_payload = await r.get(redis_key)
 
-    if not user_id_str:
+    if not raw_payload:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
+    payload = _parse_temp_token_payload(raw_payload)
+    available_methods = payload.get("available_methods", []) if payload else []
+    if payload is None or not isinstance(available_methods, list) or "totp" not in available_methods:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
     # Load user
-    result = await session.execute(select(User).where(User.id == uuid.UUID(user_id_str)))
+    result = await session.execute(select(User).where(User.id == uuid.UUID(str(payload["user_id"]))))
     user = result.scalar_one_or_none()
-    if not user or not user.totp_secret:
+    if not user or not (user.is_2fa_enabled and user.totp_secret):
         raise HTTPException(status_code=401, detail="Invalid token")
 
     # Verify TOTP

@@ -18,11 +18,12 @@ import {
   ReferenceLine,
   ResponsiveContainer,
 } from 'recharts'
-import { HelpCircle } from 'lucide-react'
+import { HelpCircle, X } from 'lucide-react'
 import { reports } from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { PageHeader } from '@/components/page-header'
+import { CashflowSankey } from '@/components/reports/CashflowSankey'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
@@ -43,6 +44,8 @@ const SLICE_COLORS = [
   '#14B8A6', // teal
   '#84CC16', // lime
   '#D946EF', // fuchsia
+  '#F43F5E', // rose
+  '#06B6D4', // cyan
 ]
 const OTHER_SLICE_COLOR = '#9CA3AF'
 
@@ -76,6 +79,16 @@ const FORWARD_RANGE_OPTIONS: readonly RangeOption[] = [
   { key: '12m', months: 12 },
 ]
 
+// The Money Map answers "where did my money go lately", so it leans on recent
+// windows (down to 30 days) and drops the 2Y trend view the other tabs keep.
+const MONEY_MAP_RANGE_OPTIONS: readonly RangeOption[] = [
+  { key: '30d', months: 1 },
+  { key: '3m', months: 3 },
+  { key: '6m', months: 6 },
+  { key: 'ytd', months: 12, period: 'ytd' },
+  { key: '1y', months: 12 },
+]
+
 const HISTORICAL_INTERVAL_OPTIONS = [
   { key: 'daily', value: 'daily' },
   { key: 'weekly', value: 'weekly' },
@@ -97,6 +110,7 @@ const INTERVAL_LABELS: Record<string, string> = {
 }
 
 const RANGE_LABELS: Record<string, string> = {
+  '30d': 'range30d',
   '3m': 'range3m',
   '6m': 'range6m',
   '1y': 'range1y',
@@ -115,6 +129,7 @@ const REPORT_TABS: ReportTab[] = [
   { key: 'net_worth', labelKey: 'reports.netWorth', enabled: true },
   { key: 'income_expenses', labelKey: 'reports.incomeExpenses', enabled: true },
   { key: 'cash_flow', labelKey: 'reports.cashFlow', enabled: true },
+  { key: 'money_map', labelKey: 'reports.moneyMap', enabled: true },
 ]
 
 export default function ReportsPage() {
@@ -131,6 +146,7 @@ export default function ReportsPage() {
   const [sparklineView, setSparklineView] = useState<'byExpenses' | 'byIncome'>('byExpenses')
   const [sparklinePage, setSparklinePage] = useState(0)
   const [cashFlowBaseline, setCashFlowBaseline] = useState(false)
+  const [selectedDate, setSelectedDate] = useState<string | null>(null)
   // Active Collection filter (issue #105): scope all report tabs to its
   // accounts; net worth also includes the collection's wallets' assets.
   const { activeAccountIds, activeWalletIds } = useCollectionFilter()
@@ -144,7 +160,14 @@ export default function ReportsPage() {
   const currentTab = REPORT_TABS.find((tab) => tab.key === activeTab) ?? REPORT_TABS[0]
 
   const isCashFlow = activeTab === 'cash_flow'
-  const rangeOptions = isCashFlow ? FORWARD_RANGE_OPTIONS : HISTORICAL_RANGE_OPTIONS
+  // The Money Map (Sankey) tab is driven by the same income/expenses
+  // composition, aggregated over the selected historical range.
+  const isMoneyMap = activeTab === 'money_map'
+  const rangeOptions = isCashFlow
+    ? FORWARD_RANGE_OPTIONS
+    : isMoneyMap
+      ? MONEY_MAP_RANGE_OPTIONS
+      : HISTORICAL_RANGE_OPTIONS
   const intervalOptions = isCashFlow ? CASH_FLOW_INTERVAL_OPTIONS : HISTORICAL_INTERVAL_OPTIONS
   const selectedRange = rangeOptions.find((r) => r.key === rangeKey) ?? rangeOptions[0]
   const months = selectedRange.months
@@ -154,10 +177,15 @@ export default function ReportsPage() {
     setActiveTab(key)
     setCompositionView(key === 'net_worth' ? 'netWorth' : 'net')
     setSparklinePage(0)
+    setSelectedDate(null)
     // Clamp months/interval to options supported by the new tab
-    const nextRanges = key === 'cash_flow' ? FORWARD_RANGE_OPTIONS : HISTORICAL_RANGE_OPTIONS
+    const nextRanges = key === 'cash_flow'
+      ? FORWARD_RANGE_OPTIONS
+      : key === 'money_map'
+        ? MONEY_MAP_RANGE_OPTIONS
+        : HISTORICAL_RANGE_OPTIONS
     if (!nextRanges.some((r) => r.key === rangeKey)) {
-      setRangeKey(key === 'cash_flow' ? '6m' : '1y')
+      setRangeKey(key === 'cash_flow' ? '6m' : key === 'money_map' ? '3m' : '1y')
     }
     const nextIntervals = key === 'cash_flow' ? CASH_FLOW_INTERVAL_OPTIONS : HISTORICAL_INTERVAL_OPTIONS
     if (!nextIntervals.some((i) => i.value === interval)) {
@@ -170,7 +198,7 @@ export default function ReportsPage() {
     queryFn: () =>
       isCashFlow
         ? reports.cashFlow(months, interval, cashFlowBaseline, acctIds)
-        : activeTab === 'income_expenses'
+        : activeTab === 'income_expenses' || isMoneyMap
           ? reports.incomeExpenses(months, interval, acctIds, period)
           : reports.netWorth(months, interval, acctIds, walletIds, period),
     enabled: currentTab.enabled && !(noAccounts && activeTab !== 'net_worth'),
@@ -210,6 +238,29 @@ export default function ReportsPage() {
   for (const b of allBreakdowns) {
     colorMap[b.key] = b.color
   }
+
+  const snapshotTrendPoint = selectedDate
+    ? (trend.find((dp) => dp.date === selectedDate) ?? null)
+    : null
+  const isHistoricalSnapshot =
+    snapshotTrendPoint !== null &&
+    selectedDate !== trend[trend.length - 1]?.date
+
+  const snapshotBreakdownData = snapshotTrendPoint
+    ? Object.entries(snapshotTrendPoint.breakdowns)
+        .map(([key, rawValue]) => {
+          const orig = allBreakdowns.find((b) => b.key === key)
+          return {
+            key,
+            label: orig?.label ?? key,
+            value: Math.abs(rawValue as number),
+            color: orig?.color ?? '#6366F1',
+          }
+        })
+        .filter((b) => b.value > 0)
+    : null
+
+  const compositionBreakdownData = snapshotBreakdownData ?? breakdownData
 
   const changePrefix = (summary?.change_amount ?? 0) >= 0 ? '+' : ''
   const changeColor = (summary?.change_amount ?? 0) >= 0 ? 'text-emerald-600' : 'text-rose-500'
@@ -253,7 +304,7 @@ export default function ReportsPage() {
   // Inner ring — summary view (high-level breakdown), filtered by toggle state for net_worth
   const innerDonutData = (() => {
     const excludedKeys = new Set(['netIncome', 'startingBalance', 'endingBalance'])
-    return breakdownData
+    return compositionBreakdownData
       .filter((b) => !excludedKeys.has(b.key) && (!activeCompositionGroups || activeCompositionGroups.has(groupOf(b.key))))
       .map((b) => ({
         name: t(`reports.${b.key}`, { defaultValue: b.label }),
@@ -262,16 +313,40 @@ export default function ReportsPage() {
       }))
   })()
 
+  const activeComposition = snapshotTrendPoint?.composition ?? composition
+
+  // Build a stable key → color map from the full composition range (never the
+  // snapshot), sorted the same way compositionDetail sorts, so colors don't
+  // shift when switching between dates.
+  const netWorthColorMap = (() => {
+    const excludedKeys = new Set(['netIncome', 'startingBalance', 'endingBalance'])
+    const groupOrder = breakdownData
+      .filter((b) => !excludedKeys.has(b.key) && (!activeCompositionGroups || activeCompositionGroups.has(groupOf(b.key))))
+      .map((b) => groupOf(b.key))
+    const activeGroups = new Set(groupOrder)
+    const sorted = [...composition]
+      .filter((c) => activeGroups.has(c.group))
+      .sort((a, b) => {
+        const ga = groupOrder.indexOf(a.group)
+        const gb = groupOrder.indexOf(b.group)
+        if (ga !== gb) return ga - gb
+        return b.value - a.value
+      })
+    const map = new Map<string, string>()
+    sorted.forEach((c, i) => map.set(c.key, SLICE_COLORS[i % SLICE_COLORS.length]))
+    return map
+  })()
+
   // Full detail — every holding in the active group(s), largest first, labelled
   // and coloured. The donut draws only the top slice of this; the legend popover
   // lists all of it. Net worth items get a distinct palette (the long tail falls
   // back to the neutral colour); income/expense items keep the user's category colour.
   const compositionDetail = (() => {
-    if (composition.length === 0) return []
+    if (activeComposition.length === 0) return []
 
     const excludedKeys = new Set(['netIncome', 'startingBalance', 'endingBalance'])
     const activeGroups = new Set(
-      breakdownData
+      compositionBreakdownData
         .filter((b) => !excludedKeys.has(b.key) && (!activeCompositionGroups || activeCompositionGroups.has(groupOf(b.key))))
         .map((b) => groupOf(b.key))
     )
@@ -289,33 +364,88 @@ export default function ReportsPage() {
       return c.label
     }
 
-    return composition
+    const groupOrder = compositionBreakdownData
+      .filter((b) => !excludedKeys.has(b.key) && (!activeCompositionGroups || activeCompositionGroups.has(groupOf(b.key))))
+      .map((b) => groupOf(b.key))
+
+    return activeComposition
       .filter((c) => activeGroups.has(c.group))
-      .sort((a, b) => b.value - a.value)
-      .map((c, i) => ({
+      .sort((a, b) => {
+        const ga = groupOrder.indexOf(a.group)
+        const gb = groupOrder.indexOf(b.group)
+        if (ga !== gb) return ga - gb
+        return b.value - a.value
+      })
+      .map((c) => ({
         name: itemLabel(c),
         value: c.value,
-        color: activeTab === 'net_worth' ? (SLICE_COLORS[i] ?? OTHER_SLICE_COLOR) : c.color,
+        color: activeTab === 'net_worth' ? (netWorthColorMap.get(c.key) ?? OTHER_SLICE_COLOR) : c.color,
+        group: c.group,
       }))
   })()
 
-  // Outer ring — the top slices individually, with the long tail folded into a
-  // single "Other". Capping the slice count is what keeps them tellable apart;
-  // the full breakdown stays one click away in the legend's "+N more" popover.
+  // Outer ring — items above 3 % of total get their own slice; everything else
+  // per group folds into one "Other <Group>" slice. Outer arcs are anchored to
+  // inner ring values so per-item rounding never misaligns the two rings.
   const outerDonutData = (() => {
     if (compositionDetail.length === 0) return []
-    const LIMIT = SLICE_COLORS.length
-    const top = compositionDetail.slice(0, LIMIT)
-    const rest = compositionDetail.slice(LIMIT)
-    const result: { name: string; value: number; color: string }[] =
-      top.map((d) => ({ name: d.name, value: d.value, color: d.color }))
-    if (rest.length > 0) {
-      result.push({
-        name: t('reports.other'),
-        value: Math.round(rest.reduce((s, d) => s + d.value, 0) * 100) / 100,
-        color: OTHER_SLICE_COLOR,
-      })
+
+    const excludedKeys = new Set(['netIncome', 'startingBalance', 'endingBalance'])
+    const innerGroups = [
+      ...new Set(
+        compositionBreakdownData
+          .filter((b) => !excludedKeys.has(b.key) && (!activeCompositionGroups || activeCompositionGroups.has(groupOf(b.key))))
+          .map((b) => groupOf(b.key))
+      ),
+    ]
+
+    const innerGroupValue = new Map<string, number>()
+    for (const b of compositionBreakdownData) {
+      if (!excludedKeys.has(b.key) && (!activeCompositionGroups || activeCompositionGroups.has(groupOf(b.key)))) {
+        const g = groupOf(b.key)
+        innerGroupValue.set(g, (innerGroupValue.get(g) ?? 0) + b.value)
+      }
     }
+
+    const totalValue = [...innerGroupValue.values()].reduce((s, v) => s + v, 0)
+
+    const otherLabel = (g: string) =>
+      g === 'accounts' ? t('reports.otherAccounts')
+        : g === 'assets' ? t('reports.otherAssets')
+          : g === 'liabilities' ? t('reports.otherLiabilities')
+            : g === 'income' ? t('reports.otherIncome')
+              : g === 'expenses' ? t('reports.otherExpenses')
+                : t('reports.other')
+
+    const byGroup = new Map<string, typeof compositionDetail>()
+    for (const g of innerGroups) byGroup.set(g, [])
+    for (const item of compositionDetail) byGroup.get(item.group)?.push(item)
+
+    const result: {
+      name: string
+      value: number
+      color: string
+      children?: { name: string; value: number; color: string }[]
+    }[] = []
+
+    for (const g of innerGroups) {
+      const all = byGroup.get(g) ?? []
+      const significant = all.filter((item) => totalValue > 0 && item.value / totalValue >= 0.03)
+      const rest = all.filter((item) => totalValue <= 0 || item.value / totalValue < 0.03)
+      const topSum = significant.reduce((s, d) => s + d.value, 0)
+      const innerTotal = innerGroupValue.get(g) ?? topSum
+      const otherValue = Math.round((innerTotal - topSum) * 100) / 100
+      for (const item of significant) result.push(item)
+      if (otherValue > 0.005) {
+        result.push({
+          name: otherLabel(g),
+          value: otherValue,
+          color: OTHER_SLICE_COLOR,
+          children: rest.length > 0 ? rest : undefined,
+        })
+      }
+    }
+
     return result
   })()
 
@@ -366,7 +496,7 @@ export default function ReportsPage() {
               {rangeOptions.map((opt) => (
                 <button
                   key={opt.key}
-                  onClick={() => setRangeKey(opt.key)}
+                  onClick={() => { setRangeKey(opt.key); setSelectedDate(null) }}
                   className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
                     rangeKey === opt.key
                       ? 'bg-primary text-primary-foreground'
@@ -377,11 +507,11 @@ export default function ReportsPage() {
                 </button>
               ))}
             </div>
-            <div className="flex items-center rounded-lg border border-border bg-card overflow-hidden">
+            <div className={`flex items-center rounded-lg border border-border bg-card overflow-hidden ${isMoneyMap ? 'hidden' : ''}`}>
               {intervalOptions.map((opt) => (
                 <button
                   key={opt.key}
-                  onClick={() => setInterval(opt.value)}
+                  onClick={() => { setInterval(opt.value); setSelectedDate(null) }}
                   className={`px-2.5 py-1.5 text-xs font-semibold transition-colors ${
                     interval === opt.value
                       ? 'bg-primary text-primary-foreground'
@@ -480,6 +610,44 @@ export default function ReportsPage() {
         </div>
       </div>
 
+      {/* Flow (Sankey) */}
+      {isMoneyMap && (
+        <div className="bg-card rounded-xl border border-border shadow-sm mb-5">
+          <div className="px-5 pt-5 pb-2 flex items-center justify-between">
+            <p className="text-sm font-semibold text-foreground">
+              {t('reports.moneyMap')}
+            </p>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#10B981' }} />
+                <span className="text-[11px] text-muted-foreground">{t('reports.income')}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#F43F5E' }} />
+                <span className="text-[11px] text-muted-foreground">{t('reports.expenses')}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#0EA5E9' }} />
+                <span className="text-[11px] text-muted-foreground">{t('reports.investments')}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#F59E0B' }} />
+                <span className="text-[11px] text-muted-foreground">{t('reports.deficit')}</span>
+              </div>
+            </div>
+          </div>
+          <div className="px-3 pb-5">
+            {isLoading ? (
+              <div className="px-2"><Skeleton className="h-[360px] w-full" /></div>
+            ) : (
+              <CashflowSankey composition={composition} currency={userCurrency} locale={locale} />
+            )}
+          </div>
+        </div>
+      )}
+
+      {!isMoneyMap && (
+      <>
       {/* Main Trend Chart */}
       <div className="bg-card rounded-xl border border-border shadow-sm mb-5">
         <div className="px-5 pt-5 pb-2 flex items-center justify-between">
@@ -760,16 +928,21 @@ export default function ReportsPage() {
       {/* Breakdown: Donut + Grouped Bar */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
         {/* Composition widget — summary ring + ranked, labelled detail bars */}
-        <div className="bg-card rounded-xl border border-border shadow-sm">
-          <div className="px-5 pt-4 pb-2 flex items-center justify-between gap-2">
-            <p className="text-sm font-semibold text-foreground shrink-0">{t('reports.composition')}</p>
-            <div className="flex items-stretch rounded-lg border border-border bg-muted/30 overflow-hidden">
+        <div className={`rounded-xl border shadow-sm transition-colors ${selectedDate ? 'bg-primary/5 border-primary/50' : 'bg-card border-border'}`}>
+          <div className="px-5 pt-4 pb-2 flex flex-col gap-2 min-[635px]:flex-row min-[635px]:items-start min-[635px]:justify-between lg:flex-col lg:items-start xl:flex-row xl:items-start xl:justify-between">
+            <div className="flex flex-col">
+              <p className="text-sm font-semibold text-foreground">{t('reports.composition')}</p>
+              {selectedDate && (
+                <span className="text-xs text-primary font-medium">{t('reports.asOf', { date: selectedDate })}</span>
+              )}
+            </div>
+            <div className="flex items-stretch rounded-lg border border-border bg-muted/30 overflow-hidden w-fit">
               {compositionOptions.map((opt) => (
                 <button
                   key={opt}
                   type="button"
                   onClick={() => setCompositionView(opt)}
-                  className={`px-2 py-1 text-[11px] font-semibold text-center whitespace-nowrap transition-colors ${
+                  className={`px-2 py-1 text-[11px] font-semibold text-center transition-colors ${
                     compositionView === opt
                       ? 'bg-primary text-primary-foreground'
                       : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
@@ -850,56 +1023,78 @@ export default function ReportsPage() {
                                 const pct = donutTotal > 0 ? ((v / donutTotal) * 100).toFixed(1) : '0'
                                 const rawName = (entry.name as string) ?? ''
                                 const displayName = rawName.length > 50 ? rawName.slice(0, 47) + '…' : rawName
+                                const children = (entry.payload as { children?: { name: string; value: number; color: string }[] }).children
                                 return (
-                                  <div style={{ ...tooltipStyle, padding: '8px 12px', zIndex: 10 }}>
+                                  <div style={{ ...tooltipStyle, padding: '8px 12px', zIndex: 10, maxWidth: 256 }}>
                                     <p className="text-xs font-semibold mb-1">{displayName}</p>
                                     <p className="text-xs">
                                       {privacyMode ? MASK : `${formatCurrency(v, userCurrency, locale)} (${pct}%)`}
                                     </p>
+                                    {children && children.length > 0 && (
+                                      <div className="mt-1.5 border-t border-border/50 pt-1.5 flex flex-col gap-0.5" style={{ maxHeight: 180, overflowY: 'auto', paddingRight: '0.5rem' }}>
+                                        {children.map((child, i) => {
+                                          const childPct = donutTotal > 0 ? ((child.value / donutTotal) * 100).toFixed(1) : '0'
+                                          return (
+                                            <div key={i} className="flex items-center justify-between gap-3">
+                                              <div className="flex items-center gap-1.5 min-w-0">
+                                                <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: child.color }} />
+                                                <span className="text-xs text-muted-foreground truncate">
+                                                  {child.name.length > 25 ? child.name.slice(0, 22) + '…' : child.name}
+                                                </span>
+                                              </div>
+                                              <span className="text-xs text-muted-foreground shrink-0">
+                                                {privacyMode ? MASK : `${formatCurrency(child.value, userCurrency, locale)} (${childPct}%)`}
+                                              </span>
+                                            </div>
+                                          )
+                                        })}
+                                      </div>
+                                    )}
                                   </div>
                                 )
                               }}
-                              wrapperStyle={{ zIndex: 10 }}
+                              wrapperStyle={{ zIndex: 10, pointerEvents: 'auto' }}
                               offset={20}
                             />
                         </PieChart>
                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none" style={{ zIndex: 0 }}>
                           <span className="text-[10px] text-muted-foreground">
-                            {compositionView === 'assetsAndAccounts' ? t('reports.youOwn', { defaultValue: 'You Own' })
-                              : compositionView === 'liabilities' ? t('reports.youOwe', { defaultValue: 'You Owe' })
-                              : compositionView === 'byIncome' ? t('reports.income')
-                              : compositionView === 'byExpenses' ? t('reports.expenses')
-                              : meta?.type === 'income_expenses' ? t('reports.netIncome')
-                              : t(currentTab.labelKey)}
+                            {compositionView === 'assetsAndAccounts'
+                              ? t(isHistoricalSnapshot ? 'reports.youOwned' : 'reports.youOwn', { defaultValue: isHistoricalSnapshot ? 'You Owned' : 'You Own' })
+                              : compositionView === 'liabilities'
+                                ? t(isHistoricalSnapshot ? 'reports.youOwed' : 'reports.youOwe', { defaultValue: isHistoricalSnapshot ? 'You Owed' : 'You Owe' })
+                                : compositionView === 'byIncome' ? t('reports.income')
+                                : compositionView === 'byExpenses' ? t('reports.expenses')
+                                : meta?.type === 'income_expenses' ? t('reports.netIncome')
+                                : t(currentTab.labelKey)}
                           </span>
                           <span className="text-base font-bold text-foreground tabular-nums">
                             {mask(formatCompact(
-                              compositionView === 'netWorth' || compositionView === 'net' || !compositionView
-                                ? meta?.type === 'cash_flow'
-                                  ? (summary?.change_amount ?? 0)
-                                  : (summary?.primary_value ?? 0)
-                                : innerDonutData.reduce((s, d) => s + d.value, 0),
+                              snapshotTrendPoint
+                                ? compositionView === 'netWorth' || compositionView === 'net' || !compositionView
+                                  ? snapshotTrendPoint.value
+                                  : innerDonutData.reduce((s, d) => s + d.value, 0)
+                                : compositionView === 'netWorth' || compositionView === 'net' || !compositionView
+                                  ? meta?.type === 'cash_flow'
+                                    ? (summary?.change_amount ?? 0)
+                                    : (summary?.primary_value ?? 0)
+                                  : innerDonutData.reduce((s, d) => s + d.value, 0),
                               userCurrency, locale
                             ))}
                           </span>
                         </div>
                       </div>
                       <div key={compositionView} className="flex flex-col items-center gap-1 px-3 mt-1 w-full">
-                        {/* Inner-ring (summary) legend only when there is no detailed
-                            outer ring — otherwise the toggle + center label already
-                            name it, and the detailed legend below carries the colours. */}
-                        {!hasOuter && (
-                          <div className="flex flex-wrap justify-center gap-x-3 gap-y-1">
-                            {innerDonutData.map((d, i) => (
-                              <div key={`${i}-${d.name}`} className="flex items-center gap-1.5">
-                                <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                                <span className="text-[11px] text-muted-foreground whitespace-nowrap">
-                                  {d.name.length > 30 ? d.name.slice(0, 27) + '…' : d.name}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                        <div className="flex flex-wrap justify-center gap-x-3 gap-y-1">
+                          {innerDonutData.map((d, i) => (
+                            <div key={`${i}-${d.name}`} className="flex items-center gap-1.5">
+                              <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                              <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                                {d.name.length > 30 ? d.name.slice(0, 27) + '…' : d.name}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
                         {hasOuter && (() => {
                           const visible = outerDonutData.slice(0, 6)
                           const hiddenCount = compositionDetail.length - visible.length
@@ -936,9 +1131,8 @@ export default function ReportsPage() {
                                             <span className="text-[11px] text-muted-foreground flex-1 truncate">
                                               {d.name.length > 25 ? d.name.slice(0, 22) + '…' : d.name}
                                             </span>
-                                            <span className="text-[11px] tabular-nums text-foreground whitespace-nowrap">
-                                              {mask(formatCompact(d.value, userCurrency, locale))}
-                                              <span className="text-muted-foreground ml-1">({pct}%)</span>
+                                            <span className="text-xs text-muted-foreground shrink-0">
+                                              {privacyMode ? MASK : `${formatCurrency(d.value, userCurrency, locale)} (${pct}%)`}
                                             </span>
                                           </div>
                                         )
@@ -962,15 +1156,27 @@ export default function ReportsPage() {
         </div>
 
         {/* Evolution / Category Sparklines */}
-        <div className="lg:col-span-2 bg-card rounded-xl border border-border shadow-sm">
+        <div className={`lg:col-span-2 rounded-xl border shadow-sm transition-colors ${selectedDate && meta?.type !== 'income_expenses' ? 'bg-primary/5 border-primary/50' : 'bg-card border-border'}`}>
           <div className="px-5 pt-5 pb-2 flex items-center justify-between">
-            <p className="text-sm font-semibold text-foreground">
-              {meta?.type === 'income_expenses'
-                ? t('reports.categoryTrends')
-                : meta?.type === 'cash_flow'
-                  ? t('reports.inflowOutflow')
-                  : t('reports.evolution')}
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold text-foreground">
+                {meta?.type === 'income_expenses'
+                  ? t('reports.categoryTrends')
+                  : meta?.type === 'cash_flow'
+                    ? t('reports.inflowOutflow')
+                    : t('reports.evolution')}
+              </p>
+              {selectedDate && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedDate(null)}
+                  className="flex items-center gap-1 rounded-full bg-primary/10 border border-primary/30 px-2 py-0.5 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/20 whitespace-nowrap"
+                >
+                  {selectedDate}
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
             {meta?.type === 'income_expenses' && (() => {
               const groupKey = sparklineView === 'byIncome' ? 'income' : 'expenses'
               const allItems = (data?.category_trend ?? []).filter((c) => c.group === groupKey)
@@ -1119,7 +1325,17 @@ export default function ReportsPage() {
               </div>
             ) : chartData.length > 0 && meta ? (
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 0 }} stackOffset="sign">
+                <ComposedChart
+                  data={chartData}
+                  margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
+                  stackOffset="sign"
+                  onClick={(payload) => {
+                    const date = payload?.activeLabel as string | undefined
+                    if (!date) return
+                    setSelectedDate((prev) => (prev === date ? null : date))
+                  }}
+                  style={{ cursor: 'pointer' }}
+                >
                   <XAxis
                     dataKey="date"
                     tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
@@ -1194,7 +1410,15 @@ export default function ReportsPage() {
                           fill={color}
                           radius={radius}
                           maxBarSize={32}
-                        />
+                        >
+                          {selectedDate && chartData.map((d) => (
+                            <Cell
+                              key={d.date}
+                              fill={color}
+                              fillOpacity={d.date === selectedDate ? 1 : 0.4}
+                            />
+                          ))}
+                        </Bar>
                       )
                     })
                   })()}
@@ -1222,6 +1446,8 @@ export default function ReportsPage() {
           )}
         </div>
       </div>
+      </>
+      )}
     </div>
   )
 }

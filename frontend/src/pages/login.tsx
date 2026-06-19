@@ -12,16 +12,19 @@ import type { AxiosError } from 'axios'
 import { isServerUnreachable } from '@/lib/auth-errors'
 import { useTheme } from 'next-themes'
 import { setThemeBasedOnSystem } from '@/lib/theme-utils'
+import { isPasskeySupported, startPasskeyAuthentication } from '@/lib/webauthn'
 
 export default function LoginPage() {
   const { t } = useTranslation()
-  const { login, verify2fa, token } = useAuth()
+  const { login, verify2fa, loginWithToken, token } = useAuth()
   const navigate = useNavigate()
   const { resolvedTheme } = useTheme()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [isPasskeyLoading, setIsPasskeyLoading] = useState(false)
+  const [passkeySupported, setPasskeySupported] = useState(false)
   const [registrationEnabled, setRegistrationEnabled] = useState(true)
   const [oidcConfig, setOidcConfig] = useState<{ enabled: boolean; provider_name: string }>({ enabled: false, provider_name: 'OIDC' })
 
@@ -29,8 +32,11 @@ export default function LoginPage() {
   const [requires2fa, setRequires2fa] = useState(false)
   const [tempToken, setTempToken] = useState('')
   const [totpCode, setTotpCode] = useState('')
+  const [available2faMethods, setAvailable2faMethods] = useState<Array<'totp' | 'passkey'>>(['totp'])
+  const [selected2faMethod, setSelected2faMethod] = useState<'totp' | 'passkey'>('totp')
 
   useEffect(() => {
+    setPasskeySupported(isPasskeySupported())
     if (token) {
       navigate('/', { replace: true })
       return
@@ -56,8 +62,11 @@ export default function LoginPage() {
     try {
       const result = await login(email, password)
       if (result.requires_2fa) {
+        const methods: Array<'totp' | 'passkey'> = result.available_methods?.length ? result.available_methods : ['totp']
         setRequires2fa(true)
         setTempToken(result.temp_token ?? '')
+        setAvailable2faMethods(methods)
+        setSelected2faMethod(methods.includes('passkey') ? 'passkey' : methods[0])
       } else {
         navigate('/')
       }
@@ -79,6 +88,31 @@ export default function LoginPage() {
     window.location.href = '/api/auth/oidc/login'
   }
 
+  const handlePasskeyLogin = async () => {
+    setError('')
+    setIsPasskeyLoading(true)
+    try {
+      const trimmedEmail = email.trim()
+      const options = await authApi.passkeyAuthenticationOptions(trimmedEmail || undefined)
+      const credential = await startPasskeyAuthentication(options.options)
+      const result = await authApi.verifyPasskeyAuthentication(options.challenge_id, credential)
+      loginWithToken(result.access_token)
+      navigate('/')
+    } catch (err) {
+      const axiosErr = err as AxiosError
+      const domErr = err as { name?: string }
+      if (domErr?.name === 'NotAllowedError') {
+        setError(t('auth.passkeyCancelled'))
+      } else if (axiosErr?.response?.status === 429) {
+        setError(t('auth.tooManyAttempts'))
+      } else {
+        setError(t('auth.passkeyLoginError'))
+      }
+    } finally {
+      setIsPasskeyLoading(false)
+    }
+  }
+
   const handleVerify2fa = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
@@ -93,14 +127,48 @@ export default function LoginPage() {
       } else if (axiosErr?.response?.status === 401) {
         setError(t('auth.invalidCredentials'))
         // Token expired, go back to login
-        setRequires2fa(false)
-        setTempToken('')
-        setTotpCode('')
+        resetSecondFactor()
       } else {
         setError(t('auth.invalid2faCode'))
       }
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  function resetSecondFactor() {
+    setRequires2fa(false)
+    setTempToken('')
+    setTotpCode('')
+    setAvailable2faMethods(['totp'])
+    setSelected2faMethod('totp')
+    setError('')
+  }
+
+  const handlePasskeySecondFactor = async () => {
+    setError('')
+    setIsPasskeyLoading(true)
+    try {
+      const options = await authApi.passkeySecondFactorOptions(tempToken)
+      const credential = await startPasskeyAuthentication(options.options)
+      const result = await authApi.verifyPasskeySecondFactor(tempToken, options.challenge_id, credential)
+      loginWithToken(result.access_token)
+      navigate('/')
+    } catch (err) {
+      const axiosErr = err as AxiosError
+      const domErr = err as { name?: string }
+      if (domErr?.name === 'NotAllowedError') {
+        setError(t('auth.passkeyCancelled'))
+      } else if (axiosErr?.response?.status === 401) {
+        setError(t('auth.invalidCredentials'))
+        resetSecondFactor()
+      } else if (axiosErr?.response?.status === 429) {
+        setError(t('auth.tooManyAttempts'))
+      } else {
+        setError(t('auth.passkeyLoginError'))
+      }
+    } finally {
+      setIsPasskeyLoading(false)
     }
   }
 
@@ -113,8 +181,14 @@ export default function LoginPage() {
               <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
                 <ShellLogo size={22} className="text-primary" />
               </div>
-              <h1 className="text-xl font-semibold tracking-tight">{t('auth.twoFactor')}</h1>
-              <p className="text-sm text-muted-foreground mt-1">{t('auth.twoFactorDescription')}</p>
+              <h1 className="text-xl font-semibold tracking-tight">
+                {selected2faMethod === 'passkey' ? t('auth.passkeySecondFactorTitle') : t('auth.twoFactorTitle')}
+              </h1>
+              <p className="text-sm text-muted-foreground mt-1 text-center">
+                {selected2faMethod === 'passkey'
+                  ? t('auth.passkeySecondFactorDescription')
+                  : t('auth.twoFactorDescription')}
+              </p>
             </div>
             <CardContent className="space-y-4 px-8 pt-4">
               {error && (
@@ -122,35 +196,70 @@ export default function LoginPage() {
                   {error}
                 </div>
               )}
-              <div className="space-y-1.5">
-                <Label htmlFor="totp-code" className="text-sm">{t('auth.twoFactor')}</Label>
-                <Input
-                  id="totp-code"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  value={totpCode}
-                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  placeholder="000000"
-                  className="text-center text-lg tracking-[0.3em] font-mono"
-                  maxLength={6}
-                  required
-                  autoFocus
-                />
-              </div>
+              {available2faMethods.length > 1 && (
+                <div className="grid grid-cols-2 gap-2">
+                  {available2faMethods.includes('passkey') && (
+                    <Button
+                      type="button"
+                      variant={selected2faMethod === 'passkey' ? 'default' : 'outline'}
+                      onClick={() => setSelected2faMethod('passkey')}
+                    >
+                      {t('auth.passkeyMethod')}
+                    </Button>
+                  )}
+                  {available2faMethods.includes('totp') && (
+                    <Button
+                      type="button"
+                      variant={selected2faMethod === 'totp' ? 'default' : 'outline'}
+                      onClick={() => setSelected2faMethod('totp')}
+                    >
+                      {t('auth.totpMethod')}
+                    </Button>
+                  )}
+                </div>
+              )}
+              {selected2faMethod === 'totp' && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="totp-code" className="text-sm">{t('auth.twoFactor')}</Label>
+                  <Input
+                    id="totp-code"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={totpCode}
+                    onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    placeholder="000000"
+                    className="text-center text-lg tracking-[0.3em] font-mono"
+                    maxLength={6}
+                    required
+                    autoFocus
+                  />
+                </div>
+              )}
+              {selected2faMethod === 'passkey' && (
+                <p className="text-sm text-muted-foreground text-center">
+                  {t('auth.passkeySecondFactorPrompt')}
+                </p>
+              )}
             </CardContent>
             <CardFooter className="flex flex-col gap-4 px-8 pb-8 pt-2">
-              <Button type="submit" className="w-full" disabled={isLoading || totpCode.length !== 6}>
-                {isLoading ? t('common.loading') : t('auth.verify')}
-              </Button>
+              {selected2faMethod === 'totp' ? (
+                <Button type="submit" className="w-full" disabled={isLoading || totpCode.length !== 6}>
+                  {isLoading ? t('common.loading') : t('auth.verify')}
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  className="w-full"
+                  onClick={handlePasskeySecondFactor}
+                  disabled={isLoading || isPasskeyLoading || !passkeySupported}
+                >
+                  {isPasskeyLoading ? t('common.loading') : t('auth.usePasskeySecondFactor')}
+                </Button>
+              )}
               <button
                 type="button"
-                onClick={() => {
-                  setRequires2fa(false)
-                  setTempToken('')
-                  setTotpCode('')
-                  setError('')
-                }}
+                onClick={resetSecondFactor}
                 className="text-sm text-muted-foreground hover:text-foreground"
               >
                 {t('auth.login')}
@@ -202,20 +311,31 @@ export default function LoginPage() {
             </div>
           </CardContent>
           <CardFooter className="flex flex-col gap-4 px-8 pb-8 pt-2">
-            <Button type="submit" className="w-full" disabled={isLoading}>
+            <Button type="submit" className="w-full" disabled={isLoading || isPasskeyLoading}>
               {isLoading ? t('common.loading') : t('auth.login')}
             </Button>
+            {(passkeySupported || oidcConfig.enabled) && (
+              <div className="flex items-center gap-3 w-full">
+                <div className="h-px flex-1 bg-border" />
+                <span className="text-xs text-muted-foreground">{t('auth.or')}</span>
+                <div className="h-px flex-1 bg-border" />
+              </div>
+            )}
+            {passkeySupported && (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={handlePasskeyLogin}
+                disabled={isLoading || isPasskeyLoading}
+              >
+                {isPasskeyLoading ? t('common.loading') : t('auth.loginWithPasskey')}
+              </Button>
+            )}
             {oidcConfig.enabled && (
-              <>
-                <div className="flex items-center gap-3 w-full">
-                  <div className="h-px flex-1 bg-border" />
-                  <span className="text-xs text-muted-foreground">{t('auth.or')}</span>
-                  <div className="h-px flex-1 bg-border" />
-                </div>
-                <Button type="button" variant="outline" className="w-full" onClick={handleOIDCLogin}>
-                  {t('auth.loginWithProvider', { provider: oidcConfig.provider_name })}
-                </Button>
-              </>
+              <Button type="button" variant="outline" className="w-full" onClick={handleOIDCLogin}>
+                {t('auth.loginWithProvider', { provider: oidcConfig.provider_name })}
+              </Button>
             )}
             {registrationEnabled && (
               <p className="text-sm text-muted-foreground">

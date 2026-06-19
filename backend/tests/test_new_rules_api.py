@@ -396,3 +396,121 @@ async def test_rule_user_isolation(
     items = response.json()["items"]
     # Verify user1 still has transactions
     assert len(items) >= 5
+
+
+@pytest.mark.asyncio
+async def test_export_rules_serializes_category_actions_by_name(client: AsyncClient, auth_headers, test_rules, test_categories):
+    response = await client.get("/api/rules/export", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.headers["content-disposition"].startswith("attachment;")
+    payload = response.json()
+    assert payload["format"] == "securo-categorization-rules"
+    assert payload["version"] == 1
+    exported = {rule["name"]: rule for rule in payload["rules"]}
+    assert set(exported) == {"UBER rule", "IFOOD rule", "SALARIO rule"}
+    uber_action = exported["UBER rule"]["actions"][0]
+    assert uber_action == {"op": "set_category", "value": "Transporte"}
+    assert "id" not in exported["UBER rule"]
+    assert "user_id" not in exported["UBER rule"]
+
+
+@pytest.mark.asyncio
+async def test_import_rules_requires_overwrite_confirmation_when_rules_exist(
+    client: AsyncClient, auth_headers, test_rules, test_categories
+):
+    payload = {
+        "format": "securo-categorization-rules",
+        "version": 1,
+        "rules": [
+            {
+                "name": "Imported Netflix",
+                "conditions_op": "and",
+                "conditions": [{"field": "description", "op": "contains", "value": "NETFLIX"}],
+                "actions": [{"op": "set_category", "value": "Alimentação"}],
+                "priority": 7,
+                "is_active": True,
+            }
+        ],
+    }
+
+    response = await client.post("/api/rules/import", json={"payload": payload}, headers=auth_headers)
+
+    assert response.status_code == 409
+    assert "overwrite" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_import_rules_overwrites_existing_rules_and_maps_categories_by_name(
+    client: AsyncClient, auth_headers, test_rules, test_categories
+):
+    payload = {
+        "format": "securo-categorization-rules",
+        "version": 1,
+        "rules": [
+            {
+                "name": "Imported Netflix",
+                "conditions_op": "and",
+                "conditions": [{"field": "description", "op": "contains", "value": "NETFLIX"}],
+                "actions": [{"op": "set_category", "value": "Alimentação"}],
+                "priority": 7,
+                "is_active": True,
+            },
+            {
+                "name": "Missing category rule",
+                "conditions_op": "and",
+                "conditions": [{"field": "description", "op": "contains", "value": "UNKNOWN"}],
+                "actions": [{"op": "set_category", "value": "Does Not Exist"}],
+                "priority": 8,
+                "is_active": True,
+            },
+        ],
+    }
+
+    response = await client.post(
+        "/api/rules/import",
+        json={"payload": payload, "overwrite": True},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"imported": 1, "skipped": 1, "overwritten": 3}
+    rules_response = await client.get("/api/rules", headers=auth_headers)
+    rules = rules_response.json()
+    assert [r["name"] for r in rules] == ["Imported Netflix"]
+    assert rules[0]["actions"] == [{"op": "set_category", "value": str(test_categories[0].id)}]
+
+
+@pytest.mark.asyncio
+async def test_import_rules_with_overwrite_preserves_existing_when_every_rule_is_skipped(
+    client: AsyncClient, auth_headers, test_rules
+):
+    payload = {
+        "format": "securo-categorization-rules",
+        "version": 1,
+        "rules": [
+            {
+                "name": "External groceries rule",
+                "conditions_op": "and",
+                "conditions": [{"field": "description", "op": "contains", "value": "MARKET"}],
+                "actions": [{"op": "set_category", "value": "Groceries"}],
+                "priority": 7,
+                "is_active": True,
+            }
+        ],
+    }
+
+    before_response = await client.get("/api/rules", headers=auth_headers)
+    before_names = [rule["name"] for rule in before_response.json()]
+
+    response = await client.post(
+        "/api/rules/import",
+        json={"payload": payload, "overwrite": True},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"imported": 0, "skipped": 1, "overwritten": 0}
+    after_response = await client.get("/api/rules", headers=auth_headers)
+    assert [rule["name"] for rule in after_response.json()] == before_names

@@ -913,6 +913,26 @@ async def test_net_worth_composition_uses_display_name(session: AsyncSession, te
 
 
 @pytest.mark.asyncio
+async def test_net_worth_intermediate_trend_points_have_composition(
+    session: AsyncSession, test_user, test_workspace: User
+):
+    """Non-last trend points carry per-item composition, not just the current snapshot."""
+    acct = await _make_manual_account(session, test_user.id, "History Acct")
+    # 135 days back lands before the first monthly cutoff (end of month-4),
+    # so the first trend point carries this account in composition.
+    await _add_txn(session, test_user.id, acct.id, 8000, "credit", date.today() - timedelta(days=135))
+
+    report = await get_net_worth_report(
+        session, test_workspace.id, test_user.id, months=4, interval="monthly"
+    )
+    assert len(report.trend) >= 2
+    # The first trend point predates today and must still have composition populated
+    first = report.trend[0]
+    assert len(first.composition) > 0
+    assert any(c.label == "History Acct" for c in first.composition)
+
+
+@pytest.mark.asyncio
 async def test_net_worth_weekly_interval(session: AsyncSession, test_user, test_workspace: User):
     acct = await _make_manual_account(session, test_user.id, "Weekly Test")
     await _add_txn(session, test_user.id, acct.id, 1000, "credit", date.today())

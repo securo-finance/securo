@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
@@ -9,7 +10,14 @@ from app.core.workspace_context import (
     current_workspace,
     current_writable_workspace,
 )
-from app.schemas.rule import RuleCreate, RuleCreateResponse, RuleRead, RuleUpdate
+from app.schemas.rule import (
+    RuleCreate,
+    RuleCreateResponse,
+    RuleImportRequest,
+    RuleImportResponse,
+    RuleRead,
+    RuleUpdate,
+)
 from app.services import rule_service
 from app.services.rule_service import DuplicateRuleError
 
@@ -43,6 +51,41 @@ async def create_rule(
     response = RuleCreateResponse.model_validate(rule)
     response.applied_count = applied_count
     return response
+
+
+@router.get("/export")
+async def export_rules(
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    payload = await rule_service.export_rules(session, ctx.workspace.id)
+    return JSONResponse(
+        content=payload.model_dump(mode="json"),
+        headers={
+            "Content-Disposition": 'attachment; filename="securo-categorization-rules.json"',
+        },
+    )
+
+
+@router.post("/import", response_model=RuleImportResponse)
+async def import_rules(
+    data: RuleImportRequest,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        return await rule_service.import_rules(
+            session,
+            ctx.workspace.id,
+            ctx.user_id,
+            data.payload,
+            overwrite=data.overwrite,
+        )
+    except DuplicateRuleError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Import would overwrite existing rules. Confirm overwrite to continue.",
+        )
 
 
 @router.patch("/{rule_id}", response_model=RuleRead)

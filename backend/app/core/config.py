@@ -1,5 +1,7 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
+from urllib.parse import urlparse
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -35,6 +37,25 @@ class Settings(BaseSettings):
 
     # Frontend
     frontend_url: str = "http://localhost:5173"
+
+    # WebAuthn / passkeys
+    webauthn_rp_name: str = "Securo"
+    # Empty means derive from frontend_url host, e.g. localhost for http://localhost:5173.
+    webauthn_rp_id: str = ""
+    # Empty means use frontend_url. Must match the browser origin exactly.
+    webauthn_origin: str = ""
+    webauthn_challenge_ttl_seconds: int = 300
+
+    @property
+    def resolved_webauthn_origin(self) -> str:
+        return self.webauthn_origin or self.frontend_url
+
+    @property
+    def resolved_webauthn_rp_id(self) -> str:
+        if self.webauthn_rp_id:
+            return self.webauthn_rp_id
+        parsed = urlparse(self.frontend_url)
+        return parsed.hostname or "localhost"
 
     # Defaults
     default_currency: str = "USD"  # fallback currency when user preference is unavailable

@@ -585,6 +585,31 @@ async def test_income_expenses_owner_split_offset(session, test_user, test_works
     assert dinner.value == pytest.approx(600.0)
 
 
+async def test_income_expenses_trend_points_have_per_period_composition(session, test_user, test_workspace):
+    """Each income/expenses trend DataPoint carries per-period composition items."""
+    cat_wages = await _make_category(session, test_user.id, "Wages", color="#0E0")
+    cat_groceries = await _make_category(session, test_user.id, "Groceries", color="#E00")
+    acct = await _make_account(session, test_user.id, "IE Trend Acct")
+    today = date.today()
+
+    await _add_txn(session, test_user.id, acct.id, 4000, "credit", today, category_id=cat_wages.id)
+    await _add_txn(session, test_user.id, acct.id, 900, "debit", today, category_id=cat_groceries.id)
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, months=2, interval="monthly"
+    )
+
+    # The last trend point always covers the current period where transactions landed
+    current_dp = report.trend[-1]
+    assert len(current_dp.composition) > 0
+    groups = {c.group for c in current_dp.composition}
+    assert "income" in groups
+    assert "expenses" in groups
+    labels = {c.label for c in current_dp.composition}
+    assert "Wages" in labels
+    assert "Groceries" in labels
+
+
 async def test_net_worth_composition_positive_checking_in_accounts_group(session, test_user, test_workspace):
     """A manual checking account with positive balance lands in the accounts group."""
     acct = await _make_account(session, test_user.id, "NW Pos Checking")

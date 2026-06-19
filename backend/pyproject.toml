@@ -22,6 +22,7 @@ dependencies = [
     "aiofiles>=24.0",
     "redis[hiredis]>=5.0.0",
     "pyotp>=2.9.0",
+    "webauthn>=2.8.0",
     "yfinance>=1.3.0",
     "pgvector>=0.3.0",
     "pypdf>=5.0.0",
