@@ -116,6 +116,18 @@ export default function SetupPage() {
                   </button>
                   <button
                     type="button"
+                    onClick={() => i18n.changeLanguage('uk')}
+                    className={cn(
+                      'px-2.5 py-1 rounded text-[11px] font-semibold transition-colors',
+                      currentLang === 'uk'
+                        ? 'bg-primary/15 text-primary'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    UK
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => i18n.changeLanguage('en')}
                     className={cn(
                       'px-2.5 py-1 rounded text-[11px] font-semibold transition-colors',
