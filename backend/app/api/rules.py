@@ -15,6 +15,7 @@ from app.schemas.rule import (
     RuleCreateResponse,
     RuleImportRequest,
     RuleImportResponse,
+    RuleMutationResponse,
     RuleRead,
     RuleUpdate,
 )
@@ -88,7 +89,7 @@ async def import_rules(
         )
 
 
-@router.patch("/{rule_id}", response_model=RuleRead)
+@router.patch("/{rule_id}", response_model=RuleMutationResponse)
 async def update_rule(
     rule_id: uuid.UUID,
     data: RuleUpdate,
@@ -104,7 +105,10 @@ async def update_rule(
         )
     if not rule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
-    return rule
+    applied_count = await rule_service.apply_single_rule(session, ctx.workspace.id, rule)
+    response = RuleMutationResponse.model_validate(rule)
+    response.applied_count = applied_count
+    return response
 
 
 @router.delete("/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)

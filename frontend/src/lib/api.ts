@@ -794,7 +794,7 @@ export const rules = {
     const { data } = await api.post('/rules', rule)
     return data
   },
-  update: async (id: string, rule: Partial<Rule>): Promise<Rule> => {
+  update: async (id: string, rule: Partial<Rule>): Promise<Rule & { applied_count: number }> => {
     const { data } = await api.patch(`/rules/${id}`, rule)
     return data
   },

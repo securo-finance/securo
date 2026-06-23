@@ -47,10 +47,14 @@ class RuleRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class RuleCreateResponse(RuleRead):
-    """A created rule plus how many existing transactions it just affected."""
+class RuleMutationResponse(RuleRead):
+    """A changed rule plus how many existing transactions it just affected."""
 
     applied_count: int = 0
+
+
+class RuleCreateResponse(RuleMutationResponse):
+    """A created rule response kept for API compatibility."""
 
 
 class RuleExportItem(BaseModel):

@@ -190,12 +190,18 @@ export default function RulesPage() {
 
   const updateMutation = useMutation({
     mutationFn: ({ id, ...data }: Partial<Rule> & { id: string }) => rulesApi.update(id, data),
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['rules'] })
       queryClient.invalidateQueries({ queryKey: ['rule-packs'] })
       setDialogOpen(false)
       setEditing(null)
-      toast.success(t('rules.updated'))
+      const applied = result.applied_count ?? 0
+      if (applied > 0) {
+        invalidateFinancialQueries(queryClient)
+        toast.success(t('rules.updatedAndApplied', { count: applied }))
+      } else {
+        toast.success(t('rules.updated'))
+      }
     },
     onError: (error: unknown) => {
       const err = error as { response?: { status?: number } }
@@ -579,4 +585,3 @@ function RulePacksDialog({ open, onClose }: { open: boolean; onClose: () => void
     </Dialog>
   )
 }
-
