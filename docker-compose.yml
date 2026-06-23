@@ -8,6 +8,7 @@ x-podman:
   in_pod: false
 
 x-backend-env: &backend-env
+  TZ: ${TZ:-UTC}
   DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/securo
   SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-production}
   DEBUG: ${DEBUG:-true}
