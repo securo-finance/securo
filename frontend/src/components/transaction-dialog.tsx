@@ -1154,6 +1154,10 @@ function AddTransactionToRuleDialog({
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
+    // This dialog renders inside the transaction's <form>; without stopping
+    // propagation the submit event bubbles up the React tree (portals preserve
+    // it) and also triggers the parent transaction save.
+    event.stopPropagation()
     if (!selectedRule || !matchText.trim()) return
     onSubmit({
       rule: selectedRule,
