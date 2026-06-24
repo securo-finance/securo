@@ -6,8 +6,9 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
+from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
 from app.services.category_service import create_default_categories
-from app.services.rule_service import create_default_rules
+from app.services.rule_service import create_default_rules, create_rule
 
 
 
@@ -141,6 +142,45 @@ async def test_update_rule(client: AsyncClient, auth_headers, test_rules):
     data = response.json()
     assert data["name"] == "Updated Name"
     assert "applied_count" in data
+
+
+@pytest.mark.asyncio
+async def test_update_rule_name_does_not_apply_to_existing_transactions(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace,
+    test_transactions,
+    test_categories,
+):
+    cat_food = str(test_categories[0].id)
+    rule = await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Netflix direct",
+            conditions_op="and",
+            conditions=[RuleCondition(field="description", op="contains", value="NETFLIX")],
+            actions=[RuleAction(op="set_category", value=cat_food)],
+            priority=5,
+            is_active=True,
+        ),
+    )
+
+    response = await client.patch(
+        f"/api/rules/{rule.id}",
+        json={"name": "Netflix renamed"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["applied_count"] == 0
+
+    items = (await client.get("/api/transactions", headers=auth_headers)).json()["items"]
+    netflix = {t["description"]: t for t in items}.get("NETFLIX")
+    assert netflix is not None
+    assert netflix["category_id"] is None
 
 
 @pytest.mark.asyncio
