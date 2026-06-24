@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
 import { currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
+import { normalizeRuleMatchValue } from '@/lib/rule-match-utils'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -69,10 +70,6 @@ export function extractApiError(error: unknown): string {
 
 function isImageType(contentType: string): boolean {
   return contentType.startsWith('image/')
-}
-
-function normalizeRuleValue(value: string | number): string {
-  return String(value ?? '').trim().toUpperCase()
 }
 
 function getRuleCategoryId(rule: Rule): string | null {
@@ -450,7 +447,7 @@ function TransactionForm({
       const duplicate = rule.conditions.some(existing =>
         existing.field === condition.field &&
         existing.op === condition.op &&
-        normalizeRuleValue(existing.value) === normalizeRuleValue(condition.value)
+        normalizeRuleMatchValue(existing.value) === normalizeRuleMatchValue(condition.value)
       )
       if (duplicate) {
         throw new Error('duplicate-condition')
