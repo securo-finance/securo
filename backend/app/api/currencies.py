@@ -31,6 +31,7 @@ CURRENCY_META = {
     "CRC": {"symbol": "₡", "name": "Costa Rican Colón", "flag": "\U0001F1E8\U0001F1F7"},
     "IDR": {"symbol": "Rp", "name": "Indonesian Rupiah", "flag": "\U0001F1EE\U0001F1E9"},
     "DOP": {"symbol": "RD$", "name": "Peso Dominicano", "flag": "\U0001F1E9\U0001F1F4"},
+    "RUB": {"symbol": "₽", "name": "Russian Ruble", "flag": "\U0001F1F7\U0001F1FA"},
 }
 
 
