@@ -1106,7 +1106,7 @@ function TransactionForm({
         <AddTransactionToRuleDialog
           open={true}
           onOpenChange={setAddToRuleOpen}
-          transactionDescription={description}
+          transactionDescription={transaction.description}
           rules={extendableRules}
           categories={categories}
           loadingRules={rulesLoading}
