@@ -19,6 +19,12 @@ x-backend-env: &backend-env
   ENABLE_BANKING_PRIVATE_KEY_FILE: ${ENABLE_BANKING_PRIVATE_KEY_FILE:-/app/secrets/enable_banking_private.pem}
   ENABLE_BANKING_API_URL: ${ENABLE_BANKING_API_URL:-https://api.enablebanking.com}
   ENABLE_BANKING_OAUTH_REDIRECT_URI: ${ENABLE_BANKING_OAUTH_REDIRECT_URI:-http://localhost:${FRONTEND_PORT:-3000}/oauth/callback}
+
+  # Fintoc (Chilean banks)
+  FINTOC_SECRET_KEY: ${FINTOC_SECRET_KEY:-}
+  VITE_FINTOC_PUBLIC_KEY: ${VITE_FINTOC_PUBLIC_KEY:-}
+  VITE_FINTOC_WEBHOOK_URL: ${VITE_FINTOC_WEBHOOK_URL:-}
+
   SIMPLEFIN_ENABLED: ${SIMPLEFIN_ENABLED:-false}
   SIMPLEFIN_API_URL: ${SIMPLEFIN_API_URL:-https://beta-bridge.simplefin.org}
   OIDC_ENABLED: ${OIDC_ENABLED:-false}
@@ -124,6 +130,8 @@ services:
       BACKEND_URL: http://backend:8000
       FRONTEND_URL: http://localhost:3000
       APP_VERSION_ROOT: /workspace
+      VITE_FINTOC_PUBLIC_KEY: ${VITE_FINTOC_PUBLIC_KEY:-}
+      VITE_FINTOC_WEBHOOK_URL: ${VITE_FINTOC_WEBHOOK_URL:-}
     depends_on:
       - backend
     volumes:

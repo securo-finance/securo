@@ -218,7 +218,7 @@ async def test_reconnect_token_no_item_id(
         f"/api/connections/{conn.id}/reconnect-token", headers=auth_headers,
     )
     assert resp.status_code == 400
-    assert "item_id" in resp.json()["detail"]
+    assert "reconnect identifier" in resp.json()["detail"]
 
 
 @pytest.mark.asyncio

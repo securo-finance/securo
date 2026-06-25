@@ -66,11 +66,10 @@ export function ConnectorSelectDialog({ open, onClose, onSelect }: ConnectorSele
                   onSelect(p)
                   onClose()
                 }}
-                className={`w-full flex items-start gap-3 rounded-lg border p-4 text-left transition-colors ${
-                  p.configured
-                    ? 'border-border hover:border-primary hover:bg-muted/50 cursor-pointer'
-                    : 'border-border/50 opacity-60 cursor-not-allowed'
-                }`}
+                className={`w-full flex items-start gap-3 rounded-lg border p-4 text-left transition-colors ${p.configured
+                  ? 'border-border hover:border-primary hover:bg-muted/50 cursor-pointer'
+                  : 'border-border/50 opacity-60 cursor-not-allowed'
+                  }`}
               >
                 <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center shrink-0 mt-0.5">
                   <Building2 size={16} className="text-muted-foreground" />

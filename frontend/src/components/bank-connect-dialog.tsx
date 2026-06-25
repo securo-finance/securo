@@ -5,6 +5,7 @@ import { PluggyConnect } from 'react-pluggy-connect'
 import { connections } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
+import { FintocConnectWidget } from '@/hooks/use-fintoc-widget'
 
 interface BankConnectDialogProps {
   open: boolean
@@ -72,7 +73,20 @@ export function BankConnectDialog({
     onClose()
   }
 
-  if (!open || !connectToken) return null
+  if (!open) return null
+
+  if (provider === 'fintoc') {
+    if (!connectToken) return null
+    return (
+      <FintocConnectWidget
+        widgetToken={connectToken}
+        onSuccess={(exchangeToken) => handleSuccess({ item: { id: exchangeToken } })}
+        onExit={handleClose}
+      />
+    )
+  }
+
+  if (!connectToken) return null
 
   return (
     <PluggyConnect

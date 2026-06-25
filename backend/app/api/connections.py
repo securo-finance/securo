@@ -46,6 +46,8 @@ async def create_connect_token(
         return ConnectTokenResponse(**token_data)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except SessionExpiredError as e:
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail=str(e))
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -193,11 +195,12 @@ async def get_reconnect_token(
     if not connection:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
 
-    item_id = connection.credentials.get("item_id") if connection.credentials else None
+    creds = connection.credentials or {}
+    item_id = creds.get("item_id") or creds.get("link_token")
     if not item_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Connection has no item_id for reconnection",
+            detail="Connection has no reconnect identifier",
         )
 
     try:
@@ -236,6 +239,36 @@ async def delete_connection(
     deleted = await connection_service.delete_connection(session, connection_id, ctx.workspace.id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
+
+
+@router.get("/{connection_id}/debug/accounts")
+async def debug_fintoc_accounts(
+    connection_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Return raw account list from the provider for debugging purposes."""
+    import httpx
+    from app.core.config import get_settings
+
+    connection = await connection_service.get_connection(session, connection_id, ctx.workspace.id)
+    if not connection:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")
+
+    creds = connection.credentials or {}
+    link_token = creds.get("link_token") or creds.get("link_token_enc")
+    if not link_token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No link_token found in credentials")
+
+    async with httpx.AsyncClient(
+        headers={"Authorization": get_settings().fintoc_secret_key}, timeout=30
+    ) as client:
+        response = await client.get(
+            "https://api.fintoc.com/v1/accounts",
+            params={"link_token": link_token},
+        )
+
+    return {"status_code": response.status_code, "accounts": response.json()}
 
 
 @router.post("/transfers/detect")

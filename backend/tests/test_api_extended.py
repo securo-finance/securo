@@ -458,7 +458,7 @@ async def test_reconnect_token_no_item_id(
         headers=auth_headers,
     )
     assert response.status_code == 400
-    assert "item_id" in response.json()["detail"].lower()
+    assert "reconnect identifier" in response.json()["detail"].lower()
 
 
 # ---------------------------------------------------------------------------
