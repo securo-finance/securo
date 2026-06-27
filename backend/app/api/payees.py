@@ -20,10 +20,15 @@ router = APIRouter(prefix="/api/payees", tags=["payees"])
 
 @router.get("", response_model=list[PayeeRead])
 async def list_payees(
+    q: Optional[str] = Query(None),
+    type: Optional[str] = Query(None),
+    is_favorite: Optional[bool] = Query(None),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    return await payee_service.get_payees(session, ctx.workspace.id)
+    return await payee_service.get_payees(
+        session, ctx.workspace.id, q=q, type=type, is_favorite=is_favorite
+    )
 
 
 @router.get("/{payee_id}", response_model=PayeeRead)

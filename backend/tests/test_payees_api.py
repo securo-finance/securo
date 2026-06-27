@@ -78,6 +78,51 @@ async def test_list_payees(client: AsyncClient, auth_headers):
     assert names == {"Alpha", "Beta"}
 
 
+@pytest.mark.asyncio
+async def test_list_payees_filters(client: AsyncClient, auth_headers):
+    mcd = await _create_payee(client, auth_headers, "McDonalds", type="merchant", notes="Burgers")
+    # Toggle favorite via PATCH since PayeeCreate doesn't take is_favorite
+    patch_resp = await client.patch(f"/api/payees/{mcd['id']}", headers=auth_headers, json={"is_favorite": True})
+    assert patch_resp.status_code == 200
+
+    await _create_payee(client, auth_headers, "John Doe", type="person", notes="Friend")
+    await _create_payee(client, auth_headers, "Acme Corp", type="company", notes="Supplies")
+
+    # Test search query on name
+    resp = await client.get("/api/payees?q=Don", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["name"] == "McDonalds"
+
+    # Test search query on notes
+    resp = await client.get("/api/payees?q=Friend", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["name"] == "John Doe"
+
+    # Test type filter
+    resp = await client.get("/api/payees?type=person", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["name"] == "John Doe"
+
+    # Test favorites filter
+    resp = await client.get("/api/payees?is_favorite=true", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["name"] == "McDonalds"
+
+    # Test search + favorites filter
+    resp = await client.get("/api/payees?q=corp&is_favorite=true", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 0
+
+
 # ---------------------------------------------------------------------------
 # Create
 # ---------------------------------------------------------------------------

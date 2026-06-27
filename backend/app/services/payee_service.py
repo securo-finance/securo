@@ -12,7 +12,13 @@ from app.models.category import Category
 from app.schemas.payee import PayeeCreate, PayeeUpdate
 
 
-async def get_payees(session: AsyncSession, workspace_id: uuid.UUID) -> list[Payee]:
+async def get_payees(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    q: Optional[str] = None,
+    type: Optional[str] = None,
+    is_favorite: Optional[bool] = None,
+) -> list[Payee]:
     """List all payees in a workspace with transaction counts."""
     count_subq = (
         select(
@@ -24,12 +30,25 @@ async def get_payees(session: AsyncSession, workspace_id: uuid.UUID) -> list[Pay
         .subquery()
     )
     tx_count = func.coalesce(count_subq.c.tx_count, 0)
-    result = await session.execute(
+    stmt = (
         select(Payee, tx_count.label("transaction_count"))
         .outerjoin(count_subq, Payee.id == count_subq.c.payee_id)
         .where(Payee.workspace_id == workspace_id)
-        .order_by(Payee.name)
     )
+
+    if q:
+        from sqlalchemy import or_
+        pattern = f"%{q.strip()}%"
+        stmt = stmt.where(or_(Payee.name.ilike(pattern), Payee.notes.ilike(pattern)))
+
+    if type:
+        stmt = stmt.where(Payee.type == type)
+
+    if is_favorite is not None:
+        stmt = stmt.where(Payee.is_favorite == is_favorite)
+
+    stmt = stmt.order_by(Payee.name)
+    result = await session.execute(stmt)
     payees = []
     for row in result.all():
         payee = row[0]
