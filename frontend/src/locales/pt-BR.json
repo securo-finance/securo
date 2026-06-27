@@ -1155,7 +1155,10 @@
     "merged": "Beneficiários mesclados ({{count}} transações reatribuídas)",
     "typeMerchant": "Comerciante",
     "typePerson": "Pessoa",
-    "typeCompany": "Empresa"
+    "typeCompany": "Empresa",
+    "allTypes": "Todos os tipos",
+    "filterByType": "Filtrar por tipo",
+    "favoritesOnly": "Apenas favoritos"
   },
   "common": {
     "save": "Salvar",

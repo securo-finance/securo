@@ -1155,7 +1155,10 @@
     "merged": "Beneficiari uniti ({{count}} transazioni riassegnate)",
     "typeMerchant": "Esercente",
     "typePerson": "Persona",
-    "typeCompany": "Azienda"
+    "typeCompany": "Azienda",
+    "allTypes": "Tutti i tipi",
+    "filterByType": "Filtra per tipo",
+    "favoritesOnly": "Solo preferiti"
   },
   "common": {
     "save": "Salva",

@@ -1155,7 +1155,10 @@
     "merged": "Payees merged ({{count}} transactions reassigned)",
     "typeMerchant": "Merchant",
     "typePerson": "Person",
-    "typeCompany": "Company"
+    "typeCompany": "Company",
+    "allTypes": "All Types",
+    "filterByType": "Filter by Type",
+    "favoritesOnly": "Favorites Only"
   },
   "common": {
     "save": "Save",

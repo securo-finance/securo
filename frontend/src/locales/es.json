@@ -1155,7 +1155,10 @@
     "merged": "Beneficiarios fusionados ({{count}} transacciones reasignadas)",
     "typeMerchant": "Comerciante",
     "typePerson": "Persona",
-    "typeCompany": "Empresa"
+    "typeCompany": "Empresa",
+    "allTypes": "Todos los tipos",
+    "filterByType": "Filtrar por tipo",
+    "favoritesOnly": "Solo favoritos"
   },
   "common": {
     "save": "Guardar",

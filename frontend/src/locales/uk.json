@@ -1155,7 +1155,10 @@
     "merged": "Отримувачів об'єднано ({{count}} транзакцій переназначено)",
     "typeMerchant": "Продавець",
     "typePerson": "Фізособа",
-    "typeCompany": "Компанія"
+    "typeCompany": "Компанія",
+    "allTypes": "Всі типи",
+    "filterByType": "Фільтрувати за типом",
+    "favoritesOnly": "Тільки обрані"
   },
   "common": {
     "save": "Зберегти",

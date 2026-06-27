@@ -1155,7 +1155,10 @@
     "merged": "Получатели объединены ({{count}} транзакций переназначено)",
     "typeMerchant": "Продавец",
     "typePerson": "Физлицо",
-    "typeCompany": "Компания"
+    "typeCompany": "Компания",
+    "allTypes": "Все типы",
+    "filterByType": "Фильтровать по типу",
+    "favoritesOnly": "Только избранные"
   },
   "common": {
     "save": "Сохранить",

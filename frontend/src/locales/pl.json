@@ -1230,7 +1230,10 @@
     "merged_other": "Scalono odbiorców (przypisano ponownie {{count}} transakcji)",
     "typeMerchant": "Sprzedawca",
     "typePerson": "Osoba",
-    "typeCompany": "Firma"
+    "typeCompany": "Firma",
+    "allTypes": "Wszystkie typy",
+    "filterByType": "Filtruj według typu",
+    "favoritesOnly": "Tylko ulubione"
   },
   "common": {
     "save": "Zapisz",
