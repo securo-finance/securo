@@ -18,7 +18,7 @@ import { TransferDialog } from '@/components/transfer-dialog'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { PeriodSelector } from '@/components/period-selector'
 import {
-  resolvePeriod,
+  resolvePeriodValue,
   weekStartFromLocale,
   type PeriodValue,
 } from '@/lib/period'
@@ -282,13 +282,17 @@ export default function AccountDetailPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [transferDialogOpen, setTransferDialogOpen] = useState(false)
-  const [filterFrom, setFilterFrom] = useState(defaultFrom)
-  const [filterTo, setFilterTo] = useState(defaultTo)
-  const [showPrimary, setShowPrimary] = useState(false)
-  // Non-CC period selector state — drives filterFrom/filterTo via resolvePeriod
-  // so the rest of the page can stay unchanged. Persists to localStorage so
-  // reloads/new tabs land on the same view per account.
-  const [nonCcPeriod, setNonCcPeriod] = useState<PeriodValue>(() => {
+  // Single source of truth for filter range:
+// - CC: ccFilterFrom/ccFilterTo are direct state, set by cycle math below.
+// - non-CC: `period` is state; ccFilterFrom/ccFilterTo are unused (kept as
+//   placeholders so the CC setters keep working — but the `filterFrom`/
+//   `filterTo` reads below pick `period` for non-CC).
+const [ccFilterFrom, setCcFilterFrom] = useState(defaultFrom)
+const [ccFilterTo, setCcFilterTo] = useState(defaultTo)
+const [showPrimary, setShowPrimary] = useState(false)
+  // Non-CC period selector state. Persists to localStorage so reloads/new
+  // tabs land on the same view per account.
+  const [period, setPeriod] = useState<PeriodValue>(() => {
     if (typeof window === 'undefined' || !id) {
       return { mode: 'monthly', anchor: format(new Date(), 'yyyy-MM-dd') }
     }
@@ -296,7 +300,12 @@ export default function AccountDetailPage() {
       const stored = window.localStorage.getItem(`period-selector-${id}`)
       if (stored) {
         const parsed = JSON.parse(stored) as PeriodValue
-        if (parsed?.mode && parsed?.anchor) return parsed
+        if (parsed?.mode === 'custom' && parsed.from && parsed.to) return parsed
+        // After the early return above, parsed is narrowed to the non-custom
+        // union member by TS — but only if the cast was lossless. The
+        // explicit assertion here keeps the narrowing stable.
+        const anchorCandidate = parsed as Extract<PeriodValue, { anchor: string }>
+        if (anchorCandidate?.mode && anchorCandidate.anchor) return anchorCandidate
       }
     } catch {
       // ignore — fall through to default
@@ -304,13 +313,9 @@ export default function AccountDetailPage() {
     return { mode: 'monthly', anchor: format(new Date(), 'yyyy-MM-dd') }
   })
 
-  // For non-CC accounts, keep filterFrom/filterTo in sync with the period
-  // selector on mount and whenever the period changes. We skip this when the
-  // account is a credit card — CC uses its own cycle math to drive the range.
-  // (declared after isCreditCard to avoid TDZ on first render)
+  // filterTouched tracks user-driven changes vs. default-cycle rewrites so the
+  // CC default-cycle useEffect below can avoid overriding the user's pick.
   const filterTouched = useRef(false)
-  const handleFilterFromChange = (v: string) => { filterTouched.current = true; setFilterFrom(v) }
-  const handleFilterToChange = (v: string) => { filterTouched.current = true; setFilterTo(v) }
   const shiftCycleBy = (direction: -1 | 1) => {
     filterTouched.current = true
     // Bill-aware nav: step through the bills list when we have it, so prev/next
@@ -324,8 +329,8 @@ export default function AccountDetailPage() {
         const next = billsAsc[newIdx]
         const prev = newIdx > 0 ? billsAsc[newIdx - 1] : null
         const { start, end } = rangeForBill(next, prev)
-        setFilterFrom(start)
-        setFilterTo(end)
+        setCcFilterFrom(start)
+        setCcFilterTo(end)
         return
       }
       // Stepping forward past the newest bill = the in-progress cycle.
@@ -335,22 +340,22 @@ export default function AccountDetailPage() {
       // path so already-billed txs don't double-count against the bar.
       if (newIdx === billsAsc.length && account?.statement_close_day) {
         const cm = creditCardCycleBoundaries(account.statement_close_day, new Date())
-        setFilterFrom(cm.start)
-        setFilterTo(cm.end)
+        setCcFilterFrom(cm.start)
+        setCcFilterTo(cm.end)
         return
       }
     }
     if (account?.type === 'credit_card' && account?.statement_close_day) {
       const ref = direction === -1
-        ? new Date(parseISO(filterFrom + 'T00:00:00').getTime() - 86400000)
-        : new Date(parseISO(filterTo + 'T00:00:00').getTime() + 86400000)
+        ? new Date(parseISO(ccFilterFrom + 'T00:00:00').getTime() - 86400000)
+        : new Date(parseISO(ccFilterTo + 'T00:00:00').getTime() + 86400000)
       const { start, end } = creditCardCycleBoundaries(account.statement_close_day, ref)
-      setFilterFrom(start)
-      setFilterTo(end)
+      setCcFilterFrom(start)
+      setCcFilterTo(end)
       return
     }
-    setFilterFrom(format(addMonths(parseISO(filterFrom + 'T00:00:00'), direction), 'yyyy-MM-dd'))
-    setFilterTo(format(addMonths(parseISO(filterTo + 'T00:00:00'), direction), 'yyyy-MM-dd'))
+    setCcFilterFrom(format(addMonths(parseISO(ccFilterFrom + 'T00:00:00'), direction), 'yyyy-MM-dd'))
+    setCcFilterTo(format(addMonths(parseISO(ccFilterTo + 'T00:00:00'), direction), 'yyyy-MM-dd'))
   }
 
   const { data: account, isLoading: accountLoading } = useQuery({
@@ -358,6 +363,20 @@ export default function AccountDetailPage() {
     queryFn: () => accounts.get(id!),
     enabled: !!id,
   })
+
+  // Derived filter range — non-CC reads from `period`, CC reads from
+  // ccFilterFrom/ccFilterTo. Defined early (before downstream queries
+  // reference filterFrom/filterTo) so the JS execution order doesn't TDZ.
+  const isCreditCard = account?.type === 'credit_card'
+  const filterRange = useMemo(() => {
+    if (isCreditCard) {
+      return { start: ccFilterFrom, end: ccFilterTo }
+    }
+    const weekStart = weekStartFromLocale(i18n.resolvedLanguage ?? i18n.language ?? 'en')
+    return resolvePeriodValue(period, weekStart)
+  }, [isCreditCard, ccFilterFrom, ccFilterTo, period, i18n.resolvedLanguage, i18n.language])
+  const filterFrom = filterRange.start
+  const filterTo = filterRange.end
 
   // Bills (faturas) from the provider's bills feed — issue #92. Only fetched
   // for CC accounts; non-CC and CC-without-bills both return [] so the UI
@@ -378,8 +397,8 @@ export default function AccountDetailPage() {
   // a simple equality check.
   const activeBill = useMemo(() => {
     if (!billsAsc.length) return null
-    return billsAsc.find(b => b.due_date === filterTo) ?? null
-  }, [billsAsc, filterTo])
+    return billsAsc.find(b => b.due_date === ccFilterTo) ?? null
+  }, [billsAsc, ccFilterTo])
   // True when the user is on the trailing in-progress cycle (CC has bills,
   // but the current view doesn't match any of them). Backend uses this to
   // exclude already-billed txs from the cycle window so they don't double-
@@ -402,8 +421,8 @@ export default function AccountDetailPage() {
           const idx = billsAsc.indexOf(upcoming)
           const prev = idx > 0 ? billsAsc[idx - 1] : null
           const { start, end } = rangeForBill(upcoming, prev)
-          setFilterFrom(start)
-          setFilterTo(end)
+          setCcFilterFrom(start)
+          setCcFilterTo(end)
           return
         }
         // Today is past the newest bill — use cycle-math range
@@ -412,8 +431,8 @@ export default function AccountDetailPage() {
         // filter in the cycle-math fallback keeps already-billed txs out.
         if (account.statement_close_day) {
           const { start, end } = creditCardCycleBoundaries(account.statement_close_day, new Date())
-          setFilterFrom(start)
-          setFilterTo(end)
+          setCcFilterFrom(start)
+          setCcFilterTo(end)
           return
         }
       }
@@ -422,8 +441,8 @@ export default function AccountDetailPage() {
         account.payment_due_day,
         new Date(),
       )
-      setFilterFrom(start)
-      setFilterTo(end)
+      setCcFilterFrom(start)
+      setCcFilterTo(end)
     }
   }, [account, billsAsc])
 
@@ -439,12 +458,12 @@ export default function AccountDetailPage() {
     // For the in-progress cycle (no bill match), unbilled_only excludes
     // txs already linked to a closed bill (anti-double-count).
     queryKey: activeBill
-      ? ['accounts', id, 'summary', { bill_id: activeBill.id, from: filterFrom, to: filterTo }]
-      : ['accounts', id, 'summary', filterFrom, filterTo, { unbilled_only: isInProgressCycle }],
+      ? ['accounts', id, 'summary', { bill_id: activeBill.id, from: ccFilterFrom, to: ccFilterTo }]
+      : ['accounts', id, 'summary', ccFilterFrom, ccFilterTo, { unbilled_only: isInProgressCycle }],
     queryFn: () => accounts.summary(
       id!,
-      filterFrom || undefined,
-      filterTo || undefined,
+      ccFilterFrom || undefined,
+      ccFilterTo || undefined,
       activeBill?.id,
       isInProgressCycle || undefined,
     ),
@@ -455,9 +474,9 @@ export default function AccountDetailPage() {
   // Only fires for credit cards with a statement_close_day set.
   const previousCycle = useMemo(() => {
     if (!account || account.type !== 'credit_card' || !account.statement_close_day) return null
-    const dayBeforeStart = new Date(parseISO(filterFrom + 'T00:00:00').getTime() - 86400000)
+    const dayBeforeStart = new Date(parseISO(ccFilterFrom + 'T00:00:00').getTime() - 86400000)
     return creditCardCycleBoundaries(account.statement_close_day, dayBeforeStart)
-  }, [account, filterFrom])
+  }, [account, ccFilterFrom])
 
   const { data: previousCycleSummary } = useQuery({
     queryKey: ['accounts', id, 'summary', previousCycle?.start, previousCycle?.end],
@@ -644,22 +663,10 @@ export default function AccountDetailPage() {
   })
 
   // Whether to use primary currency amounts (for foreign-currency accounts with toggle, or domestic accounts with foreign txs)
-  const isCreditCard = account?.type === 'credit_card'
   const isForeignCurrency = account ? account.currency !== userCurrency : false
+
   const usePrimary = !isForeignCurrency || showPrimary
   const displayCurrency = (isForeignCurrency && !showPrimary) ? (account?.currency || userCurrency) : userCurrency
-
-  // Non-CC: keep filterFrom/filterTo in sync with the period selector. CC keeps
-  // its own cycle-driven logic untouched.
-  useEffect(() => {
-    if (isCreditCard) return
-    const weekStart = weekStartFromLocale(i18n.resolvedLanguage ?? i18n.language ?? 'en')
-    const range = resolvePeriod(nonCcPeriod.mode, nonCcPeriod.anchor, weekStart)
-    setFilterFrom(range.start)
-    setFilterTo(range.end)
-    // We intentionally don't set filterTouched here — initial sync isn't a
-    // user-initiated filter change.
-  }, [isCreditCard, nonCcPeriod.mode, nonCcPeriod.anchor, i18n.resolvedLanguage, i18n.language])
 
   // Chart data:
   // - Non-CC: daily running balance from /balance-history
@@ -882,16 +889,22 @@ export default function AccountDetailPage() {
                   <div className="space-y-1.5">
                     <Label className="text-xs">{t('transactions.from')}</Label>
                     <DatePickerInput
-                      value={filterFrom}
-                      onChange={handleFilterFromChange}
+                      value={ccFilterFrom}
+                      onChange={(v) => {
+                        filterTouched.current = true
+                        setCcFilterFrom(v)
+                      }}
                       placeholder={t('transactions.from')}
                     />
                   </div>
                   <div className="space-y-1.5">
                     <Label className="text-xs">{t('transactions.to')}</Label>
                     <DatePickerInput
-                      value={filterTo}
-                      onChange={handleFilterToChange}
+                      value={ccFilterTo}
+                      onChange={(v) => {
+                        filterTouched.current = true
+                        setCcFilterTo(v)
+                      }}
                       placeholder={t('transactions.to')}
                     />
                   </div>
@@ -908,40 +921,31 @@ export default function AccountDetailPage() {
             </div>
           ) : (
             <PeriodSelector
-              value={nonCcPeriod}
+              value={period}
               onChange={(next) => {
-                const range = resolvePeriod(
-                  next.mode,
-                  next.anchor,
-                  weekStartFromLocale(i18n.resolvedLanguage ?? i18n.language ?? 'en'),
-                )
                 filterTouched.current = true
-                setFilterFrom(range.start)
-                setFilterTo(range.end)
-                setNonCcPeriod(next)
+                setPeriod(next)
               }}
               storageKey={`period-selector-${id ?? 'default'}`}
             />
           )}
-          {hasFilters && (
+          {/* Legacy "Limpar filtros" button — only for CC where the new
+              period selector doesn't apply. Non-CC has the 📅 "hoje" button
+              which serves the same purpose. */}
+          {isCreditCard && hasFilters && (
             <Button
               variant="ghost"
               size="sm"
               className="text-muted-foreground hover:text-foreground"
               onClick={() => {
                 filterTouched.current = false
-                if (account?.type === 'credit_card') {
-                  const { start, end } = defaultCycleForCreditCard(
-                    account.statement_close_day,
-                    account.payment_due_day,
-                    new Date(),
-                  )
-                  setFilterFrom(start)
-                  setFilterTo(end)
-                } else {
-                  setFilterFrom(defaultFrom())
-                  setFilterTo(defaultTo())
-                }
+                const { start, end } = defaultCycleForCreditCard(
+                  account.statement_close_day,
+                  account.payment_due_day,
+                  new Date(),
+                )
+                setCcFilterFrom(start)
+                setCcFilterTo(end)
               }}
             >
               <X className="h-3.5 w-3.5 mr-1" />
@@ -1018,8 +1022,8 @@ export default function AccountDetailPage() {
                     type="button"
                     onClick={() => {
                       filterTouched.current = true
-                      setFilterFrom(c.start)
-                      setFilterTo(c.end)
+                      setCcFilterFrom(c.start)
+                      setCcFilterTo(c.end)
                     }}
                     className={`group flex-1 min-w-[60px] flex flex-col items-center gap-1.5 px-1 py-2 rounded-lg transition-colors ${isCurrent ? 'bg-rose-50 dark:bg-rose-500/10' : 'hover:bg-muted/50'}`}
                   >

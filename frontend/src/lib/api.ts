@@ -387,7 +387,7 @@ export const accounts = {
   },
   summary: async (
     id: string,
-    opts: {
+    optsOrFrom?: string | {
       from?: string
       to?: string
       mode?: import('./period').PeriodMode
@@ -395,31 +395,43 @@ export const accounts = {
       weekStart?: number
       billId?: string
       unbilledOnly?: boolean
-    } = {},
+    },
+    to?: string,
+    billId?: string,
+    unbilledOnly?: boolean,
   ): Promise<AccountSummary> => {
-    const { from, to, mode, anchor, weekStart, billId, unbilledOnly } = opts
+    // Back-compat: callers may pass (id, from, to, billId, unbilledOnly) as
+    // positional args (legacy) or (id, opts) as a single options object (new).
+    const opts =
+      typeof optsOrFrom === 'string'
+        ? { from: optsOrFrom, to, billId, unbilledOnly }
+        : (optsOrFrom ?? {})
+    const { from, to: toVal, mode, anchor, weekStart, billId: bId, unbilledOnly: ub } = opts
     const { data } = await api.get(`/accounts/${id}/summary`, {
       params: {
-        from, to,
+        from, to: toVal,
         mode, anchor_date: anchor, week_start: weekStart,
-        bill_id: billId, unbilled_only: unbilledOnly || undefined,
+        bill_id: bId, unbilled_only: ub || undefined,
       },
     })
     return data
   },
   balanceHistory: async (
     id: string,
-    opts: {
+    optsOrFrom?: string | {
       from?: string
       to?: string
       mode?: import('./period').PeriodMode
       anchor?: string
       weekStart?: number
-    } = {},
+    },
+    to?: string,
   ): Promise<{ date: string; balance: number; balance_primary?: number }[]> => {
-    const { from, to, mode, anchor, weekStart } = opts
+    const opts =
+      typeof optsOrFrom === 'string' ? { from: optsOrFrom, to } : (optsOrFrom ?? {})
+    const { from, to: toVal, mode, anchor, weekStart } = opts
     const { data } = await api.get(`/accounts/${id}/balance-history`, {
-      params: { from, to, mode, anchor_date: anchor, week_start: weekStart },
+      params: { from, to: toVal, mode, anchor_date: anchor, week_start: weekStart },
     })
     return data
   },
