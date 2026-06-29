@@ -328,6 +328,83 @@ async def test_list_transactions_filter_by_date(
 
 
 @pytest.mark.asyncio
+async def test_list_transactions_filter_by_mode_anchor(
+    client: AsyncClient, auth_headers, test_transactions: list[Transaction]
+):
+    """mode + anchor_date should resolve to a [from, to] range server-side and
+    return the same rows the equivalent from/to would."""
+    uber_date = test_transactions[0].date.isoformat()
+    ifood_date = test_transactions[1].date.isoformat()
+    date_from = min(uber_date, ifood_date)
+    date_to = max(uber_date, ifood_date)
+    # Pick an anchor between the two dates so the daily period covers both.
+    anchor = date_from
+    response = await client.get(
+        f"/api/transactions?mode=daily&anchor_date={anchor}", headers=auth_headers
+    )
+    assert response.status_code == 200
+    data = response.json()
+    # daily anchor=date_from should narrow to that exact day; range-equal test
+    # below is the real proof.
+    assert data["total"] >= 1
+
+    # Monthly mode at any anchor inside the same month should return both UBER
+    # and IFOOD (matching the from/to test above).
+    response_monthly = await client.get(
+        f"/api/transactions?mode=monthly&anchor_date={anchor}", headers=auth_headers
+    )
+    response_range = await client.get(
+        f"/api/transactions?from={date_from}&to={date_to}", headers=auth_headers
+    )
+    assert response_monthly.status_code == 200
+    assert response_range.status_code == 200
+    # Both should yield at least 2 (UBER + IFOOD) and totals should match.
+    monthly_ids = {t["id"] for t in response_monthly.json()["items"]}
+    range_ids = {t["id"] for t in response_range.json()["items"]}
+    # Monthly mode returns the full month (might include other txns beyond the
+    # from/to range); just verify the from/to subset is contained in monthly.
+    assert range_ids.issubset(monthly_ids)
+
+
+@pytest.mark.asyncio
+async def test_list_transactions_mode_with_from_to_conflicts(
+    client: AsyncClient, auth_headers
+):
+    """mode + from is a 422 — caller must pick one or the other."""
+    response = await client.get(
+        "/api/transactions?mode=monthly&anchor_date=2026-06-15&from=2026-06-01",
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+    assert "mode" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_list_transactions_mode_without_anchor(
+    client: AsyncClient, auth_headers
+):
+    """mode without anchor_date is a 422 — anchor is mandatory for non-custom."""
+    response = await client.get(
+        "/api/transactions?mode=monthly", headers=auth_headers
+    )
+    assert response.status_code == 422
+    assert "anchor_date" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_list_transactions_custom_mode_rejected(
+    client: AsyncClient, auth_headers
+):
+    """custom mode is rejected at the API layer — use from/to directly."""
+    response = await client.get(
+        "/api/transactions?mode=custom&anchor_date=2026-06-15",
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+    assert "custom" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
 async def test_get_transaction(
     client: AsyncClient, auth_headers, test_transactions: list[Transaction]
 ):

@@ -18,6 +18,7 @@ from app.core.workspace_context import (
 from app.schemas.transaction import BulkAddToGroupRequest, BulkCategorizeRequest, BulkTagsRequest, CreateCounterpartRequest, LinkTransferRequest, TransactionCreate, TransactionRead, TransactionUpdate, TransferCreate, TransferRead
 from app.services import transaction_service
 from app.services.admin_service import get_credit_card_accounting_mode
+from app.services.period_service import resolve_period
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
@@ -75,6 +76,18 @@ async def list_transactions(
     payee_id: Optional[uuid.UUID] = Query(None),
     from_date: Optional[date] = Query(None, alias="from"),
     to_date: Optional[date] = Query(None, alias="to"),
+    mode: Optional[str] = Query(
+        None,
+        description="Period mode (daily/weekly/monthly/quarterly/half_yearly/yearly/custom). Mutually exclusive with from/to.",
+    ),
+    anchor_date: Optional[date] = Query(
+        None,
+        description="Anchor date inside the desired period. Required when mode is set.",
+    ),
+    week_start: int = Query(
+        0, ge=0, le=6,
+        description="0=Sun (PT-BR), 1=Mon (EN/ISO). Used only for weekly mode.",
+    ),
     bill_id: Optional[uuid.UUID] = Query(None, description="Filter by credit-card bill (issue #92); takes precedence over from/to"),
     group_id: Optional[uuid.UUID] = Query(None, description="Filter to transactions split through this group; widens visibility for linked members"),
     unbilled_only: bool = Query(False, description="Cycle-math fallback only: exclude txs already linked to any bill (used for in-progress CC cycles)"),
@@ -93,6 +106,25 @@ async def list_transactions(
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
+    if mode:
+        if from_date or to_date:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Cannot combine mode with from/to; use one or the other",
+            )
+        if not anchor_date:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="anchor_date is required when mode is set",
+            )
+        if mode == "custom":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="custom mode requires explicit from/to; not supported with mode param",
+            )
+        period = resolve_period(mode, anchor_date, week_start=week_start)
+        from_date = period.start
+        to_date = period.end
     accounting_mode = await get_credit_card_accounting_mode(session)
     transactions, total, summary = await transaction_service.get_transactions(
         session, ctx.workspace.id, ctx.user_id,

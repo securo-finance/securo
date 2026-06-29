@@ -21,6 +21,7 @@ from app.schemas.account import (
 )
 from app.services import account_service
 from app.services.fx_rate_service import convert
+from app.services.period_service import resolve_period
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
@@ -47,11 +48,42 @@ async def get_account_summary(
     account_id: uuid.UUID,
     date_from: Optional[str] = Query(None, alias="from", description="YYYY-MM-DD"),
     date_to: Optional[str] = Query(None, alias="to", description="YYYY-MM-DD"),
+    mode: Optional[str] = Query(
+        None,
+        description="Period mode (daily/weekly/monthly/quarterly/half_yearly/yearly/custom). Mutually exclusive with from/to.",
+    ),
+    anchor_date: Optional[date] = Query(
+        None,
+        description="Anchor date inside the desired period. Required when mode is set.",
+    ),
+    week_start: int = Query(
+        0, ge=0, le=6,
+        description="0=Sun (PT-BR), 1=Mon (EN/ISO). Used only for weekly mode.",
+    ),
     bill_id: Optional[uuid.UUID] = Query(None, description="Aggregate by bill_id (issue #92); takes precedence over from/to"),
     unbilled_only: bool = Query(False, description="Cycle-math fallback only: exclude txs already linked to any bill"),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
+    if mode:
+        if date_from or date_to:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Cannot combine mode with from/to; use one or the other",
+            )
+        if not anchor_date:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="anchor_date is required when mode is set",
+            )
+        if mode == "custom":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="custom mode requires explicit from/to; not supported with mode param",
+            )
+        period = resolve_period(mode, anchor_date, week_start=week_start)
+        date_from = period.start.isoformat()
+        date_to = period.end.isoformat()
     from_date = date.fromisoformat(date_from) if date_from else None
     to_date = date.fromisoformat(date_to) if date_to else None
     summary = await account_service.get_account_summary(
@@ -79,9 +111,40 @@ async def get_account_balance_history(
     account_id: uuid.UUID,
     date_from: Optional[str] = Query(None, alias="from", description="YYYY-MM-DD"),
     date_to: Optional[str] = Query(None, alias="to", description="YYYY-MM-DD"),
+    mode: Optional[str] = Query(
+        None,
+        description="Period mode (daily/weekly/monthly/quarterly/half_yearly/yearly/custom). Mutually exclusive with from/to.",
+    ),
+    anchor_date: Optional[date] = Query(
+        None,
+        description="Anchor date inside the desired period. Required when mode is set.",
+    ),
+    week_start: int = Query(
+        0, ge=0, le=6,
+        description="0=Sun (PT-BR), 1=Mon (EN/ISO). Used only for weekly mode.",
+    ),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
+    if mode:
+        if date_from or date_to:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Cannot combine mode with from/to; use one or the other",
+            )
+        if not anchor_date:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="anchor_date is required when mode is set",
+            )
+        if mode == "custom":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="custom mode requires explicit from/to; not supported with mode param",
+            )
+        period = resolve_period(mode, anchor_date, week_start=week_start)
+        date_from = period.start.isoformat()
+        date_to = period.end.isoformat()
     from_date = date.fromisoformat(date_from) if date_from else None
     to_date = date.fromisoformat(date_to) if date_to else None
     history = await account_service.get_account_balance_history(

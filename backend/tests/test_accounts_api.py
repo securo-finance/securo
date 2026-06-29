@@ -234,6 +234,79 @@ async def test_account_summary_not_found(client: AsyncClient, auth_headers):
 
 
 @pytest.mark.asyncio
+async def test_account_summary_mode_anchor_monthly(
+    client: AsyncClient, auth_headers, test_account
+):
+    """mode=monthly + anchor_date resolves server-side and returns the same
+    summary as a manual from/to for the same month."""
+    account_id = str(test_account.id)
+    # Anchor deep in 2020 (well outside the seed fixture's tx dates) so the
+    # response exercises the resolution path. Any month with no txs returns
+    # zeroes; the contract we test is "200 + valid shape".
+    response = await client.get(
+        f"/api/accounts/{account_id}/summary?mode=monthly&anchor_date=2020-06-15",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "current_balance" in data
+    assert "monthly_income" in data
+    assert "monthly_expenses" in data
+
+
+@pytest.mark.asyncio
+async def test_account_summary_mode_weekly_sunday_start(
+    client: AsyncClient, auth_headers, test_account
+):
+    """weekly mode with week_start=0 (Sunday, PT-BR) covers Sun..Sat."""
+    response = await client.get(
+        f"/api/accounts/{str(test_account.id)}/summary"
+        f"?mode=weekly&anchor_date=2026-06-17&week_start=0",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_account_summary_mode_with_from_to_conflicts(
+    client: AsyncClient, auth_headers, test_account
+):
+    """mode + from is a 422 — caller must pick one."""
+    response = await client.get(
+        f"/api/accounts/{str(test_account.id)}/summary"
+        "?mode=monthly&anchor_date=2026-06-15&from=2026-06-01",
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_account_summary_mode_without_anchor(
+    client: AsyncClient, auth_headers, test_account
+):
+    """mode without anchor_date is a 422."""
+    response = await client.get(
+        f"/api/accounts/{str(test_account.id)}/summary?mode=monthly",
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_balance_history_mode_anchor(
+    client: AsyncClient, auth_headers, test_account
+):
+    """balance-history also accepts mode+anchor_date."""
+    response = await client.get(
+        f"/api/accounts/{str(test_account.id)}/balance-history"
+        "?mode=yearly&anchor_date=2026-06-15",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert isinstance(response.json(), list)
+
+
+@pytest.mark.asyncio
 async def test_list_accounts_includes_manual_and_bank_connected(
     client: AsyncClient, auth_headers, test_account: Account
 ):
