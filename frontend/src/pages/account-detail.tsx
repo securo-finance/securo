@@ -16,6 +16,12 @@ import { CategoryIcon } from '@/components/category-icon'
 import { TransactionDialog, extractApiError } from '@/components/transaction-dialog'
 import { TransferDialog } from '@/components/transfer-dialog'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
+import { PeriodSelector } from '@/components/period-selector'
+import {
+  resolvePeriod,
+  weekStartFromLocale,
+  type PeriodValue,
+} from '@/lib/period'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -279,6 +285,29 @@ export default function AccountDetailPage() {
   const [filterFrom, setFilterFrom] = useState(defaultFrom)
   const [filterTo, setFilterTo] = useState(defaultTo)
   const [showPrimary, setShowPrimary] = useState(false)
+  // Non-CC period selector state — drives filterFrom/filterTo via resolvePeriod
+  // so the rest of the page can stay unchanged. Persists to localStorage so
+  // reloads/new tabs land on the same view per account.
+  const [nonCcPeriod, setNonCcPeriod] = useState<PeriodValue>(() => {
+    if (typeof window === 'undefined' || !id) {
+      return { mode: 'monthly', anchor: format(new Date(), 'yyyy-MM-dd') }
+    }
+    try {
+      const stored = window.localStorage.getItem(`period-selector-${id}`)
+      if (stored) {
+        const parsed = JSON.parse(stored) as PeriodValue
+        if (parsed?.mode && parsed?.anchor) return parsed
+      }
+    } catch {
+      // ignore — fall through to default
+    }
+    return { mode: 'monthly', anchor: format(new Date(), 'yyyy-MM-dd') }
+  })
+
+  // For non-CC accounts, keep filterFrom/filterTo in sync with the period
+  // selector on mount and whenever the period changes. We skip this when the
+  // account is a credit card — CC uses its own cycle math to drive the range.
+  // (declared after isCreditCard to avoid TDZ on first render)
   const filterTouched = useRef(false)
   const handleFilterFromChange = (v: string) => { filterTouched.current = true; setFilterFrom(v) }
   const handleFilterToChange = (v: string) => { filterTouched.current = true; setFilterTo(v) }
@@ -620,6 +649,18 @@ export default function AccountDetailPage() {
   const usePrimary = !isForeignCurrency || showPrimary
   const displayCurrency = (isForeignCurrency && !showPrimary) ? (account?.currency || userCurrency) : userCurrency
 
+  // Non-CC: keep filterFrom/filterTo in sync with the period selector. CC keeps
+  // its own cycle-driven logic untouched.
+  useEffect(() => {
+    if (isCreditCard) return
+    const weekStart = weekStartFromLocale(i18n.resolvedLanguage ?? i18n.language ?? 'en')
+    const range = resolvePeriod(nonCcPeriod.mode, nonCcPeriod.anchor, weekStart)
+    setFilterFrom(range.start)
+    setFilterTo(range.end)
+    // We intentionally don't set filterTouched here — initial sync isn't a
+    // user-initiated filter change.
+  }, [isCreditCard, nonCcPeriod.mode, nonCcPeriod.anchor, i18n.resolvedLanguage, i18n.language])
+
   // Chart data:
   // - Non-CC: daily running balance from /balance-history
   // - CC: cumulative charges within the current cycle, starting at 0
@@ -866,24 +907,21 @@ export default function AccountDetailPage() {
               </button>
             </div>
           ) : (
-            <>
-              <div className="flex items-center gap-2">
-                <label className="text-sm text-muted-foreground hidden md:inline">{t('transactions.from')}</label>
-                <DatePickerInput
-                  value={filterFrom}
-                  onChange={handleFilterFromChange}
-                  placeholder={t('transactions.from')}
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="text-sm text-muted-foreground hidden md:inline">{t('transactions.to')}</label>
-                <DatePickerInput
-                  value={filterTo}
-                  onChange={handleFilterToChange}
-                  placeholder={t('transactions.to')}
-                />
-              </div>
-            </>
+            <PeriodSelector
+              value={nonCcPeriod}
+              onChange={(next) => {
+                const range = resolvePeriod(
+                  next.mode,
+                  next.anchor,
+                  weekStartFromLocale(i18n.resolvedLanguage ?? i18n.language ?? 'en'),
+                )
+                filterTouched.current = true
+                setFilterFrom(range.start)
+                setFilterTo(range.end)
+                setNonCcPeriod(next)
+              }}
+              storageKey={`period-selector-${id ?? 'default'}`}
+            />
           )}
           {hasFilters && (
             <Button

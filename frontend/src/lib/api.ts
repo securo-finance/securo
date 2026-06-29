@@ -385,12 +385,42 @@ export const accounts = {
   delete: async (id: string): Promise<void> => {
     await api.delete(`/accounts/${id}`)
   },
-  summary: async (id: string, from?: string, to?: string, billId?: string, unbilledOnly?: boolean): Promise<AccountSummary> => {
-    const { data } = await api.get(`/accounts/${id}/summary`, { params: { from, to, bill_id: billId, unbilled_only: unbilledOnly || undefined } })
+  summary: async (
+    id: string,
+    opts: {
+      from?: string
+      to?: string
+      mode?: import('./period').PeriodMode
+      anchor?: string
+      weekStart?: number
+      billId?: string
+      unbilledOnly?: boolean
+    } = {},
+  ): Promise<AccountSummary> => {
+    const { from, to, mode, anchor, weekStart, billId, unbilledOnly } = opts
+    const { data } = await api.get(`/accounts/${id}/summary`, {
+      params: {
+        from, to,
+        mode, anchor_date: anchor, week_start: weekStart,
+        bill_id: billId, unbilled_only: unbilledOnly || undefined,
+      },
+    })
     return data
   },
-  balanceHistory: async (id: string, from?: string, to?: string): Promise<{ date: string; balance: number; balance_primary?: number }[]> => {
-    const { data } = await api.get(`/accounts/${id}/balance-history`, { params: { from, to } })
+  balanceHistory: async (
+    id: string,
+    opts: {
+      from?: string
+      to?: string
+      mode?: import('./period').PeriodMode
+      anchor?: string
+      weekStart?: number
+    } = {},
+  ): Promise<{ date: string; balance: number; balance_primary?: number }[]> => {
+    const { from, to, mode, anchor, weekStart } = opts
+    const { data } = await api.get(`/accounts/${id}/balance-history`, {
+      params: { from, to, mode, anchor_date: anchor, week_start: weekStart },
+    })
     return data
   },
   bills: async (id: string, limit = 24): Promise<CreditCardBill[]> => {
