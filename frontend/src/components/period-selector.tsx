@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   addDays,
@@ -7,13 +7,16 @@ import {
   type Locale,
 } from 'date-fns'
 import { ptBR, enUS, es, ja, ko, zhCN, he } from 'date-fns/locale'
-import { ChevronLeft, ChevronRight, CalendarDays, ChevronDown } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, CalendarDays, ChevronDown, X } from 'lucide-react'
 
 import { Calendar } from '@/components/ui/calendar'
+import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import {
+  modePicksMonth,
+  modePicksYear,
   resolvePeriod,
   shiftAnchor,
   weekStartFromLocale,
@@ -32,7 +35,6 @@ const DATE_FNS_LOCALES: Record<string, Locale> = {
 }
 
 function resolveDateFnsLocale(lang: string): Locale {
-  // Match by full tag first, then base language, then fall back to enUS.
   if (DATE_FNS_LOCALES[lang]) return DATE_FNS_LOCALES[lang]
   const base = lang.split('-')[0]
   if (DATE_FNS_LOCALES[base]) return DATE_FNS_LOCALES[base]
@@ -50,7 +52,7 @@ interface PeriodSelectorProps {
   /**
    * Storage key for the localStorage persistence slot. Pass an account id so
    * each account remembers its own mode+anchor. The component reads/writes
-   * `{mode, anchor}` JSON under this key on mount and on every change.
+   * `{mode, ...}` JSON under this key on mount and on every change.
    */
   storageKey?: string
   className?: string
@@ -71,12 +73,12 @@ const MODES: PeriodMode[] = [
 ]
 
 /**
- * Map a period mode to the calendar view the popover should open at, and
- * to the anchor derivation when the user picks at that granularity.
+ * Map a period mode to the calendar view the popover should open at.
  *
- * - daily / weekly / custom → day picker (full calendar grid)
- * - monthly / quarterly / half_yearly → month picker (12 cells)
- * - yearly → year picker (12 years per page)
+ * - daily / weekly / custom → day picker (but custom renders a range picker
+ *   instead, so this branch never fires the Calendar for custom)
+ * - monthly / quarterly / half_yearly → month picker
+ * - yearly → year picker
  */
 function calendarViewFor(mode: PeriodMode): 'days' | 'months' | 'years' {
   if (mode === 'yearly') return 'years'
@@ -87,10 +89,10 @@ function calendarViewFor(mode: PeriodMode): 'days' | 'months' | 'years' {
 }
 
 /**
- * When the user clicks at the calendar's granularity (e.g. a month cell in
- * monthly mode), derive the new anchor from the picked date. The anchor is
- * what `resolvePeriod` and `shiftAnchor` work with; for coarse modes we
- * snap to a representative day inside the chosen cell (1st for month/year).
+ * When the user clicks at the calendar's granularity (a month cell in
+ * monthly mode or a year cell in yearly mode), derive the new anchor from
+ * the picked date. For coarse modes we snap to a representative day inside
+ * the chosen cell (1st for month, Jan 1 for year).
  */
 function anchorFromPick(mode: PeriodMode, picked: Date): string {
   if (mode === 'yearly') return format(new Date(picked.getFullYear(), 0, 1), 'yyyy-MM-dd')
@@ -98,6 +100,54 @@ function anchorFromPick(mode: PeriodMode, picked: Date): string {
     return format(new Date(picked.getFullYear(), picked.getMonth(), 1), 'yyyy-MM-dd')
   }
   return format(picked, 'yyyy-MM-dd')
+}
+
+/**
+ * The Date object used as the Calendar's `defaultMonth` and `selected`
+ * anchor. For non-custom modes it's the anchor date. For custom we use the
+ * range midpoint so the calendar opens inside the picked range.
+ */
+function anchorDateFor(value: PeriodValue): Date {
+  if (value.mode === 'custom') {
+    const from = parseIsoLocal(value.from)
+    const to = parseIsoLocal(value.to)
+    return new Date((from.getTime() + to.getTime()) / 2)
+  }
+  return parseIsoLocal(value.anchor)
+}
+
+/** Compute the value button's display label for the current value. */
+function formatLabel(value: PeriodValue, dfLocale: Locale, weekStart: number): string {
+  if (value.mode === 'custom') {
+    return `${format(parseIsoLocal(value.from), 'd MMM', { locale: dfLocale })} – ${format(parseIsoLocal(value.to), 'd MMM', { locale: dfLocale })}`
+  }
+  const r = resolvePeriod(value.mode, value.anchor, weekStart)
+  if (value.mode === 'daily') return format(parseIsoLocal(r.start), 'PPP', { locale: dfLocale })
+  if (value.mode === 'weekly') {
+    return `${format(parseIsoLocal(r.start), 'd MMM', { locale: dfLocale })} – ${format(parseIsoLocal(r.end), 'd MMM', { locale: dfLocale })}`
+  }
+  if (value.mode === 'monthly') return format(parseIsoLocal(r.start), 'LLLL yyyy', { locale: dfLocale })
+  if (value.mode === 'quarterly') {
+    const start = parseIsoLocal(r.start)
+    const end = parseIsoLocal(r.end)
+    const q = Math.floor(start.getMonth() / 3) + 1
+    return `Q${q} ${start.getFullYear()} (${format(start, 'MMM', { locale: dfLocale })}–${format(end, 'MMM', { locale: dfLocale })})`
+  }
+  if (value.mode === 'half_yearly') {
+    const start = parseIsoLocal(r.start)
+    const s = start.getMonth() < 6 ? 1 : 2
+    const end = parseIsoLocal(r.end)
+    return `S${s} ${start.getFullYear()} (${format(start, 'MMM', { locale: dfLocale })}–${format(end, 'MMM', { locale: dfLocale })})`
+  }
+  // yearly
+  return format(parseIsoLocal(r.start), 'yyyy')
+}
+
+/** Build a PeriodValue of the given mode with a sensible default anchor/range. */
+function defaultValueFor(mode: PeriodMode): PeriodValue {
+  const today = todayIso()
+  if (mode === 'custom') return { mode: 'custom', from: today, to: today }
+  return { mode, anchor: today }
 }
 
 export function PeriodSelector({
@@ -112,8 +162,7 @@ export function PeriodSelector({
   const dfLocale = resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language ?? 'en')
   const weekStart = weekStartFromLocale(i18n.resolvedLanguage ?? i18n.language ?? 'en')
 
-  // Persist to localStorage on every change (best-effort — silently ignores
-  // quota errors or SSR where window is undefined).
+  // Persist to localStorage on every change.
   useEffect(() => {
     if (!storageKey) return
     try {
@@ -123,76 +172,59 @@ export function PeriodSelector({
     }
   }, [storageKey, value])
 
-  // Current anchor as Date for calendar defaultMonth. Clamp day=1 if mode is
-  // coarse so the calendar opens on the right month/year page.
-  const anchorDate = useMemo(() => {
-    const [y, m, d] = value.anchor.split('-').map(Number)
-    return new Date(y, m - 1, d)
-  }, [value.anchor])
+  // For non-custom modes, the anchor as a Date — used by the Calendar's
+  // selected/defaultMonth props.
+  const calendarAnchor = useMemo(() => anchorDateFor(value), [value])
 
-  // Stepping anchor by ◀ / ▶. For daily/weekly/custom we use date-fns so the
-  // week boundary (week_start) is respected for weekly; for the others we
-  // delegate to period.shiftAnchor which clamps day overflow.
+  // ◀ / ▶ stepping. Disabled for custom (no anchor concept).
   const stepAnchor = (direction: -1 | 1) => {
-    if (value.mode === 'custom') return // arrows disabled anyway
+    if (value.mode === 'custom') return
     const nextAnchor =
       value.mode === 'daily'
-        ? format(addDays(anchorDate, direction), 'yyyy-MM-dd')
+        ? format(addDays(calendarAnchor, direction), 'yyyy-MM-dd')
         : value.mode === 'weekly'
-          ? format(addDays(anchorDate, 7 * direction), 'yyyy-MM-dd')
+          ? format(addDays(calendarAnchor, 7 * direction), 'yyyy-MM-dd')
           : value.mode === 'yearly'
-            ? format(addYears(anchorDate, direction), 'yyyy-MM-dd')
+            ? format(addYears(calendarAnchor, direction), 'yyyy-MM-dd')
             : shiftAnchor(value.mode, value.anchor, direction)
     onChange({ mode: value.mode, anchor: nextAnchor })
   }
 
+  // 📅 hoje reset. For custom, snap the range to today (single day).
   const goToday = () => {
-    onChange({ mode: value.mode, anchor: todayIso() })
+    const today = todayIso()
+    if (value.mode === 'custom') onChange({ mode: 'custom', from: today, to: today })
+    else onChange({ mode: value.mode, anchor: today })
   }
 
   const setMode = (mode: PeriodMode) => {
-    onChange({ mode, anchor: todayIso() })
+    onChange(defaultValueFor(mode))
   }
 
-  // Compute the label that appears in the value button. Different format per
-  // mode so the user gets useful context without opening the picker.
-  const label = useMemo(() => {
-    const r = resolvePeriod(value.mode, value.anchor, weekStart)
-    if (value.mode === 'daily') {
-      return format(parseIsoLocal(r.start), 'PPP', { locale: dfLocale })
-    }
-    if (value.mode === 'weekly') {
-      return `${format(parseIsoLocal(r.start), 'd MMM', { locale: dfLocale })} – ${format(parseIsoLocal(r.end), 'd MMM', { locale: dfLocale })}`
-    }
-    if (value.mode === 'monthly') {
-      return format(parseIsoLocal(r.start), 'LLLL yyyy', { locale: dfLocale })
-    }
-    if (value.mode === 'quarterly') {
-      const start = parseIsoLocal(r.start)
-      const end = parseIsoLocal(r.end)
-      const q = Math.floor(start.getMonth() / 3) + 1
-      return `Q${q} ${start.getFullYear()} (${format(start, 'MMM', { locale: dfLocale })}–${format(end, 'MMM', { locale: dfLocale })})`
-    }
-    if (value.mode === 'half_yearly') {
-      const start = parseIsoLocal(r.start)
-      const s = start.getMonth() < 6 ? 1 : 2
-      const end = parseIsoLocal(r.end)
-      return `S${s} ${start.getFullYear()} (${format(start, 'MMM', { locale: dfLocale })}–${format(end, 'MMM', { locale: dfLocale })})`
-    }
-    if (value.mode === 'yearly') {
-      return format(parseIsoLocal(r.start), 'yyyy')
-    }
-    // custom
-    return `${format(parseIsoLocal(r.start), 'd MMM', { locale: dfLocale })} – ${format(parseIsoLocal(r.end), 'd MMM', { locale: dfLocale })}`
-  }, [value.mode, value.anchor, dfLocale, weekStart])
+  const label = useMemo(
+    () => formatLabel(value, dfLocale, weekStart),
+    [value, dfLocale, weekStart],
+  )
 
-// Build the range string so callers can render "Saldo: ..." alongside. We
-  // expose it via window for now — pages can compute it themselves using
-  // resolvePeriod + their preferred formatter.
-  // (intentionally not exposed as prop to keep the component minimal)
-
-  const initialView = calendarViewFor(value.mode)
   const isCustom = value.mode === 'custom'
+  // Granular callbacks: only wire them up for modes that actually pick at
+  // that granularity. Otherwise the Calendar uses its built-in climb-back
+  // (e.g. clicking a year cell in daily mode returns to the month picker
+  // instead of committing the year as the new anchor and closing).
+  // The cast on the returned PeriodValue is safe: modePicksMonth/ModePicksYear
+  // returned true here, which excludes 'custom'.
+  const onSelectMonth = modePicksMonth(value.mode)
+    ? (date: Date) => onChange({
+        mode: value.mode as Exclude<PeriodMode, 'custom'>,
+        anchor: anchorFromPick(value.mode, date),
+      })
+    : undefined
+  const onSelectYear = modePicksYear(value.mode)
+    ? (date: Date) => onChange({
+        mode: value.mode as Exclude<PeriodMode, 'custom'>,
+        anchor: anchorFromPick(value.mode, date),
+      })
+    : undefined
 
   return (
     <div className={cn('inline-flex items-center gap-1', className)}>
@@ -208,40 +240,46 @@ export function PeriodSelector({
         <ChevronLeft className="h-4 w-4" />
       </Button>
 
-      <Popover>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            className="inline-flex items-center justify-center gap-2 min-w-[140px] border border-border rounded-lg px-3 py-1.5 text-sm bg-card text-foreground hover:bg-muted/50 transition-colors capitalize"
-          >
-            {label}
-          </button>
-        </PopoverTrigger>
-        <PopoverContent align="center" className="w-auto p-0">
-          <Calendar
-            initialView={initialView}
-            locale={dfLocale}
-            selected={anchorDate}
-            defaultMonth={anchorDate}
-            // Day pick (daily/weekly/custom): set anchor to the picked day
-            // and let resolvePeriod snap to the right week/range.
-            onSelect={(date) => {
-              if (!date) return
-              onChange({ mode: value.mode, anchor: format(date, 'yyyy-MM-dd') })
-            }}
-            // Month pick (monthly/quarterly/half_yearly): anchor to day 1 of
-            // the chosen month so resolvePeriod returns that whole month (or
-            // quarter/semester containing it).
-            onSelectMonth={(date) => {
-              onChange({ mode: value.mode, anchor: anchorFromPick(value.mode, date) })
-            }}
-            // Year pick (yearly): anchor to Jan 1 of the chosen year.
-            onSelectYear={(date) => {
-              onChange({ mode: value.mode, anchor: anchorFromPick(value.mode, date) })
-            }}
-          />
-        </PopoverContent>
-      </Popover>
+      {isCustom ? (
+        <CustomRangePopover
+          value={value}
+          onChange={onChange}
+          label={label}
+        />
+      ) : (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex items-center justify-center gap-2 min-w-[140px] border border-border rounded-lg px-3 py-1.5 text-sm bg-card text-foreground hover:bg-muted/50 transition-colors capitalize"
+            >
+              {label}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="center" className="w-auto p-0">
+            <Calendar
+              initialView={calendarViewFor(value.mode)}
+              locale={dfLocale}
+              selected={calendarAnchor}
+              defaultMonth={calendarAnchor}
+              // Day pick (daily/weekly): set anchor to the picked day and let
+              // resolvePeriod snap to the right week/range.
+              onSelect={(date) => {
+                if (!date) return
+                onChange({ mode: value.mode, anchor: format(date, 'yyyy-MM-dd') })
+              }}
+              // Month pick (monthly/quarterly/half_yearly): fires when the mode
+              // actually picks at the month granularity. Otherwise the Calendar
+              // uses its default behavior (climb back to days view).
+              onSelectMonth={onSelectMonth}
+              // Year pick (yearly only): fires when mode is yearly. For other
+              // modes the Calendar climbs back to months (the user picks year
+              // → returns to month picker → confirms month → returns to days).
+              onSelectYear={onSelectYear}
+            />
+          </PopoverContent>
+        </Popover>
+      )}
 
       <Button
         type="button"
@@ -299,6 +337,124 @@ export function PeriodSelector({
         </Popover>
       )}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Custom-range popover
+// ---------------------------------------------------------------------------
+
+interface CustomRangePopoverProps {
+  value: Extract<PeriodValue, { mode: 'custom' }>
+  onChange: (next: PeriodValue) => void
+  label: string
+}
+
+/**
+ * The popover content for custom mode: two DatePickerInput fields (Início,
+ * Fim) plus a Confirm button. The state stays local until the user clicks
+ * Confirm, so they can fiddle with the inputs without committing.
+ */
+function CustomRangePopover({ value, onChange, label }: CustomRangePopoverProps) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const [draftFrom, setDraftFrom] = useState(value.from)
+  const [draftTo, setDraftTo] = useState(value.to)
+
+  // Reset the draft whenever the popover opens so previous unsaved edits
+  // don't leak in (and so external value changes propagate).
+  const onOpenChange = (next: boolean) => {
+    if (next) {
+      setDraftFrom(value.from)
+      setDraftTo(value.to)
+    }
+    setOpen(next)
+  }
+
+  const swap = () => {
+    setDraftFrom(draftTo)
+    setDraftTo(draftFrom)
+  }
+
+  const valid = draftFrom && draftTo && draftFrom <= draftTo
+
+  const confirm = () => {
+    if (!valid) return
+    onChange({ mode: 'custom', from: draftFrom, to: draftTo })
+    setOpen(false)
+  }
+
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center justify-center gap-2 min-w-[160px] border border-border rounded-lg px-3 py-1.5 text-sm bg-card text-foreground hover:bg-muted/50 transition-colors capitalize"
+        >
+          {label}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="center" className="w-auto p-3 space-y-3">
+        <div className="space-y-1.5">
+          <label className="text-xs text-muted-foreground">
+            {t('transactions.from', 'Início')} <span className="text-rose-500">*</span>
+          </label>
+          <DatePickerInput
+            value={draftFrom}
+            onChange={setDraftFrom}
+            placeholder={t('transactions.from', 'Início')}
+            align="start"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs text-muted-foreground">
+            {t('transactions.to', 'Fim')} <span className="text-rose-500">*</span>
+          </label>
+          <DatePickerInput
+            value={draftTo}
+            onChange={setDraftTo}
+            placeholder={t('transactions.to', 'Fim')}
+            align="start"
+          />
+        </div>
+        <div className="flex items-center justify-between pt-1">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={swap}
+            disabled={!draftFrom || !draftTo}
+            title={t('periodSelector.swap', 'Inverter')}
+          >
+            <span className="text-xs">⇅</span>
+          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground"
+              onClick={() => setOpen(false)}
+              title={t('common.cancel', 'Cancelar')}
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              type="button"
+              variant="default"
+              size="icon"
+              className="h-7 w-7"
+              onClick={confirm}
+              disabled={!valid}
+              title={t('common.confirm', 'Confirmar')}
+            >
+              <Check className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }
 

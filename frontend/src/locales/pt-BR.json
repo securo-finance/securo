@@ -1671,6 +1671,9 @@
     "custom": "Personalizado",
     "today": "Hoje",
     "previous": "Período anterior",
-    "next": "Próximo período"
+    "next": "Próximo período",
+    "swap": "Inverter",
+    "confirm": "Confirmar",
+    "cancel": "Cancelar"
   }
 }

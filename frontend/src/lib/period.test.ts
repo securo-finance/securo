@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  modePicksMonth,
+  modePicksYear,
   resolvePeriod,
+  resolvePeriodValue,
   shiftAnchor,
   weekStartFromLocale,
   type PeriodMode,
+  type PeriodValue,
 } from './period'
 
 // Mirror of backend test_period_service.py — same anchors, same expected
@@ -209,5 +213,59 @@ describe('weekStartFromLocale', () => {
     // and the static table check kicks in. "" isn't in SUNDAY_LOCALES, so
     // we land on the Monday default.
     expect(weekStartFromLocale('')).toBe(1)
+  })
+})
+
+describe('resolvePeriodValue (custom mode passthrough)', () => {
+  it('passes custom mode through unchanged', () => {
+    const value: PeriodValue = {
+      mode: 'custom',
+      from: '2026-03-10',
+      to: '2026-03-20',
+    }
+    expect(resolvePeriodValue(value)).toEqual({
+      start: '2026-03-10',
+      end: '2026-03-20',
+    })
+  })
+
+  it('delegates to resolvePeriod for non-custom modes', () => {
+    const value: PeriodValue = { mode: 'monthly', anchor: '2026-06-15' }
+    expect(resolvePeriodValue(value)).toEqual(resolvePeriod('monthly', '2026-06-15'))
+  })
+
+  it('honors weekStart for weekly mode', () => {
+    const value: PeriodValue = { mode: 'weekly', anchor: '2026-06-17' }
+    expect(resolvePeriodValue(value, 0)).toEqual({
+      start: '2026-06-14', // Sunday
+      end: '2026-06-20',
+    })
+    expect(resolvePeriodValue(value, 1)).toEqual({
+      start: '2026-06-15', // Monday
+      end: '2026-06-21',
+    })
+  })
+})
+
+describe('modePicksMonth / modePicksYear', () => {
+  it('month-pickers select at the month granularity', () => {
+    expect(modePicksMonth('monthly')).toBe(true)
+    expect(modePicksMonth('quarterly')).toBe(true)
+    expect(modePicksMonth('half_yearly')).toBe(true)
+  })
+
+  it('non-month-pickers do NOT select at month granularity', () => {
+    expect(modePicksMonth('daily')).toBe(false)
+    expect(modePicksMonth('weekly')).toBe(false)
+    expect(modePicksMonth('yearly')).toBe(false)
+    expect(modePicksMonth('custom')).toBe(false)
+  })
+
+  it('yearly is the only year-picker', () => {
+    expect(modePicksYear('yearly')).toBe(true)
+    const otherModes: PeriodMode[] = ['daily', 'weekly', 'monthly', 'quarterly', 'half_yearly', 'custom']
+    for (const m of otherModes) {
+      expect(modePicksYear(m)).toBe(false)
+    }
   })
 })

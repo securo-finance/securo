@@ -1761,6 +1761,9 @@
     "custom": "Custom",
     "today": "Today",
     "previous": "Previous period",
-    "next": "Next period"
+    "next": "Next period",
+    "swap": "Swap",
+    "confirm": "Confirm",
+    "cancel": "Cancel"
   }
 }

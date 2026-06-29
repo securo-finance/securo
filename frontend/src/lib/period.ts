@@ -21,15 +21,28 @@ export type PeriodMode =
   | 'yearly'
   | 'custom'
 
-export interface PeriodValue {
-  mode: PeriodMode
-  /** Anchor date as YYYY-MM-DD. The "what period am I looking at" cursor. */
-  anchor: string
-}
+/**
+ * Discriminated union: granular modes carry a single anchor date, custom
+ * carries an explicit [from, to] range. The two share a `mode` discriminator
+ * so the PeriodSelector and downstream consumers can pattern-match.
+ */
+export type PeriodValue =
+  | { mode: Exclude<PeriodMode, 'custom'>; anchor: string }
+  | { mode: 'custom'; from: string; to: string }
 
 export interface PeriodRange {
   start: string
   end: string
+}
+
+/**
+ * Resolve any PeriodValue to its [start, end] range. Use this instead of
+ * resolvePeriod when you have the full value (not just mode+anchor) so
+ * custom mode works without special-casing at the call site.
+ */
+export function resolvePeriodValue(value: PeriodValue, weekStart = 0): PeriodRange {
+  if (value.mode === 'custom') return { start: value.from, end: value.to }
+  return resolvePeriod(value.mode, value.anchor, weekStart)
 }
 
 // ----------------------------------------------------------------- date utils
@@ -164,6 +177,24 @@ export function shiftAnchor(
     lastDayOfMonth(targetY, anchor.getMonth() + 1),
   )
   return toIso(new Date(targetY, anchor.getMonth(), targetD))
+}
+
+/**
+ * Whether `mode` selects a discrete month cell (month picker should fire on
+ * pick). Used by the PeriodSelector to decide whether to wire up
+ * `onSelectMonth` on the Calendar.
+ */
+export function modePicksMonth(mode: PeriodMode): boolean {
+  return mode === 'monthly' || mode === 'quarterly' || mode === 'half_yearly'
+}
+
+/**
+ * Whether `mode` selects a discrete year cell (year picker should fire on
+ * pick). Used by the PeriodSelector to decide whether to wire up
+ * `onSelectYear` on the Calendar.
+ */
+export function modePicksYear(mode: PeriodMode): boolean {
+  return mode === 'yearly'
 }
 
 // -------------------------------------------------- locale-derived week_start
