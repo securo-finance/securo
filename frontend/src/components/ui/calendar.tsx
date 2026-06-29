@@ -24,8 +24,24 @@ interface CalendarProps {
   mode?: 'single'
   selected?: Date
   defaultMonth?: Date
+  /**
+   * Open directly at this view, skipping the climb-through. The default
+   * 'days' preserves the original behavior for callers that just need a
+   * day picker. The PeriodSelector uses 'months' so clicking the value
+   * opens the month grid without first showing days.
+   */
+  initialView?: 'days' | 'months' | 'years'
   locale?: Locale
+  /** Fired when a day cell is clicked (existing behavior). */
   onSelect?: (date: Date | undefined) => void
+  /**
+   * Fired when a month cell is clicked. When set, the calendar stops at the
+   * month view (no auto-climb-back to days) so callers can react to a
+   * month-level pick without an extra click.
+   */
+  onSelectMonth?: (date: Date) => void
+  /** Fired when a year cell is clicked. Same stop-at-this-view semantics. */
+  onSelectYear?: (date: Date) => void
   className?: string
 }
 
@@ -35,12 +51,15 @@ const YEAR_PAGE_SIZE = 12
 function Calendar({
   selected,
   defaultMonth,
+  initialView = 'days',
   locale,
   onSelect,
+  onSelectMonth,
+  onSelectYear,
   className,
 }: CalendarProps) {
   const [viewMonth, setViewMonth] = useState(defaultMonth ?? selected ?? new Date())
-  const [view, setView] = useState<View>('days')
+  const [view, setView] = useState<View>(initialView)
 
   const currentYear = viewMonth.getFullYear()
   const yearPageStart = Math.floor(currentYear / YEAR_PAGE_SIZE) * YEAR_PAGE_SIZE
@@ -66,6 +85,27 @@ function Calendar({
   const onHeaderClick = () => {
     if (view === 'days') setView('months')
     else if (view === 'months') setView('years')
+  }
+
+  // Granular pick handlers: when a granular callback is provided, the
+  // calendar stops at that view (no auto-climb-back to days) so callers can
+  // react to a single click without forcing an extra step.
+  const handleMonthPick = (monthDate: Date) => {
+    if (onSelectMonth) {
+      onSelectMonth(monthDate)
+      return
+    }
+    setViewMonth(monthDate)
+    setView('days')
+  }
+  const handleYearPick = (year: number) => {
+    const next = dfSetYear(viewMonth, year)
+    if (onSelectYear) {
+      onSelectYear(next)
+      return
+    }
+    setViewMonth(next)
+    setView('months')
   }
 
   const monthStart = startOfMonth(viewMonth)
@@ -171,10 +211,7 @@ function Calendar({
               <button
                 key={i}
                 type="button"
-                onClick={() => {
-                  setViewMonth(monthDate)
-                  setView('days')
-                }}
+                onClick={() => handleMonthPick(monthDate)}
                 className={cn(
                   'h-10 rounded-lg text-sm capitalize transition-colors',
                   isCurrent
@@ -198,10 +235,7 @@ function Calendar({
               <button
                 key={y}
                 type="button"
-                onClick={() => {
-                  setViewMonth(dfSetYear(viewMonth, y))
-                  setView('months')
-                }}
+                onClick={() => handleYearPick(y)}
                 className={cn(
                   'h-10 rounded-lg text-sm transition-colors',
                   isCurrent
