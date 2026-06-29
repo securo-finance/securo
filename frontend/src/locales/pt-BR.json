@@ -1660,5 +1660,17 @@
         "openai": "OpenAI Responses API"
       }
     }
+  },
+  "periodSelector": {
+    "daily": "Diário",
+    "weekly": "Semanal",
+    "monthly": "Mensal",
+    "quarterly": "Trimestral",
+    "half_yearly": "Semestral",
+    "yearly": "Anual",
+    "custom": "Personalizado",
+    "today": "Hoje",
+    "previous": "Período anterior",
+    "next": "Próximo período"
   }
 }

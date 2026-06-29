@@ -1660,5 +1660,17 @@
         "subtitle": "Додайте підключення, щоб направити Securo на ваш локальний Ollama, OpenAI, Anthropic або будь-який сумісний з OpenAI ендпоінт."
       }
     }
+  },
+  "periodSelector": {
+    "daily": "Daily",
+    "weekly": "Weekly",
+    "monthly": "Monthly",
+    "quarterly": "Quarterly",
+    "half_yearly": "Half-yearly",
+    "yearly": "Yearly",
+    "custom": "Custom",
+    "today": "Today",
+    "previous": "Previous period",
+    "next": "Next period"
   }
 }
