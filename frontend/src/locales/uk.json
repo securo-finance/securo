@@ -288,6 +288,8 @@
     "category": "Категорія",
     "account": "Рахунок",
     "noCategory": "Без категорії",
+    "searchCategory": "Пошук категорії...",
+    "noCategoryFound": "Категорію не знайдено.",
     "addManual": "Додати транзакцію",
     "duplicate": "Дублювати",
     "createRule": "Створити правило",

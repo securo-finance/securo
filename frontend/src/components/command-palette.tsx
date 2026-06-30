@@ -33,7 +33,7 @@ import {
 } from 'lucide-react'
 
 import { search as searchApi, type SearchHit, type SearchHitType } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, normalizeText } from '@/lib/utils'
 
 // ---------------------------------------------------------------------------
 // Static actions & navigation registry
@@ -237,11 +237,6 @@ function formatHitDate(iso: string | null, locale: string): string | null {
   }
 }
 
-// Accent- and case-insensitive substring match so that typing "regras"
-// matches "Regras", "orcamento" matches "Orçamentos", etc.
-function normalizeText(s: string): string {
-  return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-}
 
 function matchesQuery(query: string, haystacks: Array<string | undefined>): boolean {
   const q = normalizeText(query.trim())

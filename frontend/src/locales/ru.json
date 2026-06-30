@@ -288,6 +288,8 @@
     "category": "Категория",
     "account": "Счёт",
     "noCategory": "Без категории",
+    "searchCategory": "Поиск категории...",
+    "noCategoryFound": "Категория не найдена.",
     "addManual": "Добавить транзакцию",
     "duplicate": "Дублировать",
     "createRule": "Создать правило",

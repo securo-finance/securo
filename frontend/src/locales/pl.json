@@ -294,6 +294,8 @@
     "category": "Kategoria",
     "account": "Konto",
     "noCategory": "Brak kategorii",
+    "searchCategory": "Szukaj kategorii...",
+    "noCategoryFound": "Nie znaleziono żadnej kategorii.",
     "addManual": "Dodaj transakcję",
     "duplicate": "Duplikuj",
     "createRule": "Utwórz regułę",

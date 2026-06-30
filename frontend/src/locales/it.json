@@ -288,6 +288,8 @@
     "category": "Categoria",
     "account": "Conto",
     "noCategory": "Nessuna categoria",
+    "searchCategory": "Cerca categoria...",
+    "noCategoryFound": "Nessuna categoria trovata.",
     "addManual": "Aggiungi transazione",
     "duplicate": "Duplica",
     "createRule": "Crea regola",

@@ -288,6 +288,8 @@
     "category": "Category",
     "account": "Account",
     "noCategory": "No category",
+    "searchCategory": "Search category...",
+    "noCategoryFound": "No category found.",
     "addManual": "Add Transaction",
     "duplicate": "Duplicate",
     "createRule": "Create Rule",
