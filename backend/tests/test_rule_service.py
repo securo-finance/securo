@@ -455,6 +455,57 @@ async def test_apply_all_rules_preserves_manual_categories(
     assert count == 1
 
 
+@pytest.mark.asyncio
+async def test_apply_all_rules_reverts_incompatible_category_rule(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="InvalidRuleCat",
+        type="checking",
+        balance=Decimal("1000"),
+        currency="BRL",
+    )
+    session.add(account)
+    await session.commit()
+
+    original_cat = test_categories[0]
+    income_cat = test_categories[2]
+    txn = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=account.id,
+        description="BAD INCOME RULE",
+        amount=Decimal("20"),
+        date=date(2025, 4, 4),
+        type="debit",
+        source="manual",
+        category_id=original_cat.id,
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(txn)
+    await session.commit()
+
+    await create_rule(
+        session,
+        test_workspace.id, test_user.id,
+        RuleCreate(
+            name="Invalid income category on debit",
+            conditions_op="or",
+            conditions=[RuleCondition(field="description", op="contains", value="BAD INCOME")],
+            actions=[RuleAction(op="set_category", value=str(income_cat.id))],
+            priority=10,
+        ),
+    )
+
+    count = await apply_all_rules(session, test_workspace.id)
+
+    await session.refresh(txn)
+    assert count == 1
+    assert txn.category_id == original_cat.id
+
+
 # ---------------------------------------------------------------------------
 # create_default_rules / install_rule_pack / get_installed_packs
 # ---------------------------------------------------------------------------

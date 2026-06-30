@@ -1,13 +1,16 @@
 import uuid
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict
+
+CategoryFlowType = Literal["income", "expense"]
 
 
 class CategoryBase(BaseModel):
     name: str
     icon: str = "circle-help"
     color: str = "#6B7280"
+    flow_type: CategoryFlowType = "expense"
 
 
 class CategoryCreate(CategoryBase):
@@ -20,6 +23,7 @@ class CategoryUpdate(BaseModel):
     name: Optional[str] = None
     icon: Optional[str] = None
     color: Optional[str] = None
+    flow_type: Optional[CategoryFlowType] = None
     group_id: Optional[uuid.UUID] = None
     treat_as_transfer: Optional[bool] = None
     is_ignored: Optional[bool] = None
@@ -29,6 +33,7 @@ class CategoryRead(CategoryBase):
     id: uuid.UUID
     user_id: uuid.UUID
     group_id: Optional[uuid.UUID] = None
+    flow_type: CategoryFlowType
     is_system: bool
     treat_as_transfer: bool = False
     is_ignored: bool = False

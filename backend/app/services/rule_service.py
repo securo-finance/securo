@@ -10,7 +10,11 @@ from app.models.category import Category
 from app.models.transaction import Transaction
 from app.schemas.rule import RuleCreate, RuleExportPayload, RuleImportResponse, RuleUpdate
 from app.services.rule_engine import evaluate_conditions, apply_rule_actions
-from app.services.category_service import DEFAULT_CATEGORIES_I18N
+from app.services.category_service import (
+    DEFAULT_CATEGORIES_I18N,
+    flow_type_for_category_key,
+    validate_category_for_transaction,
+)
 
 
 class DuplicateRuleError(Exception):
@@ -467,7 +471,7 @@ def _resolve_categories_by_internal_key(
     which language the user's categories were created in.
     """
     key_to_id: dict[str, str] = {}
-    non_name_fields = {"icon", "color", "treat_as_transfer"}
+    non_name_fields = {"icon", "color", "flow_type", "treat_as_transfer"}
     for internal_key, data in DEFAULT_CATEGORIES_I18N.items():
         for field, value in data.items():
             if field in non_name_fields:
@@ -611,7 +615,7 @@ async def _ensure_categories_for_keys(
     )
     from app.services.category_service import DEFAULT_CATEGORIES_I18N
 
-    non_name_fields = {"icon", "color", "treat_as_transfer", "position"}
+    non_name_fields = {"icon", "color", "flow_type", "treat_as_transfer", "position"}
 
     def variants(data: dict) -> set[str]:
         return {v for k, v in data.items() if k not in non_name_fields}
@@ -661,6 +665,7 @@ async def _ensure_categories_for_keys(
             name=gdata.get(lang, gdata["en"]),
             icon=gdata["icon"],
             color=gdata["color"],
+            flow_type="income" if gkey == "income" else "expense",
             position=gdata["position"],
             is_system=True,
         )
@@ -676,6 +681,7 @@ async def _ensure_categories_for_keys(
             name=data.get(lang, data["en"]),
             icon=data["icon"],
             color=data["color"],
+            flow_type=flow_type_for_category_key(key),
             is_system=True,
             group_id=target_group.id if target_group else None,
             treat_as_transfer=data.get("treat_as_transfer", False),
@@ -970,7 +976,18 @@ async def apply_rules_to_transaction(
         conditions = rule.conditions or []
         actions = rule.actions or []
         if evaluate_conditions(rule.conditions_op, conditions, transaction):
+            before_category_id = transaction.category_id
             category_set = apply_rule_actions(actions, transaction, category_set)
+            try:
+                await validate_category_for_transaction(
+                    session,
+                    transaction.workspace_id,
+                    transaction.category_id,
+                    transaction.type,
+                )
+            except ValueError:
+                transaction.category_id = before_category_id
+                category_set = before_category_id is not None
 
 
 async def apply_single_rule(
@@ -1005,7 +1022,17 @@ async def apply_single_rule(
         if not evaluate_conditions(rule.conditions_op, conditions, tx):
             continue
         before = (tx.category_id, tx.payee_id, tx.notes, tx.is_ignored)
+        before_category_id = tx.category_id
         apply_rule_actions(actions, tx, category_already_set=tx.category_id is not None)
+        try:
+            await validate_category_for_transaction(
+                session,
+                tx.workspace_id,
+                tx.category_id,
+                tx.type,
+            )
+        except ValueError:
+            tx.category_id = before_category_id
         if before != (tx.category_id, tx.payee_id, tx.notes, tx.is_ignored):
             count += 1
 
@@ -1047,10 +1074,21 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
             if evaluate_conditions(rule.conditions_op, conditions, tx):
                 if not matched:
                     # First match: reset so rules are applied from scratch
-                    tx.category_id = None
                     tx.notes = None
                     matched = True
+                before_category_id = tx.category_id
+                before_category_set = category_set
                 category_set = apply_rule_actions(actions, tx, category_set)
+                try:
+                    await validate_category_for_transaction(
+                        session,
+                        tx.workspace_id,
+                        tx.category_id,
+                        tx.type,
+                    )
+                except ValueError:
+                    tx.category_id = before_category_id
+                    category_set = before_category_set
 
         if matched:
             count += 1

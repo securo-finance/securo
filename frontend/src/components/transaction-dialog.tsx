@@ -425,6 +425,15 @@ function TransactionForm({
   const [isIgnored, setIsIgnored] = useState(seed?.is_ignored ?? false)
   const [togglingIgnore, setTogglingIgnore] = useState(false)
   const [addToRuleOpen, setAddToRuleOpen] = useState(false)
+  const categoryFlowType: Category['flow_type'] = type === 'credit' ? 'income' : 'expense'
+
+  useEffect(() => {
+    if (!categoryId) return
+    const selectedCategory = categories.find((category) => category.id === categoryId)
+    if (selectedCategory && selectedCategory.flow_type !== categoryFlowType) {
+      setCategoryId('')
+    }
+  }, [categories, categoryFlowType, categoryId])
 
   const { data: rulesList, isLoading: rulesLoading } = useQuery({
     queryKey: ['rules'],
@@ -842,6 +851,7 @@ function TransactionForm({
             onChange={setCategoryId}
             categories={categories}
             groups={categoryGroups}
+            flowType={categoryFlowType}
             allowNone={true}
           />
         </div>

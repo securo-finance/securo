@@ -128,6 +128,23 @@ async def test_create_transaction_with_category_skips_rules(
 
 
 @pytest.mark.asyncio
+async def test_create_transaction_rejects_category_with_different_flow(
+    session: AsyncSession, test_user, test_workspace, test_categories, txn_account
+):
+    data = TransactionCreate(
+        description="Income with expense category",
+        amount=Decimal("500.00"),
+        date=date(2025, 3, 10),
+        type="credit",
+        account_id=txn_account.id,
+        category_id=test_categories[0].id,
+    )
+
+    with pytest.raises(ValueError, match="not valid for credit"):
+        await create_transaction(session, test_workspace.id, test_user.id, data)
+
+
+@pytest.mark.asyncio
 async def test_create_transaction_invalid_account(session: AsyncSession, test_user, test_workspace):
     data = TransactionCreate(
         description="Orphan",
@@ -589,6 +606,30 @@ async def test_bulk_update_category_clear(
 
     await session.refresh(txn)
     assert txn.category_id is None
+
+
+@pytest.mark.asyncio
+async def test_bulk_update_category_rejects_mixed_flow(
+    session: AsyncSession, test_user, test_workspace, test_categories, txn_account
+):
+    income_txn = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=txn_account.id,
+        description="Income",
+        amount=Decimal("100"),
+        date=date(2025, 3, 1),
+        type="credit",
+        source="manual",
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(income_txn)
+    await session.commit()
+
+    with pytest.raises(ValueError, match="not valid for credit"):
+        await bulk_update_category(
+            session, test_workspace.id, [income_txn.id], category_id=test_categories[0].id
+        )
 
 
 # ---------------------------------------------------------------------------

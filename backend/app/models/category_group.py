@@ -23,6 +23,7 @@ class CategoryGroup(Base):
     name: Mapped[str] = mapped_column(String(100))
     icon: Mapped[str] = mapped_column(String(50), default="folder")
     color: Mapped[str] = mapped_column(String(7), default="#6B7280")
+    flow_type: Mapped[str] = mapped_column(String(20), default="expense", server_default="expense")
     position: Mapped[int] = mapped_column(Integer, default=0)
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)
 

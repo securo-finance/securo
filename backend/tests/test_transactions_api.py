@@ -483,7 +483,7 @@ async def test_update_transaction_all_fields(
             "date": "2026-12-25",
             "type": "credit",
             "currency": "USD",
-            "category_id": str(test_categories[0].id),
+            "category_id": str(test_categories[2].id),
         },
     )
     assert response.status_code == 200
@@ -493,7 +493,7 @@ async def test_update_transaction_all_fields(
     assert data["date"] == "2026-12-25"
     assert data["type"] == "credit"
     assert data["currency"] == "USD"
-    assert data["category_id"] == str(test_categories[0].id)
+    assert data["category_id"] == str(test_categories[2].id)
 
 
 @pytest.mark.asyncio

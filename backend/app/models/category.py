@@ -24,6 +24,7 @@ class Category(Base):
     name: Mapped[str] = mapped_column(String(100))
     icon: Mapped[str] = mapped_column(String(50), default="circle-help")
     color: Mapped[str] = mapped_column(String(7), default="#6B7280")
+    flow_type: Mapped[str] = mapped_column(String(20), default="expense", server_default="expense")
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Flag for "money that moves rather than money earned or spent".

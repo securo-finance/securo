@@ -85,6 +85,7 @@ export interface Category {
   name: string
   icon: string
   color: string
+  flow_type: 'income' | 'expense'
   is_system: boolean
   treat_as_transfer: boolean
   is_ignored: boolean
@@ -96,6 +97,7 @@ export interface CategoryGroup {
   name: string
   icon: string
   color: string
+  flow_type: 'income' | 'expense'
   position: number
   is_system: boolean
   categories: Category[]

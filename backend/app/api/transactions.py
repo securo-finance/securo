@@ -197,9 +197,12 @@ async def bulk_categorize(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    count = await transaction_service.bulk_update_category(
-        session, ctx.workspace.id, data.transaction_ids, data.category_id
-    )
+    try:
+        count = await transaction_service.bulk_update_category(
+            session, ctx.workspace.id, data.transaction_ids, data.category_id
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     return {"updated": count}
 
 

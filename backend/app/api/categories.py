@@ -1,6 +1,7 @@
 import uuid
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
@@ -17,10 +18,11 @@ router = APIRouter(prefix="/api/categories", tags=["categories"])
 
 @router.get("", response_model=list[CategoryRead])
 async def list_categories(
+    flow_type: Optional[str] = Query(None, pattern="^(income|expense)$"),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    return await category_service.get_categories(session, ctx.workspace.id)
+    return await category_service.get_categories(session, ctx.workspace.id, flow_type)
 
 
 @router.post("", response_model=CategoryRead, status_code=status.HTTP_201_CREATED)
@@ -29,7 +31,10 @@ async def create_category(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    return await category_service.create_category(session, ctx.workspace.id, ctx.user_id, data)
+    try:
+        return await category_service.create_category(session, ctx.workspace.id, ctx.user_id, data)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.patch("/{category_id}", response_model=CategoryRead)
@@ -39,7 +44,10 @@ async def update_category(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    category = await category_service.update_category(session, category_id, ctx.workspace.id, data)
+    try:
+        category = await category_service.update_category(session, category_id, ctx.workspace.id, data)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not category:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
     return category

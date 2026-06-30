@@ -251,9 +251,15 @@ export const auth = {
 }
 
 // Categories
+const parseCategoryFlowType = (value: unknown): Category['flow_type'] | undefined =>
+  value === 'income' || value === 'expense' ? value : undefined
+
 export const categories = {
-  list: async (): Promise<Category[]> => {
-    const { data } = await api.get('/categories')
+  list: async (flowType?: unknown): Promise<Category[]> => {
+    const categoryFlowType = parseCategoryFlowType(flowType)
+    const { data } = await api.get('/categories', {
+      params: categoryFlowType ? { flow_type: categoryFlowType } : undefined,
+    })
     return data
   },
   create: async (category: Partial<Category>): Promise<Category> => {
@@ -271,8 +277,11 @@ export const categories = {
 
 // Category Groups
 export const categoryGroups = {
-  list: async (): Promise<CategoryGroup[]> => {
-    const { data } = await api.get('/category-groups')
+  list: async (flowType?: unknown): Promise<CategoryGroup[]> => {
+    const categoryFlowType = parseCategoryFlowType(flowType)
+    const { data } = await api.get('/category-groups', {
+      params: categoryFlowType ? { flow_type: categoryFlowType } : undefined,
+    })
     return data
   },
   create: async (group: Partial<CategoryGroup>): Promise<CategoryGroup> => {

@@ -47,12 +47,14 @@ export default function CategoriesPage() {
   const [editingCat, setEditingCat] = useState<Category | null>(null)
   const [formIcon, setFormIcon] = useState('circle-help')
   const [formColor, setFormColor] = useState('#6366f1')
+  const [formFlowType, setFormFlowType] = useState<Category['flow_type']>('expense')
   const [formTreatAsTransfer, setFormTreatAsTransfer] = useState(false)
   const [formIgnoreTransfer, setFormIgnoreTransfer] = useState(false)
   const [groupDialogOpen, setGroupDialogOpen] = useState(false)
   const [editingGroup, setEditingGroup] = useState<CategoryGroup | null>(null)
   const [groupFormIcon, setGroupFormIcon] = useState('folder')
   const [groupFormColor, setGroupFormColor] = useState('#6B7280')
+  const [groupFormFlowType, setGroupFormFlowType] = useState<CategoryGroup['flow_type']>('expense')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
 
   const { data: groups } = useQuery({
@@ -112,6 +114,7 @@ export default function CategoriesPage() {
     setEditingCat(cat)
     setFormIcon(cat?.icon ?? 'circle-help')
     setFormColor(cat?.color ?? '#6366f1')
+    setFormFlowType(cat?.flow_type ?? 'expense')
     setFormTreatAsTransfer(cat?.treat_as_transfer ?? false)
     setCatDialogOpen(true)
   }
@@ -120,6 +123,7 @@ export default function CategoriesPage() {
     setEditingGroup(group)
     setGroupFormIcon(group?.icon ?? 'folder')
     setGroupFormColor(group?.color ?? '#6B7280')
+    setGroupFormFlowType(group?.flow_type ?? 'expense')
     setGroupDialogOpen(true)
   }
 
@@ -277,6 +281,7 @@ export default function CategoriesPage() {
                 name: formData.get('name') as string,
                 icon: formData.get('icon') as string,
                 color: formData.get('color') as string,
+                flow_type: formData.get('flow_type') as Category['flow_type'],
                 group_id: (formData.get('group_id') as string) || null,
                 treat_as_transfer: formTreatAsTransfer,
                 is_ignored: formIgnoreTransfer
@@ -294,6 +299,18 @@ export default function CategoriesPage() {
               <Input name="name" defaultValue={editingCat?.name ?? ''} required />
             </div>
             <div className="space-y-2">
+              <Label>{t('transactions.type')}</Label>
+              <select
+                name="flow_type"
+                value={formFlowType}
+                onChange={(e) => setFormFlowType(e.target.value as Category['flow_type'])}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="expense">{t('transactions.expense')}</option>
+                <option value="income">{t('transactions.income')}</option>
+              </select>
+            </div>
+            <div className="space-y-2">
               <Label>{t('categories.group')}</Label>
               <select
                 name="group_id"
@@ -301,7 +318,7 @@ export default function CategoriesPage() {
                 className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 <option value="">{t('categories.noGroup')}</option>
-                {groups?.map((g) => (
+                {groups?.filter((g) => g.flow_type === formFlowType).map((g) => (
                   <option key={g.id} value={g.id}>{g.name}</option>
                 ))}
               </select>
@@ -366,6 +383,7 @@ export default function CategoriesPage() {
                 name: formData.get('name') as string,
                 icon: formData.get('icon') as string,
                 color: formData.get('color') as string,
+                flow_type: formData.get('flow_type') as CategoryGroup['flow_type'],
                 position: parseInt(formData.get('position') as string) || 0,
               }
               if (editingGroup) {
@@ -383,6 +401,18 @@ export default function CategoriesPage() {
             <div className="space-y-2">
               <Label>{t('groups.position')}</Label>
               <Input name="position" type="number" defaultValue={editingGroup?.position?.toString() ?? '0'} />
+            </div>
+            <div className="space-y-2">
+              <Label>{t('transactions.type')}</Label>
+              <select
+                name="flow_type"
+                value={groupFormFlowType}
+                onChange={(e) => setGroupFormFlowType(e.target.value as CategoryGroup['flow_type'])}
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="expense">{t('transactions.expense')}</option>
+                <option value="income">{t('transactions.income')}</option>
+              </select>
             </div>
             <div className="space-y-2">
               <Label>{t('groups.color')}</Label>

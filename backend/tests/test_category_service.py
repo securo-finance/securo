@@ -37,6 +37,8 @@ async def test_create_default_categories(session: AsyncSession, test_user, test_
 
     for cat in categories:
         assert cat.is_system is True
+    assert {c.name for c in categories if c.flow_type == "income"} == {"Salário & Renda"}
+    assert "Alimentação" in {c.name for c in categories if c.flow_type == "expense"}
 
 
 @pytest.mark.asyncio
@@ -111,6 +113,17 @@ async def test_get_categories_ordered(session: AsyncSession, test_user, test_wor
 
 
 @pytest.mark.asyncio
+async def test_get_categories_filters_by_flow_type(session: AsyncSession, test_user, test_workspace):
+    await create_default_categories(session, test_user.id, lang="pt-BR")
+
+    income_categories = await get_categories(session, test_workspace.id, flow_type="income")
+    expense_categories = await get_categories(session, test_workspace.id, flow_type="expense")
+
+    assert {c.name for c in income_categories} == {"Salário & Renda"}
+    assert "Salário & Renda" not in {c.name for c in expense_categories}
+
+
+@pytest.mark.asyncio
 async def test_get_categories_excludes_other_users(
     session: AsyncSession, test_user, test_workspace, test_categories
 ):
@@ -149,6 +162,33 @@ async def test_create_category_with_group(session: AsyncSession, test_user, test
         CategoryCreate(name="WithGroup", icon="star", color="#FFF", group_id=group.id),
     )
     assert cat.group_id == group.id
+
+
+@pytest.mark.asyncio
+async def test_create_category_rejects_group_with_different_flow(
+    session: AsyncSession, test_user, test_workspace
+):
+    from app.schemas.category_group import CategoryGroupCreate
+    from app.services.category_group_service import create_group
+
+    group = await create_group(
+        session,
+        test_workspace.id, test_user.id,
+        CategoryGroupCreate(name="Income", icon="folder", color="#000", flow_type="income"),
+    )
+
+    with pytest.raises(ValueError, match="must match group"):
+        await create_category(
+            session,
+            test_workspace.id, test_user.id,
+            CategoryCreate(
+                name="Expense In Income",
+                icon="star",
+                color="#FFF",
+                flow_type="expense",
+                group_id=group.id,
+            ),
+        )
 
 
 @pytest.mark.asyncio

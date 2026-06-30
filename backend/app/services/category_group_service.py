@@ -41,6 +41,8 @@ CATEGORY_TO_GROUP = {
     "other": "other",
 }
 
+INCOME_GROUP_KEYS = {"income"}
+
 
 def _resolve_group_name(key: str, lang: str) -> str:
     entry = DEFAULT_GROUPS_I18N.get(key, {})
@@ -63,6 +65,7 @@ async def create_default_groups(
             name=name,
             icon=data["icon"],
             color=data["color"],
+            flow_type="income" if key in INCOME_GROUP_KEYS else "expense",
             position=data["position"],
             is_system=True,
         )
@@ -72,13 +75,20 @@ async def create_default_groups(
     return groups
 
 
-async def get_groups(session: AsyncSession, workspace_id: uuid.UUID) -> list[CategoryGroup]:
-    result = await session.execute(
+async def get_groups(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    flow_type: Optional[str] = None,
+) -> list[CategoryGroup]:
+    query = (
         select(CategoryGroup)
         .where(CategoryGroup.workspace_id == workspace_id)
         .options(selectinload(CategoryGroup.categories))
         .order_by(CategoryGroup.position)
     )
+    if flow_type:
+        query = query.where(CategoryGroup.flow_type == flow_type)
+    result = await session.execute(query)
     return list(result.scalars().all())
 
 
@@ -111,6 +121,12 @@ async def update_group(
         return None
 
     for key, value in data.model_dump(exclude_unset=True).items():
+        if key == "flow_type" and value != group.flow_type:
+            child_id = await session.scalar(
+                select(Category.id).where(Category.group_id == group.id).limit(1)
+            )
+            if child_id is not None:
+                raise ValueError("Cannot change flow type while group has categories")
         setattr(group, key, value)
 
     await session.commit()

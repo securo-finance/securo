@@ -18,6 +18,7 @@ from app.models.payee import Payee
 from app.schemas.transaction import TransactionCreate, TransactionUpdate, TransferCreate
 from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
 from app.services import split_service
+from app.services.category_service import validate_category_for_transaction
 from app.services.credit_card_service import apply_effective_date
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.fx_rate_service import stamp_primary_amount, convert as fx_convert
@@ -648,6 +649,10 @@ async def create_transaction(
     if not account:
         raise ValueError("Account not found")
 
+    await validate_category_for_transaction(
+        session, workspace_id, data.category_id, data.type
+    )
+
     # Resolve currency: explicit value > account currency
     currency = data.currency or account.currency
 
@@ -672,6 +677,9 @@ async def create_transaction(
     # Apply rules only if no explicit category provided
     if not data.category_id:
         await apply_rules_to_transaction(session, user_id, transaction)
+        await validate_category_for_transaction(
+            session, workspace_id, transaction.category_id, transaction.type
+        )
 
     # Stamp primary currency amount (manual override or auto)
     if data.amount_primary is not None or data.fx_rate_used is not None:
@@ -1132,6 +1140,11 @@ async def update_transaction(
     for key, value in update_data.items():
         setattr(transaction, key, value)
 
+    if "category_id" in update_data or "type" in update_data:
+        await validate_category_for_transaction(
+            session, workspace_id, transaction.category_id, transaction.type
+        )
+
     if has_fx_override:
         _apply_fx_override(
             transaction,
@@ -1196,6 +1209,22 @@ async def bulk_update_category(
     transaction_ids: list[uuid.UUID],
     category_id: Optional[uuid.UUID] = None,
 ) -> int:
+    if category_id is not None:
+        tx_types = (
+            await session.execute(
+                select(Transaction.type)
+                .where(
+                    Transaction.id.in_(transaction_ids),
+                    Transaction.workspace_id == workspace_id,
+                )
+                .distinct()
+            )
+        ).scalars().all()
+        for tx_type in tx_types:
+            await validate_category_for_transaction(
+                session, workspace_id, category_id, tx_type
+            )
+
     result = await session.execute(
         update(Transaction)
         .where(

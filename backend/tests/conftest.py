@@ -280,10 +280,10 @@ def admin_auth_headers(admin_auth_token: str) -> dict:
 async def test_categories(session: AsyncSession, test_user: User) -> list[Category]:
     """Create test categories."""
     categories = []
-    for name, icon, color in [
-        ("Alimentação", "🍔", "#F59E0B"),
-        ("Transporte", "🚗", "#3B82F6"),
-        ("Receita", "💼", "#22C55E"),
+    for name, icon, color, flow_type in [
+        ("Alimentação", "🍔", "#F59E0B", "expense"),
+        ("Transporte", "🚗", "#3B82F6", "expense"),
+        ("Receita", "💼", "#22C55E", "income"),
     ]:
         cat = Category(
             id=uuid.uuid4(),
@@ -291,6 +291,7 @@ async def test_categories(session: AsyncSession, test_user: User) -> list[Catego
             name=name,
             icon=icon,
             color=color,
+            flow_type=flow_type,
             is_system=True,
         )
         session.add(cat)

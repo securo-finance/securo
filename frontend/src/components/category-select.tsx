@@ -15,6 +15,7 @@ interface CategorySelectProps {
   disabled?: boolean
   className?: string
   allowNone?: boolean
+  flowType?: Category['flow_type']
   contentProps?: React.ComponentProps<typeof PopoverContent>
 }
 
@@ -28,6 +29,7 @@ export function CategorySelect({
   disabled = false,
   className,
   allowNone = false,
+  flowType,
   contentProps,
 }: CategorySelectProps) {
   const [open, setOpen] = useState(false)
@@ -36,18 +38,27 @@ export function CategorySelect({
   const resolvedPlaceholder = placeholder ?? t('transactions.selectCategory', 'Select category')
 
   const displayGroups = useMemo(() => {
-    const ungrouped = (categories ?? []).filter((c) => !c.group_id)
-    if (ungrouped.length === 0) return groups
+    const visibleCategories = flowType
+      ? (categories ?? []).filter((c) => c.flow_type === flowType)
+      : (categories ?? [])
+    const visibleGroups = (groups ?? [])
+      .filter((group) => !flowType || group.flow_type === flowType)
+      .map((group) => ({
+        ...group,
+        categories: group.categories.filter((cat) => !flowType || cat.flow_type === flowType),
+      }))
+    const ungrouped = visibleCategories.filter((c) => !c.group_id)
+    if (ungrouped.length === 0) return visibleGroups
 
     return [
-      ...groups,
+      ...visibleGroups,
       {
         id: 'ungrouped-virtual',
         name: t('groups.noGroup'),
         categories: ungrouped,
       } as CategoryGroup,
     ]
-  }, [categories, groups, t])
+  }, [categories, flowType, groups, t])
 
   const selectedCategory = useMemo(() => {
     return (categories ?? []).find((c) => c.id === value)

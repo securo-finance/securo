@@ -1,6 +1,7 @@
 import uuid
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
@@ -17,10 +18,11 @@ router = APIRouter(prefix="/api/category-groups", tags=["category-groups"])
 
 @router.get("", response_model=list[CategoryGroupRead])
 async def list_groups(
+    flow_type: Optional[str] = Query(None, pattern="^(income|expense)$"),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    return await category_group_service.get_groups(session, ctx.workspace.id)
+    return await category_group_service.get_groups(session, ctx.workspace.id, flow_type)
 
 
 @router.post("", response_model=CategoryGroupRead, status_code=status.HTTP_201_CREATED)
@@ -39,7 +41,10 @@ async def update_group(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    group = await category_group_service.update_group(session, group_id, ctx.workspace.id, data)
+    try:
+        group = await category_group_service.update_group(session, group_id, ctx.workspace.id, data)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     return group

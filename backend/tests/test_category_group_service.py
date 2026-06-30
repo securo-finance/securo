@@ -40,6 +40,8 @@ async def test_create_default_groups(session: AsyncSession, test_user, test_work
     # All should be system groups
     for g in groups.values():
         assert g.is_system is True
+    assert groups["income"].flow_type == "income"
+    assert groups["housing"].flow_type == "expense"
 
 
 @pytest.mark.asyncio
@@ -86,6 +88,18 @@ async def test_get_groups_ordered_by_position(session: AsyncSession, test_user, 
 
     positions = [g.position for g in groups]
     assert positions == sorted(positions)
+
+
+@pytest.mark.asyncio
+async def test_get_groups_filters_by_flow_type(session: AsyncSession, test_user, test_workspace):
+    await create_default_groups(session, test_user.id)
+    await session.commit()
+
+    income_groups = await get_groups(session, test_workspace.id, flow_type="income")
+    expense_groups = await get_groups(session, test_workspace.id, flow_type="expense")
+
+    assert {g.name for g in income_groups} == {"Renda"}
+    assert "Renda" not in {g.name for g in expense_groups}
 
 
 @pytest.mark.asyncio
@@ -161,6 +175,37 @@ async def test_update_group(session: AsyncSession, test_user, test_workspace):
     assert updated.name == "New"
     assert updated.color == "#222222"
     assert updated.icon == "x"  # unchanged
+
+
+@pytest.mark.asyncio
+async def test_update_group_rejects_flow_change_with_categories(
+    session: AsyncSession, test_user, test_workspace
+):
+    group = await create_group(
+        session,
+        test_workspace.id, test_user.id,
+        CategoryGroupCreate(name="Has Children", icon="folder", color="#111111"),
+    )
+    session.add(
+        Category(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            name="ChildCat",
+            icon="star",
+            color="#0000FF",
+            is_system=False,
+            group_id=group.id,
+        )
+    )
+    await session.commit()
+
+    with pytest.raises(ValueError, match="Cannot change flow type"):
+        await update_group(
+            session,
+            group.id,
+            test_workspace.id,
+            CategoryGroupUpdate(flow_type="income"),
+        )
 
 
 @pytest.mark.asyncio
