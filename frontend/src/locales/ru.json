@@ -290,6 +290,8 @@
     "noCategory": "Без категории",
     "searchCategory": "Поиск категории...",
     "noCategoryFound": "Категория не найдена.",
+    "searchRule": "Поиск правила...",
+    "noRulesFound": "Правила не найдены.",
     "addManual": "Добавить транзакцию",
     "duplicate": "Дублировать",
     "createRule": "Создать правило",

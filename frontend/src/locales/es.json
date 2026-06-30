@@ -290,6 +290,8 @@
     "noCategory": "Sin categoría",
     "searchCategory": "Buscar categoría...",
     "noCategoryFound": "No se encontraron categorías.",
+    "searchRule": "Buscar regla...",
+    "noRulesFound": "No se encontraron reglas.",
     "addManual": "Agregar transacción",
     "duplicate": "Duplicar",
     "createRule": "Crear regla",

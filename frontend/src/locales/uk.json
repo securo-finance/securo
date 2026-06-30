@@ -290,6 +290,8 @@
     "noCategory": "Без категорії",
     "searchCategory": "Пошук категорії...",
     "noCategoryFound": "Категорію не знайдено.",
+    "searchRule": "Пошук правила...",
+    "noRulesFound": "Правил не знайдено.",
     "addManual": "Додати транзакцію",
     "duplicate": "Дублювати",
     "createRule": "Створити правило",

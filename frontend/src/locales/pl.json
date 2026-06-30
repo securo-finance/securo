@@ -296,6 +296,8 @@
     "noCategory": "Brak kategorii",
     "searchCategory": "Szukaj kategorii...",
     "noCategoryFound": "Nie znaleziono żadnej kategorii.",
+    "searchRule": "Szukaj reguły...",
+    "noRulesFound": "Nie znaleziono reguł.",
     "addManual": "Dodaj transakcję",
     "duplicate": "Duplikuj",
     "createRule": "Utwórz regułę",
