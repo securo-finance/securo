@@ -1662,18 +1662,18 @@
     }
   },
   "periodSelector": {
-    "daily": "Daily",
-    "weekly": "Weekly",
-    "monthly": "Monthly",
-    "quarterly": "Quarterly",
-    "half_yearly": "Half-yearly",
-    "yearly": "Yearly",
-    "custom": "Custom",
-    "today": "Today",
-    "previous": "Previous period",
-    "next": "Next period",
-    "swap": "Swap",
-    "confirm": "Confirm",
-    "cancel": "Cancel"
+    "daily": "Ежедневно",
+    "weekly": "Еженедельно",
+    "monthly": "Ежемесячно",
+    "quarterly": "Ежеквартально",
+    "half_yearly": "Раз в полгода",
+    "yearly": "Ежегодно",
+    "custom": "Пользовательский",
+    "today": "Сегодня",
+    "previous": "Предыдущий период",
+    "next": "Следующий период",
+    "swap": "Поменять",
+    "confirm": "Подтвердить",
+    "cancel": "Отмена"
   }
 }

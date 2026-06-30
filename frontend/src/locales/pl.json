@@ -1752,18 +1752,18 @@
     }
   },
   "periodSelector": {
-    "daily": "Daily",
-    "weekly": "Weekly",
-    "monthly": "Monthly",
-    "quarterly": "Quarterly",
-    "half_yearly": "Half-yearly",
-    "yearly": "Yearly",
-    "custom": "Custom",
-    "today": "Today",
-    "previous": "Previous period",
-    "next": "Next period",
-    "swap": "Swap",
-    "confirm": "Confirm",
-    "cancel": "Cancel"
+    "daily": "Dzienny",
+    "weekly": "Tygodniowy",
+    "monthly": "Miesięczny",
+    "quarterly": "Kwartalny",
+    "half_yearly": "Półroczny",
+    "yearly": "Roczny",
+    "custom": "Niestandardowy",
+    "today": "Dzisiaj",
+    "previous": "Poprzedni okres",
+    "next": "Następny okres",
+    "swap": "Zamień",
+    "confirm": "Potwierdź",
+    "cancel": "Anuluj"
   }
 }

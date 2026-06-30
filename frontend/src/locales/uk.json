@@ -1662,18 +1662,18 @@
     }
   },
   "periodSelector": {
-    "daily": "Daily",
-    "weekly": "Weekly",
-    "monthly": "Monthly",
-    "quarterly": "Quarterly",
-    "half_yearly": "Half-yearly",
-    "yearly": "Yearly",
-    "custom": "Custom",
-    "today": "Today",
-    "previous": "Previous period",
-    "next": "Next period",
-    "swap": "Swap",
-    "confirm": "Confirm",
-    "cancel": "Cancel"
+    "daily": "Щодня",
+    "weekly": "Щотижня",
+    "monthly": "Щомісяця",
+    "quarterly": "Щокварталу",
+    "half_yearly": "Раз на пів року",
+    "yearly": "Щороку",
+    "custom": "Користувацький",
+    "today": "Сьогодні",
+    "previous": "Попередній період",
+    "next": "Наступний період",
+    "swap": "Поміняти",
+    "confirm": "Підтвердити",
+    "cancel": "Скасувати"
   }
 }

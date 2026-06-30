@@ -1662,18 +1662,18 @@
     }
   },
   "periodSelector": {
-    "daily": "Daily",
-    "weekly": "Weekly",
-    "monthly": "Monthly",
-    "quarterly": "Quarterly",
-    "half_yearly": "Half-yearly",
-    "yearly": "Yearly",
-    "custom": "Custom",
-    "today": "Today",
-    "previous": "Previous period",
-    "next": "Next period",
-    "swap": "Swap",
-    "confirm": "Confirm",
-    "cancel": "Cancel"
+    "daily": "Diario",
+    "weekly": "Semanal",
+    "monthly": "Mensual",
+    "quarterly": "Trimestral",
+    "half_yearly": "Semestral",
+    "yearly": "Anual",
+    "custom": "Personalizado",
+    "today": "Hoy",
+    "previous": "Periodo anterior",
+    "next": "Próximo periodo",
+    "swap": "Intercambiar",
+    "confirm": "Confirmar",
+    "cancel": "Cancelar"
   }
 }
