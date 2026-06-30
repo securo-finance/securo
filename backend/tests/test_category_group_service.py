@@ -71,6 +71,17 @@ async def test_create_default_groups_ukrainian(session: AsyncSession, test_user,
     assert groups["income"].name == "Доходи"
 
 
+@pytest.mark.asyncio
+async def test_create_default_groups_german(session: AsyncSession, test_user, test_workspace):
+    groups = await create_default_groups(session, test_user.id, lang="de")
+    await session.commit()
+
+    assert groups["housing"].name == "Wohnen"
+    assert groups["food"].name == "Essen & Trinken"
+    assert groups["income"].name == "Einkommen"
+
+
+
 # ---------------------------------------------------------------------------
 # get_groups
 # ---------------------------------------------------------------------------

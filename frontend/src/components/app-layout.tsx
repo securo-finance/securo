@@ -698,6 +698,15 @@ function UserMenu({
                 )}
               </DropdownMenuItem>
               <DropdownMenuItem
+                onClick={() => i18n.changeLanguage('de')}
+                className="flex items-center gap-2"
+              >
+                <span className="flex-1">Deutsch</span>
+                {currentLang === 'de' && (
+                  <Check size={13} className="text-primary" />
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuItem
                 onClick={() => i18n.changeLanguage('uk')}
                 className="flex items-center gap-2"
               >

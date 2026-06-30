@@ -40,6 +40,22 @@ async def test_create_default_categories(session: AsyncSession, test_user, test_
 
 
 @pytest.mark.asyncio
+async def test_create_default_categories_german(session: AsyncSession, test_user, test_workspace):
+    categories = await create_default_categories(session, test_user.id, lang="de")
+
+    assert len(categories) == len(DEFAULT_CATEGORIES_I18N)
+
+    names = {c.name for c in categories}
+    assert "Wohnen" in names
+    assert "Essen & Trinken" in names
+    assert "Lebensmittel" in names
+    assert "Sonstiges" in names
+
+    for cat in categories:
+        assert cat.is_system is True
+
+
+@pytest.mark.asyncio
 async def test_create_default_categories_creates_groups(session: AsyncSession, test_user, test_workspace):
     await create_default_categories(session, test_user.id, lang="pt-BR")
 

@@ -651,6 +651,7 @@ export default function AdminSettingsPage() {
                     className="w-full h-10 rounded-lg border border-input bg-background px-3 text-sm"
                   >
                     <option value="en">English</option>
+                    <option value="de">Deutsch</option>
                     <option value="ru">Русский</option>
                     <option value="uk">Українська</option>
                     <option value="pt-BR">Português (BR)</option>
