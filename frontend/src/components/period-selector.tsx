@@ -206,7 +206,7 @@ export function PeriodSelector({
           className="h-8 w-8 shrink-0"
           onClick={() => stepAnchor(-1)}
           disabled={isCustom}
-          title={t('periodSelector.previous', 'Período anterior')}
+          title={t('periodSelector.previous', 'Previous period')}
         >
           <ChevronLeft className="h-4 w-4" />
         </Button>
@@ -261,7 +261,7 @@ export function PeriodSelector({
           className="h-8 w-8 shrink-0"
           onClick={() => stepAnchor(1)}
           disabled={isCustom}
-          title={t('periodSelector.next', 'Próximo período')}
+          title={t('periodSelector.next', 'Next period')}
         >
           <ChevronRight className="h-4 w-4" />
         </Button>
@@ -273,7 +273,7 @@ export function PeriodSelector({
             size="icon"
             className="h-8 w-8 shrink-0"
             onClick={goToday}
-            title={t('periodSelector.today', 'Hoje')}
+            title={t('periodSelector.today', 'Today')}
           >
             <CalendarDays className="h-4 w-4" />
           </Button>
@@ -321,8 +321,8 @@ interface CustomRangePopoverProps {
 }
 
 /**
- * The popover content for custom mode: two DatePickerInput fields (Início,
- * Fim) plus a Confirm button. The state stays local until the user clicks
+ * The popover content for custom mode: two DatePickerInput fields (From,
+ * To) plus a Confirm button. The state stays local until the user clicks
  * Confirm, so they can fiddle with the inputs without committing.
  */
 function CustomRangePopover({ value, onChange, label }: CustomRangePopoverProps) {
@@ -369,23 +369,23 @@ function CustomRangePopover({ value, onChange, label }: CustomRangePopoverProps)
       <PopoverContent align="center" className="w-auto p-3 space-y-3">
         <div className="space-y-1.5">
           <label className="text-xs text-muted-foreground">
-            {t('transactions.from', 'Início')} <span className="text-rose-500">*</span>
+            {t('transactions.from', 'From')} <span className="text-rose-500">*</span>
           </label>
           <DatePickerInput
             value={draftFrom}
             onChange={setDraftFrom}
-            placeholder={t('transactions.from', 'Início')}
+            placeholder={t('transactions.from', 'From')}
             align="start"
           />
         </div>
         <div className="space-y-1.5">
           <label className="text-xs text-muted-foreground">
-            {t('transactions.to', 'Fim')} <span className="text-rose-500">*</span>
+            {t('transactions.to', 'To')} <span className="text-rose-500">*</span>
           </label>
           <DatePickerInput
             value={draftTo}
             onChange={setDraftTo}
-            placeholder={t('transactions.to', 'Fim')}
+            placeholder={t('transactions.to', 'To')}
             align="start"
           />
         </div>
@@ -397,7 +397,7 @@ function CustomRangePopover({ value, onChange, label }: CustomRangePopoverProps)
             className="h-7 w-7"
             onClick={swap}
             disabled={!draftFrom || !draftTo}
-            title={t('periodSelector.swap', 'Inverter')}
+            title={t('periodSelector.swap', 'Swap')}
           >
             <span className="text-xs">⇅</span>
           </Button>
