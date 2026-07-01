@@ -48,6 +48,10 @@ function defaultTo() {
   return format(new Date(), 'yyyy-MM-dd')
 }
 
+function defaultPeriodValue(): PeriodValue {
+  return { mode: 'monthly', anchor: format(new Date(), 'yyyy-MM-dd') }
+}
+
 function daysInMonth(year: number, month: number): number {
   return new Date(year, month + 1, 0).getDate()
 }
@@ -290,28 +294,13 @@ export default function AccountDetailPage() {
 const [ccFilterFrom, setCcFilterFrom] = useState(defaultFrom)
 const [ccFilterTo, setCcFilterTo] = useState(defaultTo)
 const [showPrimary, setShowPrimary] = useState(false)
-  // Non-CC period selector state. Persists to localStorage so reloads/new
-  // tabs land on the same view per account.
-  const [period, setPeriod] = useState<PeriodValue>(() => {
-    if (typeof window === 'undefined' || !id) {
-      return { mode: 'monthly', anchor: format(new Date(), 'yyyy-MM-dd') }
-    }
-    try {
-      const stored = window.localStorage.getItem(`period-selector-${id}`)
-      if (stored) {
-        const parsed = JSON.parse(stored) as PeriodValue
-        if (parsed?.mode === 'custom' && parsed.from && parsed.to) return parsed
-        // After the early return above, parsed is narrowed to the non-custom
-        // union member by TS — but only if the cast was lossless. The
-        // explicit assertion here keeps the narrowing stable.
-        const anchorCandidate = parsed as Extract<PeriodValue, { anchor: string }>
-        if (anchorCandidate?.mode && anchorCandidate.anchor) return anchorCandidate
-      }
-    } catch {
-      // ignore — fall through to default
-    }
-    return { mode: 'monthly', anchor: format(new Date(), 'yyyy-MM-dd') }
-  })
+  // Non-CC period selector state is intentionally local-only. Reloads and
+  // returning from another page start at the default period, matching main.
+  const [period, setPeriod] = useState<PeriodValue>(defaultPeriodValue)
+
+  useEffect(() => {
+    setPeriod(defaultPeriodValue())
+  }, [id])
 
   // filterTouched tracks user-driven changes vs. default-cycle rewrites so the
   // CC default-cycle useEffect below can avoid overriding the user's pick.
@@ -451,21 +440,26 @@ const [showPrimary, setShowPrimary] = useState(false)
     queryFn: () => accounts.list(),
   })
 
+  const summaryFrom = isCreditCard ? ccFilterFrom : filterFrom
+  const summaryTo = isCreditCard ? ccFilterTo : filterTo
+  const summaryBillId = isCreditCard ? activeBill?.id : undefined
+  const summaryUnbilledOnly = isCreditCard && isInProgressCycle
+
   const { data: summary, isLoading: summaryLoading } = useQuery({
     // When a real bill anchors the active cycle, send bill_id AND the cycle
     // window. Backend ORs them so both bill_id-linked txs (bank truth) and
     // unlinked txs in the window (manual recurring, CSV imports) count.
     // For the in-progress cycle (no bill match), unbilled_only excludes
     // txs already linked to a closed bill (anti-double-count).
-    queryKey: activeBill
-      ? ['accounts', id, 'summary', { bill_id: activeBill.id, from: ccFilterFrom, to: ccFilterTo }]
-      : ['accounts', id, 'summary', ccFilterFrom, ccFilterTo, { unbilled_only: isInProgressCycle }],
+    queryKey: summaryBillId
+      ? ['accounts', id, 'summary', { bill_id: summaryBillId, from: summaryFrom, to: summaryTo }]
+      : ['accounts', id, 'summary', summaryFrom, summaryTo, { unbilled_only: summaryUnbilledOnly }],
     queryFn: () => accounts.summary(
       id!,
-      ccFilterFrom || undefined,
-      ccFilterTo || undefined,
-      activeBill?.id,
-      isInProgressCycle || undefined,
+      summaryFrom || undefined,
+      summaryTo || undefined,
+      summaryBillId,
+      summaryUnbilledOnly || undefined,
     ),
     enabled: !!id,
   })
@@ -926,7 +920,6 @@ const [showPrimary, setShowPrimary] = useState(false)
                 filterTouched.current = true
                 setPeriod(next)
               }}
-              storageKey={`period-selector-${id ?? 'default'}`}
             />
           )}
           {/* Legacy "Limpar filtros" button — only for CC where the new

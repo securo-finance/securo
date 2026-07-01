@@ -405,6 +405,15 @@ async def test_list_transactions_custom_mode_rejected(
 
 
 @pytest.mark.asyncio
+async def test_list_transactions_invalid_mode_returns_422(client: AsyncClient, auth_headers):
+    response = await client.get(
+        "/api/transactions?mode=bogus&anchor_date=2026-06-15",
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_get_transaction(
     client: AsyncClient, auth_headers, test_transactions: list[Transaction]
 ):

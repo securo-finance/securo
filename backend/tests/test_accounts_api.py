@@ -293,6 +293,17 @@ async def test_account_summary_mode_without_anchor(
 
 
 @pytest.mark.asyncio
+async def test_account_summary_invalid_mode_returns_422(
+    client: AsyncClient, auth_headers, test_account
+):
+    response = await client.get(
+        f"/api/accounts/{str(test_account.id)}/summary?mode=bogus&anchor_date=2026-06-15",
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_balance_history_mode_anchor(
     client: AsyncClient, auth_headers, test_account
 ):
@@ -304,6 +315,18 @@ async def test_balance_history_mode_anchor(
     )
     assert response.status_code == 200
     assert isinstance(response.json(), list)
+
+
+@pytest.mark.asyncio
+async def test_balance_history_invalid_mode_returns_422(
+    client: AsyncClient, auth_headers, test_account
+):
+    response = await client.get(
+        f"/api/accounts/{str(test_account.id)}/balance-history"
+        "?mode=bogus&anchor_date=2026-06-15",
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio

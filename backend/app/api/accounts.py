@@ -81,7 +81,13 @@ async def get_account_summary(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="custom mode requires explicit from/to; not supported with mode param",
             )
-        period = resolve_period(mode, anchor_date, week_start=week_start)
+        try:
+            period = resolve_period(mode, anchor_date, week_start=week_start)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
         date_from = period.start.isoformat()
         date_to = period.end.isoformat()
     from_date = date.fromisoformat(date_from) if date_from else None
@@ -142,7 +148,13 @@ async def get_account_balance_history(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="custom mode requires explicit from/to; not supported with mode param",
             )
-        period = resolve_period(mode, anchor_date, week_start=week_start)
+        try:
+            period = resolve_period(mode, anchor_date, week_start=week_start)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
         date_from = period.start.isoformat()
         date_to = period.end.isoformat()
     from_date = date.fromisoformat(date_from) if date_from else None

@@ -122,7 +122,13 @@ async def list_transactions(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="custom mode requires explicit from/to; not supported with mode param",
             )
-        period = resolve_period(mode, anchor_date, week_start=week_start)
+        try:
+            period = resolve_period(mode, anchor_date, week_start=week_start)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
         from_date = period.start
         to_date = period.end
     accounting_mode = await get_credit_card_accounting_mode(session)

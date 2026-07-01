@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   addDays,
@@ -6,14 +6,11 @@ import {
   format,
   type Locale,
 } from 'date-fns'
-import { ptBR, enUS, es, ja, ko, zhCN, he } from 'date-fns/locale'
 import {
   CalendarDays,
   Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  MoreVertical,
   X,
 } from 'lucide-react'
 
@@ -21,6 +18,7 @@ import { Calendar } from '@/components/ui/calendar'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
+import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import { cn } from '@/lib/utils'
 import {
   modePicksMonth,
@@ -32,23 +30,6 @@ import {
   type PeriodValue,
 } from '@/lib/period'
 
-const DATE_FNS_LOCALES: Record<string, Locale> = {
-  'pt-BR': ptBR,
-  en: enUS,
-  es: es,
-  ja: ja,
-  ko: ko,
-  zh: zhCN,
-  he: he,
-}
-
-function resolveDateFnsLocale(lang: string): Locale {
-  if (DATE_FNS_LOCALES[lang]) return DATE_FNS_LOCALES[lang]
-  const base = lang.split('-')[0]
-  if (DATE_FNS_LOCALES[base]) return DATE_FNS_LOCALES[base]
-  return enUS
-}
-
 function todayIso(): string {
   const d = new Date()
   return format(d, 'yyyy-MM-dd')
@@ -57,14 +38,8 @@ function todayIso(): string {
 interface PeriodSelectorProps {
   value: PeriodValue
   onChange: (next: PeriodValue) => void
-  /**
-   * Storage key for the localStorage persistence slot. Pass an account id so
-   * each account remembers its own mode+anchor. The component reads/writes
-   * `{mode, ...}` JSON under this key on mount and on every change.
-   */
-  storageKey?: string
   className?: string
-  /** When true, hides the mode dropdown (single-mode embedding). */
+  /** When true, hides the mode selector (single-mode embedding). */
   hideModeMenu?: boolean
   /** When true, hides the "hoje" reset button. */
   hideToday?: boolean
@@ -127,7 +102,7 @@ function anchorDateFor(value: PeriodValue): Date {
 /** Compute the value button's display label for the current value. */
 function formatLabel(value: PeriodValue, dfLocale: Locale, weekStart: number): string {
   if (value.mode === 'custom') {
-    return `${format(parseIsoLocal(value.from), 'd MMM', { locale: dfLocale })} – ${format(parseIsoLocal(value.to), 'd MMM', { locale: dfLocale })}`
+    return `${format(parseIsoLocal(value.from), 'dd/MM/yy', { locale: dfLocale })} – ${format(parseIsoLocal(value.to), 'dd/MM/yy', { locale: dfLocale })}`
   }
   const r = resolvePeriod(value.mode, value.anchor, weekStart)
   if (value.mode === 'daily') return format(parseIsoLocal(r.start), 'PPP', { locale: dfLocale })
@@ -135,69 +110,6 @@ function formatLabel(value: PeriodValue, dfLocale: Locale, weekStart: number): s
     return `${format(parseIsoLocal(r.start), 'd MMM', { locale: dfLocale })} – ${format(parseIsoLocal(r.end), 'd MMM yyyy', { locale: dfLocale })}`
   }
   if (value.mode === 'monthly') return format(parseIsoLocal(r.start), 'LLLL yyyy', { locale: dfLocale })
-  if (value.mode === 'quarterly') {
-    const start = parseIsoLocal(r.start)
-    const end = parseIsoLocal(r.end)
-    const q = Math.floor(start.getMonth() / 3) + 1
-    return `Q${q} ${start.getFullYear()} (${format(start, 'MMM', { locale: dfLocale })}–${format(end, 'MMM', { locale: dfLocale })})`
-  }
-  if (value.mode === 'half_yearly') {
-    const start = parseIsoLocal(r.start)
-    const s = start.getMonth() < 6 ? 1 : 2
-    const end = parseIsoLocal(r.end)
-    return `S${s} ${start.getFullYear()} (${format(start, 'MMM', { locale: dfLocale })}–${format(end, 'MMM', { locale: dfLocale })})`
-  }
-  // yearly
-  return format(parseIsoLocal(r.start), 'yyyy')
-}
-
-/**
- * Ultra-short label for the narrowest breakpoint (< 375px). Even weekly
- * ranges drop the year, and quarterly/half-yearly collapse to "Q2 2026" /
- * "S1 2026". The whole component stacks vertically at this width so the
- * label has the full row to itself, but we still trim aggressively because
- * three 32×32 icon buttons eat most of the horizontal budget.
- */
-function formatLabelUltraShort(value: PeriodValue, dfLocale: Locale, weekStart: number): string {
-  if (value.mode === 'custom') {
-    return `${format(parseIsoLocal(value.from), 'dd/MM', { locale: dfLocale })} – ${format(parseIsoLocal(value.to), 'dd/MM', { locale: dfLocale })}`
-  }
-  const r = resolvePeriod(value.mode, value.anchor, weekStart)
-  if (value.mode === 'daily') return format(parseIsoLocal(r.start), 'dd/MM/yyyy', { locale: dfLocale })
-  if (value.mode === 'weekly') {
-    // No year — saving ~30px buys enough room for "28 Jun – 4 Jul" on a 320px viewport.
-    return `${format(parseIsoLocal(r.start), 'd MMM', { locale: dfLocale })} – ${format(parseIsoLocal(r.end), 'd MMM', { locale: dfLocale })}`
-  }
-  if (value.mode === 'monthly') return format(parseIsoLocal(r.start), 'MMM yyyy', { locale: dfLocale })
-  if (value.mode === 'quarterly') {
-    const start = parseIsoLocal(r.start)
-    const q = Math.floor(start.getMonth() / 3) + 1
-    return `Q${q} ${start.getFullYear()}`
-  }
-  if (value.mode === 'half_yearly') {
-    const start = parseIsoLocal(r.start)
-    const s = start.getMonth() < 6 ? 1 : 2
-    return `S${s} ${start.getFullYear()}`
-  }
-  // yearly
-  return format(parseIsoLocal(r.start), 'yyyy')
-}
-
-/**
- * Medium label for the [375px, 640px) range — phone landscape / large
- * mobile. Room for the year on weekly, and quarterly/half-yearly can drop
- * the "Q2"/"S1" prefix in favor of explicit month ranges ("abr – jun 2026").
- */
-function formatLabelMedium(value: PeriodValue, dfLocale: Locale, weekStart: number): string {
-  if (value.mode === 'custom') {
-    return `${format(parseIsoLocal(value.from), 'dd/MM', { locale: dfLocale })} – ${format(parseIsoLocal(value.to), 'dd/MM', { locale: dfLocale })}`
-  }
-  const r = resolvePeriod(value.mode, value.anchor, weekStart)
-  if (value.mode === 'daily') return format(parseIsoLocal(r.start), 'd MMM yyyy', { locale: dfLocale })
-  if (value.mode === 'weekly') {
-    return `${format(parseIsoLocal(r.start), 'd MMM', { locale: dfLocale })} – ${format(parseIsoLocal(r.end), 'd MMM yyyy', { locale: dfLocale })}`
-  }
-  if (value.mode === 'monthly') return format(parseIsoLocal(r.start), 'MMM yyyy', { locale: dfLocale })
   if (value.mode === 'quarterly') {
     const start = parseIsoLocal(r.start)
     const end = parseIsoLocal(r.end)
@@ -222,7 +134,6 @@ function defaultValueFor(mode: PeriodMode): PeriodValue {
 export function PeriodSelector({
   value,
   onChange,
-  storageKey,
   className,
   hideModeMenu,
   hideToday,
@@ -230,17 +141,6 @@ export function PeriodSelector({
   const { t, i18n } = useTranslation()
   const dfLocale = resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language ?? 'en')
   const weekStart = weekStartFromLocale(i18n.resolvedLanguage ?? i18n.language ?? 'en')
-  const [modeMenuOpen, setModeMenuOpen] = useState(false)
-
-  // Persist to localStorage on every change.
-  useEffect(() => {
-    if (!storageKey) return
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify(value))
-    } catch {
-      // ignore
-    }
-  }, [storageKey, value])
 
   // For non-custom modes, the anchor as a Date — used by the Calendar's
   // selected/defaultMonth props.
@@ -269,19 +169,10 @@ export function PeriodSelector({
 
   const setMode = (mode: PeriodMode) => {
     onChange(defaultValueFor(mode))
-    setModeMenuOpen(false)
   }
 
   const label = useMemo(
     () => formatLabel(value, dfLocale, weekStart),
-    [value, dfLocale, weekStart],
-  )
-  const mediumLabel = useMemo(
-    () => formatLabelMedium(value, dfLocale, weekStart),
-    [value, dfLocale, weekStart],
-  )
-  const shortLabel = useMemo(
-    () => formatLabelUltraShort(value, dfLocale, weekStart),
     [value, dfLocale, weekStart],
   )
 
@@ -306,8 +197,8 @@ export function PeriodSelector({
     : undefined
 
   return (
-    <div className={cn('flex w-full flex-wrap items-center gap-2 sm:w-auto', className)}>
-      <div className="order-2 flex w-full min-w-0 items-center gap-1 min-[375px]:order-1 min-[375px]:w-auto min-[375px]:flex-1 sm:flex-none">
+    <div className={cn('flex w-full flex-wrap items-center gap-x-2 gap-y-1 sm:w-auto md:gap-y-2', className)}>
+      <div className="order-2 flex w-full min-w-0 items-center gap-1 md:order-1 md:w-auto md:flex-1 lg:flex-none">
         <Button
           type="button"
           variant="outline"
@@ -325,8 +216,6 @@ export function PeriodSelector({
             value={value}
             onChange={onChange}
             label={label}
-            mediumLabel={mediumLabel}
-            shortLabel={shortLabel}
           />
         ) : (
           <Popover>
@@ -337,9 +226,7 @@ export function PeriodSelector({
                 aria-label={label}
                 className="inline-flex flex-1 items-center justify-center gap-2 border border-border rounded-lg px-3 py-1.5 text-sm bg-card text-foreground hover:bg-muted/50 transition-colors capitalize whitespace-nowrap sm:w-[164px] sm:flex-none"
               >
-                <span className="min-[375px]:hidden">{shortLabel}</span>
-                <span className="hidden min-[375px]:inline sm:hidden">{mediumLabel}</span>
-                <span className="hidden sm:inline">{label}</span>
+                {label}
               </button>
             </PopoverTrigger>
             <PopoverContent align="center" className="w-auto p-0">
@@ -394,42 +281,30 @@ export function PeriodSelector({
       </div>
 
       {!hideModeMenu && (
-        <Popover open={modeMenuOpen} onOpenChange={setModeMenuOpen}>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              title={t(`periodSelector.${value.mode}`, value.mode)}
-              aria-label={t(`periodSelector.${value.mode}`, value.mode)}
-              className={cn(
-                'inline-flex items-center justify-center gap-1.5 border border-border rounded-lg text-sm bg-card text-foreground hover:bg-muted/50 transition-colors',
-                'order-1 w-full px-3',
-                'min-[375px]:order-2 min-[375px]:h-8 min-[375px]:w-8 min-[375px]:p-0 min-[375px]:shrink-0',
-                'sm:h-auto sm:w-auto sm:px-3 sm:py-1.5 sm:min-w-[110px]',
-              )}
-            >
-              <span className="min-[375px]:hidden sm:inline whitespace-nowrap">{t(`periodSelector.${value.mode}`, value.mode)}</span>
-              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground min-[375px]:hidden sm:block" />
-              <MoreVertical className="hidden h-4 w-4 text-muted-foreground min-[375px]:block sm:hidden" />
-            </button>
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-44 p-1">
-            {MODES.map((m) => (
+        <div className="order-1 flex h-[30px] w-full max-w-full items-center overflow-hidden rounded-lg border border-border bg-card md:order-2 md:h-[34px] md:w-auto">
+          {MODES.map((m) => {
+            const modeLabel = t(`periodSelector.${m}`, m)
+            const modeShortLabel = t(`periodSelector.${m}Short`, m === 'custom' ? '...' : modeLabel)
+            return (
               <button
                 key={m}
                 type="button"
                 onClick={() => setMode(m)}
+                title={modeLabel}
+                aria-label={modeLabel}
                 className={cn(
-                  'w-full text-left px-3 py-1.5 text-sm rounded-md transition-colors',
+                    'flex h-[30px] min-w-0 flex-1 items-center justify-center px-0 text-xs font-semibold transition-colors md:h-[34px] md:min-w-[34px] md:flex-none',
                   value.mode === m
                     ? 'bg-primary text-primary-foreground font-medium'
-                    : 'text-foreground hover:bg-muted/60',
+                    : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground',
                 )}
+                aria-pressed={value.mode === m}
               >
-                {t(`periodSelector.${m}`, m)}
+                {modeShortLabel}
               </button>
-            ))}
-          </PopoverContent>
-        </Popover>
+            )
+          })}
+        </div>
       )}
     </div>
   )
@@ -443,8 +318,6 @@ interface CustomRangePopoverProps {
   value: Extract<PeriodValue, { mode: 'custom' }>
   onChange: (next: PeriodValue) => void
   label: string
-  mediumLabel: string
-  shortLabel: string
 }
 
 /**
@@ -452,7 +325,7 @@ interface CustomRangePopoverProps {
  * Fim) plus a Confirm button. The state stays local until the user clicks
  * Confirm, so they can fiddle with the inputs without committing.
  */
-function CustomRangePopover({ value, onChange, label, mediumLabel, shortLabel }: CustomRangePopoverProps) {
+function CustomRangePopover({ value, onChange, label }: CustomRangePopoverProps) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [draftFrom, setDraftFrom] = useState(value.from)
@@ -490,9 +363,7 @@ function CustomRangePopover({ value, onChange, label, mediumLabel, shortLabel }:
           aria-label={label}
           className="inline-flex flex-1 items-center justify-center gap-2 border border-border rounded-lg px-3 py-1.5 text-sm bg-card text-foreground hover:bg-muted/50 transition-colors capitalize whitespace-nowrap sm:w-[164px] sm:flex-none"
         >
-          <span className="min-[375px]:hidden">{shortLabel}</span>
-          <span className="hidden min-[375px]:inline sm:hidden">{mediumLabel}</span>
-          <span className="hidden sm:inline">{label}</span>
+          {label}
         </button>
       </PopoverTrigger>
       <PopoverContent align="center" className="w-auto p-3 space-y-3">
@@ -537,7 +408,7 @@ function CustomRangePopover({ value, onChange, label, mediumLabel, shortLabel }:
               size="icon"
               className="h-7 w-7 text-muted-foreground"
               onClick={() => setOpen(false)}
-              title={t('common.cancel', 'Cancelar')}
+              title={t('periodSelector.cancel', 'Cancel')}
             >
               <X className="h-3.5 w-3.5" />
             </Button>
@@ -548,7 +419,7 @@ function CustomRangePopover({ value, onChange, label, mediumLabel, shortLabel }:
               className="h-7 w-7"
               onClick={confirm}
               disabled={!valid}
-              title={t('common.confirm', 'Confirmar')}
+              title={t('periodSelector.confirm', 'Confirm')}
             >
               <Check className="h-3.5 w-3.5" />
             </Button>
