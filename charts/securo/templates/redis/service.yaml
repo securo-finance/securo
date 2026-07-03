@@ -1,0 +1,19 @@
+{{- if .Values.redis.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "securo.fullname" . }}-redis-master
+  labels:
+    {{- include "securo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  type: ClusterIP
+  ports:
+    - port: 6379
+      targetPort: tcp-redis
+      protocol: TCP
+      name: tcp-redis
+  selector:
+    {{- include "securo.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+{{- end }}
