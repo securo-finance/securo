@@ -11,7 +11,7 @@ import { toast } from 'sonner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
-import { Calendar } from '@/components/ui/calendar'
+import { MonthPicker } from '@/components/ui/monthpicker'
 import {
   Table,
   TableBody,
@@ -468,12 +468,10 @@ export default function DashboardPage() {
                 </button>
               </PopoverTrigger>
               <PopoverContent align="center" className="w-auto p-0">
-                <Calendar
-                  mode="single"
+                <MonthPicker
                   locale={dateFnsLocale}
-                  selected={new Date(`${selectedMonth}-01T00:00:00`)}
-                  defaultMonth={new Date(`${selectedMonth}-01T00:00:00`)}
-                  onSelect={(date) => {
+                  selectedMonth={new Date(`${selectedMonth}-01T00:00:00`)}
+                  onMonthSelect={(date) => {
                     if (!date) return
                     const newMonth = format(date, 'yyyy-MM')
                     setSelectedMonth(newMonth)

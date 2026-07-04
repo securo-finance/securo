@@ -18,7 +18,7 @@ import type { Budget } from '@/types'
 import { Pencil, Trash2, Plus, Repeat, CalendarIcon } from 'lucide-react'
 import { format } from 'date-fns'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
-import { Calendar } from '@/components/ui/calendar'
+import { MonthPicker } from '@/components/ui/monthpicker'
 import { PageHeader } from '@/components/page-header'
 import { CategoryIcon } from '@/components/category-icon'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -154,12 +154,10 @@ export default function BudgetsPage() {
                 </button>
               </PopoverTrigger>
               <PopoverContent align="center" className="w-auto p-0">
-                <Calendar
-                  mode="single"
+                <MonthPicker
                   locale={dateFnsLocale}
-                  selected={new Date(`${selectedMonth}-01T00:00:00`)}
-                  defaultMonth={new Date(`${selectedMonth}-01T00:00:00`)}
-                  onSelect={(date) => {
+                  selectedMonth={new Date(`${selectedMonth}-01T00:00:00`)}
+                  onMonthSelect={(date) => {
                     if (!date) return
                     setSelectedMonth(format(date, 'yyyy-MM'))
                     setMonthCalOpen(false)
