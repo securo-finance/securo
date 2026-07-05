@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { getAccountName } from '@/lib/account-utils'
 import { currentMonth, shiftMonth, monthLastDay, monthLabel, monthRange } from '@/lib/month-utils'
 import { useTranslation } from 'react-i18next'
@@ -30,7 +30,7 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { CheckCircle2, CalendarIcon, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed } from 'lucide-react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ICON_MAP } from '@/lib/category-icons'
 import { PageHeader } from '@/components/page-header'
 import { CategoryIcon } from '@/components/category-icon'
@@ -59,6 +59,26 @@ function parseHashtags(notes: string | null): string[] {
   return matches ?? []
 }
 
+const MONTH_REGEX = /^\d{4}-\d{2}$/
+const MONTH_STRING_LENGTH = 7
+
+function parseMonthFromParams(params: URLSearchParams): string | null {
+  const monthParam = params.get('month')
+  if (monthParam && MONTH_REGEX.test(monthParam)) {
+    return monthParam
+  }
+
+  const fromParam = params.get('from')
+  if (fromParam && fromParam.length >= MONTH_STRING_LENGTH) {
+    const parsedMonth = fromParam.substring(0, MONTH_STRING_LENGTH)
+    if (MONTH_REGEX.test(parsedMonth)) {
+      return parsedMonth
+    }
+  }
+
+  return null
+}
+
 
 export default function DashboardPage() {
   const { t, i18n } = useTranslation()
@@ -76,8 +96,42 @@ export default function DashboardPage() {
     const base = t(`dashboard.${key}`)
     return displayName ? `${base}, ${displayName}` : base
   })()
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    return parseMonthFromParams(searchParams) ?? currentMonth()
+  })
   const [drillDown, setDrillDown] = useState<DrillDownFilter | null>(null)
+
+  const prevSearchRef = useRef<string | null>(null)
+
+  // Sync state from URL when navigating (e.g. back/forward button)
+  useEffect(() => {
+    const search = searchParams.toString()
+    if (prevSearchRef.current === search) return
+    const isInitial = prevSearchRef.current === null
+    prevSearchRef.current = search
+
+    const parsedMonth = parseMonthFromParams(searchParams)
+    if (parsedMonth) {
+      setSelectedMonth(parsedMonth)
+    } else if (!isInitial) {
+      setSelectedMonth(currentMonth())
+    }
+  }, [searchParams])
+
+  // Sync selectedMonth back to URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (selectedMonth) {
+      params.set('month', selectedMonth)
+      params.delete('from')
+      params.delete('to')
+    } else {
+      params.delete('month')
+    }
+
+    setSearchParams(params, { replace: true })
+  }, [selectedMonth, setSearchParams])
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [createRuleOpen, setCreateRuleOpen] = useState(false)
