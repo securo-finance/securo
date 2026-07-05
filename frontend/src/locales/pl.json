@@ -1263,7 +1263,8 @@
     "showMore_many": "+{{count}} więcej",
     "showMore_other": "+{{count}} więcej",
     "previous": "Poprzedni",
-    "next": "Następny"
+    "next": "Następny",
+    "rowsPerPage": "Wierszy na stronę"
   },
   "splitGroups": {
     "title": "Grupy",

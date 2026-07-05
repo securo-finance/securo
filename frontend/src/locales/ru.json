@@ -1185,7 +1185,8 @@
     "showLess": "Показать меньше",
     "showMore": "+{{count}} ещё",
     "previous": "Назад",
-    "next": "Далее"
+    "next": "Далее",
+    "rowsPerPage": "Строк на странице"
   },
   "splitGroups": {
     "title": "Группы",

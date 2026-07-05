@@ -1185,7 +1185,8 @@
     "showLess": "Show less",
     "showMore": "+{{count}} more",
     "previous": "Previous",
-    "next": "Next"
+    "next": "Next",
+    "rowsPerPage": "Rows per page"
   },
   "splitGroups": {
     "title": "Groups",

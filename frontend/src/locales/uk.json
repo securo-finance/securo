@@ -1185,7 +1185,8 @@
     "showLess": "Показати менше",
     "showMore": "+{{count}} ще",
     "previous": "Назад",
-    "next": "Далі"
+    "next": "Далі",
+    "rowsPerPage": "Рядків на сторінці"
   },
   "splitGroups": {
     "title": "Групи",
