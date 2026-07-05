@@ -167,7 +167,7 @@ async def test_create_account_with_balance_creates_opening_transaction(
     assert opening_tx is not None, "opening_balance transaction should exist in DB"
     assert opening_tx.amount == Decimal("500.00")
     assert opening_tx.type == "credit"
-    assert opening_tx.description == "Saldo inicial"
+    assert opening_tx.description == "Initial Balance"
 
     # Also verify it does NOT appear in the public transaction list
     txn_response = await client.get(

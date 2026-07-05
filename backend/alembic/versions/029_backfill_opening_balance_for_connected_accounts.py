@@ -114,7 +114,7 @@ def upgrade() -> None:
                 "id": str(uuid.uuid4()),
                 "user_id": str(user_id),
                 "account_id": str(acc_id),
-                "description": "Saldo inicial",
+                "description": "Initial Balance",
                 "amount": amount,
                 "currency": currency,
                 "date": opening_date,
@@ -135,7 +135,7 @@ def downgrade() -> None:
             """
             DELETE FROM transactions
             WHERE source = 'opening_balance'
-              AND description = 'Saldo inicial'
+              AND description = 'Initial Balance'
               AND account_id IN (
                   SELECT id FROM accounts WHERE connection_id IS NOT NULL
               )
