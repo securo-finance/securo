@@ -1,4 +1,4 @@
-{{- if .Values.persistence.agentKnowledge.enabled }}
+{{- if and (eq .Values.config.agentsEnabled "true") .Values.persistence.agentKnowledge.enabled }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

@@ -162,7 +162,7 @@ mcpServer:
       memory: 128Mi
 
 # Persistence for application data
-# IMPORTANT: Since Backend, Celery Worker, and MCP Server all share the same files,
+# IMPORTANT: Since Backend, Celery Worker, and MCP Server all share the same attachment files,
 # they mount these PVCs concurrently. If your pods are scheduled across multiple nodes,
 # you MUST use a StorageClass that supports `ReadWriteMany` (RWX) access mode (e.g., NFS, CephFS).
 # `ReadWriteOnce` will only work if you restrict all pods to a single node.
@@ -171,17 +171,17 @@ persistence:
     enabled: true
     size: 5Gi
     storageClass: ""
-    accessMode: ReadWriteMany
+    accessMode: ReadWriteOnce
   agentKnowledge:
     enabled: true
     size: 5Gi
     storageClass: ""
-    accessMode: ReadWriteMany
+    accessMode: ReadWriteOnce
   agentEmbeddingModels:
     enabled: true
     size: 5Gi
     storageClass: ""
-    accessMode: ReadWriteMany
+    accessMode: ReadWriteOnce
 
 # Standard Kubernetes Ingress
 ingress:
