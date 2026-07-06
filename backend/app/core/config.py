@@ -35,8 +35,9 @@ class Settings(BaseSettings):
     simplefin_enabled: bool = False
     simplefin_api_url: str = "https://beta-bridge.simplefin.org"
 
-    # Fintoc
+    # Fintoc (Chilean banks)
     fintoc_secret_key: str = ""
+    fintoc_api_url: str = "https://api.fintoc.com/v1"
 
     # Frontend
     frontend_url: str = "http://localhost:5173"
