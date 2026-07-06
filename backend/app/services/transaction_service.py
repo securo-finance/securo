@@ -1414,6 +1414,26 @@ async def toggle_ignore_transaction(
     return transaction
 
 
+async def unlink_recurring_transaction(
+    session: AsyncSession,
+    transaction_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+) -> Optional[Transaction]:
+    """Clear a transaction's link to a recurring bill (issue #116).
+
+    The escape hatch for a wrong auto-link: only the FK is cleared, the
+    transaction row is otherwise untouched, and the bill is left as-is (its
+    next_occurrence already moved on). Returns the transaction, or None if not
+    found / not currently linked."""
+    transaction = await get_transaction(session, transaction_id, workspace_id)
+    if not transaction or transaction.recurring_transaction_id is None:
+        return None
+    transaction.recurring_transaction_id = None
+    await session.commit()
+    await session.refresh(transaction)
+    return transaction
+
+
 async def delete_transaction(
     session: AsyncSession,
     transaction_id: uuid.UUID,

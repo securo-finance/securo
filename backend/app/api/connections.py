@@ -108,6 +108,7 @@ async def oauth_callback(
             data.code,
             provider_name=data.provider,
             state=data.state,
+            sync_assets=data.sync_assets,
         )
         return connection
     except ProviderUserActionRequired as e:

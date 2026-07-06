@@ -296,6 +296,8 @@
     "noCategory": "Brak kategorii",
     "searchCategory": "Szukaj kategorii...",
     "noCategoryFound": "Nie znaleziono żadnej kategorii.",
+    "searchRule": "Szukaj reguły...",
+    "noRulesFound": "Nie znaleziono reguł.",
     "addManual": "Dodaj transakcję",
     "duplicate": "Duplikuj",
     "createRule": "Utwórz regułę",
@@ -319,6 +321,10 @@
     "confirmDelete": "Czy na pewno usunąć tę transakcję?",
     "makeRecurring": "Ustaw jako cykliczną",
     "recurringBadge": "Cykliczna",
+    "recurringLinkedTooltip": "Powiązana z cyklicznym rachunkiem",
+    "recurringLinkedInfo": "Ta transakcja jest powiązana z cyklicznym rachunkiem.",
+    "recurringUnlinkAction": "Odłącz",
+    "recurringUnlinkSuccess": "Transakcja odłączona od cyklicznego rachunku",
     "transfer": "Transfer",
     "pending": "Oczekująca",
     "recurringInfo": "Transakcja cykliczna ({{frequency}}). Następna: {{next}}",
@@ -665,7 +671,12 @@
     "payeePaymentData": "Nazwa płatnika/odbiorcy",
     "payeeDescription": "Opis transakcji",
     "payeeNone": "Nie ustawiaj odbiorcy",
-    "importPending": "Importuj transakcje oczekujące"
+    "importPending": "Importuj transakcje oczekujące",
+    "syncAssets": "Importuj aktywa inwestycyjne",
+    "syncAssetsHint": "Gdy wyłączone, to połączenie synchronizuje konta i transakcje, ale nie zmienia inwestycji dostawcy.",
+    "initialSyncSettings": "Opcje synchronizacji",
+    "initialSyncSettingsDesc": "Wybierz, co Securo ma zaimportować przed otwarciem konektora.",
+    "continueToConnector": "Przejdź do konektora"
   },
   "settings": {
     "rules": "Reguły",
@@ -791,6 +802,8 @@
     "generated_many": "Wygenerowano {{count}} transakcji",
     "generated_other": "Wygenerowano {{count}} transakcji",
     "generatePending": "Generuj oczekujące",
+    "autoGenerate": "Automatycznie generuj transakcje",
+    "autoGenerateHelp": "Tworzy transakcję za każdym razem, gdy ten rachunek jest wymagalny. Wyłącz, aby poczekać na rzeczywiste obciążenie (np. z synchronizacji bankowej) i do tego czasu pokazywać je tylko jako nadchodzące.",
     "fxEstimate": "Szacunek na podstawie najnowszego kursu wymiany ({{rate}}). Ostateczna kwota może się zmienić."
   },
   "rules": {
@@ -1267,7 +1280,8 @@
     "showMore_many": "+{{count}} więcej",
     "showMore_other": "+{{count}} więcej",
     "previous": "Poprzedni",
-    "next": "Następny"
+    "next": "Następny",
+    "rowsPerPage": "Wierszy na stronę"
   },
   "splitGroups": {
     "title": "Grupy",

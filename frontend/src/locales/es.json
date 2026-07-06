@@ -290,6 +290,8 @@
     "noCategory": "Sin categoría",
     "searchCategory": "Buscar categoría...",
     "noCategoryFound": "No se encontraron categorías.",
+    "searchRule": "Buscar regla...",
+    "noRulesFound": "No se encontraron reglas.",
     "addManual": "Agregar transacción",
     "duplicate": "Duplicar",
     "createRule": "Crear regla",
@@ -313,6 +315,10 @@
     "confirmDelete": "¿Estás seguro de que quieres eliminar esta transacción?",
     "makeRecurring": "Hacer recurrente",
     "recurringBadge": "Recurrente",
+    "recurringLinkedTooltip": "Vinculada a una factura recurrente",
+    "recurringLinkedInfo": "Esta transacción está vinculada a una factura recurrente.",
+    "recurringUnlinkAction": "Desvincular",
+    "recurringUnlinkSuccess": "Transacción desvinculada de la factura recurrente",
     "transfer": "Transferencia",
     "pending": "Pendiente",
     "recurringInfo": "Transacción recurrente ({{frequency}}). Próxima: {{next}}",
@@ -629,7 +635,12 @@
     "payeePaymentData": "Nombre del pagador/receptor",
     "payeeDescription": "Descripción de la transacción",
     "payeeNone": "No asignar beneficiario",
-    "importPending": "Importar transacciones pendientes"
+    "importPending": "Importar transacciones pendientes",
+    "syncAssets": "Importar activos de inversión",
+    "syncAssetsHint": "Cuando está desactivado, esta conexión sincroniza cuentas y transacciones, pero deja intactas las inversiones del proveedor.",
+    "initialSyncSettings": "Opciones de sincronización",
+    "initialSyncSettingsDesc": "Elige qué debe importar Securo antes de abrir el conector.",
+    "continueToConnector": "Continuar al conector"
   },
   "settings": {
     "rules": "Reglas",
@@ -746,6 +757,8 @@
     "deleted": "Transacción recurrente eliminada",
     "generated": "{{count}} transacciones generadas",
     "generatePending": "Generar pendientes",
+    "autoGenerate": "Generar transacciones automáticamente",
+    "autoGenerateHelp": "Crea una transacción cada vez que vence esta factura. Desactívalo para esperar el cargo real (por ejemplo, de la sincronización bancaria) y mostrarla solo como próxima hasta entonces.",
     "fxEstimate": "Estimación basada en el último tipo de cambio ({{rate}}). El importe final puede cambiar."
   },
   "rules": {
@@ -1189,7 +1202,8 @@
     "showLess": "Mostrar menos",
     "showMore": "+{{count}} más",
     "previous": "Anterior",
-    "next": "Siguiente"
+    "next": "Siguiente",
+    "rowsPerPage": "Filas por página"
   },
   "splitGroups": {
     "title": "Grupos",

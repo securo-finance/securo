@@ -118,6 +118,7 @@ export interface BankConnection {
 export interface ConnectionSettings {
   payee_source?: 'auto' | 'merchant' | 'payment_data' | 'description' | 'none'
   import_pending?: boolean
+  sync_assets?: boolean
 }
 
 export interface Account {
@@ -216,6 +217,8 @@ export interface Transaction {
   // available, cycle math otherwise). Setting it forces the tx into the
   // bill whose due_date matches.
   effective_bill_date: string | null
+  // The recurring bill this transaction fulfills, if any (issue #116).
+  recurring_transaction_id?: string | null
   splits: TransactionSplit[]
   // Shared-transaction view fields. Set per-request when the viewer
   // is a linked split member but not the owner. Render `viewer_share`
@@ -427,6 +430,7 @@ export interface RecurringTransaction {
   start_date: string
   end_date: string | null
   is_active: boolean
+  auto_generate: boolean
   next_occurrence: string
   amount_primary: number | null
   fx_rate_used: number | null

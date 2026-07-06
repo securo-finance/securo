@@ -23,8 +23,17 @@ router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
 
 def _tag_fx_fallback(tx: TransactionRead, primary_currency: str) -> TransactionRead:
-    """Set fx_fallback=True when a cross-currency tx used 1:1 fallback rate."""
-    if tx.currency != primary_currency and tx.fx_rate_used is not None and tx.fx_rate_used == 1.0:
+    """Set fx_fallback=True when a cross-currency tx isn't backed by a real rate.
+
+    Covers both the legacy 1:1 fallback rate and rows left unconverted (NULL)
+    because no rate was available at stamp time (issue #353). The UI uses this
+    to warn the user and offer a manual rate.
+    """
+    if tx.currency != primary_currency and (
+        tx.amount_primary is None
+        or tx.fx_rate_used is None
+        or tx.fx_rate_used == 1.0
+    ):
         tx.fx_fallback = True
     return tx
 
@@ -399,6 +408,24 @@ async def toggle_ignore_transaction(
     )
     if not transaction:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+    primary_currency = ctx.user.primary_currency
+    return _tag_fx_fallback(TransactionRead.model_validate(transaction, from_attributes=True), primary_currency)
+
+
+@router.patch("/{transaction_id}/unlink-recurring", response_model=TransactionRead)
+async def unlink_recurring_transaction(
+    transaction_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    transaction = await transaction_service.unlink_recurring_transaction(
+        session, transaction_id, ctx.workspace.id
+    )
+    if not transaction:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Transaction not found or not linked to a recurring bill",
+        )
     primary_currency = ctx.user.primary_currency
     return _tag_fx_fallback(TransactionRead.model_validate(transaction, from_attributes=True), primary_currency)
 

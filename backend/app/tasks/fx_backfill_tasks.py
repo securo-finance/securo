@@ -1,9 +1,9 @@
 import asyncio
 import logging
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select, func, distinct
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
 from app.worker import celery_app
@@ -23,23 +23,46 @@ def _make_session_maker():
 
 
 async def _backfill_primary_amounts() -> dict:
-    """One-time backfill: stamp amount_primary on all rows where it's NULL."""
-    from app.services.fx_rate_service import sync_rates, convert
+    """One-time backfill / heal of amount_primary.
+
+    Targets cross-currency rows that were never stamped (``amount_primary`` NULL)
+    or that were stamped with the legacy 1:1 fallback rate (issue #353), and
+    re-stamps them once a real rate is resolvable. Genuine same-currency 1:1 rows
+    are left untouched.
+    """
+    from app.services.fx_rate_service import sync_rates, convert, _resolve_rate
 
     engine, session_maker = _make_session_maker()
     try:
         stats = {"transactions": 0, "recurring": 0, "assets": 0, "rates_synced": 0}
 
         async with session_maker() as session:
-            # 1. Collect all unique (year, month) pairs from transactions needing backfill
-            month_result = await session.execute(
-                select(distinct(func.to_char(Transaction.date, "YYYY-MM"))).where(
-                    Transaction.amount_primary.is_(None)
+            # 1. Get all users up front so we can tell cross-currency rows apart.
+            users_result = await session.execute(select(User))
+            settings = get_settings()
+            users = {u.id: u.primary_currency for u in users_result.scalars().all()}
+
+            def _primary(user_id) -> str:
+                return users.get(user_id, settings.default_currency)
+
+            # 2. Collect candidate transactions: never stamped OR stamped with the
+            #    1:1 fallback. Same-currency rows are filtered out so we never
+            #    re-touch legitimate 1:1 conversions.
+            tx_result = await session.execute(
+                select(Transaction).where(
+                    or_(
+                        Transaction.amount_primary.is_(None),
+                        Transaction.fx_rate_used == 1,
+                    )
                 )
             )
-            months = [row[0] for row in month_result.all()]
+            candidate_txs = [
+                tx for tx in tx_result.scalars().all()
+                if tx.currency != _primary(tx.user_id)
+            ]
 
-            # Sync historical rates for each month
+            # 3. Sync one historical rate per month that has candidates.
+            months = {tx.date.strftime("%Y-%m") for tx in candidate_txs}
             for month_str in months:
                 try:
                     year, mon = month_str.split("-")
@@ -48,49 +71,49 @@ async def _backfill_primary_amounts() -> dict:
                         target = date(int(year) + 1, 1, 1)
                     else:
                         target = date(int(year), int(mon) + 1, 1)
-                    from datetime import timedelta
-
                     target = target - timedelta(days=1)
-                    count = await sync_rates(session, target)
-                    stats["rates_synced"] += count
+                    stats["rates_synced"] += await sync_rates(session, target)
                 except Exception:
                     logger.exception("Failed to sync rates for %s", month_str)
 
-            # 2. Get all users
-            users_result = await session.execute(select(User))
-            settings = get_settings()
-            users = {u.id: (u.preferences or {}).get("currency_display", settings.default_currency) for u in users_result.scalars().all()}
-
-            # 3. Backfill transactions
-            tx_result = await session.execute(
-                select(Transaction).where(Transaction.amount_primary.is_(None))
-            )
-            for tx in tx_result.scalars().all():
-                primary_currency = users.get(tx.user_id, settings.default_currency)
+            # 4. Re-stamp candidates only when a real rate is now resolvable.
+            for tx in candidate_txs:
+                primary_currency = _primary(tx.user_id)
                 try:
-                    converted, rate = await convert(
-                        session, Decimal(str(tx.amount)),
-                        tx.currency, primary_currency, tx.date,
+                    rate = await _resolve_rate(
+                        session, tx.currency, primary_currency, tx.date,
                     )
-                    tx.amount_primary = converted
+                    if rate is None:
+                        continue  # still no rate — leave as-is, heal next run
+                    tx.amount_primary = (Decimal(str(tx.amount)) * rate).quantize(Decimal("0.01"))
                     tx.fx_rate_used = rate
                     stats["transactions"] += 1
                 except Exception:
                     logger.exception("Failed to backfill tx %s", tx.id)
             await session.commit()
 
-            # 4. Backfill recurring transactions
+            # 5. Backfill recurring transactions (same NULL-or-1:1 heal).
             rec_result = await session.execute(
-                select(RecurringTransaction).where(RecurringTransaction.amount_primary.is_(None))
-            )
-            for rec in rec_result.scalars().all():
-                primary_currency = users.get(rec.user_id, settings.default_currency)
-                try:
-                    converted, rate = await convert(
-                        session, Decimal(str(rec.amount)),
-                        rec.currency, primary_currency, rec.start_date,
+                select(RecurringTransaction).where(
+                    or_(
+                        RecurringTransaction.amount_primary.is_(None),
+                        RecurringTransaction.fx_rate_used == 1,
                     )
-                    rec.amount_primary = converted
+                )
+            )
+            candidate_recs = [
+                rec for rec in rec_result.scalars().all()
+                if rec.currency != _primary(rec.user_id)
+            ]
+            for rec in candidate_recs:
+                primary_currency = _primary(rec.user_id)
+                try:
+                    rate = await _resolve_rate(
+                        session, rec.currency, primary_currency, rec.start_date,
+                    )
+                    if rate is None:
+                        continue
+                    rec.amount_primary = (Decimal(str(rec.amount)) * rate).quantize(Decimal("0.01"))
                     rec.fx_rate_used = rate
                     stats["recurring"] += 1
                 except Exception:

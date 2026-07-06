@@ -16,6 +16,7 @@ export interface Provider {
   flow_type: string
   configured: boolean
   requires_institution_select?: boolean
+  supports_asset_sync?: boolean
 }
 
 interface ConnectorSelectDialogProps {

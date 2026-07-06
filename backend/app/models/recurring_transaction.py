@@ -13,6 +13,7 @@ from app.core.database import Base
 if TYPE_CHECKING:
     from app.models.account import Account
     from app.models.category import Category
+    from app.models.transaction import Transaction
     from app.models.user import User
 
 
@@ -38,6 +39,12 @@ class RecurringTransaction(Base):
     start_date: Mapped[date] = mapped_column(Date)
     end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # When True (the default), generate_pending materializes this bill's due
+    # occurrences into real transactions. When False, no placeholder is written
+    # and the bill is only shown as a projection until the actual charge is
+    # matched to it (e.g. from bank sync). Either way, incoming real
+    # transactions are linked back to the bill to avoid duplicates.
+    auto_generate: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     next_occurrence: Mapped[date] = mapped_column(Date)
     amount_primary: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
     fx_rate_used: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=20, scale=10), nullable=True)
@@ -46,3 +53,6 @@ class RecurringTransaction(Base):
     user: Mapped["User"] = relationship()
     account: Mapped[Optional["Account"]] = relationship()
     category: Mapped[Optional["Category"]] = relationship()
+    transactions: Mapped[list["Transaction"]] = relationship(
+        back_populates="recurring_transaction"
+    )

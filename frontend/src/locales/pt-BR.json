@@ -290,6 +290,8 @@
     "noCategory": "Sem categoria",
     "searchCategory": "Buscar categoria...",
     "noCategoryFound": "Nenhuma categoria encontrada.",
+    "searchRule": "Buscar regra...",
+    "noRulesFound": "Nenhuma regra encontrada.",
     "addManual": "Adicionar Transação",
     "duplicate": "Duplicar",
     "createRule": "Criar Regra",
@@ -313,6 +315,10 @@
     "confirmDelete": "Tem certeza que deseja excluir esta transação?",
     "makeRecurring": "Tornar recorrente",
     "recurringBadge": "Recorrente",
+    "recurringLinkedTooltip": "Vinculada a uma conta recorrente",
+    "recurringLinkedInfo": "Esta transação está vinculada a uma conta recorrente.",
+    "recurringUnlinkAction": "Desvincular",
+    "recurringUnlinkSuccess": "Transação desvinculada da conta recorrente",
     "transfer": "Transferência",
     "pending": "Pendente",
     "recurringInfo": "Transação recorrente ({{frequency}}). Próxima: {{next}}",
@@ -629,7 +635,12 @@
     "payeePaymentData": "Nome do pagador/recebedor",
     "payeeDescription": "Descrição da transação",
     "payeeNone": "Não definir beneficiário",
-    "importPending": "Importar transações pendentes"
+    "importPending": "Importar transações pendentes",
+    "syncAssets": "Importar ativos de investimento",
+    "syncAssetsHint": "Quando desativado, esta conexão sincroniza contas e transações, mas não altera os investimentos do provedor.",
+    "initialSyncSettings": "Opções de sincronização",
+    "initialSyncSettingsDesc": "Escolha o que o Securo deve importar antes de abrir o conector.",
+    "continueToConnector": "Continuar para o conector"
   },
   "settings": {
     "rules": "Regras",
@@ -746,6 +757,8 @@
     "deleted": "Transação recorrente excluída",
     "generated": "{{count}} transações geradas",
     "generatePending": "Gerar Pendentes",
+    "autoGenerate": "Gerar transações automaticamente",
+    "autoGenerateHelp": "Cria uma transação sempre que esta conta vence. Desative para aguardar o lançamento real (por exemplo, da sincronização bancária) e mostrá-la apenas como prevista até lá.",
     "fxEstimate": "Estimativa baseada na última taxa de câmbio ({{rate}}). O valor final pode mudar."
   },
   "rules": {
@@ -1189,7 +1202,8 @@
     "showLess": "Mostrar menos",
     "showMore": "Mostrar +{{count}}",
     "previous": "Anterior",
-    "next": "Próximo"
+    "next": "Próximo",
+    "rowsPerPage": "Linhas por página"
   },
   "splitGroups": {
     "title": "Grupos",

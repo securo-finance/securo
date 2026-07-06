@@ -18,6 +18,7 @@ class RecurringTransactionCreate(BaseModel):
     account_id: uuid.UUID
     category_id: Optional[uuid.UUID] = None
     skip_first: bool = False  # Set true when first occurrence already created as a transaction
+    auto_generate: bool = True  # Materialize occurrences; when false, wait for the real charge
 
 
 class RecurringTransactionUpdate(BaseModel):
@@ -32,6 +33,7 @@ class RecurringTransactionUpdate(BaseModel):
     account_id: Optional[uuid.UUID] = None
     category_id: Optional[uuid.UUID] = None
     is_active: Optional[bool] = None
+    auto_generate: Optional[bool] = None
 
 
 class RecurringTransactionRead(BaseModel):
@@ -48,6 +50,7 @@ class RecurringTransactionRead(BaseModel):
     start_date: _Date
     end_date: Optional[_Date] = None
     is_active: bool
+    auto_generate: bool = True
     next_occurrence: _Date
     amount_primary: Optional[float] = None
     fx_rate_used: Optional[float] = None

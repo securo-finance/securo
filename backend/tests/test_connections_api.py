@@ -20,9 +20,14 @@ async def test_list_providers(client: AsyncClient, auth_headers):
     assert "pluggy" in by_name
     assert by_name["pluggy"]["configured"] is False
     assert by_name["pluggy"]["flow_type"] == "widget"
+    assert by_name["pluggy"]["supports_asset_sync"] is True
     assert "enable_banking" in by_name
     assert by_name["enable_banking"]["flow_type"] == "oauth"
     assert by_name["enable_banking"]["requires_institution_select"] is True
+    # Enable Banking (PSD2) exposes no investment holdings, so the asset-sync
+    # opt-out is hidden for it; connectors that import holdings advertise it.
+    assert by_name["enable_banking"]["supports_asset_sync"] is False
+    assert by_name["simplefin"]["supports_asset_sync"] is True
 
 
 @pytest.mark.asyncio

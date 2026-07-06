@@ -290,6 +290,8 @@
     "noCategory": "No category",
     "searchCategory": "Search category...",
     "noCategoryFound": "No category found.",
+    "searchRule": "Search rule...",
+    "noRulesFound": "No rules found.",
     "addManual": "Add Transaction",
     "duplicate": "Duplicate",
     "createRule": "Create Rule",
@@ -313,6 +315,10 @@
     "confirmDelete": "Are you sure you want to delete this transaction?",
     "makeRecurring": "Make recurring",
     "recurringBadge": "Recurring",
+    "recurringLinkedTooltip": "Linked to a recurring bill",
+    "recurringLinkedInfo": "This transaction is linked to a recurring bill.",
+    "recurringUnlinkAction": "Unlink",
+    "recurringUnlinkSuccess": "Transaction unlinked from the recurring bill",
     "transfer": "Transfer",
     "pending": "Pending",
     "recurringInfo": "Recurring transaction ({{frequency}}). Next: {{next}}",
@@ -629,7 +635,12 @@
     "payeePaymentData": "Payer/receiver name",
     "payeeDescription": "Transaction description",
     "payeeNone": "Don't set payee",
-    "importPending": "Import pending transactions"
+    "importPending": "Import pending transactions",
+    "syncAssets": "Import investment assets",
+    "syncAssetsHint": "When disabled, this connection syncs accounts and transactions but leaves provider investment holdings untouched.",
+    "initialSyncSettings": "Sync options",
+    "initialSyncSettingsDesc": "Choose what Securo should import before opening the connector.",
+    "continueToConnector": "Continue to connector"
   },
   "settings": {
     "rules": "Rules",
@@ -746,6 +757,8 @@
     "deleted": "Recurring transaction deleted",
     "generated": "{{count}} transactions generated",
     "generatePending": "Generate Pending",
+    "autoGenerate": "Generate transactions automatically",
+    "autoGenerateHelp": "Create a transaction each time this bill is due. Turn off to wait for the real charge (e.g. from bank sync) and only show it as upcoming until then.",
     "fxEstimate": "Estimate based on latest exchange rate ({{rate}}). Final amount may change."
   },
   "rules": {
@@ -1189,7 +1202,8 @@
     "showLess": "Show less",
     "showMore": "+{{count}} more",
     "previous": "Previous",
-    "next": "Next"
+    "next": "Next",
+    "rowsPerPage": "Rows per page"
   },
   "splitGroups": {
     "title": "Groups",

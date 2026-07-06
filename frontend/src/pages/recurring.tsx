@@ -301,6 +301,7 @@ function RecurringForm({
   const [categoryId, setCategoryId] = useState(recurring?.category_id ?? '')
   const [accountId, setAccountId] = useState(recurring?.account_id ?? accounts[0]?.id ?? '')
   const [isActive, setIsActive] = useState(recurring?.is_active ?? true)
+  const [autoGenerate, setAutoGenerate] = useState(recurring?.auto_generate ?? true)
 
   const selectClass = 'w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary'
 
@@ -320,6 +321,7 @@ function RecurringForm({
           category_id: categoryId || null,
           account_id: accountId || null,
           is_active: isActive,
+          auto_generate: autoGenerate,
         } as Partial<RecurringTransaction>)
       }}
       className="space-y-4"
@@ -402,6 +404,18 @@ function RecurringForm({
           </select>
         </div>
       </div>
+      <label className="flex items-start gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={autoGenerate}
+          onChange={(e) => setAutoGenerate(e.target.checked)}
+          className="h-4 w-4 mt-0.5 rounded border-border"
+        />
+        <span className="text-sm text-foreground">
+          {t('recurring.autoGenerate')}
+          <span className="block text-xs text-muted-foreground">{t('recurring.autoGenerateHelp')}</span>
+        </span>
+      </label>
       {recurring && (
         <label className="flex items-center gap-2 cursor-pointer">
           <input

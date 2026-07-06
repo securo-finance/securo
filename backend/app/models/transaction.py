@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from app.models.credit_card_bill import CreditCardBill
     from app.models.import_log import ImportLog
     from app.models.payee import Payee
+    from app.models.recurring_transaction import RecurringTransaction
     from app.models.transaction_attachment import TransactionAttachment
     from app.models.transaction_split import TransactionSplit
 
@@ -79,12 +80,25 @@ class Transaction(Base):
     # Flag to exclude this transaction from reports and dashboard aggregations.
     # When set to True, the transaction is ignored for income/expense calculations.
     is_ignored: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Link to the recurring bill this transaction fulfills (issue #116). Set when
+    # a synced/imported/manual charge is matched to a recurring bill, or stamped
+    # onto the placeholder generate_pending materializes. ON DELETE SET NULL: if
+    # the recurring bill is removed, the transaction stays put and just unlinks.
+    recurring_transaction_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("recurring_transactions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     account: Mapped["Account"] = relationship(back_populates="transactions")
     category: Mapped[Optional["Category"]] = relationship()
     bill: Mapped[Optional["CreditCardBill"]] = relationship()
     payee_entity: Mapped[Optional["Payee"]] = relationship(back_populates="transactions")
+    recurring_transaction: Mapped[Optional["RecurringTransaction"]] = relationship(
+        back_populates="transactions"
+    )
     import_log: Mapped[Optional["ImportLog"]] = relationship(back_populates="transactions")
     attachments: Mapped[list["TransactionAttachment"]] = relationship(
         back_populates="transaction", cascade="all, delete-orphan"
