@@ -540,6 +540,7 @@
     "syncError": "Sincronizzazione fallita",
     "connected": "Banca collegata con successo",
     "connectError": "Impossibile collegare la banca",
+    "syncingConnection": "Sincronizzazione della connessione bancaria…",
     "disconnected": "Connessione rimossa",
     "confirmDisconnectTitle": "Disconnettere la connessione bancaria?",
     "confirmDisconnectDesc": "Questo scollegherà {{institution}} e rimuoverà dall'app i conti e le transazioni sincronizzati. Questa azione è irreversibile.",
@@ -611,6 +612,9 @@
       },
       "simplefin": {
         "description": "Banche statunitensi e internazionali tramite SimpleFIN Bridge"
+      },
+      "fintoc": {
+        "description": "Collega conti bancari cileni — Banco de Chile, Santander, BCI e altri"
       }
     }
   },

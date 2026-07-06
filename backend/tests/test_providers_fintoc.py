@@ -83,31 +83,31 @@ def test_build_account_data_falls_back_to_current_balance():
     assert result.balance == Decimal("200000")
 
 
-def test_build_transaction_data_charge_is_debit():
+def test_build_transaction_data_negative_amount_is_debit():
     mov = {
         "id": "mov-1",
-        "amount": 15000,
+        "amount": -15000,
         "post_date": "2026-06-01",
         "description": "Supermercado Jumbo",
-        "type": "charge",
+        "type": "transfer",
         "currency": "CLP",
     }
     result = _build_transaction_data(mov)
     assert result.external_id == "mov-1"
     assert result.type == "debit"
-    assert result.amount == Decimal("15000")
+    assert result.amount == Decimal("-15000")
     assert result.currency == "CLP"
     assert result.date == date(2026, 6, 1)
     assert result.status == "posted"
 
 
-def test_build_transaction_data_deposit_is_credit():
+def test_build_transaction_data_positive_amount_is_credit():
     mov = {
         "id": "mov-2",
         "amount": 1000000,
         "post_date": "2026-06-10",
         "description": "Sueldo",
-        "type": "deposit",
+        "type": "transfer",
         "currency": "CLP",
     }
     result = _build_transaction_data(mov)
@@ -117,13 +117,13 @@ def test_build_transaction_data_deposit_is_credit():
 
 def test_build_transaction_data_clp_no_scaling():
     """CLP is a whole-unit currency — Fintoc returns integers, no centavo scaling."""
-    mov = {"id": "m", "amount": 1234, "post_date": "2026-01-01", "type": "charge"}
+    mov = {"id": "m", "amount": -1234, "post_date": "2026-01-01", "type": "transfer"}
     result = _build_transaction_data(mov)
-    assert result.amount == Decimal("1234")
+    assert result.amount == Decimal("-1234")
 
 
 def test_build_transaction_data_falls_back_to_transaction_date():
-    mov = {"id": "m2", "amount": 500, "transaction_date": "2026-05-15", "type": "deposit"}
+    mov = {"id": "m2", "amount": 500, "transaction_date": "2026-05-15", "type": "transfer"}
     result = _build_transaction_data(mov)
     assert result.date == date(2026, 5, 15)
 
@@ -302,15 +302,15 @@ async def test_get_accounts_maps_types_correctly():
 
 
 @pytest.mark.asyncio
-async def test_get_transactions_charge_is_debit_deposit_is_credit():
+async def test_get_transactions_negative_is_debit_positive_is_credit():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
             json=[
-                {"id": "t1", "amount": 5000, "post_date": "2026-05-01",
-                 "description": "Compra", "type": "charge", "currency": "CLP"},
+                {"id": "t1", "amount": -5000, "post_date": "2026-05-01",
+                 "description": "Compra", "type": "transfer", "currency": "CLP"},
                 {"id": "t2", "amount": 100000, "post_date": "2026-05-10",
-                 "description": "Transferencia recibida", "type": "deposit", "currency": "CLP"},
+                 "description": "Transferencia recibida", "type": "transfer", "currency": "CLP"},
             ],
         )
 
@@ -321,30 +321,33 @@ async def test_get_transactions_charge_is_debit_deposit_is_credit():
 
     by_id = {t.external_id: t for t in txns}
     assert by_id["t1"].type == "debit"
-    assert by_id["t1"].amount == Decimal("5000")
+    assert by_id["t1"].amount == Decimal("-5000")
     assert by_id["t2"].type == "credit"
     assert by_id["t2"].amount == Decimal("100000")
 
 
 @pytest.mark.asyncio
-async def test_get_transactions_pagination_follows_next_cursor():
-    """Fintoc cursor pagination: keep fetching until next_cursor is null."""
+async def test_get_transactions_pagination_follows_link_header():
+    """Fintoc paginates via the RFC 5988 Link header (rel="next"), not a body cursor."""
     pages = [
         {
-            "data": [{"id": "t1", "amount": 1000, "post_date": "2026-01-01",
-                      "type": "charge", "currency": "CLP"}],
-            "next_cursor": "cursor_page2",
+            "body": [{"id": "t1", "amount": -1000, "post_date": "2026-01-01",
+                      "type": "transfer", "currency": "CLP"}],
+            "headers": {
+                "link": '<https://api.fintoc.com/v1/accounts/acc-cl-1/movements?page=2>; rel="next"'
+            },
         },
         {
-            "data": [{"id": "t2", "amount": 2000, "post_date": "2026-01-02",
-                      "type": "deposit", "currency": "CLP"}],
-            "next_cursor": None,
+            "body": [{"id": "t2", "amount": 2000, "post_date": "2026-01-02",
+                      "type": "transfer", "currency": "CLP"}],
+            "headers": {},
         },
     ]
     page_iter = iter(pages)
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=next(page_iter))
+        page = next(page_iter)
+        return httpx.Response(200, json=page["body"], headers=page["headers"])
 
     creds = {"link_token": "lt_test"}
     provider = FintocProvider()

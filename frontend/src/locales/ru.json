@@ -540,6 +540,7 @@
     "syncError": "Синхронизация не удалась",
     "connected": "Банк успешно подключён",
     "connectError": "Не удалось подключить банк",
+    "syncingConnection": "Синхронизация банковского подключения…",
     "disconnected": "Подключение удалено",
     "confirmDisconnectTitle": "Отключить подключение к банку?",
     "confirmDisconnectDesc": "Это отвяжет {{institution}} и удалит синхронизированные счета и транзакции из приложения. Это действие необратимо.",
@@ -611,6 +612,9 @@
       },
       "simplefin": {
         "description": "Банки США и других стран через SimpleFIN Bridge"
+      },
+      "fintoc": {
+        "description": "Подключите чилийские банковские счета — Banco de Chile, Santander, BCI и другие"
       }
     }
   },

@@ -22,9 +22,7 @@ x-backend-env: &backend-env
 
   # Fintoc (Chilean banks)
   FINTOC_SECRET_KEY: ${FINTOC_SECRET_KEY:-}
-  FINTOC_API_URL: ${FINTOC_API_URL:-https://api.fintoc.com/v1}
   VITE_FINTOC_PUBLIC_KEY: ${VITE_FINTOC_PUBLIC_KEY:-}
-  VITE_FINTOC_WEBHOOK_URL: ${VITE_FINTOC_WEBHOOK_URL:-}
 
   SIMPLEFIN_ENABLED: ${SIMPLEFIN_ENABLED:-false}
   SIMPLEFIN_API_URL: ${SIMPLEFIN_API_URL:-https://beta-bridge.simplefin.org}
@@ -132,7 +130,6 @@ services:
       FRONTEND_URL: http://localhost:3000
       APP_VERSION_ROOT: /workspace
       VITE_FINTOC_PUBLIC_KEY: ${VITE_FINTOC_PUBLIC_KEY:-}
-      VITE_FINTOC_WEBHOOK_URL: ${VITE_FINTOC_WEBHOOK_URL:-}
     depends_on:
       - backend
     volumes:

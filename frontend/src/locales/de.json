@@ -540,6 +540,7 @@
     "syncError": "Synchronisierung fehlgeschlagen",
     "connected": "Bank erfolgreich verbunden",
     "connectError": "Verbindung zur Bank fehlgeschlagen",
+    "syncingConnection": "Bankverbindung wird synchronisiert…",
     "disconnected": "Verbindung entfernt",
     "confirmDisconnectTitle": "Bankverbindung trennen?",
     "confirmDisconnectDesc": "Dadurch wird die Verknüpfung mit {{institution}} aufgehoben und die synchronisierten Konten und Transaktionen werden aus der App gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.",

@@ -38,6 +38,13 @@ KNOWN_PROVIDERS = [
         "flow_type": "token",
         "requires_institution_select": False,
     },
+    {
+        "name": "fintoc",
+        "display_name": "Fintoc",
+        "description": "Connect Chilean bank accounts — Banco de Chile, Santander, BCI and more",
+        "flow_type": "widget",
+        "requires_institution_select": False,
+    },
 ]
 
 
@@ -90,6 +97,10 @@ def _auto_register_providers() -> None:
     if settings.simplefin_enabled:
         from app.providers.simplefin import SimpleFinProvider
         register_provider("simplefin", SimpleFinProvider)
+
+    if settings.fintoc_secret_key:
+        from app.providers.fintoc import FintocProvider
+        register_provider("fintoc", FintocProvider)
 
 
 _auto_register_providers()

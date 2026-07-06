@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQueryClient } from '@tanstack/react-query'
 import { PluggyConnect } from 'react-pluggy-connect'
@@ -25,33 +25,43 @@ export function BankConnectDialog({
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [connectToken, setConnectToken] = useState<string | null>(null)
+  const fetchKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!open) {
       setConnectToken(null)
+      fetchKeyRef.current = null
       return
     }
 
-    let cancelled = false
+    const key = `${provider}:${reconnectConnectionId ?? ''}`
+    if (fetchKeyRef.current === key) {
+      // React StrictMode double-invokes this effect in dev with identical
+      // inputs. getConnectToken/getReconnectToken issue a real, single-use
+      // token server-side (e.g. a Fintoc link_intent) — firing it twice per
+      // open wastes one and can leave the widget that actually opens (built
+      // from the second token) intermittently failing to finish loading.
+      // Only the first invocation of a given open cycle requests one.
+      return
+    }
+    fetchKeyRef.current = key
+
     const fetchToken = async () => {
       try {
         const token = reconnectConnectionId
           ? await connections.getReconnectToken(reconnectConnectionId)
           : await connections.getConnectToken(provider)
-        if (!cancelled) setConnectToken(token)
+        setConnectToken(token)
       } catch {
-        if (!cancelled) {
-          toast.error(t('accounts.connectError'))
-          onClose()
-        }
+        toast.error(t('accounts.connectError'))
+        onClose()
       }
     }
     fetchToken()
-
-    return () => { cancelled = true }
   }, [open, reconnectConnectionId, provider])
 
   const handleSuccess = async (data: { item: { id: string } }) => {
+    const toastId = toast.loading(t('accounts.syncingConnection'))
     try {
       if (reconnectConnectionId) {
         await connections.sync(reconnectConnectionId)
@@ -60,9 +70,9 @@ export function BankConnectDialog({
       }
       invalidateFinancialQueries(queryClient)
       queryClient.invalidateQueries({ queryKey: ['connections'] })
-      toast.success(t('accounts.connected'))
+      toast.success(t('accounts.connected'), { id: toastId })
     } catch {
-      toast.error(t('accounts.connectError'))
+      toast.error(t('accounts.connectError'), { id: toastId })
     } finally {
       handleClose()
     }
