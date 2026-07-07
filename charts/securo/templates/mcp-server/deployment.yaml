@@ -23,7 +23,7 @@ spec:
       containers:
         - name: mcp-server
           image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
-          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          imagePullPolicy: {{ .Values.mcpServer.image.pullPolicy }}
           command:
             - uvicorn
             - mcp_server.main:app

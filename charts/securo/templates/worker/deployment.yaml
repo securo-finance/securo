@@ -25,7 +25,7 @@ spec:
       containers:
         - name: celery-worker
           image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
-          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          imagePullPolicy: {{ .Values.celeryWorker.image.pullPolicy }}
           command:
             - celery
             - -A
