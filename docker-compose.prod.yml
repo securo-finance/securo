@@ -22,6 +22,7 @@ x-backend-env: &backend-env
 
   # Fintoc (Chilean banks)
   FINTOC_SECRET_KEY: ${FINTOC_SECRET_KEY:-}
+  VITE_FINTOC_PUBLIC_KEY: ${VITE_FINTOC_PUBLIC_KEY:-}
   FINTOC_API_BASE: ${FINTOC_API_BASE:-https://api.fintoc.com/v1}
 
   SIMPLEFIN_ENABLED: ${SIMPLEFIN_ENABLED:-false}

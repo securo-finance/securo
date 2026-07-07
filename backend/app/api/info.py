@@ -7,6 +7,8 @@ import os
 
 from fastapi import APIRouter
 
+from app.core.config import get_settings
+
 router = APIRouter(prefix="/api", tags=["info"])
 
 
@@ -16,9 +18,11 @@ def _flag(name: str, default: str = "false") -> bool:
 
 @router.get("/info")
 async def get_app_info():
+    settings = get_settings()
     return {
         "features": {
             "agents": _flag("AGENTS_ENABLED"),
             "tesouro_direto": _flag("TESOURO_DIRETO_ENABLED"),
         },
+        "fintoc_public_key": settings.vite_fintoc_public_key or None,
     }

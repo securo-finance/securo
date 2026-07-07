@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { getFintoc } from '@fintoc/fintoc-js'
+import { useFeatureFlags } from '@/hooks/use-feature-flags'
 
 interface FintocConnectWidgetProps {
   widgetToken: string
@@ -8,6 +9,7 @@ interface FintocConnectWidgetProps {
 }
 
 export function FintocConnectWidget({ widgetToken, onSuccess, onExit }: FintocConnectWidgetProps) {
+  const { fintocPublicKey, isLoading } = useFeatureFlags()
   const onSuccessRef = useRef(onSuccess)
   const onExitRef = useRef(onExit)
 
@@ -17,6 +19,8 @@ export function FintocConnectWidget({ widgetToken, onSuccess, onExit }: FintocCo
   })
 
   useEffect(() => {
+    if (isLoading || !fintocPublicKey) return
+
     let active = true
     let widget: { open: () => void; destroy?: () => void } | null = null
 
@@ -25,7 +29,7 @@ export function FintocConnectWidget({ widgetToken, onSuccess, onExit }: FintocCo
         if (!active || !Fintoc) return
 
         widget = Fintoc.create({
-          publicKey: import.meta.env.VITE_FINTOC_PUBLIC_KEY,
+          publicKey: fintocPublicKey,
           widgetToken,
           onSuccess: (data: any) => {
             // The Fintoc SDK delivers the Link Intent object in camelCase.
@@ -51,7 +55,7 @@ export function FintocConnectWidget({ widgetToken, onSuccess, onExit }: FintocCo
       active = false
       widget?.destroy?.()
     }
-  }, [widgetToken])
+  }, [widgetToken, fintocPublicKey, isLoading])
 
   return null
 }

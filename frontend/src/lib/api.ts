@@ -1258,6 +1258,7 @@ export const search = {
 // App-level feature flags (whether optional modules like agents are mounted)
 export interface AppInfo {
   features: { agents: boolean; tesouro_direto?: boolean }
+  fintoc_public_key?: string
 }
 
 export const info = {
