@@ -22,8 +22,6 @@ from app.providers.base import (
 
 logger = logging.getLogger(__name__)
 
-FINTOC_API_BASE = "https://api.fintoc.com/v1"
-
 # Fintoc movements only contain settled (posted) entries — no pending state.
 _DEFAULT_SYNC_DAYS = 90
 
@@ -136,9 +134,10 @@ class FintocProvider(BankProvider):
         item_id: str | None = None,
     ) -> ConnectTokenData:
         """Create a FintocLink widget token by calling the Link Intent endpoint."""
+        api_base = get_settings().fintoc_api_base
         async with httpx.AsyncClient(headers=self._get_headers(), timeout=30) as client:
             response = await client.post(
-                f"{FINTOC_API_BASE}/link_intents",
+                f"{api_base}/link_intents",
                 json={
                     "product": "movements",
                     "holder_type": "individual",
@@ -156,9 +155,10 @@ class FintocProvider(BankProvider):
         (linkIntent.exchangeToken). The exchange endpoint returns the full Link object
         including link_token, accounts, and institution.
         """
+        api_base = get_settings().fintoc_api_base
         async with httpx.AsyncClient(headers=self._get_headers(), timeout=30) as client:
             response = await client.get(
-                f"{FINTOC_API_BASE}/links/exchange",
+                f"{api_base}/links/exchange",
                 params={"exchange_token": code},
             )
             self._raise_for_fintoc(response)
@@ -182,9 +182,10 @@ class FintocProvider(BankProvider):
 
     async def get_accounts(self, credentials: dict) -> list[AccountData]:
         link_token = credentials.get("link_token") or credentials.get("link_token_enc", "")
+        api_base = get_settings().fintoc_api_base
         async with httpx.AsyncClient(headers=self._get_headers(), timeout=30) as client:
             response = await client.get(
-                f"{FINTOC_API_BASE}/accounts",
+                f"{api_base}/accounts",
                 params={"link_token": link_token},
             )
             self._raise_for_fintoc(response)
@@ -209,10 +210,11 @@ class FintocProvider(BankProvider):
         }
 
         results: list[TransactionData] = []
+        api_base = get_settings().fintoc_api_base
         async with httpx.AsyncClient(headers=self._get_headers(), timeout=60) as client:
             while True:
                 response = await client.get(
-                    f"{FINTOC_API_BASE}/accounts/{account_external_id}/movements",
+                    f"{api_base}/accounts/{account_external_id}/movements",
                     params=params,
                 )
                 self._raise_for_fintoc(response)
@@ -248,9 +250,10 @@ class FintocProvider(BankProvider):
     async def list_institutions(self, country: Optional[str] = None) -> InstitutionListData:
         """Return Fintoc-supported institutions for Chile (or the specified country)."""
         target_country = country or "cl"
+        api_base = get_settings().fintoc_api_base
         async with httpx.AsyncClient(headers=self._get_headers(), timeout=30) as client:
             response = await client.get(
-                f"{FINTOC_API_BASE}/institutions",
+                f"{api_base}/institutions",
                 params={"country": target_country},
             )
             self._raise_for_fintoc(response)

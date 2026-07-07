@@ -37,6 +37,7 @@ class Settings(BaseSettings):
 
     # Fintoc (Chilean banks). Enabled when FINTOC_SECRET_KEY is set.
     fintoc_secret_key: str = ""
+    fintoc_api_base: str = "https://api.fintoc.com/v1"
 
     # Frontend
     frontend_url: str = "http://localhost:5173"
