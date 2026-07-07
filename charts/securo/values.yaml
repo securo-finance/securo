@@ -78,6 +78,7 @@ config:
   # Agents feature
   agentsEnabled: "false"
   agentsBuiltinMcpUrl: 'http://{{ include "securo.fullname" . }}-mcp-server:8765/mcp'
+  agentsExternalMcpUrl: '{{ include "securo.frontendUrl" . }}/mcp'
   agentsExtraMcpServers: ""
   agentsMcpExternalTtlDays: "90"
   agentsDefaultProvider: "ollama"
