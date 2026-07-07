@@ -19,22 +19,25 @@ interface TokenConnectDialogProps {
   open: boolean
   onClose: () => void
   provider: string
+  supportsAssetSync?: boolean
 }
 
 const PROVIDER_BRIDGE_URLS: Record<string, string> = {
   simplefin: 'https://bridge.simplefin.org/simplefin/create',
 }
 
-export function TokenConnectDialog({ open, onClose, provider }: TokenConnectDialogProps) {
+export function TokenConnectDialog({ open, onClose, provider, supportsAssetSync = false }: TokenConnectDialogProps) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [token, setToken] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [syncAssets, setSyncAssets] = useState(true)
 
   useEffect(() => {
     if (!open) {
       setToken('')
       setSubmitting(false)
+      setSyncAssets(true)
     }
   }, [open])
 
@@ -45,7 +48,12 @@ export function TokenConnectDialog({ open, onClose, provider }: TokenConnectDial
     if (!token.trim()) return
     setSubmitting(true)
     try {
-      await connections.handleCallback(token.trim(), provider)
+      await connections.handleCallback(
+        token.trim(),
+        provider,
+        undefined,
+        supportsAssetSync ? { sync_assets: syncAssets } : undefined,
+      )
       invalidateFinancialQueries(queryClient)
       queryClient.invalidateQueries({ queryKey: ['connections'] })
       toast.success(t('accounts.connected'))
@@ -80,6 +88,25 @@ export function TokenConnectDialog({ open, onClose, provider }: TokenConnectDial
               <ExternalLink size={14} />
             </a>
           </Button>
+        )}
+
+        {supportsAssetSync && (
+          <div className="flex items-start justify-between gap-4 rounded-lg border border-border p-3">
+            <div className="space-y-1">
+              <label htmlFor="token-sync-assets" className="text-sm font-medium text-foreground">
+                {t('connections.syncAssets')}
+              </label>
+              <p className="text-xs text-muted-foreground">{t('connections.syncAssetsHint')}</p>
+            </div>
+            <input
+              id="token-sync-assets"
+              type="checkbox"
+              checked={syncAssets}
+              onChange={(e) => setSyncAssets(e.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-primary"
+              disabled={submitting}
+            />
+          </div>
         )}
 
         <div className="space-y-1.5">

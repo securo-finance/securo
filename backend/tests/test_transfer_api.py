@@ -875,14 +875,14 @@ async def test_create_counterpart_rejects_already_linked(
 
 
 @pytest.mark.asyncio
-async def test_create_counterpart_clears_anchor_category(
+async def test_create_counterpart_preserves_anchor_category(
     client: AsyncClient,
     auth_headers,
     test_account: Account,
     second_account: Account,
     test_categories,
 ):
-    """Marking a categorized transaction as a transfer clears its category."""
+    """Marking a categorized transaction as a transfer keeps its category."""
     create_response = await client.post(
         "/api/transactions",
         json={
@@ -910,7 +910,7 @@ async def test_create_counterpart_clears_anchor_category(
         f"/api/transactions/{anchor['id']}", headers=auth_headers
     )
     assert refreshed.status_code == 200
-    assert refreshed.json()["category_id"] is None
+    assert refreshed.json()["category_id"] == str(test_categories[0].id)
 
 
 @pytest.mark.asyncio

@@ -47,6 +47,12 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.fx_rate_tasks.restamp_recurring_fx",
         "schedule": 60 * 60 * 12,  # twice daily, after FX rate sync
     },
+    "restamp-fallback-fx-daily": {
+        "task": "app.tasks.fx_rate_tasks.restamp_fallback_fx",
+        # Twice daily, after FX rate sync — heals transactions that were
+        # stamped with the 1:1 fallback (or left NULL) once real rates land.
+        "schedule": 60 * 60 * 12,
+    },
 }
 
 celery_app.conf.include = [

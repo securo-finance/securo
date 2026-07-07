@@ -923,7 +923,6 @@ async def link_existing_as_transfer(
     transfer_pair_id = uuid.uuid4()
     for tx in txns:
         tx.transfer_pair_id = transfer_pair_id
-        tx.category_id = None  # transfers are excluded from category reports
 
     await session.commit()
     for tx in txns:
@@ -1002,9 +1001,8 @@ async def create_transfer_counterpart(
     apply_effective_date(counterpart_tx, to_account)
     session.add(counterpart_tx)
 
-    # Link the anchor into the pair; transfers are excluded from category reports.
+    # Link the anchor into the pair; reports exclude transfer_pair_id.
     anchor.transfer_pair_id = transfer_pair_id
-    anchor.category_id = None
 
     await session.flush()
     await stamp_primary_amount(session, user_id, counterpart_tx)
@@ -1122,9 +1120,9 @@ async def update_transaction(
                 raise ValueError("Cannot move transfer to the same account as its paired transaction")
 
     # Pop FX override fields before generic setattr loop
+    has_fx_override = "amount_primary" in update_data or "fx_rate_used" in update_data
     override_amount_primary = update_data.pop("amount_primary", None)
     override_fx_rate = update_data.pop("fx_rate_used", None)
-    has_fx_override = override_amount_primary is not None or override_fx_rate is not None
 
     restamp_fields = {"amount", "currency", "date"}
     needs_restamp = bool(restamp_fields & update_data.keys())
@@ -1133,12 +1131,17 @@ async def update_transaction(
         setattr(transaction, key, value)
 
     if has_fx_override:
-        _apply_fx_override(
-            transaction,
-            transaction.amount,
-            override_amount_primary,
-            override_fx_rate,
-        )
+        if override_amount_primary is None and override_fx_rate is None:
+            transaction.amount_primary = None
+            transaction.fx_rate_used = None
+            await stamp_primary_amount(session, user_id, transaction)
+        else:
+            _apply_fx_override(
+                transaction,
+                transaction.amount,
+                override_amount_primary,
+                override_fx_rate,
+            )
     elif needs_restamp:
         await stamp_primary_amount(session, user_id, transaction)
 
@@ -1406,6 +1409,26 @@ async def toggle_ignore_transaction(
     if not transaction:
         return None
     transaction.is_ignored = not transaction.is_ignored
+    await session.commit()
+    await session.refresh(transaction)
+    return transaction
+
+
+async def unlink_recurring_transaction(
+    session: AsyncSession,
+    transaction_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+) -> Optional[Transaction]:
+    """Clear a transaction's link to a recurring bill (issue #116).
+
+    The escape hatch for a wrong auto-link: only the FK is cleared, the
+    transaction row is otherwise untouched, and the bill is left as-is (its
+    next_occurrence already moved on). Returns the transaction, or None if not
+    found / not currently linked."""
+    transaction = await get_transaction(session, transaction_id, workspace_id)
+    if not transaction or transaction.recurring_transaction_id is None:
+        return None
+    transaction.recurring_transaction_id = None
     await session.commit()
     await session.refresh(transaction)
     return transaction

@@ -173,10 +173,14 @@ export function useTransactionsGridState(): TransactionsGridState {
   const toggleSort = useCallback((id: ColumnId) => {
     const def = COL_BY_ID[id]
     if (!def || !def.sortable) return
+    // Two-state toggle: first click on a column sorts descending, then every
+    // subsequent click flips the direction. We intentionally never cycle back
+    // to an unsorted state: the backend's implicit default is date-descending,
+    // so a "cleared" sort was visually identical to date-desc and made the
+    // header look like it toggled between the same two orders (issue #383).
     setSort(prev => {
       if (prev.by !== id) return { by: id, dir: 'desc' }
-      if (prev.dir === 'desc') return { by: id, dir: 'asc' }
-      return { by: null, dir: 'desc' }
+      return { by: id, dir: prev.dir === 'desc' ? 'asc' : 'desc' }
     })
   }, [])
 

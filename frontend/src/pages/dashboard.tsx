@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { getAccountName } from '@/lib/account-utils'
 import { currentMonth, shiftMonth, monthLastDay, monthLabel, monthRange } from '@/lib/month-utils'
 import { useTranslation } from 'react-i18next'
@@ -10,8 +10,15 @@ import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
-import { Calendar } from '@/components/ui/calendar'
+import { MonthPicker } from '@/components/ui/monthpicker'
 import {
   Table,
   TableBody,
@@ -30,7 +37,7 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { CheckCircle2, CalendarIcon, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed } from 'lucide-react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ICON_MAP } from '@/lib/category-icons'
 import { PageHeader } from '@/components/page-header'
 import { CategoryIcon } from '@/components/category-icon'
@@ -59,6 +66,26 @@ function parseHashtags(notes: string | null): string[] {
   return matches ?? []
 }
 
+const MONTH_REGEX = /^\d{4}-\d{2}$/
+const MONTH_STRING_LENGTH = 7
+
+function parseMonthFromParams(params: URLSearchParams): string | null {
+  const monthParam = params.get('month')
+  if (monthParam && MONTH_REGEX.test(monthParam)) {
+    return monthParam
+  }
+
+  const fromParam = params.get('from')
+  if (fromParam && fromParam.length >= MONTH_STRING_LENGTH) {
+    const parsedMonth = fromParam.substring(0, MONTH_STRING_LENGTH)
+    if (MONTH_REGEX.test(parsedMonth)) {
+      return parsedMonth
+    }
+  }
+
+  return null
+}
+
 
 export default function DashboardPage() {
   const { t, i18n } = useTranslation()
@@ -76,8 +103,42 @@ export default function DashboardPage() {
     const base = t(`dashboard.${key}`)
     return displayName ? `${base}, ${displayName}` : base
   })()
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    return parseMonthFromParams(searchParams) ?? currentMonth()
+  })
   const [drillDown, setDrillDown] = useState<DrillDownFilter | null>(null)
+
+  const prevSearchRef = useRef<string | null>(null)
+
+  // Sync state from URL when navigating (e.g. back/forward button)
+  useEffect(() => {
+    const search = searchParams.toString()
+    if (prevSearchRef.current === search) return
+    const isInitial = prevSearchRef.current === null
+    prevSearchRef.current = search
+
+    const parsedMonth = parseMonthFromParams(searchParams)
+    if (parsedMonth) {
+      setSelectedMonth(parsedMonth)
+    } else if (!isInitial) {
+      setSelectedMonth(currentMonth())
+    }
+  }, [searchParams])
+
+  // Sync selectedMonth back to URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (selectedMonth) {
+      params.set('month', selectedMonth)
+      params.delete('from')
+      params.delete('to')
+    } else {
+      params.delete('month')
+    }
+
+    setSearchParams(params, { replace: true })
+  }, [selectedMonth, setSearchParams])
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [createRuleOpen, setCreateRuleOpen] = useState(false)
@@ -360,7 +421,14 @@ export default function DashboardPage() {
     isIgnored: boolean
   }
 
-  const TX_PER_PAGE = 10
+  const [txPerPage, setTxPerPage] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('securo.dashboard.pageSize')
+      return stored ? Number(stored) : 10
+    } catch {
+      return 10
+    }
+  })
   const allDisplayRows = useMemo(() => {
     const rows: DisplayRow[] = []
     for (const tx of currentMonthTxs?.items ?? []) {
@@ -428,8 +496,8 @@ export default function DashboardPage() {
     return rows
   }, [currentMonthTxs, projectedTxs, txSortDesc, groupNameById])
 
-  const txTotalPages = Math.ceil(allDisplayRows.length / TX_PER_PAGE)
-  const pagedRows = allDisplayRows.slice((txPage - 1) * TX_PER_PAGE, txPage * TX_PER_PAGE)
+  const txTotalPages = Math.ceil(allDisplayRows.length / txPerPage)
+  const pagedRows = allDisplayRows.slice((txPage - 1) * txPerPage, txPage * txPerPage)
   const txListLoading = currentTxLoading || projectedTxLoading
 
   // Savings rate display
@@ -468,12 +536,10 @@ export default function DashboardPage() {
                 </button>
               </PopoverTrigger>
               <PopoverContent align="center" className="w-auto p-0">
-                <Calendar
-                  mode="single"
+                <MonthPicker
                   locale={dateFnsLocale}
-                  selected={new Date(`${selectedMonth}-01T00:00:00`)}
-                  defaultMonth={new Date(`${selectedMonth}-01T00:00:00`)}
-                  onSelect={(date) => {
+                  selectedMonth={new Date(`${selectedMonth}-01T00:00:00`)}
+                  onMonthSelect={(date) => {
                     if (!date) return
                     const newMonth = format(date, 'yyyy-MM')
                     setSelectedMonth(newMonth)
@@ -1090,27 +1156,61 @@ export default function DashboardPage() {
                   ))}
                 </TableBody>
               </Table>
-              {txTotalPages > 1 && (
-                <div className="flex items-center justify-center gap-2 py-4 border-t border-border">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={txPage <= 1}
-                    onClick={() => setTxPage(txPage - 1)}
-                  >
-                    {t('dashboard.previous')}
-                  </Button>
-                  <span className="text-sm text-muted-foreground">
-                    {txPage} / {txTotalPages}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={txPage >= txTotalPages}
-                    onClick={() => setTxPage(txPage + 1)}
-                  >
-                    {t('dashboard.next')}
-                  </Button>
+              {allDisplayRows.length > 10 && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-5 py-4 border-t border-border">
+                  <div className="hidden sm:block w-32" />
+                  {txTotalPages > 1 ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={txPage <= 1}
+                        onClick={() => setTxPage(txPage - 1)}
+                      >
+                        {t('dashboard.previous')}
+                      </Button>
+                      <span className="text-sm text-muted-foreground">
+                        {txPage} / {txTotalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={txPage >= txTotalPages}
+                        onClick={() => setTxPage(txPage + 1)}
+                      >
+                        {t('dashboard.next')}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="hidden sm:block" />
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">{t('common.rowsPerPage', 'Rows per page')}</span>
+                    <Select
+                      value={String(txPerPage)}
+                      onValueChange={(val) => {
+                        const nextLimit = Number(val)
+                        setTxPerPage(nextLimit)
+                        setTxPage(1)
+                        try {
+                          localStorage.setItem('securo.dashboard.pageSize', String(nextLimit))
+                        } catch {
+                          // ignored
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="w-[70px] h-8 text-xs">
+                        <SelectValue placeholder={txPerPage} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="10">10</SelectItem>
+                        <SelectItem value="20">20</SelectItem>
+                        <SelectItem value="50">50</SelectItem>
+                        <SelectItem value="100">100</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               )}
             </>

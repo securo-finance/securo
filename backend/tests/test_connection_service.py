@@ -7,10 +7,18 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.asset import Asset
 from app.models.bank_connection import BankConnection
 from app.models.category import Category
 from app.models.transaction import Transaction
-from app.providers.base import AccountData, BillData, ConnectionData, ConnectTokenData, TransactionData
+from app.providers.base import (
+    AccountData,
+    BillData,
+    ConnectionData,
+    ConnectTokenData,
+    HoldingData,
+    TransactionData,
+)
 from app.services.connection_service import (
     _description_similarity,
     _match_pluggy_category,
@@ -242,6 +250,106 @@ async def test_update_settings_preserves_existing(session: AsyncSession, test_us
     assert updated is not None
     assert updated.settings["payee_source"] == "auto"
     assert updated.settings["import_pending"] is False
+
+
+@pytest.mark.asyncio
+async def test_update_settings_sync_assets(session: AsyncSession, test_user, test_workspace):
+    """Per-connection asset sync can be disabled without clobbering other settings."""
+    conn = await _make_connection(
+        session, test_user.id, "Asset Settings Test",
+        settings={"payee_source": "auto", "import_pending": True},
+    )
+
+    updated = await update_connection_settings(
+        session, conn.id, test_workspace.id, {"sync_assets": False},
+    )
+    assert updated is not None
+    assert updated.settings["payee_source"] == "auto"
+    assert updated.settings["import_pending"] is True
+    assert updated.settings["sync_assets"] is False
+
+
+@pytest.mark.asyncio
+async def test_oauth_callback_respects_initial_asset_sync_opt_out(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Initial connection creation can opt out before holdings are imported."""
+    mock_provider = AsyncMock()
+    mock_provider.handle_oauth_callback = AsyncMock(return_value=ConnectionData(
+        external_id="ext-no-assets",
+        institution_name="No Assets Bank",
+        credentials={"token": "x"},
+        accounts=[],
+    ))
+    mock_provider.get_holdings = AsyncMock(return_value=[
+        HoldingData(
+            external_id="holding-1", name="Provider Fund",
+            currency="BRL", current_value=Decimal("1234.56"),
+        ),
+    ])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock):
+        connection = await handle_oauth_callback(
+            session,
+            test_workspace.id,
+            test_user.id,
+            "code",
+            "pluggy",
+            sync_assets=False,
+        )
+
+    assert connection.settings["sync_assets"] is False
+    mock_provider.get_holdings.assert_not_awaited()
+    assets = (await session.execute(select(Asset))).scalars().all()
+    assert assets == []
+
+
+@pytest.mark.asyncio
+async def test_oauth_callback_respects_state_asset_sync_opt_out(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Redirect OAuth stores the initial opt-out in state before the callback."""
+    mock_provider = AsyncMock()
+    mock_provider.handle_oauth_callback = AsyncMock(return_value=ConnectionData(
+        external_id="ext-oauth-no-assets",
+        institution_name="OAuth No Assets Bank",
+        credentials={"token": "x"},
+        accounts=[],
+    ))
+    mock_provider.get_holdings = AsyncMock(return_value=[
+        HoldingData(
+            external_id="holding-1", name="Provider Fund",
+            currency="BRL", current_value=Decimal("1234.56"),
+        ),
+    ])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.oauth_state.consume_state", new_callable=AsyncMock, return_value={
+             "user_id": str(test_user.id),
+             "workspace_id": str(test_workspace.id),
+             "provider": "test",
+             "flow_params": {
+                 "country": "BR",
+                 "institution_name": "OAuth No Assets Bank",
+                 "sync_assets": False,
+             },
+         }), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock):
+        connection = await handle_oauth_callback(
+            session,
+            test_workspace.id,
+            test_user.id,
+            "code",
+            state="stored-state",
+        )
+
+    assert connection.settings["sync_assets"] is False
+    assert connection.settings["flow_params"] == {
+        "country": "BR",
+        "institution_name": "OAuth No Assets Bank",
+    }
+    mock_provider.get_holdings.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -601,6 +709,80 @@ async def test_sync_connection_skips_pending(session: AsyncSession, test_user, t
         result_conn, _ = await sync_connection(session, conn.id, test_workspace.id, test_user.id)
 
     assert result_conn.status == "active"
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_skips_holdings_when_asset_sync_disabled(
+    session: AsyncSession, test_user, test_workspace
+):
+    """sync_assets=False keeps account/transaction sync active but never fetches holdings."""
+    conn = await _make_connection(
+        session, test_user.id, "No Assets Bank",
+        settings={"sync_assets": False},
+    )
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_institution_logo = AsyncMock(return_value=None)
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="no-assets-acc-1", name="Checking",
+            type="checking", balance=Decimal("100"), currency="BRL",
+        ),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+    mock_provider.get_holdings = AsyncMock(return_value=[
+        HoldingData(
+            external_id="holding-1", name="Provider Fund",
+            currency="BRL", current_value=Decimal("1234.56"),
+        ),
+    ])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        result_conn, _ = await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    assert result_conn.status == "active"
+    mock_provider.get_holdings.assert_not_awaited()
+    assets = (await session.execute(select(Asset))).scalars().all()
+    assert assets == []
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_imports_holdings_by_default(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Missing sync_assets setting preserves legacy asset-sync behavior."""
+    conn = await _make_connection(session, test_user.id, "Assets Bank")
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_institution_logo = AsyncMock(return_value=None)
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="assets-acc-1", name="Checking",
+            type="checking", balance=Decimal("100"), currency="BRL",
+        ),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+    mock_provider.get_holdings = AsyncMock(return_value=[
+        HoldingData(
+            external_id="holding-1", name="Provider Fund",
+            currency="BRL", current_value=Decimal("1234.56"),
+        ),
+    ])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        result_conn, _ = await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    assert result_conn.status == "active"
+    mock_provider.get_holdings.assert_awaited_once()
+    asset = (await session.execute(select(Asset).where(Asset.external_id == "holding-1"))).scalar_one()
+    assert asset.name == "Provider Fund"
+    assert asset.connection_id == conn.id
 
 
 @pytest.mark.asyncio

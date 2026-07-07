@@ -19,6 +19,7 @@ from app.models.category import Category
 from app.models.rule import Rule
 from app.models.transaction import Transaction
 from app.schemas.transaction import TransactionImport
+from app.services import recurring_match_service
 from app.services.credit_card_service import apply_effective_date
 from app.services.rule_engine import apply_rule_actions, evaluate_conditions
 from app.services.rule_service import apply_rules_to_transaction
@@ -623,6 +624,29 @@ async def import_transactions(
             import_payee_entity = await get_or_create_payee(session, user_id, import_payee_raw)
             import_payee_id = import_payee_entity.id
 
+        # Recurring bill reconciliation (issue #116): if this imported charge
+        # fulfills a generated placeholder, merge into it instead of creating a
+        # duplicate; the recurring link is preserved.
+        placeholder = await recurring_match_service.find_placeholder_for_incoming(
+            session, account_id, txn_data.amount, txn_currency, txn_data.type,
+            txn_data.date, txn_data.description,
+        )
+        if placeholder and not placeholder.is_ignored:
+            placeholder.source = source
+            placeholder.external_id = txn_data.external_id
+            placeholder.import_id = import_log.id
+            if import_payee_raw and not placeholder.payee:
+                placeholder.payee = import_payee_raw
+                placeholder.payee_id = import_payee_id
+            imported += 1
+            continue
+
+        # Otherwise, link to an active bill's next occurrence if this fulfills it.
+        recurring_link = await recurring_match_service.find_bill_for_incoming(
+            session, user_id, account_id, txn_data.amount, txn_currency, txn_data.type,
+            txn_data.date, txn_data.description,
+        )
+
         user_category_id = txn_data.category_id
         suggested_cat_id = txn_data.suggested_category_id
         csv_category_id = category_map.get(txn_data.category_name) if txn_data.category_name else None
@@ -646,6 +670,7 @@ async def import_transactions(
             payee=import_payee_raw,
             payee_id=import_payee_id,
             category_id=category_id,
+            recurring_transaction_id=recurring_link.id if recurring_link else None,
         )
         apply_effective_date(transaction, account)
 
@@ -655,6 +680,8 @@ async def import_transactions(
 
         session.add(transaction)
         await session.flush()
+        if recurring_link is not None:
+            recurring_match_service.advance_past(recurring_link, txn_data.date)
 
         await apply_rules_to_transaction(session, user_id, transaction, skip_category_rules=txn_data.force_uncategorized)
 

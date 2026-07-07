@@ -437,12 +437,16 @@ export default function ReportsPage() {
       const otherValue = Math.round((innerTotal - topSum) * 100) / 100
       for (const item of significant) result.push(item)
       if (otherValue > 0.005) {
-        result.push({
-          name: otherLabel(g),
-          value: otherValue,
-          color: OTHER_SLICE_COLOR,
-          children: rest.length > 0 ? rest : undefined,
-        })
+        if (rest.length === 1) {
+          result.push(rest[0])
+        } else {
+          result.push({
+            name: otherLabel(g),
+            value: otherValue,
+            color: OTHER_SLICE_COLOR,
+            children: rest.length > 0 ? rest : undefined,
+          })
+        }
       }
     }
 

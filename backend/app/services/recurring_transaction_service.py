@@ -11,6 +11,7 @@ from app.models.bank_connection import BankConnection
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.schemas.recurring_transaction import RecurringTransactionCreate, RecurringTransactionUpdate
+from app.services import recurring_match_service
 from app.services.credit_card_service import apply_effective_date
 from app.services.fx_rate_service import stamp_primary_amount
 
@@ -81,6 +82,7 @@ async def create_recurring_transaction(
         day_of_month=data.day_of_month,
         start_date=data.start_date,
         end_date=data.end_date,
+        auto_generate=data.auto_generate,
         next_occurrence=next_occ,
     )
     session.add(recurring)
@@ -198,6 +200,7 @@ async def generate_pending(
         .where(
             RecurringTransaction.user_id == user_id,
             RecurringTransaction.is_active == True,
+            RecurringTransaction.auto_generate == True,
             RecurringTransaction.next_occurrence <= cutoff,
         )
     )
@@ -217,23 +220,35 @@ async def generate_pending(
                 recurring.is_active = False
                 break
 
-            transaction = Transaction(
-                user_id=user_id,
-                account_id=recurring.account_id,
-                category_id=recurring.category_id,
-                description=recurring.description,
-                amount=recurring.amount,
-                currency=recurring.currency,
-                date=recurring.next_occurrence,
-                type=recurring.type,
-                source="recurring",
+            # If a real transaction (synced/imported/manual) already covers this
+            # occurrence, link it to the bill instead of writing a duplicate
+            # placeholder (issue #116). Otherwise materialize the placeholder,
+            # stamped with the recurring link so a later synced charge merges
+            # into it rather than duplicating.
+            existing_real = await recurring_match_service.find_real_tx_for_occurrence(
+                session, recurring, recurring.next_occurrence
             )
-            account = await session.get(Account, recurring.account_id)
-            apply_effective_date(transaction, account)
-            session.add(transaction)
-            await session.flush()
-            await stamp_primary_amount(session, user_id, transaction)
-            count += 1
+            if existing_real is not None:
+                existing_real.recurring_transaction_id = recurring.id
+            else:
+                transaction = Transaction(
+                    user_id=user_id,
+                    account_id=recurring.account_id,
+                    category_id=recurring.category_id,
+                    description=recurring.description,
+                    amount=recurring.amount,
+                    currency=recurring.currency,
+                    date=recurring.next_occurrence,
+                    type=recurring.type,
+                    source="recurring",
+                    recurring_transaction_id=recurring.id,
+                )
+                account = await session.get(Account, recurring.account_id)
+                apply_effective_date(transaction, account)
+                session.add(transaction)
+                await session.flush()
+                await stamp_primary_amount(session, user_id, transaction)
+                count += 1
 
             # Advance to next occurrence
             recurring.next_occurrence = _advance_date(

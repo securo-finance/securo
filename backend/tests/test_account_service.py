@@ -118,6 +118,27 @@ async def test_create_account_with_balance(session: AsyncSession, test_user, tes
 
 
 @pytest.mark.asyncio
+async def test_create_account_with_negative_balance(session: AsyncSession, test_user, test_workspace):
+    """Negative manual opening balance is recorded as a debit."""
+    data = AccountCreate(name="Overdrawn", type="checking", balance=Decimal("-250.00"), currency="BRL")
+    account = await create_account(session, test_workspace.id, test_user.id, data)
+
+    from sqlalchemy import select
+    result = await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account.id,
+            Transaction.source == "opening_balance",
+        )
+    )
+    opening = result.scalar_one()
+    assert opening.amount == Decimal("250.00")
+    assert opening.type == "debit"
+
+    [serialized] = await get_accounts(session, test_workspace.id)
+    assert serialized["current_balance"] == -250.0
+
+
+@pytest.mark.asyncio
 async def test_create_credit_card_account_opening_is_debit(session: AsyncSession, test_user, test_workspace):
     """Credit card opening balance is recorded as debit (represents debt)."""
     data = AccountCreate(name="Nubank", type="credit_card", balance=Decimal("500.00"), currency="BRL")
@@ -209,6 +230,26 @@ async def test_update_account_balance_creates_opening(session: AsyncSession, tes
 
 
 @pytest.mark.asyncio
+async def test_update_account_balance_creates_negative_opening(session: AsyncSession, test_user, test_workspace):
+    """Updating a manual account to a negative balance creates a debit opening."""
+    account = await _make_account(session, test_user.id, "No Balance", balance="0.00")
+    data = AccountUpdate(balance=Decimal("-500.00"))
+    updated = await update_account(session, account.id, test_workspace.id, data)
+
+    assert updated is not None
+    from sqlalchemy import select
+    result = await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account.id,
+            Transaction.source == "opening_balance",
+        )
+    )
+    opening = result.scalar_one()
+    assert opening.amount == Decimal("500.00")
+    assert opening.type == "debit"
+
+
+@pytest.mark.asyncio
 async def test_update_account_balance_updates_existing_opening(session: AsyncSession, test_user, test_workspace):
     """Updating balance when opening_balance exists updates it."""
     data = AccountCreate(name="Update Test", type="checking", balance=Decimal("1000.00"), currency="BRL")
@@ -267,6 +308,28 @@ async def test_update_account_balance_with_date(session: AsyncSession, test_user
     opening = result.scalar_one()
     assert opening.date == new_date
     assert opening.amount == Decimal("1500.00")
+
+
+@pytest.mark.asyncio
+async def test_update_account_balance_date_only_updates_opening(session: AsyncSession, test_user, test_workspace):
+    """Updating only balance_date moves the existing opening transaction."""
+    data = AccountCreate(name="Date Only Test", type="checking", balance=Decimal("1000.00"), currency="BRL")
+    account = await create_account(session, test_workspace.id, test_user.id, data)
+
+    new_date = date(2025, 7, 20)
+    update_data = AccountUpdate(balance_date=new_date)
+    await update_account(session, account.id, test_workspace.id, update_data)
+
+    from sqlalchemy import select
+    result = await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == account.id,
+            Transaction.source == "opening_balance",
+        )
+    )
+    opening = result.scalar_one()
+    assert opening.date == new_date
+    assert opening.amount == Decimal("1000.00")
 
 
 @pytest.mark.asyncio

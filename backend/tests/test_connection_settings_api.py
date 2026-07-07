@@ -36,6 +36,21 @@ async def test_update_import_pending(
 
 
 @pytest.mark.asyncio
+async def test_update_sync_assets(
+    client: AsyncClient, auth_headers, test_connection: BankConnection
+):
+    """PATCH connection settings updates sync_assets."""
+    resp = await client.patch(
+        f"/api/connections/{test_connection.id}/settings",
+        headers=auth_headers,
+        json={"sync_assets": False},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["settings"]["sync_assets"] is False
+
+
+@pytest.mark.asyncio
 async def test_update_both_settings(
     client: AsyncClient, auth_headers, test_connection: BankConnection
 ):

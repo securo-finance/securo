@@ -290,6 +290,8 @@
     "noCategory": "Keine Kategorie",
     "searchCategory": "Kategorie suchen...",
     "noCategoryFound": "Keine Kategorie gefunden.",
+    "searchRule": "Regel suchen...",
+    "noRulesFound": "Keine Regeln gefunden.",
     "addManual": "Transaktion hinzufügen",
     "duplicate": "Duplizieren",
     "createRule": "Regel erstellen",
@@ -313,6 +315,10 @@
     "confirmDelete": "Möchtest du diese Transaktion wirklich löschen?",
     "makeRecurring": "Als wiederkehrend einrichten",
     "recurringBadge": "Wiederkehrend",
+    "recurringLinkedTooltip": "Mit einer wiederkehrenden Rechnung verknüpft",
+    "recurringLinkedInfo": "Diese Transaktion ist mit einer wiederkehrenden Rechnung verknüpft.",
+    "recurringUnlinkAction": "Verknüpfung aufheben",
+    "recurringUnlinkSuccess": "Transaktion von der wiederkehrenden Rechnung getrennt",
     "transfer": "Umbuchung",
     "pending": "Ausstehend",
     "recurringInfo": "Wiederkehrende Transaktion ({{frequency}}). Nächste: {{next}}",
@@ -625,7 +631,12 @@
     "payeePaymentData": "Zahler-/Empfängername",
     "payeeDescription": "Transaktionsbeschreibung",
     "payeeNone": "Keinen Zahlungsempfänger festlegen",
-    "importPending": "Ausstehende Transaktionen importieren"
+    "importPending": "Ausstehende Transaktionen importieren",
+    "syncAssets": "Investment-Assets importieren",
+    "syncAssetsHint": "Wenn deaktiviert, synchronisiert diese Verbindung Konten und Transaktionen, lässt aber Investment-Bestände des Anbieters unverändert.",
+    "initialSyncSettings": "Synchronisierungsoptionen",
+    "initialSyncSettingsDesc": "Wähle aus, was Securo importieren soll, bevor der Connector geöffnet wird.",
+    "continueToConnector": "Weiter zum Connector"
   },
   "settings": {
     "rules": "Regeln",
@@ -742,6 +753,8 @@
     "deleted": "Wiederkehrende Transaktion gelöscht",
     "generated": "{{count}} Transaktionen erstellt",
     "generatePending": "Ausstehende erstellen",
+    "autoGenerate": "Transaktionen automatisch erstellen",
+    "autoGenerateHelp": "Erstellt bei jeder Fälligkeit dieser Rechnung eine Transaktion. Deaktivieren, um auf die tatsächliche Belastung (z. B. aus der Banksynchronisierung) zu warten und sie bis dahin nur als anstehend anzuzeigen.",
     "fxEstimate": "Schätzung basierend auf dem aktuellsten Wechselkurs ({{rate}}). Der endgültige Betrag kann abweichen."
   },
   "rules": {
@@ -1185,7 +1198,8 @@
     "showLess": "Weniger anzeigen",
     "showMore": "+{{count}} weitere",
     "previous": "Vorherige",
-    "next": "Nächste"
+    "next": "Nächste",
+    "rowsPerPage": "Zeilen pro Seite"
   },
   "splitGroups": {
     "title": "Gruppen",

@@ -613,6 +613,7 @@ export default function AccountsPage() {
         open={!!selectedProvider && selectedProvider.flow_type === 'widget'}
         onClose={() => setSelectedProvider(null)}
         provider={selectedProvider?.name}
+        supportsAssetSync={selectedProvider?.supports_asset_sync ?? false}
       />
 
       {/* OAuth Connect Dialog — institution-pickers (Enable Banking) */}
@@ -620,6 +621,7 @@ export default function AccountsPage() {
         open={!!selectedProvider && selectedProvider.flow_type === 'oauth'}
         onClose={() => setSelectedProvider(null)}
         provider={selectedProvider?.name ?? ''}
+        supportsAssetSync={selectedProvider?.supports_asset_sync ?? false}
       />
 
       {/* Token Connect Dialog — paste-a-token flow (SimpleFIN) */}
@@ -627,6 +629,7 @@ export default function AccountsPage() {
         open={!!selectedProvider && selectedProvider.flow_type === 'token'}
         onClose={() => setSelectedProvider(null)}
         provider={selectedProvider?.name ?? ''}
+        supportsAssetSync={selectedProvider?.supports_asset_sync ?? false}
       />
 
       {/* Reconnect Dialog */}
@@ -642,6 +645,11 @@ export default function AccountsPage() {
         open={!!settingsConnection}
         onClose={() => setSettingsConnection(null)}
         connection={settingsConnection}
+        supportsAssetSync={
+          settingsConnection
+            ? providersByName.get(settingsConnection.provider)?.supports_asset_sync ?? false
+            : false
+        }
       />
 
       {/* Account Dialog */}

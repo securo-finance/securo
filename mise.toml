@@ -1,0 +1,5 @@
+min_version = "2026.7.0"
+monorepo_root = true
+
+[monorepo]
+config_roots = ["backend/", "frontend/"]

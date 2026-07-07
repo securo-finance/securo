@@ -28,6 +28,7 @@ from app.providers.base import (
 )
 from app.services import oauth_state
 from app.services import admin_service
+from app.services import recurring_match_service
 from app.services.account_service import (
     _simplefin_to_internal_balance,
     sync_opening_balance_for_connected_account,
@@ -77,6 +78,15 @@ PLUGGY_CATEGORY_MAP = {
     "Transfers": "Transferências",
     "Wire transfers": "Transferências",
 }
+
+
+def _sync_assets_enabled(settings: Optional[dict]) -> bool:
+    """Return whether provider investment holdings should sync for a connection.
+
+    Missing settings keep the legacy behavior (enabled). Users can opt out per
+    connection via Connection settings without disabling account/transaction sync.
+    """
+    return (settings or {}).get("sync_assets", True) is not False
 
 
 async def _sync_holdings(
@@ -490,6 +500,7 @@ async def handle_oauth_callback(
     code: str,
     provider_name: Optional[str] = None,
     state: Optional[str] = None,
+    sync_assets: Optional[bool] = None,
 ) -> BankConnection:
     state_payload: dict = {}
     if state:
@@ -527,6 +538,14 @@ async def handle_oauth_callback(
         await session.refresh(existing)
         return existing
 
+    flow_params = dict(state_payload.get("flow_params") or {})
+    flow_sync_assets = flow_params.pop("sync_assets", None)
+    initial_settings: dict[str, object] = {"flow_params": flow_params}
+    if sync_assets is None and isinstance(flow_sync_assets, bool):
+        sync_assets = flow_sync_assets
+    if sync_assets is not None:
+        initial_settings["sync_assets"] = sync_assets
+
     connection = BankConnection(
         workspace_id=workspace_id,
         user_id=user_id,
@@ -535,7 +554,7 @@ async def handle_oauth_callback(
         institution_name=connection_data.institution_name,
         logo_url=_clean_logo_url(connection_data.logo_url),
         credentials=connection_data.credentials,
-        settings={"flow_params": state_payload.get("flow_params") or {}},
+        settings=initial_settings,
         status="active",
     )
     session.add(connection)
@@ -667,9 +686,10 @@ async def handle_oauth_callback(
     await detect_transfer_pairs(session, workspace_id, candidate_ids=new_tx_ids)
 
     # Investment holdings live on /investments — separate endpoint from
-    # /accounts. Pulled after account setup so holdings are available on
-    # the Assets page immediately after the widget closes.
-    await _sync_holdings(session, user_id, connection, connection_data.credentials)
+    # /accounts. Pulled after account setup when enabled so holdings are
+    # available on the Assets page immediately after the widget closes.
+    if _sync_assets_enabled(connection.settings):
+        await _sync_holdings(session, user_id, connection, connection_data.credentials)
 
     connection.last_sync_at = datetime.now(timezone.utc)
     await session.commit()
@@ -1320,6 +1340,31 @@ async def sync_connection(
                                 )
                     continue
 
+                # Pass 4: recurring bill placeholder. If generate_pending
+                # already materialized this bill's occurrence, merge the incoming
+                # charge into that placeholder instead of duplicating (issue
+                # #116). The recurring link is preserved by upgrading in place.
+                incoming_currency = txn_data.currency or acc_data.currency or user_currency
+                placeholder = await recurring_match_service.find_placeholder_for_incoming(
+                    session, account.id, txn_data.amount, incoming_currency,
+                    txn_data.type, txn_data.date, txn_data.description,
+                )
+                if placeholder:
+                    if placeholder.is_ignored:
+                        continue
+                    placeholder.external_id = txn_data.external_id
+                    placeholder.source = "sync"
+                    placeholder.status = txn_data.status
+                    placeholder.raw_data = txn_data.raw_data
+                    if txn_data.payee:
+                        if not placeholder.payee:
+                            placeholder.payee = txn_data.payee
+                        placeholder.payee_id = (
+                            await get_or_create_payee(session, user_id, txn_data.payee)
+                        ).id
+                    merged_count += 1
+                    continue
+
                 category_id = await _match_pluggy_category(
                     session, workspace_id, txn_data.pluggy_category, enabled=use_provider_cats
                 )
@@ -1329,6 +1374,14 @@ async def sync_connection(
                 if txn_data.payee:
                     sync_payee_entity = await get_or_create_payee(session, user_id, txn_data.payee)
                     sync_payee_id = sync_payee_entity.id
+
+                # No placeholder existed: if this charge fulfills an active bill's
+                # next occurrence, link it and advance the bill so a later
+                # generate_pending won't create a duplicate placeholder.
+                recurring_link = await recurring_match_service.find_bill_for_incoming(
+                    session, user_id, account.id, txn_data.amount, incoming_currency,
+                    txn_data.type, txn_data.date, txn_data.description,
+                )
 
                 bill = (
                     bills_by_external_id.get(txn_data.bill_external_id)
@@ -1355,12 +1408,15 @@ async def sync_connection(
                     installment_total_amount=txn_data.installment_total_amount,
                     installment_purchase_date=txn_data.installment_purchase_date,
                     bill_id=bill.id if bill else None,
+                    recurring_transaction_id=recurring_link.id if recurring_link else None,
                 )
                 apply_effective_date(
                     transaction, account, bill_due_date=bill.due_date if bill else None
                 )
                 session.add(transaction)
                 await session.flush()
+                if recurring_link is not None:
+                    recurring_match_service.advance_past(recurring_link, txn_data.date)
                 new_tx_ids.append(transaction.id)
                 if not category_id:
                     await apply_rules_to_transaction(session, user_id, transaction)
@@ -1392,10 +1448,11 @@ async def sync_connection(
         await _cleanup_phantom_duplicates(session, connection.id)
 
         # Refresh investment holdings (brokerage, fixed income, funds,
-        # etc.). Errors here are logged but don't fail the sync; a bank
-        # connector that doesn't expose /investments shouldn't block the
-        # transaction sync that just succeeded.
-        await _sync_holdings(session, user_id, connection, credentials)
+        # etc.) when enabled for this connection. Errors here are logged but
+        # don't fail the sync; a bank connector that doesn't expose
+        # /investments shouldn't block the transaction sync that just succeeded.
+        if _sync_assets_enabled(conn_settings):
+            await _sync_holdings(session, user_id, connection, credentials)
 
         connection.last_sync_at = datetime.now(timezone.utc)
         connection.status = "active"

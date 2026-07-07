@@ -84,6 +84,31 @@ async def test_agents_info_exposes_mcp_external_ttl(client: AsyncClient, auth_he
     assert body["mcp_external_ttl_days"] >= 1
 
 
+async def test_agents_info_exposes_external_mcp_url(client: AsyncClient, auth_headers: dict):
+    """The frontend uses external_mcp_url (empty by default) so deployments
+    behind an ingress can override the hardcoded :8765 endpoint."""
+    r = await client.get("/api/agents/info", headers=auth_headers)
+    body = r.json()
+    assert "external_mcp_url" in body
+    assert isinstance(body["external_mcp_url"], str)
+
+
+async def test_agents_info_returns_configured_external_mcp_url(
+    client: AsyncClient, auth_headers: dict, monkeypatch
+):
+    """When AGENTS_EXTERNAL_MCP_URL is set, it is surfaced verbatim (trimmed)."""
+    from app.agents import config
+
+    config.get_agent_settings.cache_clear()
+    monkeypatch.setenv("AGENTS_EXTERNAL_MCP_URL", "  https://securo.example.com/mcp  ")
+    try:
+        r = await client.get("/api/agents/info", headers=auth_headers)
+        assert r.json()["external_mcp_url"] == "https://securo.example.com/mcp"
+    finally:
+        monkeypatch.delenv("AGENTS_EXTERNAL_MCP_URL", raising=False)
+        config.get_agent_settings.cache_clear()
+
+
 # --- External MCP tokens ---------------------------------------------------
 
 async def test_mcp_tokens_requires_auth(client: AsyncClient):

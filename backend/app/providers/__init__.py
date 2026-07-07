@@ -23,6 +23,7 @@ KNOWN_PROVIDERS = [
         "description": "Open finance provider for Brazilian banks",
         "flow_type": "widget",
         "requires_institution_select": False,
+        "supports_asset_sync": True,
     },
     {
         "name": "enable_banking",
@@ -30,6 +31,7 @@ KNOWN_PROVIDERS = [
         "description": "European banks via PSD2 open banking",
         "flow_type": "oauth",
         "requires_institution_select": True,
+        "supports_asset_sync": False,
     },
     {
         "name": "simplefin",
@@ -37,6 +39,7 @@ KNOWN_PROVIDERS = [
         "description": "US and international banks via SimpleFIN Bridge",
         "flow_type": "token",
         "requires_institution_select": False,
+        "supports_asset_sync": True,
     },
 ]
 

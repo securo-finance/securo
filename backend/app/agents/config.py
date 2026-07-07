@@ -9,7 +9,16 @@ class AgentSettings(BaseSettings):
     enabled: bool = False
 
     # Built-in MCP server URL. The mcp-server container speaks JSON-RPC 2.0.
+    # This is the internal address the backend uses to reach the container.
     builtin_mcp_url: str = "http://mcp-server:8765/mcp"
+
+    # Public URL external agents use to reach the built-in MCP server, shown
+    # in the UI token panel. Leave blank to have the frontend derive it from
+    # the browser location (``<protocol>//<hostname>:8765/mcp``). Set this
+    # when the MCP server is exposed behind an ingress/reverse proxy on a
+    # custom host, subpath, or standard 80/443 port instead of ``:8765``.
+    # Example: "https://securo.example.com/mcp".
+    external_mcp_url: str = ""
 
     # Comma-separated extra MCP servers users can plug in (URL[|name]).
     # Example: "http://my-tools:9000/mcp|my-tools,http://other:9001/mcp"

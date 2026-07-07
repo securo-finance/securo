@@ -315,6 +315,37 @@ async def test_transfer_candidates_not_found(client: AsyncClient, auth_headers, 
 
 
 @pytest.mark.asyncio
+async def test_link_transfer_preserves_categories(
+    client: AsyncClient, auth_headers, test_transactions, test_categories
+):
+    other = await _manual_account(client, auth_headers, "Destino linkado")
+    debit = test_transactions[0]
+    credit_resp = await client.post(
+        "/api/transactions",
+        headers=auth_headers,
+        json={
+            "account_id": other,
+            "category_id": str(test_categories[2].id),
+            "description": "Linked credit",
+            "amount": "25.50",
+            "date": date.today().isoformat(),
+            "type": "credit",
+        },
+    )
+    assert credit_resp.status_code == 201, credit_resp.text
+
+    resp = await client.post(
+        "/api/transactions/link-transfer",
+        headers=auth_headers,
+        json={"transaction_ids": [str(debit.id), credit_resp.json()["id"]]},
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["debit"]["category_id"] == str(debit.category_id)
+    assert data["credit"]["category_id"] == str(test_categories[2].id)
+
+
+@pytest.mark.asyncio
 async def test_create_counterpart(
     client: AsyncClient, auth_headers, test_account: Account, test_transactions
 ):
@@ -326,7 +357,9 @@ async def test_create_counterpart(
         json={"to_account_id": other},
     )
     assert resp.status_code == 201, resp.text
-    assert resp.json()["transfer_pair_id"]
+    data = resp.json()
+    assert data["transfer_pair_id"]
+    assert data["debit"]["category_id"] == str(tx.category_id)
 
 
 @pytest.mark.asyncio
