@@ -1218,6 +1218,8 @@
     "range30d": "30D"
   },
   "payees": {
+    "addFavorite": "Dodaj do ulubionych",
+    "removeFavorite": "Usuń z ulubionych",
     "title": "Odbiorcy",
     "section": "Konfiguracja",
     "payee": "Odbiorca",
@@ -1259,6 +1261,7 @@
     "favoritesOnly": "Tylko ulubione"
   },
   "common": {
+    "view": "Zobacz",
     "save": "Zapisz",
     "cancel": "Anuluj",
     "close": "Zamknij",

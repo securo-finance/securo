@@ -385,6 +385,7 @@ export default function AccountsPage() {
                             size="sm"
                             className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
                             onClick={() => setSettingsConnection(conn)}
+                            title={t('connections.settings')}
                           >
                             <Settings size={14} />
                           </Button>
@@ -417,6 +418,7 @@ export default function AccountsPage() {
                             className="h-8 w-8 p-0 text-muted-foreground hover:text-rose-500"
                             onClick={() => setDisconnectingConnection(conn)}
                             disabled={disconnectMutation.isPending}
+                            title={t('accounts.disconnect')}
                           >
                             <Unlink size={14} />
                           </Button>

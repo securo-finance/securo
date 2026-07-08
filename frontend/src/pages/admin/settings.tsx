@@ -353,6 +353,7 @@ export default function AdminSettingsPage() {
                       role="button"
                       onClick={(e) => { e.stopPropagation(); setDeleteUser(u) }}
                       className="p-1.5 rounded-md text-muted-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                      title={t('common.delete')}
                     >
                       <Trash2 size={14} />
                     </span>

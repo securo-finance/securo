@@ -812,10 +812,10 @@ export default function AssetsPage() {
                 <button onClick={(e) => { e.stopPropagation(); setMovingAsset(asset) }} title={t('assets.moveToWallet')} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
                   <FolderInput size={13} />
                 </button>
-                <button onClick={(e) => { e.stopPropagation(); if (!isProviderOwned) openEdit(asset) }} disabled={isProviderOwned} title={isProviderOwned ? t('assets.syncedReadOnly') : undefined} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                <button onClick={(e) => { e.stopPropagation(); if (!isProviderOwned) openEdit(asset) }} disabled={isProviderOwned} title={isProviderOwned ? t('assets.syncedReadOnly') : t('common.edit')} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                   <Pencil size={13} />
                 </button>
-                <button onClick={(e) => { e.stopPropagation(); if (!isProviderOwned) setDeletingId(asset.id) }} disabled={isProviderOwned} title={isProviderOwned ? t('assets.syncedReadOnly') : undefined} className="p-1 rounded text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+                <button onClick={(e) => { e.stopPropagation(); if (!isProviderOwned) setDeletingId(asset.id) }} disabled={isProviderOwned} title={isProviderOwned ? t('assets.syncedReadOnly') : t('common.delete')} className="p-1 rounded text-muted-foreground hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
                   <Trash2 size={13} />
                 </button>
               </>
@@ -2195,6 +2195,7 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
                         onClick={() => deleteValueMutation.mutate(v.id)}
                         className="p-1 rounded text-muted-foreground/40 hover:text-rose-600 transition-colors"
                         disabled={deleteValueMutation.isPending}
+                        title={t('common.delete')}
                       >
                         <Trash2 size={12} />
                       </button>
@@ -2697,6 +2698,7 @@ function HoldingLedger({
                   onClick={() => deleteMutation.mutate(tx.id)}
                   disabled={deleteMutation.isPending}
                   className="p-1 rounded text-muted-foreground/50 hover:text-rose-600 transition-colors"
+                  title={t('common.delete')}
                 >
                   <Trash2 size={12} />
                 </button>

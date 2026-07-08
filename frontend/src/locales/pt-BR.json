@@ -1149,6 +1149,8 @@
     "range30d": "30D"
   },
   "payees": {
+    "addFavorite": "Adicionar aos favoritos",
+    "removeFavorite": "Remover dos favoritos",
     "title": "Beneficiários",
     "section": "Configuração",
     "payee": "Beneficiário",
@@ -1184,6 +1186,7 @@
     "favoritesOnly": "Apenas favoritos"
   },
   "common": {
+    "view": "Ver",
     "save": "Salvar",
     "cancel": "Cancelar",
     "close": "Fechar",

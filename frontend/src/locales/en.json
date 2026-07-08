@@ -1149,6 +1149,8 @@
     "range30d": "30D"
   },
   "payees": {
+    "addFavorite": "Add to favorites",
+    "removeFavorite": "Remove from favorites",
     "title": "Payees",
     "section": "Setup",
     "payee": "Payee",
@@ -1184,6 +1186,7 @@
     "favoritesOnly": "Favorites Only"
   },
   "common": {
+    "view": "View",
     "save": "Save",
     "cancel": "Cancel",
     "close": "Close",

@@ -952,6 +952,8 @@ export default function GroupDetailPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => deleteSettlementMutation.mutate(s.id)}
+                      title={t('common.delete')}
+                      aria-label={t('common.delete')}
                     >
                       <Trash2 size={14} />
                     </Button>

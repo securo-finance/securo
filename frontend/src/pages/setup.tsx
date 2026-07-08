@@ -206,6 +206,7 @@ export default function SetupPage() {
                   <button
                     type="button"
                     onClick={() => setTheme('light')}
+                    title={t('settings.themeLight')}
                     className={cn(
                       'p-1.5 rounded transition-colors',
                       theme === 'light'
@@ -218,6 +219,7 @@ export default function SetupPage() {
                   <button
                     type="button"
                     onClick={() => setTheme('dark')}
+                    title={t('settings.themeDark')}
                     className={cn(
                       'p-1.5 rounded transition-colors',
                       theme === 'dark'

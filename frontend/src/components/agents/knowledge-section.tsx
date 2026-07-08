@@ -122,7 +122,7 @@ export function KnowledgeSection({ agentId }: { agentId: string }) {
                   >
                     {d.pinned ? <Pin className="h-4 w-4 text-amber-500" /> : <PinOff className="h-4 w-4" />}
                   </Button>
-                  <Button size="icon" variant="ghost" onClick={() => remove.mutate(d.id)}>
+                  <Button size="icon" variant="ghost" onClick={() => remove.mutate(d.id)} title={t('common.delete')}>
                     <Trash2 className="h-4 w-4 text-rose-500" />
                   </Button>
                 </>

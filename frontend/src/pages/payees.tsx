@@ -514,6 +514,7 @@ export default function PayeesPage() {
                           favoriteMutation.mutate({ id: payee.id, is_favorite: !payee.is_favorite })
                         }}
                         className="p-1 rounded hover:bg-accent"
+                        title={payee.is_favorite ? t('payees.removeFavorite') : t('payees.addFavorite')}
                       >
                         <Star
                           size={14}
