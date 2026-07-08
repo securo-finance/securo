@@ -26,12 +26,12 @@ import {
 
 import {
   groups as groupsApi,
-  users as usersApi,
   accounts as accountsApi,
   transactions as transactionsApi,
   type GroupMemberPayload,
   type GroupSettlementPayload,
 } from '@/lib/api'
+import { MemberForm } from '@/components/member-form'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { Button } from '@/components/ui/button'
@@ -281,27 +281,6 @@ export default function GroupDetailPage() {
     })
   }
 
-  // Directory of all Securo users on the instance — populates the
-  // member-picker dropdown so the host can pick an existing account
-  // rather than typing its email.
-  const { data: userDirectory } = useQuery({
-    queryKey: ['users', 'directory'],
-    queryFn: () => usersApi.directory(),
-    enabled: memberDialogOpen,
-    staleTime: 60_000,
-  })
-
-  // Resolve a typed email to an existing Securo user, kept as a
-  // fallback for the "I know their email but they aren't in my list
-  // for some reason" path.
-  const trimmedEmail = memberEmail.trim()
-  const { data: lookupResult } = useQuery({
-    queryKey: ['users', 'lookup', trimmedEmail.toLowerCase()],
-    queryFn: () => usersApi.lookupByEmail(trimmedEmail),
-    enabled: trimmedEmail.length >= 3 && trimmedEmail.includes('@'),
-    staleTime: 60_000,
-    retry: false,
-  })
 
   // ── Settle-up ────────────────────────────────────────────────
   const [settleOpen, setSettleOpen] = useState(false)
@@ -977,76 +956,14 @@ export default function GroupDetailPage() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            {/* Pick an existing Securo user, or leave as "non-user" to
-                add someone without an account (the most common case for
-                roommates/relatives who don't use the app yet). When a
-                user is picked, name+email come from their account and
-                the inputs are locked — switch back to "Sem vínculo" to
-                edit them by hand. */}
-            <div className="space-y-2">
-              <Label>{t('splitGroups.linkedUser')}</Label>
-              <select
-                className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background h-9 focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
-                value={memberLinkedUserId ?? ''}
-                onChange={(e) => {
-                  const id = e.target.value || null
-                  setMemberLinkedUserId(id)
-                  if (id) {
-                    const picked = userDirectory?.find((u) => u.id === id)
-                    if (picked) {
-                      // Always reflect the currently picked user — the
-                      // inputs are locked, so the source of truth is
-                      // whatever account is selected here.
-                      setMemberEmail(picked.email)
-                      setMemberName(picked.email.split('@')[0])
-                    }
-                  }
-                }}
-              >
-                <option value="">{t('splitGroups.linkedUserNone')}</option>
-                {(userDirectory ?? []).map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.email}
-                    {u.id === user?.id ? ` (${t('splitGroups.you')})` : ''}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-muted-foreground">
-                {t('splitGroups.linkedUserHint')}
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label>{t('splitGroups.memberName')}</Label>
-              <Input
-                value={memberName}
-                onChange={(e) => setMemberName(e.target.value)}
-                disabled={memberLinkedUserId !== null}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('splitGroups.memberEmail')}</Label>
-              <Input
-                type="email"
-                value={memberEmail}
-                onChange={(e) => setMemberEmail(e.target.value)}
-                disabled={memberLinkedUserId !== null}
-              />
-              {memberLinkedUserId !== null ? (
-                <p className="text-xs text-emerald-600 inline-flex items-center gap-1">
-                  <Link2 size={11} />
-                  {t('splitGroups.willLinkToUser', { email: memberEmail })}
-                </p>
-              ) : lookupResult ? (
-                <p className="text-xs text-emerald-600 inline-flex items-center gap-1">
-                  <Link2 size={11} />
-                  {t('splitGroups.willLinkToUser', { email: lookupResult.email })}
-                </p>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  {t('splitGroups.memberEmailHint')}
-                </p>
-              )}
-            </div>
+            <MemberForm
+              name={memberName}
+              onChangeName={setMemberName}
+              email={memberEmail}
+              onChangeEmail={setMemberEmail}
+              linkedUserId={memberLinkedUserId}
+              onChangeLinkedUserId={setMemberLinkedUserId}
+            />
           </div>
           <DialogFooter className={editingMember ? 'flex justify-between sm:justify-between' : ''}>
             {editingMember && (

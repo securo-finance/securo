@@ -1296,6 +1296,8 @@
     "date": "Date",
     "splitTransaction": "Split this transaction",
     "splitNoGroups": "Create a group first to split a transaction.",
+    "splitNoGroupsLinkPrefix": "You don't have a group yet. You can ",
+    "splitNoGroupsLinkSuffix": "create one here",
     "splitNoMembers": "Add members to the group first.",
     "group": "Group",
     "shareType": "Split by",

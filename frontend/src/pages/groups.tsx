@@ -4,12 +4,10 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
-import { groups as groupsApi, currencies as currenciesApi, type GroupCreatePayload } from '@/lib/api'
+import { groups as groupsApi, type GroupCreatePayload } from '@/lib/api'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
@@ -18,19 +16,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { GroupForm } from '@/components/group-form'
 import { PageHeader } from '@/components/page-header'
 import { Archive, ChevronRight, Trash2, Users } from 'lucide-react'
 import type { Group, GroupKind } from '@/types'
 
 type StatusFilter = 'active' | 'archived' | 'all'
 
-const KIND_OPTIONS: { value: GroupKind; tKey: string }[] = [
-  { value: 'social', tKey: 'splitGroups.kind.social' },
-  { value: 'cost_center', tKey: 'splitGroups.kind.cost_center' },
-  { value: 'project', tKey: 'splitGroups.kind.project' },
-  { value: 'client', tKey: 'splitGroups.kind.client' },
-  { value: 'other', tKey: 'splitGroups.kind.other' },
-]
 
 export default function GroupsPage() {
   const { t } = useTranslation()
@@ -49,11 +41,6 @@ export default function GroupsPage() {
   const [defaultCurrency, setDefaultCurrency] = useState(userCurrency)
   const [notes, setNotes] = useState('')
 
-  const { data: supportedCurrencies } = useQuery({
-    queryKey: ['currencies'],
-    queryFn: currenciesApi.list,
-    staleTime: Infinity,
-  })
 
   const { data: list, isLoading } = useQuery({
     queryKey: ['groups', { includeArchived }],
@@ -242,46 +229,16 @@ export default function GroupsPage() {
             <DialogTitle>{editing ? t('splitGroups.edit') : t('splitGroups.add')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>{t('splitGroups.name')}</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('splitGroups.kindLabel')}</Label>
-              <select
-                className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background"
-                value={kind}
-                onChange={(e) => setKind(e.target.value as GroupKind)}
-              >
-                {KIND_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {t(opt.tKey)}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-muted-foreground">{t('splitGroups.kindHint')}</p>
-            </div>
-            <div className="space-y-2">
-              <Label>{t('splitGroups.defaultCurrency')}</Label>
-              <select
-                className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background h-9 focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
-                value={defaultCurrency}
-                onChange={(e) => setDefaultCurrency(e.target.value)}
-              >
-                {(supportedCurrencies ?? [{ code: defaultCurrency, symbol: defaultCurrency, name: defaultCurrency, flag: '' }]).map((c) => (
-                  <option key={c.code} value={c.code}>{c.flag} {c.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label>{t('splitGroups.notes')}</Label>
-              <textarea
-                className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background resize-none"
-                rows={2}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-              />
-            </div>
+            <GroupForm
+              name={name}
+              onChangeName={setName}
+              kind={kind}
+              onChangeKind={setKind}
+              defaultCurrency={defaultCurrency}
+              onChangeDefaultCurrency={setDefaultCurrency}
+              notes={notes}
+              onChangeNotes={setNotes}
+            />
             {editing && (
               <label className="text-sm text-muted-foreground inline-flex items-center gap-2 cursor-pointer">
                 <input

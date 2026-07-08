@@ -1296,6 +1296,8 @@
     "date": "Дата",
     "splitTransaction": "Розділити цю транзакцію",
     "splitNoGroups": "Спочатку створіть групу, щоб розділити транзакцію.",
+    "splitNoGroupsLinkPrefix": "У вас ще немає групи. Ви можете ",
+    "splitNoGroupsLinkSuffix": "створити її тут",
     "splitNoMembers": "Спочатку додайте учасників до групи.",
     "group": "Група",
     "shareType": "Розділити за",

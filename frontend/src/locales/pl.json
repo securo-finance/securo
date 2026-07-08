@@ -1380,6 +1380,8 @@
     "date": "Data",
     "splitTransaction": "Podziel tę transakcję",
     "splitNoGroups": "Najpierw utwórz grupę, aby podzielić transakcję.",
+    "splitNoGroupsLinkPrefix": "Nie masz jeszcze grupy. Możesz ",
+    "splitNoGroupsLinkSuffix": "utworzyć ją tutaj",
     "splitNoMembers": "Najpierw dodaj członków do grupy.",
     "group": "Grupa",
     "shareType": "Podziel wg",

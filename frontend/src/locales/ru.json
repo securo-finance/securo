@@ -1296,6 +1296,8 @@
     "date": "Дата",
     "splitTransaction": "Разделить эту транзакцию",
     "splitNoGroups": "Сначала создайте группу, чтобы разделить транзакцию.",
+    "splitNoGroupsLinkPrefix": "У вас еще нет группы. Вы можете ",
+    "splitNoGroupsLinkSuffix": "создать ее здесь",
     "splitNoMembers": "Сначала добавьте участников в группу.",
     "group": "Группа",
     "shareType": "Разделить по",
