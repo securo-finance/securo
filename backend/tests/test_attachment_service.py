@@ -89,8 +89,12 @@ def test_validate_file_ok():
 @pytest_asyncio.fixture
 async def txn_account(session: AsyncSession, test_user):
     acct = Account(
-        id=uuid.uuid4(), user_id=test_user.id, name="Attach Acct",
-        type="checking", balance=Decimal("0"), currency="BRL",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Attach Acct",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
     )
     session.add(acct)
     await session.commit()
@@ -101,9 +105,15 @@ async def txn_account(session: AsyncSession, test_user):
 @pytest_asyncio.fixture
 async def txn_for_attach(session: AsyncSession, test_user, txn_account):
     txn = Transaction(
-        id=uuid.uuid4(), user_id=test_user.id, account_id=txn_account.id,
-        description="Attach test", amount=Decimal("100"), date=datetime.now(timezone.utc).date(),
-        type="debit", source="manual", currency="BRL",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=txn_account.id,
+        description="Attach test",
+        amount=Decimal("100"),
+        date=datetime.now(timezone.utc).date(),
+        type="debit",
+        source="manual",
+        currency="BRL",
         created_at=datetime.now(timezone.utc),
     )
     session.add(txn)
@@ -119,51 +129,84 @@ async def txn_for_attach(session: AsyncSession, test_user, txn_account):
 
 async def test_upload_attachment(session: AsyncSession, test_user, test_workspace, txn_for_attach):
     mock_storage = AsyncMock()
-    mock_storage.upload = AsyncMock(return_value=StoredFile(
-        storage_key="test/key", size=100, content_type="application/pdf",
-    ))
+    mock_storage.upload = AsyncMock(
+        return_value=StoredFile(
+            storage_key="test/key",
+            size=100,
+            content_type="application/pdf",
+        )
+    )
     with patch("app.services.attachment_service.get_storage_provider", return_value=mock_storage):
         att = await upload_attachment(
-            session, test_workspace.id, test_user.id, txn_for_attach.id,
-            "receipt.pdf", "application/pdf", b"fake-data",
+            session,
+            test_workspace.id,
+            test_user.id,
+            txn_for_attach.id,
+            "receipt.pdf",
+            "application/pdf",
+            b"fake-data",
         )
     assert att.filename == "receipt.pdf"
     assert att.transaction_id == txn_for_attach.id
 
 
-async def test_upload_attachment_max_limit(session: AsyncSession, test_user, test_workspace, txn_for_attach):
+async def test_upload_attachment_max_limit(
+    session: AsyncSession, test_user, test_workspace, txn_for_attach
+):
     """Exceeding max attachments per transaction raises ValueError."""
     # Pre-seed attachments up to the limit
     from app.core.config import get_settings
+
     limit = get_settings().storage_max_attachments_per_transaction
     for i in range(limit):
         att = TransactionAttachment(
-            id=uuid.uuid4(), user_id=test_user.id, transaction_id=txn_for_attach.id,
-            filename=f"file{i}.pdf", storage_key=f"k{i}", content_type="application/pdf", size=10,
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            transaction_id=txn_for_attach.id,
+            filename=f"file{i}.pdf",
+            storage_key=f"k{i}",
+            content_type="application/pdf",
+            size=10,
         )
         session.add(att)
     await session.commit()
 
     mock_storage = AsyncMock()
-    mock_storage.upload = AsyncMock(return_value=StoredFile(
-        storage_key="test/key", size=100, content_type="application/pdf",
-    ))
+    mock_storage.upload = AsyncMock(
+        return_value=StoredFile(
+            storage_key="test/key",
+            size=100,
+            content_type="application/pdf",
+        )
+    )
     with patch("app.services.attachment_service.get_storage_provider", return_value=mock_storage):
         with pytest.raises(ValueError, match="Maximum"):
             await upload_attachment(
-                session, test_workspace.id, test_user.id, txn_for_attach.id,
-                "extra.pdf", "application/pdf", b"data",
+                session,
+                test_workspace.id,
+                test_user.id,
+                txn_for_attach.id,
+                "extra.pdf",
+                "application/pdf",
+                b"data",
             )
 
 
-async def test_upload_wrong_transaction(session: AsyncSession, test_user, test_workspace, txn_for_attach):
+async def test_upload_wrong_transaction(
+    session: AsyncSession, test_user, test_workspace, txn_for_attach
+):
     """Uploading to a non-existent transaction raises LookupError."""
     mock_storage = AsyncMock()
     with patch("app.services.attachment_service.get_storage_provider", return_value=mock_storage):
         with pytest.raises(LookupError, match="not found"):
             await upload_attachment(
-                session, test_workspace.id, test_user.id, uuid.uuid4(),
-                "file.pdf", "application/pdf", b"data",
+                session,
+                test_workspace.id,
+                test_user.id,
+                uuid.uuid4(),
+                "file.pdf",
+                "application/pdf",
+                b"data",
             )
 
 
@@ -172,7 +215,9 @@ async def test_upload_wrong_transaction(session: AsyncSession, test_user, test_w
 # ---------------------------------------------------------------------------
 
 
-async def test_list_attachments_empty(session: AsyncSession, test_user, test_workspace, txn_for_attach):
+async def test_list_attachments_empty(
+    session: AsyncSession, test_user, test_workspace, txn_for_attach
+):
     result = await list_attachments(session, test_workspace.id, txn_for_attach.id)
     assert result == []
 
@@ -182,10 +227,17 @@ async def test_list_attachments_empty(session: AsyncSession, test_user, test_wor
 # ---------------------------------------------------------------------------
 
 
-async def test_download_attachment(session: AsyncSession, test_user, test_workspace, txn_for_attach):
+async def test_download_attachment(
+    session: AsyncSession, test_user, test_workspace, txn_for_attach
+):
     att = TransactionAttachment(
-        id=uuid.uuid4(), user_id=test_user.id, transaction_id=txn_for_attach.id,
-        filename="dl.pdf", storage_key="dl/key", content_type="application/pdf", size=5,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        transaction_id=txn_for_attach.id,
+        filename="dl.pdf",
+        storage_key="dl/key",
+        content_type="application/pdf",
+        size=5,
     )
     session.add(att)
     await session.commit()
@@ -208,10 +260,17 @@ async def test_download_attachment_not_found(session: AsyncSession, test_user, t
 # ---------------------------------------------------------------------------
 
 
-async def test_rename_preserves_extension(session: AsyncSession, test_user, test_workspace, txn_for_attach):
+async def test_rename_preserves_extension(
+    session: AsyncSession, test_user, test_workspace, txn_for_attach
+):
     att = TransactionAttachment(
-        id=uuid.uuid4(), user_id=test_user.id, transaction_id=txn_for_attach.id,
-        filename="original.pdf", storage_key="ren/key", content_type="application/pdf", size=5,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        transaction_id=txn_for_attach.id,
+        filename="original.pdf",
+        storage_key="ren/key",
+        content_type="application/pdf",
+        size=5,
     )
     session.add(att)
     await session.commit()
@@ -221,10 +280,17 @@ async def test_rename_preserves_extension(session: AsyncSession, test_user, test
     assert result.filename == "newname.pdf"
 
 
-async def test_rename_same_extension(session: AsyncSession, test_user, test_workspace, txn_for_attach):
+async def test_rename_same_extension(
+    session: AsyncSession, test_user, test_workspace, txn_for_attach
+):
     att = TransactionAttachment(
-        id=uuid.uuid4(), user_id=test_user.id, transaction_id=txn_for_attach.id,
-        filename="doc.pdf", storage_key="ren2/key", content_type="application/pdf", size=5,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        transaction_id=txn_for_attach.id,
+        filename="doc.pdf",
+        storage_key="ren2/key",
+        content_type="application/pdf",
+        size=5,
     )
     session.add(att)
     await session.commit()
@@ -245,8 +311,13 @@ async def test_rename_not_found(session: AsyncSession, test_user, test_workspace
 
 async def test_delete_attachment(session: AsyncSession, test_user, test_workspace, txn_for_attach):
     att = TransactionAttachment(
-        id=uuid.uuid4(), user_id=test_user.id, transaction_id=txn_for_attach.id,
-        filename="del.pdf", storage_key="del/key", content_type="application/pdf", size=5,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        transaction_id=txn_for_attach.id,
+        filename="del.pdf",
+        storage_key="del/key",
+        content_type="application/pdf",
+        size=5,
     )
     session.add(att)
     await session.commit()
@@ -275,12 +346,22 @@ async def test_cleanup_empty_list(session: AsyncSession):
 
 async def test_cleanup_deletes_storage_keys(session: AsyncSession, test_user, txn_for_attach):
     att1 = TransactionAttachment(
-        id=uuid.uuid4(), user_id=test_user.id, transaction_id=txn_for_attach.id,
-        filename="c1.pdf", storage_key="c1/key", content_type="application/pdf", size=5,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        transaction_id=txn_for_attach.id,
+        filename="c1.pdf",
+        storage_key="c1/key",
+        content_type="application/pdf",
+        size=5,
     )
     att2 = TransactionAttachment(
-        id=uuid.uuid4(), user_id=test_user.id, transaction_id=txn_for_attach.id,
-        filename="c2.pdf", storage_key="c2/key", content_type="application/pdf", size=5,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        transaction_id=txn_for_attach.id,
+        filename="c2.pdf",
+        storage_key="c2/key",
+        content_type="application/pdf",
+        size=5,
     )
     session.add_all([att1, att2])
     await session.commit()
@@ -293,8 +374,13 @@ async def test_cleanup_deletes_storage_keys(session: AsyncSession, test_user, tx
 
 async def test_cleanup_ignores_storage_errors(session: AsyncSession, test_user, txn_for_attach):
     att = TransactionAttachment(
-        id=uuid.uuid4(), user_id=test_user.id, transaction_id=txn_for_attach.id,
-        filename="err.pdf", storage_key="err/key", content_type="application/pdf", size=5,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        transaction_id=txn_for_attach.id,
+        filename="err.pdf",
+        storage_key="err/key",
+        content_type="application/pdf",
+        size=5,
     )
     session.add(att)
     await session.commit()

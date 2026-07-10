@@ -14,6 +14,7 @@ Flow:
      c. Stop when finish_reason is `stop` (no tool call this turn).
   4. Persist user + assistant messages and any tool messages.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -49,8 +50,8 @@ logger = logging.getLogger(__name__)
 class ExecutorEvent:
     type: Literal[
         "text_delta",
-        "tool_call",      # tool name + args (after assembly)
-        "tool_result",    # tool name + ok + summary
+        "tool_call",  # tool name + args (after assembly)
+        "tool_result",  # tool name + ok + summary
         "citation",
         "error",
         "done",
@@ -168,9 +169,9 @@ _RUNTIME_GUARDRAIL = (
     "```\n"
     "\n"
     "Single-series shorthand: omit `series` and use the key `y`. "
-    'Example: `{\"type\":\"bar\",\"data\":[{\"x\":\"Food\",\"y\":500},'
-    '{\"x\":\"Rent\",\"y\":1200}]}`. For pie use '
-    '`{\"type\":\"pie\",\"data\":[{\"name\":\"Food\",\"value\":500},...]}`.\n'
+    'Example: `{"type":"bar","data":[{"x":"Food","y":500},'
+    '{"x":"Rent","y":1200}]}`. For pie use '
+    '`{"type":"pie","data":[{"name":"Food","value":500},...]}`.\n'
     "\n"
     "Add a one-sentence summary above the chart; do NOT also list every "
     "data point in prose — let the chart speak. Only render charts when "
@@ -225,12 +226,16 @@ def _format_page_context(page_context: Optional[dict[str, Any]]) -> Optional[str
         return None
     path = page_context.get("path") or page_context.get("route")
     label = page_context.get("label") or path
-    lines = ["## Current page context",
-             "The user is sending this message from the page below — when they refer "
-             "to 'this', 'these', 'aqui', etc., it most likely refers to what's on "
-             "this page right now."]
+    lines = [
+        "## Current page context",
+        "The user is sending this message from the page below — when they refer "
+        "to 'this', 'these', 'aqui', etc., it most likely refers to what's on "
+        "this page right now.",
+    ]
     if label or path:
-        lines.append(f"- **Page:** {label or '?'}{f' ({path})' if (path and label != path) else ''}")
+        lines.append(
+            f"- **Page:** {label or '?'}{f' ({path})' if (path and label != path) else ''}"
+        )
     summary = page_context.get("summary")
     if summary:
         lines.append(f"- **Summary:** {summary}")
@@ -252,7 +257,11 @@ def _format_page_context(page_context: Optional[dict[str, Any]]) -> Optional[str
                 lines.append(f"- **Selection:** {selection!r}")
         except Exception:  # noqa: BLE001
             lines.append(f"- **Selection:** {selection!r}")
-    extra = {k: v for k, v in page_context.items() if k not in {"path", "route", "label", "summary", "filters", "selection"}}
+    extra = {
+        k: v
+        for k, v in page_context.items()
+        if k not in {"path", "route", "label", "summary", "filters", "selection"}
+    }
     for k, v in extra.items():
         if v in (None, "", [], {}):
             continue
@@ -344,7 +353,9 @@ class AgentExecutor:
         #      5. Page-context primer (where the user is right now)
         #      6. Conversation history
         #      7. The new user message (appended in step 4 below)
-        history = await conversation_service.list_messages(session, conversation_id, limit=agent.max_history_messages * 2 + 2)
+        history = await conversation_service.list_messages(
+            session, conversation_id, limit=agent.max_history_messages * 2 + 2
+        )
         messages: list[ChatMessage] = []
         # Runtime guardrail goes FIRST and applies to every conversation,
         # regardless of agent settings or per-agent system prompt. Locks
@@ -366,6 +377,7 @@ class AgentExecutor:
         if getattr(agent, "auto_context", True):
             try:
                 from app.models.user import User
+
                 user = await session.get(User, user_id)
                 if user is not None:
                     primer = await context_service.build_context_primer(
@@ -384,20 +396,26 @@ class AgentExecutor:
             messages.append(ChatMessage(role="system", content=page_primer))
         for m in history:
             tcs = []
-            for raw in (m.tool_calls or []):
-                tcs.append(ToolCall(id=raw.get("id"), name=raw.get("name"), arguments=raw.get("arguments") or {}))
+            for raw in m.tool_calls or []:
+                tcs.append(
+                    ToolCall(
+                        id=raw.get("id"), name=raw.get("name"), arguments=raw.get("arguments") or {}
+                    )
+                )
             tool_call_id = (m.tool_result or {}).get("tool_call_id") if m.role == "tool" else None
             content = m.content
             if m.role == "tool":
                 # Encode tool result as content for the LLM.
                 tr = m.tool_result or {}
                 content = tr.get("text") or _safe_json(tr.get("data"))
-            messages.append(ChatMessage(
-                role=m.role,  # type: ignore[arg-type]
-                content=content,
-                tool_calls=tcs,
-                tool_call_id=tool_call_id,
-            ))
+            messages.append(
+                ChatMessage(
+                    role=m.role,  # type: ignore[arg-type]
+                    content=content,
+                    tool_calls=tcs,
+                    tool_call_id=tool_call_id,
+                )
+            )
 
         # 3. Discover tools from MCP and filter by per-agent whitelist.
         try:
@@ -472,6 +490,7 @@ class AgentExecutor:
             assembled_calls: list[ToolCall] = []
             for tc in open_calls.values():
                 import json
+
                 try:
                     args = json.loads(tc["args_buf"]) if tc["args_buf"] else {}
                 except json.JSONDecodeError:
@@ -484,11 +503,18 @@ class AgentExecutor:
                 conversation_id=conversation_id,
                 role="assistant",
                 content=assistant_text or None,
-                tool_calls=[{"id": c.id, "name": c.name, "arguments": c.arguments} for c in assembled_calls] or None,
+                tool_calls=[
+                    {"id": c.id, "name": c.name, "arguments": c.arguments} for c in assembled_calls
+                ]
+                or None,
                 input_tokens=usage_input or None,
                 output_tokens=usage_output or None,
             )
-            messages.append(ChatMessage(role="assistant", content=assistant_text or None, tool_calls=assembled_calls))
+            messages.append(
+                ChatMessage(
+                    role="assistant", content=assistant_text or None, tool_calls=assembled_calls
+                )
+            )
 
             # Record one usage row per provider call. Best-effort: a logging
             # failure should never break the user's chat.
@@ -531,13 +557,25 @@ class AgentExecutor:
                 return
 
             # 5. Run tool calls in parallel, persist + emit results, loop.
-            for ev in [ExecutorEvent(type="tool_call", tool_name=c.name, tool_args=c.arguments) for c in assembled_calls]:
+            for ev in [
+                ExecutorEvent(type="tool_call", tool_name=c.name, tool_args=c.arguments)
+                for c in assembled_calls
+            ]:
                 yield ev
 
-            results = await asyncio.gather(*[
-                _safe_call_tool(self.mcp, c, user_id=user_id, workspace_id=workspace_id, conversation_id=conversation_id, agent_id=agent.id)
-                for c in assembled_calls
-            ])
+            results = await asyncio.gather(
+                *[
+                    _safe_call_tool(
+                        self.mcp,
+                        c,
+                        user_id=user_id,
+                        workspace_id=workspace_id,
+                        conversation_id=conversation_id,
+                        agent_id=agent.id,
+                    )
+                    for c in assembled_calls
+                ]
+            )
             for c, res in zip(assembled_calls, results):
                 # Two views of the same result:
                 #   - `summary` is a SHORT preview for the UI chip header
@@ -546,7 +584,9 @@ class AgentExecutor:
                 #     Truncating this is what caused the model to think the
                 #     data was incomplete and report fake "truncated" rows.
                 summary = _summarize_result(res)
-                llm_content = _safe_json(res.get("data") if res.get("data") is not None else res.get("text"))
+                llm_content = _safe_json(
+                    res.get("data") if res.get("data") is not None else res.get("text")
+                )
                 yield ExecutorEvent(type="tool_result", tool_name=c.name, tool_result=summary)
                 await conversation_service.append_message(
                     session,
@@ -560,12 +600,14 @@ class AgentExecutor:
                         "ok": summary.get("ok", False),
                     },
                 )
-                messages.append(ChatMessage(
-                    role="tool",
-                    content=llm_content,
-                    tool_call_id=c.id,
-                    name=c.name,
-                ))
+                messages.append(
+                    ChatMessage(
+                        role="tool",
+                        content=llm_content,
+                        tool_call_id=c.id,
+                        name=c.name,
+                    )
+                )
 
         # Reached the tool-call ceiling without the model producing a final
         # answer. Emit a visible fallback so the UI doesn't show an empty
@@ -579,13 +621,22 @@ class AgentExecutor:
         )
         yield ExecutorEvent(type="text_delta", text=fallback)
         await conversation_service.append_message(
-            session, conversation_id=conversation_id, role="assistant", content=fallback,
+            session,
+            conversation_id=conversation_id,
+            role="assistant",
+            content=fallback,
         )
-        yield ExecutorEvent(type="error", error_code="max_iterations", error_message="Agent reached its tool-call limit.")
+        yield ExecutorEvent(
+            type="error",
+            error_code="max_iterations",
+            error_message="Agent reached its tool-call limit.",
+        )
         yield ExecutorEvent(type="done", finish_reason="max_iterations")
 
 
-async def _process_chunk(chunk: ChatChunk, text_buf: list[str], open_calls: dict[str, dict]) -> AsyncIterator[ExecutorEvent]:
+async def _process_chunk(
+    chunk: ChatChunk, text_buf: list[str], open_calls: dict[str, dict]
+) -> AsyncIterator[ExecutorEvent]:
     if chunk.type == "text_delta" and chunk.text:
         text_buf.append(chunk.text)
         yield ExecutorEvent(type="text_delta", text=chunk.text)
@@ -596,7 +647,9 @@ async def _process_chunk(chunk: ChatChunk, text_buf: list[str], open_calls: dict
             "args_buf": "",
         }
     elif chunk.type == "tool_call_args_delta" and chunk.tool_call_id:
-        tc = open_calls.setdefault(chunk.tool_call_id, {"id": chunk.tool_call_id, "name": "", "args_buf": ""})
+        tc = open_calls.setdefault(
+            chunk.tool_call_id, {"id": chunk.tool_call_id, "name": "", "args_buf": ""}
+        )
         tc["args_buf"] += chunk.args_delta or ""
 
 
@@ -621,7 +674,12 @@ async def _safe_call_tool(
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("tool call %s failed", call.name)
-        return {"ok": False, "data": None, "text": f"Tool error: {exc}", "elapsed_ms": int((time.time() - started) * 1000)}
+        return {
+            "ok": False,
+            "data": None,
+            "text": f"Tool error: {exc}",
+            "elapsed_ms": int((time.time() - started) * 1000),
+        }
 
 
 def _summarize_result(res: dict[str, Any]) -> dict[str, Any]:
@@ -652,6 +710,7 @@ def _safe_json(obj: Any) -> str:
     """Serialize tool data for the LLM to read. No length cap — the
     model needs the full payload or it'll hallucinate truncation."""
     import json
+
     try:
         return json.dumps(obj, default=str)
     except Exception:

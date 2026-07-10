@@ -16,7 +16,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("goals", sa.Column("asset_id", UUID(as_uuid=True), sa.ForeignKey("assets.id"), nullable=True))
+    op.add_column(
+        "goals",
+        sa.Column("asset_id", UUID(as_uuid=True), sa.ForeignKey("assets.id"), nullable=True),
+    )
 
 
 def downgrade() -> None:

@@ -90,7 +90,9 @@ class Settings(BaseSettings):
     # OIDC login (works with Authentik, Pocket ID, and other standard OIDC providers)
     oidc_enabled: bool = False
     oidc_provider_name: str = "OIDC"
-    oidc_discovery_url: str = ""  # e.g. https://auth.example.com/application/o/securo/.well-known/openid-configuration
+    oidc_discovery_url: str = (
+        ""  # e.g. https://auth.example.com/application/o/securo/.well-known/openid-configuration
+    )
     oidc_client_id: str = ""
     oidc_client_secret: str = ""
     oidc_redirect_uri: str = ""  # defaults to {FRONTEND_URL}/api/auth/oidc/callback

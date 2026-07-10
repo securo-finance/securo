@@ -52,7 +52,13 @@ def _serialize_tools(tools: Optional[list[ToolDefinition]]) -> Optional[list[dic
 class OllamaProvider(LLMProvider):
     name = "ollama"
 
-    def __init__(self, *, base_url: str = "http://ollama:11434", api_key: str = "", model: Optional[str] = None):
+    def __init__(
+        self,
+        *,
+        base_url: str = "http://ollama:11434",
+        api_key: str = "",
+        model: Optional[str] = None,
+    ):
         super().__init__(api_key=api_key, base_url=base_url, model=model)
 
     async def chat_stream(
@@ -81,7 +87,9 @@ class OllamaProvider(LLMProvider):
                 async with client.stream("POST", url, json=payload) as resp:
                     if resp.status_code >= 400:
                         body = (await resp.aread()).decode("utf-8", errors="replace")
-                        raise LLMUnavailableError(f"Ollama {resp.status_code}: {body}", status=resp.status_code)
+                        raise LLMUnavailableError(
+                            f"Ollama {resp.status_code}: {body}", status=resp.status_code
+                        )
                     tool_idx = 0
                     async for line in resp.aiter_lines():
                         if not line.strip():
@@ -91,15 +99,21 @@ class OllamaProvider(LLMProvider):
                         content = msg.get("content") or ""
                         if content:
                             yield ChatChunk(type="text_delta", text=content)
-                        for call in (msg.get("tool_calls") or []):
+                        for call in msg.get("tool_calls") or []:
                             fn = call.get("function") or {}
                             args = fn.get("arguments") or {}
                             if not isinstance(args, str):
                                 args = json.dumps(args)
                             tcid = call.get("id") or f"call_{tool_idx}"
                             tool_idx += 1
-                            yield ChatChunk(type="tool_call_start", tool_call_id=tcid, tool_name=fn.get("name") or "")
-                            yield ChatChunk(type="tool_call_args_delta", tool_call_id=tcid, args_delta=args)
+                            yield ChatChunk(
+                                type="tool_call_start",
+                                tool_call_id=tcid,
+                                tool_name=fn.get("name") or "",
+                            )
+                            yield ChatChunk(
+                                type="tool_call_args_delta", tool_call_id=tcid, args_delta=args
+                            )
                             yield ChatChunk(type="tool_call_end", tool_call_id=tcid)
                         if data.get("done"):
                             usage = Usage(
@@ -107,7 +121,9 @@ class OllamaProvider(LLMProvider):
                                 output_tokens=int(data.get("eval_count") or 0),
                             )
                             yield ChatChunk(type="usage", usage=usage)
-                            yield ChatChunk(type="finish", finish_reason=data.get("done_reason") or "stop")
+                            yield ChatChunk(
+                                type="finish", finish_reason=data.get("done_reason") or "stop"
+                            )
         except httpx.HTTPError as exc:
             raise LLMUnavailableError(f"Ollama unreachable: {exc}") from exc
 
@@ -119,7 +135,9 @@ class OllamaProvider(LLMProvider):
                 # /api/embed accepts a list under `input` since Ollama 0.2+.
                 resp = await client.post(url, json={"model": model, "input": texts})
                 if resp.status_code >= 400:
-                    raise LLMUnavailableError(f"Ollama embed {resp.status_code}: {resp.text}", status=resp.status_code)
+                    raise LLMUnavailableError(
+                        f"Ollama embed {resp.status_code}: {resp.text}", status=resp.status_code
+                    )
                 data = resp.json()
                 embeddings = data.get("embeddings") or []
                 for vec in embeddings:

@@ -10,6 +10,7 @@ from alembic import context
 from app.core.config import get_settings
 from app.core.database import Base
 from app.models import *  # noqa: F401,F403
+
 # Agents module models (always loaded so migrations stay in sync; the
 # feature itself is gated at runtime by AGENTS_ENABLED).
 from app.agents.models import *  # noqa: F401,F403

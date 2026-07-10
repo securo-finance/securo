@@ -31,7 +31,7 @@ export function FintocConnectWidget({ widgetToken, onSuccess, onExit }: FintocCo
         widget = Fintoc.create({
           publicKey: fintocPublicKey,
           widgetToken,
-          onSuccess: (data: any) => {
+          onSuccess: (data: { exchangeToken?: string }) => {
             // The Fintoc SDK delivers the Link Intent object in camelCase.
             // exchangeToken is the one-time token that must be exchanged server-side.
             const token = data?.exchangeToken

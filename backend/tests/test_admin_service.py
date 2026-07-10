@@ -39,6 +39,7 @@ pytestmark = pytest.mark.asyncio
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 async def _make_user(session: AsyncSession, email: str, is_superuser: bool = False) -> User:
     import bcrypt as _bcrypt
     from app.services.workspace_service import create_personal_workspace_for_user
@@ -76,9 +77,13 @@ async def _populate_user_data(session: AsyncSession, user: User):
 
     # Connection
     conn = BankConnection(
-        id=uuid.uuid4(), user_id=user.id, provider="test",
-        external_id="ext-1", institution_name="Test Bank",
-        credentials={}, status="active",
+        id=uuid.uuid4(),
+        user_id=user.id,
+        provider="test",
+        external_id="ext-1",
+        institution_name="Test Bank",
+        credentials={},
+        status="active",
         last_sync_at=datetime.now(timezone.utc),
         created_at=datetime.now(timezone.utc),
     )
@@ -86,8 +91,12 @@ async def _populate_user_data(session: AsyncSession, user: User):
 
     # Account
     acct = Account(
-        id=uuid.uuid4(), user_id=user.id, name="Acct",
-        type="checking", balance=Decimal("100"), currency="BRL",
+        id=uuid.uuid4(),
+        user_id=user.id,
+        name="Acct",
+        type="checking",
+        balance=Decimal("100"),
+        currency="BRL",
     )
     session.add(acct)
 
@@ -96,21 +105,31 @@ async def _populate_user_data(session: AsyncSession, user: User):
     session.add(payee)
     await session.flush()
     mapping = PayeeMapping(
-        id=uuid.uuid4(), user_id=user.id, target_id=payee.id,
+        id=uuid.uuid4(),
+        user_id=user.id,
+        target_id=payee.id,
     )
     session.add(mapping)
 
     # Rule
     rule = Rule(
-        id=uuid.uuid4(), user_id=user.id, name="R",
-        conditions_op="and", conditions=[], actions=[], priority=1,
+        id=uuid.uuid4(),
+        user_id=user.id,
+        name="R",
+        conditions_op="and",
+        conditions=[],
+        actions=[],
+        priority=1,
     )
     session.add(rule)
 
     # Asset + value
     asset = Asset(
-        id=uuid.uuid4(), user_id=user.id, name="House",
-        type="real_estate", currency="BRL",
+        id=uuid.uuid4(),
+        user_id=user.id,
+        name="House",
+        type="real_estate",
+        currency="BRL",
     )
     session.add(asset)
     await session.flush()
@@ -119,38 +138,63 @@ async def _populate_user_data(session: AsyncSession, user: User):
 
     # Transaction + attachment
     txn = Transaction(
-        id=uuid.uuid4(), user_id=user.id, account_id=acct.id,
-        description="Test txn", amount=Decimal("50"), date=date.today(),
-        type="debit", source="manual", currency="BRL",
+        id=uuid.uuid4(),
+        user_id=user.id,
+        account_id=acct.id,
+        description="Test txn",
+        amount=Decimal("50"),
+        date=date.today(),
+        type="debit",
+        source="manual",
+        currency="BRL",
         created_at=datetime.now(timezone.utc),
     )
     session.add(txn)
     await session.flush()
     att = TransactionAttachment(
-        id=uuid.uuid4(), user_id=user.id, transaction_id=txn.id,
-        filename="receipt.pdf", storage_key="k", content_type="application/pdf", size=100,
+        id=uuid.uuid4(),
+        user_id=user.id,
+        transaction_id=txn.id,
+        filename="receipt.pdf",
+        storage_key="k",
+        content_type="application/pdf",
+        size=100,
     )
     session.add(att)
 
     # Budget
     budget = Budget(
-        id=uuid.uuid4(), user_id=user.id, category_id=cat.id,
-        amount=Decimal("500"), month=date.today().replace(day=1), currency="BRL",
+        id=uuid.uuid4(),
+        user_id=user.id,
+        category_id=cat.id,
+        amount=Decimal("500"),
+        month=date.today().replace(day=1),
+        currency="BRL",
     )
     session.add(budget)
 
     # Recurring transaction
     rec = RecurringTransaction(
-        id=uuid.uuid4(), user_id=user.id, description="Rent",
-        amount=Decimal("2000"), type="debit", frequency="monthly",
-        start_date=date.today(), next_occurrence=date.today(), currency="BRL",
+        id=uuid.uuid4(),
+        user_id=user.id,
+        description="Rent",
+        amount=Decimal("2000"),
+        type="debit",
+        frequency="monthly",
+        start_date=date.today(),
+        next_occurrence=date.today(),
+        currency="BRL",
     )
     session.add(rec)
 
     # Import log
     imp = ImportLog(
-        id=uuid.uuid4(), user_id=user.id, account_id=acct.id,
-        filename="test.ofx", format="ofx", transaction_count=1,
+        id=uuid.uuid4(),
+        user_id=user.id,
+        account_id=acct.id,
+        filename="test.ofx",
+        format="ofx",
+        transaction_count=1,
     )
     session.add(imp)
 
@@ -160,6 +204,7 @@ async def _populate_user_data(session: AsyncSession, user: User):
 # ---------------------------------------------------------------------------
 # list_users
 # ---------------------------------------------------------------------------
+
 
 async def test_list_users_basic(session: AsyncSession, clean_db):
     await _make_user(session, "alpha@test.com")
@@ -191,6 +236,7 @@ async def test_list_users_pagination(session: AsyncSession, clean_db):
 # get_user
 # ---------------------------------------------------------------------------
 
+
 async def test_get_user_found(session: AsyncSession, clean_db):
     u = await _make_user(session, "found@test.com")
     result = await get_user(session, u.id)
@@ -206,6 +252,7 @@ async def test_get_user_not_found(session: AsyncSession, clean_db):
 # ---------------------------------------------------------------------------
 # update_user
 # ---------------------------------------------------------------------------
+
 
 async def test_update_user_email(session: AsyncSession, clean_db):
     admin = await _make_user(session, "admin_upd@test.com", is_superuser=True)
@@ -278,6 +325,7 @@ async def test_update_user_is_active_and_superuser(session: AsyncSession, clean_
 # delete_user — cascade
 # ---------------------------------------------------------------------------
 
+
 async def test_delete_user_cascade(session: AsyncSession, clean_db):
     """Delete a user with all related data (the most important coverage gap)."""
     admin = await _make_user(session, "admin_del@test.com", is_superuser=True)
@@ -326,6 +374,7 @@ async def test_delete_user_not_found(session: AsyncSession, clean_db):
 # App settings
 # ---------------------------------------------------------------------------
 
+
 async def test_get_app_setting_not_found(session: AsyncSession, clean_db):
     result = await get_app_setting(session, "nonexistent_key")
     assert result is None
@@ -353,6 +402,7 @@ async def test_get_app_setting_found(session: AsyncSession, clean_db):
 # ---------------------------------------------------------------------------
 # is_registration_enabled
 # ---------------------------------------------------------------------------
+
 
 async def test_is_registration_enabled_from_setting(session: AsyncSession, clean_db):
     await set_app_setting(session, "registration_enabled", "true")
@@ -398,7 +448,8 @@ async def test_use_provider_categories_case_insensitive(session: AsyncSession, c
 
 
 async def test_use_provider_categories_unknown_value_falls_back_to_false(
-    session: AsyncSession, clean_db,
+    session: AsyncSession,
+    clean_db,
 ):
     """Defensive: anything not 'true' (case-insensitive) is treated as off.
     Prevents a stray 'maybe' / '1' from quietly turning provider mapping back

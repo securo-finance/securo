@@ -58,9 +58,7 @@ async def test_create_category(client: AsyncClient, auth_headers, test_categorie
 
 
 @pytest.mark.asyncio
-async def test_update_category(
-    client: AsyncClient, auth_headers, test_categories: list[Category]
-):
+async def test_update_category(client: AsyncClient, auth_headers, test_categories: list[Category]):
     cat_id = str(test_categories[0].id)
     response = await client.patch(
         f"/api/categories/{cat_id}",

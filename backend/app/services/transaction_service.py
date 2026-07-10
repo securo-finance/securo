@@ -40,7 +40,7 @@ def _apply_fx_override(transaction, amount, amount_primary=None, fx_rate_used=No
     elif amount_primary is not None:
         transaction.amount_primary = Decimal(str(amount_primary))
         if amount:
-            transaction.fx_rate_used = (Decimal(str(amount_primary)) / amount)
+            transaction.fx_rate_used = Decimal(str(amount_primary)) / amount
         else:
             transaction.fx_rate_used = Decimal("1")
     elif fx_rate_used is not None:
@@ -245,9 +245,11 @@ async def get_transactions(
     # straight to all txs.
     if bill_id is not None:
         from app.models.credit_card_bill import CreditCardBill  # local — avoid cycle
+
         bill_predicates = [Transaction.bill_id == bill_id]
         if from_date or to_date:
             from sqlalchemy import and_ as _and, not_ as _not
+
             # Resolve the active bill's due_date once so we can trust
             # cycle-math classification when Pluggy hasn't tagged a tx yet.
             active_due_subq = (
@@ -275,12 +277,14 @@ async def get_transactions(
                 # carve-out, a pending tx whose override doesn't snap to
                 # an existing bill's due_date (so bill_id stays null)
                 # gets filtered out of every closed-bill view (issue #162).
-                _not(_and(
-                    Transaction.source == "sync",
-                    Transaction.status == "pending",
-                    Transaction.effective_bill_date.is_(None),
-                    Transaction.effective_date != active_due_subq,
-                )),
+                _not(
+                    _and(
+                        Transaction.source == "sync",
+                        Transaction.status == "pending",
+                        Transaction.effective_bill_date.is_(None),
+                        Transaction.effective_date != active_due_subq,
+                    )
+                ),
             ]
             if from_date:
                 unlinked_clauses.append(filter_date_col >= from_date)
@@ -307,17 +311,20 @@ async def get_transactions(
         # /transactions list isn't reshaped by the same rule.
         if unbilled_only and to_date is not None:
             from sqlalchemy import and_ as _and
+
             window_clauses = []
             if from_date:
                 window_clauses.append(filter_date_col >= from_date)
             window_clauses.append(filter_date_col <= to_date)
-            base_query = base_query.where(or_(
-                _and(*window_clauses),
-                _and(
-                    Transaction.effective_bill_date.is_not(None),
-                    Transaction.effective_bill_date > to_date,
-                ),
-            ))
+            base_query = base_query.where(
+                or_(
+                    _and(*window_clauses),
+                    _and(
+                        Transaction.effective_bill_date.is_not(None),
+                        Transaction.effective_bill_date > to_date,
+                    ),
+                )
+            )
         else:
             if from_date:
                 base_query = base_query.where(filter_date_col >= from_date)
@@ -342,12 +349,14 @@ async def get_transactions(
         clauses = []
         for raw_tag in tags:
             tag = raw_tag if raw_tag.startswith("#") else f"#{raw_tag}"
-            clauses.extend([
-                Transaction.notes == tag,
-                Transaction.notes.ilike(f"{tag} %"),
-                Transaction.notes.ilike(f"% {tag}"),
-                Transaction.notes.ilike(f"% {tag} %"),
-            ])
+            clauses.extend(
+                [
+                    Transaction.notes == tag,
+                    Transaction.notes.ilike(f"{tag} %"),
+                    Transaction.notes.ilike(f"% {tag}"),
+                    Transaction.notes.ilike(f"% {tag} %"),
+                ]
+            )
         base_query = base_query.where(or_(*clauses))
 
     # Get total count
@@ -368,9 +377,7 @@ async def get_transactions(
         # custom) and ignored items are kept OUT of income/expense.
         pnl_filter = counts_as_pnl()
         pnl_subq = base_query.where(pnl_filter).subquery()
-        amount_norm = func.coalesce(
-            pnl_subq.c.amount_primary, pnl_subq.c.amount
-        )
+        amount_norm = func.coalesce(pnl_subq.c.amount_primary, pnl_subq.c.amount)
         summary_rows = await session.execute(
             select(
                 pnl_subq.c.type,
@@ -390,9 +397,7 @@ async def get_transactions(
         # transfer-like movement (e.g. how much was moved/invested) without
         # distorting income/expense/net.
         excl_subq = base_query.where(not_(pnl_filter)).subquery()
-        excl_amount_norm = func.coalesce(
-            excl_subq.c.amount_primary, excl_subq.c.amount
-        )
+        excl_amount_norm = func.coalesce(excl_subq.c.amount_primary, excl_subq.c.amount)
         excluded_total = await session.scalar(
             select(func.coalesce(func.sum(func.abs(excl_amount_norm)), 0))
         )
@@ -433,10 +438,12 @@ async def get_transactions(
         # Default: by date desc, with created_at as tiebreaker.
         query = base_query.order_by(default_order_col.desc(), Transaction.created_at.desc())
     else:
-        direction = (chosen_col.asc() if sort_dir == "asc" else chosen_col.desc())
+        direction = chosen_col.asc() if sort_dir == "asc" else chosen_col.desc()
         # Always tie-break on date desc + created_at desc so equal values
         # stay in a sensible order (e.g. multiple txs with the same amount).
-        query = base_query.order_by(direction, default_order_col.desc(), Transaction.created_at.desc())
+        query = base_query.order_by(
+            direction, default_order_col.desc(), Transaction.created_at.desc()
+        )
     if not skip_pagination:
         query = query.offset((page - 1) * limit).limit(limit)
 
@@ -560,9 +567,7 @@ async def _tag_shared_view(
                     break
             tx.group_id = owner_group_id
             self_mid = (
-                self_member_id_by_group.get(owner_group_id)
-                if owner_group_id is not None
-                else None
+                self_member_id_by_group.get(owner_group_id) if owner_group_id is not None else None
             )
             owner_split = (
                 next(
@@ -751,12 +756,17 @@ async def create_transfer(
     if from_account.currency != to_account.currency:
         if data.fx_rate is not None:
             from decimal import ROUND_HALF_UP
+
             credit_amount = (Decimal(str(data.amount)) * Decimal(str(data.fx_rate))).quantize(
                 Decimal("0.01"), rounding=ROUND_HALF_UP
             )
         else:
             converted_amount, _ = await fx_convert(
-                session, Decimal(str(data.amount)), from_account.currency, to_account.currency, data.date
+                session,
+                Decimal(str(data.amount)),
+                from_account.currency,
+                to_account.currency,
+                data.date,
             )
             credit_amount = converted_amount
     else:
@@ -850,13 +860,11 @@ async def get_transfer_candidates(
         date_diff = abs((tx.date - anchor.date).days)
         if anchor_amount_primary is not None and tx.amount_primary is not None:
             amount_diff = abs(
-                Decimal(str(tx.amount_primary)).copy_abs()
-                - anchor_amount_primary.copy_abs()
+                Decimal(str(tx.amount_primary)).copy_abs() - anchor_amount_primary.copy_abs()
             )
         else:
             amount_diff = abs(
-                Decimal(str(tx.amount)).copy_abs()
-                - Decimal(str(anchor.amount)).copy_abs()
+                Decimal(str(tx.amount)).copy_abs() - Decimal(str(anchor.amount)).copy_abs()
             )
         return (date_diff, amount_diff)
 
@@ -899,8 +907,7 @@ async def link_existing_as_transfer(
         raise ValueError("Cannot link a transaction to itself")
 
     result = await session.execute(
-        select(Transaction)
-        .where(
+        select(Transaction).where(
             Transaction.id.in_(transaction_ids),
             Transaction.workspace_id == workspace_id,
         )
@@ -1036,6 +1043,7 @@ async def _resync_bill_link_from_override(
       `creditCardMetadata.billId` in raw_data, if recoverable; else null.
     """
     from app.models.credit_card_bill import CreditCardBill  # local: avoid circular
+
     if account is None or account.type != "credit_card":
         return
     override = transaction.effective_bill_date
@@ -1117,7 +1125,9 @@ async def update_transaction(
             )
             paired_tx = paired_result.scalar_one_or_none()
             if paired_tx and paired_tx.account_id == new_account_id:
-                raise ValueError("Cannot move transfer to the same account as its paired transaction")
+                raise ValueError(
+                    "Cannot move transfer to the same account as its paired transaction"
+                )
 
     # Pop FX override fields before generic setattr loop
     has_fx_override = "amount_primary" in update_data or "fx_rate_used" in update_data
@@ -1157,7 +1167,9 @@ async def update_transaction(
     # Cascade changes to paired transfer transaction
     cascade_fields = {"amount", "date", "description", "notes"}
     should_cascade_category = apply_to_transfer_pair and "category_id" in update_data
-    if transaction.transfer_pair_id and ((cascade_fields & update_data.keys()) or should_cascade_category):
+    if transaction.transfer_pair_id and (
+        (cascade_fields & update_data.keys()) or should_cascade_category
+    ):
         paired = await session.execute(
             select(Transaction).where(
                 Transaction.transfer_pair_id == transaction.transfer_pair_id,
@@ -1171,9 +1183,13 @@ async def update_transaction(
             for key in cascade_fields & update_data.keys():
                 if key == "amount" and paired_tx.currency != transaction.currency:
                     from decimal import Decimal
+
                     converted, _ = await fx_convert(
-                        session, Decimal(str(transaction.amount)),
-                        transaction.currency, paired_tx.currency, transaction.date,
+                        session,
+                        Decimal(str(transaction.amount)),
+                        transaction.currency,
+                        paired_tx.currency,
+                        transaction.date,
                     )
                     paired_tx.amount = converted
                 elif key != "amount":
@@ -1286,11 +1302,7 @@ async def bulk_remove_tags(
         original = tx.notes
         updated = original
         for tag in normalized_tags:
-            pattern = (
-                r"(?:(?<=^)|(?<=[^\wÀ-ž-]))"
-                + re.escape(tag)
-                + r"(?=$|[^\wÀ-ž-])"
-            )
+            pattern = r"(?:(?<=^)|(?<=[^\wÀ-ž-]))" + re.escape(tag) + r"(?=$|[^\wÀ-ž-])"
             updated = re.sub(pattern, "", updated)
         # Collapse consecutive whitespace left behind by removed tags.
         updated = re.sub(r"\s{2,}", " ", updated).strip()
@@ -1331,9 +1343,7 @@ async def bulk_add_to_group(
 
     # The caller may own the group OR be a linked member of it.
     linked_group_ids = (
-        select(GroupMember.group_id)
-        .where(GroupMember.linked_user_id == user_id)
-        .distinct()
+        select(GroupMember.group_id).where(GroupMember.linked_user_id == user_id).distinct()
     )
     group_result = await session.execute(
         select(Group).where(

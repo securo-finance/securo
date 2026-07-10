@@ -5,6 +5,7 @@ balance adjustments, group-split (owner offset + viewer shared) paths,
 pending-shares-net aggregation, and the daily-deltas / balance-history
 projection branches that the existing suite doesn't reach.
 """
+
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -40,18 +41,40 @@ async def _seed_fx(session, today=None):
     """USD->BRL=5.0, USD->EUR=0.9, USD->USD=1.0."""
     today = today or date.today()
     for quote, rate in [("BRL", "5.0"), ("EUR", "0.9"), ("USD", "1.0")]:
-        session.add(FxRate(base_currency="USD", quote_currency=quote, date=today,
-                           rate=Decimal(rate), source="test"))
+        session.add(
+            FxRate(
+                base_currency="USD",
+                quote_currency=quote,
+                date=today,
+                rate=Decimal(rate),
+                source="test",
+            )
+        )
     await session.commit()
 
 
-async def _make_account(session, user_id, workspace_id, *, currency="BRL",
-                        balance="0.00", connection_id=None, acc_type="checking",
-                        is_closed=False, name="Acc"):
+async def _make_account(
+    session,
+    user_id,
+    workspace_id,
+    *,
+    currency="BRL",
+    balance="0.00",
+    connection_id=None,
+    acc_type="checking",
+    is_closed=False,
+    name="Acc",
+):
     acc = Account(
-        id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id, name=name,
-        type=acc_type, balance=Decimal(balance), currency=currency,
-        connection_id=connection_id, is_closed=is_closed,
+        id=uuid.uuid4(),
+        user_id=user_id,
+        workspace_id=workspace_id,
+        name=name,
+        type=acc_type,
+        balance=Decimal(balance),
+        currency=currency,
+        connection_id=connection_id,
+        is_closed=is_closed,
     )
     session.add(acc)
     await session.commit()
@@ -59,13 +82,32 @@ async def _make_account(session, user_id, workspace_id, *, currency="BRL",
     return acc
 
 
-async def _add_txn(session, user_id, account_id, workspace_id, amount, typ, dt,
-                   *, currency="BRL", source="manual", category_id=None,
-                   amount_primary=None, transfer_pair_id=None):
+async def _add_txn(
+    session,
+    user_id,
+    account_id,
+    workspace_id,
+    amount,
+    typ,
+    dt,
+    *,
+    currency="BRL",
+    source="manual",
+    category_id=None,
+    amount_primary=None,
+    transfer_pair_id=None,
+):
     txn = Transaction(
-        id=uuid.uuid4(), user_id=user_id, account_id=account_id,
-        workspace_id=workspace_id, description="t", amount=Decimal(str(amount)),
-        date=dt, type=typ, source=source, currency=currency,
+        id=uuid.uuid4(),
+        user_id=user_id,
+        account_id=account_id,
+        workspace_id=workspace_id,
+        description="t",
+        amount=Decimal(str(amount)),
+        date=dt,
+        type=typ,
+        source=source,
+        currency=currency,
         category_id=category_id,
         amount_primary=Decimal(str(amount_primary)) if amount_primary is not None else None,
         transfer_pair_id=transfer_pair_id,
@@ -79,8 +121,13 @@ async def _add_txn(session, user_id, account_id, workspace_id, amount, typ, dt,
 
 async def _make_category(session, user_id, workspace_id, name):
     cat = Category(
-        id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id,
-        name=name, icon="tag", color="#000", is_system=False,
+        id=uuid.uuid4(),
+        user_id=user_id,
+        workspace_id=workspace_id,
+        name=name,
+        icon="tag",
+        color="#000",
+        is_system=False,
     )
     session.add(cat)
     await session.commit()
@@ -95,23 +142,64 @@ async def _make_category(session, user_id, workspace_id, name):
 
 
 @pytest.mark.asyncio
-async def test_summary_multi_currency_and_primary_amounts(session: AsyncSession, test_user, test_workspace):
+async def test_summary_multi_currency_and_primary_amounts(
+    session: AsyncSession, test_user, test_workspace
+):
     today = date.today()
     await _seed_fx(session, today)
     brl = await _make_account(session, test_user.id, test_workspace.id, currency="BRL")
     usd = await _make_account(session, test_user.id, test_workspace.id, currency="USD")
 
     # Opening balances in two currencies -> multi-currency total -> convert loop
-    await _add_txn(session, test_user.id, brl.id, test_workspace.id, 1000, "credit", today, source="opening_balance")
-    await _add_txn(session, test_user.id, usd.id, test_workspace.id, 200, "credit", today, source="opening_balance", currency="USD")
+    await _add_txn(
+        session,
+        test_user.id,
+        brl.id,
+        test_workspace.id,
+        1000,
+        "credit",
+        today,
+        source="opening_balance",
+    )
+    await _add_txn(
+        session,
+        test_user.id,
+        usd.id,
+        test_workspace.id,
+        200,
+        "credit",
+        today,
+        source="opening_balance",
+        currency="USD",
+    )
 
     # Income/expense rows carrying amount_primary -> primary_row branch (257-258)
-    await _add_txn(session, test_user.id, usd.id, test_workspace.id, 300, "credit", today,
-                   currency="USD", amount_primary=1500)
-    await _add_txn(session, test_user.id, usd.id, test_workspace.id, 100, "debit", today,
-                   currency="USD", amount_primary=500)
+    await _add_txn(
+        session,
+        test_user.id,
+        usd.id,
+        test_workspace.id,
+        300,
+        "credit",
+        today,
+        currency="USD",
+        amount_primary=1500,
+    )
+    await _add_txn(
+        session,
+        test_user.id,
+        usd.id,
+        test_workspace.id,
+        100,
+        "debit",
+        today,
+        currency="USD",
+        amount_primary=500,
+    )
 
-    summary = await get_summary(session, test_workspace.id, test_user.id, month=today.replace(day=1))
+    summary = await get_summary(
+        session, test_workspace.id, test_user.id, month=today.replace(day=1)
+    )
     assert summary.total_balance.get("BRL") == pytest.approx(1000.0)
     assert summary.total_balance.get("USD") is not None
     assert summary.total_balance_primary > 0
@@ -130,22 +218,40 @@ async def test_summary_balance_projection_with_recurring(session, test_user, tes
     today = date.today()
     month_start = today.replace(day=1)
     acc = await _make_account(session, test_user.id, test_workspace.id, currency="BRL", balance="0")
-    await _add_txn(session, test_user.id, acc.id, test_workspace.id, 1000, "credit", month_start, source="opening_balance")
+    await _add_txn(
+        session,
+        test_user.id,
+        acc.id,
+        test_workspace.id,
+        1000,
+        "credit",
+        month_start,
+        source="opening_balance",
+    )
 
     # Recurring that produces occurrences later this month (after today) so the
     # projection adjusts total_balance (lines 117-124). Use daily frequency.
     rec = RecurringTransaction(
-        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
-        description="Daily", amount=Decimal("10"), type="debit",
-        frequency="daily", currency="BRL",
-        start_date=month_start, next_occurrence=month_start,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        description="Daily",
+        amount=Decimal("10"),
+        type="debit",
+        frequency="daily",
+        currency="BRL",
+        start_date=month_start,
+        next_occurrence=month_start,
     )
     session.add(rec)
     await session.commit()
 
     # Use a balance_date in the past so month_end > cutoff -> projection path runs
     summary = await get_summary(
-        session, test_workspace.id, test_user.id, month=month_start,
+        session,
+        test_workspace.id,
+        test_user.id,
+        month=month_start,
         balance_date=month_start,
     )
     assert summary is not None
@@ -161,18 +267,29 @@ async def _make_group_with_members(session, owner_id, workspace_id, *, viewer_us
     """Create a group owned by owner_id with a self member and one other.
     If viewer_user_id given, that other member is linked to viewer (invitee)."""
     group = Group(
-        id=uuid.uuid4(), user_id=owner_id, workspace_id=workspace_id,
-        name="Trip", default_currency="BRL",
+        id=uuid.uuid4(),
+        user_id=owner_id,
+        workspace_id=workspace_id,
+        name="Trip",
+        default_currency="BRL",
     )
     session.add(group)
     await session.flush()
     self_m = GroupMember(
-        id=uuid.uuid4(), group_id=group.id, workspace_id=workspace_id,
-        name="Me", linked_user_id=owner_id, is_self=True,
+        id=uuid.uuid4(),
+        group_id=group.id,
+        workspace_id=workspace_id,
+        name="Me",
+        linked_user_id=owner_id,
+        is_self=True,
     )
     other_m = GroupMember(
-        id=uuid.uuid4(), group_id=group.id, workspace_id=workspace_id,
-        name="Friend", linked_user_id=viewer_user_id, is_self=False,
+        id=uuid.uuid4(),
+        group_id=group.id,
+        workspace_id=workspace_id,
+        name="Friend",
+        linked_user_id=viewer_user_id,
+        is_self=False,
     )
     session.add_all([self_m, other_m])
     await session.commit()
@@ -194,19 +311,29 @@ async def test_summary_owner_split_offset(session, test_user, test_workspace):
     )
 
     # Owner paid a 100 debit, split 50/50 with the friend (non-owner share = 50)
-    txn = await _add_txn(session, test_user.id, acc.id, test_workspace.id, 100, "debit", today, category_id=cat.id)
+    txn = await _add_txn(
+        session, test_user.id, acc.id, test_workspace.id, 100, "debit", today, category_id=cat.id
+    )
     for member, amt in [(self_m, "50.00"), (other_m, "50.00")]:
-        session.add(TransactionSplit(
-            id=uuid.uuid4(), transaction_id=txn.id, workspace_id=test_workspace.id,
-            group_member_id=member.id, share_amount=Decimal(amt), share_type="exact",
-        ))
+        session.add(
+            TransactionSplit(
+                id=uuid.uuid4(),
+                transaction_id=txn.id,
+                workspace_id=test_workspace.id,
+                group_member_id=member.id,
+                share_amount=Decimal(amt),
+                share_type="exact",
+            )
+        )
     await session.commit()
 
     summary = await get_summary(session, test_workspace.id, test_user.id, month=month_start)
     # Only the owner's 50 share should count as expense, not the full 100
     assert summary.monthly_expenses == pytest.approx(50.0, abs=0.01)
 
-    spending = await get_spending_by_category(session, test_workspace.id, test_user.id, month=month_start)
+    spending = await get_spending_by_category(
+        session, test_workspace.id, test_user.id, month=month_start
+    )
     dining = next((s for s in spending if s.category_name == "Dining"), None)
     assert dining is not None
     assert dining.total == pytest.approx(50.0, abs=0.01)
@@ -224,20 +351,28 @@ async def test_summary_viewer_shared_split(session, test_user, test_workspace, c
     from app.models.workspace import Workspace, WorkspaceMember
 
     owner = UserModel(
-        id=uuid.uuid4(), email="owner_dash@example.com",
+        id=uuid.uuid4(),
+        email="owner_dash@example.com",
         hashed_password=_bcrypt.hashpw(b"x", _bcrypt.gensalt()).decode(),
-        is_active=True, is_verified=True,
+        is_active=True,
+        is_verified=True,
         preferences={"currency_display": "BRL"},
     )
     session.add(owner)
     await session.flush()
     owner_ws = Workspace(
-        id=uuid.uuid4(), name="OwnerWS", kind="personal",
-        created_by_user_id=owner.id, default_currency="BRL", locale="en",
+        id=uuid.uuid4(),
+        name="OwnerWS",
+        kind="personal",
+        created_by_user_id=owner.id,
+        default_currency="BRL",
+        locale="en",
     )
     session.add(owner_ws)
     await session.flush()
-    session.add(WorkspaceMember(id=uuid.uuid4(), workspace_id=owner_ws.id, user_id=owner.id, role="owner"))
+    session.add(
+        WorkspaceMember(id=uuid.uuid4(), workspace_id=owner_ws.id, user_id=owner.id, role="owner")
+    )
     await session.commit()
 
     owner_acc = await _make_account(session, owner.id, owner_ws.id, currency="BRL")
@@ -253,17 +388,25 @@ async def test_summary_viewer_shared_split(session, test_user, test_workspace, c
     txn.category_id = cat.id
     await session.commit()
     for member, amt in [(self_m, "60.00"), (viewer_m, "40.00")]:
-        session.add(TransactionSplit(
-            id=uuid.uuid4(), transaction_id=txn.id, workspace_id=owner_ws.id,
-            group_member_id=member.id, share_amount=Decimal(amt), share_type="exact",
-        ))
+        session.add(
+            TransactionSplit(
+                id=uuid.uuid4(),
+                transaction_id=txn.id,
+                workspace_id=owner_ws.id,
+                group_member_id=member.id,
+                share_amount=Decimal(amt),
+                share_type="exact",
+            )
+        )
     await session.commit()
 
     # Viewer's summary should pick up their 40 shared expense (viewer_shared paths)
     summary = await get_summary(session, test_workspace.id, test_user.id, month=month_start)
     assert summary.monthly_expenses == pytest.approx(40.0, abs=0.01)
 
-    spending = await get_spending_by_category(session, test_workspace.id, test_user.id, month=month_start)
+    spending = await get_spending_by_category(
+        session, test_workspace.id, test_user.id, month=month_start
+    )
     shared = next((s for s in spending if s.category_name == "Shared"), None)
     assert shared is not None
     assert shared.total == pytest.approx(40.0, abs=0.01)
@@ -284,10 +427,16 @@ async def test_pending_shares_net_owned_group(session, test_user, test_workspace
     # Owner paid 100, friend owes 50 -> friend's line is +50 (asset to owner)
     txn = await _add_txn(session, test_user.id, acc.id, test_workspace.id, 100, "debit", today)
     for member, amt in [(self_m, "50.00"), (other_m, "50.00")]:
-        session.add(TransactionSplit(
-            id=uuid.uuid4(), transaction_id=txn.id, workspace_id=test_workspace.id,
-            group_member_id=member.id, share_amount=Decimal(amt), share_type="exact",
-        ))
+        session.add(
+            TransactionSplit(
+                id=uuid.uuid4(),
+                transaction_id=txn.id,
+                workspace_id=test_workspace.id,
+                group_member_id=member.id,
+                share_amount=Decimal(amt),
+                share_type="exact",
+            )
+        )
     await session.commit()
 
     net = await _compute_pending_shares_net(session, test_workspace.id, test_user.id, "BRL")
@@ -314,15 +463,23 @@ async def test_projected_transactions_currency_conversion(session, test_user, te
 
     # Recurring in USD; user primary is BRL -> amount_primary conversion branch
     rec = RecurringTransaction(
-        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
-        description="USD Sub", amount=Decimal("10"), type="debit",
-        frequency="monthly", currency="USD",
-        start_date=month_start, next_occurrence=month_start,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        description="USD Sub",
+        amount=Decimal("10"),
+        type="debit",
+        frequency="monthly",
+        currency="USD",
+        start_date=month_start,
+        next_occurrence=month_start,
     )
     session.add(rec)
     await session.commit()
 
-    projections = await get_projected_transactions(session, test_workspace.id, test_user.id, month=month_start)
+    projections = await get_projected_transactions(
+        session, test_workspace.id, test_user.id, month=month_start
+    )
     assert len(projections) >= 1
     assert projections[0].currency == "USD"
     assert projections[0].amount_primary is not None
@@ -345,11 +502,23 @@ async def test_daily_deltas_multi_currency(session, test_user, test_workspace):
     brl = await _make_account(session, test_user.id, test_workspace.id, currency="BRL")
     usd = await _make_account(session, test_user.id, test_workspace.id, currency="USD")
     await _add_txn(session, test_user.id, brl.id, test_workspace.id, 100, "credit", month_start)
-    await _add_txn(session, test_user.id, usd.id, test_workspace.id, 20, "credit", month_start,
-                   currency="USD", amount_primary=100)
+    await _add_txn(
+        session,
+        test_user.id,
+        usd.id,
+        test_workspace.id,
+        20,
+        "credit",
+        month_start,
+        currency="USD",
+        amount_primary=100,
+    )
 
     deltas = await _daily_deltas(
-        session, test_workspace.id, month_start, month_end,
+        session,
+        test_workspace.id,
+        month_start,
+        month_end,
         primary_currency_hint="BRL",
     )
     # Day 1 should aggregate both currencies converted to BRL
@@ -361,7 +530,16 @@ async def test_balance_history_with_future_projections(session, test_user, test_
     today = date.today()
     month_start = today.replace(day=1)
     acc = await _make_account(session, test_user.id, test_workspace.id, currency="BRL")
-    await _add_txn(session, test_user.id, acc.id, test_workspace.id, 1000, "credit", month_start, source="opening_balance")
+    await _add_txn(
+        session,
+        test_user.id,
+        acc.id,
+        test_workspace.id,
+        1000,
+        "credit",
+        month_start,
+        source="opening_balance",
+    )
 
     # Daily recurring whose next occurrence is in the future -> future days
     # get projection deltas (lines 979-985). Skip on the last day of the month
@@ -370,10 +548,16 @@ async def test_balance_history_with_future_projections(session, test_user, test_
     if next_day.month != today.month:
         pytest.skip("no future days left in current month")
     rec = RecurringTransaction(
-        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
-        description="Daily", amount=Decimal("5"), type="credit",
-        frequency="daily", currency="BRL",
-        start_date=month_start, next_occurrence=next_day,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        description="Daily",
+        amount=Decimal("5"),
+        type="credit",
+        frequency="daily",
+        currency="BRL",
+        start_date=month_start,
+        next_occurrence=next_day,
     )
     session.add(rec)
     await session.commit()
@@ -409,6 +593,7 @@ async def _register_sqlite_to_char(session):
     production. To exercise that code path under the SQLite test backend
     we install a matching scalar function on the underlying connection.
     """
+
     def _to_char(value, fmt):
         if value is None:
             return None
@@ -430,8 +615,26 @@ async def test_monthly_trend(session, test_user, test_workspace):
     today = date.today()
     month_start = today.replace(day=1)
     acc = await _make_account(session, test_user.id, test_workspace.id, currency="BRL")
-    await _add_txn(session, test_user.id, acc.id, test_workspace.id, 3000, "credit", month_start, amount_primary=3000)
-    await _add_txn(session, test_user.id, acc.id, test_workspace.id, 500, "debit", month_start, amount_primary=500)
+    await _add_txn(
+        session,
+        test_user.id,
+        acc.id,
+        test_workspace.id,
+        3000,
+        "credit",
+        month_start,
+        amount_primary=3000,
+    )
+    await _add_txn(
+        session,
+        test_user.id,
+        acc.id,
+        test_workspace.id,
+        500,
+        "debit",
+        month_start,
+        amount_primary=500,
+    )
 
     trends = await get_monthly_trend(session, test_workspace.id, test_user.id, months=6)
     assert len(trends) >= 1
@@ -452,12 +655,27 @@ async def test_summary_current_month_projection_adjusts_balance(session, test_us
         pytest.skip("no future days left in current month")
 
     acc = await _make_account(session, test_user.id, test_workspace.id, currency="BRL")
-    await _add_txn(session, test_user.id, acc.id, test_workspace.id, 1000, "credit", month_start, source="opening_balance")
+    await _add_txn(
+        session,
+        test_user.id,
+        acc.id,
+        test_workspace.id,
+        1000,
+        "credit",
+        month_start,
+        source="opening_balance",
+    )
     rec = RecurringTransaction(
-        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
-        description="DailyProj", amount=Decimal("10"), type="credit",
-        frequency="daily", currency="BRL",
-        start_date=month_start, next_occurrence=today + timedelta(days=1),
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        description="DailyProj",
+        amount=Decimal("10"),
+        type="credit",
+        frequency="daily",
+        currency="BRL",
+        start_date=month_start,
+        next_occurrence=today + timedelta(days=1),
     )
     session.add(rec)
     await session.commit()
@@ -474,7 +692,9 @@ async def test_balance_at_multi_currency_conversion(session, test_user, test_wor
     brl = await _make_account(session, test_user.id, test_workspace.id, currency="BRL")
     usd = await _make_account(session, test_user.id, test_workspace.id, currency="USD")
     await _add_txn(session, test_user.id, brl.id, test_workspace.id, 500, "credit", today)
-    await _add_txn(session, test_user.id, usd.id, test_workspace.id, 100, "credit", today, currency="USD")
+    await _add_txn(
+        session, test_user.id, usd.id, test_workspace.id, 100, "credit", today, currency="USD"
+    )
 
     total = await _balance_at(session, test_workspace.id, today, primary_currency_hint="BRL")
     # 500 BRL + (100 USD * 5.0 = 500 BRL) = 1000

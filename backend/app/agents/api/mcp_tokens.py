@@ -15,6 +15,7 @@ predictable tenant.
 Follows the AGENTS_ENABLED master switch: when agents are off, the
 router isn't mounted at all so the endpoint 404s.
 """
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status

@@ -15,7 +15,9 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("accounts", sa.Column("credit_limit", sa.Numeric(precision=15, scale=2), nullable=True))
+    op.add_column(
+        "accounts", sa.Column("credit_limit", sa.Numeric(precision=15, scale=2), nullable=True)
+    )
     op.add_column("accounts", sa.Column("statement_close_day", sa.SmallInteger(), nullable=True))
     op.add_column("accounts", sa.Column("payment_due_day", sa.SmallInteger(), nullable=True))
 

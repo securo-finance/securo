@@ -35,7 +35,9 @@ async def preview_import(
 
     logger.info(
         "Import preview requested: filename=%s, size=%d bytes, content_type=%s",
-        filename, len(content), file.content_type,
+        filename,
+        len(content),
+        file.content_type,
     )
 
     # column_mapping arrives as a JSON-encoded form field (Securo field -> CSV header)
@@ -56,16 +58,16 @@ async def preview_import(
 
     parse_error: Optional[str] = None
     try:
-        if filename.lower().endswith('.ofx') or filename.lower().endswith('.qfx'):
+        if filename.lower().endswith(".ofx") or filename.lower().endswith(".qfx"):
             transactions = import_service.parse_ofx(content)
             detected_format = "ofx"
-        elif filename.lower().endswith('.qif'):
+        elif filename.lower().endswith(".qif"):
             transactions = import_service.parse_qif(content)
             detected_format = "qif"
-        elif filename.lower().endswith('.xml') or filename.lower().endswith('.camt'):
+        elif filename.lower().endswith(".xml") or filename.lower().endswith(".camt"):
             transactions = import_service.parse_camt(content)
             detected_format = "camt"
-        elif filename.lower().endswith('.csv'):
+        elif filename.lower().endswith(".csv"):
             detected_format = "csv"
             try:
                 transactions = import_service.parse_csv(
@@ -104,8 +106,11 @@ async def preview_import(
         logger.error(
             "Failed to parse import file: filename=%s, size=%d bytes, "
             "content_type=%s, first_100_bytes=%r, error=%s",
-            filename, len(content), file.content_type,
-            content[:100], e,
+            filename,
+            len(content),
+            file.content_type,
+            content[:100],
+            e,
             exc_info=True,
         )
         raise HTTPException(
@@ -115,11 +120,15 @@ async def preview_import(
 
     logger.info(
         "Import preview parsed: filename=%s, format=%s, transactions=%d",
-        filename, detected_format, len(transactions),
+        filename,
+        detected_format,
+        len(transactions),
     )
 
     transactions = await import_service.enrich_with_category_suggestions(
-        session, ctx.workspace.id, transactions,
+        session,
+        ctx.workspace.id,
+        transactions,
     )
 
     # Expose CSV headers so the UI can offer accurate column-mapping dropdowns.
@@ -152,8 +161,14 @@ async def import_transactions(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
 
     imported, skipped, excluded, import_log_id = await import_service.import_transactions(
-        session, ctx.workspace.id, ctx.user_id, data.account_id, data.transactions, "import",
-        filename=data.filename, detected_format=data.detected_format,
+        session,
+        ctx.workspace.id,
+        ctx.user_id,
+        data.account_id,
+        data.transactions,
+        "import",
+        filename=data.filename,
+        detected_format=data.detected_format,
         detect_duplicates=data.detect_duplicates,
     )
 

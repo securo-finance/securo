@@ -7,7 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
 from app.core.workspace_context import WorkspaceContext, current_workspace
-from app.schemas.dashboard import DashboardSummary, SpendingByCategory, MonthlyTrend, ProjectedTransaction, BalanceHistory
+from app.schemas.dashboard import (
+    DashboardSummary,
+    SpendingByCategory,
+    MonthlyTrend,
+    ProjectedTransaction,
+    BalanceHistory,
+)
 from app.services import dashboard_service
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -23,7 +29,12 @@ async def get_summary(
     session: AsyncSession = Depends(get_async_session),
 ):
     return await dashboard_service.get_summary(
-        session, ctx.workspace.id, ctx.user_id, month, balance_date, account_ids,
+        session,
+        ctx.workspace.id,
+        ctx.user_id,
+        month,
+        balance_date,
+        account_ids,
         asset_group_ids,
     )
 

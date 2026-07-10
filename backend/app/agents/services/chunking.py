@@ -4,6 +4,7 @@ Goal: produce chunks of roughly TARGET characters with light paragraph-aware
 splits and OVERLAP between adjacent chunks to preserve context. Cheap and
 predictable; good enough for a v1 RAG pipeline.
 """
+
 from __future__ import annotations
 
 import io
@@ -46,12 +47,13 @@ def chunk_text(text: str, *, target: int = TARGET_CHARS, overlap: int = OVERLAP_
             final.append(c)
         else:
             for i in range(0, len(c), target):
-                final.append(c[i:i + target])
+                final.append(c[i : i + target])
     return [c.strip() for c in final if c.strip()]
 
 
 def parse_pdf_to_text(payload: bytes) -> str:
     from pypdf import PdfReader
+
     reader = PdfReader(io.BytesIO(payload))
     pages = [page.extract_text() or "" for page in reader.pages]
     return "\n\n".join(pages)

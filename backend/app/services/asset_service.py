@@ -98,12 +98,14 @@ def _generate_growth_values(
             current_amount = current_amount + growth_rate
         else:
             break
-        values.append(AssetValue(
-            asset_id=asset_id,
-            amount=Decimal(str(round(current_amount, 6))),
-            date=next_due,
-            source="rule",
-        ))
+        values.append(
+            AssetValue(
+                asset_id=asset_id,
+                amount=Decimal(str(round(current_amount, 6))),
+                date=next_due,
+                source="rule",
+            )
+        )
         current_date = next_due
         if len(values) >= 10000:
             break
@@ -128,9 +130,7 @@ def _asset_to_read(
     # is the signal that the holding is driven by the transactions ledger.
     is_ledger = asset.average_price is not None
     total_invested = (
-        float(asset.purchase_price)
-        if is_ledger and asset.purchase_price is not None
-        else None
+        float(asset.purchase_price) if is_ledger and asset.purchase_price is not None else None
     )
 
     return AssetRead(
@@ -300,8 +300,11 @@ async def _load_asset_native_values(
     txs_by_aid: dict[str, list[tuple[date, str, Decimal]]] = {}
     if market_ids:
         tq = select(
-            AssetTransaction.asset_id, AssetTransaction.date,
-            AssetTransaction.kind, AssetTransaction.quantity, AssetTransaction.price,
+            AssetTransaction.asset_id,
+            AssetTransaction.date,
+            AssetTransaction.kind,
+            AssetTransaction.quantity,
+            AssetTransaction.price,
         ).where(AssetTransaction.asset_id.in_(market_ids))
         if up_to_date is not None:
             tq = tq.where(AssetTransaction.date <= up_to_date)
@@ -494,7 +497,6 @@ async def create_asset(
             )
         )
 
-
     # Create initial value if provided
     if data.current_value is not None:
         value = AssetValue(
@@ -534,7 +536,12 @@ async def create_asset(
     # from the transactions, consistently with later edits. `purchase_price`
     # is the total paid, so per-share = purchase_price / units; absent that we
     # fall back to the live quote (cost basis ≈ current value, gain ≈ 0).
-    if data.valuation_method == "market_price" and quote is not None and data.units and data.units > 0:
+    if (
+        data.valuation_method == "market_price"
+        and quote is not None
+        and data.units
+        and data.units > 0
+    ):
         from app.services import asset_transaction_service
 
         # Unit price is the per-unit cost of the opening buy (consistent with
@@ -563,7 +570,9 @@ async def create_asset(
     # Stamp purchase_price_primary
     if asset.purchase_price is not None:
         await stamp_primary_amount(
-            session, user_id, asset,
+            session,
+            user_id,
+            asset,
             amount_field="purchase_price",
             primary_field="purchase_price_primary",
             rate_field="_no_rate",  # Asset has no rate field
@@ -575,7 +584,9 @@ async def create_asset(
     latest = await _get_latest_value(session, asset.id)
     count = await _get_value_count(session, asset.id)
     tx_count = await session.scalar(
-        select(func.count()).select_from(AssetTransaction).where(AssetTransaction.asset_id == asset.id)
+        select(func.count())
+        .select_from(AssetTransaction)
+        .where(AssetTransaction.asset_id == asset.id)
     )
     return _asset_to_read(asset, latest, count, tx_count or 0)
 
@@ -606,10 +617,10 @@ async def update_asset(
     if regenerate_growth and asset.valuation_method == "growth_rule":
         # Delete all rule-generated values
         await session.execute(
-            select(AssetValue)
-            .where(AssetValue.asset_id == asset.id, AssetValue.source == "rule")
+            select(AssetValue).where(AssetValue.asset_id == asset.id, AssetValue.source == "rule")
         )
         from sqlalchemy import delete as sa_delete
+
         await session.execute(
             sa_delete(AssetValue).where(
                 AssetValue.asset_id == asset.id,
@@ -617,7 +628,12 @@ async def update_asset(
             )
         )
         # Regenerate from purchase_price
-        if asset.purchase_price and asset.growth_type and asset.growth_rate and asset.growth_frequency:
+        if (
+            asset.purchase_price
+            and asset.growth_type
+            and asset.growth_rate
+            and asset.growth_frequency
+        ):
             base_date = asset.purchase_date or asset.growth_start_date or date.today()
             backfill = _generate_growth_values(
                 asset_id=asset.id,
@@ -635,7 +651,9 @@ async def update_asset(
     if "purchase_price" in update_data or "currency" in update_data:
         if asset.purchase_price is not None:
             await stamp_primary_amount(
-                session, user_id, asset,
+                session,
+                user_id,
+                asset,
                 amount_field="purchase_price",
                 primary_field="purchase_price_primary",
                 rate_field="_no_rate",
@@ -663,9 +681,7 @@ async def update_asset(
     return _asset_to_read(asset, latest, count)
 
 
-async def delete_asset(
-    session: AsyncSession, asset_id: uuid.UUID, workspace_id: uuid.UUID
-) -> bool:
+async def delete_asset(session: AsyncSession, asset_id: uuid.UUID, workspace_id: uuid.UUID) -> bool:
     """Delete an asset (cascades to values)."""
     result = await session.execute(
         select(Asset).where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
@@ -767,15 +783,19 @@ async def get_asset_value_trend(
         txs = (
             await session.execute(
                 select(
-                    AssetTransaction.date, AssetTransaction.kind,
-                    AssetTransaction.quantity, AssetTransaction.price,
-                )
-                .where(AssetTransaction.asset_id == asset_id)
+                    AssetTransaction.date,
+                    AssetTransaction.kind,
+                    AssetTransaction.quantity,
+                    AssetTransaction.price,
+                ).where(AssetTransaction.asset_id == asset_id)
             )
         ).all()
         series = build_market_value_series(
             [(d, a, p) for d, a, p in rows],
-            [(d, k, Decimal(str(q)), Decimal(str(pr)) if pr is not None else None) for d, k, q, pr in txs],
+            [
+                (d, k, Decimal(str(q)), Decimal(str(pr)) if pr is not None else None)
+                for d, k, q, pr in txs
+            ],
         )
         return [{"date": d.isoformat(), "amount": v} for d, v in series]
 
@@ -798,10 +818,12 @@ async def get_portfolio_trend(
     not supplied.
     """
     result = await session.execute(
-        select(Asset).where(
+        select(Asset)
+        .where(
             Asset.workspace_id == workspace_id,
             Asset.is_archived == False,
-        ).order_by(Asset.position, Asset.name)
+        )
+        .order_by(Asset.position, Asset.name)
     )
     active_assets = list(result.scalars().all())
 
@@ -821,12 +843,14 @@ async def get_portfolio_trend(
 
     for asset in active_assets:
         aid = str(asset.id)
-        asset_meta.append({
-            "id": aid,
-            "name": asset.name,
-            "type": asset.type,
-            "group_id": str(asset.group_id) if asset.group_id else None,
-        })
+        asset_meta.append(
+            {
+                "id": aid,
+                "name": asset.name,
+                "type": asset.type,
+                "group_id": str(asset.group_id) if asset.group_id else None,
+            }
+        )
         asset_currency[aid] = asset.currency
 
         vals = values_map[aid]
@@ -927,9 +951,7 @@ async def get_asset_values_at(
       falling back to purchase_price only if the asset existed by that date.
     - primary_currency=None: primary_total is 0.0.
     """
-    scope_filter = (
-        Asset.workspace_id == scope_id if by_workspace else Asset.user_id == scope_id
-    )
+    scope_filter = Asset.workspace_id == scope_id if by_workspace else Asset.user_id == scope_id
     # `group_ids` restricts to assets in a Collection's wallets (issue #105).
     # An empty list means "no wallets in this collection" → no assets.
     if group_ids is not None and len(group_ids) == 0:
@@ -1113,9 +1135,7 @@ async def refresh_all_market_prices(
             # ticker, one-off provider error, etc.). Try the full quote
             # path which also populates name/currency if needed.
             try:
-                ok = await refresh_market_price_asset(
-                    session, asset, market_provider=provider
-                )
+                ok = await refresh_market_price_asset(session, asset, market_provider=provider)
             except MarketPriceRateLimitedError:
                 logger.warning(
                     "Yahoo rate-limited mid-refresh after %d assets; halting",

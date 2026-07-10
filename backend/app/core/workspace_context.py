@@ -10,6 +10,7 @@ inferred role. Routes that mutate data check `ctx.role` to enforce
 viewer/editor/owner restrictions; routes that just read use any
 membership.
 """
+
 import uuid
 from dataclasses import dataclass
 from typing import Optional

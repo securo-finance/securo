@@ -5,7 +5,12 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.schemas.connection import ConnectionCreate, ConnectionRead, ConnectionTestResult, ConnectionUpdate
+from app.agents.schemas.connection import (
+    ConnectionCreate,
+    ConnectionRead,
+    ConnectionTestResult,
+    ConnectionUpdate,
+)
 from app.agents.services import connection_service
 from app.core.auth import current_active_user
 from app.core.database import get_async_session
@@ -32,9 +37,15 @@ async def create_connection(
 ):
     try:
         conn = await connection_service.create_connection(
-            session, user.id,
-            name=data.name, kind=data.kind, base_url=data.base_url, api_key=data.api_key,
-            default_model=data.default_model, extra=data.extra, is_default=data.is_default,
+            session,
+            user.id,
+            name=data.name,
+            kind=data.kind,
+            base_url=data.base_url,
+            api_key=data.api_key,
+            default_model=data.default_model,
+            extra=data.extra,
+            is_default=data.is_default,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -61,9 +72,15 @@ async def update_connection(
     user: User = Depends(current_active_user),
 ):
     conn = await connection_service.update_connection(
-        session, conn_id, user.id,
-        name=data.name, base_url=data.base_url, api_key=data.api_key,
-        default_model=data.default_model, extra=data.extra, is_default=data.is_default,
+        session,
+        conn_id,
+        user.id,
+        name=data.name,
+        base_url=data.base_url,
+        api_key=data.api_key,
+        default_model=data.default_model,
+        extra=data.extra,
+        is_default=data.is_default,
     )
     if conn is None:
         raise HTTPException(status_code=404, detail="connection not found")

@@ -54,7 +54,8 @@ async def test_get_rules(session: AsyncSession, test_user, test_workspace, test_
     for name in ["Rule A", "Rule B"]:
         await create_rule(
             session,
-            test_workspace.id, test_user.id,
+            test_workspace.id,
+            test_user.id,
             RuleCreate(
                 name=name,
                 conditions=[RuleCondition(field="description", op="contains", value="X")],
@@ -73,7 +74,8 @@ async def test_get_rules(session: AsyncSession, test_user, test_workspace, test_
 async def test_get_rule_by_id(session: AsyncSession, test_user, test_workspace, test_categories):
     created = await create_rule(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         RuleCreate(
             name="Lookup Rule",
             conditions=[RuleCondition(field="description", op="contains", value="X")],
@@ -95,7 +97,8 @@ async def test_get_rule_not_found(session: AsyncSession, test_user, test_workspa
 async def test_update_rule(session: AsyncSession, test_user, test_workspace, test_categories):
     rule = await create_rule(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         RuleCreate(
             name="Original",
             conditions=[RuleCondition(field="description", op="contains", value="OLD")],
@@ -129,7 +132,8 @@ async def test_update_rule_not_found(session: AsyncSession, test_user, test_work
 async def test_delete_rule(session: AsyncSession, test_user, test_workspace, test_categories):
     rule = await create_rule(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         RuleCreate(
             name="ToDelete",
             conditions=[RuleCondition(field="description", op="contains", value="X")],
@@ -151,7 +155,9 @@ async def test_delete_rule_not_found(session: AsyncSession, test_user, test_work
 
 
 @pytest.mark.asyncio
-async def test_create_duplicate_rule_raises(session: AsyncSession, test_user, test_workspace, test_categories):
+async def test_create_duplicate_rule_raises(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
     data = RuleCreate(
         name="Unique Name",
         conditions=[RuleCondition(field="description", op="contains", value="X")],
@@ -164,10 +170,13 @@ async def test_create_duplicate_rule_raises(session: AsyncSession, test_user, te
 
 
 @pytest.mark.asyncio
-async def test_update_rule_duplicate_name_raises(session: AsyncSession, test_user, test_workspace, test_categories):
+async def test_update_rule_duplicate_name_raises(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
     rule_a = await create_rule(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         RuleCreate(
             name="Name A",
             conditions=[RuleCondition(field="description", op="contains", value="X")],
@@ -176,7 +185,8 @@ async def test_update_rule_duplicate_name_raises(session: AsyncSession, test_use
     )
     await create_rule(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         RuleCreate(
             name="Name B",
             conditions=[RuleCondition(field="description", op="contains", value="Y")],
@@ -199,11 +209,14 @@ async def test_update_rule_duplicate_name_raises(session: AsyncSession, test_use
 
 
 @pytest.mark.asyncio
-async def test_apply_rules_to_transaction(session: AsyncSession, test_user, test_workspace, test_categories):
+async def test_apply_rules_to_transaction(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
     # Create a rule matching UBER
     await create_rule(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         RuleCreate(
             name="UBER Rule",
             conditions_op="or",
@@ -244,10 +257,13 @@ async def test_apply_rules_to_transaction(session: AsyncSession, test_user, test
 
 
 @pytest.mark.asyncio
-async def test_apply_rules_no_match(session: AsyncSession, test_user, test_workspace, test_categories):
+async def test_apply_rules_no_match(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
     await create_rule(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         RuleCreate(
             name="IFOOD Only",
             conditions_op="or",
@@ -332,7 +348,8 @@ async def test_apply_all_rules(session: AsyncSession, test_user, test_workspace,
     # Create rules
     await create_rule(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         RuleCreate(
             name="UBER apply-all",
             conditions_op="or",
@@ -343,7 +360,8 @@ async def test_apply_all_rules(session: AsyncSession, test_user, test_workspace,
     )
     await create_rule(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         RuleCreate(
             name="IFOOD apply-all",
             conditions_op="or",
@@ -425,7 +443,8 @@ async def test_apply_all_rules_preserves_manual_categories(
     # Only one rule: matches UBER
     await create_rule(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         RuleCreate(
             name="UBER preserve-test",
             conditions_op="or",
@@ -500,7 +519,9 @@ async def test_install_rule_pack_skips_duplicates(session: AsyncSession, test_us
 
 
 @pytest.mark.asyncio
-async def test_install_rule_pack_works_across_languages(session: AsyncSession, test_user, test_workspace):
+async def test_install_rule_pack_works_across_languages(
+    session: AsyncSession, test_user, test_workspace
+):
     # Regression for #154: user registers in English, switches UI to pt-BR,
     # then installs the BR pack. Categories ("Transport") and template
     # language ("pt-BR" → "Transporte") would mismatch — install should
@@ -551,7 +572,9 @@ async def test_install_rule_pack_creates_missing_categories_when_opted_in(
 
 
 @pytest.mark.asyncio
-async def test_install_rule_pack_unknown_returns_empty(session: AsyncSession, test_user, test_workspace):
+async def test_install_rule_pack_unknown_returns_empty(
+    session: AsyncSession, test_user, test_workspace
+):
     result = await install_rule_pack(session, test_user.id, "ZZ")
     assert result.rules == []
     assert result.unresolved == 0

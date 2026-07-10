@@ -11,6 +11,7 @@ before the sync are expired afterwards. We capture primitive ids up front and
 re-fetch rows after the sync rather than touching expired attributes (which
 would trigger a synchronous lazy-load).
 """
+
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -33,17 +34,27 @@ from app.services.recurring_transaction_service import create_recurring_transact
 @pytest_asyncio.fixture
 async def conn_account(session: AsyncSession, test_user, test_workspace):
     conn = BankConnection(
-        id=uuid.uuid4(), user_id=test_user.id, provider="test",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        provider="test",
         external_id=f"ext-{uuid.uuid4().hex[:8]}",
-        institution_name="Sync Bank", credentials={"token": "fake"},
-        status="active", last_sync_at=datetime.now(timezone.utc),
+        institution_name="Sync Bank",
+        credentials={"token": "fake"},
+        status="active",
+        last_sync_at=datetime.now(timezone.utc),
         created_at=datetime.now(timezone.utc),
     )
     session.add(conn)
     account = Account(
-        id=uuid.uuid4(), user_id=test_user.id, connection_id=conn.id,
-        workspace_id=test_workspace.id, name="Checking", type="checking",
-        external_id="acc-ext-1", balance=Decimal("0"), currency="BRL",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        connection_id=conn.id,
+        workspace_id=test_workspace.id,
+        name="Checking",
+        type="checking",
+        external_id="acc-ext-1",
+        balance=Decimal("0"),
+        currency="BRL",
     )
     session.add(account)
     await session.commit()
@@ -54,18 +65,27 @@ async def conn_account(session: AsyncSession, test_user, test_workspace):
 
 def _provider(transactions, account_ext="acc-ext-1"):
     from app.providers.base import AccountData
+
     p = AsyncMock()
     p.refresh_credentials = AsyncMock(return_value={"token": "t"})
-    p.get_accounts = AsyncMock(return_value=[
-        AccountData(external_id=account_ext, name="Checking",
-                    type="checking", balance=Decimal("0"), currency="BRL"),
-    ])
+    p.get_accounts = AsyncMock(
+        return_value=[
+            AccountData(
+                external_id=account_ext,
+                name="Checking",
+                type="checking",
+                balance=Decimal("0"),
+                currency="BRL",
+            ),
+        ]
+    )
     p.get_transactions = AsyncMock(return_value=transactions)
     return p
 
 
 def _tx(**kw):
     from app.providers.base import TransactionData
+
     kw.setdefault("currency", "BRL")
     kw.setdefault("type", "debit")
     kw.setdefault("status", "posted")
@@ -73,10 +93,12 @@ def _tx(**kw):
 
 
 async def _run_sync(session, conn_id, test_workspace, test_user, provider):
-    with patch("app.services.connection_service.get_provider", return_value=provider), \
-         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
-         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
-         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+    with (
+        patch("app.services.connection_service.get_provider", return_value=provider),
+        patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock),
+        patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock),
+        patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock),
+    ):
         return await sync_connection(session, conn_id, test_workspace.id, test_user.id)
 
 
@@ -88,7 +110,8 @@ async def _make_bill(session, test_workspace, test_user, account, **ov):
         type=ov.pop("type", "debit"),
         frequency=ov.pop("frequency", "monthly"),
         start_date=ov.pop("start_date", date(2025, 1, 10)),
-        account_id=account.id, **ov,
+        account_id=account.id,
+        **ov,
     )
     return await create_recurring_transaction(session, test_workspace.id, test_user.id, data)
 
@@ -114,11 +137,20 @@ async def _all_txs(session, account_id):
 async def test_sync_links_and_advances_bill(session, test_user, test_workspace, conn_account):
     conn, account = conn_account
     conn_id, account_id = conn.id, account.id
-    bill = await _make_bill(session, test_workspace, test_user, account,
-                            start_date=date(2025, 1, 10))
+    bill = await _make_bill(
+        session, test_workspace, test_user, account, start_date=date(2025, 1, 10)
+    )
     bill_id = bill.id
-    provider = _provider([_tx(external_id="s1", description="NETFLIX SUBSCRIPTION",
-                              amount=Decimal("39.90"), date=date(2025, 1, 12))])
+    provider = _provider(
+        [
+            _tx(
+                external_id="s1",
+                description="NETFLIX SUBSCRIPTION",
+                amount=Decimal("39.90"),
+                date=date(2025, 1, 12),
+            )
+        ]
+    )
 
     await _run_sync(session, conn_id, test_workspace, test_user, provider)
 
@@ -139,25 +171,42 @@ async def test_sync_links_and_advances_bill(session, test_user, test_workspace, 
 async def test_sync_merges_into_placeholder(session, test_user, test_workspace, conn_account):
     conn, account = conn_account
     conn_id, account_id = conn.id, account.id
-    bill = await _make_bill(session, test_workspace, test_user, account,
-                            start_date=date(2025, 1, 10))
+    bill = await _make_bill(
+        session, test_workspace, test_user, account, start_date=date(2025, 1, 10)
+    )
     bill_id = bill.id
     # Placeholder as generate_pending would have written it (occurrence already
     # advanced next_occurrence to Feb).
     bill.next_occurrence = date(2025, 2, 10)
     placeholder = Transaction(
-        id=uuid.uuid4(), user_id=test_user.id, account_id=account_id,
-        workspace_id=test_workspace.id, description="Netflix Subscription",
-        amount=Decimal("39.90"), currency="BRL", date=date(2025, 1, 10),
-        type="debit", source="recurring", status="posted",
-        recurring_transaction_id=bill_id, created_at=datetime.now(timezone.utc),
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=account_id,
+        workspace_id=test_workspace.id,
+        description="Netflix Subscription",
+        amount=Decimal("39.90"),
+        currency="BRL",
+        date=date(2025, 1, 10),
+        type="debit",
+        source="recurring",
+        status="posted",
+        recurring_transaction_id=bill_id,
+        created_at=datetime.now(timezone.utc),
     )
     session.add(placeholder)
     await session.commit()
     placeholder_id = placeholder.id
 
-    provider = _provider([_tx(external_id="s1", description="NETFLIX SUBSCRIPTION",
-                              amount=Decimal("39.90"), date=date(2025, 1, 11))])
+    provider = _provider(
+        [
+            _tx(
+                external_id="s1",
+                description="NETFLIX SUBSCRIPTION",
+                amount=Decimal("39.90"),
+                date=date(2025, 1, 11),
+            )
+        ]
+    )
     await _run_sync(session, conn_id, test_workspace, test_user, provider)
 
     txs = await _all_txs(session, account_id)
@@ -186,12 +235,21 @@ async def test_sync_early_charge_advances_and_no_duplicate(
 
     conn, account = conn_account
     conn_id, account_id = conn.id, account.id
-    bill = await _make_bill(session, test_workspace, test_user, account,
-                            start_date=date(2025, 1, 10))
+    bill = await _make_bill(
+        session, test_workspace, test_user, account, start_date=date(2025, 1, 10)
+    )
     bill_id = bill.id
     # Posts 2 days early, inside the before-window of the Jan 10 occurrence.
-    provider = _provider([_tx(external_id="s1", description="NETFLIX SUBSCRIPTION",
-                              amount=Decimal("39.90"), date=date(2025, 1, 8))])
+    provider = _provider(
+        [
+            _tx(
+                external_id="s1",
+                description="NETFLIX SUBSCRIPTION",
+                amount=Decimal("39.90"),
+                date=date(2025, 1, 8),
+            )
+        ]
+    )
     await _run_sync(session, conn_id, test_workspace, test_user, provider)
 
     refreshed = await session.get(RecurringTransaction, bill_id)
@@ -208,11 +266,25 @@ async def test_sync_early_charge_advances_and_no_duplicate(
 async def test_sync_amount_mismatch_not_linked(session, test_user, test_workspace, conn_account):
     conn, account = conn_account
     conn_id, account_id = conn.id, account.id
-    bill = await _make_bill(session, test_workspace, test_user, account,
-                            amount=Decimal("39.90"), start_date=date(2025, 1, 10))
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        account,
+        amount=Decimal("39.90"),
+        start_date=date(2025, 1, 10),
+    )
     bill_id = bill.id
-    provider = _provider([_tx(external_id="s1", description="NETFLIX SUBSCRIPTION",
-                              amount=Decimal("50.00"), date=date(2025, 1, 10))])
+    provider = _provider(
+        [
+            _tx(
+                external_id="s1",
+                description="NETFLIX SUBSCRIPTION",
+                amount=Decimal("50.00"),
+                date=date(2025, 1, 10),
+            )
+        ]
+    )
     await _run_sync(session, conn_id, test_workspace, test_user, provider)
 
     txs = await _all_txs(session, account_id)
@@ -233,15 +305,31 @@ async def test_sync_two_charges_same_occurrence_links_one(
 ):
     conn, account = conn_account
     conn_id, account_id = conn.id, account.id
-    bill = await _make_bill(session, test_workspace, test_user, account,
-                            amount=Decimal("39.90"), start_date=date(2025, 1, 10))
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        account,
+        amount=Decimal("39.90"),
+        start_date=date(2025, 1, 10),
+    )
     bill_id = bill.id
-    provider = _provider([
-        _tx(external_id="s1", description="NETFLIX SUBSCRIPTION",
-            amount=Decimal("39.90"), date=date(2025, 1, 10)),
-        _tx(external_id="s2", description="NETFLIX SUBSCRIPTION",
-            amount=Decimal("39.90"), date=date(2025, 1, 11)),
-    ])
+    provider = _provider(
+        [
+            _tx(
+                external_id="s1",
+                description="NETFLIX SUBSCRIPTION",
+                amount=Decimal("39.90"),
+                date=date(2025, 1, 10),
+            ),
+            _tx(
+                external_id="s2",
+                description="NETFLIX SUBSCRIPTION",
+                amount=Decimal("39.90"),
+                date=date(2025, 1, 11),
+            ),
+        ]
+    )
     await _run_sync(session, conn_id, test_workspace, test_user, provider)
 
     txs = await _all_txs(session, account_id)
@@ -261,13 +349,25 @@ async def test_sync_two_charges_same_occurrence_links_one(
 async def test_resync_is_idempotent(session, test_user, test_workspace, conn_account):
     conn, account = conn_account
     conn_id, account_id = conn.id, account.id
-    bill = await _make_bill(session, test_workspace, test_user, account,
-                            amount=Decimal("39.90"), start_date=date(2025, 1, 10))
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        account,
+        amount=Decimal("39.90"),
+        start_date=date(2025, 1, 10),
+    )
     bill_id = bill.id
 
     def txns():
-        return [_tx(external_id="s1", description="NETFLIX SUBSCRIPTION",
-                    amount=Decimal("39.90"), date=date(2025, 1, 10))]
+        return [
+            _tx(
+                external_id="s1",
+                description="NETFLIX SUBSCRIPTION",
+                amount=Decimal("39.90"),
+                date=date(2025, 1, 10),
+            )
+        ]
 
     await _run_sync(session, conn_id, test_workspace, test_user, _provider(txns()))
     await _run_sync(session, conn_id, test_workspace, test_user, _provider(txns()))

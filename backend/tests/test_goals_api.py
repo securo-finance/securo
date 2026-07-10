@@ -38,7 +38,9 @@ async def test_create_goal_manual(client: AsyncClient, auth_headers: dict, test_
 
 
 @pytest.mark.asyncio
-async def test_create_goal_with_target_date(client: AsyncClient, auth_headers: dict, test_user: User):
+async def test_create_goal_with_target_date(
+    client: AsyncClient, auth_headers: dict, test_user: User
+):
     future_date = (date.today() + timedelta(days=365)).isoformat()
     response = await client.post(
         "/api/goals",
@@ -89,7 +91,9 @@ async def test_create_goal_account_tracking(
 
 
 @pytest.mark.asyncio
-async def test_create_goal_invalid_tracking_type(client: AsyncClient, auth_headers: dict, test_user: User):
+async def test_create_goal_invalid_tracking_type(
+    client: AsyncClient, auth_headers: dict, test_user: User
+):
     response = await client.post(
         "/api/goals",
         json={
@@ -126,7 +130,9 @@ async def test_list_goals(client: AsyncClient, auth_headers: dict, test_user: Us
 
 
 @pytest.mark.asyncio
-async def test_list_goals_filter_by_status(client: AsyncClient, auth_headers: dict, test_user: User):
+async def test_list_goals_filter_by_status(
+    client: AsyncClient, auth_headers: dict, test_user: User
+):
     # Create an active goal
     resp = await client.post(
         "/api/goals",
@@ -250,7 +256,9 @@ async def test_update_goal_tracking_type(client: AsyncClient, auth_headers: dict
 
 
 @pytest.mark.asyncio
-async def test_update_goal_invalid_tracking_type(client: AsyncClient, auth_headers: dict, test_user: User):
+async def test_update_goal_invalid_tracking_type(
+    client: AsyncClient, auth_headers: dict, test_user: User
+):
     resp = await client.post(
         "/api/goals",
         json={"name": "Bad Tracking", "target_amount": "1000.00", "tracking_type": "manual"},
@@ -313,7 +321,12 @@ async def test_goal_summary(client: AsyncClient, auth_headers: dict, test_user: 
     for name in ["Goal 1", "Goal 2", "Goal 3", "Goal 4"]:
         await client.post(
             "/api/goals",
-            json={"name": name, "target_amount": "1000.00", "current_amount": "250.00", "tracking_type": "manual"},
+            json={
+                "name": name,
+                "target_amount": "1000.00",
+                "current_amount": "250.00",
+                "tracking_type": "manual",
+            },
             headers=auth_headers,
         )
 
@@ -412,7 +425,12 @@ async def test_goal_ownership_isolation(
         is_active=True,
         is_superuser=False,
         is_verified=True,
-        preferences={"language": "en", "date_format": "MM/DD/YYYY", "timezone": "UTC", "currency_display": "USD"},
+        preferences={
+            "language": "en",
+            "date_format": "MM/DD/YYYY",
+            "timezone": "UTC",
+            "currency_display": "USD",
+        },
     )
     session.add(other_user)
     await session.flush()
@@ -616,17 +634,26 @@ async def test_goal_asset_tracking_with_currency_conversion(
 
 @pytest.mark.asyncio
 async def test_goal_account_tracking_cross_currency(
-    client: AsyncClient, auth_headers: dict, test_user: User, test_account: Account, session: AsyncSession
+    client: AsyncClient,
+    auth_headers: dict,
+    test_user: User,
+    test_account: Account,
+    session: AsyncSession,
 ):
     """EUR goal linked to a BRL account should convert account balance to EUR."""
     # Seed FX rates: USD→BRL = 5.0, USD→EUR = 0.9
     # So BRL 1500 → USD 300 → EUR 270
     today = date.today()
     for quote, rate in [("BRL", "5.0"), ("EUR", "0.9")]:
-        session.add(FxRate(
-            base_currency="USD", quote_currency=quote,
-            date=today, rate=Decimal(rate), source="test",
-        ))
+        session.add(
+            FxRate(
+                base_currency="USD",
+                quote_currency=quote,
+                date=today,
+                rate=Decimal(rate),
+                source="test",
+            )
+        )
     await session.commit()
 
     response = await client.post(
@@ -680,10 +707,15 @@ async def test_goal_asset_tracking_eur_goal_usd_asset(
     """EUR goal linked to a USD asset should convert asset value to EUR."""
     # Seed FX rates: USD→EUR = 0.9
     today = date.today()
-    session.add(FxRate(
-        base_currency="USD", quote_currency="EUR",
-        date=today, rate=Decimal("0.9"), source="test",
-    ))
+    session.add(
+        FxRate(
+            base_currency="USD",
+            quote_currency="EUR",
+            date=today,
+            rate=Decimal("0.9"),
+            source="test",
+        )
+    )
 
     asset = Asset(
         id=uuid.uuid4(),

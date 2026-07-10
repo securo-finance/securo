@@ -2,6 +2,7 @@
 HTTP layer covers most paths in test_agents_api.py — this fills in the
 service-only utilities (append_message ordinal generation,
 update_title_if_empty, etc.) that don't ride a route."""
+
 from __future__ import annotations
 
 import uuid
@@ -12,9 +13,14 @@ from app.agents.services import conversation_service as svc
 
 
 @pytest.mark.asyncio
-async def test_create_conversation_persists_with_defaults(session, test_user, test_workspace, test_agent):
+async def test_create_conversation_persists_with_defaults(
+    session, test_user, test_workspace, test_agent
+):
     conv = await svc.create_conversation(
-        session, workspace_id=test_workspace.id, user_id=test_user.id, agent_id=test_agent.id,
+        session,
+        workspace_id=test_workspace.id,
+        user_id=test_user.id,
+        agent_id=test_agent.id,
     )
     assert conv.id is not None
     assert conv.user_id == test_user.id
@@ -24,18 +30,29 @@ async def test_create_conversation_persists_with_defaults(session, test_user, te
 
 
 @pytest.mark.asyncio
-async def test_list_conversations_filters_by_agent_and_user(session, test_user, test_workspace, test_agent):
+async def test_list_conversations_filters_by_agent_and_user(
+    session, test_user, test_workspace, test_agent
+):
     a = await svc.create_conversation(
-        session, workspace_id=test_workspace.id, user_id=test_user.id, agent_id=test_agent.id, title="A",
+        session,
+        workspace_id=test_workspace.id,
+        user_id=test_user.id,
+        agent_id=test_agent.id,
+        title="A",
     )
     # Conversation for a different agent → should be filtered out.
     other_agent_id = uuid.uuid4()
     from app.agents.models.agent import Agent
+
     other_agent = Agent(id=other_agent_id, user_id=test_user.id, name="Other")
     session.add(other_agent)
     await session.commit()
     b = await svc.create_conversation(
-        session, workspace_id=test_workspace.id, user_id=test_user.id, agent_id=other_agent_id, title="B",
+        session,
+        workspace_id=test_workspace.id,
+        user_id=test_user.id,
+        agent_id=other_agent_id,
+        title="B",
     )
 
     rows_a = await svc.list_conversations(session, test_workspace.id, agent_id=test_agent.id)
@@ -51,9 +68,14 @@ async def test_list_conversations_filters_by_agent_and_user(session, test_user, 
 
 
 @pytest.mark.asyncio
-async def test_append_message_assigns_monotonic_ordinals(session, test_user, test_workspace, test_agent):
+async def test_append_message_assigns_monotonic_ordinals(
+    session, test_user, test_workspace, test_agent
+):
     conv = await svc.create_conversation(
-        session, workspace_id=test_workspace.id, user_id=test_user.id, agent_id=test_agent.id,
+        session,
+        workspace_id=test_workspace.id,
+        user_id=test_user.id,
+        agent_id=test_agent.id,
     )
     a = await svc.append_message(session, conversation_id=conv.id, role="user", content="one")
     b = await svc.append_message(session, conversation_id=conv.id, role="assistant", content="two")
@@ -64,7 +86,10 @@ async def test_append_message_assigns_monotonic_ordinals(session, test_user, tes
 @pytest.mark.asyncio
 async def test_list_messages_ordered_by_ordinal(session, test_user, test_workspace, test_agent):
     conv = await svc.create_conversation(
-        session, workspace_id=test_workspace.id, user_id=test_user.id, agent_id=test_agent.id,
+        session,
+        workspace_id=test_workspace.id,
+        user_id=test_user.id,
+        agent_id=test_agent.id,
     )
     await svc.append_message(session, conversation_id=conv.id, role="user", content="one")
     await svc.append_message(session, conversation_id=conv.id, role="assistant", content="two")
@@ -73,9 +98,14 @@ async def test_list_messages_ordered_by_ordinal(session, test_user, test_workspa
 
 
 @pytest.mark.asyncio
-async def test_append_message_persists_tool_payloads(session, test_user, test_workspace, test_agent):
+async def test_append_message_persists_tool_payloads(
+    session, test_user, test_workspace, test_agent
+):
     conv = await svc.create_conversation(
-        session, workspace_id=test_workspace.id, user_id=test_user.id, agent_id=test_agent.id,
+        session,
+        workspace_id=test_workspace.id,
+        user_id=test_user.id,
+        agent_id=test_agent.id,
     )
     msg = await svc.append_message(
         session,
@@ -96,9 +126,14 @@ async def test_append_message_persists_tool_payloads(session, test_user, test_wo
 
 
 @pytest.mark.asyncio
-async def test_update_title_if_empty_only_writes_when_blank(session, test_user, test_workspace, test_agent):
+async def test_update_title_if_empty_only_writes_when_blank(
+    session, test_user, test_workspace, test_agent
+):
     conv = await svc.create_conversation(
-        session, workspace_id=test_workspace.id, user_id=test_user.id, agent_id=test_agent.id,
+        session,
+        workspace_id=test_workspace.id,
+        user_id=test_user.id,
+        agent_id=test_agent.id,
     )
     # First call: title is None → should fill in.
     await svc.update_title_if_empty(session, conv.id, "Auto generated")
@@ -122,10 +157,13 @@ async def test_update_title_if_empty_silent_on_missing_conv(session):
 @pytest.mark.asyncio
 async def test_update_title_truncates_to_200_chars(session, test_user, test_workspace, test_agent):
     conv = await svc.create_conversation(
-        session, workspace_id=test_workspace.id, user_id=test_user.id, agent_id=test_agent.id,
+        session,
+        workspace_id=test_workspace.id,
+        user_id=test_user.id,
+        agent_id=test_agent.id,
     )
     long_title = "x" * 500
-    out = await svc.update_title(session, conv.id, test_workspace.id,long_title)
+    out = await svc.update_title(session, conv.id, test_workspace.id, long_title)
     assert out is not None
     assert len(out.title) == 200
 
@@ -139,9 +177,13 @@ async def test_update_title_returns_none_on_missing(session, test_workspace):
 @pytest.mark.asyncio
 async def test_update_title_blank_clears_to_none(session, test_user, test_workspace, test_agent):
     conv = await svc.create_conversation(
-        session, workspace_id=test_workspace.id, user_id=test_user.id, agent_id=test_agent.id, title="Existing",
+        session,
+        workspace_id=test_workspace.id,
+        user_id=test_user.id,
+        agent_id=test_agent.id,
+        title="Existing",
     )
-    out = await svc.update_title(session, conv.id, test_workspace.id,"   ")
+    out = await svc.update_title(session, conv.id, test_workspace.id, "   ")
     assert out is not None
     assert out.title is None
 
@@ -154,7 +196,10 @@ async def test_delete_conversation_returns_false_on_missing(session, test_worksp
 @pytest.mark.asyncio
 async def test_delete_conversation_removes_row(session, test_user, test_workspace, test_agent):
     conv = await svc.create_conversation(
-        session, workspace_id=test_workspace.id, user_id=test_user.id, agent_id=test_agent.id,
+        session,
+        workspace_id=test_workspace.id,
+        user_id=test_user.id,
+        agent_id=test_agent.id,
     )
     assert await svc.delete_conversation(session, conv.id, test_workspace.id) is True
     assert await svc.get_conversation(session, conv.id, test_workspace.id) is None

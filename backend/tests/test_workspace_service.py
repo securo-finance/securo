@@ -7,6 +7,7 @@ Covers the happy paths the registration flow + invite API rely on:
   - Manager virtual access (managed_by_user_id)
   - Sole-owner protection on demote + remove
 """
+
 import uuid
 
 import pytest
@@ -74,22 +75,16 @@ async def test_viewer_role_blocks_write_min_role(session, test_user: User):
     )
     session.add(other)
     await session.flush()
-    await workspace_service.add_member(
-        session, workspace_id=ws.id, user_id=other.id, role="viewer"
-    )
+    await workspace_service.add_member(session, workspace_id=ws.id, user_id=other.id, role="viewer")
     await session.commit()
 
     # Viewer can read.
-    member = await workspace_service.require_membership(
-        session, ws.id, other.id, min_role="viewer"
-    )
+    member = await workspace_service.require_membership(session, ws.id, other.id, min_role="viewer")
     assert member.role == "viewer"
 
     # But not write.
     with pytest.raises(HTTPException) as exc:
-        await workspace_service.require_membership(
-            session, ws.id, other.id, min_role="editor"
-        )
+        await workspace_service.require_membership(session, ws.id, other.id, min_role="editor")
     assert exc.value.status_code == 403
 
 
@@ -125,9 +120,7 @@ async def test_cannot_demote_sole_owner(session, test_user: User):
     await session.commit()
 
     with pytest.raises(HTTPException) as exc:
-        await workspace_service.update_member_role(
-            session, ws.id, test_user.id, "viewer"
-        )
+        await workspace_service.update_member_role(session, ws.id, test_user.id, "viewer")
     assert exc.value.status_code == 400
     assert "sole owner" in exc.value.detail.lower()
 
@@ -155,9 +148,7 @@ async def test_list_members_includes_invited_users(session, test_user: User):
     )
     session.add(other)
     await session.flush()
-    await workspace_service.add_member(
-        session, workspace_id=ws.id, user_id=other.id, role="editor"
-    )
+    await workspace_service.add_member(session, workspace_id=ws.id, user_id=other.id, role="editor")
     await session.commit()
 
     members = await workspace_service.list_members(session, ws.id)

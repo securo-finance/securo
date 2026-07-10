@@ -3,6 +3,7 @@ app/agents/services/agent_service and app/agents/api/{agents,conversations}.
 The existing test_agents_api.py covers happy paths; this file fills in
 the unhit branches (is_default toggling, count aggregation, tools
 discovery, generate-title, delete fallbacks)."""
+
 from __future__ import annotations
 
 import uuid
@@ -15,6 +16,7 @@ from app.agents.services import agent_service
 
 # --------------------------------------------------------------------- agent_service.list_agents conv+kb count aggregation
 
+
 @pytest.mark.asyncio
 async def test_list_agents_populates_conversation_and_knowledge_counts(
     session, test_user, test_workspace, test_agent
@@ -24,14 +26,26 @@ async def test_list_agents_populates_conversation_and_knowledge_counts(
     from app.agents.models.knowledge import KnowledgeDoc
 
     # Add 2 conversations and 1 KB doc to the agent.
-    session.add_all([
-        Conversation(id=uuid.uuid4(), user_id=test_user.id, agent_id=test_agent.id, channel="web"),
-        Conversation(id=uuid.uuid4(), user_id=test_user.id, agent_id=test_agent.id, channel="web"),
-        KnowledgeDoc(
-            id=uuid.uuid4(), agent_id=test_agent.id, user_id=test_user.id,
-            title="t", source="t", mime="text/plain", size_bytes=1, status="ready",
-        ),
-    ])
+    session.add_all(
+        [
+            Conversation(
+                id=uuid.uuid4(), user_id=test_user.id, agent_id=test_agent.id, channel="web"
+            ),
+            Conversation(
+                id=uuid.uuid4(), user_id=test_user.id, agent_id=test_agent.id, channel="web"
+            ),
+            KnowledgeDoc(
+                id=uuid.uuid4(),
+                agent_id=test_agent.id,
+                user_id=test_user.id,
+                title="t",
+                source="t",
+                mime="text/plain",
+                size_bytes=1,
+                status="ready",
+            ),
+        ]
+    )
     await session.commit()
 
     rows = await agent_service.list_agents(session, test_workspace.id)
@@ -41,6 +55,7 @@ async def test_list_agents_populates_conversation_and_knowledge_counts(
 
 
 # --------------------------------------------------------------------- agent_service.set_tool_enabled
+
 
 @pytest.mark.asyncio
 async def test_set_tool_enabled_inserts_then_updates_existing_row(session, test_agent):
@@ -71,10 +86,9 @@ async def test_allowed_tool_pairs_returns_none_when_no_rows(session, test_agent)
 
 # --------------------------------------------------------------------- agents API: /default + /tools
 
+
 @pytest.mark.asyncio
-async def test_get_default_agent_endpoint_returns_explicit_default(
-    client, auth_headers, test_user
-):
+async def test_get_default_agent_endpoint_returns_explicit_default(client, auth_headers, test_user):
     await client.post("/api/agents", json={"name": "A"}, headers=auth_headers)
     b = (await client.post("/api/agents", json={"name": "B"}, headers=auth_headers)).json()
     # Mark B explicit default.
@@ -104,9 +118,7 @@ async def test_get_default_falls_back_to_most_recent_when_no_explicit(
 
 
 @pytest.mark.asyncio
-async def test_marking_second_agent_default_clears_first(
-    client, auth_headers, test_user
-):
+async def test_marking_second_agent_default_clears_first(client, auth_headers, test_user):
     a = (await client.post("/api/agents", json={"name": "A"}, headers=auth_headers)).json()
     b = (await client.post("/api/agents", json={"name": "B"}, headers=auth_headers)).json()
 
@@ -120,21 +132,25 @@ async def test_marking_second_agent_default_clears_first(
 
 
 @pytest.mark.asyncio
-async def test_get_agent_tools_returns_merged_state(
-    client, auth_headers, test_user
-):
+async def test_get_agent_tools_returns_merged_state(client, auth_headers, test_user):
     """Mock MCPRegistry.discover so we can exercise the merge logic
     in api/agents.py without a live MCP server."""
     from app.agents.mcp.client import ToolHandle
 
-    async def fake_discover(self, *, user_id, workspace_id=None, conversation_id=None, agent_id=None):
+    async def fake_discover(
+        self, *, user_id, workspace_id=None, conversation_id=None, agent_id=None
+    ):
         return [
             ToolHandle(server="securo", name="list_accounts", description="d", parameters={}),
-            ToolHandle(server="securo", name="propose_x", description="d", parameters={}, is_proposal=True),
+            ToolHandle(
+                server="securo", name="propose_x", description="d", parameters={}, is_proposal=True
+            ),
         ]
 
-    with patch("app.agents.api.agents.MCPRegistry.discover", new=fake_discover), \
-         patch("app.agents.api.agents.MCPRegistry.server_names", lambda self: ["securo"]):
+    with (
+        patch("app.agents.api.agents.MCPRegistry.discover", new=fake_discover),
+        patch("app.agents.api.agents.MCPRegistry.server_names", lambda self: ["securo"]),
+    ):
         a = (await client.post("/api/agents", json={"name": "A"}, headers=auth_headers)).json()
         r = await client.get(f"/api/agents/{a['id']}/tools", headers=auth_headers)
         assert r.status_code == 200
@@ -153,9 +169,7 @@ async def test_get_agent_tools_404_for_unknown_agent(client, auth_headers, test_
 
 
 @pytest.mark.asyncio
-async def test_put_agent_tools_persists_explicit_selection(
-    client, auth_headers, test_user
-):
+async def test_put_agent_tools_persists_explicit_selection(client, auth_headers, test_user):
     a = (await client.post("/api/agents", json={"name": "A"}, headers=auth_headers)).json()
     r = await client.put(
         f"/api/agents/{a['id']}/tools",
@@ -181,6 +195,7 @@ async def test_put_agent_tools_404_for_unknown_agent(client, auth_headers, test_
 
 # --------------------------------------------------------------------- conversations API: generate-title quirks
 
+
 @pytest.mark.asyncio
 async def test_generate_title_returns_unchanged_when_no_messages(
     client, auth_headers, test_user, session
@@ -192,14 +207,18 @@ async def test_generate_title_returns_unchanged_when_no_messages(
 
     agent = Agent(id=uuid.uuid4(), user_id=test_user.id, name="A")
     conv = Conversation(
-        id=uuid.uuid4(), user_id=test_user.id, agent_id=agent.id,
-        channel="web", title="original",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        agent_id=agent.id,
+        channel="web",
+        title="original",
     )
     session.add_all([agent, conv])
     await session.commit()
 
     r = await client.post(
-        f"/api/agents/conversations/{conv.id}/generate-title", headers=auth_headers,
+        f"/api/agents/conversations/{conv.id}/generate-title",
+        headers=auth_headers,
     )
     assert r.status_code == 200
     assert r.json()["title"] == "original"
@@ -217,25 +236,44 @@ async def test_generate_title_silently_swallows_llm_errors(
 
     class _Boom(LLMProvider):
         name = "openai"
-        async def chat_stream(self, *a, **kw): yield  # pragma: no cover
+
+        async def chat_stream(self, *a, **kw):
+            yield  # pragma: no cover
+
         async def chat(self, *a, **kw):
             raise RuntimeError("provider down")
-        async def embed(self, *a, **kw): return []
+
+        async def embed(self, *a, **kw):
+            return []
 
     agent = Agent(
-        id=uuid.uuid4(), user_id=test_user.id, name="A",
-        provider="openai", model="gpt-4o-mini",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="A",
+        provider="openai",
+        model="gpt-4o-mini",
     )
     conv = Conversation(
-        id=uuid.uuid4(), user_id=test_user.id, agent_id=agent.id,
-        channel="web", title="kept",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        agent_id=agent.id,
+        channel="web",
+        title="kept",
     )
     session.add_all([agent, conv])
     await session.commit()
-    session.add_all([
-        Message(id=uuid.uuid4(), conversation_id=conv.id, ordinal=1, role="user", content="hi"),
-        Message(id=uuid.uuid4(), conversation_id=conv.id, ordinal=2, role="assistant", content="hello"),
-    ])
+    session.add_all(
+        [
+            Message(id=uuid.uuid4(), conversation_id=conv.id, ordinal=1, role="user", content="hi"),
+            Message(
+                id=uuid.uuid4(),
+                conversation_id=conv.id,
+                ordinal=2,
+                role="assistant",
+                content="hello",
+            ),
+        ]
+    )
     await session.commit()
 
     with patch(
@@ -243,7 +281,8 @@ async def test_generate_title_silently_swallows_llm_errors(
         return_value=(_Boom(), "gpt-4o-mini"),
     ):
         r = await client.post(
-            f"/api/agents/conversations/{conv.id}/generate-title", headers=auth_headers,
+            f"/api/agents/conversations/{conv.id}/generate-title",
+            headers=auth_headers,
         )
     assert r.status_code == 200
     assert r.json()["title"] == "kept"
@@ -252,17 +291,20 @@ async def test_generate_title_silently_swallows_llm_errors(
 @pytest.mark.asyncio
 async def test_generate_title_404_for_unknown_conversation(client, auth_headers, test_user):
     r = await client.post(
-        f"/api/agents/conversations/{uuid.uuid4()}/generate-title", headers=auth_headers,
+        f"/api/agents/conversations/{uuid.uuid4()}/generate-title",
+        headers=auth_headers,
     )
     assert r.status_code == 404
 
 
 # --------------------------------------------------------------------- conversations API: 404 paths
 
+
 @pytest.mark.asyncio
 async def test_get_conversation_404(client, auth_headers, test_user):
     r = await client.get(
-        f"/api/agents/conversations/{uuid.uuid4()}", headers=auth_headers,
+        f"/api/agents/conversations/{uuid.uuid4()}",
+        headers=auth_headers,
     )
     assert r.status_code == 404
 
@@ -270,7 +312,8 @@ async def test_get_conversation_404(client, auth_headers, test_user):
 @pytest.mark.asyncio
 async def test_list_messages_404_for_unknown_conversation(client, auth_headers, test_user):
     r = await client.get(
-        f"/api/agents/conversations/{uuid.uuid4()}/messages", headers=auth_headers,
+        f"/api/agents/conversations/{uuid.uuid4()}/messages",
+        headers=auth_headers,
     )
     assert r.status_code == 404
 
@@ -286,14 +329,23 @@ async def test_list_messages_returns_messages_for_owned_conversation(
     conv = Conversation(id=uuid.uuid4(), user_id=test_user.id, agent_id=agent.id, channel="web")
     session.add_all([agent, conv])
     await session.commit()
-    session.add_all([
-        Message(id=uuid.uuid4(), conversation_id=conv.id, ordinal=1, role="user", content="hi"),
-        Message(id=uuid.uuid4(), conversation_id=conv.id, ordinal=2, role="assistant", content="hello"),
-    ])
+    session.add_all(
+        [
+            Message(id=uuid.uuid4(), conversation_id=conv.id, ordinal=1, role="user", content="hi"),
+            Message(
+                id=uuid.uuid4(),
+                conversation_id=conv.id,
+                ordinal=2,
+                role="assistant",
+                content="hello",
+            ),
+        ]
+    )
     await session.commit()
 
     r = await client.get(
-        f"/api/agents/conversations/{conv.id}/messages", headers=auth_headers,
+        f"/api/agents/conversations/{conv.id}/messages",
+        headers=auth_headers,
     )
     assert r.status_code == 200
     body = r.json()
@@ -303,7 +355,8 @@ async def test_list_messages_returns_messages_for_owned_conversation(
 @pytest.mark.asyncio
 async def test_delete_conversation_404(client, auth_headers, test_user):
     r = await client.delete(
-        f"/api/agents/conversations/{uuid.uuid4()}", headers=auth_headers,
+        f"/api/agents/conversations/{uuid.uuid4()}",
+        headers=auth_headers,
     )
     assert r.status_code == 404
 

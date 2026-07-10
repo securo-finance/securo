@@ -52,12 +52,11 @@ async def delete_import_log(
     session: AsyncSession = Depends(get_async_session),
 ):
     import uuid as _uuid
+
     log_id = _uuid.UUID(import_log_id)
 
     result = await session.execute(
-        select(ImportLog).where(
-            ImportLog.id == log_id, ImportLog.workspace_id == ctx.workspace.id
-        )
+        select(ImportLog).where(ImportLog.id == log_id, ImportLog.workspace_id == ctx.workspace.id)
     )
     log = result.scalar_one_or_none()
     if not log:
@@ -65,24 +64,20 @@ async def delete_import_log(
 
     # Clean up attachment files before deleting transactions
     from app.services.attachment_service import cleanup_attachment_files
-    tx_result = await session.execute(
-        select(Transaction.id).where(Transaction.import_id == log_id)
-    )
+
+    tx_result = await session.execute(select(Transaction.id).where(Transaction.import_id == log_id))
     tx_ids = [row[0] for row in tx_result.all()]
     await cleanup_attachment_files(session, tx_ids)
 
     # Also delete attachment DB records (raw SQL delete bypasses ORM cascade)
     from app.models.transaction_attachment import TransactionAttachment
+
     if tx_ids:
         await session.execute(
-            delete(TransactionAttachment).where(
-                TransactionAttachment.transaction_id.in_(tx_ids)
-            )
+            delete(TransactionAttachment).where(TransactionAttachment.transaction_id.in_(tx_ids))
         )
 
     # Delete all transactions from this import
-    await session.execute(
-        delete(Transaction).where(Transaction.import_id == log_id)
-    )
+    await session.execute(delete(Transaction).where(Transaction.import_id == log_id))
     await session.delete(log)
     await session.commit()

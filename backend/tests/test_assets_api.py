@@ -69,13 +69,17 @@ async def test_get_asset_not_found(client: AsyncClient, auth_headers: dict):
 
 @pytest.mark.asyncio
 async def test_create_asset(client: AsyncClient, auth_headers: dict):
-    response = await client.post("/api/assets", headers=auth_headers, json={
-        "name": "New Car",
-        "type": "vehicle",
-        "currency": "BRL",
-        "current_value": 80000,
-        "purchase_price": 75000,
-    })
+    response = await client.post(
+        "/api/assets",
+        headers=auth_headers,
+        json={
+            "name": "New Car",
+            "type": "vehicle",
+            "currency": "BRL",
+            "current_value": 80000,
+            "purchase_price": 75000,
+        },
+    )
     assert response.status_code == 201
     data = response.json()
     assert data["name"] == "New Car"
@@ -95,7 +99,9 @@ async def test_update_asset(client: AsyncClient, auth_headers: dict, test_asset_
 
 
 @pytest.mark.asyncio
-async def test_delete_asset(client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user: User):
+async def test_delete_asset(
+    client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user: User
+):
     asset = Asset(
         id=uuid.uuid4(),
         user_id=test_user.id,
@@ -135,7 +141,10 @@ async def test_add_asset_value(client: AsyncClient, auth_headers: dict, test_ass
 
 @pytest.mark.asyncio
 async def test_delete_asset_value(
-    client: AsyncClient, auth_headers: dict, session: AsyncSession, test_asset_api: Asset,
+    client: AsyncClient,
+    auth_headers: dict,
+    session: AsyncSession,
+    test_asset_api: Asset,
 ):
     v = AssetValue(
         id=uuid.uuid4(),
@@ -153,7 +162,9 @@ async def test_delete_asset_value(
 
 @pytest.mark.asyncio
 async def test_get_value_trend(client: AsyncClient, auth_headers: dict, test_asset_api: Asset):
-    response = await client.get(f"/api/assets/{test_asset_api.id}/value-trend", headers=auth_headers)
+    response = await client.get(
+        f"/api/assets/{test_asset_api.id}/value-trend", headers=auth_headers
+    )
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)

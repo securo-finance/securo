@@ -24,7 +24,9 @@ class GoalCreate(BaseModel):
     @classmethod
     def validate_tracking_type(cls, v: str) -> str:
         if v not in ("manual", "account", "asset", "asset_group", "net_worth"):
-            raise ValueError("tracking_type must be manual, account, asset, asset_group, or net_worth")
+            raise ValueError(
+                "tracking_type must be manual, account, asset, asset_group, or net_worth"
+            )
         return v
 
 
@@ -55,7 +57,9 @@ class GoalUpdate(BaseModel):
     @classmethod
     def validate_tracking_type(cls, v: Optional[str]) -> Optional[str]:
         if v is not None and v not in ("manual", "account", "asset", "asset_group", "net_worth"):
-            raise ValueError("tracking_type must be manual, account, asset, asset_group, or net_worth")
+            raise ValueError(
+                "tracking_type must be manual, account, asset, asset_group, or net_worth"
+            )
         return v
 
 

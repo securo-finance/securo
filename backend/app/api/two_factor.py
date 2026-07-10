@@ -80,6 +80,7 @@ async def disable_2fa(
     # Verify password by authenticating
     user_db = SQLAlchemyUserDatabase(session, User)
     from app.core.auth import UserManager
+
     user_manager = UserManager(user_db)
 
     creds = OAuth2PasswordRequestForm(username=user.email, password=body.password)
@@ -116,11 +117,17 @@ async def verify_2fa(
 
     payload = _parse_temp_token_payload(raw_payload)
     available_methods = payload.get("available_methods", []) if payload else []
-    if payload is None or not isinstance(available_methods, list) or "totp" not in available_methods:
+    if (
+        payload is None
+        or not isinstance(available_methods, list)
+        or "totp" not in available_methods
+    ):
         raise HTTPException(status_code=401, detail="Invalid token")
 
     # Load user
-    result = await session.execute(select(User).where(User.id == uuid.UUID(str(payload["user_id"]))))
+    result = await session.execute(
+        select(User).where(User.id == uuid.UUID(str(payload["user_id"])))
+    )
     user = result.scalar_one_or_none()
     if not user or not (user.is_2fa_enabled and user.totp_secret):
         raise HTTPException(status_code=401, detail="Invalid token")

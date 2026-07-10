@@ -1,4 +1,5 @@
 """User-managed LLM connections (provider endpoints + API keys)."""
+
 from __future__ import annotations
 
 import uuid
@@ -16,23 +17,41 @@ VALID_KINDS = set(list_providers())  # ollama, openai, anthropic, openai_compati
 
 
 async def list_connections(session: AsyncSession, user_id: uuid.UUID) -> list[LlmConnection]:
-    return list((await session.execute(
-        select(LlmConnection).where(LlmConnection.user_id == user_id).order_by(LlmConnection.created_at.desc())
-    )).scalars().all())
+    return list(
+        (
+            await session.execute(
+                select(LlmConnection)
+                .where(LlmConnection.user_id == user_id)
+                .order_by(LlmConnection.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
 
 
 async def get_connection(
     session: AsyncSession, conn_id: uuid.UUID, user_id: uuid.UUID
 ) -> Optional[LlmConnection]:
-    return (await session.execute(
-        select(LlmConnection).where(LlmConnection.id == conn_id, LlmConnection.user_id == user_id)
-    )).scalar_one_or_none()
+    return (
+        await session.execute(
+            select(LlmConnection).where(
+                LlmConnection.id == conn_id, LlmConnection.user_id == user_id
+            )
+        )
+    ).scalar_one_or_none()
 
 
-async def get_default_connection(session: AsyncSession, user_id: uuid.UUID) -> Optional[LlmConnection]:
-    return (await session.execute(
-        select(LlmConnection).where(LlmConnection.user_id == user_id, LlmConnection.is_default.is_(True)).limit(1)
-    )).scalar_one_or_none()
+async def get_default_connection(
+    session: AsyncSession, user_id: uuid.UUID
+) -> Optional[LlmConnection]:
+    return (
+        await session.execute(
+            select(LlmConnection)
+            .where(LlmConnection.user_id == user_id, LlmConnection.is_default.is_(True))
+            .limit(1)
+        )
+    ).scalar_one_or_none()
 
 
 async def create_connection(
@@ -115,8 +134,12 @@ async def delete_connection(session: AsyncSession, conn_id: uuid.UUID, user_id: 
     return True
 
 
-async def _clear_default(session: AsyncSession, user_id: uuid.UUID, *, except_id: Optional[uuid.UUID] = None) -> None:
-    stmt = update(LlmConnection).where(LlmConnection.user_id == user_id, LlmConnection.is_default.is_(True))
+async def _clear_default(
+    session: AsyncSession, user_id: uuid.UUID, *, except_id: Optional[uuid.UUID] = None
+) -> None:
+    stmt = update(LlmConnection).where(
+        LlmConnection.user_id == user_id, LlmConnection.is_default.is_(True)
+    )
     if except_id is not None:
         stmt = stmt.where(LlmConnection.id != except_id)
     await session.execute(stmt.values(is_default=False))
@@ -169,14 +192,21 @@ async def test_connection(conn: LlmConnection) -> dict[str, Any]:
                 try:
                     payload = r.json()
                 except Exception:
-                    return {"ok": False, "detail": f"reachable but {base}/models did not return JSON — wrong path?"}
+                    return {
+                        "ok": False,
+                        "detail": f"reachable but {base}/models did not return JSON — wrong path?",
+                    }
                 models = [m.get("id") for m in (payload.get("data") or [])][:50]
                 if not models and conn.kind == "openai_compatible":
                     return {
                         "ok": False,
                         "detail": f"reachable but {base}/models returned no models — check the base URL",
                     }
-            return {"ok": True, "detail": f"reachable at {base} ({len(models)} models)", "models": models}
+            return {
+                "ok": True,
+                "detail": f"reachable at {base} ({len(models)} models)",
+                "models": models,
+            }
 
         if conn.kind == "anthropic":
             base = (conn.base_url or "https://api.anthropic.com/v1").rstrip("/")

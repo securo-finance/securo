@@ -2,6 +2,7 @@
 
 Tests: GET /api/setup/status, POST /api/setup/create-admin.
 """
+
 import pytest
 from httpx import AsyncClient
 

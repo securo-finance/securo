@@ -12,7 +12,9 @@ from app.core.database import Base
 class FxRate(Base):
     __tablename__ = "fx_rates"
     __table_args__ = (
-        UniqueConstraint("base_currency", "quote_currency", "date", name="uq_fx_rate_base_quote_date"),
+        UniqueConstraint(
+            "base_currency", "quote_currency", "date", name="uq_fx_rate_base_quote_date"
+        ),
         Index("ix_fx_rates_quote_date", "quote_currency", "date"),
     )
 
@@ -22,4 +24,6 @@ class FxRate(Base):
     date: Mapped[date] = mapped_column(Date)
     rate: Mapped[Decimal] = mapped_column(Numeric(precision=20, scale=10))
     source: Mapped[str] = mapped_column(String(50))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )

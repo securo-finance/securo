@@ -31,9 +31,7 @@ async def test_list_providers(client: AsyncClient, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_list_connections(
-    client: AsyncClient, auth_headers, test_connection: BankConnection
-):
+async def test_list_connections(client: AsyncClient, auth_headers, test_connection: BankConnection):
     response = await client.get("/api/connections", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
@@ -66,9 +64,7 @@ async def test_oauth_url_unknown_provider(client: AsyncClient, auth_headers):
 async def test_delete_connection(
     client: AsyncClient, auth_headers, test_connection: BankConnection
 ):
-    response = await client.delete(
-        f"/api/connections/{test_connection.id}", headers=auth_headers
-    )
+    response = await client.delete(f"/api/connections/{test_connection.id}", headers=auth_headers)
     assert response.status_code == 204
 
     # Verify it's gone
@@ -111,7 +107,8 @@ async def test_detect_transfers(client: AsyncClient, auth_headers):
 @pytest.mark.asyncio
 async def test_unlink_transfer_not_found(client: AsyncClient, auth_headers):
     resp = await client.delete(
-        f"/api/connections/transfers/{uuid.uuid4()}", headers=auth_headers,
+        f"/api/connections/transfers/{uuid.uuid4()}",
+        headers=auth_headers,
     )
     assert resp.status_code == 404
 
@@ -193,7 +190,8 @@ async def test_oauth_callback_failure(client: AsyncClient, auth_headers):
 @pytest.mark.asyncio
 async def test_sync_connection_not_found(client: AsyncClient, auth_headers):
     resp = await client.post(
-        f"/api/connections/{uuid.uuid4()}/sync", headers=auth_headers,
+        f"/api/connections/{uuid.uuid4()}/sync",
+        headers=auth_headers,
     )
     assert resp.status_code == 404
 
@@ -201,26 +199,35 @@ async def test_sync_connection_not_found(client: AsyncClient, auth_headers):
 @pytest.mark.asyncio
 async def test_reconnect_token_not_found(client: AsyncClient, auth_headers):
     resp = await client.post(
-        f"/api/connections/{uuid.uuid4()}/reconnect-token", headers=auth_headers,
+        f"/api/connections/{uuid.uuid4()}/reconnect-token",
+        headers=auth_headers,
     )
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_reconnect_token_no_item_id(
-    client: AsyncClient, auth_headers, session: AsyncSession, test_user: User,
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
 ):
     conn = BankConnection(
-        id=uuid.uuid4(), user_id=test_user.id, provider="test",
-        external_id="ext-recon-no-item", institution_name="NoItem Bank",
-        credentials={}, status="active",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        provider="test",
+        external_id="ext-recon-no-item",
+        institution_name="NoItem Bank",
+        credentials={},
+        status="active",
         last_sync_at=datetime.now(timezone.utc),
         created_at=datetime.now(timezone.utc),
     )
     session.add(conn)
     await session.commit()
     resp = await client.post(
-        f"/api/connections/{conn.id}/reconnect-token", headers=auth_headers,
+        f"/api/connections/{conn.id}/reconnect-token",
+        headers=auth_headers,
     )
     assert resp.status_code == 400
     assert "item_id" in resp.json()["detail"]
@@ -228,12 +235,19 @@ async def test_reconnect_token_no_item_id(
 
 @pytest.mark.asyncio
 async def test_reconnect_token_with_item_id(
-    client: AsyncClient, auth_headers, session: AsyncSession, test_user: User,
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
 ):
     conn = BankConnection(
-        id=uuid.uuid4(), user_id=test_user.id, provider="test",
-        external_id="ext-recon-ok", institution_name="Recon Bank",
-        credentials={"item_id": "item-abc-123"}, status="error",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        provider="test",
+        external_id="ext-recon-ok",
+        institution_name="Recon Bank",
+        credentials={"item_id": "item-abc-123"},
+        status="error",
         last_sync_at=datetime.now(timezone.utc),
         created_at=datetime.now(timezone.utc),
     )
@@ -245,7 +259,8 @@ async def test_reconnect_token_with_item_id(
     with patch("app.services.connection_service.get_provider") as mock_gp:
         mock_gp.return_value.create_connect_token = AsyncMock(return_value=mock_token)
         resp = await client.post(
-            f"/api/connections/{conn.id}/reconnect-token", headers=auth_headers,
+            f"/api/connections/{conn.id}/reconnect-token",
+            headers=auth_headers,
         )
         assert resp.status_code == 200
         assert resp.json()["access_token"] == "recon-token"
@@ -253,12 +268,20 @@ async def test_reconnect_token_with_item_id(
 
 @pytest.mark.asyncio
 async def test_update_settings_success(
-    client: AsyncClient, auth_headers, session: AsyncSession, test_user: User,
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
 ):
     conn = BankConnection(
-        id=uuid.uuid4(), user_id=test_user.id, provider="test",
-        external_id="ext-settings-1", institution_name="Settings Bank",
-        credentials={}, status="active", settings={"payee_source": "auto"},
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        provider="test",
+        external_id="ext-settings-1",
+        institution_name="Settings Bank",
+        credentials={},
+        status="active",
+        settings={"payee_source": "auto"},
         last_sync_at=datetime.now(timezone.utc),
         created_at=datetime.now(timezone.utc),
     )

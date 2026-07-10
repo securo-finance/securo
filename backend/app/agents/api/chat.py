@@ -5,6 +5,7 @@ Returns Server-Sent Events streaming text + tool-call + result events. The
 client UI renders deltas as they arrive and replaces tool-call spinners
 with summaries when results land.
 """
+
 from __future__ import annotations
 
 import json
@@ -43,7 +44,9 @@ async def chat(
 
     conv = None
     if body.conversation_id:
-        conv = await conversation_service.get_conversation(session, body.conversation_id, ctx.workspace.id)
+        conv = await conversation_service.get_conversation(
+            session, body.conversation_id, ctx.workspace.id
+        )
         if conv is None or conv.agent_id != agent_id:
             raise HTTPException(status_code=404, detail="conversation not found")
     if conv is None:
@@ -75,8 +78,12 @@ async def chat(
         except Exception as exc:  # noqa: BLE001
             yield f"event: error\ndata: {json.dumps({'error_code': 'unknown', 'error_message': str(exc)})}\n\n".encode()
 
-    return StreamingResponse(gen(), media_type="text/event-stream", headers={
-        "Cache-Control": "no-cache",
-        "X-Accel-Buffering": "no",
-        "Connection": "keep-alive",
-    })
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )

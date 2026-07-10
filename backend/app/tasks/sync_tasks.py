@@ -69,9 +69,7 @@ async def _sync_one(session_maker, connection_id: uuid.UUID, user_id: uuid.UUID)
         if workspace_id is None:
             logger.warning("Connection %s has no workspace; skipping sync", connection_id)
             return
-        await connection_service.sync_connection(
-            session, connection_id, workspace_id, user_id
-        )
+        await connection_service.sync_connection(session, connection_id, workspace_id, user_id)
 
 
 @celery_app.task(name="app.tasks.sync_tasks.sync_all_connections")

@@ -24,7 +24,12 @@ from mcp_server.registry import tool
         "properties": {
             "query": {"type": "string", "minLength": 1},
             "top_n": {"type": "integer", "minimum": 1, "maximum": 25, "default": 6},
-            "similarity_threshold": {"type": "number", "minimum": 0.0, "maximum": 1.0, "default": 0.0},
+            "similarity_threshold": {
+                "type": "number",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.0,
+            },
         },
         "required": ["query"],
         "additionalProperties": False,

@@ -61,9 +61,7 @@ async def get_group(
     # Read endpoint — visible to workspace members and to cross-workspace
     # linked members (the Splitwise case where someone is added from
     # outside this workspace).
-    group = await group_service.get_group_visible(
-        session, group_id, ctx.workspace.id, ctx.user_id
-    )
+    group = await group_service.get_group_visible(session, group_id, ctx.workspace.id, ctx.user_id)
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     return group
@@ -107,9 +105,7 @@ async def list_members(
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    members = await group_service.list_members(
-        session, group_id, ctx.workspace.id, ctx.user_id
-    )
+    members = await group_service.list_members(session, group_id, ctx.workspace.id, ctx.user_id)
     if members is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     return members
@@ -154,9 +150,7 @@ async def update_member(
     return member
 
 
-@router.delete(
-    "/{group_id}/members/{member_id}", status_code=status.HTTP_204_NO_CONTENT
-)
+@router.delete("/{group_id}/members/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_member(
     group_id: uuid.UUID,
     member_id: uuid.UUID,
@@ -164,9 +158,7 @@ async def delete_member(
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        deleted = await group_service.delete_member(
-            session, group_id, member_id, ctx.workspace.id
-        )
+        deleted = await group_service.delete_member(session, group_id, member_id, ctx.workspace.id)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     if not deleted:
@@ -240,9 +232,7 @@ async def create_settlement(
     return settlement
 
 
-@router.patch(
-    "/{group_id}/settlements/{settlement_id}", response_model=GroupSettlementRead
-)
+@router.patch("/{group_id}/settlements/{settlement_id}", response_model=GroupSettlementRead)
 async def update_settlement(
     group_id: uuid.UUID,
     settlement_id: uuid.UUID,
@@ -259,9 +249,7 @@ async def update_settlement(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if settlement is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Settlement not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Settlement not found")
     return settlement
 
 
@@ -282,6 +270,4 @@ async def delete_settlement(
     except PermissionError as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
     if not deleted:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Settlement not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Settlement not found")

@@ -1,4 +1,5 @@
 """Tests for recurring-bill ↔ transaction matching (issue #116)."""
+
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -97,8 +98,14 @@ async def test_find_bill_matches_within_window(session, test_user, test_workspac
     bill = await _make_bill(session, test_workspace, test_user, account)
     # next_occurrence = 2025-01-10; charge posts 2 days late.
     match = await rms.find_bill_for_incoming(
-        session, test_user.id, account.id, Decimal("39.90"), "BRL", "debit",
-        date(2025, 1, 12), "NETFLIX SUBSCRIPTION",
+        session,
+        test_user.id,
+        account.id,
+        Decimal("39.90"),
+        "BRL",
+        "debit",
+        date(2025, 1, 12),
+        "NETFLIX SUBSCRIPTION",
     )
     assert match is not None
     assert match.id == bill.id
@@ -109,41 +116,82 @@ async def test_find_bill_rejects_outside_window(session, test_user, test_workspa
     await _make_bill(session, test_workspace, test_user, account)
     # 10 days after the due date is well outside the monthly window.
     match = await rms.find_bill_for_incoming(
-        session, test_user.id, account.id, Decimal("39.90"), "BRL", "debit",
-        date(2025, 1, 20), "NETFLIX SUBSCRIPTION",
+        session,
+        test_user.id,
+        account.id,
+        Decimal("39.90"),
+        "BRL",
+        "debit",
+        date(2025, 1, 20),
+        "NETFLIX SUBSCRIPTION",
     )
     assert match is None
 
 
 @pytest.mark.asyncio
-async def test_find_bill_rejects_amount_and_type_mismatch(session, test_user, test_workspace, account):
+async def test_find_bill_rejects_amount_and_type_mismatch(
+    session, test_user, test_workspace, account
+):
     await _make_bill(session, test_workspace, test_user, account)
-    assert await rms.find_bill_for_incoming(
-        session, test_user.id, account.id, Decimal("41.00"), "BRL", "debit",
-        date(2025, 1, 10), "NETFLIX SUBSCRIPTION",
-    ) is None
-    assert await rms.find_bill_for_incoming(
-        session, test_user.id, account.id, Decimal("39.90"), "BRL", "credit",
-        date(2025, 1, 10), "NETFLIX SUBSCRIPTION",
-    ) is None
+    assert (
+        await rms.find_bill_for_incoming(
+            session,
+            test_user.id,
+            account.id,
+            Decimal("41.00"),
+            "BRL",
+            "debit",
+            date(2025, 1, 10),
+            "NETFLIX SUBSCRIPTION",
+        )
+        is None
+    )
+    assert (
+        await rms.find_bill_for_incoming(
+            session,
+            test_user.id,
+            account.id,
+            Decimal("39.90"),
+            "BRL",
+            "credit",
+            date(2025, 1, 10),
+            "NETFLIX SUBSCRIPTION",
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
 async def test_find_bill_rejects_currency_mismatch(session, test_user, test_workspace, account):
     # Bill is in BRL; a same-numeric charge in another currency must not match.
     await _make_bill(session, test_workspace, test_user, account, currency="BRL")
-    assert await rms.find_bill_for_incoming(
-        session, test_user.id, account.id, Decimal("39.90"), "USD", "debit",
-        date(2025, 1, 10), "NETFLIX SUBSCRIPTION",
-    ) is None
+    assert (
+        await rms.find_bill_for_incoming(
+            session,
+            test_user.id,
+            account.id,
+            Decimal("39.90"),
+            "USD",
+            "debit",
+            date(2025, 1, 10),
+            "NETFLIX SUBSCRIPTION",
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
 async def test_find_bill_rejects_low_similarity(session, test_user, test_workspace, account):
     await _make_bill(session, test_workspace, test_user, account)
     match = await rms.find_bill_for_incoming(
-        session, test_user.id, account.id, Decimal("39.90"), "BRL", "debit",
-        date(2025, 1, 10), "Amazon Prime",
+        session,
+        test_user.id,
+        account.id,
+        Decimal("39.90"),
+        "BRL",
+        "debit",
+        date(2025, 1, 10),
+        "Amazon Prime",
     )
     assert match is None
 
@@ -157,29 +205,52 @@ async def test_find_bill_rejects_low_similarity(session, test_user, test_workspa
 async def test_find_placeholder_matches_generated_row(session, test_user, test_workspace, account):
     bill = await _make_bill(session, test_workspace, test_user, account)
     placeholder = await _add_tx(
-        session, test_user, test_workspace, account,
-        date=date(2025, 1, 10), source="recurring", external_id=None,
-        recurring_transaction_id=bill.id, description="Netflix Subscription",
+        session,
+        test_user,
+        test_workspace,
+        account,
+        date=date(2025, 1, 10),
+        source="recurring",
+        external_id=None,
+        recurring_transaction_id=bill.id,
+        description="Netflix Subscription",
     )
     found = await rms.find_placeholder_for_incoming(
-        session, account.id, Decimal("39.90"), "BRL", "debit",
-        date(2025, 1, 11), "NETFLIX SUBSCRIPTION",
+        session,
+        account.id,
+        Decimal("39.90"),
+        "BRL",
+        "debit",
+        date(2025, 1, 11),
+        "NETFLIX SUBSCRIPTION",
     )
     assert found is not None and found.id == placeholder.id
 
 
 @pytest.mark.asyncio
-async def test_find_placeholder_ignores_already_linked_synced(session, test_user, test_workspace, account):
+async def test_find_placeholder_ignores_already_linked_synced(
+    session, test_user, test_workspace, account
+):
     bill = await _make_bill(session, test_workspace, test_user, account)
     # A real synced row (has external_id) is not a placeholder to merge into.
     await _add_tx(
-        session, test_user, test_workspace, account,
-        date=date(2025, 1, 10), source="sync", external_id="ext-9",
+        session,
+        test_user,
+        test_workspace,
+        account,
+        date=date(2025, 1, 10),
+        source="sync",
+        external_id="ext-9",
         recurring_transaction_id=bill.id,
     )
     found = await rms.find_placeholder_for_incoming(
-        session, account.id, Decimal("39.90"), "BRL", "debit",
-        date(2025, 1, 10), "NETFLIX SUBSCRIPTION",
+        session,
+        account.id,
+        Decimal("39.90"),
+        "BRL",
+        "debit",
+        date(2025, 1, 10),
+        "NETFLIX SUBSCRIPTION",
     )
     assert found is None
 
@@ -200,7 +271,11 @@ async def test_advance_past_moves_pointer(session, test_user, test_workspace, ac
 @pytest.mark.asyncio
 async def test_advance_past_deactivates_past_end_date(session, test_user, test_workspace, account):
     bill = await _make_bill(
-        session, test_workspace, test_user, account, end_date=date(2025, 1, 31),
+        session,
+        test_workspace,
+        test_user,
+        account,
+        end_date=date(2025, 1, 31),
     )
     rms.advance_past(bill, date(2025, 1, 10))
     assert bill.next_occurrence == date(2025, 2, 10)
@@ -208,7 +283,9 @@ async def test_advance_past_deactivates_past_end_date(session, test_user, test_w
 
 
 @pytest.mark.asyncio
-async def test_advance_past_early_charge_still_advances(session, test_user, test_workspace, account):
+async def test_advance_past_early_charge_still_advances(
+    session, test_user, test_workspace, account
+):
     """An early-posted charge (inside the before-window, before next_occurrence)
     must still advance the pointer, or generate_pending would duplicate it."""
     bill = await _make_bill(session, test_workspace, test_user, account)  # next_occ 2025-01-10
@@ -226,8 +303,13 @@ async def test_generate_pending_links_existing_real_tx(session, test_user, test_
     """A synced charge that already covers the occurrence is linked, not duplicated."""
     bill = await _make_bill(session, test_workspace, test_user, account)
     real = await _add_tx(
-        session, test_user, test_workspace, account,
-        date=date(2025, 1, 11), source="sync", external_id="bank-1",
+        session,
+        test_user,
+        test_workspace,
+        account,
+        date=date(2025, 1, 11),
+        source="sync",
+        external_id="bank-1",
     )
 
     count = await generate_pending(session, test_user.id, up_to=date(2025, 1, 20))
@@ -237,32 +319,30 @@ async def test_generate_pending_links_existing_real_tx(session, test_user, test_
     await session.refresh(real)
     assert real.recurring_transaction_id == bill.id
 
-    result = await session.execute(
-        select(Transaction).where(Transaction.account_id == account.id)
-    )
+    result = await session.execute(select(Transaction).where(Transaction.account_id == account.id))
     assert len(result.scalars().all()) == 1  # only the synced row, no duplicate
 
 
 @pytest.mark.asyncio
-async def test_generate_pending_stamps_placeholder_link(session, test_user, test_workspace, account):
+async def test_generate_pending_stamps_placeholder_link(
+    session, test_user, test_workspace, account
+):
     bill = await _make_bill(session, test_workspace, test_user, account)
     count = await generate_pending(session, test_user.id, up_to=date(2025, 1, 20))
     assert count == 1
-    result = await session.execute(
-        select(Transaction).where(Transaction.source == "recurring")
-    )
+    result = await session.execute(select(Transaction).where(Transaction.source == "recurring"))
     tx = result.scalar_one()
     assert tx.recurring_transaction_id == bill.id
 
 
 @pytest.mark.asyncio
-async def test_generate_pending_skips_auto_generate_off(session, test_user, test_workspace, account):
+async def test_generate_pending_skips_auto_generate_off(
+    session, test_user, test_workspace, account
+):
     await _make_bill(session, test_workspace, test_user, account, auto_generate=False)
     count = await generate_pending(session, test_user.id, up_to=date(2025, 6, 1))
     assert count == 0
-    result = await session.execute(
-        select(Transaction).where(Transaction.account_id == account.id)
-    )
+    result = await session.execute(select(Transaction).where(Transaction.account_id == account.id))
     assert result.scalars().all() == []
 
 
@@ -275,17 +355,20 @@ async def test_generate_pending_description_mismatch_creates_placeholder(
     the real charge is left untouched."""
     bill = await _make_bill(session, test_workspace, test_user, account)
     unrelated = await _add_tx(
-        session, test_user, test_workspace, account,
-        date=date(2025, 1, 10), source="sync", external_id="bank-x",
+        session,
+        test_user,
+        test_workspace,
+        account,
+        date=date(2025, 1, 10),
+        source="sync",
+        external_id="bank-x",
         description="Amazon Marketplace",
     )
     count = await generate_pending(session, test_user.id, up_to=date(2025, 1, 20))
     assert count == 1  # placeholder created, real charge not reused
     await session.refresh(unrelated)
     assert unrelated.recurring_transaction_id is None
-    result = await session.execute(
-        select(Transaction).where(Transaction.source == "recurring")
-    )
+    result = await session.execute(select(Transaction).where(Transaction.source == "recurring"))
     ph = result.scalar_one()
     assert ph.recurring_transaction_id == bill.id
 
@@ -293,26 +376,54 @@ async def test_generate_pending_description_mismatch_creates_placeholder(
 @pytest.mark.asyncio
 async def test_find_bill_weekly_window_boundary(session, test_user, test_workspace, account):
     await _make_bill(
-        session, test_workspace, test_user, account,
-        description="Weekly Gym", frequency="weekly", start_date=date(2025, 1, 6),
+        session,
+        test_workspace,
+        test_user,
+        account,
+        description="Weekly Gym",
+        frequency="weekly",
+        start_date=date(2025, 1, 6),
     )
     # weekly window is (2, 2): 2 days late matches, 3 days late does not.
-    assert await rms.find_bill_for_incoming(
-        session, test_user.id, account.id, Decimal("39.90"), "BRL", "debit",
-        date(2025, 1, 8), "Weekly Gym",
-    ) is not None
-    assert await rms.find_bill_for_incoming(
-        session, test_user.id, account.id, Decimal("39.90"), "BRL", "debit",
-        date(2025, 1, 9), "Weekly Gym",
-    ) is None
+    assert (
+        await rms.find_bill_for_incoming(
+            session,
+            test_user.id,
+            account.id,
+            Decimal("39.90"),
+            "BRL",
+            "debit",
+            date(2025, 1, 8),
+            "Weekly Gym",
+        )
+        is not None
+    )
+    assert (
+        await rms.find_bill_for_incoming(
+            session,
+            test_user.id,
+            account.id,
+            Decimal("39.90"),
+            "BRL",
+            "debit",
+            date(2025, 1, 9),
+            "Weekly Gym",
+        )
+        is None
+    )
 
 
 @pytest.mark.asyncio
 async def test_find_real_tx_ignores_already_linked(session, test_user, test_workspace, account):
     bill = await _make_bill(session, test_workspace, test_user, account)
     await _add_tx(
-        session, test_user, test_workspace, account,
-        date=date(2025, 1, 10), source="sync", external_id="bank-1",
+        session,
+        test_user,
+        test_workspace,
+        account,
+        date=date(2025, 1, 10),
+        source="sync",
+        external_id="bank-1",
         recurring_transaction_id=bill.id,  # already linked
     )
     found = await rms.find_real_tx_for_occurrence(session, bill, date(2025, 1, 10))
@@ -330,8 +441,13 @@ async def test_unlink_recurring_clears_link(session, test_user, test_workspace, 
 
     bill = await _make_bill(session, test_workspace, test_user, account)
     tx = await _add_tx(
-        session, test_user, test_workspace, account,
-        date=date(2025, 1, 10), source="sync", external_id="bank-1",
+        session,
+        test_user,
+        test_workspace,
+        account,
+        date=date(2025, 1, 10),
+        source="sync",
+        external_id="bank-1",
         recurring_transaction_id=bill.id,
     )
     result = await transaction_service.unlink_recurring_transaction(
@@ -348,8 +464,13 @@ async def test_unlink_recurring_noop_when_not_linked(session, test_user, test_wo
     from app.services import transaction_service
 
     tx = await _add_tx(
-        session, test_user, test_workspace, account,
-        date=date(2025, 1, 10), source="sync", external_id="bank-2",
+        session,
+        test_user,
+        test_workspace,
+        account,
+        date=date(2025, 1, 10),
+        source="sync",
+        external_id="bank-2",
     )
     result = await transaction_service.unlink_recurring_transaction(
         session, tx.id, test_workspace.id

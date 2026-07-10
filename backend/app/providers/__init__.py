@@ -68,27 +68,23 @@ def get_provider(name: str) -> BankProvider:
 
 def list_providers() -> list[dict[str, str]]:
     """Return info about all registered providers."""
-    return [
-        {"name": name, "flow_type": cls().flow_type}
-        for name, cls in _PROVIDERS.items()
-    ]
+    return [{"name": name, "flow_type": cls().flow_type} for name, cls in _PROVIDERS.items()]
 
 
 def all_known_providers() -> list[dict]:
     """Return all known providers with a configured flag."""
-    return [
-        {**p, "configured": p["name"] in _PROVIDERS}
-        for p in KNOWN_PROVIDERS
-    ]
+    return [{**p, "configured": p["name"] in _PROVIDERS} for p in KNOWN_PROVIDERS]
 
 
 def _auto_register_providers() -> None:
     """Auto-register providers when credentials are configured."""
     from app.core.config import get_settings
+
     settings = get_settings()
 
     if settings.pluggy_client_id and settings.pluggy_client_secret:
         from app.providers.pluggy import PluggyProvider
+
         register_provider("pluggy", PluggyProvider)
 
     eb_has_key = bool(
@@ -96,14 +92,17 @@ def _auto_register_providers() -> None:
     )
     if settings.enable_banking_app_id and eb_has_key:
         from app.providers.enable_banking import EnableBankingProvider
+
         register_provider("enable_banking", EnableBankingProvider)
 
     if settings.simplefin_enabled:
         from app.providers.simplefin import SimpleFinProvider
+
         register_provider("simplefin", SimpleFinProvider)
 
     if settings.fintoc_secret_key:
         from app.providers.fintoc import FintocProvider
+
         register_provider("fintoc", FintocProvider)
 
 

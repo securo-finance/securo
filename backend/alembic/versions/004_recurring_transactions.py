@@ -4,6 +4,7 @@ Revision ID: 004
 Revises: 003
 Create Date: 2026-02-25
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -20,9 +21,18 @@ def upgrade() -> None:
     op.create_table(
         "recurring_transactions",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
-        sa.Column("account_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("accounts.id"), nullable=True),
-        sa.Column("category_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("categories.id"), nullable=True),
+        sa.Column(
+            "user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
+        ),
+        sa.Column(
+            "account_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("accounts.id"), nullable=True
+        ),
+        sa.Column(
+            "category_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("categories.id"),
+            nullable=True,
+        ),
         sa.Column("description", sa.String(500), nullable=False),
         sa.Column("amount", sa.Numeric(precision=15, scale=2), nullable=False),
         sa.Column("currency", sa.String(3), nullable=False, server_default="BRL"),
@@ -34,7 +44,9 @@ def upgrade() -> None:
         sa.Column("is_active", sa.Boolean, nullable=False, server_default="true"),
         sa.Column("next_occurrence", sa.Date, nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.UniqueConstraint("user_id", "description", "frequency", "start_date", name="uq_recurring_tx"),
+        sa.UniqueConstraint(
+            "user_id", "description", "frequency", "start_date", name="uq_recurring_tx"
+        ),
     )
     op.create_index("ix_recurring_transactions_user_id", "recurring_transactions", ["user_id"])
 

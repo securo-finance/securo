@@ -12,7 +12,14 @@ from app.models.bank_connection import BankConnection
 from app.models.transaction import Transaction
 from app.models.category import Category
 from app.models.recurring_transaction import RecurringTransaction
-from app.schemas.dashboard import DashboardSummary, SpendingByCategory, MonthlyTrend, ProjectedTransaction, DailyBalance, BalanceHistory
+from app.schemas.dashboard import (
+    DashboardSummary,
+    SpendingByCategory,
+    MonthlyTrend,
+    ProjectedTransaction,
+    DailyBalance,
+    BalanceHistory,
+)
 from app.services._query_filters import (
     counts_as_user_pnl,
     owner_split_offset_by_category,
@@ -52,13 +59,10 @@ async def _get_recurring_projections(
     those accounts are projected. Empty list → no projections."""
     if account_ids is not None and len(account_ids) == 0:
         return []
-    stmt = (
-        select(RecurringTransaction)
-        .where(
-            RecurringTransaction.workspace_id == workspace_id,
-            RecurringTransaction.is_active == True,
-            RecurringTransaction.start_date < month_end,
-        )
+    stmt = select(RecurringTransaction).where(
+        RecurringTransaction.workspace_id == workspace_id,
+        RecurringTransaction.is_active == True,
+        RecurringTransaction.start_date < month_end,
     )
     if account_ids:
         stmt = stmt.where(RecurringTransaction.account_id.in_(account_ids))
@@ -77,13 +81,15 @@ async def _get_recurring_projections(
             intended_day=rec.day_of_month or rec.start_date.day,
         )
         for occ_date in occurrences:
-            projections.append({
-                "category_id": rec.category_id,
-                "amount": float(rec.amount),
-                "type": rec.type,
-                "currency": rec.currency,
-                "date": occ_date,
-            })
+            projections.append(
+                {
+                    "category_id": rec.category_id,
+                    "amount": float(rec.amount),
+                    "type": rec.type,
+                    "currency": rec.currency,
+                    "date": occ_date,
+                }
+            )
     return projections
 
 
@@ -209,11 +215,14 @@ async def get_summary(
     if filtered:
         accounts_count = len(account_ids)
     else:
-        accounts_count = await session.scalar(
-            select(func.count())
-            .select_from(Account)
-            .where(Account.workspace_id == workspace_id)
-        ) or 0
+        accounts_count = (
+            await session.scalar(
+                select(func.count())
+                .select_from(Account)
+                .where(Account.workspace_id == workspace_id)
+            )
+            or 0
+        )
 
     # Pending categorization — exclude opening_balance and transfer pairs
     pending_cat_filters = [
@@ -227,17 +236,23 @@ async def get_summary(
         Transaction.transfer_pair_id.is_(None),
         *acct_filter,
     ]
-    pending_categorization = await session.scalar(
-        select(func.count())
-        .select_from(Transaction)
-        .where(*pending_cat_filters)
-    ) or 0
+    pending_categorization = (
+        await session.scalar(
+            select(func.count()).select_from(Transaction).where(*pending_cat_filters)
+        )
+        or 0
+    )
 
-    pending_categorization_amount = abs(float(await session.scalar(
-        select(func.coalesce(func.sum(func.abs(Transaction.amount)), 0))
-        .select_from(Transaction)
-        .where(*pending_cat_filters)
-    ) or 0))
+    pending_categorization_amount = abs(
+        float(
+            await session.scalar(
+                select(func.coalesce(func.sum(func.abs(Transaction.amount)), 0))
+                .select_from(Transaction)
+                .where(*pending_cat_filters)
+            )
+            or 0
+        )
+    )
 
     # Get user's primary currency (user already loaded above for reporting mode)
     primary_currency = user.primary_currency if user else get_settings().default_currency
@@ -246,7 +261,10 @@ async def get_summary(
     # collection filter, include only assets in the collection's wallets
     # (asset_group_ids); a collection with no wallets → no assets.
     assets_value, assets_value_primary = await get_asset_values_at(
-        session, workspace_id, as_of_date=cutoff, primary_currency=primary_currency,
+        session,
+        workspace_id,
+        as_of_date=cutoff,
+        primary_currency=primary_currency,
         by_workspace=True,
         group_ids=(asset_group_ids or []) if filtered else None,
     )
@@ -258,7 +276,9 @@ async def get_summary(
     # Convert totals to primary currency
     total_balance_primary = 0.0
     for currency, amount in total_balance.items():
-        converted, _ = await convert(session, Decimal(str(amount)), currency, primary_currency, cutoff)
+        converted, _ = await convert(
+            session, Decimal(str(amount)), currency, primary_currency, cutoff
+        )
         total_balance_primary += float(converted)
 
     # Convert income/expenses to primary currency using amount_primary when available
@@ -356,16 +376,16 @@ async def get_summary(
                 )
                 monthly_income_primary += float(credit_pri)
             if in_debit:
-                debit_pri, _ = await convert(
-                    session, Decimal(str(in_debit)), cur, primary_currency
-                )
+                debit_pri, _ = await convert(session, Decimal(str(in_debit)), cur, primary_currency)
                 monthly_expenses_primary += abs(float(debit_pri))
 
     # Add recurring projections to primary totals (convert each)
     for proj in projections:
         proj_converted, _ = await convert(
-            session, Decimal(str(proj["amount"])),
-            proj["currency"], primary_currency,
+            session,
+            Decimal(str(proj["amount"])),
+            proj["currency"],
+            primary_currency,
         )
         if proj["type"] == "credit":
             monthly_income_primary += float(proj_converted)
@@ -378,9 +398,7 @@ async def get_summary(
     pending_shares_net = (
         0.0
         if filtered
-        else await _compute_pending_shares_net(
-            session, workspace_id, user_id, primary_currency
-        )
+        else await _compute_pending_shares_net(session, workspace_id, user_id, primary_currency)
     )
 
     return DashboardSummary(
@@ -461,9 +479,7 @@ async def _compute_pending_shares_net(
                 if line["member_id"] != member_id_for_group[gid]:
                     continue
                 signed = -line_amount
-            converted, _ = await convert(
-                session, Decimal(str(signed)), currency, primary_currency
-            )
+            converted, _ = await convert(session, Decimal(str(signed)), currency, primary_currency)
             total_primary += float(converted)
     return total_primary
 
@@ -526,14 +542,18 @@ async def get_spending_by_category(
 
     # Subtract non-owner shares per category — owner-side splits should
     # contribute only the owner's share, not the full amount.
-    owner_offset = {} if filtered else await owner_split_offset_by_category(
-        session,
-        user_id,
-        month_start,
-        month_end,
-        use_effective_date=accounting_mode == "accrual",
-        primary_currency=primary_currency,
-        workspace_id=workspace_id,
+    owner_offset = (
+        {}
+        if filtered
+        else await owner_split_offset_by_category(
+            session,
+            user_id,
+            month_start,
+            month_end,
+            use_effective_date=accounting_mode == "accrual",
+            primary_currency=primary_currency,
+            workspace_id=workspace_id,
+        )
     )
     for cat_uuid, offset_total in owner_offset.items():
         cat_id = str(cat_uuid) if cat_uuid else None
@@ -545,10 +565,17 @@ async def get_spending_by_category(
     # Add shared shares — the viewer's portion of group-split debits
     # they participate in but don't own. The category comes from the
     # parent transaction.
-    shared_by_cat = {} if filtered else await viewer_shared_spending_by_category(
-        session, user_id, month_start, month_end,
-        use_effective_date=accounting_mode == "accrual",
-        primary_currency=primary_currency,
+    shared_by_cat = (
+        {}
+        if filtered
+        else await viewer_shared_spending_by_category(
+            session,
+            user_id,
+            month_start,
+            month_end,
+            use_effective_date=accounting_mode == "accrual",
+            primary_currency=primary_currency,
+        )
     )
     if shared_by_cat:
         cat_meta_cache: dict[str, dict] = {}
@@ -595,25 +622,35 @@ async def get_spending_by_category(
         if cat_id and cat_id not in cat_cache:
             # Fetch category info
             cat_result = await session.execute(
-                select(Category.name, Category.icon, Category.color)
-                .where(Category.id == proj["category_id"])
+                select(Category.name, Category.icon, Category.color).where(
+                    Category.id == proj["category_id"]
+                )
             )
             cat_row = cat_result.one_or_none()
             if cat_row:
                 cat_cache[cat_id] = {"name": cat_row[0], "icon": cat_row[1], "color": cat_row[2]}
             else:
-                cat_cache[cat_id] = {"name": "Sem categoria", "icon": "circle-help", "color": "#6B7280"}
+                cat_cache[cat_id] = {
+                    "name": "Sem categoria",
+                    "icon": "circle-help",
+                    "color": "#6B7280",
+                }
 
         # Convert projection amount to primary currency
         proj_amount, _ = await convert(
-            session, Decimal(str(proj["amount"])), proj["currency"], primary_currency,
+            session,
+            Decimal(str(proj["amount"])),
+            proj["currency"],
+            primary_currency,
         )
         proj_amount_float = float(proj_amount)
 
         if cat_id in spending_map:
             spending_map[cat_id]["total"] += proj_amount_float
         else:
-            info = cat_cache.get(cat_id, {"name": "Sem categoria", "icon": "circle-help", "color": "#6B7280"})
+            info = cat_cache.get(
+                cat_id, {"name": "Sem categoria", "icon": "circle-help", "color": "#6B7280"}
+            )
             spending_map[cat_id] = {
                 "name": info["name"],
                 "icon": info["icon"],
@@ -625,14 +662,16 @@ async def get_spending_by_category(
     grand_total = sum(entry["total"] for entry in spending_map.values())
     spending = []
     for cat_id, entry in sorted(spending_map.items(), key=lambda x: x[1]["total"], reverse=True):
-        spending.append(SpendingByCategory(
-            category_id=cat_id,
-            category_name=entry["name"],
-            category_icon=entry["icon"],
-            category_color=entry["color"],
-            total=entry["total"],
-            percentage=(entry["total"] / grand_total * 100) if grand_total else 0,
-        ))
+        spending.append(
+            SpendingByCategory(
+                category_id=cat_id,
+                category_name=entry["name"],
+                category_icon=entry["icon"],
+                category_color=entry["color"],
+                total=entry["total"],
+                percentage=(entry["total"] / grand_total * 100) if grand_total else 0,
+            )
+        )
 
     return spending
 
@@ -648,7 +687,7 @@ async def get_monthly_trend(
     acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
     accounting_mode = await get_credit_card_accounting_mode(session)
     report_date = reporting_date_col(accounting_mode)
-    month_label = func.to_char(report_date, 'YYYY-MM').label('month')
+    month_label = func.to_char(report_date, "YYYY-MM").label("month")
     primary_amt = _primary_amount_expr()
     result = await session.execute(
         select(
@@ -682,22 +721,24 @@ async def get_monthly_trend(
     for month_str, income, expenses in trends_raw:
         year, mnum = month_str.split("-")
         m_start = date(int(year), int(mnum), 1)
-        m_end = (
-            date(int(year), int(mnum) + 1, 1)
-            if int(mnum) < 12
-            else date(int(year) + 1, 1, 1)
-        )
+        m_end = date(int(year), int(mnum) + 1, 1) if int(mnum) < 12 else date(int(year) + 1, 1, 1)
         if filtered:
             own_inc, own_exp, shared_inc, shared_exp = 0.0, 0.0, 0.0, 0.0
         else:
             own_inc, own_exp = await owner_split_offset_pnl(
-                session, user_id, m_start, m_end,
+                session,
+                user_id,
+                m_start,
+                m_end,
                 use_effective_date=accounting_mode == "accrual",
                 primary_currency=primary_currency,
                 workspace_id=workspace_id,
             )
             shared_inc, shared_exp = await viewer_shared_pnl(
-                session, user_id, m_start, m_end,
+                session,
+                user_id,
+                m_start,
+                m_end,
                 use_effective_date=accounting_mode == "accrual",
                 primary_currency=primary_currency,
             )
@@ -730,8 +771,7 @@ async def get_projected_transactions(
     primary_currency = user.primary_currency if user else get_settings().default_currency
 
     result = await session.execute(
-        select(RecurringTransaction)
-        .where(
+        select(RecurringTransaction).where(
             RecurringTransaction.workspace_id == workspace_id,
             RecurringTransaction.is_active == True,
             RecurringTransaction.start_date < month_end,
@@ -744,8 +784,9 @@ async def get_projected_transactions(
     cat_map: dict[uuid.UUID, tuple[str, str, str]] = {}
     if cat_ids:
         cat_result = await session.execute(
-            select(Category.id, Category.name, Category.icon, Category.color)
-            .where(Category.id.in_(cat_ids))
+            select(Category.id, Category.name, Category.icon, Category.color).where(
+                Category.id.in_(cat_ids)
+            )
         )
         for row in cat_result.all():
             cat_map[row[0]] = (row[1], row[2], row[3])
@@ -760,30 +801,39 @@ async def get_projected_transactions(
             range_end=month_end,
             intended_day=rec.day_of_month or rec.start_date.day,
         )
-        cat_name, cat_icon, cat_color = cat_map.get(rec.category_id, (None, None, None)) if rec.category_id else (None, None, None)
+        cat_name, cat_icon, cat_color = (
+            cat_map.get(rec.category_id, (None, None, None))
+            if rec.category_id
+            else (None, None, None)
+        )
 
         # Convert to primary currency at current rate (consistent with summary)
         amt_primary = None
         if rec.currency != primary_currency:
             converted, _ = await convert(
-                session, Decimal(str(rec.amount)), rec.currency, primary_currency,
+                session,
+                Decimal(str(rec.amount)),
+                rec.currency,
+                primary_currency,
             )
             amt_primary = float(converted)
 
         for occ_date in occurrences:
-            projections.append(ProjectedTransaction(
-                recurring_id=str(rec.id),
-                description=rec.description,
-                amount=float(rec.amount),
-                amount_primary=amt_primary,
-                currency=rec.currency,
-                type=rec.type,
-                date=occ_date.isoformat(),
-                category_id=str(rec.category_id) if rec.category_id else None,
-                category_name=cat_name,
-                category_icon=cat_icon,
-                category_color=cat_color,
-            ))
+            projections.append(
+                ProjectedTransaction(
+                    recurring_id=str(rec.id),
+                    description=rec.description,
+                    amount=float(rec.amount),
+                    amount_primary=amt_primary,
+                    currency=rec.currency,
+                    type=rec.type,
+                    date=occ_date.isoformat(),
+                    category_id=str(rec.category_id) if rec.category_id else None,
+                    category_name=cat_name,
+                    category_icon=cat_icon,
+                    category_color=cat_color,
+                )
+            )
 
     return projections
 
@@ -848,9 +898,7 @@ async def _get_open_accounts(
     return [row[0] for row in result.all()]
 
 
-async def _account_balance_at(
-    session: AsyncSession, account: Account, cutoff: date
-) -> float:
+async def _account_balance_at(session: AsyncSession, account: Account, cutoff: date) -> float:
     """Get balance for a single account at a specific date.
 
     For bank-connected accounts, backtrack from the provider's current balance
@@ -865,8 +913,7 @@ async def _account_balance_at(
         # Subtract activity after cutoff to get the balance AT cutoff
         # Exclude ignored transactions from balance calculation
         delta_after = await session.scalar(
-            select(func.coalesce(func.sum(_signed_balance_expr(account.currency)), 0))
-            .where(
+            select(func.coalesce(func.sum(_signed_balance_expr(account.currency)), 0)).where(
                 Transaction.account_id == account.id,
                 Transaction.date > cutoff,
                 Transaction.is_ignored == False,
@@ -877,8 +924,7 @@ async def _account_balance_at(
         # Manual: sum signed transactions up to cutoff
         # Exclude ignored transactions from balance calculation
         result = await session.scalar(
-            select(func.coalesce(func.sum(_signed_balance_expr(account.currency)), 0))
-            .where(
+            select(func.coalesce(func.sum(_signed_balance_expr(account.currency)), 0)).where(
                 Transaction.account_id == account.id,
                 Transaction.date <= cutoff,
                 Transaction.is_ignored == False,
@@ -888,7 +934,9 @@ async def _account_balance_at(
 
 
 async def _total_balance_by_currency(
-    session: AsyncSession, workspace_id: uuid.UUID, cutoff: date,
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    cutoff: date,
     account_ids: Optional[list[uuid.UUID]] = None,
 ) -> dict[str, float]:
     """Get total balance across all open accounts at a date, grouped by currency."""
@@ -901,8 +949,11 @@ async def _total_balance_by_currency(
 
 
 async def _balance_at(
-    session: AsyncSession, workspace_id: uuid.UUID, cutoff: date,
-    *, primary_currency_hint: Optional[str] = None,
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    cutoff: date,
+    *,
+    primary_currency_hint: Optional[str] = None,
     account_ids: Optional[list[uuid.UUID]] = None,
 ) -> float:
     """Get total balance across all open accounts at a specific date, converted to primary currency.
@@ -965,7 +1016,7 @@ async def _daily_deltas(
                 Transaction.category_id.is_(None),
                 Category.is_ignored == False,
             ),
-            *( [Transaction.account_id.in_(account_ids)] if account_ids is not None else [] ),
+            *([Transaction.account_id.in_(account_ids)] if account_ids is not None else []),
         )
         .group_by("day", Account.currency)
     )
@@ -1019,22 +1070,36 @@ async def get_balance_history(
 
     # Starting balances
     current_start = await _balance_at(
-        session, workspace_id, month_start - timedelta(days=1),
-        primary_currency_hint=primary_currency, account_ids=account_ids,
+        session,
+        workspace_id,
+        month_start - timedelta(days=1),
+        primary_currency_hint=primary_currency,
+        account_ids=account_ids,
     )
     prev_start = await _balance_at(
-        session, workspace_id, prev_month_start - timedelta(days=1),
-        primary_currency_hint=primary_currency, account_ids=account_ids,
+        session,
+        workspace_id,
+        prev_month_start - timedelta(days=1),
+        primary_currency_hint=primary_currency,
+        account_ids=account_ids,
     )
 
     # Daily deltas from real transactions
     current_deltas = await _daily_deltas(
-        session, workspace_id, month_start, month_end,
-        primary_currency_hint=primary_currency, account_ids=account_ids,
+        session,
+        workspace_id,
+        month_start,
+        month_end,
+        primary_currency_hint=primary_currency,
+        account_ids=account_ids,
     )
     prev_deltas = await _daily_deltas(
-        session, workspace_id, prev_month_start, prev_month_end,
-        primary_currency_hint=primary_currency, account_ids=account_ids,
+        session,
+        workspace_id,
+        prev_month_start,
+        prev_month_end,
+        primary_currency_hint=primary_currency,
+        account_ids=account_ids,
     )
 
     # Recurring projections for future days of current month (converted to primary currency)
@@ -1047,7 +1112,10 @@ async def get_balance_history(
         for proj in projections:
             day = proj["date"].day
             proj_converted, _ = await convert(
-                session, Decimal(str(proj["amount"])), proj["currency"], primary_currency,
+                session,
+                Decimal(str(proj["amount"])),
+                proj["currency"],
+                primary_currency,
             )
             amount = float(proj_converted)
             signed = amount if proj["type"] == "credit" else -amount
@@ -1058,10 +1126,12 @@ async def get_balance_history(
     balance = current_start
     for day in range(1, days_in_month + 1):
         balance += current_deltas.get(day, 0) + proj_deltas.get(day, 0)
-        current_daily.append(DailyBalance(
-            day=day,
-            balance=round(balance, 2) if day <= cutoff_day else None,
-        ))
+        current_daily.append(
+            DailyBalance(
+                day=day,
+                balance=round(balance, 2) if day <= cutoff_day else None,
+            )
+        )
 
     # Build previous month daily balances
     prev_daily = []

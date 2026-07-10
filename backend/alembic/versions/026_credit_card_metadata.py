@@ -15,7 +15,9 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("accounts", sa.Column("minimum_payment", sa.Numeric(precision=15, scale=2), nullable=True))
+    op.add_column(
+        "accounts", sa.Column("minimum_payment", sa.Numeric(precision=15, scale=2), nullable=True)
+    )
     op.add_column("accounts", sa.Column("card_brand", sa.String(length=50), nullable=True))
     op.add_column("accounts", sa.Column("card_level", sa.String(length=50), nullable=True))
 

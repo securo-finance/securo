@@ -64,12 +64,14 @@ async def _make_group_with_members(session, user_id, workspace_id, names):
 
 async def _read_splits(session, transaction_id):
     rows = (
-        await session.execute(
-            select(TransactionSplit).where(
-                TransactionSplit.transaction_id == transaction_id
+        (
+            await session.execute(
+                select(TransactionSplit).where(TransactionSplit.transaction_id == transaction_id)
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return list(rows)
 
 
@@ -99,9 +101,7 @@ async def test_equal_split_three_ways_assigns_residual_to_last(
 
 
 @pytest.mark.asyncio
-async def test_percent_split_residual_on_last(
-    session: AsyncSession, test_user, test_workspace
-):
+async def test_percent_split_residual_on_last(session: AsyncSession, test_user, test_workspace):
     account = await _make_account(session, test_user.id)
     tx = await _make_tx(session, test_user.id, account.id, Decimal("100.00"))
     _, members = await _make_group_with_members(
@@ -128,9 +128,7 @@ async def test_percent_split_residual_on_last(
 
 
 @pytest.mark.asyncio
-async def test_percent_must_sum_to_100(
-    session: AsyncSession, test_user, test_workspace
-):
+async def test_percent_must_sum_to_100(session: AsyncSession, test_user, test_workspace):
     account = await _make_account(session, test_user.id)
     tx = await _make_tx(session, test_user.id, account.id, Decimal("100.00"))
     _, members = await _make_group_with_members(
@@ -149,9 +147,7 @@ async def test_percent_must_sum_to_100(
 
 
 @pytest.mark.asyncio
-async def test_exact_amounts_must_sum_to_total(
-    session: AsyncSession, test_user, test_workspace
-):
+async def test_exact_amounts_must_sum_to_total(session: AsyncSession, test_user, test_workspace):
     account = await _make_account(session, test_user.id)
     tx = await _make_tx(session, test_user.id, account.id, Decimal("100.00"))
     _, members = await _make_group_with_members(
@@ -161,12 +157,8 @@ async def test_exact_amounts_must_sum_to_total(
     payload = TransactionSplitsInput(
         share_type="exact",
         splits=[
-            TransactionSplitInput(
-                group_member_id=members[0].id, share_amount=Decimal("60.00")
-            ),
-            TransactionSplitInput(
-                group_member_id=members[1].id, share_amount=Decimal("39.00")
-            ),
+            TransactionSplitInput(group_member_id=members[0].id, share_amount=Decimal("60.00")),
+            TransactionSplitInput(group_member_id=members[1].id, share_amount=Decimal("39.00")),
         ],
     )
     with pytest.raises(ValueError, match="sum to the transaction amount"):
@@ -188,12 +180,8 @@ async def test_exact_amounts_credit_transaction_uses_absolute_total(
     payload = TransactionSplitsInput(
         share_type="exact",
         splits=[
-            TransactionSplitInput(
-                group_member_id=members[0].id, share_amount=Decimal("120.00")
-            ),
-            TransactionSplitInput(
-                group_member_id=members[1].id, share_amount=Decimal("80.00")
-            ),
+            TransactionSplitInput(group_member_id=members[0].id, share_amount=Decimal("120.00")),
+            TransactionSplitInput(group_member_id=members[1].id, share_amount=Decimal("80.00")),
         ],
     )
     await split_service.replace_splits(session, tx, payload, test_user.id)
@@ -202,9 +190,7 @@ async def test_exact_amounts_credit_transaction_uses_absolute_total(
 
 
 @pytest.mark.asyncio
-async def test_replace_splits_clears_previous(
-    session: AsyncSession, test_user, test_workspace
-):
+async def test_replace_splits_clears_previous(session: AsyncSession, test_user, test_workspace):
     account = await _make_account(session, test_user.id)
     tx = await _make_tx(session, test_user.id, account.id, Decimal("60.00"))
     _, members = await _make_group_with_members(
@@ -230,12 +216,8 @@ async def test_replace_splits_clears_previous(
         TransactionSplitsInput(
             share_type="exact",
             splits=[
-                TransactionSplitInput(
-                    group_member_id=members[0].id, share_amount=Decimal("20.00")
-                ),
-                TransactionSplitInput(
-                    group_member_id=members[1].id, share_amount=Decimal("40.00")
-                ),
+                TransactionSplitInput(group_member_id=members[0].id, share_amount=Decimal("20.00")),
+                TransactionSplitInput(group_member_id=members[1].id, share_amount=Decimal("40.00")),
             ],
         ),
         test_user.id,
@@ -246,17 +228,11 @@ async def test_replace_splits_clears_previous(
 
 
 @pytest.mark.asyncio
-async def test_members_must_share_one_group(
-    session: AsyncSession, test_user, test_workspace
-):
+async def test_members_must_share_one_group(session: AsyncSession, test_user, test_workspace):
     account = await _make_account(session, test_user.id)
     tx = await _make_tx(session, test_user.id, account.id, Decimal("50.00"))
-    _, members_a = await _make_group_with_members(
-        session, test_user.id, test_workspace.id, ["A"]
-    )
-    _, members_b = await _make_group_with_members(
-        session, test_user.id, test_workspace.id, ["B"]
-    )
+    _, members_a = await _make_group_with_members(session, test_user.id, test_workspace.id, ["A"])
+    _, members_b = await _make_group_with_members(session, test_user.id, test_workspace.id, ["B"])
 
     payload = TransactionSplitsInput(
         share_type="equal",
@@ -270,14 +246,10 @@ async def test_members_must_share_one_group(
 
 
 @pytest.mark.asyncio
-async def test_members_must_belong_to_owner(
-    session: AsyncSession, test_user, test_workspace
-):
+async def test_members_must_belong_to_owner(session: AsyncSession, test_user, test_workspace):
     account = await _make_account(session, test_user.id)
     tx = await _make_tx(session, test_user.id, account.id, Decimal("50.00"))
-    _, members = await _make_group_with_members(
-        session, test_user.id, test_workspace.id, ["A"]
-    )
+    _, members = await _make_group_with_members(session, test_user.id, test_workspace.id, ["A"])
 
     other_user = uuid.uuid4()
     payload = TransactionSplitsInput(
@@ -294,9 +266,7 @@ async def test_no_duplicate_member_per_transaction(
 ):
     account = await _make_account(session, test_user.id)
     tx = await _make_tx(session, test_user.id, account.id, Decimal("50.00"))
-    _, members = await _make_group_with_members(
-        session, test_user.id, test_workspace.id, ["A"]
-    )
+    _, members = await _make_group_with_members(session, test_user.id, test_workspace.id, ["A"])
 
     payload = TransactionSplitsInput(
         share_type="equal",

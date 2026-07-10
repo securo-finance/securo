@@ -17,6 +17,7 @@ At scale=1.0 seeds:
     FX rates for EUR + BRL · 20 recurring transactions
     (date range: --start-date through today)
 """
+
 import argparse
 import asyncio
 import os
@@ -55,12 +56,36 @@ from fastapi_users.exceptions import UserAlreadyExists
 ACCOUNT_TEMPLATES = [
     {"name": "Main Checking", "type": "checking", "currency": "USD", "balance": Decimal("5000.00")},
     {"name": "Savings", "type": "savings", "currency": "USD", "balance": Decimal("25000.00")},
-    {"name": "Visa Credit", "type": "credit_card", "currency": "USD", "balance": Decimal("0.00"), "credit_limit": Decimal("10000.00")},
-    {"name": "Mastercard Platinum", "type": "credit_card", "currency": "USD", "balance": Decimal("0.00"), "credit_limit": Decimal("15000.00")},
-    {"name": "Amex Gold", "type": "credit_card", "currency": "USD", "balance": Decimal("0.00"), "credit_limit": Decimal("20000.00")},
+    {
+        "name": "Visa Credit",
+        "type": "credit_card",
+        "currency": "USD",
+        "balance": Decimal("0.00"),
+        "credit_limit": Decimal("10000.00"),
+    },
+    {
+        "name": "Mastercard Platinum",
+        "type": "credit_card",
+        "currency": "USD",
+        "balance": Decimal("0.00"),
+        "credit_limit": Decimal("15000.00"),
+    },
+    {
+        "name": "Amex Gold",
+        "type": "credit_card",
+        "currency": "USD",
+        "balance": Decimal("0.00"),
+        "credit_limit": Decimal("20000.00"),
+    },
     {"name": "Euro Account", "type": "checking", "currency": "EUR", "balance": Decimal("3000.00")},
     {"name": "BRL Account", "type": "checking", "currency": "BRL", "balance": Decimal("15000.00")},
-    {"name": "Euro Visa", "type": "credit_card", "currency": "EUR", "balance": Decimal("0.00"), "credit_limit": Decimal("8000.00")},
+    {
+        "name": "Euro Visa",
+        "type": "credit_card",
+        "currency": "EUR",
+        "balance": Decimal("0.00"),
+        "credit_limit": Decimal("8000.00"),
+    },
 ]
 
 # (name, color, icon)  — first 22 are debit, last 8 are credit
@@ -100,44 +125,205 @@ CATEGORY_TEMPLATES = [
 N_DEBIT_CATS = 22  # first N_DEBIT_CATS entries are debit categories
 
 PAYEES = [
-    "Amazon", "Walmart", "Target", "Costco", "Whole Foods", "Trader Joe's",
-    "Netflix", "Spotify", "Apple", "Google", "Microsoft", "Adobe",
-    "Shell", "BP", "Uber", "Lyft", "Delta Airlines", "United Airlines",
-    "Marriott", "Hilton", "Home Depot", "IKEA", "CVS", "Walgreens",
-    "Doctor Smith", "City Hospital", "LA Fitness", "Planet Fitness",
-    "PG&E", "Comcast", "AT&T", "Verizon", "State Farm", "Geico",
+    "Amazon",
+    "Walmart",
+    "Target",
+    "Costco",
+    "Whole Foods",
+    "Trader Joe's",
+    "Netflix",
+    "Spotify",
+    "Apple",
+    "Google",
+    "Microsoft",
+    "Adobe",
+    "Shell",
+    "BP",
+    "Uber",
+    "Lyft",
+    "Delta Airlines",
+    "United Airlines",
+    "Marriott",
+    "Hilton",
+    "Home Depot",
+    "IKEA",
+    "CVS",
+    "Walgreens",
+    "Doctor Smith",
+    "City Hospital",
+    "LA Fitness",
+    "Planet Fitness",
+    "PG&E",
+    "Comcast",
+    "AT&T",
+    "Verizon",
+    "State Farm",
+    "Geico",
 ]
 
 # Wallet groups to create. Each asset below can reference one by the "group" key.
 ASSET_GROUP_TEMPLATES = [
-    {"name": "Stock Portfolio",  "icon": "trending-up", "color": "#22c55e"},
-    {"name": "Real Estate",      "icon": "home",        "color": "#f97316"},
-    {"name": "Collectibles",     "icon": "gem",         "color": "#a855f7"},
+    {"name": "Stock Portfolio", "icon": "trending-up", "color": "#22c55e"},
+    {"name": "Real Estate", "icon": "home", "color": "#f97316"},
+    {"name": "Collectibles", "icon": "gem", "color": "#a855f7"},
 ]
 
 ASSET_TEMPLATES = [
-    {"name": "Primary Residence",   "type": "real_estate",  "currency": "USD", "purchase": Decimal("450000"), "base": Decimal("520000"), "daily_pct": Decimal("0.00110"),  "group": "Real Estate"},
-    {"name": "Investment Property", "type": "real_estate",  "currency": "USD", "purchase": Decimal("280000"), "base": Decimal("310000"), "daily_pct": Decimal("0.00082"),  "group": "Real Estate"},
-    {"name": "Tesla Model 3",       "type": "vehicle",      "currency": "USD", "purchase": Decimal("45000"),  "base": Decimal("28000"),  "daily_pct": Decimal("-0.00219")},
-    {"name": "Rolex Watch",         "type": "valuable",     "currency": "USD", "purchase": Decimal("8000"),   "base": Decimal("9500"),   "daily_pct": Decimal("0.00055"),  "group": "Collectibles"},
-    {"name": "S&P 500 Index",       "type": "investment",   "currency": "USD", "purchase": Decimal("50000"),  "base": Decimal("75000"),  "daily_pct": Decimal("0.00219"),  "group": "Stock Portfolio"},
-    {"name": "Tech Stock Portfolio","type": "investment",   "currency": "USD", "purchase": Decimal("30000"),  "base": Decimal("42000"),  "daily_pct": Decimal("0.00274"),  "group": "Stock Portfolio"},
-    {"name": "Bond Portfolio",      "type": "investment",   "currency": "USD", "purchase": Decimal("20000"),  "base": Decimal("22000"),  "daily_pct": Decimal("0.00082"),  "group": "Stock Portfolio"},
-    {"name": "Crypto Portfolio",    "type": "investment",   "currency": "USD", "purchase": Decimal("10000"),  "base": Decimal("15000"),  "daily_pct": Decimal("0.00548")},
-    {"name": "Vacation Cabin",      "type": "real_estate",  "currency": "USD", "purchase": Decimal("180000"), "base": Decimal("210000"), "daily_pct": Decimal("0.00137"),  "group": "Real Estate"},
-    {"name": "BMW 5 Series",        "type": "vehicle",      "currency": "USD", "purchase": Decimal("55000"),  "base": Decimal("35000"),  "daily_pct": Decimal("-0.00247")},
-    {"name": "Art Collection",      "type": "valuable",     "currency": "USD", "purchase": Decimal("15000"),  "base": Decimal("18000"),  "daily_pct": Decimal("0.00082"),  "group": "Collectibles"},
-    {"name": "Gold Bars",           "type": "valuable",     "currency": "USD", "purchase": Decimal("25000"),  "base": Decimal("30000"),  "daily_pct": Decimal("0.00110"),  "group": "Collectibles"},
-    {"name": "EU Real Estate",      "type": "real_estate",  "currency": "EUR", "purchase": Decimal("300000"), "base": Decimal("340000"), "daily_pct": Decimal("0.00110"),  "group": "Real Estate"},
-    {"name": "Emerging Markets ETF","type": "investment",   "currency": "USD", "purchase": Decimal("15000"),  "base": Decimal("18000"),  "daily_pct": Decimal("0.00164"),  "group": "Stock Portfolio"},
-    {"name": "Private Equity Fund", "type": "investment",   "currency": "USD", "purchase": Decimal("100000"), "base": Decimal("125000"), "daily_pct": Decimal("0.00192"),  "group": "Stock Portfolio"},
+    {
+        "name": "Primary Residence",
+        "type": "real_estate",
+        "currency": "USD",
+        "purchase": Decimal("450000"),
+        "base": Decimal("520000"),
+        "daily_pct": Decimal("0.00110"),
+        "group": "Real Estate",
+    },
+    {
+        "name": "Investment Property",
+        "type": "real_estate",
+        "currency": "USD",
+        "purchase": Decimal("280000"),
+        "base": Decimal("310000"),
+        "daily_pct": Decimal("0.00082"),
+        "group": "Real Estate",
+    },
+    {
+        "name": "Tesla Model 3",
+        "type": "vehicle",
+        "currency": "USD",
+        "purchase": Decimal("45000"),
+        "base": Decimal("28000"),
+        "daily_pct": Decimal("-0.00219"),
+    },
+    {
+        "name": "Rolex Watch",
+        "type": "valuable",
+        "currency": "USD",
+        "purchase": Decimal("8000"),
+        "base": Decimal("9500"),
+        "daily_pct": Decimal("0.00055"),
+        "group": "Collectibles",
+    },
+    {
+        "name": "S&P 500 Index",
+        "type": "investment",
+        "currency": "USD",
+        "purchase": Decimal("50000"),
+        "base": Decimal("75000"),
+        "daily_pct": Decimal("0.00219"),
+        "group": "Stock Portfolio",
+    },
+    {
+        "name": "Tech Stock Portfolio",
+        "type": "investment",
+        "currency": "USD",
+        "purchase": Decimal("30000"),
+        "base": Decimal("42000"),
+        "daily_pct": Decimal("0.00274"),
+        "group": "Stock Portfolio",
+    },
+    {
+        "name": "Bond Portfolio",
+        "type": "investment",
+        "currency": "USD",
+        "purchase": Decimal("20000"),
+        "base": Decimal("22000"),
+        "daily_pct": Decimal("0.00082"),
+        "group": "Stock Portfolio",
+    },
+    {
+        "name": "Crypto Portfolio",
+        "type": "investment",
+        "currency": "USD",
+        "purchase": Decimal("10000"),
+        "base": Decimal("15000"),
+        "daily_pct": Decimal("0.00548"),
+    },
+    {
+        "name": "Vacation Cabin",
+        "type": "real_estate",
+        "currency": "USD",
+        "purchase": Decimal("180000"),
+        "base": Decimal("210000"),
+        "daily_pct": Decimal("0.00137"),
+        "group": "Real Estate",
+    },
+    {
+        "name": "BMW 5 Series",
+        "type": "vehicle",
+        "currency": "USD",
+        "purchase": Decimal("55000"),
+        "base": Decimal("35000"),
+        "daily_pct": Decimal("-0.00247"),
+    },
+    {
+        "name": "Art Collection",
+        "type": "valuable",
+        "currency": "USD",
+        "purchase": Decimal("15000"),
+        "base": Decimal("18000"),
+        "daily_pct": Decimal("0.00082"),
+        "group": "Collectibles",
+    },
+    {
+        "name": "Gold Bars",
+        "type": "valuable",
+        "currency": "USD",
+        "purchase": Decimal("25000"),
+        "base": Decimal("30000"),
+        "daily_pct": Decimal("0.00110"),
+        "group": "Collectibles",
+    },
+    {
+        "name": "EU Real Estate",
+        "type": "real_estate",
+        "currency": "EUR",
+        "purchase": Decimal("300000"),
+        "base": Decimal("340000"),
+        "daily_pct": Decimal("0.00110"),
+        "group": "Real Estate",
+    },
+    {
+        "name": "Emerging Markets ETF",
+        "type": "investment",
+        "currency": "USD",
+        "purchase": Decimal("15000"),
+        "base": Decimal("18000"),
+        "daily_pct": Decimal("0.00164"),
+        "group": "Stock Portfolio",
+    },
+    {
+        "name": "Private Equity Fund",
+        "type": "investment",
+        "currency": "USD",
+        "purchase": Decimal("100000"),
+        "base": Decimal("125000"),
+        "daily_pct": Decimal("0.00192"),
+        "group": "Stock Portfolio",
+    },
 ]
 
 RECURRING_DESCRIPTIONS = [
-    "Netflix", "Spotify", "Rent Payment", "Gym Membership", "Car Insurance",
-    "Phone Bill", "Internet", "Electric Bill", "Water Bill", "Gas Bill",
-    "Amazon Prime", "iCloud Storage", "LinkedIn Premium", "YouTube Premium", "Adobe Creative Cloud",
-    "Mortgage", "Student Loan", "Car Payment", "Health Insurance", "Life Insurance",
+    "Netflix",
+    "Spotify",
+    "Rent Payment",
+    "Gym Membership",
+    "Car Insurance",
+    "Phone Bill",
+    "Internet",
+    "Electric Bill",
+    "Water Bill",
+    "Gas Bill",
+    "Amazon Prime",
+    "iCloud Storage",
+    "LinkedIn Premium",
+    "YouTube Premium",
+    "Adobe Creative Cloud",
+    "Mortgage",
+    "Student Loan",
+    "Car Payment",
+    "Health Insurance",
+    "Life Insurance",
 ]
 
 
@@ -145,13 +331,16 @@ RECURRING_DESCRIPTIONS = [
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_date_range(days: int) -> list[date]:
     today = date.today()
     return [today - timedelta(days=d) for d in range(days, -1, -1)]
 
 
 async def _wipe_user_data(session, user_id: uuid.UUID) -> None:
-    await session.execute(delete(RecurringTransaction).where(RecurringTransaction.user_id == user_id))
+    await session.execute(
+        delete(RecurringTransaction).where(RecurringTransaction.user_id == user_id)
+    )
     await session.execute(
         delete(AssetValue).where(
             AssetValue.asset_id.in_(select(Asset.id).where(Asset.user_id == user_id))
@@ -169,6 +358,7 @@ async def _wipe_user_data(session, user_id: uuid.UUID) -> None:
 # Main seeder
 # ---------------------------------------------------------------------------
 
+
 async def seed(
     email: str,
     password: str,
@@ -183,7 +373,6 @@ async def seed(
     today = date.today()
 
     async with async_session_maker() as session:
-
         # ── 1. User ──────────────────────────────────────────────────────────
         user = await session.scalar(select(User).where(User.email == email))
 
@@ -245,7 +434,9 @@ async def seed(
             categories.append(cat)
         await session.flush()
         debit_cats = categories[:N_DEBIT_CATS]
-        credit_cats = categories[N_DEBIT_CATS:] or debit_cats  # fallback if slice has no credit cats
+        credit_cats = (
+            categories[N_DEBIT_CATS:] or debit_cats
+        )  # fallback if slice has no credit cats
         print(f"  {len(categories)} categories")
 
         # ── 4. FX Rates ──────────────────────────────────────────────────────
@@ -254,8 +445,8 @@ async def seed(
         all_dates = _make_date_range(n_days)
 
         # rates are USD-quoted: how many of quote_currency per 1 USD
-        eur_rate = Decimal("0.9200")   # ~0.92 EUR per USD
-        brl_rate = Decimal("5.0000")   # ~5.0 BRL per USD
+        eur_rate = Decimal("0.9200")  # ~0.92 EUR per USD
+        brl_rate = Decimal("5.0000")  # ~5.0 BRL per USD
         fx_rows = []
         for d in all_dates:
             eur_rate = max(
@@ -266,10 +457,24 @@ async def seed(
                 Decimal("4.00"),
                 min(Decimal("6.50"), brl_rate + Decimal(str(round(rng.gauss(0, 0.02), 6)))),
             )
-            fx_rows.append({"base_currency": "USD", "quote_currency": "EUR", "date": d,
-                             "rate": eur_rate.quantize(Decimal("0.000001")), "source": "seed"})
-            fx_rows.append({"base_currency": "USD", "quote_currency": "BRL", "date": d,
-                             "rate": brl_rate.quantize(Decimal("0.000001")), "source": "seed"})
+            fx_rows.append(
+                {
+                    "base_currency": "USD",
+                    "quote_currency": "EUR",
+                    "date": d,
+                    "rate": eur_rate.quantize(Decimal("0.000001")),
+                    "source": "seed",
+                }
+            )
+            fx_rows.append(
+                {
+                    "base_currency": "USD",
+                    "quote_currency": "BRL",
+                    "date": d,
+                    "rate": brl_rate.quantize(Decimal("0.000001")),
+                    "source": "seed",
+                }
+            )
 
         for i in range(0, len(fx_rows), 2000):
             stmt = pg_insert(FxRate).values(fx_rows[i : i + 2000])
@@ -297,22 +502,24 @@ async def seed(
             else:
                 amount = Decimal(str(round(abs(rng.lognormvariate(6.5, 0.8)), 2)))
 
-            tx_rows.append({
-                "id": uuid.uuid4(),
-                "user_id": uid,
-                "workspace_id": wid,
-                "account_id": acc.id,
-                "category_id": cat.id,
-                "description": rng.choice(PAYEES),
-                "amount": amount,
-                "currency": acc.currency,
-                "date": tx_date,
-                "effective_date": tx_date,
-                "type": "debit" if is_debit else "credit",
-                "source": "manual",
-                "status": "posted",
-                "payee": rng.choice(PAYEES),
-            })
+            tx_rows.append(
+                {
+                    "id": uuid.uuid4(),
+                    "user_id": uid,
+                    "workspace_id": wid,
+                    "account_id": acc.id,
+                    "category_id": cat.id,
+                    "description": rng.choice(PAYEES),
+                    "amount": amount,
+                    "currency": acc.currency,
+                    "date": tx_date,
+                    "effective_date": tx_date,
+                    "type": "debit" if is_debit else "credit",
+                    "source": "manual",
+                    "status": "posted",
+                    "payee": rng.choice(PAYEES),
+                }
+            )
 
         chunk = 2000  # asyncpg limit: 32767 params / 14 cols per tx = 2340 max
         for i in range(0, len(tx_rows), chunk):
@@ -341,7 +548,9 @@ async def seed(
         print(f"  {len(asset_groups)} asset groups")
 
         # ── 7. Assets + AssetValues ──────────────────────────────────────────
-        print(f"Creating {len(ASSET_TEMPLATES[:n_assets])} assets with {n_days + 1} daily values each …")
+        print(
+            f"Creating {len(ASSET_TEMPLATES[:n_assets])} assets with {n_days + 1} daily values each …"
+        )
         asset_days = _make_date_range(n_days)
 
         for tmpl in ASSET_TEMPLATES[:n_assets]:
@@ -371,14 +580,16 @@ async def seed(
                 v = v * (1 + daily_pct)
 
             for d, v in zip(asset_days, value_sequence):
-                value_rows.append({
-                    "id": uuid.uuid4(),
-                    "asset_id": asset.id,
-                    "workspace_id": wid,
-                    "amount": v,
-                    "date": d,
-                    "source": "manual",
-                })
+                value_rows.append(
+                    {
+                        "id": uuid.uuid4(),
+                        "asset_id": asset.id,
+                        "workspace_id": wid,
+                        "amount": v,
+                        "date": d,
+                        "source": "manual",
+                    }
+                )
 
             for i in range(0, len(value_rows), 2000):
                 await session.execute(pg_insert(AssetValue).values(value_rows[i : i + 2000]))
@@ -393,21 +604,23 @@ async def seed(
         for i, desc in enumerate(RECURRING_DESCRIPTIONS[:n_rec]):
             acc = accounts[i % len(accounts)]
             cat = debit_cats[i % len(debit_cats)]
-            session.add(RecurringTransaction(
-                user_id=uid,
-                workspace_id=wid,
-                account_id=acc.id,
-                category_id=cat.id,
-                description=desc,
-                amount=Decimal(str(round(rng.uniform(10.0, 500.0), 2))),
-                currency=acc.currency,
-                type="debit",
-                frequency="monthly",
-                day_of_month=rng.randint(1, 28),
-                start_date=today - timedelta(days=365),
-                next_occurrence=today + timedelta(days=rng.randint(1, 30)),
-                is_active=True,
-            ))
+            session.add(
+                RecurringTransaction(
+                    user_id=uid,
+                    workspace_id=wid,
+                    account_id=acc.id,
+                    category_id=cat.id,
+                    description=desc,
+                    amount=Decimal(str(round(rng.uniform(10.0, 500.0), 2))),
+                    currency=acc.currency,
+                    type="debit",
+                    frequency="monthly",
+                    day_of_month=rng.randint(1, 28),
+                    start_date=today - timedelta(days=365),
+                    next_occurrence=today + timedelta(days=rng.randint(1, 30)),
+                    is_active=True,
+                )
+            )
         await session.commit()
         print(f"  {n_rec} recurring transactions")
 
@@ -418,27 +631,62 @@ async def seed(
 
 # ---------------------------------------------------------------------------
 
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Seed performance stress-test data")
-    parser.add_argument("--scale", type=float, default=1.0,
-                        help="Volume multiplier (default 1.0; 0.1 for quick smoke run)")
+    parser.add_argument(
+        "--scale",
+        type=float,
+        default=1.0,
+        help="Volume multiplier (default 1.0; 0.1 for quick smoke run)",
+    )
     parser.add_argument("--email", default="test@securo.app")
     parser.add_argument("--password", default="Securo123!")
-    parser.add_argument("--no-reset", dest="reset", action="store_false", default=True,
-                        help="Skip wiping existing seed data for this user")
-    parser.add_argument("--start-date", type=date.fromisoformat, default=date(2024, 1, 1),
-                        metavar="YYYY-MM-DD", help="Earliest date for seeded data (default: 2024-01-01)")
-    parser.add_argument("--accounts", type=int, default=len(ACCOUNT_TEMPLATES),
-                        help=f"Number of accounts to create (default: {len(ACCOUNT_TEMPLATES)}, max: {len(ACCOUNT_TEMPLATES)})")
-    parser.add_argument("--categories", type=int, default=len(CATEGORY_TEMPLATES),
-                        help=f"Number of categories to create (default: {len(CATEGORY_TEMPLATES)}, max: {len(CATEGORY_TEMPLATES)})")
-    parser.add_argument("--assets", type=int, default=len(ASSET_TEMPLATES),
-                        help=f"Number of assets to create (default: {len(ASSET_TEMPLATES)}, max: {len(ASSET_TEMPLATES)})")
+    parser.add_argument(
+        "--no-reset",
+        dest="reset",
+        action="store_false",
+        default=True,
+        help="Skip wiping existing seed data for this user",
+    )
+    parser.add_argument(
+        "--start-date",
+        type=date.fromisoformat,
+        default=date(2024, 1, 1),
+        metavar="YYYY-MM-DD",
+        help="Earliest date for seeded data (default: 2024-01-01)",
+    )
+    parser.add_argument(
+        "--accounts",
+        type=int,
+        default=len(ACCOUNT_TEMPLATES),
+        help=f"Number of accounts to create (default: {len(ACCOUNT_TEMPLATES)}, max: {len(ACCOUNT_TEMPLATES)})",
+    )
+    parser.add_argument(
+        "--categories",
+        type=int,
+        default=len(CATEGORY_TEMPLATES),
+        help=f"Number of categories to create (default: {len(CATEGORY_TEMPLATES)}, max: {len(CATEGORY_TEMPLATES)})",
+    )
+    parser.add_argument(
+        "--assets",
+        type=int,
+        default=len(ASSET_TEMPLATES),
+        help=f"Number of assets to create (default: {len(ASSET_TEMPLATES)}, max: {len(ASSET_TEMPLATES)})",
+    )
     args = parser.parse_args()
-    asyncio.run(seed(
-        args.email, args.password, args.scale, args.reset, args.start_date,
-        args.accounts, args.categories, args.assets,
-    ))
+    asyncio.run(
+        seed(
+            args.email,
+            args.password,
+            args.scale,
+            args.reset,
+            args.start_date,
+            args.accounts,
+            args.categories,
+            args.assets,
+        )
+    )
 
 
 if __name__ == "__main__":

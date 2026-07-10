@@ -52,13 +52,19 @@ async def get_payee_summary(
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        result = await payee_service.get_payee_summary(session, payee_id, ctx.workspace.id, start_date, end_date)
+        result = await payee_service.get_payee_summary(
+            session, payee_id, ctx.workspace.id, start_date, end_date
+        )
         return PayeeSummary(
             payee=PayeeRead.model_validate(result["payee"], from_attributes=True),
             total_spent=result["total_spent"],
             total_received=result["total_received"],
             transaction_count=result["transaction_count"],
-            most_common_category=CategoryRead.model_validate(result["most_common_category"], from_attributes=True) if result["most_common_category"] else None,
+            most_common_category=CategoryRead.model_validate(
+                result["most_common_category"], from_attributes=True
+            )
+            if result["most_common_category"]
+            else None,
             last_transaction_date=result["last_transaction_date"],
         )
     except ValueError as e:
@@ -111,7 +117,9 @@ async def merge_payees(
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        reassigned = await payee_service.merge_payees(session, ctx.workspace.id, data.target_id, data.source_ids)
+        reassigned = await payee_service.merge_payees(
+            session, ctx.workspace.id, data.target_id, data.source_ids
+        )
         return {"merged": len(data.source_ids), "transactions_reassigned": reassigned}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

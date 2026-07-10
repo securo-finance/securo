@@ -18,8 +18,12 @@ class KnowledgeDoc(Base):
     __tablename__ = "agent_knowledge_docs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    agent_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), index=True)
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"))
+    agent_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE")
+    )
 
     title: Mapped[str] = mapped_column(String(255))
     source: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
@@ -35,18 +39,26 @@ class KnowledgeDoc(Base):
     pinned: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
     agent: Mapped["Agent"] = relationship(back_populates="knowledge_docs")  # noqa: F821
-    chunks: Mapped[list["KnowledgeChunk"]] = relationship(back_populates="doc", cascade="all, delete-orphan")
+    chunks: Mapped[list["KnowledgeChunk"]] = relationship(
+        back_populates="doc", cascade="all, delete-orphan"
+    )
 
 
 class KnowledgeChunk(Base):
     __tablename__ = "agent_knowledge_chunks"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    doc_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("agent_knowledge_docs.id", ondelete="CASCADE"), index=True)
-    agent_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), index=True)
+    doc_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agent_knowledge_docs.id", ondelete="CASCADE"), index=True
+    )
+    agent_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), index=True
+    )
 
     ordinal: Mapped[int] = mapped_column(Integer)
     content: Mapped[str] = mapped_column(Text)
@@ -55,6 +67,4 @@ class KnowledgeChunk(Base):
 
     doc: Mapped["KnowledgeDoc"] = relationship(back_populates="chunks")
 
-    __table_args__ = (
-        Index("ix_agent_knowledge_chunks_doc_ord", "doc_id", "ordinal"),
-    )
+    __table_args__ = (Index("ix_agent_knowledge_chunks_doc_ord", "doc_id", "ordinal"),)

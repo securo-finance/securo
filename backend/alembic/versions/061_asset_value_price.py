@@ -14,6 +14,7 @@ the column and backfills it for existing market-priced value rows as
 `amount / units` (units were constant at this point, so this recovers the true
 per-share price). Manual/growth assets keep `price` NULL and use `amount`.
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -26,7 +27,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column("asset_values", sa.Column("price", sa.Numeric(precision=18, scale=6), nullable=True))
+    op.add_column(
+        "asset_values", sa.Column("price", sa.Numeric(precision=18, scale=6), nullable=True)
+    )
 
     # Backfill per-share price for market-priced holdings: price = amount / units.
     op.get_bind().execute(

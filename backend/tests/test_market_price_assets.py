@@ -146,10 +146,10 @@ async def test_create_market_price_seeds_opening_buy_at_unit_price(
     created = await asset_service.create_asset(
         session, test_workspace.id, test_user.id, data, market_provider=provider
     )
-    assert created.average_price == pytest.approx(150.0)   # cost, not the quote
+    assert created.average_price == pytest.approx(150.0)  # cost, not the quote
     assert created.total_invested == pytest.approx(1500.0)  # 10 × 150
-    assert created.current_value == pytest.approx(2000.0)   # 10 × 200 (live)
-    assert created.gain_loss == pytest.approx(500.0)        # unrealized
+    assert created.current_value == pytest.approx(2000.0)  # 10 × 200 (live)
+    assert created.gain_loss == pytest.approx(500.0)  # unrealized
     assert created.transaction_count == 1
 
 
@@ -262,9 +262,7 @@ async def test_refresh_market_price_updates_cached_price_and_upserts_today(
     assert updated is True
     assert asset.last_price == Decimal("190.000000")
 
-    values = await session.execute(
-        select(AssetValue).where(AssetValue.asset_id == asset.id)
-    )
+    values = await session.execute(select(AssetValue).where(AssetValue.asset_id == asset.id))
     all_values = list(values.scalars().all())
     todays = [v for v in all_values if v.date == date.today()]
     # Exactly one value for today — the refresh must upsert, not append.
@@ -318,9 +316,7 @@ async def test_refresh_all_falls_back_when_batch_misses_symbol(
     session: AsyncSession, test_user: User, test_workspace
 ):
     """If a symbol is missing from the batch response, per-asset path picks it up."""
-    provider = FakeMarketProvider(
-        {"AAPL": _quote("AAPL", 180.0), "MSFT": _quote("MSFT", 400.0)}
-    )
+    provider = FakeMarketProvider({"AAPL": _quote("AAPL", 180.0), "MSFT": _quote("MSFT", 400.0)})
     for ticker in ("AAPL", "MSFT"):
         await asset_service.create_asset(
             session,

@@ -135,6 +135,7 @@ class CreateCounterpartRequest(BaseModel):
     """Mark a transaction as a transfer by auto-creating its counterpart in
     another account. Used when the counterpart account is manual, so no
     matching transaction exists to link against."""
+
     to_account_id: uuid.UUID
 
 
@@ -151,6 +152,7 @@ class TransferRead(BaseModel):
 
 class TransactionImport(TransactionBase):
     """TransactionBase extended with import-only fields not exposed in read responses."""
+
     category_name: Optional[str] = None
     suggested_category_id: Optional[uuid.UUID] = None
     suggested_category_name: Optional[str] = None

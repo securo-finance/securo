@@ -26,18 +26,47 @@ from mcp_server.tools._helpers import num, parse_date, parse_uuid_list, resolve_
         "type": "object",
         "properties": {
             "metric": {"type": "string", "enum": ["sum", "count", "avg"], "default": "sum"},
-            "group_by": {"type": "string", "enum": ["category", "month", "account", "payee", "day"], "default": "category"},
+            "group_by": {
+                "type": "string",
+                "enum": ["category", "month", "account", "payee", "day"],
+                "default": "category",
+            },
             "from_date": {"type": "string", "format": "date"},
             "to_date": {"type": "string", "format": "date"},
             "account_ids": {"type": "array", "items": {"type": "string", "format": "uuid"}},
             "category_ids": {"type": "array", "items": {"type": "string", "format": "uuid"}},
-            "payee_id": {"type": "string", "format": "uuid", "description": "Restrict to a single payee — useful for 'how much did I spend at X?'"},
-            "currency": {"type": "string", "description": "Restrict to one native currency (BRL, USD, EUR, ...)"},
-            "tx_type": {"type": "string", "enum": ["expense", "income"], "description": "Filter to expenses or income only"},
-            "description_contains": {"type": "string", "description": "Case-insensitive substring match against the transaction description — use this to scope to a merchant/keyword like 'uber', 'spotify', 'amigos do bem'."},
-            "status": {"type": "string", "enum": ["posted", "pending", "all"], "default": "posted", "description": "Default 'posted' = only money that already moved. Use 'pending' for scheduled/recurring not yet settled, or 'all' to include both."},
+            "payee_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "Restrict to a single payee — useful for 'how much did I spend at X?'",
+            },
+            "currency": {
+                "type": "string",
+                "description": "Restrict to one native currency (BRL, USD, EUR, ...)",
+            },
+            "tx_type": {
+                "type": "string",
+                "enum": ["expense", "income"],
+                "description": "Filter to expenses or income only",
+            },
+            "description_contains": {
+                "type": "string",
+                "description": "Case-insensitive substring match against the transaction description — use this to scope to a merchant/keyword like 'uber', 'spotify', 'amigos do bem'.",
+            },
+            "status": {
+                "type": "string",
+                "enum": ["posted", "pending", "all"],
+                "default": "posted",
+                "description": "Default 'posted' = only money that already moved. Use 'pending' for scheduled/recurring not yet settled, or 'all' to include both.",
+            },
             "exclude_transfers": {"type": "boolean", "default": True},
-            "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 25, "description": "Max bucket rows in the result. Capped at 50."},
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 50,
+                "default": 25,
+                "description": "Max bucket rows in the result. Capped at 50.",
+            },
         },
         "additionalProperties": False,
     },
@@ -93,10 +122,11 @@ async def aggregate(
     else:  # count
         value_expr = func.count(Transaction.id)
 
-    q = (
-        select(bucket_id.label("bucket"), value_expr.label("value"), func.count(Transaction.id).label("count"))
-        .where(Transaction.workspace_id == ws_id)
-    )
+    q = select(
+        bucket_id.label("bucket"),
+        value_expr.label("value"),
+        func.count(Transaction.id).label("count"),
+    ).where(Transaction.workspace_id == ws_id)
 
     fd = parse_date(from_date)
     td = parse_date(to_date)

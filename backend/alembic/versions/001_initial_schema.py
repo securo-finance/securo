@@ -4,6 +4,7 @@ Revision ID: 001
 Revises:
 Create Date: 2026-02-25
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -33,7 +34,9 @@ def upgrade() -> None:
     op.create_table(
         "categories",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
+        sa.Column(
+            "user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
+        ),
         sa.Column("name", sa.String(100), nullable=False),
         sa.Column("icon", sa.String(10), nullable=False, server_default="❓"),
         sa.Column("color", sa.String(7), nullable=False, server_default="#6B7280"),
@@ -45,14 +48,18 @@ def upgrade() -> None:
     op.create_table(
         "bank_connections",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
+        sa.Column(
+            "user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
+        ),
         sa.Column("provider", sa.String(50), nullable=False),
         sa.Column("external_id", sa.String(255), nullable=False),
         sa.Column("institution_name", sa.String(255), nullable=False),
         sa.Column("credentials", sa.JSON(), nullable=True),
         sa.Column("status", sa.String(50), nullable=False, server_default="active"),
         sa.Column("last_sync_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
     )
     op.create_index("ix_bank_connections_user_id", "bank_connections", ["user_id"])
 
@@ -60,11 +67,18 @@ def upgrade() -> None:
     op.create_table(
         "accounts",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("connection_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("bank_connections.id"), nullable=False),
+        sa.Column(
+            "connection_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("bank_connections.id"),
+            nullable=False,
+        ),
         sa.Column("external_id", sa.String(255), nullable=False),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("type", sa.String(50), nullable=False),
-        sa.Column("balance", sa.Numeric(precision=15, scale=2), nullable=False, server_default="0.00"),
+        sa.Column(
+            "balance", sa.Numeric(precision=15, scale=2), nullable=False, server_default="0.00"
+        ),
         sa.Column("currency", sa.String(3), nullable=False, server_default="BRL"),
     )
     op.create_index("ix_accounts_connection_id", "accounts", ["connection_id"])
@@ -73,15 +87,27 @@ def upgrade() -> None:
     op.create_table(
         "transactions",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("account_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("accounts.id"), nullable=False),
-        sa.Column("category_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("categories.id"), nullable=True),
+        sa.Column(
+            "account_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("accounts.id"),
+            nullable=False,
+        ),
+        sa.Column(
+            "category_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("categories.id"),
+            nullable=True,
+        ),
         sa.Column("external_id", sa.String(255), nullable=True),
         sa.Column("description", sa.String(500), nullable=False),
         sa.Column("amount", sa.Numeric(precision=15, scale=2), nullable=False),
         sa.Column("date", sa.Date(), nullable=False),
         sa.Column("type", sa.String(10), nullable=False),
         sa.Column("source", sa.String(20), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
     )
     op.create_index("ix_transactions_account_id", "transactions", ["account_id"])
     op.create_index("ix_transactions_category_id", "transactions", ["category_id"])
@@ -91,9 +117,16 @@ def upgrade() -> None:
     op.create_table(
         "categorization_rules",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
+        sa.Column(
+            "user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
+        ),
         sa.Column("pattern", sa.String(255), nullable=False),
-        sa.Column("category_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("categories.id"), nullable=False),
+        sa.Column(
+            "category_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("categories.id"),
+            nullable=False,
+        ),
         sa.Column("priority", sa.Integer(), nullable=False, server_default="100"),
     )
     op.create_index("ix_categorization_rules_user_id", "categorization_rules", ["user_id"])

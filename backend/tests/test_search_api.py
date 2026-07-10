@@ -161,9 +161,7 @@ async def test_search_matches_goal_and_asset(
 
 
 @pytest.mark.asyncio
-async def test_search_empty_query_returns_empty(
-    client: AsyncClient, auth_headers: dict
-) -> None:
+async def test_search_empty_query_returns_empty(client: AsyncClient, auth_headers: dict) -> None:
     resp = await client.get("/api/search?q=", headers=auth_headers)
     assert resp.status_code == 200
     assert resp.json()["results"] == []

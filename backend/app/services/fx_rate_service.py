@@ -18,9 +18,7 @@ logger = logging.getLogger(__name__)
 _provider = OpenExchangeRatesProvider()
 
 
-async def sync_rates(
-    session: AsyncSession, target_date: Optional[date] = None
-) -> int:
+async def sync_rates(session: AsyncSession, target_date: Optional[date] = None) -> int:
     """Fetch rates from the provider for the given date and upsert into fx_rates.
 
     Only saves rates for currencies in `supported_currencies`.
@@ -135,19 +133,22 @@ async def get_rate(
     if rate is None:
         logger.warning(
             "No FX rate found for %s -> %s on %s, returning 1",
-            from_currency, to_currency, target_date or date.today(),
+            from_currency,
+            to_currency,
+            target_date or date.today(),
         )
         return Decimal("1")
     return rate
 
 
-async def _get_exact_date_rate(session: AsyncSession, currency: str, target: date) -> Optional[Decimal]:
+async def _get_exact_date_rate(
+    session: AsyncSession, currency: str, target: date
+) -> Optional[Decimal]:
     """Get the rate for an exact date."""
     if currency == "USD":
         return Decimal("1")
     result = await session.scalar(
-        select(FxRate.rate)
-        .where(
+        select(FxRate.rate).where(
             FxRate.base_currency == "USD",
             FxRate.quote_currency == currency,
             FxRate.date == target,
@@ -156,7 +157,9 @@ async def _get_exact_date_rate(session: AsyncSession, currency: str, target: dat
     return result
 
 
-async def _get_closest_rate(session: AsyncSession, currency: str, target: date) -> Optional[Decimal]:
+async def _get_closest_rate(
+    session: AsyncSession, currency: str, target: date
+) -> Optional[Decimal]:
     """Get the closest available rate to a target date (preferring before, then after)."""
     if currency == "USD":
         return Decimal("1")
@@ -175,6 +178,7 @@ async def _get_closest_rate(session: AsyncSession, currency: str, target: date) 
         return result
     # Try closest after target date
     from sqlalchemy import asc
+
     result = await session.scalar(
         select(FxRate.rate)
         .where(
@@ -206,9 +210,7 @@ async def convert(
     if from_currency == to_currency:
         return amount, Decimal("1")
 
-    rate = await get_rate(
-        session, from_currency, to_currency, target_date, allow_fetch=allow_fetch
-    )
+    rate = await get_rate(session, from_currency, to_currency, target_date, allow_fetch=allow_fetch)
     converted = amount * rate
     return converted.quantize(Decimal("0.01")), rate
 

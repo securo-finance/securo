@@ -5,6 +5,7 @@ Revision ID: 006
 Revises: 005
 Create Date: 2026-02-25
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -25,7 +26,9 @@ def upgrade() -> None:
     op.create_table(
         "rules",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
+        sa.Column(
+            "user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
+        ),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("conditions_op", sa.String(3), nullable=False, server_default="and"),
         sa.Column("conditions", sa.JSON(), nullable=False, server_default="[]"),
@@ -43,9 +46,16 @@ def downgrade() -> None:
     op.create_table(
         "categorization_rules",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
+        sa.Column(
+            "user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
+        ),
         sa.Column("pattern", sa.String(255), nullable=False),
-        sa.Column("category_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("categories.id"), nullable=False),
+        sa.Column(
+            "category_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("categories.id"),
+            nullable=False,
+        ),
         sa.Column("priority", sa.Integer(), nullable=False, server_default="100"),
     )
     op.drop_index("ix_rules_user_id", "rules")

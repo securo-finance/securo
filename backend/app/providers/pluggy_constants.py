@@ -10,6 +10,7 @@ Icon filenames were harvested from Pluggy's own ``/connectors`` and do NOT
 track the connector id (e.g. Nubank is connector 612 but its icon is
 ``212.svg``), which is why an explicit table is needed.
 """
+
 from typing import Optional
 
 # Public Pluggy CDN that hosts the per-bank connector icons.

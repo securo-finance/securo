@@ -8,7 +8,9 @@ from app.models.account import Account
 
 @pytest.mark.asyncio
 async def test_preview_csv_import(client: AsyncClient, auth_headers, test_account):
-    csv_content = b"data,descricao,valor\n10/02/2026,UBER TRIP,-25.50\n12/02/2026,PIX RECEBIDO,150.00\n"
+    csv_content = (
+        b"data,descricao,valor\n10/02/2026,UBER TRIP,-25.50\n12/02/2026,PIX RECEBIDO,150.00\n"
+    )
     response = await client.post(
         "/api/transactions/import/preview",
         headers=auth_headers,
@@ -31,11 +33,15 @@ async def test_preview_csv_returns_columns(client: AsyncClient, auth_headers, te
         "/api/transactions/import/preview",
         headers=auth_headers,
         files={"file": ("bank.csv", csv_content, "text/csv")},
-        data={"column_mapping": json.dumps({
-            "date": "Posted On",
-            "description": "Memo Line",
-            "amount": "Movement",
-        })},
+        data={
+            "column_mapping": json.dumps(
+                {
+                    "date": "Posted On",
+                    "description": "Memo Line",
+                    "amount": "Movement",
+                }
+            )
+        },
     )
     assert response.status_code == 200
     data = response.json()
@@ -65,11 +71,15 @@ async def test_preview_csv_with_column_mapping(client: AsyncClient, auth_headers
         "/api/transactions/import/preview",
         headers=auth_headers,
         files={"file": ("export.csv", csv_content, "text/csv")},
-        data={"column_mapping": json.dumps({
-            "date": "transaction_date",
-            "description": "details",
-            "amount": "value",
-        })},
+        data={
+            "column_mapping": json.dumps(
+                {
+                    "date": "transaction_date",
+                    "description": "details",
+                    "amount": "value",
+                }
+            )
+        },
     )
     assert ok.status_code == 200
     data = ok.json()
@@ -130,9 +140,7 @@ async def test_preview_unrecognized_csv_parse_error_is_specific(
 
 
 @pytest.mark.asyncio
-async def test_import_transactions(
-    client: AsyncClient, auth_headers, test_account: Account
-):
+async def test_import_transactions(client: AsyncClient, auth_headers, test_account: Account):
     response = await client.post(
         "/api/transactions/import",
         headers=auth_headers,
@@ -196,8 +204,18 @@ async def test_import_creates_log(client: AsyncClient, auth_headers, test_accoun
         json={
             "account_id": str(test_account.id),
             "transactions": [
-                {"description": "UBER TRIP", "amount": "25.50", "date": "2026-02-10", "type": "debit"},
-                {"description": "PIX RECEBIDO", "amount": "150.00", "date": "2026-02-15", "type": "credit"},
+                {
+                    "description": "UBER TRIP",
+                    "amount": "25.50",
+                    "date": "2026-02-10",
+                    "type": "debit",
+                },
+                {
+                    "description": "PIX RECEBIDO",
+                    "amount": "150.00",
+                    "date": "2026-02-15",
+                    "type": "credit",
+                },
             ],
             "filename": "extrato.csv",
             "detected_format": "csv",
@@ -211,12 +229,19 @@ async def test_import_creates_log(client: AsyncClient, auth_headers, test_accoun
 
 @pytest.mark.asyncio
 async def test_import_csv_with_duplicate_detection_disabled_allows_reimport(
-    client: AsyncClient, auth_headers, test_account: Account,
+    client: AsyncClient,
+    auth_headers,
+    test_account: Account,
 ):
     payload = {
         "account_id": str(test_account.id),
         "transactions": [
-            {"description": "REPEATED CSV", "amount": "10.00", "date": "2026-03-01", "type": "debit"},
+            {
+                "description": "REPEATED CSV",
+                "amount": "10.00",
+                "date": "2026-03-01",
+                "type": "debit",
+            },
         ],
         "filename": "repeated.csv",
         "detected_format": "csv",
@@ -243,7 +268,12 @@ async def test_list_import_logs(client: AsyncClient, auth_headers, test_account:
         json={
             "account_id": str(test_account.id),
             "transactions": [
-                {"description": "TEST TXN", "amount": "10.00", "date": "2026-02-20", "type": "debit"},
+                {
+                    "description": "TEST TXN",
+                    "amount": "10.00",
+                    "date": "2026-02-20",
+                    "type": "debit",
+                },
             ],
             "filename": "test.csv",
             "detected_format": "csv",
@@ -269,7 +299,12 @@ async def test_delete_import_log(client: AsyncClient, auth_headers, test_account
         json={
             "account_id": str(test_account.id),
             "transactions": [
-                {"description": "TO DELETE", "amount": "50.00", "date": "2026-02-20", "type": "debit"},
+                {
+                    "description": "TO DELETE",
+                    "amount": "50.00",
+                    "date": "2026-02-20",
+                    "type": "debit",
+                },
             ],
             "filename": "delete_me.csv",
             "detected_format": "csv",
@@ -290,7 +325,9 @@ async def test_delete_import_log(client: AsyncClient, auth_headers, test_account
 async def test_preview_returns_suggested_categories(
     client: AsyncClient, auth_headers, test_account, test_categories, test_rules
 ):
-    csv_content = b"data,descricao,valor\n10/02/2026,UBER TRIP,-25.50\n12/02/2026,UNKNOWN TX,150.00\n"
+    csv_content = (
+        b"data,descricao,valor\n10/02/2026,UBER TRIP,-25.50\n12/02/2026,UNKNOWN TX,150.00\n"
+    )
     response = await client.post(
         "/api/transactions/import/preview",
         headers=auth_headers,

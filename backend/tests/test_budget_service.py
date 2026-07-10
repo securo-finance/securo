@@ -40,7 +40,9 @@ async def test_create_budget(session: AsyncSession, test_user, test_workspace, t
 
 
 @pytest.mark.asyncio
-async def test_create_recurring_budget(session: AsyncSession, test_user, test_workspace, test_categories):
+async def test_create_recurring_budget(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
     data = BudgetCreate(
         category_id=test_categories[0].id,
         amount=Decimal("300.00"),
@@ -86,7 +88,9 @@ async def test_get_budgets_all(session: AsyncSession, test_user, test_workspace,
 
 
 @pytest.mark.asyncio
-async def test_get_budgets_with_month_filter(session: AsyncSession, test_user, test_workspace, test_categories):
+async def test_get_budgets_with_month_filter(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
     # Recurring default for Jan
     await create_budget(
         session,
@@ -177,7 +181,9 @@ async def test_get_budget_not_found(session: AsyncSession, test_user, test_works
 
 
 @pytest.mark.asyncio
-async def test_update_budget_in_place(session: AsyncSession, test_user, test_workspace, test_categories):
+async def test_update_budget_in_place(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
     budget = await create_budget(
         session,
         test_workspace.id,
@@ -266,7 +272,9 @@ async def test_delete_budget_not_found(session: AsyncSession, test_user, test_wo
 
 
 @pytest.mark.asyncio
-async def test_get_budget_vs_actual(session: AsyncSession, test_user, test_workspace, test_categories):
+async def test_get_budget_vs_actual(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
     # Need a category group for budget_vs_actual join
     group = CategoryGroup(
         id=uuid.uuid4(),
@@ -324,7 +332,9 @@ async def test_get_budget_vs_actual(session: AsyncSession, test_user, test_works
     session.add(txn)
     await session.commit()
 
-    comparisons = await get_budget_vs_actual(session, test_workspace.id, test_user.id, month=date(2025, 3, 1))
+    comparisons = await get_budget_vs_actual(
+        session, test_workspace.id, test_user.id, month=date(2025, 3, 1)
+    )
     assert len(comparisons) > 0
 
     cat0_comp = [c for c in comparisons if c.category_id == test_categories[0].id]
@@ -380,7 +390,9 @@ async def test_budget_vs_actual_excludes_transfers(
     session.add_all(txns)
     await session.commit()
 
-    comparisons = await get_budget_vs_actual(session, test_workspace.id, test_user.id, month=date(2025, 4, 1))
+    comparisons = await get_budget_vs_actual(
+        session, test_workspace.id, test_user.id, month=date(2025, 4, 1)
+    )
     cat0 = [c for c in comparisons if c.category_id == test_categories[0].id]
     if cat0:
         assert cat0[0].actual_amount == Decimal("50")
@@ -430,7 +442,9 @@ async def test_budget_vs_actual_includes_prev_month(
     session.add_all([txn_prev, txn_curr])
     await session.commit()
 
-    comparisons = await get_budget_vs_actual(session, test_workspace.id, test_user.id, month=date(2025, 3, 1))
+    comparisons = await get_budget_vs_actual(
+        session, test_workspace.id, test_user.id, month=date(2025, 3, 1)
+    )
     cat0 = [c for c in comparisons if c.category_id == test_categories[0].id]
     if cat0:
         assert cat0[0].prev_month_amount == Decimal("75")

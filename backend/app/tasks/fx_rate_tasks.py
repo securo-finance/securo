@@ -53,7 +53,10 @@ async def _restamp_recurring_fx() -> int:
             )
             for rec in result.scalars().all():
                 await stamp_primary_amount(
-                    session, user.id, rec, date_field="start_date",
+                    session,
+                    user.id,
+                    rec,
+                    date_field="start_date",
                 )
                 count += 1
         await session.commit()

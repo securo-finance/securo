@@ -13,7 +13,11 @@ from app.models.asset_group import AssetGroup
 from app.models.goal import Goal
 from app.models.user import User
 from app.schemas.goal import GoalCreate, GoalRead, GoalSummary, GoalUpdate
-from app.services.asset_service import _compute_current_value, _get_latest_value, get_asset_values_at
+from app.services.asset_service import (
+    _compute_current_value,
+    _get_latest_value,
+    get_asset_values_at,
+)
 from app.services.dashboard_service import _account_balance_at, _get_open_accounts
 from app.services.account_service import get_account_name
 from app.services.fx_rate_service import convert
@@ -42,7 +46,9 @@ async def _sum_native_totals_in_currency(
     return total
 
 
-async def _linked_name(session: AsyncSession, model: type, item_id: uuid.UUID | None) -> Optional[str]:
+async def _linked_name(
+    session: AsyncSession, model: type, item_id: uuid.UUID | None
+) -> Optional[str]:
     if not item_id:
         return None
     item = await session.get(model, item_id)
@@ -53,9 +59,7 @@ async def _linked_name(session: AsyncSession, model: type, item_id: uuid.UUID | 
     return item.name
 
 
-async def _resolve_current_amount(
-    session: AsyncSession, goal: Goal, user_id: uuid.UUID
-) -> Decimal:
+async def _resolve_current_amount(session: AsyncSession, goal: Goal, user_id: uuid.UUID) -> Decimal:
     """Resolve the current_amount based on tracking_type.
 
     Returns the amount in the goal's currency.
@@ -77,7 +81,9 @@ async def _resolve_current_amount(
             latest = await _get_latest_value(session, asset.id)
             value = _compute_current_value(asset, latest)
             if value is not None:
-                return await _convert_amount(session, Decimal(str(value)), asset.currency, goal_currency)
+                return await _convert_amount(
+                    session, Decimal(str(value)), asset.currency, goal_currency
+                )
         return goal.current_amount
     elif goal.tracking_type == "asset_group" and goal.asset_group_id:
         group = await session.get(AssetGroup, goal.asset_group_id)
@@ -158,8 +164,11 @@ def _compute_monthly_contribution(
 
 
 def _compute_on_track(
-    current: Decimal, target: Decimal, target_date: Optional[date],
-    created_at: Optional[date] = None, initial_amount: Decimal = Decimal("0"),
+    current: Decimal,
+    target: Decimal,
+    target_date: Optional[date],
+    created_at: Optional[date] = None,
+    initial_amount: Decimal = Decimal("0"),
 ) -> Optional[str]:
     if not target_date:
         return None
@@ -197,9 +206,7 @@ def _compute_on_track(
     return "behind"
 
 
-async def _enrich_goal(
-    session: AsyncSession, goal: Goal, user_id: uuid.UUID
-) -> GoalRead:
+async def _enrich_goal(session: AsyncSession, goal: Goal, user_id: uuid.UUID) -> GoalRead:
     """Enrich a goal with computed fields."""
     current = await _resolve_current_amount(session, goal, user_id)
     percentage = _compute_percentage(current, goal.target_amount)
@@ -218,7 +225,9 @@ async def _enrich_goal(
     target_primary = None
     current_primary = None
     if goal.currency != primary_currency:
-        target_primary = await _convert_amount(session, goal.target_amount, goal.currency, primary_currency)
+        target_primary = await _convert_amount(
+            session, goal.target_amount, goal.currency, primary_currency
+        )
         current_primary = await _convert_amount(session, current, goal.currency, primary_currency)
 
     return GoalRead(
@@ -257,7 +266,11 @@ async def get_goals(
     user_id: uuid.UUID,
     status: Optional[str] = None,
 ) -> list[GoalRead]:
-    query = select(Goal).where(Goal.workspace_id == workspace_id).order_by(Goal.position, Goal.created_at)
+    query = (
+        select(Goal)
+        .where(Goal.workspace_id == workspace_id)
+        .order_by(Goal.position, Goal.created_at)
+    )
     if status:
         query = query.where(Goal.status == status)
     result = await session.execute(query)
@@ -335,9 +348,7 @@ async def update_goal(
     return await _enrich_goal(session, goal, user_id)
 
 
-async def delete_goal(
-    session: AsyncSession, goal_id: uuid.UUID, workspace_id: uuid.UUID
-) -> bool:
+async def delete_goal(session: AsyncSession, goal_id: uuid.UUID, workspace_id: uuid.UUID) -> bool:
     result = await session.execute(
         select(Goal).where(Goal.id == goal_id, Goal.workspace_id == workspace_id)
     )
@@ -372,18 +383,20 @@ async def get_goal_summary(
         on_track = _compute_on_track(
             current, goal.target_amount, goal.target_date, goal_start, goal.initial_amount
         )
-        summaries.append(GoalSummary(
-            id=goal.id,
-            name=goal.name,
-            target_amount=goal.target_amount,
-            current_amount=current,
-            currency=goal.currency,
-            target_date=goal.target_date,
-            status=goal.status,
-            icon=goal.icon,
-            color=goal.color,
-            percentage=percentage,
-            monthly_contribution=monthly,
-            on_track=on_track,
-        ))
+        summaries.append(
+            GoalSummary(
+                id=goal.id,
+                name=goal.name,
+                target_amount=goal.target_amount,
+                current_amount=current,
+                currency=goal.currency,
+                target_date=goal.target_date,
+                status=goal.status,
+                icon=goal.icon,
+                color=goal.color,
+                percentage=percentage,
+                monthly_contribution=monthly,
+                on_track=on_track,
+            )
+        )
     return summaries

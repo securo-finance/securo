@@ -235,13 +235,9 @@ async def create_settlement(
 
     if not await _can_settle_from(session, group, user_id, data.from_member_id):
         # Linked members may only record payments they themselves made.
-        raise PermissionError(
-            "You can only record settlements where you are the payer"
-        )
+        raise PermissionError("You can only record settlements where you are the payer")
 
-    await _validate_members_in_group(
-        session, group_id, [data.from_member_id, data.to_member_id]
-    )
+    await _validate_members_in_group(session, group_id, [data.from_member_id, data.to_member_id])
     await _validate_transaction(session, data.transaction_id, workspace_id)
 
     payload = data.model_dump()
@@ -310,9 +306,7 @@ async def create_settlement(
             receiver_tx_id = receiver_tx.id
     payload["receiver_transaction_id"] = receiver_tx_id
 
-    settlement = GroupSettlement(
-        group_id=group_id, workspace_id=workspace_id, **payload
-    )
+    settlement = GroupSettlement(group_id=group_id, workspace_id=workspace_id, **payload)
     session.add(settlement)
     await session.commit()
     await session.refresh(settlement)

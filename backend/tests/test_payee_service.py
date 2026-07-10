@@ -67,19 +67,22 @@ async def test_create_payee_with_notes(session: AsyncSession, test_user, test_wo
 
 
 @pytest.mark.asyncio
-async def test_create_payee_duplicate_name_rejected(session: AsyncSession, test_user, test_workspace):
+async def test_create_payee_duplicate_name_rejected(
+    session: AsyncSession, test_user, test_workspace
+):
     await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="Starbucks"))
     with pytest.raises(ValueError, match="already exists"):
-        await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="starbucks"))  # case-insensitive
+        await create_payee(
+            session, test_workspace.id, test_user.id, PayeeCreate(name="starbucks")
+        )  # case-insensitive
 
 
 @pytest.mark.asyncio
 async def test_create_payee_creates_self_mapping(session: AsyncSession, test_user, test_workspace):
     payee = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="Mapped"))
     from sqlalchemy import select
-    result = await session.execute(
-        select(PayeeMapping).where(PayeeMapping.id == payee.id)
-    )
+
+    result = await session.execute(select(PayeeMapping).where(PayeeMapping.id == payee.id))
     mapping = result.scalar_one_or_none()
     assert mapping is not None
     assert mapping.target_id == payee.id
@@ -92,7 +95,9 @@ async def test_create_payee_creates_self_mapping(session: AsyncSession, test_use
 
 @pytest.mark.asyncio
 async def test_get_payee(session: AsyncSession, test_user, test_workspace):
-    created = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="Target"))
+    created = await create_payee(
+        session, test_workspace.id, test_user.id, PayeeCreate(name="Target")
+    )
     fetched = await get_payee(session, created.id, test_workspace.id)
 
     assert fetched is not None
@@ -121,18 +126,34 @@ async def test_get_payees_with_transaction_counts(session: AsyncSession, test_us
 
     # Add 2 transactions for p1, 1 for p2
     for i in range(2):
-        session.add(Transaction(
-            id=uuid.uuid4(), user_id=test_user.id, account_id=account.id,
-            description=f"Tx {i}", amount=Decimal("10"), date=date.today(),
-            type="debit", source="manual", payee_id=p1.id,
+        session.add(
+            Transaction(
+                id=uuid.uuid4(),
+                user_id=test_user.id,
+                account_id=account.id,
+                description=f"Tx {i}",
+                amount=Decimal("10"),
+                date=date.today(),
+                type="debit",
+                source="manual",
+                payee_id=p1.id,
+                created_at=datetime.now(timezone.utc),
+            )
+        )
+    session.add(
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            account_id=account.id,
+            description="Tx single",
+            amount=Decimal("5"),
+            date=date.today(),
+            type="debit",
+            source="manual",
+            payee_id=p2.id,
             created_at=datetime.now(timezone.utc),
-        ))
-    session.add(Transaction(
-        id=uuid.uuid4(), user_id=test_user.id, account_id=account.id,
-        description="Tx single", amount=Decimal("5"), date=date.today(),
-        type="debit", source="manual", payee_id=p2.id,
-        created_at=datetime.now(timezone.utc),
-    ))
+        )
+    )
     await session.commit()
 
     payees = await get_payees(session, test_workspace.id)
@@ -154,17 +175,29 @@ async def test_get_payees_ordered_by_name(session: AsyncSession, test_user, test
 
 
 @pytest.mark.asyncio
-async def test_get_payees_includes_zero_transaction_payees(session: AsyncSession, test_user, test_workspace):
+async def test_get_payees_includes_zero_transaction_payees(
+    session: AsyncSession, test_user, test_workspace
+):
     orphan = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="No Tx"))
-    active = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="Has Tx"))
+    active = await create_payee(
+        session, test_workspace.id, test_user.id, PayeeCreate(name="Has Tx")
+    )
     account = await _make_account(session, test_user)
 
-    session.add(Transaction(
-        id=uuid.uuid4(), user_id=test_user.id, account_id=account.id,
-        description="Paid", amount=Decimal("12"), date=date.today(),
-        type="debit", source="manual", payee_id=active.id,
-        created_at=datetime.now(timezone.utc),
-    ))
+    session.add(
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            account_id=account.id,
+            description="Paid",
+            amount=Decimal("12"),
+            date=date.today(),
+            type="debit",
+            source="manual",
+            payee_id=active.id,
+            created_at=datetime.now(timezone.utc),
+        )
+    )
     await session.commit()
 
     payees = await get_payees(session, test_workspace.id)
@@ -191,14 +224,20 @@ async def test_get_or_create_payee_creates_new(session: AsyncSession, test_user,
 
 
 @pytest.mark.asyncio
-async def test_get_or_create_payee_returns_existing(session: AsyncSession, test_user, test_workspace):
-    original = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="Existing"))
+async def test_get_or_create_payee_returns_existing(
+    session: AsyncSession, test_user, test_workspace
+):
+    original = await create_payee(
+        session, test_workspace.id, test_user.id, PayeeCreate(name="Existing")
+    )
     found = await get_or_create_payee(session, test_user.id, "existing")  # case-insensitive
     assert found.id == original.id
 
 
 @pytest.mark.asyncio
-async def test_get_or_create_payee_strips_whitespace(session: AsyncSession, test_user, test_workspace):
+async def test_get_or_create_payee_strips_whitespace(
+    session: AsyncSession, test_user, test_workspace
+):
     payee = await get_or_create_payee(session, test_user.id, "  Trimmed  ")
     assert payee.name == "Trimmed"
 
@@ -216,9 +255,13 @@ async def test_get_or_create_payee_empty_raises(session: AsyncSession, test_user
 
 @pytest.mark.asyncio
 async def test_update_payee(session: AsyncSession, test_user, test_workspace):
-    payee = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="Old Name"))
+    payee = await create_payee(
+        session, test_workspace.id, test_user.id, PayeeCreate(name="Old Name")
+    )
     updated = await update_payee(
-        session, payee.id, test_workspace.id,
+        session,
+        payee.id,
+        test_workspace.id,
         PayeeUpdate(name="New Name", is_favorite=True),
     )
 
@@ -230,14 +273,14 @@ async def test_update_payee(session: AsyncSession, test_user, test_workspace):
 
 @pytest.mark.asyncio
 async def test_update_payee_not_found(session: AsyncSession, test_user, test_workspace):
-    result = await update_payee(
-        session, uuid.uuid4(), test_workspace.id, PayeeUpdate(name="Nope")
-    )
+    result = await update_payee(session, uuid.uuid4(), test_workspace.id, PayeeUpdate(name="Nope"))
     assert result is None
 
 
 @pytest.mark.asyncio
-async def test_update_payee_duplicate_name_rejected(session: AsyncSession, test_user, test_workspace):
+async def test_update_payee_duplicate_name_rejected(
+    session: AsyncSession, test_user, test_workspace
+):
     await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="A"))
     b = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="B"))
 
@@ -252,7 +295,9 @@ async def test_update_payee_duplicate_name_rejected(session: AsyncSession, test_
 
 @pytest.mark.asyncio
 async def test_delete_payee(session: AsyncSession, test_user, test_workspace):
-    payee = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="ToDelete"))
+    payee = await create_payee(
+        session, test_workspace.id, test_user.id, PayeeCreate(name="ToDelete")
+    )
     assert await delete_payee(session, payee.id, test_workspace.id) is True
     assert await get_payee(session, payee.id, test_workspace.id) is None
 
@@ -263,14 +308,22 @@ async def test_delete_payee_not_found(session: AsyncSession, test_user, test_wor
 
 
 @pytest.mark.asyncio
-async def test_delete_payee_nulls_transaction_refs(session: AsyncSession, test_user, test_workspace):
+async def test_delete_payee_nulls_transaction_refs(
+    session: AsyncSession, test_user, test_workspace
+):
     payee = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="Linked"))
     account = await _make_account(session, test_user)
 
     tx = Transaction(
-        id=uuid.uuid4(), user_id=test_user.id, account_id=account.id,
-        description="Linked Tx", amount=Decimal("50"), date=date.today(),
-        type="debit", source="manual", payee_id=payee.id,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=account.id,
+        description="Linked Tx",
+        amount=Decimal("50"),
+        date=date.today(),
+        type="debit",
+        source="manual",
+        payee_id=payee.id,
         created_at=datetime.now(timezone.utc),
     )
     session.add(tx)
@@ -289,25 +342,37 @@ async def test_delete_payee_nulls_transaction_refs(session: AsyncSession, test_u
 
 @pytest.mark.asyncio
 async def test_merge_payees(session: AsyncSession, test_user, test_workspace):
-    target = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="Target"))
-    source1 = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="Source1"))
-    source2 = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="Source2"))
+    target = await create_payee(
+        session, test_workspace.id, test_user.id, PayeeCreate(name="Target")
+    )
+    source1 = await create_payee(
+        session, test_workspace.id, test_user.id, PayeeCreate(name="Source1")
+    )
+    source2 = await create_payee(
+        session, test_workspace.id, test_user.id, PayeeCreate(name="Source2")
+    )
 
     account = await _make_account(session, test_user)
 
     # Create transactions assigned to source payees
     for p in [source1, source2]:
-        session.add(Transaction(
-            id=uuid.uuid4(), user_id=test_user.id, account_id=account.id,
-            description=f"Tx for {p.name}", amount=Decimal("10"), date=date.today(),
-            type="debit", source="manual", payee_id=p.id,
-            created_at=datetime.now(timezone.utc),
-        ))
+        session.add(
+            Transaction(
+                id=uuid.uuid4(),
+                user_id=test_user.id,
+                account_id=account.id,
+                description=f"Tx for {p.name}",
+                amount=Decimal("10"),
+                date=date.today(),
+                type="debit",
+                source="manual",
+                payee_id=p.id,
+                created_at=datetime.now(timezone.utc),
+            )
+        )
     await session.commit()
 
-    reassigned = await merge_payees(
-        session, test_workspace.id, target.id, [source1.id, source2.id]
-    )
+    reassigned = await merge_payees(session, test_workspace.id, target.id, [source1.id, source2.id])
 
     assert reassigned == 2
 
@@ -321,14 +386,18 @@ async def test_merge_payees(session: AsyncSession, test_user, test_workspace):
 
 @pytest.mark.asyncio
 async def test_merge_payees_target_not_found(session: AsyncSession, test_user, test_workspace):
-    source = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="Source"))
+    source = await create_payee(
+        session, test_workspace.id, test_user.id, PayeeCreate(name="Source")
+    )
     with pytest.raises(ValueError, match="Target payee not found"):
         await merge_payees(session, test_workspace.id, uuid.uuid4(), [source.id])
 
 
 @pytest.mark.asyncio
 async def test_merge_payees_source_not_found(session: AsyncSession, test_user, test_workspace):
-    target = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="Target"))
+    target = await create_payee(
+        session, test_workspace.id, test_user.id, PayeeCreate(name="Target")
+    )
     with pytest.raises(ValueError, match="Source payee"):
         await merge_payees(session, test_workspace.id, target.id, [uuid.uuid4()])
 
@@ -340,7 +409,9 @@ async def test_merge_payees_source_not_found(session: AsyncSession, test_user, t
 
 @pytest.mark.asyncio
 async def test_get_payee_summary(session: AsyncSession, test_user, test_workspace, test_categories):
-    payee = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="Summary"))
+    payee = await create_payee(
+        session, test_workspace.id, test_user.id, PayeeCreate(name="Summary")
+    )
     account = await _make_account(session, test_user)
     cat = test_categories[0]
 
@@ -351,12 +422,21 @@ async def test_get_payee_summary(session: AsyncSession, test_user, test_workspac
         ("Buy 2", Decimal("50"), "debit"),
         ("Refund", Decimal("30"), "credit"),
     ]:
-        session.add(Transaction(
-            id=uuid.uuid4(), user_id=test_user.id, account_id=account.id,
-            description=desc, amount=amount, date=today,
-            type=typ, source="manual", payee_id=payee.id,
-            category_id=cat.id, created_at=datetime.now(timezone.utc),
-        ))
+        session.add(
+            Transaction(
+                id=uuid.uuid4(),
+                user_id=test_user.id,
+                account_id=account.id,
+                description=desc,
+                amount=amount,
+                date=today,
+                type=typ,
+                source="manual",
+                payee_id=payee.id,
+                category_id=cat.id,
+                created_at=datetime.now(timezone.utc),
+            )
+        )
     await session.commit()
 
     summary = await get_payee_summary(session, payee.id, test_workspace.id)

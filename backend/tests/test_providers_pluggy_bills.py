@@ -49,18 +49,20 @@ def _mock_httpx_client_paged(pages: list[list[dict]]) -> MagicMock:
 async def _fetch(bills: list[dict]):
     provider = PluggyProvider()
     fake_client = _mock_httpx_client(bills)
-    with patch.object(
-        PluggyProvider, "_ensure_api_key", new=AsyncMock(return_value="fake-key")
-    ), patch("app.providers.pluggy.httpx.AsyncClient", return_value=fake_client):
+    with (
+        patch.object(PluggyProvider, "_ensure_api_key", new=AsyncMock(return_value="fake-key")),
+        patch("app.providers.pluggy.httpx.AsyncClient", return_value=fake_client),
+    ):
         return await provider.get_bills({"item_id": "i"}, "acc-ext-1")
 
 
 async def _fetch_paged(pages: list[list[dict]]):
     provider = PluggyProvider()
     fake_client = _mock_httpx_client_paged(pages)
-    with patch.object(
-        PluggyProvider, "_ensure_api_key", new=AsyncMock(return_value="fake-key")
-    ), patch("app.providers.pluggy.httpx.AsyncClient", return_value=fake_client):
+    with (
+        patch.object(PluggyProvider, "_ensure_api_key", new=AsyncMock(return_value="fake-key")),
+        patch("app.providers.pluggy.httpx.AsyncClient", return_value=fake_client),
+    ):
         return await provider.get_bills({"item_id": "i"}, "acc-ext-1")
 
 
@@ -91,9 +93,7 @@ async def test_bills_parser_full_payload():
 @pytest.mark.asyncio
 async def test_bills_parser_minimal_payload_uses_defaults():
     """Optional fields default to None; currency falls back to BRL."""
-    result = await _fetch([
-        {"id": "bill-2", "dueDate": "2026-03-15", "totalAmount": 100}
-    ])
+    result = await _fetch([{"id": "bill-2", "dueDate": "2026-03-15", "totalAmount": 100}])
     bill = result[0]
     assert bill.currency == "BRL"
     assert bill.minimum_payment is None
@@ -128,10 +128,12 @@ async def test_bills_parser_preserves_provider_extras_in_raw_data():
 
 @pytest.mark.asyncio
 async def test_bills_parser_skips_missing_id():
-    result = await _fetch([
-        {"dueDate": "2026-03-15", "totalAmount": 50},
-        {"id": "bill-ok", "dueDate": "2026-04-15", "totalAmount": 50},
-    ])
+    result = await _fetch(
+        [
+            {"dueDate": "2026-03-15", "totalAmount": 50},
+            {"id": "bill-ok", "dueDate": "2026-04-15", "totalAmount": 50},
+        ]
+    )
     assert [b.external_id for b in result] == ["bill-ok"]
 
 
@@ -139,46 +141,56 @@ async def test_bills_parser_skips_missing_id():
 async def test_bills_parser_skips_empty_string_id():
     """Falsy id must be skipped, not coerced to "" — that would collide on the
     unique(account_id, external_id) constraint downstream."""
-    result = await _fetch([
-        {"id": "", "dueDate": "2026-04-15", "totalAmount": 10},
-        {"id": "bill-ok", "dueDate": "2026-04-15", "totalAmount": 50},
-    ])
+    result = await _fetch(
+        [
+            {"id": "", "dueDate": "2026-04-15", "totalAmount": 10},
+            {"id": "bill-ok", "dueDate": "2026-04-15", "totalAmount": 50},
+        ]
+    )
     assert [b.external_id for b in result] == ["bill-ok"]
 
 
 @pytest.mark.asyncio
 async def test_bills_parser_skips_missing_due_date():
-    result = await _fetch([
-        {"id": "bill-x", "totalAmount": 10},
-        {"id": "bill-ok", "dueDate": "2026-04-15", "totalAmount": 50},
-    ])
+    result = await _fetch(
+        [
+            {"id": "bill-x", "totalAmount": 10},
+            {"id": "bill-ok", "dueDate": "2026-04-15", "totalAmount": 50},
+        ]
+    )
     assert [b.external_id for b in result] == ["bill-ok"]
 
 
 @pytest.mark.asyncio
 async def test_bills_parser_skips_malformed_due_date():
-    result = await _fetch([
-        {"id": "bill-x", "dueDate": "not-a-date", "totalAmount": 10},
-        {"id": "bill-ok", "dueDate": "2026-04-15", "totalAmount": 50},
-    ])
+    result = await _fetch(
+        [
+            {"id": "bill-x", "dueDate": "not-a-date", "totalAmount": 10},
+            {"id": "bill-ok", "dueDate": "2026-04-15", "totalAmount": 50},
+        ]
+    )
     assert [b.external_id for b in result] == ["bill-ok"]
 
 
 @pytest.mark.asyncio
 async def test_bills_parser_skips_missing_total_amount():
-    result = await _fetch([
-        {"id": "bill-x", "dueDate": "2026-04-15"},
-        {"id": "bill-ok", "dueDate": "2026-04-15", "totalAmount": 50},
-    ])
+    result = await _fetch(
+        [
+            {"id": "bill-x", "dueDate": "2026-04-15"},
+            {"id": "bill-ok", "dueDate": "2026-04-15", "totalAmount": 50},
+        ]
+    )
     assert [b.external_id for b in result] == ["bill-ok"]
 
 
 @pytest.mark.asyncio
 async def test_bills_parser_skips_malformed_total_amount():
-    result = await _fetch([
-        {"id": "bill-x", "dueDate": "2026-04-15", "totalAmount": "not-a-number"},
-        {"id": "bill-ok", "dueDate": "2026-04-15", "totalAmount": 50},
-    ])
+    result = await _fetch(
+        [
+            {"id": "bill-x", "dueDate": "2026-04-15", "totalAmount": "not-a-number"},
+            {"id": "bill-ok", "dueDate": "2026-04-15", "totalAmount": 50},
+        ]
+    )
     assert [b.external_id for b in result] == ["bill-ok"]
 
 
@@ -188,25 +200,21 @@ async def test_bills_parser_skips_malformed_total_amount():
 @pytest.mark.asyncio
 async def test_bills_parser_due_date_with_time_suffix():
     """ISO datetime strings get truncated to date cleanly."""
-    result = await _fetch([
-        {"id": "bill-3", "dueDate": "2026-05-10T03:00:00.000Z", "totalAmount": 200}
-    ])
+    result = await _fetch(
+        [{"id": "bill-3", "dueDate": "2026-05-10T03:00:00.000Z", "totalAmount": 200}]
+    )
     assert result[0].due_date == date(2026, 5, 10)
 
 
 @pytest.mark.asyncio
 async def test_bills_parser_total_amount_as_string():
-    result = await _fetch([
-        {"id": "b", "dueDate": "2026-04-15", "totalAmount": "1234.56"}
-    ])
+    result = await _fetch([{"id": "b", "dueDate": "2026-04-15", "totalAmount": "1234.56"}])
     assert result[0].total_amount == Decimal("1234.56")
 
 
 @pytest.mark.asyncio
 async def test_bills_parser_total_amount_as_int():
-    result = await _fetch([
-        {"id": "b", "dueDate": "2026-04-15", "totalAmount": 100}
-    ])
+    result = await _fetch([{"id": "b", "dueDate": "2026-04-15", "totalAmount": 100}])
     assert result[0].total_amount == Decimal("100")
 
 
@@ -215,9 +223,7 @@ async def test_bills_parser_negative_total_preserves_sign():
     """Pluggy reports credit-balance bills as negative — keep as-is, not abs'd.
     A negative bill means the bank owes the user money; flipping the sign
     would silently turn a credit into a debt in any aggregation."""
-    result = await _fetch([
-        {"id": "b", "dueDate": "2026-04-15", "totalAmount": -12.50}
-    ])
+    result = await _fetch([{"id": "b", "dueDate": "2026-04-15", "totalAmount": -12.50}])
     assert result[0].total_amount == Decimal("-12.50")
 
 
@@ -225,31 +231,29 @@ async def test_bills_parser_negative_total_preserves_sign():
 async def test_bills_parser_zero_total_is_kept():
     """A R$0,00 fatura is still a valid statement (e.g. a closed cycle with
     no spend) — must not be confused with "missing totalAmount"."""
-    result = await _fetch([
-        {"id": "b", "dueDate": "2026-04-15", "totalAmount": 0}
-    ])
+    result = await _fetch([{"id": "b", "dueDate": "2026-04-15", "totalAmount": 0}])
     assert len(result) == 1
     assert result[0].total_amount == Decimal("0")
 
 
 @pytest.mark.asyncio
 async def test_bills_parser_currency_defaults_to_brl():
-    result = await _fetch([
-        {"id": "b", "dueDate": "2026-04-15", "totalAmount": 10}
-    ])
+    result = await _fetch([{"id": "b", "dueDate": "2026-04-15", "totalAmount": 10}])
     assert result[0].currency == "BRL"
 
 
 @pytest.mark.asyncio
 async def test_bills_parser_currency_explicit_overrides_default():
-    result = await _fetch([
-        {
-            "id": "b",
-            "dueDate": "2026-04-15",
-            "totalAmount": 10,
-            "totalAmountCurrencyCode": "USD",
-        }
-    ])
+    result = await _fetch(
+        [
+            {
+                "id": "b",
+                "dueDate": "2026-04-15",
+                "totalAmount": 10,
+                "totalAmountCurrencyCode": "USD",
+            }
+        ]
+    )
     assert result[0].currency == "USD"
 
 
@@ -258,36 +262,38 @@ async def test_bills_parser_id_coerced_to_string():
     """Pluggy normally returns string IDs but we coerce defensively — the
     column is String(255) and a numeric id would otherwise blow up the
     upsert with a type error."""
-    result = await _fetch([
-        {"id": 12345, "dueDate": "2026-04-15", "totalAmount": 10}
-    ])
+    result = await _fetch([{"id": 12345, "dueDate": "2026-04-15", "totalAmount": 10}])
     assert result[0].external_id == "12345"
     assert isinstance(result[0].external_id, str)
 
 
 @pytest.mark.asyncio
 async def test_bills_parser_minimum_payment_string():
-    result = await _fetch([
-        {
-            "id": "b",
-            "dueDate": "2026-04-15",
-            "totalAmount": 10,
-            "minimumPaymentAmount": "12.50",
-        }
-    ])
+    result = await _fetch(
+        [
+            {
+                "id": "b",
+                "dueDate": "2026-04-15",
+                "totalAmount": 10,
+                "minimumPaymentAmount": "12.50",
+            }
+        ]
+    )
     assert result[0].minimum_payment == Decimal("12.50")
 
 
 @pytest.mark.asyncio
 async def test_bills_parser_minimum_payment_garbage_drops_to_none():
-    result = await _fetch([
-        {
-            "id": "b",
-            "dueDate": "2026-04-15",
-            "totalAmount": 10,
-            "minimumPaymentAmount": "n/a",
-        }
-    ])
+    result = await _fetch(
+        [
+            {
+                "id": "b",
+                "dueDate": "2026-04-15",
+                "totalAmount": 10,
+                "minimumPaymentAmount": "n/a",
+            }
+        ]
+    )
     assert result[0].minimum_payment is None
 
 
@@ -316,11 +322,13 @@ async def test_bills_parser_paginates_across_multiple_pages():
 @pytest.mark.asyncio
 async def test_bills_parser_mixed_valid_and_invalid_in_same_page():
     """Bad rows in the middle of a page don't poison the good ones."""
-    result = await _fetch([
-        {"id": "ok-1", "dueDate": "2026-01-15", "totalAmount": 100},
-        {"id": "bad", "dueDate": "garbage", "totalAmount": 50},
-        {"id": "ok-2", "dueDate": "2026-02-15", "totalAmount": 200},
-    ])
+    result = await _fetch(
+        [
+            {"id": "ok-1", "dueDate": "2026-01-15", "totalAmount": 100},
+            {"id": "bad", "dueDate": "garbage", "totalAmount": 50},
+            {"id": "ok-2", "dueDate": "2026-02-15", "totalAmount": 200},
+        ]
+    )
     assert [b.external_id for b in result] == ["ok-1", "ok-2"]
 
 
@@ -347,7 +355,9 @@ async def test_default_get_bills_returns_empty_list():
         async def get_accounts(self, credentials):
             return []
 
-        async def get_transactions(self, credentials, account_external_id, since=None, payee_source="auto"):
+        async def get_transactions(
+            self, credentials, account_external_id, since=None, payee_source="auto"
+        ):
             return []
 
         async def refresh_credentials(self, credentials):

@@ -36,7 +36,9 @@ def _validate_file(filename: str, content_type: str, size: int) -> None:
     allowed = {ext.strip().lower() for ext in settings.storage_allowed_extensions.split(",")}
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     if ext not in allowed:
-        raise ValueError(f"File type '.{ext}' is not allowed. Allowed: {', '.join(sorted(allowed))}")
+        raise ValueError(
+            f"File type '.{ext}' is not allowed. Allowed: {', '.join(sorted(allowed))}"
+        )
 
 
 async def _verify_transaction_in_workspace(
@@ -155,7 +157,9 @@ async def rename_attachment(
         raise LookupError("Attachment not found")
 
     # Preserve the original extension
-    original_ext = attachment.filename.rsplit(".", 1)[-1].lower() if "." in attachment.filename else ""
+    original_ext = (
+        attachment.filename.rsplit(".", 1)[-1].lower() if "." in attachment.filename else ""
+    )
     new_ext = new_filename.rsplit(".", 1)[-1].lower() if "." in new_filename else ""
 
     if original_ext and new_ext != original_ext:
@@ -169,9 +173,7 @@ async def rename_attachment(
     return attachment
 
 
-async def cleanup_attachment_files(
-    session: AsyncSession, transaction_ids: list[uuid.UUID]
-) -> None:
+async def cleanup_attachment_files(session: AsyncSession, transaction_ids: list[uuid.UUID]) -> None:
     """Delete storage files for all attachments belonging to the given transactions."""
     if not transaction_ids:
         return

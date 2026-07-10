@@ -1,6 +1,7 @@
 """Agent + conversation CRUD via HTTP. Verifies auth, multi-tenant scoping,
 and field handling. Does not exercise the LLM (see test_agents_executor.py).
 """
+
 import uuid
 from unittest.mock import patch
 
@@ -20,8 +21,11 @@ pytestmark = pytest.mark.asyncio
 # real MCP server during HTTP tests. Returns an empty tool list.
 @pytest.fixture(autouse=True)
 def _mock_mcp_discover():
-    async def _empty_discover(self, *, user_id, workspace_id=None, conversation_id=None, agent_id=None):
+    async def _empty_discover(
+        self, *, user_id, workspace_id=None, conversation_id=None, agent_id=None
+    ):
         return []
+
     with patch("app.agents.api.agents.MCPRegistry.discover", new=_empty_discover):
         yield
 
@@ -62,6 +66,7 @@ async def other_auth_headers(client: AsyncClient, other_user: User) -> dict:
 
 # --- Info endpoints --------------------------------------------------------
 
+
 async def test_app_info_reports_agents_enabled(client: AsyncClient):
     r = await client.get("/api/info")
     assert r.status_code == 200
@@ -85,6 +90,7 @@ async def test_agents_info_exposes_mcp_external_ttl(client: AsyncClient, auth_he
 
 
 # --- External MCP tokens ---------------------------------------------------
+
 
 async def test_mcp_tokens_requires_auth(client: AsyncClient):
     """The mint endpoint must reject unauthenticated calls — otherwise any
@@ -124,6 +130,7 @@ async def test_mcp_tokens_mint_returns_external_jwt(
 
 
 # --- Agent CRUD ------------------------------------------------------------
+
 
 async def test_unauthenticated_agents_list_rejected(client: AsyncClient):
     r = await client.get("/api/agents")
@@ -165,7 +172,11 @@ async def test_create_list_get_update_delete(client: AsyncClient, auth_headers: 
     assert r.json()["id"] == aid
 
     # Update
-    r = await client.patch(f"/api/agents/{aid}", json={"description": "New desc", "temperature": 0.7}, headers=auth_headers)
+    r = await client.patch(
+        f"/api/agents/{aid}",
+        json={"description": "New desc", "temperature": 0.7},
+        headers=auth_headers,
+    )
     assert r.status_code == 200
     assert r.json()["description"] == "New desc"
     assert r.json()["temperature"] == 0.7
@@ -179,7 +190,9 @@ async def test_create_list_get_update_delete(client: AsyncClient, auth_headers: 
     assert r.status_code == 404
 
 
-async def test_multi_tenant_scoping(client: AsyncClient, auth_headers: dict, other_auth_headers: dict):
+async def test_multi_tenant_scoping(
+    client: AsyncClient, auth_headers: dict, other_auth_headers: dict
+):
     """User A's agent is invisible to user B."""
     r = await client.post("/api/agents", json={"name": "Mine"}, headers=auth_headers)
     assert r.status_code == 201
@@ -195,7 +208,9 @@ async def test_multi_tenant_scoping(client: AsyncClient, auth_headers: dict, oth
     assert r.status_code == 404
 
     # Or update.
-    r = await client.patch(f"/api/agents/{aid}", json={"name": "hijack"}, headers=other_auth_headers)
+    r = await client.patch(
+        f"/api/agents/{aid}", json={"name": "hijack"}, headers=other_auth_headers
+    )
     assert r.status_code == 404
 
     # Or delete.
@@ -210,11 +225,14 @@ async def test_create_validation_rejects_missing_name(client: AsyncClient, auth_
 
 async def test_temperature_clamp(client: AsyncClient, auth_headers: dict):
     # Pydantic schema enforces 0..2
-    r = await client.post("/api/agents", json={"name": "x", "temperature": 5.0}, headers=auth_headers)
+    r = await client.post(
+        "/api/agents", json={"name": "x", "temperature": 5.0}, headers=auth_headers
+    )
     assert r.status_code == 422
 
 
 # --- Conversations & messages ---------------------------------------------
+
 
 async def test_conversations_empty(client: AsyncClient, auth_headers: dict):
     r = await client.get("/api/agents/conversations", headers=auth_headers)
@@ -234,8 +252,12 @@ async def test_conversation_filtered_by_agent(
     session.add_all([a1, a2])
     await session.commit()
 
-    c1 = Conversation(id=uuid.uuid4(), user_id=test_user.id, agent_id=a1.id, channel="web", title="hello")
-    c2 = Conversation(id=uuid.uuid4(), user_id=test_user.id, agent_id=a2.id, channel="web", title="other")
+    c1 = Conversation(
+        id=uuid.uuid4(), user_id=test_user.id, agent_id=a1.id, channel="web", title="hello"
+    )
+    c2 = Conversation(
+        id=uuid.uuid4(), user_id=test_user.id, agent_id=a2.id, channel="web", title="other"
+    )
     session.add_all([c1, c2])
     await session.commit()
 
@@ -253,11 +275,15 @@ async def test_rename_conversation(
     from app.agents.models.conversation import Conversation
 
     agent = Agent(id=uuid.uuid4(), user_id=test_user.id, name="A")
-    conv = Conversation(id=uuid.uuid4(), user_id=test_user.id, agent_id=agent.id, channel="web", title="old")
+    conv = Conversation(
+        id=uuid.uuid4(), user_id=test_user.id, agent_id=agent.id, channel="web", title="old"
+    )
     session.add_all([agent, conv])
     await session.commit()
 
-    r = await client.patch(f"/api/agents/conversations/{conv.id}", json={"title": "renamed!"}, headers=auth_headers)
+    r = await client.patch(
+        f"/api/agents/conversations/{conv.id}", json={"title": "renamed!"}, headers=auth_headers
+    )
     assert r.status_code == 200, r.text
     assert r.json()["title"] == "renamed!"
 
@@ -272,16 +298,24 @@ async def test_rename_conversation_validates_empty(
     from app.agents.models.conversation import Conversation
 
     agent = Agent(id=uuid.uuid4(), user_id=test_user.id, name="A")
-    conv = Conversation(id=uuid.uuid4(), user_id=test_user.id, agent_id=agent.id, channel="web", title="old")
+    conv = Conversation(
+        id=uuid.uuid4(), user_id=test_user.id, agent_id=agent.id, channel="web", title="old"
+    )
     session.add_all([agent, conv])
     await session.commit()
 
-    r = await client.patch(f"/api/agents/conversations/{conv.id}", json={"title": ""}, headers=auth_headers)
+    r = await client.patch(
+        f"/api/agents/conversations/{conv.id}", json={"title": ""}, headers=auth_headers
+    )
     assert r.status_code == 422
 
 
 async def test_rename_conversation_404_other_user(
-    client: AsyncClient, auth_headers: dict, other_auth_headers: dict, session: AsyncSession, test_user: User
+    client: AsyncClient,
+    auth_headers: dict,
+    other_auth_headers: dict,
+    session: AsyncSession,
+    test_user: User,
 ):
     """auth_headers must come BEFORE other_auth_headers so test_user's
     clean_db setup runs first — otherwise it wipes the other user that
@@ -290,7 +324,9 @@ async def test_rename_conversation_404_other_user(
     from app.agents.models.conversation import Conversation
 
     agent = Agent(id=uuid.uuid4(), user_id=test_user.id, name="A")
-    conv = Conversation(id=uuid.uuid4(), user_id=test_user.id, agent_id=agent.id, channel="web", title="old")
+    conv = Conversation(
+        id=uuid.uuid4(), user_id=test_user.id, agent_id=agent.id, channel="web", title="old"
+    )
     session.add_all([agent, conv])
     await session.commit()
 
@@ -336,7 +372,9 @@ async def test_generate_title_uses_llm(
     class _Scripted(LLMProvider):
         name = "openai"
 
-        async def chat_stream(self, messages, *, model, tools=None, temperature=0.4, max_tokens=None):
+        async def chat_stream(
+            self, messages, *, model, tools=None, temperature=0.4, max_tokens=None
+        ):
             # not used for title (we call .chat() which goes through .chat_stream)
             yield  # pragma: no cover
             return  # pragma: no cover
@@ -347,15 +385,37 @@ async def test_generate_title_uses_llm(
         async def embed(self, texts, *, model):
             return []
 
-    agent = Agent(id=uuid.uuid4(), user_id=test_user.id, name="A", provider="openai", model="gpt-4o-mini")
-    conv = Conversation(id=uuid.uuid4(), user_id=test_user.id, agent_id=agent.id, channel="web", title="name three brazilian foods")
+    agent = Agent(
+        id=uuid.uuid4(), user_id=test_user.id, name="A", provider="openai", model="gpt-4o-mini"
+    )
+    conv = Conversation(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        agent_id=agent.id,
+        channel="web",
+        title="name three brazilian foods",
+    )
     session.add_all([agent, conv])
     await session.commit()
 
-    session.add_all([
-        Message(id=uuid.uuid4(), conversation_id=conv.id, ordinal=1, role="user", content="name three brazilian foods"),
-        Message(id=uuid.uuid4(), conversation_id=conv.id, ordinal=2, role="assistant", content="Feijoada, Coxinha, Pão de Queijo"),
-    ])
+    session.add_all(
+        [
+            Message(
+                id=uuid.uuid4(),
+                conversation_id=conv.id,
+                ordinal=1,
+                role="user",
+                content="name three brazilian foods",
+            ),
+            Message(
+                id=uuid.uuid4(),
+                conversation_id=conv.id,
+                ordinal=2,
+                role="assistant",
+                content="Feijoada, Coxinha, Pão de Queijo",
+            ),
+        ]
+    )
     await session.commit()
 
     with patch(
@@ -396,13 +456,21 @@ async def test_generate_title_strips_reasoning_tags(
             return []
 
     agent = Agent(id=uuid.uuid4(), user_id=test_user.id, name="A", model="local")
-    conv = Conversation(id=uuid.uuid4(), user_id=test_user.id, agent_id=agent.id, channel="web", title="2+2")
+    conv = Conversation(
+        id=uuid.uuid4(), user_id=test_user.id, agent_id=agent.id, channel="web", title="2+2"
+    )
     session.add_all([agent, conv])
     await session.commit()
-    session.add_all([
-        Message(id=uuid.uuid4(), conversation_id=conv.id, ordinal=1, role="user", content="2+2"),
-        Message(id=uuid.uuid4(), conversation_id=conv.id, ordinal=2, role="assistant", content="4"),
-    ])
+    session.add_all(
+        [
+            Message(
+                id=uuid.uuid4(), conversation_id=conv.id, ordinal=1, role="user", content="2+2"
+            ),
+            Message(
+                id=uuid.uuid4(), conversation_id=conv.id, ordinal=2, role="assistant", content="4"
+            ),
+        ]
+    )
     await session.commit()
 
     with patch(
@@ -419,6 +487,7 @@ async def test_generate_title_strips_reasoning_tags(
 
 
 # --- Tools endpoint --------------------------------------------------------
+
 
 async def test_tools_endpoint_returns_empty_when_no_mcp(client: AsyncClient, auth_headers: dict):
     r = await client.post("/api/agents", json={"name": "T"}, headers=auth_headers)

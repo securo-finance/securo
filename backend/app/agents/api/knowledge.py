@@ -75,9 +75,14 @@ async def upload_knowledge(
     # Fire-and-forget Celery dispatch — task does the parsing/embedding.
     try:
         from app.worker import celery_app
-        celery_app.send_task("app.agents.tasks.ingest.ingest_doc", args=[str(doc.id), str(agent_id)])
+
+        celery_app.send_task(
+            "app.agents.tasks.ingest.ingest_doc", args=[str(doc.id), str(agent_id)]
+        )
     except Exception:  # noqa: BLE001 — embedding failure shouldn't kill the upload
-        await knowledge_service.mark_status(session, doc.id, status="failed", error="celery dispatch failed")
+        await knowledge_service.mark_status(
+            session, doc.id, status="failed", error="celery dispatch failed"
+        )
 
     return _serialize(doc)
 

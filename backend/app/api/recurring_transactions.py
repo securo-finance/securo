@@ -55,7 +55,9 @@ async def update_recurring_transaction(
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not recurring:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recurring transaction not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Recurring transaction not found"
+        )
     return recurring
 
 
@@ -69,7 +71,9 @@ async def delete_recurring_transaction(
         session, recurring_id, ctx.workspace.id
     )
     if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recurring transaction not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Recurring transaction not found"
+        )
 
 
 @router.post("/generate")

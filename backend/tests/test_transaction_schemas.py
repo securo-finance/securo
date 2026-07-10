@@ -44,14 +44,16 @@ class TestTransactionUpdateAllFields:
     """Verify TransactionUpdate accepts all editable fields together."""
 
     def test_all_fields_accepted(self):
-        data = TransactionUpdate.model_validate({
-            "description": "Updated description",
-            "amount": "250.00",
-            "date": "2026-06-01",
-            "type": "credit",
-            "currency": "USD",
-            "category_id": "11111111-1111-1111-1111-111111111111",
-        })
+        data = TransactionUpdate.model_validate(
+            {
+                "description": "Updated description",
+                "amount": "250.00",
+                "date": "2026-06-01",
+                "type": "credit",
+                "currency": "USD",
+                "category_id": "11111111-1111-1111-1111-111111111111",
+            }
+        )
         assert data.description == "Updated description"
         assert data.amount == Decimal("250.00")
         assert data.date == date(2026, 6, 1)
@@ -88,12 +90,14 @@ class TestTransactionReadInstallmentFields:
         return data
 
     def test_all_installment_fields_round_trip(self):
-        data = TransactionRead.model_validate(self._base(
-            installment_number=3,
-            total_installments=12,
-            installment_total_amount="1446.00",
-            installment_purchase_date="2026-02-10",
-        ))
+        data = TransactionRead.model_validate(
+            self._base(
+                installment_number=3,
+                total_installments=12,
+                installment_total_amount="1446.00",
+                installment_purchase_date="2026-02-10",
+            )
+        )
         assert data.installment_number == 3
         assert data.total_installments == 12
         assert data.installment_total_amount == 1446.00
@@ -107,12 +111,14 @@ class TestTransactionReadInstallmentFields:
         assert data.installment_purchase_date is None
 
     def test_installment_fields_serialize_in_api_response(self):
-        data = TransactionRead.model_validate(self._base(
-            installment_number=1,
-            total_installments=6,
-            installment_total_amount="300.00",
-            installment_purchase_date="2026-03-25",
-        ))
+        data = TransactionRead.model_validate(
+            self._base(
+                installment_number=1,
+                total_installments=6,
+                installment_total_amount="300.00",
+                installment_purchase_date="2026-03-25",
+            )
+        )
         dumped = data.model_dump(mode="json")
         assert dumped["installment_number"] == 1
         assert dumped["total_installments"] == 6
@@ -124,11 +130,13 @@ class TestTransactionCreateDateField:
     """Ensure TransactionCreate also handles the date field correctly."""
 
     def test_accepts_iso_date_string(self):
-        data = TransactionCreate.model_validate({
-            "description": "Test",
-            "amount": "10.00",
-            "date": "2026-02-25",
-            "type": "debit",
-            "account_id": "11111111-1111-1111-1111-111111111111",
-        })
+        data = TransactionCreate.model_validate(
+            {
+                "description": "Test",
+                "amount": "10.00",
+                "date": "2026-02-25",
+                "type": "debit",
+                "account_id": "11111111-1111-1111-1111-111111111111",
+            }
+        )
         assert data.date == date(2026, 2, 25)

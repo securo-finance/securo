@@ -12,6 +12,7 @@ Providers:
   - `openai`: OpenAI's text-embedding-* endpoints.
   - `openai_compatible`: any OpenAI-shaped /v1/embeddings endpoint.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -76,9 +77,15 @@ def _build_remote_provider():
     if name == "ollama":
         return build_provider("ollama", base_url=s.embedding_ollama_base_url)
     if name == "openai":
-        return build_provider("openai", api_key=s.embedding_openai_api_key, base_url=s.embedding_openai_base_url)
+        return build_provider(
+            "openai", api_key=s.embedding_openai_api_key, base_url=s.embedding_openai_base_url
+        )
     if name == "openai_compatible":
-        return build_provider("openai_compatible", api_key=s.embedding_openai_api_key, base_url=s.embedding_openai_base_url)
+        return build_provider(
+            "openai_compatible",
+            api_key=s.embedding_openai_api_key,
+            base_url=s.embedding_openai_base_url,
+        )
     raise LLMNotSupportedError(f"embedding provider '{name}' has no embedding endpoint")
 
 

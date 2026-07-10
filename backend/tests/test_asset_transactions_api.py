@@ -3,6 +3,7 @@
 Exercises the HTTP surface: per-asset CRUD, the workspace-wide list + filters,
 the find-or-create buy endpoint, validation, 404s and auth.
 """
+
 import uuid
 from decimal import Decimal
 
@@ -36,7 +37,9 @@ async def market_asset_api(session: AsyncSession, test_user: User) -> Asset:
 
 
 @pytest.mark.asyncio
-async def test_add_transaction_via_api(client: AsyncClient, auth_headers: dict, market_asset_api: Asset):
+async def test_add_transaction_via_api(
+    client: AsyncClient, auth_headers: dict, market_asset_api: Asset
+):
     resp = await client.post(
         f"/api/assets/{market_asset_api.id}/transactions",
         headers=auth_headers,
@@ -50,12 +53,16 @@ async def test_add_transaction_via_api(client: AsyncClient, auth_headers: dict, 
 
 
 @pytest.mark.asyncio
-async def test_transaction_list_and_filters(client: AsyncClient, auth_headers: dict, market_asset_api: Asset):
+async def test_transaction_list_and_filters(
+    client: AsyncClient, auth_headers: dict, market_asset_api: Asset
+):
     for tx in [
         {"kind": "buy", "quantity": 10, "price": 20, "date": "2026-01-01"},
         {"kind": "sell", "quantity": 4, "price": 30, "date": "2026-03-01"},
     ]:
-        r = await client.post(f"/api/assets/{market_asset_api.id}/transactions", headers=auth_headers, json=tx)
+        r = await client.post(
+            f"/api/assets/{market_asset_api.id}/transactions", headers=auth_headers, json=tx
+        )
         assert r.status_code == 201
 
     # Per-asset list
@@ -75,9 +82,13 @@ async def test_transaction_list_and_filters(client: AsyncClient, auth_headers: d
     assert [row["kind"] for row in r.json()] == ["sell"]
 
     # Filter by ticker
-    r = await client.get("/api/assets/transactions", headers=auth_headers, params={"ticker": "PETR4.SA"})
+    r = await client.get(
+        "/api/assets/transactions", headers=auth_headers, params={"ticker": "PETR4.SA"}
+    )
     assert len(r.json()) == 2
-    r = await client.get("/api/assets/transactions", headers=auth_headers, params={"ticker": "NOPE"})
+    r = await client.get(
+        "/api/assets/transactions", headers=auth_headers, params={"ticker": "NOPE"}
+    )
     assert r.json() == []
 
 
@@ -91,9 +102,13 @@ async def test_update_and_delete_transaction_via_api(
         json={"kind": "buy", "quantity": 10, "price": 20, "date": "2026-01-01"},
     )
     assert r.status_code == 201
-    tx_id = (await client.get(f"/api/assets/{market_asset_api.id}/transactions", headers=auth_headers)).json()[0]["id"]
+    tx_id = (
+        await client.get(f"/api/assets/{market_asset_api.id}/transactions", headers=auth_headers)
+    ).json()[0]["id"]
 
-    r = await client.patch(f"/api/assets/transactions/{tx_id}", headers=auth_headers, json={"quantity": 25})
+    r = await client.patch(
+        f"/api/assets/transactions/{tx_id}", headers=auth_headers, json={"quantity": 25}
+    )
     assert r.status_code == 200
     assert r.json()["units"] == 25
 
@@ -137,7 +152,9 @@ async def test_add_transaction_unknown_asset_404(client: AsyncClient, auth_heade
 
 
 @pytest.mark.asyncio
-async def test_add_transaction_invalid_kind_422(client: AsyncClient, auth_headers: dict, market_asset_api: Asset):
+async def test_add_transaction_invalid_kind_422(
+    client: AsyncClient, auth_headers: dict, market_asset_api: Asset
+):
     r = await client.post(
         f"/api/assets/{market_asset_api.id}/transactions",
         headers=auth_headers,
@@ -147,7 +164,9 @@ async def test_add_transaction_invalid_kind_422(client: AsyncClient, auth_header
 
 
 @pytest.mark.asyncio
-async def test_add_transaction_zero_quantity_422(client: AsyncClient, auth_headers: dict, market_asset_api: Asset):
+async def test_add_transaction_zero_quantity_422(
+    client: AsyncClient, auth_headers: dict, market_asset_api: Asset
+):
     r = await client.post(
         f"/api/assets/{market_asset_api.id}/transactions",
         headers=auth_headers,
@@ -157,7 +176,9 @@ async def test_add_transaction_zero_quantity_422(client: AsyncClient, auth_heade
 
 
 @pytest.mark.asyncio
-async def test_oversell_rejected_via_api(client: AsyncClient, auth_headers: dict, market_asset_api: Asset):
+async def test_oversell_rejected_via_api(
+    client: AsyncClient, auth_headers: dict, market_asset_api: Asset
+):
     await client.post(
         f"/api/assets/{market_asset_api.id}/transactions",
         headers=auth_headers,

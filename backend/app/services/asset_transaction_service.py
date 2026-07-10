@@ -8,6 +8,7 @@ Average price uses the weighted-average method (the Brazilian preço médio
 convention), not FIFO/LIFO: a sell realizes `(price - avg) * qty` and lowers
 the cost basis proportionally, leaving the per-unit average unchanged.
 """
+
 import logging
 import uuid
 from datetime import date, datetime, timezone
@@ -45,7 +46,10 @@ def _recompute(transactions: list[AssetTransaction]) -> dict:
     Returns units (current quantity), average_price (per unit, None when flat),
     cost_basis (of held units), realized_gain, first_buy/last_sell dates.
     """
-    txs = sorted(transactions, key=lambda t: (t.date, t.created_at or datetime.min.replace(tzinfo=timezone.utc)))
+    txs = sorted(
+        transactions,
+        key=lambda t: (t.date, t.created_at or datetime.min.replace(tzinfo=timezone.utc)),
+    )
     qty = Decimal("0")
     cost = Decimal("0")
     realized = Decimal("0")
@@ -146,9 +150,7 @@ async def recompute_and_cache(session: AsyncSession, asset: Asset) -> None:
     asset.units = pos["units"]
     asset.average_price = pos["average_price"]
     asset.realized_gain = pos["realized_gain"].quantize(Decimal("0.01"))
-    asset.purchase_price = (
-        pos["cost_basis"].quantize(Decimal("0.01")) if pos["units"] > 0 else None
-    )
+    asset.purchase_price = pos["cost_basis"].quantize(Decimal("0.01")) if pos["units"] > 0 else None
     asset.purchase_date = pos["first_buy"]
 
     if pos["units"] > 0:
@@ -223,9 +225,9 @@ async def list_workspace_transactions(
         query = query.where(Asset.ticker == ticker.upper())
     if kind in _VALID_KINDS:
         query = query.where(AssetTransaction.kind == kind)
-    query = query.order_by(
-        AssetTransaction.date.desc(), AssetTransaction.created_at.desc()
-    ).limit(limit)
+    query = query.order_by(AssetTransaction.date.desc(), AssetTransaction.created_at.desc()).limit(
+        limit
+    )
     result = await session.execute(query)
     return [_tx_to_read(tx, asset) for tx, asset in result.all()]
 

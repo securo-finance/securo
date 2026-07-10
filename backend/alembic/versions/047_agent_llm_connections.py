@@ -19,7 +19,12 @@ def upgrade() -> None:
     op.create_table(
         "agent_llm_connections",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("name", sa.String(120), nullable=False),
         sa.Column("kind", sa.String(40), nullable=False),
         sa.Column("base_url", sa.String(500), nullable=True),
@@ -27,8 +32,12 @@ def upgrade() -> None:
         sa.Column("default_model", sa.String(120), nullable=True),
         sa.Column("extra", postgresql.JSON, nullable=False, server_default="{}"),
         sa.Column("is_default", sa.Boolean, nullable=False, server_default="false"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
     )
     op.create_index("ix_agent_llm_connections_user_id", "agent_llm_connections", ["user_id"])
 

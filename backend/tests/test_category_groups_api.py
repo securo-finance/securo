@@ -58,7 +58,8 @@ async def test_delete_group(client: AsyncClient, auth_headers):
     )
     group_id = create_resp.json()["id"]
     response = await client.delete(
-        f"/api/category-groups/{group_id}", headers=auth_headers,
+        f"/api/category-groups/{group_id}",
+        headers=auth_headers,
     )
     assert response.status_code == 204
 
@@ -66,6 +67,7 @@ async def test_delete_group(client: AsyncClient, auth_headers):
 @pytest.mark.asyncio
 async def test_delete_group_not_found(client: AsyncClient, auth_headers):
     response = await client.delete(
-        f"/api/category-groups/{uuid.uuid4()}", headers=auth_headers,
+        f"/api/category-groups/{uuid.uuid4()}",
+        headers=auth_headers,
     )
     assert response.status_code == 400

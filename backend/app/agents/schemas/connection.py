@@ -30,6 +30,7 @@ class ConnectionUpdate(BaseModel):
 class ConnectionRead(BaseModel):
     """Note: api_key is NEVER returned. The presence of credentials is
     indicated by `has_api_key`."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID

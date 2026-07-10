@@ -45,11 +45,13 @@ def _passkey_redis_store(_mock_redis):
     async def _fake():
         return redis
 
-    with patch("app.core.redis.get_redis", _fake), \
-         patch("app.core.rate_limit.get_redis", _fake), \
-         patch("app.api.custom_auth.get_redis", _fake), \
-         patch("app.api.two_factor.get_redis", _fake), \
-         patch("app.api.passkeys.get_redis", _fake):
+    with (
+        patch("app.core.redis.get_redis", _fake),
+        patch("app.core.rate_limit.get_redis", _fake),
+        patch("app.api.custom_auth.get_redis", _fake),
+        patch("app.api.two_factor.get_redis", _fake),
+        patch("app.api.passkeys.get_redis", _fake),
+    ):
         yield redis
 
 
@@ -234,7 +236,9 @@ async def test_passkey_second_factor_returns_jwt_for_same_user_passkey(
     )
     temp_token = login_response.json()["temp_token"]
 
-    options_response = await client.post("/api/auth/passkeys/2fa/options", json={"temp_token": temp_token})
+    options_response = await client.post(
+        "/api/auth/passkeys/2fa/options", json={"temp_token": temp_token}
+    )
     assert options_response.status_code == 200
     options_data = options_response.json()
     assert options_data["options"]["allowCredentials"][0]["id"] == passkey.credential_id
@@ -301,7 +305,9 @@ async def test_passkey_second_factor_rejects_other_users_passkey(
     )
     temp_token = login_response.json()["temp_token"]
 
-    options_response = await client.post("/api/auth/passkeys/2fa/options", json={"temp_token": temp_token})
+    options_response = await client.post(
+        "/api/auth/passkeys/2fa/options", json={"temp_token": temp_token}
+    )
     assert options_response.status_code == 200
 
     with patch("app.api.passkeys.verify_authentication_response") as verify_mock:

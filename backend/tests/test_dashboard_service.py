@@ -30,16 +30,24 @@ from app.services.dashboard_service import (
 
 
 async def _make_account(
-    session: AsyncSession, user_id: uuid.UUID,
-    name: str = "Dash Test", acc_type: str = "checking",
-    balance: str = "0.00", currency: str = "BRL",
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    name: str = "Dash Test",
+    acc_type: str = "checking",
+    balance: str = "0.00",
+    currency: str = "BRL",
     connection_id: uuid.UUID | None = None,
     is_closed: bool = False,
 ) -> Account:
     account = Account(
-        id=uuid.uuid4(), user_id=user_id, name=name,
-        type=acc_type, balance=Decimal(balance), currency=currency,
-        connection_id=connection_id, is_closed=is_closed,
+        id=uuid.uuid4(),
+        user_id=user_id,
+        name=name,
+        type=acc_type,
+        balance=Decimal(balance),
+        currency=currency,
+        connection_id=connection_id,
+        is_closed=is_closed,
     )
     session.add(account)
     await session.commit()
@@ -48,17 +56,30 @@ async def _make_account(
 
 
 async def _add_txn(
-    session: AsyncSession, user_id: uuid.UUID, account_id: uuid.UUID,
-    amount: float, txn_type: str, txn_date: date,
-    source: str = "manual", transfer_pair_id: uuid.UUID | None = None,
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    account_id: uuid.UUID,
+    amount: float,
+    txn_type: str,
+    txn_date: date,
+    source: str = "manual",
+    transfer_pair_id: uuid.UUID | None = None,
     category_id: uuid.UUID | None = None,
 ) -> Transaction:
     from datetime import datetime, timezone
+
     txn = Transaction(
-        id=uuid.uuid4(), user_id=user_id, account_id=account_id,
-        description=f"Test {txn_type} {amount}", amount=Decimal(str(amount)),
-        date=txn_date, type=txn_type, source=source, currency="BRL",
-        transfer_pair_id=transfer_pair_id, category_id=category_id,
+        id=uuid.uuid4(),
+        user_id=user_id,
+        account_id=account_id,
+        description=f"Test {txn_type} {amount}",
+        amount=Decimal(str(amount)),
+        date=txn_date,
+        type=txn_type,
+        source=source,
+        currency="BRL",
+        transfer_pair_id=transfer_pair_id,
+        category_id=category_id,
         created_at=datetime.now(timezone.utc),
     )
     session.add(txn)
@@ -68,12 +89,19 @@ async def _add_txn(
 
 
 async def _make_category(
-    session: AsyncSession, user_id: uuid.UUID, name: str,
-    icon: str = "tag", color: str = "#000",
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    name: str,
+    icon: str = "tag",
+    color: str = "#000",
 ) -> Category:
     cat = Category(
-        id=uuid.uuid4(), user_id=user_id, name=name,
-        icon=icon, color=color, is_system=False,
+        id=uuid.uuid4(),
+        user_id=user_id,
+        name=name,
+        icon=icon,
+        color=color,
+        is_system=False,
     )
     session.add(cat)
     await session.commit()
@@ -132,7 +160,15 @@ async def test_account_balance_at_manual(session: AsyncSession, test_user):
     account = await _make_account(session, test_user.id, "Manual Bal")
     today = date.today()
 
-    await _add_txn(session, test_user.id, account.id, 1000, "credit", today - timedelta(days=10), source="opening_balance")
+    await _add_txn(
+        session,
+        test_user.id,
+        account.id,
+        1000,
+        "credit",
+        today - timedelta(days=10),
+        source="opening_balance",
+    )
     await _add_txn(session, test_user.id, account.id, 200, "debit", today - timedelta(days=5))
     await _add_txn(session, test_user.id, account.id, 300, "debit", today)
 
@@ -148,7 +184,9 @@ async def test_account_balance_at_manual_opening_fallback(session: AsyncSession,
     today = date.today()
 
     # Opening balance dated today, cutoff is yesterday
-    await _add_txn(session, test_user.id, account.id, 5000, "credit", today, source="opening_balance")
+    await _add_txn(
+        session, test_user.id, account.id, 5000, "credit", today, source="opening_balance"
+    )
 
     # Balance at yesterday is 0 — the opening balance hasn't happened yet
     bal = await _account_balance_at(session, account, today - timedelta(days=1))
@@ -163,7 +201,10 @@ async def test_account_balance_at_manual_opening_fallback(session: AsyncSession,
 async def test_account_balance_at_bank_connected(session: AsyncSession, test_user, test_connection):
     """Bank-connected account backtracks from stored balance."""
     account = await _make_account(
-        session, test_user.id, "Connected Bal", balance="5000.00",
+        session,
+        test_user.id,
+        "Connected Bal",
+        balance="5000.00",
         connection_id=test_connection.id,
     )
     today = date.today()
@@ -177,10 +218,16 @@ async def test_account_balance_at_bank_connected(session: AsyncSession, test_use
 
 
 @pytest.mark.asyncio
-async def test_account_balance_at_credit_card_connected(session: AsyncSession, test_user, test_connection):
+async def test_account_balance_at_credit_card_connected(
+    session: AsyncSession, test_user, test_connection
+):
     """Bank-connected credit_card negates balance."""
     account = await _make_account(
-        session, test_user.id, "CC Bal", acc_type="credit_card", balance="2000.00",
+        session,
+        test_user.id,
+        "CC Bal",
+        acc_type="credit_card",
+        balance="2000.00",
         connection_id=test_connection.id,
     )
     bal = await _account_balance_at(session, account, date.today())
@@ -200,8 +247,12 @@ async def test_total_balance_by_currency(session: AsyncSession, test_user, test_
     usd_acc = await _make_account(session, test_user.id, "USD", currency="USD")
     today = date.today()
 
-    await _add_txn(session, test_user.id, brl_acc.id, 1000, "credit", today, source="opening_balance")
-    await _add_txn(session, test_user.id, usd_acc.id, 500, "credit", today, source="opening_balance")
+    await _add_txn(
+        session, test_user.id, brl_acc.id, 1000, "credit", today, source="opening_balance"
+    )
+    await _add_txn(
+        session, test_user.id, usd_acc.id, 500, "credit", today, source="opening_balance"
+    )
 
     totals = await _total_balance_by_currency(session, test_workspace.id, today)
     assert totals.get("BRL", 0) == pytest.approx(1000.0)
@@ -219,7 +270,9 @@ async def test_get_summary_basic(session: AsyncSession, test_user, test_workspac
     account = await _make_account(session, test_user.id, "Summary Acc")
     today = date.today()
 
-    await _add_txn(session, test_user.id, account.id, 5000, "credit", today, source="opening_balance")
+    await _add_txn(
+        session, test_user.id, account.id, 5000, "credit", today, source="opening_balance"
+    )
     await _add_txn(session, test_user.id, account.id, 200, "debit", today)
     await _add_txn(session, test_user.id, account.id, 100, "credit", today)
 
@@ -230,10 +283,14 @@ async def test_get_summary_basic(session: AsyncSession, test_user, test_workspac
 
 
 @pytest.mark.asyncio
-async def test_get_summary_excludes_opening_balance_from_income(session: AsyncSession, test_user, test_workspace):
+async def test_get_summary_excludes_opening_balance_from_income(
+    session: AsyncSession, test_user, test_workspace
+):
     """Opening balance does not count as monthly income."""
     account = await _make_account(session, test_user.id, "No OB Income")
-    await _add_txn(session, test_user.id, account.id, 10000, "credit", date.today(), source="opening_balance")
+    await _add_txn(
+        session, test_user.id, account.id, 10000, "credit", date.today(), source="opening_balance"
+    )
 
     summary = await get_summary(session, test_workspace.id, test_user.id)
     assert summary.monthly_income == pytest.approx(0.0)
@@ -262,7 +319,9 @@ async def test_get_summary_pending_categorization(session: AsyncSession, test_us
     # 2 uncategorized, 1 opening_balance (excluded)
     await _add_txn(session, test_user.id, account.id, 100, "debit", today)
     await _add_txn(session, test_user.id, account.id, 200, "debit", today)
-    await _add_txn(session, test_user.id, account.id, 5000, "credit", today, source="opening_balance")
+    await _add_txn(
+        session, test_user.id, account.id, 5000, "credit", today, source="opening_balance"
+    )
 
     summary = await get_summary(session, test_workspace.id, test_user.id)
     assert summary.pending_categorization >= 2
@@ -280,7 +339,9 @@ async def test_get_summary_with_specific_month(session: AsyncSession, test_user,
     # Current month - no transactions
     await get_summary(session, test_workspace.id, test_user.id, month=today.replace(day=1))
     # Past month - has 300 debit
-    summary_past = await get_summary(session, test_workspace.id, test_user.id, month=past.replace(day=1))
+    summary_past = await get_summary(
+        session, test_workspace.id, test_user.id, month=past.replace(day=1)
+    )
     assert summary_past.monthly_expenses >= 300.0
 
 
@@ -295,7 +356,10 @@ async def test_get_summary_with_balance_date(session: AsyncSession, test_user, t
 
     # With cutoff 5 days ago, the 500 debit shouldn't be included
     summary = await get_summary(
-        session, test_workspace.id, test_user.id, month=today.replace(day=1),
+        session,
+        test_workspace.id,
+        test_user.id,
+        month=today.replace(day=1),
         balance_date=today - timedelta(days=5),
     )
     total = sum(summary.total_balance.values())
@@ -401,18 +465,27 @@ async def test_get_projected_transactions(session: AsyncSession, test_user, test
         next_month = next_month.replace(month=next_month.month + 1)
 
     from datetime import datetime, timezone
+
     rec = RecurringTransaction(
-        id=uuid.uuid4(), user_id=test_user.id,
-        description="Weekly Coffee", amount=Decimal("25.00"),
-        currency="BRL", type="debit", frequency="weekly",
-        start_date=next_month, next_occurrence=next_month,
-        is_active=True, category_id=cat.id,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        description="Weekly Coffee",
+        amount=Decimal("25.00"),
+        currency="BRL",
+        type="debit",
+        frequency="weekly",
+        start_date=next_month,
+        next_occurrence=next_month,
+        is_active=True,
+        category_id=cat.id,
         created_at=datetime.now(timezone.utc),
     )
     session.add(rec)
     await session.commit()
 
-    projections = await get_projected_transactions(session, test_workspace.id, test_user.id, month=next_month)
+    projections = await get_projected_transactions(
+        session, test_workspace.id, test_user.id, month=next_month
+    )
     assert len(projections) >= 4  # Weekly = at least 4 occurrences
 
     for proj in projections:
@@ -422,7 +495,9 @@ async def test_get_projected_transactions(session: AsyncSession, test_user, test
 
 
 @pytest.mark.asyncio
-async def test_get_projected_transactions_no_category(session: AsyncSession, test_user, test_workspace):
+async def test_get_projected_transactions_no_category(
+    session: AsyncSession, test_user, test_workspace
+):
     """Projected transactions work without category."""
     next_month = date.today().replace(day=1)
     if next_month.month == 12:
@@ -431,18 +506,27 @@ async def test_get_projected_transactions_no_category(session: AsyncSession, tes
         next_month = next_month.replace(month=next_month.month + 1)
 
     from datetime import datetime, timezone
+
     rec = RecurringTransaction(
-        id=uuid.uuid4(), user_id=test_user.id,
-        description="Monthly Fee", amount=Decimal("50.00"),
-        currency="BRL", type="debit", frequency="monthly",
-        start_date=next_month, next_occurrence=next_month,
-        is_active=True, category_id=None,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        description="Monthly Fee",
+        amount=Decimal("50.00"),
+        currency="BRL",
+        type="debit",
+        frequency="monthly",
+        start_date=next_month,
+        next_occurrence=next_month,
+        is_active=True,
+        category_id=None,
         created_at=datetime.now(timezone.utc),
     )
     session.add(rec)
     await session.commit()
 
-    projections = await get_projected_transactions(session, test_workspace.id, test_user.id, month=next_month)
+    projections = await get_projected_transactions(
+        session, test_workspace.id, test_user.id, month=next_month
+    )
     assert len(projections) >= 1
     proj = projections[0]
     assert proj.category_name is None
@@ -452,8 +536,12 @@ async def test_get_projected_transactions_no_category(session: AsyncSession, tes
 @pytest.mark.asyncio
 async def test_account_balance_manual_future_date(session, test_user):
     acct = Account(
-        id=uuid.uuid4(), user_id=test_user.id, name="FutDate",
-        type="checking", balance=Decimal("0"), currency="BRL",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="FutDate",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
     )
     session.add(acct)
     await session.commit()
@@ -461,10 +549,17 @@ async def test_account_balance_manual_future_date(session, test_user):
 
     today = date.today()
     from datetime import datetime, timezone
+
     txn = Transaction(
-        id=uuid.uuid4(), user_id=test_user.id, account_id=acct.id,
-        description="Today only", amount=Decimal("500"), date=today,
-        type="credit", source="manual", currency="BRL",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=acct.id,
+        description="Today only",
+        amount=Decimal("500"),
+        date=today,
+        type="credit",
+        source="manual",
+        currency="BRL",
         created_at=datetime.now(timezone.utc),
     )
     session.add(txn)
@@ -478,18 +573,28 @@ async def test_account_balance_manual_future_date(session, test_user):
 @pytest.mark.asyncio
 async def test_account_balance_bank_credit_card(session, test_user):
     from datetime import datetime, timezone
+
     conn = BankConnection(
-        id=uuid.uuid4(), user_id=test_user.id, provider="test",
-        external_id="ext-cc-ds", institution_name="CC Bank",
-        credentials={}, status="active",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        provider="test",
+        external_id="ext-cc-ds",
+        institution_name="CC Bank",
+        credentials={},
+        status="active",
         last_sync_at=datetime.now(timezone.utc),
         created_at=datetime.now(timezone.utc),
     )
     session.add(conn)
     await session.flush()
     cc = Account(
-        id=uuid.uuid4(), user_id=test_user.id, connection_id=conn.id,
-        name="CC", type="credit_card", balance=Decimal("1500"), currency="BRL",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        connection_id=conn.id,
+        name="CC",
+        type="credit_card",
+        balance=Decimal("1500"),
+        currency="BRL",
     )
     session.add(cc)
     await session.commit()
@@ -502,8 +607,13 @@ async def test_account_balance_bank_credit_card(session, test_user):
 @pytest.mark.asyncio
 async def test_get_open_accounts_excludes_closed(session, test_user, test_workspace):
     closed = Account(
-        id=uuid.uuid4(), user_id=test_user.id, name="Closed",
-        type="checking", balance=Decimal("0"), currency="BRL", is_closed=True,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Closed",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
+        is_closed=True,
     )
     session.add(closed)
     await session.commit()
@@ -514,16 +624,27 @@ async def test_get_open_accounts_excludes_closed(session, test_user, test_worksp
 @pytest.mark.asyncio
 async def test_balance_at_single_currency(session, test_user, test_workspace):
     acct = Account(
-        id=uuid.uuid4(), user_id=test_user.id, name="BalAt",
-        type="checking", balance=Decimal("0"), currency="BRL",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="BalAt",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
     )
     session.add(acct)
     await session.commit()
     from datetime import datetime, timezone
+
     txn = Transaction(
-        id=uuid.uuid4(), user_id=test_user.id, account_id=acct.id,
-        description="Income", amount=Decimal("3000"), date=date.today(),
-        type="credit", source="manual", currency="BRL",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=acct.id,
+        description="Income",
+        amount=Decimal("3000"),
+        date=date.today(),
+        type="credit",
+        source="manual",
+        currency="BRL",
         created_at=datetime.now(timezone.utc),
     )
     session.add(txn)
@@ -542,19 +663,32 @@ async def test_get_summary_past_month(session, test_user, test_workspace):
 
 
 @pytest.mark.asyncio
-async def test_spending_by_category_with_categorized(session, test_user, test_workspace, test_categories):
+async def test_spending_by_category_with_categorized(
+    session, test_user, test_workspace, test_categories
+):
     acct = Account(
-        id=uuid.uuid4(), user_id=test_user.id, name="SpendCat",
-        type="checking", balance=Decimal("0"), currency="BRL",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="SpendCat",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
     )
     session.add(acct)
     await session.commit()
     from datetime import datetime, timezone
+
     txn = Transaction(
-        id=uuid.uuid4(), user_id=test_user.id, account_id=acct.id,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=acct.id,
         category_id=test_categories[0].id,
-        description="Food", amount=Decimal("200"), date=date.today(),
-        type="debit", source="manual", currency="BRL",
+        description="Food",
+        amount=Decimal("200"),
+        date=date.today(),
+        type="debit",
+        source="manual",
+        currency="BRL",
         created_at=datetime.now(timezone.utc),
     )
     session.add(txn)
@@ -575,15 +709,22 @@ async def test_get_recurring_projections(session, test_user, test_workspace):
         month_end = date(today.year, today.month + 1, 1)
 
     rec = RecurringTransaction(
-        id=uuid.uuid4(), user_id=test_user.id,
-        description="Rent", amount=Decimal("2000"), type="debit",
-        frequency="monthly", start_date=month_start,
-        next_occurrence=month_start, currency="BRL",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        description="Rent",
+        amount=Decimal("2000"),
+        type="debit",
+        frequency="monthly",
+        start_date=month_start,
+        next_occurrence=month_start,
+        currency="BRL",
     )
     session.add(rec)
     await session.commit()
 
-    projections = await _get_recurring_projections(session, test_workspace.id, month_start, month_end)
+    projections = await _get_recurring_projections(
+        session, test_workspace.id, month_start, month_end
+    )
     assert len(projections) >= 1
     assert projections[0]["amount"] == 2000.0
 
@@ -591,16 +732,27 @@ async def test_get_recurring_projections(session, test_user, test_workspace):
 @pytest.mark.asyncio
 async def test_balance_history_basic(session, test_user, test_workspace):
     acct = Account(
-        id=uuid.uuid4(), user_id=test_user.id, name="BH",
-        type="checking", balance=Decimal("0"), currency="BRL",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="BH",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
     )
     session.add(acct)
     await session.commit()
     from datetime import datetime, timezone
+
     txn = Transaction(
-        id=uuid.uuid4(), user_id=test_user.id, account_id=acct.id,
-        description="BH txn", amount=Decimal("1000"), date=date.today(),
-        type="credit", source="manual", currency="BRL",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=acct.id,
+        description="BH txn",
+        amount=Decimal("1000"),
+        date=date.today(),
+        type="credit",
+        source="manual",
+        currency="BRL",
         created_at=datetime.now(timezone.utc),
     )
     session.add(txn)
@@ -635,21 +787,31 @@ async def test_get_projected_transactions_with_recurring(session, test_user, tes
     today = date.today()
     month_start = today.replace(day=1)
     cat = Category(
-        id=uuid.uuid4(), user_id=test_user.id,
-        name="Rent", icon="home", color="#000",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Rent",
+        icon="home",
+        color="#000",
     )
     session.add(cat)
     rec = RecurringTransaction(
-        id=uuid.uuid4(), user_id=test_user.id,
-        description="Monthly Rent", amount=Decimal("2500"),
-        type="debit", frequency="monthly", currency="BRL",
-        start_date=month_start, next_occurrence=month_start,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        description="Monthly Rent",
+        amount=Decimal("2500"),
+        type="debit",
+        frequency="monthly",
+        currency="BRL",
+        start_date=month_start,
+        next_occurrence=month_start,
         category_id=cat.id,
     )
     session.add(rec)
     await session.commit()
 
-    result = await get_projected_transactions(session, test_workspace.id, test_user.id, month=month_start)
+    result = await get_projected_transactions(
+        session, test_workspace.id, test_user.id, month=month_start
+    )
     assert len(result) >= 1
     assert result[0].description == "Monthly Rent"
     assert result[0].category_name == "Rent"
@@ -667,15 +829,24 @@ async def test_get_summary_includes_recurring_projections(session, test_user, te
     month_start = today.replace(day=1)
 
     acct = Account(
-        id=uuid.uuid4(), user_id=test_user.id, name="Summary Acct",
-        type="checking", balance=Decimal("5000"), currency="BRL",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Summary Acct",
+        type="checking",
+        balance=Decimal("5000"),
+        currency="BRL",
     )
     session.add(acct)
     rec = RecurringTransaction(
-        id=uuid.uuid4(), user_id=test_user.id,
-        description="Salary", amount=Decimal("10000"),
-        type="credit", frequency="monthly", currency="BRL",
-        start_date=month_start, next_occurrence=month_start,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        description="Salary",
+        amount=Decimal("10000"),
+        type="credit",
+        frequency="monthly",
+        currency="BRL",
+        start_date=month_start,
+        next_occurrence=month_start,
     )
     session.add(rec)
     await session.commit()
@@ -695,28 +866,42 @@ async def test_spending_by_category_includes_recurring(session, test_user, test_
     month_start = today.replace(day=1)
 
     cat = Category(
-        id=uuid.uuid4(), user_id=test_user.id,
-        name="Transport", icon="car", color="#3B82F6",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Transport",
+        icon="car",
+        color="#3B82F6",
     )
     session.add(cat)
 
     acct = Account(
-        id=uuid.uuid4(), user_id=test_user.id, name="Spend Acct",
-        type="checking", balance=Decimal("0"), currency="BRL",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Spend Acct",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
     )
     session.add(acct)
 
     rec = RecurringTransaction(
-        id=uuid.uuid4(), user_id=test_user.id,
-        description="Gas", amount=Decimal("200"),
-        type="debit", frequency="monthly", currency="BRL",
-        start_date=month_start, next_occurrence=month_start,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        description="Gas",
+        amount=Decimal("200"),
+        type="debit",
+        frequency="monthly",
+        currency="BRL",
+        start_date=month_start,
+        next_occurrence=month_start,
         category_id=cat.id,
     )
     session.add(rec)
     await session.commit()
 
-    spending = await get_spending_by_category(session, test_workspace.id, test_user.id, month=month_start)
+    spending = await get_spending_by_category(
+        session, test_workspace.id, test_user.id, month=month_start
+    )
     assert len(spending) >= 1
     transport = next((s for s in spending if s.category_name == "Transport"), None)
     assert transport is not None
@@ -731,21 +916,36 @@ async def test_spending_by_category_includes_recurring(session, test_user, test_
 @pytest.mark.asyncio
 async def test_balance_at_multi_currency(session, test_user, test_workspace):
     acct_brl = Account(
-        id=uuid.uuid4(), user_id=test_user.id, name="BRL Acct",
-        type="checking", balance=Decimal("0"), currency="BRL",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="BRL Acct",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
     )
     acct_usd = Account(
-        id=uuid.uuid4(), user_id=test_user.id, name="USD Acct",
-        type="checking", balance=Decimal("0"), currency="USD",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="USD Acct",
+        type="checking",
+        balance=Decimal("0"),
+        currency="USD",
     )
     session.add_all([acct_brl, acct_usd])
 
     from datetime import datetime, timezone
+
     for acct, amount in [(acct_brl, Decimal("1000")), (acct_usd, Decimal("200"))]:
         txn = Transaction(
-            id=uuid.uuid4(), user_id=test_user.id, account_id=acct.id,
-            description="Deposit", amount=amount, date=date.today(),
-            type="credit", source="manual", currency=acct.currency,
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            account_id=acct.id,
+            description="Deposit",
+            amount=amount,
+            date=date.today(),
+            type="credit",
+            source="manual",
+            currency=acct.currency,
             created_at=datetime.now(timezone.utc),
         )
         session.add(txn)
@@ -758,5 +958,3 @@ async def test_balance_at_multi_currency(session, test_user, test_workspace):
 # ---------------------------------------------------------------------------
 # _total_balance_by_currency
 # ---------------------------------------------------------------------------
-
-

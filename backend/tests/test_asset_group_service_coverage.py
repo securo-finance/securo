@@ -4,6 +4,7 @@ Exercises the rollup math (incl. value-history fallback and FX conversion),
 get/update/delete paths, position assignment, and the connection-sync
 helpers (`ensure_group_for_connection`, `_unique_default_name`).
 """
+
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -19,9 +20,18 @@ from app.schemas.asset_group import AssetGroupCreate, AssetGroupUpdate
 from app.services import asset_group_service as svc
 
 
-async def _add_asset(session, user_id, workspace_id, group_id, *, currency="BRL",
-                     purchase_price=None, value_amount=None, is_archived=False,
-                     sell_date=None):
+async def _add_asset(
+    session,
+    user_id,
+    workspace_id,
+    group_id,
+    *,
+    currency="BRL",
+    purchase_price=None,
+    value_amount=None,
+    is_archived=False,
+    sell_date=None,
+):
     asset = Asset(
         id=uuid.uuid4(),
         user_id=user_id,
@@ -37,14 +47,16 @@ async def _add_asset(session, user_id, workspace_id, group_id, *, currency="BRL"
     session.add(asset)
     await session.flush()
     if value_amount is not None:
-        session.add(AssetValue(
-            id=uuid.uuid4(),
-            asset_id=asset.id,
-            workspace_id=workspace_id,
-            amount=value_amount,
-            date=date.today(),
-            source="manual",
-        ))
+        session.add(
+            AssetValue(
+                id=uuid.uuid4(),
+                asset_id=asset.id,
+                workspace_id=workspace_id,
+                amount=value_amount,
+                date=date.today(),
+                source="manual",
+            )
+        )
         await session.flush()
     return asset
 
@@ -63,31 +75,53 @@ async def test_create_group_assigns_next_position(session: AsyncSession, test_us
 
 
 @pytest.mark.asyncio
-async def test_create_group_honors_explicit_position(session: AsyncSession, test_user, test_workspace):
+async def test_create_group_honors_explicit_position(
+    session: AsyncSession, test_user, test_workspace
+):
     g = await svc.create_group(
-        session, test_workspace.id, test_user.id,
+        session,
+        test_workspace.id,
+        test_user.id,
         AssetGroupCreate(name="Pinned", position=7),
     )
     assert g.position == 7
 
 
 @pytest.mark.asyncio
-async def test_get_groups_rolls_up_values_and_fallback(session: AsyncSession, test_user, test_workspace):
+async def test_get_groups_rolls_up_values_and_fallback(
+    session: AsyncSession, test_user, test_workspace
+):
     g = await svc.create_group(
         session, test_workspace.id, test_user.id, AssetGroupCreate(name="Rollup")
     )
     # One asset with a value-history row (primary currency BRL).
-    await _add_asset(session, test_user.id, test_workspace.id, g.id,
-                     currency="BRL", value_amount=Decimal("100"))
+    await _add_asset(
+        session, test_user.id, test_workspace.id, g.id, currency="BRL", value_amount=Decimal("100")
+    )
     # One asset with NO value history -> falls back to purchase_price.
-    await _add_asset(session, test_user.id, test_workspace.id, g.id,
-                     currency="BRL", purchase_price=Decimal("50"))
+    await _add_asset(
+        session, test_user.id, test_workspace.id, g.id, currency="BRL", purchase_price=Decimal("50")
+    )
     # Archived asset -> excluded.
-    await _add_asset(session, test_user.id, test_workspace.id, g.id,
-                     currency="BRL", value_amount=Decimal("999"), is_archived=True)
+    await _add_asset(
+        session,
+        test_user.id,
+        test_workspace.id,
+        g.id,
+        currency="BRL",
+        value_amount=Decimal("999"),
+        is_archived=True,
+    )
     # Sold asset -> excluded.
-    await _add_asset(session, test_user.id, test_workspace.id, g.id,
-                     currency="BRL", value_amount=Decimal("999"), sell_date=date.today())
+    await _add_asset(
+        session,
+        test_user.id,
+        test_workspace.id,
+        g.id,
+        currency="BRL",
+        value_amount=Decimal("999"),
+        sell_date=date.today(),
+    )
     # Asset with neither value nor purchase_price -> skipped silently.
     await _add_asset(session, test_user.id, test_workspace.id, g.id, currency="BRL")
     await session.commit()
@@ -105,12 +139,15 @@ async def test_get_groups_rolls_up_values_and_fallback(session: AsyncSession, te
 
 
 @pytest.mark.asyncio
-async def test_get_groups_converts_foreign_currency(session: AsyncSession, test_user, test_workspace, monkeypatch):
+async def test_get_groups_converts_foreign_currency(
+    session: AsyncSession, test_user, test_workspace, monkeypatch
+):
     g = await svc.create_group(
         session, test_workspace.id, test_user.id, AssetGroupCreate(name="FX")
     )
-    await _add_asset(session, test_user.id, test_workspace.id, g.id,
-                     currency="USD", value_amount=Decimal("10"))
+    await _add_asset(
+        session, test_user.id, test_workspace.id, g.id, currency="USD", value_amount=Decimal("10")
+    )
     await session.commit()
 
     async def _fake_convert(session, amount, frm, to):
@@ -130,7 +167,9 @@ async def test_get_groups_empty_returns_empty(session: AsyncSession, test_user, 
 
 
 @pytest.mark.asyncio
-async def test_get_groups_includes_institution_name(session: AsyncSession, test_user, test_workspace):
+async def test_get_groups_includes_institution_name(
+    session: AsyncSession, test_user, test_workspace
+):
     conn = BankConnection(
         id=uuid.uuid4(),
         user_id=test_user.id,
@@ -153,8 +192,9 @@ async def test_get_groups_includes_institution_name(session: AsyncSession, test_
     )
     session.add(g)
     await session.flush()
-    await _add_asset(session, test_user.id, test_workspace.id, g.id,
-                     currency="BRL", value_amount=Decimal("1"))
+    await _add_asset(
+        session, test_user.id, test_workspace.id, g.id, currency="BRL", value_amount=Decimal("1")
+    )
     await session.commit()
 
     groups = await svc.get_groups(session, test_workspace.id, test_user.id)
@@ -181,7 +221,10 @@ async def test_update_group(session: AsyncSession, test_user, test_workspace):
         session, test_workspace.id, test_user.id, AssetGroupCreate(name="Old")
     )
     updated = await svc.update_group(
-        session, g.id, test_workspace.id, test_user.id,
+        session,
+        g.id,
+        test_workspace.id,
+        test_user.id,
         AssetGroupUpdate(name="New", color="#000000"),
     )
     assert updated is not None
@@ -189,7 +232,10 @@ async def test_update_group(session: AsyncSession, test_user, test_workspace):
     assert updated.color == "#000000"
 
     none = await svc.update_group(
-        session, uuid.uuid4(), test_workspace.id, test_user.id,
+        session,
+        uuid.uuid4(),
+        test_workspace.id,
+        test_user.id,
         AssetGroupUpdate(name="X"),
     )
     assert none is None
@@ -225,7 +271,9 @@ async def test_ensure_group_for_connection_creates_then_relinks(session: AsyncSe
 
 
 @pytest.mark.asyncio
-async def test_ensure_group_for_connection_matches_by_connection_id(session: AsyncSession, test_user):
+async def test_ensure_group_for_connection_matches_by_connection_id(
+    session: AsyncSession, test_user
+):
     conn_id = uuid.uuid4()
     g = await svc.ensure_group_for_connection(
         session, test_user.id, conn_id, "pluggy", None, "NoExtId"

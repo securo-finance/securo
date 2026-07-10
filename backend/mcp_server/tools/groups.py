@@ -5,6 +5,7 @@ Splits are written through `propose_create_transaction` (with its
 tool because splits live attached to the parent transaction, not as
 standalone rows.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -43,7 +44,9 @@ async def list_groups(
     include_archived: bool = False,
 ) -> dict[str, Any]:
     ws_id = await resolve_workspace_id(session, ctx)
-    groups = await group_service.list_groups(session, ws_id, ctx.user_id, include_archived=include_archived)
+    groups = await group_service.list_groups(
+        session, ws_id, ctx.user_id, include_archived=include_archived
+    )
     return {
         "items": [
             {
@@ -105,23 +108,28 @@ async def get_group_balances(
     # call to humanize the output.
     from sqlalchemy import select
     from app.models.group import GroupMember
-    rows = (await session.execute(
-        select(GroupMember).where(GroupMember.group_id == gid)
-    )).scalars().all()
+
+    rows = (
+        (await session.execute(select(GroupMember).where(GroupMember.group_id == gid)))
+        .scalars()
+        .all()
+    )
     name_by_id = {m.id: m.name for m in rows}
     is_self_by_id = {m.id: bool(m.is_self) for m in rows}
 
     lines = []
     for ln in result.get("lines", []):
         mid = ln["member_id"]
-        lines.append({
-            "member_id": str(mid),
-            "member_name": name_by_id.get(mid),
-            "is_self": is_self_by_id.get(mid, False),
-            "currency": ln["currency"],
-            "amount": num(ln["amount"]),
-            "amount_in_default_currency": num(ln.get("amount_in_default_currency")),
-        })
+        lines.append(
+            {
+                "member_id": str(mid),
+                "member_name": name_by_id.get(mid),
+                "is_self": is_self_by_id.get(mid, False),
+                "currency": ln["currency"],
+                "amount": num(ln["amount"]),
+                "amount_in_default_currency": num(ln.get("amount_in_default_currency")),
+            }
+        )
     return {
         "group_id": str(result["group_id"]),
         "self_member_id": str(result["self_member_id"]) if result.get("self_member_id") else None,

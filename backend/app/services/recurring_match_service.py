@@ -12,6 +12,7 @@ the bank-sync fuzzy merge already uses. Matches are one-to-one and only the
 high-confidence (exact-amount) tier auto-links; softer/variable-amount matching
 is intentionally left for a later suggestion-based pass.
 """
+
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
@@ -56,9 +57,7 @@ def _match_window(frequency: str) -> tuple[int, int]:
     return 3, 5
 
 
-def _best_by_similarity(
-    candidates, description: Optional[str]
-) -> Optional[Transaction]:
+def _best_by_similarity(candidates, description: Optional[str]) -> Optional[Transaction]:
     best: Optional[Transaction] = None
     best_score = 0.0
     for cand in candidates:

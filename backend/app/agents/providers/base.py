@@ -7,6 +7,7 @@ from typing import Any, AsyncIterator, Literal, Optional
 
 # --- Errors ---------------------------------------------------------------
 
+
 class LLMError(Exception):
     """Base class for provider failures. Subclasses let the runtime show
     the user a friendly message instead of a stack trace."""
@@ -66,6 +67,7 @@ class ChatMessage:
 @dataclass
 class ToolDefinition:
     """Provider-agnostic tool spec. Matches MCP/JSON-Schema shape."""
+
     name: str
     description: str
     parameters: dict[str, Any]  # JSON Schema for the arguments object
@@ -80,7 +82,10 @@ class Usage:
 @dataclass
 class ChatChunk:
     """Streaming event. Exactly one of these fields is populated per chunk."""
-    type: Literal["text_delta", "tool_call_start", "tool_call_args_delta", "tool_call_end", "finish", "usage"]
+
+    type: Literal[
+        "text_delta", "tool_call_start", "tool_call_args_delta", "tool_call_end", "finish", "usage"
+    ]
     text: Optional[str] = None
     tool_call_id: Optional[str] = None
     tool_name: Optional[str] = None
@@ -99,13 +104,16 @@ class ChatResponse:
 
 # --- Provider interface ---------------------------------------------------
 
+
 class LLMProvider(ABC):
     name: str
     supports_native_tools: bool = True
     # Embedding capability — Anthropic returns False, others True.
     supports_embeddings: bool = True
 
-    def __init__(self, *, api_key: str = "", base_url: Optional[str] = None, model: Optional[str] = None):
+    def __init__(
+        self, *, api_key: str = "", base_url: Optional[str] = None, model: Optional[str] = None
+    ):
         self.api_key = api_key
         self.base_url = base_url
         self.default_model = model
@@ -143,15 +151,23 @@ class LLMProvider(ABC):
             if chunk.type == "text_delta" and chunk.text:
                 text_parts.append(chunk.text)
             elif chunk.type == "tool_call_start" and chunk.tool_call_id:
-                tool_calls[chunk.tool_call_id] = {"id": chunk.tool_call_id, "name": chunk.tool_name or "", "args_buf": ""}
+                tool_calls[chunk.tool_call_id] = {
+                    "id": chunk.tool_call_id,
+                    "name": chunk.tool_name or "",
+                    "args_buf": "",
+                }
             elif chunk.type == "tool_call_args_delta" and chunk.tool_call_id:
-                tc = tool_calls.setdefault(chunk.tool_call_id, {"id": chunk.tool_call_id, "name": chunk.tool_name or "", "args_buf": ""})
+                tc = tool_calls.setdefault(
+                    chunk.tool_call_id,
+                    {"id": chunk.tool_call_id, "name": chunk.tool_name or "", "args_buf": ""},
+                )
                 tc["args_buf"] += chunk.args_delta or ""
             elif chunk.type == "finish" and chunk.finish_reason:
                 finish = chunk.finish_reason
             elif chunk.type == "usage" and chunk.usage:
                 usage = chunk.usage
         import json
+
         parsed_calls = []
         for tc in tool_calls.values():
             try:
@@ -159,8 +175,9 @@ class LLMProvider(ABC):
             except json.JSONDecodeError:
                 args = {"_raw": tc["args_buf"]}
             parsed_calls.append(ToolCall(id=tc["id"], name=tc["name"], arguments=args))
-        return ChatResponse(content="".join(text_parts), tool_calls=parsed_calls, finish_reason=finish, usage=usage)
+        return ChatResponse(
+            content="".join(text_parts), tool_calls=parsed_calls, finish_reason=finish, usage=usage
+        )
 
     @abstractmethod
-    async def embed(self, texts: list[str], *, model: str) -> list[list[float]]:
-        ...
+    async def embed(self, texts: list[str], *, model: str) -> list[list[float]]: ...

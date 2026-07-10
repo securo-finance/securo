@@ -11,6 +11,7 @@ daily / monthly / yearly intervals (weekly relies on ``extract('isoyear')``
 which SQLite cannot compile and is therefore not exercised here — its label
 helper is covered by the existing pure-function tests).
 """
+
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -87,14 +88,24 @@ async def _ensure_to_char(session: AsyncSession):
 
 
 async def _make_account(
-    session: AsyncSession, user_id: uuid.UUID, name: str,
-    acc_type: str = "checking", balance: str = "0.00", currency: str = "BRL",
-    connection_id: uuid.UUID | None = None, is_closed: bool = False,
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    name: str,
+    acc_type: str = "checking",
+    balance: str = "0.00",
+    currency: str = "BRL",
+    connection_id: uuid.UUID | None = None,
+    is_closed: bool = False,
 ) -> Account:
     acct = Account(
-        id=uuid.uuid4(), user_id=user_id, name=name, type=acc_type,
-        balance=Decimal(balance), currency=currency,
-        connection_id=connection_id, is_closed=is_closed,
+        id=uuid.uuid4(),
+        user_id=user_id,
+        name=name,
+        type=acc_type,
+        balance=Decimal(balance),
+        currency=currency,
+        connection_id=connection_id,
+        is_closed=is_closed,
     )
     session.add(acct)
     await session.commit()
@@ -103,17 +114,30 @@ async def _make_account(
 
 
 async def _add_txn(
-    session: AsyncSession, user_id: uuid.UUID, account_id: uuid.UUID,
-    amount: float, txn_type: str, txn_date: date, *,
-    source: str = "manual", category_id: uuid.UUID | None = None,
-    currency: str = "BRL", effective_date: date | None = None,
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    account_id: uuid.UUID,
+    amount: float,
+    txn_type: str,
+    txn_date: date,
+    *,
+    source: str = "manual",
+    category_id: uuid.UUID | None = None,
+    currency: str = "BRL",
+    effective_date: date | None = None,
     workspace_id: uuid.UUID | None = None,
 ) -> Transaction:
     txn = Transaction(
-        id=uuid.uuid4(), user_id=user_id, account_id=account_id,
-        category_id=category_id, description=f"Test {txn_type} {amount}",
-        amount=Decimal(str(amount)), date=txn_date, type=txn_type,
-        source=source, currency=currency,
+        id=uuid.uuid4(),
+        user_id=user_id,
+        account_id=account_id,
+        category_id=category_id,
+        description=f"Test {txn_type} {amount}",
+        amount=Decimal(str(amount)),
+        date=txn_date,
+        type=txn_type,
+        source=source,
+        currency=currency,
         effective_date=effective_date or txn_date,
         created_at=datetime.now(timezone.utc),
     )
@@ -126,11 +150,18 @@ async def _add_txn(
 
 
 async def _make_category(
-    session: AsyncSession, user_id: uuid.UUID, name: str, color: str = "#123456",
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    name: str,
+    color: str = "#123456",
 ) -> Category:
     cat = Category(
-        id=uuid.uuid4(), user_id=user_id, name=name, icon="tag",
-        color=color, is_system=False,
+        id=uuid.uuid4(),
+        user_id=user_id,
+        name=name,
+        icon="tag",
+        color=color,
+        is_system=False,
     )
     session.add(cat)
     await session.commit()
@@ -139,17 +170,29 @@ async def _make_category(
 
 
 async def _make_recurring(
-    session: AsyncSession, user_id: uuid.UUID, account_id: uuid.UUID,
-    amount: float, txn_type: str, *, frequency: str = "monthly",
-    next_occurrence: date | None = None, category_id: uuid.UUID | None = None,
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    account_id: uuid.UUID,
+    amount: float,
+    txn_type: str,
+    *,
+    frequency: str = "monthly",
+    next_occurrence: date | None = None,
+    category_id: uuid.UUID | None = None,
     currency: str = "BRL",
 ) -> RecurringTransaction:
     today = date.today()
     rec = RecurringTransaction(
-        id=uuid.uuid4(), user_id=user_id, account_id=account_id,
-        category_id=category_id, description=f"Rec {txn_type} {amount}",
-        amount=Decimal(str(amount)), currency=currency, type=txn_type,
-        frequency=frequency, start_date=today,
+        id=uuid.uuid4(),
+        user_id=user_id,
+        account_id=account_id,
+        category_id=category_id,
+        description=f"Rec {txn_type} {amount}",
+        amount=Decimal(str(amount)),
+        currency=currency,
+        type=txn_type,
+        frequency=frequency,
+        start_date=today,
         next_occurrence=next_occurrence or (today + timedelta(days=2)),
         is_active=True,
     )
@@ -273,7 +316,9 @@ async def test_income_expenses_excludes_opening_and_closed(session, test_user, t
     await _add_txn(session, test_user.id, closed.id, 1000, "credit", today)
 
     open_acct = await _make_account(session, test_user.id, "IE Open")
-    await _add_txn(session, test_user.id, open_acct.id, 7000, "credit", today, source="opening_balance")
+    await _add_txn(
+        session, test_user.id, open_acct.id, 7000, "credit", today, source="opening_balance"
+    )
 
     report = await get_income_expenses_report(
         session, test_workspace.id, test_user.id, months=2, interval="monthly"
@@ -293,13 +338,23 @@ async def test_income_expenses_with_recurring_projection(session, test_user, tes
     # window. Anchor occurrences at the 1st of the current month so they
     # land inside that window regardless of what day "today" is.
     await _make_recurring(
-        session, test_user.id, acct.id, 800, "debit",
-        frequency="monthly", next_occurrence=month_start,
+        session,
+        test_user.id,
+        acct.id,
+        800,
+        "debit",
+        frequency="monthly",
+        next_occurrence=month_start,
         category_id=cat.id,
     )
     await _make_recurring(
-        session, test_user.id, acct.id, 1500, "credit",
-        frequency="monthly", next_occurrence=month_start,
+        session,
+        test_user.id,
+        acct.id,
+        1500,
+        "credit",
+        frequency="monthly",
+        next_occurrence=month_start,
     )
 
     report = await get_income_expenses_report(
@@ -313,16 +368,16 @@ async def test_income_expenses_with_recurring_projection(session, test_user, tes
     assert "Rent" in labels
 
 
-async def test_income_expenses_many_categories_triggers_other_bucket(session, test_user, test_workspace):
+async def test_income_expenses_many_categories_triggers_other_bucket(
+    session, test_user, test_workspace
+):
     """More than CATEGORY_TREND_TOP_N expense categories → an 'Other' bucket."""
     acct = await _make_account(session, test_user.id, "IE Many")
     today = date.today()
     # 14 distinct expense categories (> top-N of 11)
     for i in range(14):
         cat = await _make_category(session, test_user.id, f"Cat{i}", color="#aabbcc")
-        await _add_txn(
-            session, test_user.id, acct.id, 100 + i, "debit", today, category_id=cat.id
-        )
+        await _add_txn(session, test_user.id, acct.id, 100 + i, "debit", today, category_id=cat.id)
 
     report = await get_income_expenses_report(
         session, test_workspace.id, test_user.id, months=1, interval="monthly"
@@ -358,20 +413,31 @@ async def test_income_expenses_change_percent_computed(session, test_user, test_
 # ---------------------------------------------------------------------------
 
 
-async def test_net_worth_composition_includes_credit_card_liability(session, test_user, test_workspace):
+async def test_net_worth_composition_includes_credit_card_liability(
+    session, test_user, test_workspace
+):
     """A credit-card account surfaces as a liabilities-group composition item."""
     conn = BankConnection(
-        id=uuid.uuid4(), user_id=test_user.id, provider="test",
-        external_id="ext-nw-cc", institution_name="CC Bank",
-        credentials={}, status="active",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        provider="test",
+        external_id="ext-nw-cc",
+        institution_name="CC Bank",
+        credentials={},
+        status="active",
         last_sync_at=datetime.now(timezone.utc),
         created_at=datetime.now(timezone.utc),
     )
     session.add(conn)
     await session.flush()
     cc = Account(
-        id=uuid.uuid4(), user_id=test_user.id, connection_id=conn.id,
-        name="My Card", type="credit_card", balance=Decimal("1500"), currency="BRL",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        connection_id=conn.id,
+        name="My Card",
+        type="credit_card",
+        balance=Decimal("1500"),
+        currency="BRL",
     )
     session.add(cc)
     await session.commit()
@@ -383,18 +449,27 @@ async def test_net_worth_composition_includes_credit_card_liability(session, tes
     assert any(c.label == "My Card" for c in liab)
 
 
-async def test_net_worth_composition_asset_uses_asset_value_entry(session, test_user, test_workspace):
+async def test_net_worth_composition_asset_uses_asset_value_entry(
+    session, test_user, test_workspace
+):
     """Asset with an AssetValue row is valued via the latest entry."""
     asset = Asset(
-        id=uuid.uuid4(), user_id=test_user.id, name="Loft",
-        type="real_estate", currency="BRL",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Loft",
+        type="real_estate",
+        currency="BRL",
     )
     session.add(asset)
     await session.flush()
-    session.add(AssetValue(
-        id=uuid.uuid4(), asset_id=asset.id,
-        amount=Decimal("250000"), date=date.today(),
-    ))
+    session.add(
+        AssetValue(
+            id=uuid.uuid4(),
+            asset_id=asset.id,
+            amount=Decimal("250000"),
+            date=date.today(),
+        )
+    )
     await session.commit()
 
     report = await get_net_worth_report(
@@ -409,17 +484,26 @@ async def test_net_worth_composition_asset_uses_asset_value_entry(session, test_
 async def test_net_worth_at_credit_card_branch(session, test_user, test_workspace):
     """_net_worth_at puts credit-card balances into liabilities."""
     conn = BankConnection(
-        id=uuid.uuid4(), user_id=test_user.id, provider="test",
-        external_id="ext-nwat-cc", institution_name="CC",
-        credentials={}, status="active",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        provider="test",
+        external_id="ext-nwat-cc",
+        institution_name="CC",
+        credentials={},
+        status="active",
         last_sync_at=datetime.now(timezone.utc),
         created_at=datetime.now(timezone.utc),
     )
     session.add(conn)
     await session.flush()
     cc = Account(
-        id=uuid.uuid4(), user_id=test_user.id, connection_id=conn.id,
-        name="CC", type="credit_card", balance=Decimal("700"), currency="BRL",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        connection_id=conn.id,
+        name="CC",
+        type="credit_card",
+        balance=Decimal("700"),
+        currency="BRL",
     )
     session.add(cc)
     await session.commit()
@@ -439,8 +523,13 @@ async def test_cash_flow_monthly_interval_aggregation(session, test_user, test_w
     today = date.today()
     await _add_txn(session, test_user.id, acct.id, 5000, "credit", today, source="opening_balance")
     await _make_recurring(
-        session, test_user.id, acct.id, 400, "debit",
-        frequency="monthly", next_occurrence=today + timedelta(days=2),
+        session,
+        test_user.id,
+        acct.id,
+        400,
+        "debit",
+        frequency="monthly",
+        next_occurrence=today + timedelta(days=2),
     )
 
     report = await get_cash_flow_report(
@@ -459,8 +548,13 @@ async def test_cash_flow_weekly_interval_aggregation(session, test_user, test_wo
     today = date.today()
     await _add_txn(session, test_user.id, acct.id, 1000, "credit", today, source="opening_balance")
     await _make_recurring(
-        session, test_user.id, acct.id, 50, "debit",
-        frequency="weekly", next_occurrence=today + timedelta(days=1),
+        session,
+        test_user.id,
+        acct.id,
+        50,
+        "debit",
+        frequency="weekly",
+        next_occurrence=today + timedelta(days=1),
     )
 
     report = await get_cash_flow_report(
@@ -497,13 +591,19 @@ async def test_cash_flow_baseline_mode_projects_from_history(session, test_user,
 
 async def test_baseline_projection_no_history_returns_empty(session, test_user, test_workspace):
     """No qualifying transactions → empty projection, zero lookback days."""
+
     async def _to_primary(amount, ccy):
         return float(amount)
 
     today = date.today()
     end = today + timedelta(days=30)
     projections, lookback = await _get_baseline_projection(
-        session, test_workspace.id, today, end, "BRL", _to_primary,
+        session,
+        test_workspace.id,
+        today,
+        end,
+        "BRL",
+        _to_primary,
     )
     assert projections == []
     assert lookback == 0
@@ -521,7 +621,12 @@ async def test_baseline_projection_with_history(session, test_user, test_workspa
 
     end = today + timedelta(days=5)
     projections, lookback = await _get_baseline_projection(
-        session, test_workspace.id, today, end, "BRL", _to_primary,
+        session,
+        test_workspace.id,
+        today,
+        end,
+        "BRL",
+        _to_primary,
     )
     assert lookback > 0
     assert len(projections) > 0
@@ -549,28 +654,42 @@ async def test_income_expenses_owner_split_offset(session, test_user, test_works
     today = date.today()
 
     group = Group(
-        id=uuid.uuid4(), user_id=test_user.id, name="Trip",
-        kind="shared", default_currency="BRL",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Trip",
+        kind="shared",
+        default_currency="BRL",
     )
     session.add(group)
     await session.flush()
     # The owner's own self-member, and a friend (non-owner) member.
     self_member = GroupMember(
-        id=uuid.uuid4(), group_id=group.id, name="Me",
-        linked_user_id=test_user.id, is_self=True,
+        id=uuid.uuid4(),
+        group_id=group.id,
+        name="Me",
+        linked_user_id=test_user.id,
+        is_self=True,
     )
     friend = GroupMember(
-        id=uuid.uuid4(), group_id=group.id, name="Friend", is_self=False,
+        id=uuid.uuid4(),
+        group_id=group.id,
+        name="Friend",
+        is_self=False,
     )
     session.add_all([self_member, friend])
     await session.flush()
 
     # User pays a 1000 dinner; friend owes 400 of it.
     txn = await _add_txn(session, test_user.id, acct.id, 1000, "debit", today, category_id=cat.id)
-    session.add(TransactionSplit(
-        id=uuid.uuid4(), transaction_id=txn.id, group_member_id=friend.id,
-        share_amount=Decimal("400"), share_type="amount",
-    ))
+    session.add(
+        TransactionSplit(
+            id=uuid.uuid4(),
+            transaction_id=txn.id,
+            group_member_id=friend.id,
+            share_amount=Decimal("400"),
+            share_type="amount",
+        )
+    )
     await session.commit()
 
     report = await get_income_expenses_report(
@@ -585,7 +704,9 @@ async def test_income_expenses_owner_split_offset(session, test_user, test_works
     assert dinner.value == pytest.approx(600.0)
 
 
-async def test_income_expenses_trend_points_have_per_period_composition(session, test_user, test_workspace):
+async def test_income_expenses_trend_points_have_per_period_composition(
+    session, test_user, test_workspace
+):
     """Each income/expenses trend DataPoint carries per-period composition items."""
     cat_wages = await _make_category(session, test_user.id, "Wages", color="#0E0")
     cat_groceries = await _make_category(session, test_user.id, "Groceries", color="#E00")
@@ -593,7 +714,9 @@ async def test_income_expenses_trend_points_have_per_period_composition(session,
     today = date.today()
 
     await _add_txn(session, test_user.id, acct.id, 4000, "credit", today, category_id=cat_wages.id)
-    await _add_txn(session, test_user.id, acct.id, 900, "debit", today, category_id=cat_groceries.id)
+    await _add_txn(
+        session, test_user.id, acct.id, 900, "debit", today, category_id=cat_groceries.id
+    )
 
     report = await get_income_expenses_report(
         session, test_workspace.id, test_user.id, months=2, interval="monthly"
@@ -610,10 +733,14 @@ async def test_income_expenses_trend_points_have_per_period_composition(session,
     assert "Groceries" in labels
 
 
-async def test_net_worth_composition_positive_checking_in_accounts_group(session, test_user, test_workspace):
+async def test_net_worth_composition_positive_checking_in_accounts_group(
+    session, test_user, test_workspace
+):
     """A manual checking account with positive balance lands in the accounts group."""
     acct = await _make_account(session, test_user.id, "NW Pos Checking")
-    await _add_txn(session, test_user.id, acct.id, 4200, "credit", date.today(), source="opening_balance")
+    await _add_txn(
+        session, test_user.id, acct.id, 4200, "credit", date.today(), source="opening_balance"
+    )
 
     report = await get_net_worth_report(
         session, test_workspace.id, test_user.id, months=1, interval="monthly"
@@ -624,11 +751,17 @@ async def test_net_worth_composition_positive_checking_in_accounts_group(session
     assert item.value == pytest.approx(4200.0)
 
 
-async def test_net_worth_composition_asset_purchase_price_fallback(session, test_user, test_workspace):
+async def test_net_worth_composition_asset_purchase_price_fallback(
+    session, test_user, test_workspace
+):
     """Asset with no AssetValue rows falls back to purchase_price in composition."""
     asset = Asset(
-        id=uuid.uuid4(), user_id=test_user.id, name="Old Car",
-        type="vehicle", currency="BRL", purchase_price=Decimal("18000"),
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Old Car",
+        type="vehicle",
+        currency="BRL",
+        purchase_price=Decimal("18000"),
         purchase_date=date.today() - timedelta(days=100),
     )
     session.add(asset)
@@ -646,8 +779,12 @@ async def test_net_worth_composition_asset_purchase_price_fallback(session, test
 async def test_net_worth_composition_asset_zero_value_excluded(session, test_user, test_workspace):
     """Asset with no value entry and future purchase date contributes nothing."""
     asset = Asset(
-        id=uuid.uuid4(), user_id=test_user.id, name="Future Buy",
-        type="other", currency="BRL", purchase_price=Decimal("5000"),
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Future Buy",
+        type="other",
+        currency="BRL",
+        purchase_price=Decimal("5000"),
         purchase_date=date.today() + timedelta(days=60),
     )
     session.add(asset)
@@ -663,11 +800,20 @@ async def test_cash_flow_foreign_currency_conversion_path(session, test_user, te
     """A non-primary-currency transaction exercises the _to_primary rate path."""
     acct = await _make_account(session, test_user.id, "CF USD", currency="USD")
     today = date.today()
-    await _add_txn(session, test_user.id, acct.id, 1000, "credit", today,
-                   source="opening_balance", currency="USD")
+    await _add_txn(
+        session,
+        test_user.id,
+        acct.id,
+        1000,
+        "credit",
+        today,
+        source="opening_balance",
+        currency="USD",
+    )
     # Past actual flow in USD → hits _to_primary with a non-BRL currency
-    await _add_txn(session, test_user.id, acct.id, 200, "debit",
-                   today - timedelta(days=5), currency="USD")
+    await _add_txn(
+        session, test_user.id, acct.id, 200, "debit", today - timedelta(days=5), currency="USD"
+    )
 
     report = await get_cash_flow_report(
         session, test_workspace.id, test_user.id, months=2, interval="daily"
@@ -683,8 +829,13 @@ async def test_cash_flow_categorized_recurring_composition(session, test_user, t
     today = date.today()
     await _add_txn(session, test_user.id, acct.id, 2000, "credit", today, source="opening_balance")
     await _make_recurring(
-        session, test_user.id, acct.id, 150, "debit",
-        frequency="monthly", next_occurrence=today + timedelta(days=2),
+        session,
+        test_user.id,
+        acct.id,
+        150,
+        "debit",
+        frequency="monthly",
+        next_occurrence=today + timedelta(days=2),
         category_id=cat.id,
     )
 
@@ -701,11 +852,20 @@ async def test_cash_flow_baseline_amount_primary_used(session, test_user, test_w
     """Baseline projection uses amount_primary when present on the transaction."""
     acct = await _make_account(session, test_user.id, "CF Baseline AP", currency="USD")
     today = date.today()
-    await _add_txn(session, test_user.id, acct.id, 500, "credit", today,
-                   source="opening_balance", currency="USD")
+    await _add_txn(
+        session,
+        test_user.id,
+        acct.id,
+        500,
+        "credit",
+        today,
+        source="opening_balance",
+        currency="USD",
+    )
     # Give the historical txn an explicit amount_primary
-    txn = await _add_txn(session, test_user.id, acct.id, 100, "debit",
-                         today - timedelta(days=8), currency="USD")
+    txn = await _add_txn(
+        session, test_user.id, acct.id, 100, "debit", today - timedelta(days=8), currency="USD"
+    )
     txn.amount_primary = Decimal("550")
     await session.commit()
 
@@ -725,17 +885,26 @@ async def test_cash_flow_accrual_mode_pending_cc(session, test_user, test_worksp
     await session.commit()
 
     conn = BankConnection(
-        id=uuid.uuid4(), user_id=test_user.id, provider="test",
-        external_id="ext-cf-accrual", institution_name="CC",
-        credentials={}, status="active",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        provider="test",
+        external_id="ext-cf-accrual",
+        institution_name="CC",
+        credentials={},
+        status="active",
         last_sync_at=datetime.now(timezone.utc),
         created_at=datetime.now(timezone.utc),
     )
     session.add(conn)
     await session.flush()
     cc = Account(
-        id=uuid.uuid4(), user_id=test_user.id, connection_id=conn.id,
-        name="CC Accrual", type="credit_card", balance=Decimal("0"), currency="BRL",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        connection_id=conn.id,
+        name="CC Accrual",
+        type="credit_card",
+        balance=Decimal("0"),
+        currency="BRL",
     )
     session.add(cc)
     await session.commit()
@@ -743,7 +912,12 @@ async def test_cash_flow_accrual_mode_pending_cc(session, test_user, test_worksp
     today = date.today()
     # Purchase booked today, cash impact (effective_date) in the future window
     await _add_txn(
-        session, test_user.id, cc.id, 500, "debit", today,
+        session,
+        test_user.id,
+        cc.id,
+        500,
+        "debit",
+        today,
         effective_date=today + timedelta(days=15),
     )
 

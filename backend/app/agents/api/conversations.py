@@ -131,7 +131,10 @@ async def generate_title(
                 content = content.split(marker, 1)[1]
         content = content.strip().strip('"').strip("'")
         # First non-empty line wins.
-        candidate = next((line.strip().strip('"').strip("'") for line in content.splitlines() if line.strip()), "")
+        candidate = next(
+            (line.strip().strip('"').strip("'") for line in content.splitlines() if line.strip()),
+            "",
+        )
         if candidate:
             conv = await conversation_service.update_title(
                 session, conversation_id, ctx.workspace.id, candidate[:80]

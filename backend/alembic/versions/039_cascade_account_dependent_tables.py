@@ -20,9 +20,7 @@ depends_on = None
 
 def upgrade() -> None:
     # import_logs: cascade — logs belong to the account's lifetime
-    op.drop_constraint(
-        "import_logs_account_id_fkey", "import_logs", type_="foreignkey"
-    )
+    op.drop_constraint("import_logs_account_id_fkey", "import_logs", type_="foreignkey")
     op.create_foreign_key(
         "import_logs_account_id_fkey",
         "import_logs",
@@ -48,9 +46,7 @@ def upgrade() -> None:
     )
 
     # goals: set null — goals outlive any single tracked account; keep progress
-    op.drop_constraint(
-        "goals_account_id_fkey", "goals", type_="foreignkey"
-    )
+    op.drop_constraint("goals_account_id_fkey", "goals", type_="foreignkey")
     op.create_foreign_key(
         "goals_account_id_fkey",
         "goals",
@@ -62,9 +58,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_constraint(
-        "goals_account_id_fkey", "goals", type_="foreignkey"
-    )
+    op.drop_constraint("goals_account_id_fkey", "goals", type_="foreignkey")
     op.create_foreign_key(
         "goals_account_id_fkey",
         "goals",
@@ -86,9 +80,7 @@ def downgrade() -> None:
         ["id"],
     )
 
-    op.drop_constraint(
-        "import_logs_account_id_fkey", "import_logs", type_="foreignkey"
-    )
+    op.drop_constraint("import_logs_account_id_fkey", "import_logs", type_="foreignkey")
     op.create_foreign_key(
         "import_logs_account_id_fkey",
         "import_logs",

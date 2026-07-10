@@ -44,9 +44,7 @@ from app.services import (
 # ──────────────────────────── helpers ─────────────────────────────
 
 
-async def _make_account(
-    session: AsyncSession, user_id, currency: str = "USD"
-) -> Account:
+async def _make_account(session: AsyncSession, user_id, currency: str = "USD") -> Account:
     account = Account(
         id=uuid.uuid4(),
         user_id=user_id,
@@ -139,18 +137,14 @@ def _month_window(d: date) -> tuple[date, date]:
 
 
 @pytest.mark.asyncio
-async def test_summary_owner_share_caps_expense(
-    session: AsyncSession, test_user, test_workspace
-):
+async def test_summary_owner_share_caps_expense(session: AsyncSession, test_user, test_workspace):
     """Owner pays $150 split equally with two friends ($50 share). The
     dashboard should report a $50 expense, not $150."""
     await _force_user_currency(session, test_user, "USD")
     today = date.today()
     account = await _make_account(session, test_user.id)
     tx = await _make_tx(session, test_user.id, account.id, "150.00", when=today)
-    _, members = await _setup_group(
-        session, test_user, test_workspace.id, "Me", "A", "B"
-    )
+    _, members = await _setup_group(session, test_user, test_workspace.id, "Me", "A", "B")
 
     await split_service.replace_splits(
         session,
@@ -171,18 +165,14 @@ async def test_summary_owner_share_caps_expense(
 
 
 @pytest.mark.asyncio
-async def test_summary_owner_with_zero_share(
-    session: AsyncSession, test_user, test_workspace
-):
+async def test_summary_owner_with_zero_share(session: AsyncSession, test_user, test_workspace):
     """Owner fronts a $150 expense entirely for two friends. They each
     have a $75 share; owner has no share. Expense should be $0."""
     await _force_user_currency(session, test_user, "USD")
     today = date.today()
     account = await _make_account(session, test_user.id)
     tx = await _make_tx(session, test_user.id, account.id, "150.00", when=today)
-    _, members = await _setup_group(
-        session, test_user, test_workspace.id, "Me", "A", "B"
-    )
+    _, members = await _setup_group(session, test_user, test_workspace.id, "Me", "A", "B")
     me, friend_a, friend_b = members
 
     await split_service.replace_splits(
@@ -191,12 +181,8 @@ async def test_summary_owner_with_zero_share(
         TransactionSplitsInput(
             share_type="exact",
             splits=[
-                TransactionSplitInput(
-                    group_member_id=friend_a.id, share_amount=Decimal("75.00")
-                ),
-                TransactionSplitInput(
-                    group_member_id=friend_b.id, share_amount=Decimal("75.00")
-                ),
+                TransactionSplitInput(group_member_id=friend_a.id, share_amount=Decimal("75.00")),
+                TransactionSplitInput(group_member_id=friend_b.id, share_amount=Decimal("75.00")),
             ],
         ),
         test_user.id,
@@ -238,9 +224,7 @@ async def test_summary_drops_settlement_credits_from_income(
     today = date.today()
     account = await _make_account(session, test_user.id)
     tx = await _make_tx(session, test_user.id, account.id, "60.00", when=today)
-    _, members = await _setup_group(
-        session, test_user, test_workspace.id, "Me", "Friend"
-    )
+    _, members = await _setup_group(session, test_user, test_workspace.id, "Me", "Friend")
     me, friend = members
 
     await split_service.replace_splits(
@@ -329,9 +313,7 @@ async def test_spending_by_category_uses_owner_share(
         description="Brunch",
         when=today,
     )
-    _, members = await _setup_group(
-        session, test_user, test_workspace.id, "Me", "Friend"
-    )
+    _, members = await _setup_group(session, test_user, test_workspace.id, "Me", "Friend")
     me, friend = members
     await split_service.replace_splits(
         session,
@@ -372,9 +354,7 @@ async def test_spending_by_category_drops_zero_share_category(
         category_id=food.id,
         when=today,
     )
-    _, members = await _setup_group(
-        session, test_user, test_workspace.id, "Me", "A"
-    )
+    _, members = await _setup_group(session, test_user, test_workspace.id, "Me", "A")
     me, friend = members
     await split_service.replace_splits(
         session,
@@ -382,9 +362,7 @@ async def test_spending_by_category_drops_zero_share_category(
         TransactionSplitsInput(
             share_type="exact",
             splits=[
-                TransactionSplitInput(
-                    group_member_id=friend.id, share_amount=Decimal("100.00")
-                ),
+                TransactionSplitInput(group_member_id=friend.id, share_amount=Decimal("100.00")),
             ],
         ),
         test_user.id,
@@ -413,9 +391,7 @@ async def test_owner_self_member_recognized_without_link(
     today = date.today()
     account = await _make_account(session, test_user.id)
     tx = await _make_tx(session, test_user.id, account.id, "90.00", when=today)
-    _, members = await _setup_group(
-        session, test_user, test_workspace.id, "Me", "Friend"
-    )
+    _, members = await _setup_group(session, test_user, test_workspace.id, "Me", "Friend")
     me, friend = members
     # Sanity-check the schema invariant the bug exploited.
     assert me.is_self is True
@@ -471,9 +447,7 @@ async def test_balance_line_includes_fx_converted_amount(
     today = date.today()
     await _seed_eur_rate(session, today)
     account = await _make_account(session, test_user.id, currency="EUR")
-    tx = await _make_tx(
-        session, test_user.id, account.id, "100.00", currency="EUR", when=today
-    )
+    tx = await _make_tx(session, test_user.id, account.id, "100.00", currency="EUR", when=today)
     _, members = await _setup_group(
         session, test_user, test_workspace.id, "Me", "Friend", default_currency="USD"
     )
@@ -485,9 +459,7 @@ async def test_balance_line_includes_fx_converted_amount(
         TransactionSplitsInput(
             share_type="exact",
             splits=[
-                TransactionSplitInput(
-                    group_member_id=friend.id, share_amount=Decimal("100.00")
-                ),
+                TransactionSplitInput(group_member_id=friend.id, share_amount=Decimal("100.00")),
             ],
         ),
         test_user.id,
@@ -518,9 +490,7 @@ async def test_balance_line_default_currency_passthrough(
     today = date.today()
     account = await _make_account(session, test_user.id)
     tx = await _make_tx(session, test_user.id, account.id, "60.00", when=today)
-    _, members = await _setup_group(
-        session, test_user, test_workspace.id, "Me", "Friend"
-    )
+    _, members = await _setup_group(session, test_user, test_workspace.id, "Me", "Friend")
     me, friend = members
     await split_service.replace_splits(
         session,
@@ -528,9 +498,7 @@ async def test_balance_line_default_currency_passthrough(
         TransactionSplitsInput(
             share_type="exact",
             splits=[
-                TransactionSplitInput(
-                    group_member_id=friend.id, share_amount=Decimal("60.00")
-                ),
+                TransactionSplitInput(group_member_id=friend.id, share_amount=Decimal("60.00")),
             ],
         ),
         test_user.id,
@@ -548,9 +516,7 @@ async def test_balance_line_default_currency_passthrough(
 
 
 @pytest.mark.asyncio
-async def test_owner_split_offset_pnl_helper(
-    session: AsyncSession, test_user, test_workspace
-):
+async def test_owner_split_offset_pnl_helper(session: AsyncSession, test_user, test_workspace):
     """The income/expenses report uses Postgres `to_char`, so we can't
     exercise it under SQLite. Instead pin its underlying helper — the
     same one the dashboard uses — directly."""
@@ -560,9 +526,7 @@ async def test_owner_split_offset_pnl_helper(
     today = date.today()
     account = await _make_account(session, test_user.id)
     tx = await _make_tx(session, test_user.id, account.id, "120.00", when=today)
-    _, members = await _setup_group(
-        session, test_user, test_workspace.id, "Me", "A", "B", "C"
-    )
+    _, members = await _setup_group(session, test_user, test_workspace.id, "Me", "A", "B", "C")
 
     await split_service.replace_splits(
         session,
@@ -603,9 +567,7 @@ async def test_budget_actual_uses_share_only(
         category_id=food.id,
         when=today,
     )
-    _, members = await _setup_group(
-        session, test_user, test_workspace.id, "Me", "A", "B"
-    )
+    _, members = await _setup_group(session, test_user, test_workspace.id, "Me", "A", "B")
     me, *friends = members
     await split_service.replace_splits(
         session,

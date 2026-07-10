@@ -16,6 +16,7 @@ the initial buy (and a sell when the holding was already sold), so existing
 displayed numbers stay identical. Synced (valuation_method='manual') holdings
 are not touched.
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -57,8 +58,12 @@ def upgrade() -> None:
     op.create_index("ix_asset_transactions_workspace_id", "asset_transactions", ["workspace_id"])
     op.create_index("ix_asset_transactions_date", "asset_transactions", ["date"])
 
-    op.add_column("assets", sa.Column("average_price", sa.Numeric(precision=18, scale=6), nullable=True))
-    op.add_column("assets", sa.Column("realized_gain", sa.Numeric(precision=18, scale=2), nullable=True))
+    op.add_column(
+        "assets", sa.Column("average_price", sa.Numeric(precision=18, scale=6), nullable=True)
+    )
+    op.add_column(
+        "assets", sa.Column("realized_gain", sa.Numeric(precision=18, scale=2), nullable=True)
+    )
 
     bind = op.get_bind()
 

@@ -57,8 +57,7 @@ async def _backfill_primary_amounts() -> dict:
                 )
             )
             candidate_txs = [
-                tx for tx in tx_result.scalars().all()
-                if tx.currency != _primary(tx.user_id)
+                tx for tx in tx_result.scalars().all() if tx.currency != _primary(tx.user_id)
             ]
 
             # 3. Sync one historical rate per month that has candidates.
@@ -81,7 +80,10 @@ async def _backfill_primary_amounts() -> dict:
                 primary_currency = _primary(tx.user_id)
                 try:
                     rate = await _resolve_rate(
-                        session, tx.currency, primary_currency, tx.date,
+                        session,
+                        tx.currency,
+                        primary_currency,
+                        tx.date,
                     )
                     if rate is None:
                         continue  # still no rate — leave as-is, heal next run
@@ -102,14 +104,16 @@ async def _backfill_primary_amounts() -> dict:
                 )
             )
             candidate_recs = [
-                rec for rec in rec_result.scalars().all()
-                if rec.currency != _primary(rec.user_id)
+                rec for rec in rec_result.scalars().all() if rec.currency != _primary(rec.user_id)
             ]
             for rec in candidate_recs:
                 primary_currency = _primary(rec.user_id)
                 try:
                     rate = await _resolve_rate(
-                        session, rec.currency, primary_currency, rec.start_date,
+                        session,
+                        rec.currency,
+                        primary_currency,
+                        rec.start_date,
                     )
                     if rate is None:
                         continue
@@ -131,8 +135,11 @@ async def _backfill_primary_amounts() -> dict:
                 primary_currency = users.get(asset.user_id, settings.default_currency)
                 try:
                     converted, _ = await convert(
-                        session, Decimal(str(asset.purchase_price)),
-                        asset.currency, primary_currency, asset.purchase_date,
+                        session,
+                        Decimal(str(asset.purchase_price)),
+                        asset.currency,
+                        primary_currency,
+                        asset.purchase_date,
                     )
                     asset.purchase_price_primary = converted
                     stats["assets"] += 1

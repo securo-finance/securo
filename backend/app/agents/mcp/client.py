@@ -3,6 +3,7 @@
 Talks to one or more MCP servers (Securo's built-in + any user-supplied).
 Per call, mints a short-lived JWT scoped to (user_id, conversation_id).
 """
+
 from __future__ import annotations
 
 import uuid
@@ -19,6 +20,7 @@ from app.agents.providers.base import ToolDefinition
 @dataclass
 class ToolHandle:
     """One discovered tool, with the server it belongs to and its schema."""
+
     server: str
     name: str
     description: str
@@ -77,13 +79,15 @@ class MCPClient:
         out: list[ToolHandle] = []
         for t in (result or {}).get("tools", []):
             extras = t.get("_securo") or {}
-            out.append(ToolHandle(
-                server=self.name,
-                name=t.get("name") or "",
-                description=t.get("description") or "",
-                parameters=t.get("inputSchema") or {"type": "object", "properties": {}},
-                is_proposal=bool(extras.get("is_proposal", False)),
-            ))
+            out.append(
+                ToolHandle(
+                    server=self.name,
+                    name=t.get("name") or "",
+                    description=t.get("description") or "",
+                    parameters=t.get("inputSchema") or {"type": "object", "properties": {}},
+                    is_proposal=bool(extras.get("is_proposal", False)),
+                )
+            )
         return out
 
     async def call_tool(
@@ -152,7 +156,9 @@ class MCPRegistry:
         return out
 
     @staticmethod
-    def to_provider_tools(handles: list[ToolHandle], *, allowed: Optional[set[tuple[str, str]]] = None) -> list[ToolDefinition]:
+    def to_provider_tools(
+        handles: list[ToolHandle], *, allowed: Optional[set[tuple[str, str]]] = None
+    ) -> list[ToolDefinition]:
         """Convert MCP tool handles into provider-agnostic ToolDefinition.
 
         `allowed` is a set of (server, tool_name) pairs. When None, all are
@@ -163,11 +169,13 @@ class MCPRegistry:
         for h in handles:
             if allowed is not None and (h.server, h.name) not in allowed:
                 continue
-            out.append(ToolDefinition(
-                name=f"{h.server}__{h.name}",
-                description=h.description,
-                parameters=h.parameters or {"type": "object", "properties": {}},
-            ))
+            out.append(
+                ToolDefinition(
+                    name=f"{h.server}__{h.name}",
+                    description=h.description,
+                    parameters=h.parameters or {"type": "object", "properties": {}},
+                )
+            )
         return out
 
     async def call(

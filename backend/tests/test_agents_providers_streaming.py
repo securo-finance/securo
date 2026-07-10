@@ -3,6 +3,7 @@ app/agents/providers/{ollama,anthropic}.py. Both providers open
 httpx.AsyncClient.stream(...) inline, so we replace AsyncClient with a
 fake whose stream() yields a pre-baked SSE/JSONL response.
 """
+
 from __future__ import annotations
 
 import json
@@ -26,6 +27,7 @@ from app.agents.providers.ollama import OllamaProvider
 
 
 # --------------------------------------------------------------------- httpx fake
+
 
 class _FakeStreamResponse:
     """Stand-in for the response object yielded from `client.stream(...)`."""
@@ -91,25 +93,38 @@ def _fake_httpx(monkeypatch):
 
 # --------------------------------------------------------------------- Ollama: chat_stream
 
+
 @pytest.mark.asyncio
 async def test_ollama_chat_stream_yields_text_and_finish():
     """Two JSONL deltas + a final done frame should produce text deltas
     plus usage + finish chunks."""
-    _FakeAsyncClient.queue_stream.append(_FakeStreamResponse(status_code=200, lines=[
-        json.dumps({"message": {"content": "Hel"}}),
-        json.dumps({"message": {"content": "lo"}}),
-        json.dumps({
-            "message": {"content": ""},
-            "done": True, "done_reason": "stop",
-            "prompt_eval_count": 7, "eval_count": 4,
-        }),
-        "",  # blank line — should be skipped
-    ]))
+    _FakeAsyncClient.queue_stream.append(
+        _FakeStreamResponse(
+            status_code=200,
+            lines=[
+                json.dumps({"message": {"content": "Hel"}}),
+                json.dumps({"message": {"content": "lo"}}),
+                json.dumps(
+                    {
+                        "message": {"content": ""},
+                        "done": True,
+                        "done_reason": "stop",
+                        "prompt_eval_count": 7,
+                        "eval_count": 4,
+                    }
+                ),
+                "",  # blank line — should be skipped
+            ],
+        )
+    )
 
     provider = OllamaProvider(base_url="http://ollama:11434")
     chunks = []
     async for chunk in provider.chat_stream(
-        [ChatMessage(role="user", content="hi")], model="llama3", temperature=0.1, max_tokens=64,
+        [ChatMessage(role="user", content="hi")],
+        model="llama3",
+        temperature=0.1,
+        max_tokens=64,
     ):
         chunks.append(chunk)
 
@@ -127,17 +142,24 @@ async def test_ollama_chat_stream_yields_text_and_finish():
 @pytest.mark.asyncio
 async def test_ollama_chat_stream_emits_tool_call_events():
     """A streaming tool_calls payload should produce start/args/end chunks."""
-    _FakeAsyncClient.queue_stream.append(_FakeStreamResponse(status_code=200, lines=[
-        json.dumps({
-            "message": {
-                "content": "",
-                "tool_calls": [
-                    {"function": {"name": "list_accounts", "arguments": {"limit": 5}}},
-                ],
-            },
-        }),
-        json.dumps({"message": {"content": ""}, "done": True, "done_reason": "tool_calls"}),
-    ]))
+    _FakeAsyncClient.queue_stream.append(
+        _FakeStreamResponse(
+            status_code=200,
+            lines=[
+                json.dumps(
+                    {
+                        "message": {
+                            "content": "",
+                            "tool_calls": [
+                                {"function": {"name": "list_accounts", "arguments": {"limit": 5}}},
+                            ],
+                        },
+                    }
+                ),
+                json.dumps({"message": {"content": ""}, "done": True, "done_reason": "tool_calls"}),
+            ],
+        )
+    )
 
     provider = OllamaProvider()
     types = []
@@ -150,13 +172,18 @@ async def test_ollama_chat_stream_emits_tool_call_events():
 
 @pytest.mark.asyncio
 async def test_ollama_chat_stream_raises_on_http_error():
-    _FakeAsyncClient.queue_stream.append(_FakeStreamResponse(
-        status_code=503, lines=[], body=b"unavailable",
-    ))
+    _FakeAsyncClient.queue_stream.append(
+        _FakeStreamResponse(
+            status_code=503,
+            lines=[],
+            body=b"unavailable",
+        )
+    )
     provider = OllamaProvider()
     with pytest.raises(LLMUnavailableError):
         async for _ in provider.chat_stream(
-            [ChatMessage(role="user", content="x")], model="llama3",
+            [ChatMessage(role="user", content="x")],
+            model="llama3",
         ):
             pass
 
@@ -164,13 +191,20 @@ async def test_ollama_chat_stream_raises_on_http_error():
 @pytest.mark.asyncio
 async def test_ollama_chat_stream_includes_tools_in_payload():
     """When tools are passed, they must show up in the request body."""
-    _FakeAsyncClient.queue_stream.append(_FakeStreamResponse(status_code=200, lines=[
-        json.dumps({"message": {"content": ""}, "done": True, "done_reason": "stop"}),
-    ]))
+    _FakeAsyncClient.queue_stream.append(
+        _FakeStreamResponse(
+            status_code=200,
+            lines=[
+                json.dumps({"message": {"content": ""}, "done": True, "done_reason": "stop"}),
+            ],
+        )
+    )
     provider = OllamaProvider()
     tools = [ToolDefinition(name="t", description="d", parameters={"type": "object"})]
     async for _ in provider.chat_stream(
-        [ChatMessage(role="user", content="x")], model="llama3", tools=tools,
+        [ChatMessage(role="user", content="x")],
+        model="llama3",
+        tools=tools,
     ):
         pass
     _, payload = _FakeAsyncClient.posted[-1]
@@ -179,11 +213,17 @@ async def test_ollama_chat_stream_includes_tools_in_payload():
 
 # --------------------------------------------------------------------- Ollama: embed
 
+
 @pytest.mark.asyncio
 async def test_ollama_embed_returns_vectors_per_input():
-    _FakeAsyncClient.queue_post.append(_FakeResponse(status_code=200, json_body={
-        "embeddings": [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
-    }))
+    _FakeAsyncClient.queue_post.append(
+        _FakeResponse(
+            status_code=200,
+            json_body={
+                "embeddings": [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
+            },
+        )
+    )
     provider = OllamaProvider()
     out = await provider.embed(["a", "b"], model="nomic-embed-text")
     assert out == [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
@@ -192,7 +232,9 @@ async def test_ollama_embed_returns_vectors_per_input():
 @pytest.mark.asyncio
 async def test_ollama_embed_handles_missing_embeddings_array():
     """If the server returns an unexpected shape, we should yield [] rather than crash."""
-    _FakeAsyncClient.queue_post.append(_FakeResponse(status_code=200, json_body={"unexpected": True}))
+    _FakeAsyncClient.queue_post.append(
+        _FakeResponse(status_code=200, json_body={"unexpected": True})
+    )
     provider = OllamaProvider()
     out = await provider.embed(["a"], model="nomic-embed-text")
     assert out == []
@@ -207,6 +249,7 @@ async def test_ollama_embed_raises_on_http_error():
 
 
 # --------------------------------------------------------------------- Anthropic: chat_stream
+
 
 @pytest.mark.asyncio
 async def test_anthropic_chat_stream_parses_text_block_sequence():
@@ -238,15 +281,27 @@ async def test_anthropic_chat_stream_parses_tool_use_block():
     # Build SSE lines via explicit json.dumps payloads — avoids backslash
     # escapes inside f-strings, which Python 3.11 doesn't allow.
     events = [
-        {"type": "content_block_start", "index": 0,
-         "content_block": {"type": "tool_use", "id": "toolu_1", "name": "list_accounts"}},
-        {"type": "content_block_delta", "index": 0,
-         "delta": {"type": "input_json_delta", "partial_json": '{"limit":'}},
-        {"type": "content_block_delta", "index": 0,
-         "delta": {"type": "input_json_delta", "partial_json": "5}"}},
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "tool_use", "id": "toolu_1", "name": "list_accounts"},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "input_json_delta", "partial_json": '{"limit":'},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "input_json_delta", "partial_json": "5}"},
+        },
         {"type": "content_block_stop", "index": 0},
-        {"type": "message_delta",
-         "delta": {"stop_reason": "tool_use"}, "usage": {"output_tokens": 1}},
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": "tool_use"},
+            "usage": {"output_tokens": 1},
+        },
     ]
     sse = ["data: " + json.dumps(e) for e in events]
     _FakeAsyncClient.queue_stream.append(_FakeStreamResponse(status_code=200, lines=sse))
@@ -266,7 +321,9 @@ async def test_anthropic_chat_stream_parses_tool_use_block():
 
 @pytest.mark.asyncio
 async def test_anthropic_includes_system_and_tools_in_payload():
-    sse = [f"data: {json.dumps({'type': 'message_delta', 'delta': {'stop_reason': 'end_turn'}, 'usage': {}})}"]
+    sse = [
+        f"data: {json.dumps({'type': 'message_delta', 'delta': {'stop_reason': 'end_turn'}, 'usage': {}})}"
+    ]
     _FakeAsyncClient.queue_stream.append(_FakeStreamResponse(status_code=200, lines=sse))
     provider = AnthropicProvider(api_key="sk-test")
     tools = [ToolDefinition(name="t", description="d", parameters={"type": "object"})]
@@ -285,22 +342,32 @@ async def test_anthropic_includes_system_and_tools_in_payload():
 
 # --------------------------------------------------------------------- Anthropic: HTTP errors → typed exceptions
 
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status,exc_type", [
-    (401, LLMAuthError),
-    (403, LLMAuthError),
-    (429, LLMRateLimitError),
-    (500, LLMUnavailableError),
-    (502, LLMUnavailableError),
-    (400, LLMUnavailableError),
-])
+@pytest.mark.parametrize(
+    "status,exc_type",
+    [
+        (401, LLMAuthError),
+        (403, LLMAuthError),
+        (429, LLMRateLimitError),
+        (500, LLMUnavailableError),
+        (502, LLMUnavailableError),
+        (400, LLMUnavailableError),
+    ],
+)
 async def test_anthropic_http_errors_map_to_typed_exceptions(status, exc_type):
-    _FakeAsyncClient.queue_stream.append(_FakeStreamResponse(
-        status_code=status, lines=[], body=b'{"error":{"message":"x"}}',
-    ))
+    _FakeAsyncClient.queue_stream.append(
+        _FakeStreamResponse(
+            status_code=status,
+            lines=[],
+            body=b'{"error":{"message":"x"}}',
+        )
+    )
     provider = AnthropicProvider(api_key="sk-test")
     with pytest.raises(exc_type):
-        async for _ in provider.chat_stream([ChatMessage(role="user", content="x")], model="claude-x"):
+        async for _ in provider.chat_stream(
+            [ChatMessage(role="user", content="x")], model="claude-x"
+        ):
             pass
 
 

@@ -1,4 +1,5 @@
 """Tests for recurring transactions API."""
+
 from datetime import date, timedelta
 
 import pytest
@@ -31,7 +32,9 @@ async def test_create_recurring_transaction(client, auth_headers, test_categorie
 
 
 @pytest.mark.asyncio
-async def test_create_recurring_with_skip_first(client, auth_headers, test_categories, test_account):
+async def test_create_recurring_with_skip_first(
+    client, auth_headers, test_categories, test_account
+):
     """skip_first=true advances next_occurrence by one frequency period."""
     response = await client.post(
         "/api/recurring-transactions",
@@ -124,7 +127,9 @@ async def test_generate_pending_creates_transactions(client, auth_headers, test_
 
 
 @pytest.mark.asyncio
-async def test_generate_no_duplicate_with_skip_first(client, auth_headers, test_categories, test_account):
+async def test_generate_no_duplicate_with_skip_first(
+    client, auth_headers, test_categories, test_account
+):
     """When created with skip_first, generate doesn't create duplicate for start_date."""
     # Use relative dates so the test doesn't go stale over time
     today = date.today()
@@ -259,9 +264,7 @@ async def test_create_recurring_without_account_rejected(client, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_generate_pending_skips_legacy_null_account(
-    session, test_user, test_account
-):
+async def test_generate_pending_skips_legacy_null_account(session, test_user, test_account):
     """Legacy rows with account_id=None (predating the schema fix) must not crash
     generate_pending — they are skipped instead."""
     import uuid as _uuid

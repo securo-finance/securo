@@ -121,9 +121,7 @@ async def oauth_callback(
             },
         )
     except SessionExpiredError as e:
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE, detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
@@ -133,9 +131,7 @@ async def oauth_callback(
         )
 
 
-@router.post(
-    "/{connection_id}/oauth/reauth-url", response_model=ReauthUrlResponse
-)
+@router.post("/{connection_id}/oauth/reauth-url", response_model=ReauthUrlResponse)
 async def get_reauth_url(
     connection_id: uuid.UUID,
     ctx: WorkspaceContext = Depends(current_writable_workspace),

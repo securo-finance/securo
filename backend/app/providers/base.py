@@ -222,9 +222,7 @@ class BankProvider(ABC):
         """Create a connect token for widget-based flows. Override in widget providers."""
         raise NotImplementedError(f"{self.name} does not support widget connect tokens")
 
-    async def list_institutions(
-        self, country: Optional[str] = None
-    ) -> "InstitutionListData":
+    async def list_institutions(self, country: Optional[str] = None) -> "InstitutionListData":
         """List supported institutions (banks). Empty by default for providers
         that don't surface a selection step (Pluggy uses its own widget).
         """
@@ -269,8 +267,11 @@ class BankProvider(ABC):
 
     @abstractmethod
     async def get_transactions(
-        self, credentials: dict, account_external_id: str,
-        since: Optional[date] = None, payee_source: str = "auto",
+        self,
+        credentials: dict,
+        account_external_id: str,
+        since: Optional[date] = None,
+        payee_source: str = "auto",
     ) -> list[TransactionData]:
         """Fetch transactions for an account."""
         ...

@@ -4,6 +4,7 @@ Exercises the pure helpers directly (cheap branch coverage) plus the
 service functions against the SQLite test DB (resolve current amount for
 each tracking_type, enrich currency conversion, get/update/delete/summary).
 """
+
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -40,13 +41,24 @@ from app.services.goal_service import (
 
 
 async def _make_account(
-    session, user_id, workspace_id, *, balance="0.00", currency="BRL",
-    connection_id=None, acc_type="checking",
+    session,
+    user_id,
+    workspace_id,
+    *,
+    balance="0.00",
+    currency="BRL",
+    connection_id=None,
+    acc_type="checking",
 ):
     acc = Account(
-        id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id,
-        name="Goal Acct", type=acc_type, balance=Decimal(balance),
-        currency=currency, connection_id=connection_id,
+        id=uuid.uuid4(),
+        user_id=user_id,
+        workspace_id=workspace_id,
+        name="Goal Acct",
+        type=acc_type,
+        balance=Decimal(balance),
+        currency=currency,
+        connection_id=connection_id,
     )
     session.add(acc)
     await session.commit()
@@ -56,20 +68,34 @@ async def _make_account(
 
 async def _add_txn(session, user_id, account_id, workspace_id, amount, typ, dt, currency="BRL"):
     txn = Transaction(
-        id=uuid.uuid4(), user_id=user_id, account_id=account_id,
-        workspace_id=workspace_id, description="t", amount=Decimal(str(amount)),
-        date=dt, type=typ, source="manual", currency=currency,
+        id=uuid.uuid4(),
+        user_id=user_id,
+        account_id=account_id,
+        workspace_id=workspace_id,
+        description="t",
+        amount=Decimal(str(amount)),
+        date=dt,
+        type=typ,
+        source="manual",
+        currency=currency,
         created_at=datetime.now(timezone.utc),
     )
     session.add(txn)
     await session.commit()
 
 
-async def _make_asset(session, user_id, workspace_id, *, currency="BRL", price="0.00", group_id=None):
+async def _make_asset(
+    session, user_id, workspace_id, *, currency="BRL", price="0.00", group_id=None
+):
     asset = Asset(
-        id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id,
-        name="Goal Asset", type="investment", currency=currency,
-        purchase_price=Decimal(price), group_id=group_id,
+        id=uuid.uuid4(),
+        user_id=user_id,
+        workspace_id=workspace_id,
+        name="Goal Asset",
+        type="investment",
+        currency=currency,
+        purchase_price=Decimal(price),
+        group_id=group_id,
     )
     session.add(asset)
     await session.commit()
@@ -79,8 +105,12 @@ async def _make_asset(session, user_id, workspace_id, *, currency="BRL", price="
 
 async def _make_asset_group(session, user_id, workspace_id, *, name="Emergency Wallet"):
     group = AssetGroup(
-        id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id,
-        name=name, icon="wallet", color="#0EA5E9",
+        id=uuid.uuid4(),
+        user_id=user_id,
+        workspace_id=workspace_id,
+        name=name,
+        icon="wallet",
+        color="#0EA5E9",
     )
     session.add(group)
     await session.commit()
@@ -90,9 +120,15 @@ async def _make_asset_group(session, user_id, workspace_id, *, name="Emergency W
 
 async def _make_goal(session, user_id, workspace_id, **kwargs):
     defaults = dict(
-        id=uuid.uuid4(), user_id=user_id, workspace_id=workspace_id,
-        name="G", target_amount=Decimal("1000"), current_amount=Decimal("100"),
-        initial_amount=Decimal("0"), currency="BRL", tracking_type="manual",
+        id=uuid.uuid4(),
+        user_id=user_id,
+        workspace_id=workspace_id,
+        name="G",
+        target_amount=Decimal("1000"),
+        current_amount=Decimal("100"),
+        initial_amount=Decimal("0"),
+        currency="BRL",
+        tracking_type="manual",
         status="active",
     )
     defaults.update(kwargs)
@@ -251,8 +287,11 @@ def test_on_track_created_at_none_uses_today():
 @pytest.mark.asyncio
 async def test_resolve_manual(session: AsyncSession, test_user, test_workspace):
     goal = await _make_goal(
-        session, test_user.id, test_workspace.id,
-        tracking_type="manual", current_amount=Decimal("777"),
+        session,
+        test_user.id,
+        test_workspace.id,
+        tracking_type="manual",
+        current_amount=Decimal("777"),
     )
     val = await _resolve_current_amount(session, goal, test_user.id)
     assert val == Decimal("777")
@@ -268,8 +307,12 @@ async def test_resolve_account_same_currency(session, test_user, test_workspace)
     acc = await _make_account(session, test_user.id, test_workspace.id, currency="BRL")
     await _add_txn(session, test_user.id, acc.id, test_workspace.id, 1500, "credit", date.today())
     goal = await _make_goal(
-        session, test_user.id, test_workspace.id,
-        tracking_type="account", account_id=acc.id, currency="BRL",
+        session,
+        test_user.id,
+        test_workspace.id,
+        tracking_type="account",
+        account_id=acc.id,
+        currency="BRL",
     )
     val = await _resolve_current_amount(session, goal, test_user.id)
     assert val == pytest.approx(Decimal("1500"))
@@ -279,14 +322,25 @@ async def test_resolve_account_same_currency(session, test_user, test_workspace)
 async def test_resolve_account_cross_currency(session, test_user, test_workspace):
     today = date.today()
     for quote, rate in [("BRL", "5.0"), ("EUR", "0.9")]:
-        session.add(FxRate(base_currency="USD", quote_currency=quote, date=today,
-                           rate=Decimal(rate), source="test"))
+        session.add(
+            FxRate(
+                base_currency="USD",
+                quote_currency=quote,
+                date=today,
+                rate=Decimal(rate),
+                source="test",
+            )
+        )
     acc = await _make_account(session, test_user.id, test_workspace.id, currency="BRL")
     await _add_txn(session, test_user.id, acc.id, test_workspace.id, 1500, "credit", today)
     await session.commit()
     goal = await _make_goal(
-        session, test_user.id, test_workspace.id,
-        tracking_type="account", account_id=acc.id, currency="EUR",
+        session,
+        test_user.id,
+        test_workspace.id,
+        tracking_type="account",
+        account_id=acc.id,
+        currency="EUR",
     )
     val = await _resolve_current_amount(session, goal, test_user.id)
     # BRL 1500 / 5.0 * 0.9 = EUR 270
@@ -296,8 +350,11 @@ async def test_resolve_account_cross_currency(session, test_user, test_workspace
 @pytest.mark.asyncio
 async def test_resolve_account_missing_account_fallback(session, test_user, test_workspace):
     goal = await _make_goal(
-        session, test_user.id, test_workspace.id,
-        tracking_type="account", account_id=uuid.uuid4(),
+        session,
+        test_user.id,
+        test_workspace.id,
+        tracking_type="account",
+        account_id=uuid.uuid4(),
         current_amount=Decimal("42"),
     )
     val = await _resolve_current_amount(session, goal, test_user.id)
@@ -308,8 +365,12 @@ async def test_resolve_account_missing_account_fallback(session, test_user, test
 async def test_resolve_account_no_account_id_fallback(session, test_user, test_workspace):
     # tracking_type account but no account_id -> falls through to else
     goal = await _make_goal(
-        session, test_user.id, test_workspace.id,
-        tracking_type="account", account_id=None, current_amount=Decimal("13"),
+        session,
+        test_user.id,
+        test_workspace.id,
+        tracking_type="account",
+        account_id=None,
+        current_amount=Decimal("13"),
     )
     val = await _resolve_current_amount(session, goal, test_user.id)
     assert val == Decimal("13")
@@ -322,10 +383,16 @@ async def test_resolve_account_no_account_id_fallback(session, test_user, test_w
 
 @pytest.mark.asyncio
 async def test_resolve_asset_same_currency(session, test_user, test_workspace):
-    asset = await _make_asset(session, test_user.id, test_workspace.id, currency="BRL", price="5000")
+    asset = await _make_asset(
+        session, test_user.id, test_workspace.id, currency="BRL", price="5000"
+    )
     goal = await _make_goal(
-        session, test_user.id, test_workspace.id,
-        tracking_type="asset", asset_id=asset.id, currency="BRL",
+        session,
+        test_user.id,
+        test_workspace.id,
+        tracking_type="asset",
+        asset_id=asset.id,
+        currency="BRL",
     )
     val = await _resolve_current_amount(session, goal, test_user.id)
     assert val == pytest.approx(Decimal("5000"))
@@ -334,13 +401,26 @@ async def test_resolve_asset_same_currency(session, test_user, test_workspace):
 @pytest.mark.asyncio
 async def test_resolve_asset_cross_currency(session, test_user, test_workspace):
     today = date.today()
-    session.add(FxRate(base_currency="USD", quote_currency="EUR", date=today,
-                       rate=Decimal("0.9"), source="test"))
-    asset = await _make_asset(session, test_user.id, test_workspace.id, currency="USD", price="8000")
+    session.add(
+        FxRate(
+            base_currency="USD",
+            quote_currency="EUR",
+            date=today,
+            rate=Decimal("0.9"),
+            source="test",
+        )
+    )
+    asset = await _make_asset(
+        session, test_user.id, test_workspace.id, currency="USD", price="8000"
+    )
     await session.commit()
     goal = await _make_goal(
-        session, test_user.id, test_workspace.id,
-        tracking_type="asset", asset_id=asset.id, currency="EUR",
+        session,
+        test_user.id,
+        test_workspace.id,
+        tracking_type="asset",
+        asset_id=asset.id,
+        currency="EUR",
     )
     val = await _resolve_current_amount(session, goal, test_user.id)
     # USD 8000 * 0.9 = EUR 7200
@@ -350,14 +430,24 @@ async def test_resolve_asset_cross_currency(session, test_user, test_workspace):
 @pytest.mark.asyncio
 async def test_resolve_asset_with_asset_value(session, test_user, test_workspace):
     asset = await _make_asset(session, test_user.id, test_workspace.id, currency="BRL", price="100")
-    session.add(AssetValue(
-        id=uuid.uuid4(), asset_id=asset.id, workspace_id=test_workspace.id,
-        amount=Decimal("9999"), date=date.today(), source="manual",
-    ))
+    session.add(
+        AssetValue(
+            id=uuid.uuid4(),
+            asset_id=asset.id,
+            workspace_id=test_workspace.id,
+            amount=Decimal("9999"),
+            date=date.today(),
+            source="manual",
+        )
+    )
     await session.commit()
     goal = await _make_goal(
-        session, test_user.id, test_workspace.id,
-        tracking_type="asset", asset_id=asset.id, currency="BRL",
+        session,
+        test_user.id,
+        test_workspace.id,
+        tracking_type="asset",
+        asset_id=asset.id,
+        currency="BRL",
     )
     val = await _resolve_current_amount(session, goal, test_user.id)
     assert val == pytest.approx(Decimal("9999"))
@@ -366,8 +456,12 @@ async def test_resolve_asset_with_asset_value(session, test_user, test_workspace
 @pytest.mark.asyncio
 async def test_resolve_asset_missing_fallback(session, test_user, test_workspace):
     goal = await _make_goal(
-        session, test_user.id, test_workspace.id,
-        tracking_type="asset", asset_id=uuid.uuid4(), current_amount=Decimal("55"),
+        session,
+        test_user.id,
+        test_workspace.id,
+        tracking_type="asset",
+        asset_id=uuid.uuid4(),
+        current_amount=Decimal("55"),
     )
     val = await _resolve_current_amount(session, goal, test_user.id)
     assert val == Decimal("55")
@@ -377,17 +471,29 @@ async def test_resolve_asset_missing_fallback(session, test_user, test_workspace
 async def test_resolve_asset_group_same_currency(session, test_user, test_workspace):
     group = await _make_asset_group(session, test_user.id, test_workspace.id)
     await _make_asset(
-        session, test_user.id, test_workspace.id,
-        currency="BRL", price="1250", group_id=group.id,
+        session,
+        test_user.id,
+        test_workspace.id,
+        currency="BRL",
+        price="1250",
+        group_id=group.id,
     )
     await _make_asset(
-        session, test_user.id, test_workspace.id,
-        currency="BRL", price="750", group_id=group.id,
+        session,
+        test_user.id,
+        test_workspace.id,
+        currency="BRL",
+        price="750",
+        group_id=group.id,
     )
     await _make_asset(session, test_user.id, test_workspace.id, currency="BRL", price="999")
     goal = await _make_goal(
-        session, test_user.id, test_workspace.id,
-        tracking_type="asset_group", asset_group_id=group.id, currency="BRL",
+        session,
+        test_user.id,
+        test_workspace.id,
+        tracking_type="asset_group",
+        asset_group_id=group.id,
+        currency="BRL",
     )
     val = await _resolve_current_amount(session, goal, test_user.id)
     assert val == pytest.approx(Decimal("2000"))
@@ -396,17 +502,32 @@ async def test_resolve_asset_group_same_currency(session, test_user, test_worksp
 @pytest.mark.asyncio
 async def test_resolve_asset_group_cross_currency(session, test_user, test_workspace):
     today = date.today()
-    session.add(FxRate(base_currency="USD", quote_currency="BRL", date=today,
-                       rate=Decimal("5.0"), source="test"))
+    session.add(
+        FxRate(
+            base_currency="USD",
+            quote_currency="BRL",
+            date=today,
+            rate=Decimal("5.0"),
+            source="test",
+        )
+    )
     group = await _make_asset_group(session, test_user.id, test_workspace.id)
     await _make_asset(
-        session, test_user.id, test_workspace.id,
-        currency="USD", price="100", group_id=group.id,
+        session,
+        test_user.id,
+        test_workspace.id,
+        currency="USD",
+        price="100",
+        group_id=group.id,
     )
     await session.commit()
     goal = await _make_goal(
-        session, test_user.id, test_workspace.id,
-        tracking_type="asset_group", asset_group_id=group.id, currency="BRL",
+        session,
+        test_user.id,
+        test_workspace.id,
+        tracking_type="asset_group",
+        asset_group_id=group.id,
+        currency="BRL",
     )
     val = await _resolve_current_amount(session, goal, test_user.id)
     assert float(val) == pytest.approx(500.0, abs=1.0)
@@ -415,8 +536,12 @@ async def test_resolve_asset_group_cross_currency(session, test_user, test_works
 @pytest.mark.asyncio
 async def test_resolve_asset_group_missing_fallback(session, test_user, test_workspace):
     goal = await _make_goal(
-        session, test_user.id, test_workspace.id,
-        tracking_type="asset_group", asset_group_id=uuid.uuid4(), current_amount=Decimal("88"),
+        session,
+        test_user.id,
+        test_workspace.id,
+        tracking_type="asset_group",
+        asset_group_id=uuid.uuid4(),
+        current_amount=Decimal("88"),
     )
     val = await _resolve_current_amount(session, goal, test_user.id)
     assert val == Decimal("88")
@@ -431,15 +556,26 @@ async def test_resolve_asset_group_missing_fallback(session, test_user, test_wor
 async def test_resolve_net_worth_same_currency(session, test_user, test_workspace):
     acc = await _make_account(session, test_user.id, test_workspace.id, currency="BRL")
     await _add_txn(session, test_user.id, acc.id, test_workspace.id, 2000, "credit", date.today())
-    asset = await _make_asset(session, test_user.id, test_workspace.id, currency="BRL", price="3000")
-    session.add(AssetValue(
-        id=uuid.uuid4(), asset_id=asset.id, workspace_id=test_workspace.id,
-        amount=Decimal("3000"), date=date.today(), source="manual",
-    ))
+    asset = await _make_asset(
+        session, test_user.id, test_workspace.id, currency="BRL", price="3000"
+    )
+    session.add(
+        AssetValue(
+            id=uuid.uuid4(),
+            asset_id=asset.id,
+            workspace_id=test_workspace.id,
+            amount=Decimal("3000"),
+            date=date.today(),
+            source="manual",
+        )
+    )
     await session.commit()
     goal = await _make_goal(
-        session, test_user.id, test_workspace.id,
-        tracking_type="net_worth", currency="BRL",
+        session,
+        test_user.id,
+        test_workspace.id,
+        tracking_type="net_worth",
+        currency="BRL",
     )
     val = await _resolve_current_amount(session, goal, test_user.id)
     # 2000 account + 3000 asset
@@ -450,20 +586,38 @@ async def test_resolve_net_worth_same_currency(session, test_user, test_workspac
 async def test_resolve_net_worth_cross_currency(session, test_user, test_workspace):
     today = date.today()
     for quote, rate in [("BRL", "5.0"), ("USD", "1.0")]:
-        session.add(FxRate(base_currency="USD", quote_currency=quote, date=today,
-                           rate=Decimal(rate), source="test"))
+        session.add(
+            FxRate(
+                base_currency="USD",
+                quote_currency=quote,
+                date=today,
+                rate=Decimal(rate),
+                source="test",
+            )
+        )
     # USD account + USD asset, goal in BRL -> conversion branch for both
     acc = await _make_account(session, test_user.id, test_workspace.id, currency="USD")
-    await _add_txn(session, test_user.id, acc.id, test_workspace.id, 100, "credit", today, currency="USD")
+    await _add_txn(
+        session, test_user.id, acc.id, test_workspace.id, 100, "credit", today, currency="USD"
+    )
     asset = await _make_asset(session, test_user.id, test_workspace.id, currency="USD", price="200")
-    session.add(AssetValue(
-        id=uuid.uuid4(), asset_id=asset.id, workspace_id=test_workspace.id,
-        amount=Decimal("200"), date=today, source="manual",
-    ))
+    session.add(
+        AssetValue(
+            id=uuid.uuid4(),
+            asset_id=asset.id,
+            workspace_id=test_workspace.id,
+            amount=Decimal("200"),
+            date=today,
+            source="manual",
+        )
+    )
     await session.commit()
     goal = await _make_goal(
-        session, test_user.id, test_workspace.id,
-        tracking_type="net_worth", currency="BRL",
+        session,
+        test_user.id,
+        test_workspace.id,
+        tracking_type="net_worth",
+        currency="BRL",
     )
     val = await _resolve_current_amount(session, goal, test_user.id)
     # (100 + 200) USD * 5.0 = 1500 BRL
@@ -479,10 +633,17 @@ async def test_resolve_net_worth_cross_currency(session, test_user, test_workspa
 async def test_enrich_goal_linked_names(session, test_user, test_workspace):
     acc = await _make_account(session, test_user.id, test_workspace.id, currency="BRL")
     asset = await _make_asset(session, test_user.id, test_workspace.id, currency="BRL", price="0")
-    group = await _make_asset_group(session, test_user.id, test_workspace.id, name="Reserva de emergência")
+    group = await _make_asset_group(
+        session, test_user.id, test_workspace.id, name="Reserva de emergência"
+    )
     goal = await _make_goal(
-        session, test_user.id, test_workspace.id,
-        tracking_type="manual", account_id=acc.id, asset_id=asset.id, asset_group_id=group.id,
+        session,
+        test_user.id,
+        test_workspace.id,
+        tracking_type="manual",
+        account_id=acc.id,
+        asset_id=asset.id,
+        asset_group_id=group.id,
     )
     enriched = await _enrich_goal(session, goal, test_user.id)
     assert enriched.account_name is not None
@@ -494,13 +655,24 @@ async def test_enrich_goal_linked_names(session, test_user, test_workspace):
 async def test_enrich_goal_primary_currency_conversion(session, test_user, test_workspace):
     # test_user primary currency is BRL; make goal in USD to hit conversion branch
     today = date.today()
-    session.add(FxRate(base_currency="USD", quote_currency="BRL", date=today,
-                       rate=Decimal("5.0"), source="test"))
+    session.add(
+        FxRate(
+            base_currency="USD",
+            quote_currency="BRL",
+            date=today,
+            rate=Decimal("5.0"),
+            source="test",
+        )
+    )
     await session.commit()
     goal = await _make_goal(
-        session, test_user.id, test_workspace.id,
-        tracking_type="manual", currency="USD",
-        target_amount=Decimal("100"), current_amount=Decimal("50"),
+        session,
+        test_user.id,
+        test_workspace.id,
+        tracking_type="manual",
+        currency="USD",
+        target_amount=Decimal("100"),
+        current_amount=Decimal("50"),
     )
     enriched = await _enrich_goal(session, goal, test_user.id)
     assert enriched.target_amount_primary is not None
@@ -511,7 +683,10 @@ async def test_enrich_goal_primary_currency_conversion(session, test_user, test_
 @pytest.mark.asyncio
 async def test_enrich_goal_same_currency_no_conversion(session, test_user, test_workspace):
     goal = await _make_goal(
-        session, test_user.id, test_workspace.id, currency="BRL",
+        session,
+        test_user.id,
+        test_workspace.id,
+        currency="BRL",
     )
     enriched = await _enrich_goal(session, goal, test_user.id)
     assert enriched.target_amount_primary is None
@@ -541,7 +716,10 @@ async def test_get_goal_not_found(session, test_user, test_workspace):
 async def test_update_goal_found(session, test_user, test_workspace):
     goal = await _make_goal(session, test_user.id, test_workspace.id, name="Old")
     result = await update_goal(
-        session, goal.id, test_workspace.id, test_user.id,
+        session,
+        goal.id,
+        test_workspace.id,
+        test_user.id,
         GoalUpdate(name="New", target_amount=Decimal("2000")),
     )
     assert result is not None
@@ -552,7 +730,10 @@ async def test_update_goal_found(session, test_user, test_workspace):
 @pytest.mark.asyncio
 async def test_update_goal_not_found(session, test_user, test_workspace):
     result = await update_goal(
-        session, uuid.uuid4(), test_workspace.id, test_user.id,
+        session,
+        uuid.uuid4(),
+        test_workspace.id,
+        test_user.id,
         GoalUpdate(name="Nope"),
     )
     assert result is None
@@ -576,8 +757,12 @@ async def test_delete_goal_not_found(session, test_user, test_workspace):
 async def test_get_goal_summary(session, test_user, test_workspace):
     for i in range(4):
         await _make_goal(
-            session, test_user.id, test_workspace.id, name=f"S{i}",
-            target_amount=Decimal("1000"), current_amount=Decimal("250"),
+            session,
+            test_user.id,
+            test_workspace.id,
+            name=f"S{i}",
+            target_amount=Decimal("1000"),
+            current_amount=Decimal("250"),
             position=i,
         )
     summaries = await get_goal_summary(session, test_workspace.id, test_user.id, limit=3)
@@ -604,10 +789,15 @@ async def test_get_goals_and_status_filter(session, test_user, test_workspace):
 @pytest.mark.asyncio
 async def test_create_goal(session, test_user, test_workspace):
     result = await create_goal(
-        session, test_workspace.id, test_user.id,
+        session,
+        test_workspace.id,
+        test_user.id,
         GoalCreate(
-            name="Created", target_amount=Decimal("1000"),
-            current_amount=Decimal("200"), currency="BRL", tracking_type="manual",
+            name="Created",
+            target_amount=Decimal("1000"),
+            current_amount=Decimal("200"),
+            currency="BRL",
+            tracking_type="manual",
         ),
     )
     assert result.name == "Created"
@@ -618,9 +808,14 @@ async def test_create_goal(session, test_user, test_workspace):
 async def test_get_goal_summary_with_target_date(session, test_user, test_workspace):
     future = date.today() + timedelta(days=365)
     await _make_goal(
-        session, test_user.id, test_workspace.id, name="Dated",
-        target_amount=Decimal("1200"), current_amount=Decimal("100"),
-        target_date=future, status="active",
+        session,
+        test_user.id,
+        test_workspace.id,
+        name="Dated",
+        target_amount=Decimal("1200"),
+        current_amount=Decimal("100"),
+        target_date=future,
+        status="active",
     )
     summaries = await get_goal_summary(session, test_workspace.id, test_user.id, limit=5)
     dated = next((s for s in summaries if s.name == "Dated"), None)

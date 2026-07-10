@@ -4,6 +4,7 @@ Exposes Securo's built-in tools (read-only + propose-mutations) over the
 Model Context Protocol. Runs as a separate container; gated by the
 `agents` profile in docker-compose.
 """
+
 from __future__ import annotations
 
 import logging
@@ -55,7 +56,11 @@ async def mcp(request: Request) -> JSONResponse:
         detail = getattr(exc, "detail", str(exc))
         return JSONResponse(
             status_code=status_code,
-            content={"jsonrpc": "2.0", "id": None, "error": {"code": -32001, "message": str(detail)}},
+            content={
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {"code": -32001, "message": str(detail)},
+            },
         )
 
     try:
@@ -75,11 +80,14 @@ async def mcp(request: Request) -> JSONResponse:
 
     if method == "initialize":
         return JSONResponse(
-            content=_ok(req_id, {
-                "protocolVersion": PROTOCOL_VERSION,
-                "capabilities": {"tools": {"listChanged": False}},
-                "serverInfo": SERVER_INFO,
-            })
+            content=_ok(
+                req_id,
+                {
+                    "protocolVersion": PROTOCOL_VERSION,
+                    "capabilities": {"tools": {"listChanged": False}},
+                    "serverInfo": SERVER_INFO,
+                },
+            )
         )
 
     if method == "tools/list":
@@ -95,25 +103,36 @@ async def mcp(request: Request) -> JSONResponse:
                 result = await call_tool(session, ctx, name, arguments)
             # MCP wraps tool output in `content` blocks. Use the structured
             # variant — many clients (and our own runtime) prefer JSON.
-            return JSONResponse(content=_ok(req_id, {
-                "content": [{"type": "text", "text": _safe_json(result)}],
-                "structuredContent": result,
-                "isError": False,
-            }))
+            return JSONResponse(
+                content=_ok(
+                    req_id,
+                    {
+                        "content": [{"type": "text", "text": _safe_json(result)}],
+                        "structuredContent": result,
+                        "isError": False,
+                    },
+                )
+            )
         except KeyError as exc:
             return JSONResponse(content=_err(req_id, -32601, str(exc)))
         except Exception as exc:  # noqa: BLE001
             logger.exception("MCP tool failure: %s", name)
-            return JSONResponse(content=_ok(req_id, {
-                "content": [{"type": "text", "text": f"Tool error: {exc}"}],
-                "isError": True,
-            }))
+            return JSONResponse(
+                content=_ok(
+                    req_id,
+                    {
+                        "content": [{"type": "text", "text": f"Tool error: {exc}"}],
+                        "isError": True,
+                    },
+                )
+            )
 
     return JSONResponse(content=_err(req_id, -32601, f"unknown method: {method}"))
 
 
 def _safe_json(obj: Any) -> str:
     import json
+
     try:
         return json.dumps(obj, default=str)
     except Exception:

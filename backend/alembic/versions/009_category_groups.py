@@ -4,6 +4,7 @@ Revision ID: 009
 Revises: 008
 Create Date: 2026-02-25
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -43,8 +44,15 @@ def upgrade() -> None:
     # 1. Create category_groups table
     op.create_table(
         "category_groups",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            primary_key=True,
+            server_default=sa.text("gen_random_uuid()"),
+        ),
+        sa.Column(
+            "user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
+        ),
         sa.Column("name", sa.String(100), nullable=False),
         sa.Column("icon", sa.String(50), nullable=False, server_default="folder"),
         sa.Column("color", sa.String(7), nullable=False, server_default="#6B7280"),
@@ -56,7 +64,12 @@ def upgrade() -> None:
     # 2. Add group_id column to categories
     op.add_column(
         "categories",
-        sa.Column("group_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("category_groups.id"), nullable=True),
+        sa.Column(
+            "group_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("category_groups.id"),
+            nullable=True,
+        ),
     )
 
     # 3. Seed default groups for each existing user and assign categories
@@ -74,7 +87,13 @@ def upgrade() -> None:
                     "VALUES (gen_random_uuid(), :user_id, :name, :icon, :color, :position, true) "
                     "RETURNING id"
                 ),
-                {"user_id": user_id, "name": name, "icon": icon, "color": color, "position": position},
+                {
+                    "user_id": user_id,
+                    "name": name,
+                    "icon": icon,
+                    "color": color,
+                    "position": position,
+                },
             )
             group_ids[name] = result.scalar()
 

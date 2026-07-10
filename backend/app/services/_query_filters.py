@@ -4,6 +4,7 @@ Centralizes the "what counts as real income/expense" definition so every
 aggregation site agrees. Changes to the rule (e.g. adding a new exclusion
 signal) only need to be made here.
 """
+
 import uuid
 from datetime import date
 from typing import Optional
@@ -32,11 +33,7 @@ def reporting_date_col(accounting_mode: str):
     spend under the purchase month instead of the invoice month (issue
     #232).
     """
-    base = (
-        Transaction.effective_date
-        if accounting_mode == "accrual"
-        else Transaction.date
-    )
+    base = Transaction.effective_date if accounting_mode == "accrual" else Transaction.date
     return func.coalesce(Transaction.effective_bill_date, base)
 
 
@@ -148,11 +145,7 @@ async def owner_split_offset_pnl(
         .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
         .where(
             Transaction.user_id == user_id,
-            *(
-                [Transaction.workspace_id == workspace_id]
-                if workspace_id is not None
-                else []
-            ),
+            *([Transaction.workspace_id == workspace_id] if workspace_id is not None else []),
             TransactionSplit.group_member_id.notin_(viewer_member_ids),
             Transaction.source != "opening_balance",
             date_col >= month_start,
@@ -225,11 +218,7 @@ async def owner_split_offset_by_category(
         .join(Transaction, TransactionSplit.transaction_id == Transaction.id)
         .where(
             Transaction.user_id == user_id,
-            *(
-                [Transaction.workspace_id == workspace_id]
-                if workspace_id is not None
-                else []
-            ),
+            *([Transaction.workspace_id == workspace_id] if workspace_id is not None else []),
             Transaction.type == "debit",
             TransactionSplit.group_member_id.notin_(viewer_member_ids),
             Transaction.source != "opening_balance",

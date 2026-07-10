@@ -169,9 +169,7 @@ class TestGetRate:
         assert rate == Decimal("4.8000000000")
 
     @pytest.mark.asyncio
-    async def test_historical_cross_currency(
-        self, session: AsyncSession, historical_fx_rates
-    ):
+    async def test_historical_cross_currency(self, session: AsyncSession, historical_fx_rates):
         from app.services.fx_rate_service import get_rate
 
         rate = await get_rate(session, "EUR", "BRL", target_date=date(2025, 6, 20))
@@ -204,9 +202,7 @@ class TestResolveRate:
         assert rate == Decimal("5.0000000000")
 
     @pytest.mark.asyncio
-    async def test_get_rate_still_falls_back_to_one_for_live_reads(
-        self, session: AsyncSession
-    ):
+    async def test_get_rate_still_falls_back_to_one_for_live_reads(self, session: AsyncSession):
         """get_rate keeps the 1:1 fallback so balances/dashboards still render."""
         from app.services.fx_rate_service import get_rate
 
@@ -241,9 +237,7 @@ class TestConvert:
         assert converted == Decimal("100.00")
 
     @pytest.mark.asyncio
-    async def test_cross_currency_rounds_to_two_decimals(
-        self, session: AsyncSession, fx_rates
-    ):
+    async def test_cross_currency_rounds_to_two_decimals(self, session: AsyncSession, fx_rates):
         from app.services.fx_rate_service import convert
 
         converted, rate = await convert(session, Decimal("100.00"), "EUR", "BRL")
@@ -407,9 +401,7 @@ class TestFxRatesAPI:
     """Tests for /api/fx-rates endpoints."""
 
     @pytest.mark.asyncio
-    async def test_status_empty(
-        self, client: AsyncClient, auth_headers
-    ):
+    async def test_status_empty(self, client: AsyncClient, auth_headers):
         response = await client.get("/api/fx-rates/status", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
@@ -417,9 +409,7 @@ class TestFxRatesAPI:
         assert data["total_rates"] == 0
 
     @pytest.mark.asyncio
-    async def test_status_with_rates(
-        self, client: AsyncClient, auth_headers, fx_rates
-    ):
+    async def test_status_with_rates(self, client: AsyncClient, auth_headers, fx_rates):
         response = await client.get("/api/fx-rates/status", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
@@ -427,14 +417,10 @@ class TestFxRatesAPI:
         assert data["total_rates"] == 3
 
     @pytest.mark.asyncio
-    async def test_refresh_calls_sync(
-        self, client: AsyncClient, auth_headers
-    ):
+    async def test_refresh_calls_sync(self, client: AsyncClient, auth_headers):
         mock_sync = AsyncMock(return_value=150)
         with patch("app.api.fx_rates.sync_rates", mock_sync):
-            response = await client.post(
-                "/api/fx-rates/refresh", headers=auth_headers
-            )
+            response = await client.post("/api/fx-rates/refresh", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         assert data["synced"] is True
@@ -608,8 +594,10 @@ class TestOpenExchangeRatesProvider:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.providers.openexchangerates.get_settings") as mock_settings, \
-             patch("app.providers.openexchangerates.httpx.AsyncClient", return_value=mock_client):
+        with (
+            patch("app.providers.openexchangerates.get_settings") as mock_settings,
+            patch("app.providers.openexchangerates.httpx.AsyncClient", return_value=mock_client),
+        ):
             mock_settings.return_value.openexchangerates_app_id = "test-key"
             rates = await provider.fetch_latest()
 
@@ -645,8 +633,10 @@ class TestOpenExchangeRatesProvider:
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
         mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("app.providers.openexchangerates.get_settings") as mock_settings, \
-             patch("app.providers.openexchangerates.httpx.AsyncClient", return_value=mock_client):
+        with (
+            patch("app.providers.openexchangerates.get_settings") as mock_settings,
+            patch("app.providers.openexchangerates.httpx.AsyncClient", return_value=mock_client),
+        ):
             mock_settings.return_value.openexchangerates_app_id = "test-key"
             rates = await provider.fetch_historical(date(2025, 6, 15))
 
@@ -671,10 +661,12 @@ class TestSyncRates:
 
         mock_provider = MagicMock()
         mock_provider.name = "test_provider"
-        mock_provider.fetch_latest = AsyncMock(return_value={
-            "BRL": Decimal("5.0"),
-            "EUR": Decimal("0.92"),
-        })
+        mock_provider.fetch_latest = AsyncMock(
+            return_value={
+                "BRL": Decimal("5.0"),
+                "EUR": Decimal("0.92"),
+            }
+        )
 
         mock_session = AsyncMock()
         mock_session.execute = AsyncMock()
@@ -695,9 +687,11 @@ class TestSyncRates:
         target = date(2025, 6, 15)
         mock_provider = MagicMock()
         mock_provider.name = "test_provider"
-        mock_provider.fetch_historical = AsyncMock(return_value={
-            "BRL": Decimal("4.8"),
-        })
+        mock_provider.fetch_historical = AsyncMock(
+            return_value={
+                "BRL": Decimal("4.8"),
+            }
+        )
 
         mock_session = AsyncMock()
         mock_session.execute = AsyncMock()
@@ -737,9 +731,7 @@ class TestStampEdgeCases:
     """Edge cases for stamp_primary_amount."""
 
     @pytest.mark.asyncio
-    async def test_null_amount_returns_early(
-        self, session: AsyncSession, test_user: User
-    ):
+    async def test_null_amount_returns_early(self, session: AsyncSession, test_user: User):
         """Object with None amount → does nothing."""
         from app.services.fx_rate_service import stamp_primary_amount
 
@@ -769,7 +761,9 @@ class TestStampEdgeCases:
 
         obj = FakeAsset()
         await stamp_primary_amount(
-            session, test_user.id, obj,
+            session,
+            test_user.id,
+            obj,
             amount_field="purchase_price",
             primary_field="purchase_price_primary",
             rate_field="fx_rate_used",
@@ -1110,8 +1104,11 @@ class TestBackfillTask:
         # Simulate what backfill does: convert and stamp
         primary_currency = (test_user.preferences or {}).get("currency_display", "BRL")
         converted, rate = await convert(
-            session, Decimal(str(txn.amount)),
-            txn.currency, primary_currency, txn.date,
+            session,
+            Decimal(str(txn.amount)),
+            txn.currency,
+            primary_currency,
+            txn.date,
         )
         txn.amount_primary = converted
         txn.fx_rate_used = rate
@@ -1172,24 +1169,42 @@ class TestBackfillTask:
 
         # (a) cross-currency row wrongly stamped 1:1 → should be selected
         fallback = Transaction(
-            user_id=test_user.id, account_id=test_account.id,
-            description="USD fallback", amount=Decimal("100.00"), currency="USD",
-            date=date.today(), type="debit", source="manual",
-            amount_primary=Decimal("100.00"), fx_rate_used=Decimal("1"),
+            user_id=test_user.id,
+            account_id=test_account.id,
+            description="USD fallback",
+            amount=Decimal("100.00"),
+            currency="USD",
+            date=date.today(),
+            type="debit",
+            source="manual",
+            amount_primary=Decimal("100.00"),
+            fx_rate_used=Decimal("1"),
         )
         # (b) never-stamped cross-currency row → should be selected
         null_row = Transaction(
-            user_id=test_user.id, account_id=test_account.id,
-            description="EUR null", amount=Decimal("10.00"), currency="EUR",
-            date=date.today(), type="debit", source="manual",
-            amount_primary=None, fx_rate_used=None,
+            user_id=test_user.id,
+            account_id=test_account.id,
+            description="EUR null",
+            amount=Decimal("10.00"),
+            currency="EUR",
+            date=date.today(),
+            type="debit",
+            source="manual",
+            amount_primary=None,
+            fx_rate_used=None,
         )
         # (c) genuine same-currency 1:1 row → must NOT be selected/healed
         same_ccy = Transaction(
-            user_id=test_user.id, account_id=test_account.id,
-            description="BRL 1:1", amount=Decimal("50.00"), currency="BRL",
-            date=date.today(), type="debit", source="manual",
-            amount_primary=Decimal("50.00"), fx_rate_used=Decimal("1"),
+            user_id=test_user.id,
+            account_id=test_account.id,
+            description="BRL 1:1",
+            amount=Decimal("50.00"),
+            currency="BRL",
+            date=date.today(),
+            type="debit",
+            source="manual",
+            amount_primary=Decimal("50.00"),
+            fx_rate_used=Decimal("1"),
         )
         session.add_all([fallback, null_row, same_ccy])
         await session.commit()
@@ -1202,9 +1217,7 @@ class TestBackfillTask:
                 )
             )
         )
-        candidates = [
-            tx for tx in result.scalars().all() if tx.currency != primary
-        ]
+        candidates = [tx for tx in result.scalars().all() if tx.currency != primary]
         ids = {tx.id for tx in candidates}
         assert fallback.id in ids
         assert null_row.id in ids
@@ -1227,10 +1240,16 @@ class TestBackfillTask:
 
         # USD row stamped 1:1 (legacy fallback). No fx_rates fixture → no rate.
         tx = Transaction(
-            user_id=test_user.id, account_id=test_account.id,
-            description="USD legacy 1:1", amount=D("100.00"), currency="USD",
-            date=date.today(), type="debit", source="manual",
-            amount_primary=D("100.00"), fx_rate_used=D("1"),
+            user_id=test_user.id,
+            account_id=test_account.id,
+            description="USD legacy 1:1",
+            amount=D("100.00"),
+            currency="USD",
+            date=date.today(),
+            type="debit",
+            source="manual",
+            amount_primary=D("100.00"),
+            fx_rate_used=D("1"),
         )
         session.add(tx)
         await session.flush()
@@ -1281,9 +1300,11 @@ class TestRecurringFxRestamp:
         from sqlalchemy import update as sa_update
 
         await session.execute(
-            sa_update(FxRate).where(
+            sa_update(FxRate)
+            .where(
                 FxRate.quote_currency == "BRL",
-            ).values(rate=Decimal("5.5000000000"))
+            )
+            .values(rate=Decimal("5.5000000000"))
         )
         await session.commit()
 
@@ -1604,7 +1625,10 @@ class TestFxFallbackFlag:
     ):
         """Same-currency transaction → fx_fallback=False (not applicable)."""
         brl_account = await _make_account(
-            session, test_user, currency="BRL", name="BRL Account",
+            session,
+            test_user,
+            currency="BRL",
+            name="BRL Account",
         )
 
         resp = await client.post(

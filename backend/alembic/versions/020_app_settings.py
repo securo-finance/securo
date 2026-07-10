@@ -23,9 +23,7 @@ def upgrade() -> None:
         sa.Column("value", sa.String(2000), nullable=False),
     )
     # Seed default registration setting
-    op.execute(
-        "INSERT INTO app_settings (key, value) VALUES ('registration_enabled', 'true')"
-    )
+    op.execute("INSERT INTO app_settings (key, value) VALUES ('registration_enabled', 'true')")
 
 
 def downgrade() -> None:

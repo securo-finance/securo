@@ -5,6 +5,7 @@ Tools that depend on services Securo already tests heavily (reports,
 dashboard) just check that the wrapper returns a serializable shape, not
 the full numeric correctness of those services.
 """
+
 import uuid
 
 import pytest
@@ -26,6 +27,7 @@ def ctx(test_user) -> CallContext:
 
 
 # --- Registry shape --------------------------------------------------------
+
 
 def test_registry_contains_v1_tools():
     """We promised these in the design — keep the contract."""
@@ -57,13 +59,16 @@ def test_registry_contains_v1_tools():
         "list_assets",
         "list_goals",
     }
-    assert expected.issubset(set(REGISTRY.keys())), (
-        f"missing: {expected - set(REGISTRY.keys())}"
-    )
+    assert expected.issubset(set(REGISTRY.keys())), f"missing: {expected - set(REGISTRY.keys())}"
 
 
 def test_proposal_tools_marked_is_proposal():
-    for name in ("propose_categorize", "propose_create_category", "propose_create_budget", "propose_create_payee_rule"):
+    for name in (
+        "propose_categorize",
+        "propose_create_category",
+        "propose_create_budget",
+        "propose_create_payee_rule",
+    ):
         spec = REGISTRY[name]
         assert spec.is_proposal, f"{name} should have is_proposal=True"
 
@@ -75,6 +80,7 @@ def test_each_tool_has_input_schema():
 
 
 # --- Read tools (with real seeded data) -----------------------------------
+
 
 async def test_list_transactions_returns_seeded_data(
     session: AsyncSession, ctx: CallContext, test_transactions
@@ -123,7 +129,16 @@ async def test_list_transactions_exposes_extra_fields(
     handler = REGISTRY["list_transactions"].handler
     result = await handler(session=session, ctx=ctx, limit=5)
     sample = result["items"][0]
-    for key in ("id", "date", "description", "amount", "currency", "type", "account_id", "account_name"):
+    for key in (
+        "id",
+        "date",
+        "description",
+        "amount",
+        "currency",
+        "type",
+        "account_id",
+        "account_name",
+    ):
         assert key in sample, f"missing key {key} in row"
     # account_name should resolve when category/account are seeded.
     assert any(x.get("account_name") == "Conta Corrente" for x in result["items"])
@@ -227,9 +242,7 @@ async def test_list_budgets_empty(session: AsyncSession, ctx: CallContext):
     assert r == {"items": [], "total": 0}
 
 
-async def test_aggregate_payee_filter(
-    session: AsyncSession, ctx: CallContext, test_transactions
-):
+async def test_aggregate_payee_filter(session: AsyncSession, ctx: CallContext, test_transactions):
     """The new payee_id filter on aggregate makes 'how much did I spend at X?'
     a single tool call instead of the agent's old 4-call dance."""
     handler = REGISTRY["aggregate"].handler
@@ -270,7 +283,9 @@ async def test_list_accounts(session: AsyncSession, ctx: CallContext, test_accou
     assert found["currency"] == "BRL"
 
 
-async def test_get_account_summary(session: AsyncSession, ctx: CallContext, test_account, test_transactions):
+async def test_get_account_summary(
+    session: AsyncSession, ctx: CallContext, test_account, test_transactions
+):
     handler = REGISTRY["get_account_summary"].handler
     result = await handler(session=session, ctx=ctx, account_id=str(test_account.id))
     # Real service returns a dict with income/expense/etc. We just verify it's not an error.
@@ -311,13 +326,17 @@ async def test_get_dashboard_snapshot(session: AsyncSession, ctx: CallContext, t
 
 # --- aggregate -------------------------------------------------------------
 
+
 async def test_aggregate_by_category(
     session: AsyncSession, ctx: CallContext, test_transactions, test_categories
 ):
     handler = REGISTRY["aggregate"].handler
     result = await handler(
-        session=session, ctx=ctx,
-        metric="sum", group_by="category", tx_type="expense",
+        session=session,
+        ctx=ctx,
+        metric="sum",
+        group_by="category",
+        tx_type="expense",
     )
     assert "items" in result
     # We have UBER (Transporte) and IFOOD (Alimentação) as expenses.
@@ -325,10 +344,10 @@ async def test_aggregate_by_category(
     assert "Transporte" in labels or "Alimentação" in labels
 
 
-@pytest.mark.skip(reason="aggregate by month uses PostgreSQL to_char, not portable to SQLite test DB")
-async def test_aggregate_by_month(
-    session: AsyncSession, ctx: CallContext, test_transactions
-):
+@pytest.mark.skip(
+    reason="aggregate by month uses PostgreSQL to_char, not portable to SQLite test DB"
+)
+async def test_aggregate_by_month(session: AsyncSession, ctx: CallContext, test_transactions):
     handler = REGISTRY["aggregate"].handler
     result = await handler(session=session, ctx=ctx, metric="count", group_by="month")
     assert "items" in result
@@ -345,6 +364,7 @@ async def test_aggregate_unknown_group_by(session: AsyncSession, ctx: CallContex
 
 # --- search_all ------------------------------------------------------------
 
+
 async def test_search_all(session: AsyncSession, ctx: CallContext, test_transactions):
     handler = REGISTRY["search_all"].handler
     result = await handler(session=session, ctx=ctx, query="UBER")
@@ -353,6 +373,7 @@ async def test_search_all(session: AsyncSession, ctx: CallContext, test_transact
 
 # --- Proposal tools (no DB writes) ----------------------------------------
 
+
 async def test_propose_categorize_returns_preview(
     session: AsyncSession, ctx: CallContext, test_transactions, test_categories
 ):
@@ -360,7 +381,8 @@ async def test_propose_categorize_returns_preview(
     target_cat = test_categories[0]  # Alimentação
     tx_ids = [str(t.id) for t in test_transactions[:2]]
     result = await handler(
-        session=session, ctx=ctx,
+        session=session,
+        ctx=ctx,
         transaction_ids=tx_ids,
         category_id=str(target_cat.id),
     )
@@ -375,7 +397,8 @@ async def test_propose_categorize_unknown_category(
 ):
     handler = REGISTRY["propose_categorize"].handler
     result = await handler(
-        session=session, ctx=ctx,
+        session=session,
+        ctx=ctx,
         transaction_ids=[str(test_transactions[0].id)],
         category_id=str(uuid.uuid4()),
     )
@@ -402,12 +425,11 @@ async def test_propose_create_category_no_collision(
     assert result["proposed"]["name"] == "UniqueNewCategoryX9Z"
 
 
-async def test_propose_create_budget(
-    session: AsyncSession, ctx: CallContext, test_categories
-):
+async def test_propose_create_budget(session: AsyncSession, ctx: CallContext, test_categories):
     handler = REGISTRY["propose_create_budget"].handler
     result = await handler(
-        session=session, ctx=ctx,
+        session=session,
+        ctx=ctx,
         category_id=str(test_categories[0].id),
         month="2026-05-15",
         amount=500.0,
@@ -423,7 +445,8 @@ async def test_propose_create_transaction_full(
 ):
     handler = REGISTRY["propose_create_transaction"].handler
     r = await handler(
-        session=session, ctx=ctx,
+        session=session,
+        ctx=ctx,
         description="Almoço",
         amount=50.0,
         type="debit",
@@ -441,13 +464,15 @@ async def test_propose_create_transaction_full(
     assert p["date"]  # default to today
 
 
-async def test_propose_create_transaction_unknown_account(
-    session: AsyncSession, ctx: CallContext
-):
+async def test_propose_create_transaction_unknown_account(session: AsyncSession, ctx: CallContext):
     handler = REGISTRY["propose_create_transaction"].handler
     r = await handler(
-        session=session, ctx=ctx,
-        description="x", amount=1.0, type="debit", account_id=str(uuid.uuid4()),
+        session=session,
+        ctx=ctx,
+        description="x",
+        amount=1.0,
+        type="debit",
+        account_id=str(uuid.uuid4()),
     )
     assert r["error"] == "account not found"
 
@@ -457,9 +482,13 @@ async def test_propose_create_recurring_monthly_requires_day(
 ):
     handler = REGISTRY["propose_create_recurring_transaction"].handler
     r = await handler(
-        session=session, ctx=ctx,
-        description="Netflix", amount=55.0, type="debit",
-        frequency="monthly", account_id=str(test_account.id),
+        session=session,
+        ctx=ctx,
+        description="Netflix",
+        amount=55.0,
+        type="debit",
+        frequency="monthly",
+        account_id=str(test_account.id),
     )
     assert "day_of_month" in r.get("error", "")
 
@@ -469,9 +498,13 @@ async def test_propose_create_recurring_monthly_full(
 ):
     handler = REGISTRY["propose_create_recurring_transaction"].handler
     r = await handler(
-        session=session, ctx=ctx,
-        description="Netflix", amount=55.0, type="debit",
-        frequency="monthly", day_of_month=10,
+        session=session,
+        ctx=ctx,
+        description="Netflix",
+        amount=55.0,
+        type="debit",
+        frequency="monthly",
+        day_of_month=10,
         account_id=str(test_account.id),
     )
     assert r["kind"] == "create_recurring_transaction"
@@ -489,10 +522,17 @@ async def test_propose_update_recurring_no_changes(
     from datetime import date
 
     rt = RecurringTransaction(
-        id=uuid.uuid4(), user_id=test_user.id,
-        description="Salary", amount=Decimal("4000"), currency="BRL",
-        type="credit", frequency="monthly", day_of_month=1,
-        start_date=date(2026, 1, 1), next_occurrence=date(2026, 5, 1), is_active=True,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        description="Salary",
+        amount=Decimal("4000"),
+        currency="BRL",
+        type="credit",
+        frequency="monthly",
+        day_of_month=1,
+        start_date=date(2026, 1, 1),
+        next_occurrence=date(2026, 5, 1),
+        is_active=True,
     )
     session.add(rt)
     await session.commit()
@@ -512,10 +552,17 @@ async def test_propose_update_recurring_amount_change(
     from datetime import date
 
     rt = RecurringTransaction(
-        id=uuid.uuid4(), user_id=test_user.id,
-        description="Salary", amount=Decimal("4000"), currency="BRL",
-        type="credit", frequency="monthly", day_of_month=1,
-        start_date=date(2026, 1, 1), next_occurrence=date(2026, 5, 1), is_active=True,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        description="Salary",
+        amount=Decimal("4000"),
+        currency="BRL",
+        type="credit",
+        frequency="monthly",
+        day_of_month=1,
+        start_date=date(2026, 1, 1),
+        next_occurrence=date(2026, 5, 1),
+        is_active=True,
     )
     session.add(rt)
     await session.commit()
@@ -535,10 +582,17 @@ async def test_propose_cancel_recurring_default_mode_is_deactivate(
     from datetime import date
 
     rt = RecurringTransaction(
-        id=uuid.uuid4(), user_id=test_user.id,
-        description="Spotify", amount=Decimal("23.90"), currency="BRL",
-        type="debit", frequency="monthly", day_of_month=15,
-        start_date=date(2026, 1, 1), next_occurrence=date(2026, 5, 15), is_active=True,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        description="Spotify",
+        amount=Decimal("23.90"),
+        currency="BRL",
+        type="debit",
+        frequency="monthly",
+        day_of_month=15,
+        start_date=date(2026, 1, 1),
+        next_occurrence=date(2026, 5, 15),
+        is_active=True,
     )
     session.add(rt)
     await session.commit()
@@ -552,8 +606,11 @@ async def test_propose_cancel_recurring_default_mode_is_deactivate(
 async def test_propose_create_goal(session: AsyncSession, ctx: CallContext):
     handler = REGISTRY["propose_create_goal"].handler
     r = await handler(
-        session=session, ctx=ctx,
-        name="Viagem para o Japão", target_amount=10000, deadline="2026-12-31",
+        session=session,
+        ctx=ctx,
+        name="Viagem para o Japão",
+        target_amount=10000,
+        deadline="2026-12-31",
     )
     assert r["kind"] == "create_goal"
     assert r["proposed"]["target_amount"] == 10000.0
@@ -561,12 +618,11 @@ async def test_propose_create_goal(session: AsyncSession, ctx: CallContext):
     assert r["proposed"]["initial_amount"] == 0.0
 
 
-async def test_propose_create_payee_rule_unknown_category(
-    session: AsyncSession, ctx: CallContext
-):
+async def test_propose_create_payee_rule_unknown_category(session: AsyncSession, ctx: CallContext):
     handler = REGISTRY["propose_create_payee_rule"].handler
     result = await handler(
-        session=session, ctx=ctx,
+        session=session,
+        ctx=ctx,
         match_pattern="UBER",
         category_id=str(uuid.uuid4()),
     )
@@ -575,9 +631,8 @@ async def test_propose_create_payee_rule_unknown_category(
 
 # --- search_knowledge_base ------------------------------------------------
 
-async def test_search_knowledge_base_requires_agent_id(
-    session: AsyncSession, test_user
-):
+
+async def test_search_knowledge_base_requires_agent_id(session: AsyncSession, test_user):
     """Without agent_id in context, the tool refuses (covers a misconfigured caller)."""
     handler = REGISTRY["search_knowledge_base"].handler
     bare_ctx = CallContext(user_id=test_user.id)  # no agent_id
@@ -589,6 +644,7 @@ async def test_search_knowledge_base_requires_agent_id(
 # --- _can_apply gate -------------------------------------------------------
 # Authorization-critical: writes must only happen when the caller is external
 # AND set apply=True. Internal callers never write through propose_* tools.
+
 
 def test_can_apply_truth_table(test_user):
     from mcp_server.tools.proposals import _can_apply
@@ -617,16 +673,17 @@ async def test_propose_categorize_internal_apply_does_not_write(
     assert tx.category_id is None
 
     result = await handler(
-        session=session, ctx=internal_ctx,
+        session=session,
+        ctx=internal_ctx,
         transaction_ids=[str(tx.id)],
         category_id=str(target.id),
         apply=True,
     )
     assert "applied" not in result  # preview only
 
-    refreshed = (await session.execute(
-        select(Transaction).where(Transaction.id == tx.id)
-    )).scalar_one()
+    refreshed = (
+        await session.execute(select(Transaction).where(Transaction.id == tx.id))
+    ).scalar_one()
     assert refreshed.category_id is None
 
 
@@ -643,16 +700,17 @@ async def test_propose_categorize_external_no_apply_returns_preview(
     target = test_categories[0]
 
     result = await handler(
-        session=session, ctx=external_ctx,
+        session=session,
+        ctx=external_ctx,
         transaction_ids=[str(tx.id)],
         category_id=str(target.id),
         apply=False,
     )
     assert "applied" not in result
 
-    refreshed = (await session.execute(
-        select(Transaction).where(Transaction.id == tx.id)
-    )).scalar_one()
+    refreshed = (
+        await session.execute(select(Transaction).where(Transaction.id == tx.id))
+    ).scalar_one()
     assert refreshed.category_id is None
 
 
@@ -669,7 +727,8 @@ async def test_propose_categorize_external_apply_writes(
     target = test_categories[0]
 
     result = await handler(
-        session=session, ctx=external_ctx,
+        session=session,
+        ctx=external_ctx,
         transaction_ids=[str(tx.id)],
         category_id=str(target.id),
         apply=True,
@@ -677,9 +736,9 @@ async def test_propose_categorize_external_apply_writes(
     assert result.get("applied") is True
     assert result.get("updated_count") == 1
 
-    refreshed = (await session.execute(
-        select(Transaction).where(Transaction.id == tx.id)
-    )).scalar_one()
+    refreshed = (
+        await session.execute(select(Transaction).where(Transaction.id == tx.id))
+    ).scalar_one()
     assert refreshed.category_id == target.id
 
 
@@ -688,22 +747,19 @@ async def test_propose_categorize_external_apply_writes(
 # wiring. The _can_apply gate is shared across all of them and is already
 # exercised by test_can_apply_truth_table + the propose_categorize trio.
 
+
 def test_every_propose_tool_advertises_apply_parameter():
     """Schema contract: every propose_* tool must expose `apply` in its
     JSON Schema so external clients can opt into write mode."""
     for name, spec in REGISTRY.items():
         if not name.startswith("propose_"):
             continue
-        assert "apply" in spec.parameters["properties"], (
-            f"{name} is missing the `apply` parameter"
-        )
+        assert "apply" in spec.parameters["properties"], f"{name} is missing the `apply` parameter"
         assert spec.parameters["properties"]["apply"]["type"] == "boolean"
         assert spec.parameters["properties"]["apply"].get("default") is False
 
 
-async def test_propose_create_category_external_apply_writes(
-    session: AsyncSession, test_user
-):
+async def test_propose_create_category_external_apply_writes(session: AsyncSession, test_user):
     from sqlalchemy import select
     from app.models.category import Category
 
@@ -711,16 +767,21 @@ async def test_propose_create_category_external_apply_writes(
     ctx = CallContext(user_id=test_user.id, external=True)
 
     result = await handler(
-        session=session, ctx=ctx,
-        name="Doações", icon="heart", color="#EF4444",
+        session=session,
+        ctx=ctx,
+        name="Doações",
+        icon="heart",
+        color="#EF4444",
         apply=True,
     )
     assert result.get("applied") is True
     new_id = uuid.UUID(result["id"])
 
-    row = (await session.execute(
-        select(Category).where(Category.id == new_id, Category.user_id == test_user.id)
-    )).scalar_one()
+    row = (
+        await session.execute(
+            select(Category).where(Category.id == new_id, Category.user_id == test_user.id)
+        )
+    ).scalar_one()
     assert row.name == "Doações"
     assert row.icon == "heart"
 
@@ -737,21 +798,26 @@ async def test_propose_create_category_external_apply_blocks_collision(
     ctx = CallContext(user_id=test_user.id, external=True)
     existing = test_categories[0]
 
-    before = (await session.execute(
-        select(func.count()).select_from(Category).where(Category.user_id == test_user.id)
-    )).scalar_one()
+    before = (
+        await session.execute(
+            select(func.count()).select_from(Category).where(Category.user_id == test_user.id)
+        )
+    ).scalar_one()
 
     result = await handler(
-        session=session, ctx=ctx,
+        session=session,
+        ctx=ctx,
         name=existing.name,
         apply=True,
     )
     assert "applied" not in result
     assert "error" in result
 
-    after = (await session.execute(
-        select(func.count()).select_from(Category).where(Category.user_id == test_user.id)
-    )).scalar_one()
+    after = (
+        await session.execute(
+            select(func.count()).select_from(Category).where(Category.user_id == test_user.id)
+        )
+    ).scalar_one()
     assert after == before
 
 
@@ -767,7 +833,8 @@ async def test_propose_create_budget_external_apply_writes(
     cat = test_categories[0]
 
     result = await handler(
-        session=session, ctx=ctx,
+        session=session,
+        ctx=ctx,
         category_id=str(cat.id),
         month=date.today().replace(day=1).isoformat(),
         amount=500.0,
@@ -775,9 +842,9 @@ async def test_propose_create_budget_external_apply_writes(
     )
     assert result.get("applied") is True
 
-    row = (await session.execute(
-        select(Budget).where(Budget.id == uuid.UUID(result["id"]))
-    )).scalar_one()
+    row = (
+        await session.execute(select(Budget).where(Budget.id == uuid.UUID(result["id"])))
+    ).scalar_one()
     assert row.category_id == cat.id
     assert float(row.amount) == 500.0
 
@@ -792,7 +859,8 @@ async def test_propose_create_transaction_external_apply_writes(
     ctx = CallContext(user_id=test_user.id, external=True)
 
     result = await handler(
-        session=session, ctx=ctx,
+        session=session,
+        ctx=ctx,
         description="Sushi delivery",
         amount=78.50,
         type="debit",
@@ -802,9 +870,9 @@ async def test_propose_create_transaction_external_apply_writes(
     )
     assert result.get("applied") is True
 
-    row = (await session.execute(
-        select(Transaction).where(Transaction.id == uuid.UUID(result["id"]))
-    )).scalar_one()
+    row = (
+        await session.execute(select(Transaction).where(Transaction.id == uuid.UUID(result["id"])))
+    ).scalar_one()
     assert row.description == "Sushi delivery"
     assert float(row.amount) == 78.50
     assert row.account_id == test_account.id
@@ -820,7 +888,8 @@ async def test_propose_create_recurring_transaction_external_apply_writes(
     ctx = CallContext(user_id=test_user.id, external=True)
 
     result = await handler(
-        session=session, ctx=ctx,
+        session=session,
+        ctx=ctx,
         description="Netflix",
         amount=55.90,
         type="debit",
@@ -831,11 +900,11 @@ async def test_propose_create_recurring_transaction_external_apply_writes(
     )
     assert result.get("applied") is True
 
-    row = (await session.execute(
-        select(RecurringTransaction).where(
-            RecurringTransaction.id == uuid.UUID(result["id"])
+    row = (
+        await session.execute(
+            select(RecurringTransaction).where(RecurringTransaction.id == uuid.UUID(result["id"]))
         )
-    )).scalar_one()
+    ).scalar_one()
     assert row.description == "Netflix"
     assert row.frequency == "monthly"
     assert row.day_of_month == 10
@@ -870,7 +939,8 @@ async def test_propose_update_recurring_transaction_external_apply_writes(
     ctx = CallContext(user_id=test_user.id, external=True)
 
     result = await handler(
-        session=session, ctx=ctx,
+        session=session,
+        ctx=ctx,
         recurring_id=str(rt.id),
         amount=27.90,
         apply=True,
@@ -911,7 +981,8 @@ async def test_propose_cancel_recurring_transaction_deactivate_apply(
     ctx = CallContext(user_id=test_user.id, external=True)
 
     result = await handler(
-        session=session, ctx=ctx,
+        session=session,
+        ctx=ctx,
         recurring_id=str(rt.id),
         mode="deactivate",
         apply=True,
@@ -954,7 +1025,8 @@ async def test_propose_cancel_recurring_transaction_delete_apply(
     ctx = CallContext(user_id=test_user.id, external=True)
 
     result = await handler(
-        session=session, ctx=ctx,
+        session=session,
+        ctx=ctx,
         recurring_id=str(rt_id),
         mode="delete",
         apply=True,
@@ -962,15 +1034,13 @@ async def test_propose_cancel_recurring_transaction_delete_apply(
     assert result.get("applied") is True
     assert result.get("deleted") is True
 
-    gone = (await session.execute(
-        select(RecurringTransaction).where(RecurringTransaction.id == rt_id)
-    )).scalar_one_or_none()
+    gone = (
+        await session.execute(select(RecurringTransaction).where(RecurringTransaction.id == rt_id))
+    ).scalar_one_or_none()
     assert gone is None
 
 
-async def test_propose_create_goal_external_apply_writes(
-    session: AsyncSession, test_user
-):
+async def test_propose_create_goal_external_apply_writes(session: AsyncSession, test_user):
     from sqlalchemy import select
     from app.models.goal import Goal
 
@@ -978,7 +1048,8 @@ async def test_propose_create_goal_external_apply_writes(
     ctx = CallContext(user_id=test_user.id, external=True)
 
     result = await handler(
-        session=session, ctx=ctx,
+        session=session,
+        ctx=ctx,
         name="Travel fund",
         target_amount=10000.0,
         currency="BRL",
@@ -986,9 +1057,9 @@ async def test_propose_create_goal_external_apply_writes(
     )
     assert result.get("applied") is True
 
-    row = (await session.execute(
-        select(Goal).where(Goal.id == uuid.UUID(result["id"]))
-    )).scalar_one()
+    row = (
+        await session.execute(select(Goal).where(Goal.id == uuid.UUID(result["id"])))
+    ).scalar_one()
     assert row.name == "Travel fund"
     assert float(row.target_amount) == 10000.0
 
@@ -1006,15 +1077,16 @@ async def test_propose_create_payee_rule_external_apply_writes(
     cat = test_categories[0]
 
     result = await handler(
-        session=session, ctx=ctx,
+        session=session,
+        ctx=ctx,
         match_pattern="UBER",
         category_id=str(cat.id),
         apply=True,
     )
     assert result.get("applied") is True
 
-    row = (await session.execute(
-        select(Rule).where(Rule.id == uuid.UUID(result["id"]))
-    )).scalar_one()
+    row = (
+        await session.execute(select(Rule).where(Rule.id == uuid.UUID(result["id"])))
+    ).scalar_one()
     assert any(c.get("value") == "UBER" for c in row.conditions)
     assert any(a.get("value") == str(cat.id) for a in row.actions)

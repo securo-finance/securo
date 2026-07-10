@@ -15,7 +15,18 @@ from app.core.workspace_context import (
     current_workspace,
     current_writable_workspace,
 )
-from app.schemas.transaction import BulkAddToGroupRequest, BulkCategorizeRequest, BulkTagsRequest, CreateCounterpartRequest, LinkTransferRequest, TransactionCreate, TransactionRead, TransactionUpdate, TransferCreate, TransferRead
+from app.schemas.transaction import (
+    BulkAddToGroupRequest,
+    BulkCategorizeRequest,
+    BulkTagsRequest,
+    CreateCounterpartRequest,
+    LinkTransferRequest,
+    TransactionCreate,
+    TransactionRead,
+    TransactionUpdate,
+    TransferCreate,
+    TransferRead,
+)
 from app.services import transaction_service
 from app.services.admin_service import get_credit_card_accounting_mode
 
@@ -30,9 +41,7 @@ def _tag_fx_fallback(tx: TransactionRead, primary_currency: str) -> TransactionR
     to warn the user and offer a manual rate.
     """
     if tx.currency != primary_currency and (
-        tx.amount_primary is None
-        or tx.fx_rate_used is None
-        or tx.fx_rate_used == 1.0
+        tx.amount_primary is None or tx.fx_rate_used is None or tx.fx_rate_used == 1.0
     ):
         tx.fx_fallback = True
     return tx
@@ -48,6 +57,7 @@ class TransactionsSummary(BaseModel):
     out of income/expense for the same rows — paired transfers,
     `treat_as_transfer` categories (transfers, investments, custom) and
     ignored items — i.e. the complement of `counts_as_pnl()`."""
+
     income: float
     expense: float
     net: float
@@ -84,9 +94,17 @@ async def list_transactions(
     payee_id: Optional[uuid.UUID] = Query(None),
     from_date: Optional[date] = Query(None, alias="from"),
     to_date: Optional[date] = Query(None, alias="to"),
-    bill_id: Optional[uuid.UUID] = Query(None, description="Filter by credit-card bill (issue #92); takes precedence over from/to"),
-    group_id: Optional[uuid.UUID] = Query(None, description="Filter to transactions split through this group; widens visibility for linked members"),
-    unbilled_only: bool = Query(False, description="Cycle-math fallback only: exclude txs already linked to any bill (used for in-progress CC cycles)"),
+    bill_id: Optional[uuid.UUID] = Query(
+        None, description="Filter by credit-card bill (issue #92); takes precedence over from/to"
+    ),
+    group_id: Optional[uuid.UUID] = Query(
+        None,
+        description="Filter to transactions split through this group; widens visibility for linked members",
+    ),
+    unbilled_only: bool = Query(
+        False,
+        description="Cycle-math fallback only: exclude txs already linked to any bill (used for in-progress CC cycles)",
+    ),
     q: Optional[str] = Query(None),
     uncategorized: bool = Query(False),
     type: Optional[str] = Query(None),
@@ -95,21 +113,41 @@ async def list_transactions(
     include_opening_balance: bool = Query(False),
     exclude_transfers: bool = Query(False),
     tags: Optional[List[str]] = Query(None),
-    min_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount >= this value (primary currency)."),
-    max_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount <= this value (primary currency)."),
-    sort_by: Optional[str] = Query(None, description="Column to sort by (date|amount|description|payee|category|account|type|status). Default: date desc."),
+    min_amount: Optional[float] = Query(
+        None,
+        ge=0,
+        description="Filter to transactions with absolute amount >= this value (primary currency).",
+    ),
+    max_amount: Optional[float] = Query(
+        None,
+        ge=0,
+        description="Filter to transactions with absolute amount <= this value (primary currency).",
+    ),
+    sort_by: Optional[str] = Query(
+        None,
+        description="Column to sort by (date|amount|description|payee|category|account|type|status). Default: date desc.",
+    ),
     sort_dir: str = Query("desc", regex="^(asc|desc)$"),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
     accounting_mode = await get_credit_card_accounting_mode(session)
     transactions, total, summary = await transaction_service.get_transactions(
-        session, ctx.workspace.id, ctx.user_id,
+        session,
+        ctx.workspace.id,
+        ctx.user_id,
         account_ids=_merge_id_filters(account_id, account_ids),
         category_ids=_merge_id_filters(category_id, category_ids),
-        payee_id=payee_id, from_date=from_date, to_date=to_date, page=page, limit=limit,
-        include_opening_balance=include_opening_balance, search=q, uncategorized=uncategorized,
-        txn_type=type, exclude_transfers=exclude_transfers,
+        payee_id=payee_id,
+        from_date=from_date,
+        to_date=to_date,
+        page=page,
+        limit=limit,
+        include_opening_balance=include_opening_balance,
+        search=q,
+        uncategorized=uncategorized,
+        txn_type=type,
+        exclude_transfers=exclude_transfers,
         accounting_mode=accounting_mode,
         tags=tags,
         bill_id=bill_id,
@@ -122,13 +160,16 @@ async def list_transactions(
         include_summary=True,
     )
     primary_currency = ctx.user.primary_currency
-    items = [_tag_fx_fallback(TransactionRead.model_validate(tx, from_attributes=True), primary_currency) for tx in transactions]
+    items = [
+        _tag_fx_fallback(TransactionRead.model_validate(tx, from_attributes=True), primary_currency)
+        for tx in transactions
+    ]
     summary_out = (
-        TransactionsSummary(**summary, currency=primary_currency)
-        if summary is not None
-        else None
+        TransactionsSummary(**summary, currency=primary_currency) if summary is not None else None
     )
-    return PaginatedTransactions(items=items, total=total, page=page, limit=limit, summary=summary_out)
+    return PaginatedTransactions(
+        items=items, total=total, page=page, limit=limit, summary=summary_out
+    )
 
 
 @router.get("/export")
@@ -144,7 +185,10 @@ async def export_transactions(
     uncategorized: bool = Query(False),
     type: Optional[str] = Query(None),
     tags: Optional[List[str]] = Query(None),
-    transaction_ids: Optional[List[uuid.UUID]] = Query(None, description="If set, exports exactly these rows (scoped to the workspace); other filters are ignored."),
+    transaction_ids: Optional[List[uuid.UUID]] = Query(
+        None,
+        description="If set, exports exactly these rows (scoped to the workspace); other filters are ignored.",
+    ),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -153,18 +197,27 @@ async def export_transactions(
         # Selection-only export: bypass user-facing filters but keep the
         # service-level workspace/visibility scoping intact.
         transactions, _, _ = await transaction_service.get_transactions(
-            session, ctx.workspace.id, ctx.user_id,
+            session,
+            ctx.workspace.id,
+            ctx.user_id,
             skip_pagination=True,
             accounting_mode=accounting_mode,
             transaction_ids=transaction_ids,
         )
     else:
         transactions, _, _ = await transaction_service.get_transactions(
-            session, ctx.workspace.id, ctx.user_id,
+            session,
+            ctx.workspace.id,
+            ctx.user_id,
             account_ids=_merge_id_filters(account_id, account_ids),
             category_ids=_merge_id_filters(category_id, category_ids),
-            payee_id=payee_id, from_date=from_date, to_date=to_date,
-            search=q, uncategorized=uncategorized, txn_type=type, skip_pagination=True,
+            payee_id=payee_id,
+            from_date=from_date,
+            to_date=to_date,
+            search=q,
+            uncategorized=uncategorized,
+            txn_type=type,
+            skip_pagination=True,
             accounting_mode=accounting_mode,
             tags=tags,
         )
@@ -172,24 +225,43 @@ async def export_transactions(
     output = io.StringIO()
     output.write("﻿")  # UTF-8 BOM for Excel
     writer = csv.writer(output)
-    writer.writerow(["date", "description", "amount", "type", "currency", "category", "account", "payee", "payee_name", "notes", "status", "source", "amount_primary", "fx_rate_used"])
+    writer.writerow(
+        [
+            "date",
+            "description",
+            "amount",
+            "type",
+            "currency",
+            "category",
+            "account",
+            "payee",
+            "payee_name",
+            "notes",
+            "status",
+            "source",
+            "amount_primary",
+            "fx_rate_used",
+        ]
+    )
     for tx in transactions:
-        writer.writerow([
-            tx.date.isoformat(),
-            tx.description,
-            str(tx.amount),
-            tx.type,
-            tx.currency,
-            tx.category.name if tx.category else "",
-            tx.account.name if tx.account else "",
-            tx.payee or "",
-            getattr(tx, "payee_name", "") or "",
-            tx.notes or "",
-            tx.status,
-            tx.source,
-            str(tx.amount_primary) if tx.amount_primary is not None else "",
-            str(tx.fx_rate_used) if tx.fx_rate_used is not None else "",
-        ])
+        writer.writerow(
+            [
+                tx.date.isoformat(),
+                tx.description,
+                str(tx.amount),
+                tx.type,
+                tx.currency,
+                tx.category.name if tx.category else "",
+                tx.account.name if tx.account else "",
+                tx.payee or "",
+                getattr(tx, "payee_name", "") or "",
+                tx.notes or "",
+                tx.status,
+                tx.source,
+                str(tx.amount_primary) if tx.amount_primary is not None else "",
+                str(tx.fx_rate_used) if tx.fx_rate_used is not None else "",
+            ]
+        )
 
     output.seek(0)
     today = date.today().isoformat()
@@ -266,12 +338,20 @@ async def create_transfer(
         debit_tx, credit_tx = await transaction_service.create_transfer(
             session, ctx.workspace.id, ctx.user_id, data
         )
-        debit_full = await transaction_service.get_transaction(session, debit_tx.id, ctx.workspace.id)
-        credit_full = await transaction_service.get_transaction(session, credit_tx.id, ctx.workspace.id)
+        debit_full = await transaction_service.get_transaction(
+            session, debit_tx.id, ctx.workspace.id
+        )
+        credit_full = await transaction_service.get_transaction(
+            session, credit_tx.id, ctx.workspace.id
+        )
         primary_currency = ctx.user.primary_currency
         return TransferRead(
-            debit=_tag_fx_fallback(TransactionRead.model_validate(debit_full, from_attributes=True), primary_currency),
-            credit=_tag_fx_fallback(TransactionRead.model_validate(credit_full, from_attributes=True), primary_currency),
+            debit=_tag_fx_fallback(
+                TransactionRead.model_validate(debit_full, from_attributes=True), primary_currency
+            ),
+            credit=_tag_fx_fallback(
+                TransactionRead.model_validate(credit_full, from_attributes=True), primary_currency
+            ),
             transfer_pair_id=debit_tx.transfer_pair_id,
         )
     except ValueError as e:
@@ -289,19 +369,31 @@ async def link_transfer(
         debit_tx, credit_tx = await transaction_service.link_existing_as_transfer(
             session, ctx.workspace.id, data.transaction_ids
         )
-        debit_full = await transaction_service.get_transaction(session, debit_tx.id, ctx.workspace.id)
-        credit_full = await transaction_service.get_transaction(session, credit_tx.id, ctx.workspace.id)
+        debit_full = await transaction_service.get_transaction(
+            session, debit_tx.id, ctx.workspace.id
+        )
+        credit_full = await transaction_service.get_transaction(
+            session, credit_tx.id, ctx.workspace.id
+        )
         primary_currency = ctx.user.primary_currency
         return TransferRead(
-            debit=_tag_fx_fallback(TransactionRead.model_validate(debit_full, from_attributes=True), primary_currency),
-            credit=_tag_fx_fallback(TransactionRead.model_validate(credit_full, from_attributes=True), primary_currency),
+            debit=_tag_fx_fallback(
+                TransactionRead.model_validate(debit_full, from_attributes=True), primary_currency
+            ),
+            credit=_tag_fx_fallback(
+                TransactionRead.model_validate(credit_full, from_attributes=True), primary_currency
+            ),
             transfer_pair_id=debit_tx.transfer_pair_id,
         )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.post("/{transaction_id}/create-counterpart", response_model=TransferRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{transaction_id}/create-counterpart",
+    response_model=TransferRead,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_counterpart(
     transaction_id: uuid.UUID,
     data: CreateCounterpartRequest,
@@ -314,12 +406,20 @@ async def create_counterpart(
         debit_tx, credit_tx = await transaction_service.create_transfer_counterpart(
             session, ctx.workspace.id, ctx.user_id, transaction_id, data.to_account_id
         )
-        debit_full = await transaction_service.get_transaction(session, debit_tx.id, ctx.workspace.id)
-        credit_full = await transaction_service.get_transaction(session, credit_tx.id, ctx.workspace.id)
+        debit_full = await transaction_service.get_transaction(
+            session, debit_tx.id, ctx.workspace.id
+        )
+        credit_full = await transaction_service.get_transaction(
+            session, credit_tx.id, ctx.workspace.id
+        )
         primary_currency = ctx.user.primary_currency
         return TransferRead(
-            debit=_tag_fx_fallback(TransactionRead.model_validate(debit_full, from_attributes=True), primary_currency),
-            credit=_tag_fx_fallback(TransactionRead.model_validate(credit_full, from_attributes=True), primary_currency),
+            debit=_tag_fx_fallback(
+                TransactionRead.model_validate(debit_full, from_attributes=True), primary_currency
+            ),
+            credit=_tag_fx_fallback(
+                TransactionRead.model_validate(credit_full, from_attributes=True), primary_currency
+            ),
             transfer_pair_id=debit_tx.transfer_pair_id,
         )
     except ValueError as e:
@@ -354,11 +454,15 @@ async def get_transaction(
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    transaction = await transaction_service.get_transaction(session, transaction_id, ctx.workspace.id)
+    transaction = await transaction_service.get_transaction(
+        session, transaction_id, ctx.workspace.id
+    )
     if not transaction:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
     primary_currency = ctx.user.primary_currency
-    return _tag_fx_fallback(TransactionRead.model_validate(transaction, from_attributes=True), primary_currency)
+    return _tag_fx_fallback(
+        TransactionRead.model_validate(transaction, from_attributes=True), primary_currency
+    )
 
 
 @router.post("", response_model=TransactionRead, status_code=status.HTTP_201_CREATED)
@@ -371,9 +475,13 @@ async def create_transaction(
         transaction = await transaction_service.create_transaction(
             session, ctx.workspace.id, ctx.user_id, data
         )
-        full_tx = await transaction_service.get_transaction(session, transaction.id, ctx.workspace.id)
+        full_tx = await transaction_service.get_transaction(
+            session, transaction.id, ctx.workspace.id
+        )
         primary_currency = ctx.user.primary_currency
-        return _tag_fx_fallback(TransactionRead.model_validate(full_tx, from_attributes=True), primary_currency)
+        return _tag_fx_fallback(
+            TransactionRead.model_validate(full_tx, from_attributes=True), primary_currency
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -394,7 +502,9 @@ async def update_transaction(
     if not transaction:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
     primary_currency = ctx.user.primary_currency
-    return _tag_fx_fallback(TransactionRead.model_validate(transaction, from_attributes=True), primary_currency)
+    return _tag_fx_fallback(
+        TransactionRead.model_validate(transaction, from_attributes=True), primary_currency
+    )
 
 
 @router.patch("/{transaction_id}/ignore", response_model=TransactionRead)
@@ -409,7 +519,9 @@ async def toggle_ignore_transaction(
     if not transaction:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
     primary_currency = ctx.user.primary_currency
-    return _tag_fx_fallback(TransactionRead.model_validate(transaction, from_attributes=True), primary_currency)
+    return _tag_fx_fallback(
+        TransactionRead.model_validate(transaction, from_attributes=True), primary_currency
+    )
 
 
 @router.patch("/{transaction_id}/unlink-recurring", response_model=TransactionRead)
@@ -427,7 +539,9 @@ async def unlink_recurring_transaction(
             detail="Transaction not found or not linked to a recurring bill",
         )
     primary_currency = ctx.user.primary_currency
-    return _tag_fx_fallback(TransactionRead.model_validate(transaction, from_attributes=True), primary_currency)
+    return _tag_fx_fallback(
+        TransactionRead.model_validate(transaction, from_attributes=True), primary_currency
+    )
 
 
 @router.delete("/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)

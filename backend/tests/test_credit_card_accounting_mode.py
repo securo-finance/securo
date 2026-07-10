@@ -469,12 +469,16 @@ class TestDashboardSummary:
         await _set_mode(session, "cash")
         cash_total = 0.0
         for m in [date(2026, 3, 1), date(2026, 4, 1), date(2026, 5, 1), date(2026, 6, 1)]:
-            s = await dashboard_service.get_summary(session, test_workspace.id, test_user.id, month=m)
+            s = await dashboard_service.get_summary(
+                session, test_workspace.id, test_user.id, month=m
+            )
             cash_total += s.monthly_expenses
         await _set_mode(session, "accrual")
         accrual_total = 0.0
         for m in [date(2026, 3, 1), date(2026, 4, 1), date(2026, 5, 1), date(2026, 6, 1)]:
-            s = await dashboard_service.get_summary(session, test_workspace.id, test_user.id, month=m)
+            s = await dashboard_service.get_summary(
+                session, test_workspace.id, test_user.id, month=m
+            )
             accrual_total += s.monthly_expenses
         # All 4 charges account for R$200 total regardless of which month buckets them.
         assert cash_total == 200.0
@@ -495,13 +499,23 @@ class TestSpendingByCategory:
         transport = test_categories[1]
         # Mar 30: R$100 food, bill Apr 16
         await _make_tx(
-            session, test_user.id, cc_account.id, date(2026, 3, 30),
-            Decimal("100"), effective_date=date(2026, 4, 16), category_id=food.id,
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 3, 30),
+            Decimal("100"),
+            effective_date=date(2026, 4, 16),
+            category_id=food.id,
         )
         # Apr 12: R$40 transport, bill May 16
         await _make_tx(
-            session, test_user.id, cc_account.id, date(2026, 4, 12),
-            Decimal("40"), effective_date=date(2026, 5, 16), category_id=transport.id,
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 12),
+            Decimal("40"),
+            effective_date=date(2026, 5, 16),
+            category_id=transport.id,
         )
         await session.commit()
 
@@ -539,8 +553,13 @@ class TestSpendingByCategory:
         # purchase month) so the only thing that can move it to June is the
         # override — proving the override wins over both report columns.
         tx = await _make_tx(
-            session, test_user.id, cc_account.id, date(2026, 5, 27),
-            Decimal("100"), effective_date=date(2026, 5, 27), category_id=food.id,
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 5, 27),
+            Decimal("100"),
+            effective_date=date(2026, 5, 27),
+            category_id=food.id,
         )
         tx.effective_bill_date = date(2026, 6, 1)  # user moved it to the June invoice
         await session.commit()
@@ -573,8 +592,13 @@ class TestSpendingByCategory:
         also follow the manual invoice override (issue #232)."""
         food = test_categories[0]
         tx = await _make_tx(
-            session, test_user.id, cc_account.id, date(2026, 5, 27),
-            Decimal("100"), effective_date=date(2026, 5, 27), category_id=food.id,
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 5, 27),
+            Decimal("100"),
+            effective_date=date(2026, 5, 27),
+            category_id=food.id,
         )
         tx.effective_bill_date = date(2026, 6, 1)
         await session.commit()
@@ -601,6 +625,7 @@ class TestBudgetVsActual:
         self, session, test_user, test_workspace, cc_account, test_categories
     ):
         from app.models.budget import Budget
+
         food = test_categories[0]
         # Budget R$200/month for food
         budget = Budget(
@@ -615,18 +640,33 @@ class TestBudgetVsActual:
 
         # Mar 30 R$150 food (effective Apr 16)
         await _make_tx(
-            session, test_user.id, cc_account.id, date(2026, 3, 30),
-            Decimal("150"), effective_date=date(2026, 4, 16), category_id=food.id,
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 3, 30),
+            Decimal("150"),
+            effective_date=date(2026, 4, 16),
+            category_id=food.id,
         )
         # Apr 5 R$30 food (effective Apr 16)
         await _make_tx(
-            session, test_user.id, cc_account.id, date(2026, 4, 5),
-            Decimal("30"), effective_date=date(2026, 4, 16), category_id=food.id,
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 5),
+            Decimal("30"),
+            effective_date=date(2026, 4, 16),
+            category_id=food.id,
         )
         # Apr 15 R$20 food (effective May 16 — next cycle)
         await _make_tx(
-            session, test_user.id, cc_account.id, date(2026, 4, 15),
-            Decimal("20"), effective_date=date(2026, 5, 16), category_id=food.id,
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 15),
+            Decimal("20"),
+            effective_date=date(2026, 5, 16),
+            category_id=food.id,
         )
         await session.commit()
 
@@ -664,7 +704,9 @@ class TestIncomeExpensesReport:
         # rely on the fact that `get_income_expenses_report` uses the exact
         # same `report_date` expression as the dashboard queries above — if
         # those tests pass, this one is wired identically.
-        pytest.skip("get_income_expenses_report uses Postgres to_char — SQLite test DB doesn't support it")
+        pytest.skip(
+            "get_income_expenses_report uses Postgres to_char — SQLite test DB doesn't support it"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -684,20 +726,30 @@ class TestAccountBalanceInvariant:
     ):
         """Non-CC account: effective_date == date so both modes are identical."""
         await _make_tx(
-            session, test_user.id, test_account.id, date(2026, 4, 3),
-            Decimal("100"), tx_type="debit",
+            session,
+            test_user.id,
+            test_account.id,
+            date(2026, 4, 3),
+            Decimal("100"),
+            tx_type="debit",
         )
         await session.commit()
 
         await _set_mode(session, "cash")
         cash = await account_service.get_account_balance_history(
-            session, test_account.id, test_workspace.id,
-            date_from=date(2026, 4, 1), date_to=date(2026, 4, 30),
+            session,
+            test_account.id,
+            test_workspace.id,
+            date_from=date(2026, 4, 1),
+            date_to=date(2026, 4, 30),
         )
         await _set_mode(session, "accrual")
         accrual = await account_service.get_account_balance_history(
-            session, test_account.id, test_workspace.id,
-            date_from=date(2026, 4, 1), date_to=date(2026, 4, 30),
+            session,
+            test_account.id,
+            test_workspace.id,
+            date_from=date(2026, 4, 1),
+            date_to=date(2026, 4, 30),
         )
         assert cash == accrual
 
@@ -717,7 +769,9 @@ class TestTransactionUpdateRefreshesEffectiveDate:
         from app.schemas.transaction import TransactionCreate
 
         created = await create_transaction(
-            session, test_workspace.id, test_user.id,
+            session,
+            test_workspace.id,
+            test_user.id,
             TransactionCreate(
                 account_id=cc_account.id,
                 description="test",
@@ -725,13 +779,16 @@ class TestTransactionUpdateRefreshesEffectiveDate:
                 currency="BRL",
                 date=date(2026, 4, 3),  # Apr 3 → effective Apr 16
                 type="debit",
-            )
+            ),
         )
         assert created.effective_date == date(2026, 4, 16)
 
         updated = await update_transaction(
-            session, created.id, test_workspace.id, test_user.id,
-            TransactionUpdate(date=date(2026, 4, 12))  # Apr 12 → effective May 16
+            session,
+            created.id,
+            test_workspace.id,
+            test_user.id,
+            TransactionUpdate(date=date(2026, 4, 12)),  # Apr 12 → effective May 16
         )
         assert updated is not None
         assert updated.effective_date == date(2026, 5, 16)
@@ -751,12 +808,20 @@ class TestAccountCycleEditRecomputesEffectiveDates:
 
         # Create 2 historical txs.
         await _make_tx(
-            session, test_user.id, cc_account.id, date(2026, 3, 5),
-            Decimal("10"), effective_date=date(2026, 3, 16),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 3, 5),
+            Decimal("10"),
+            effective_date=date(2026, 3, 16),
         )
         await _make_tx(
-            session, test_user.id, cc_account.id, date(2026, 3, 20),
-            Decimal("20"), effective_date=date(2026, 4, 16),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 3, 20),
+            Decimal("20"),
+            effective_date=date(2026, 4, 16),
         )
         await session.commit()
 
@@ -765,11 +830,11 @@ class TestAccountCycleEditRecomputesEffectiveDates:
         #   Mar 5  → cycle Feb 26..Mar 25 → bill due Apr 16
         #   Mar 20 → cycle Feb 26..Mar 25 → bill due Apr 16
         await account_service.update_account(
-            session, cc_account.id, test_workspace.id,
-            AccountUpdate(statement_close_day=25)
+            session, cc_account.id, test_workspace.id, AccountUpdate(statement_close_day=25)
         )
         result = await session.execute(
-            select(Transaction).where(Transaction.account_id == cc_account.id)
+            select(Transaction)
+            .where(Transaction.account_id == cc_account.id)
             .order_by(Transaction.date)
         )
         txs = result.scalars().all()
@@ -792,10 +857,14 @@ class TestEffectiveBillDateFiltersList:
         a May-window query — even in cash mode (where the default filter is
         Transaction.date)."""
         from app.services.transaction_service import get_transactions
+
         await _set_mode(session, "cash")
         tx = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 18), Decimal("55.90"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 18),
+            Decimal("55.90"),
             effective_date=date(2026, 5, 22),
         )
         tx.effective_bill_date = date(2026, 3, 1)
@@ -803,16 +872,24 @@ class TestEffectiveBillDateFiltersList:
 
         # March window: should include the override'd tx.
         march_txs, _, _ = await get_transactions(
-            session, test_workspace.id, test_user.id, account_id=cc_account.id,
-            from_date=date(2026, 2, 16), to_date=date(2026, 3, 15),
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
+            from_date=date(2026, 2, 16),
+            to_date=date(2026, 3, 15),
             accounting_mode="cash",
         )
         assert any(t.id == tx.id for t in march_txs)
 
         # May window: should NOT include it anymore.
         may_txs, _, _ = await get_transactions(
-            session, test_workspace.id, test_user.id, account_id=cc_account.id,
-            from_date=date(2026, 4, 16), to_date=date(2026, 5, 15),
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
+            from_date=date(2026, 4, 16),
+            to_date=date(2026, 5, 15),
             accounting_mode="cash",
         )
         assert not any(t.id == tx.id for t in may_txs)
@@ -824,18 +901,26 @@ class TestEffectiveBillDateFiltersList:
         """Same behavior in accrual mode — override must beat both modes'
         default columns."""
         from app.services.transaction_service import get_transactions
+
         await _set_mode(session, "accrual")
         tx = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 18), Decimal("55.90"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 18),
+            Decimal("55.90"),
             effective_date=date(2026, 5, 22),  # accrual would put this in May
         )
         tx.effective_bill_date = date(2026, 3, 1)
         await session.commit()
 
         march_txs, _, _ = await get_transactions(
-            session, test_workspace.id, test_user.id, account_id=cc_account.id,
-            from_date=date(2026, 2, 16), to_date=date(2026, 3, 15),
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
+            from_date=date(2026, 2, 16),
+            to_date=date(2026, 3, 15),
             accounting_mode="accrual",
         )
         assert any(t.id == tx.id for t in march_txs)
@@ -855,9 +940,12 @@ class TestEffectiveBillDateFiltersList:
 
         # Pluggy bill due Apr 16
         bill = CreditCardBill(
-            user_id=test_user.id, account_id=cc_account.id,
-            external_id="bill-x", due_date=date(2026, 4, 16),
-            total_amount=Decimal("100"), currency="BRL",
+            user_id=test_user.id,
+            account_id=cc_account.id,
+            external_id="bill-x",
+            due_date=date(2026, 4, 16),
+            total_amount=Decimal("100"),
+            currency="BRL",
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
@@ -866,25 +954,35 @@ class TestEffectiveBillDateFiltersList:
 
         # Linked tx (the real one Pluggy returned)
         linked = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 5), Decimal("50"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 5),
+            Decimal("50"),
             effective_date=date(2026, 4, 16),
         )
         linked.bill_id = bill.id
 
         # Unlinked manual recurring (the workaround tx)
         unlinked = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 6), Decimal("50"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 6),
+            Decimal("50"),
             effective_date=date(2026, 4, 16),
         )
         await session.commit()
 
         # Cycle window for this bill = [Mar 17, Apr 16]
         txs, _, _ = await get_transactions(
-            session, test_workspace.id, test_user.id, account_id=cc_account.id,
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
             bill_id=bill.id,
-            from_date=date(2026, 3, 17), to_date=date(2026, 4, 16),
+            from_date=date(2026, 3, 17),
+            to_date=date(2026, 4, 16),
             accounting_mode="cash",
         )
         ids = {t.id for t in txs}
@@ -908,9 +1006,12 @@ class TestEffectiveBillDateFiltersList:
         from datetime import datetime, timezone
 
         may_bill = CreditCardBill(
-            user_id=test_user.id, account_id=cc_account.id,
-            external_id="may", due_date=date(2026, 5, 10),
-            total_amount=Decimal("100"), currency="BRL",
+            user_id=test_user.id,
+            account_id=cc_account.id,
+            external_id="may",
+            due_date=date(2026, 5, 10),
+            total_amount=Decimal("100"),
+            currency="BRL",
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
@@ -919,8 +1020,11 @@ class TestEffectiveBillDateFiltersList:
 
         # Pending sync tx, no billId, effective_date matches May's due_date
         pending = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 17), Decimal("44.90"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 17),
+            Decimal("44.90"),
             effective_date=date(2026, 5, 10),  # cycle-math pre-classified to May
             source="sync",
         )
@@ -928,9 +1032,13 @@ class TestEffectiveBillDateFiltersList:
         await session.commit()
 
         txs, _, _ = await get_transactions(
-            session, test_workspace.id, test_user.id, account_id=cc_account.id,
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
             bill_id=may_bill.id,
-            from_date=date(2026, 4, 11), to_date=date(2026, 5, 10),
+            from_date=date(2026, 4, 11),
+            to_date=date(2026, 5, 10),
             accounting_mode="cash",
         )
         assert pending.id in {t.id for t in txs}
@@ -949,8 +1057,11 @@ class TestEffectiveBillDateFiltersList:
 
         # Pending sync, no billId, dated on the close day (April 30 with close=30)
         pending = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 30), Decimal("91.51"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 30),
+            Decimal("91.51"),
             effective_date=date(2026, 6, 10),  # cycle-math classified to June
             source="sync",
         )
@@ -960,8 +1071,12 @@ class TestEffectiveBillDateFiltersList:
         # In-progress June cycle (cycle-math fallback, no bill_id passed)
         # range = [April 30, May 29] — the start INCLUDES the prev close day.
         txs, _, _ = await get_transactions(
-            session, test_workspace.id, test_user.id, account_id=cc_account.id,
-            from_date=date(2026, 4, 30), to_date=date(2026, 5, 29),
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
+            from_date=date(2026, 4, 30),
+            to_date=date(2026, 5, 29),
             accounting_mode="cash",
         )
         assert pending.id in {t.id for t in txs}
@@ -979,9 +1094,12 @@ class TestEffectiveBillDateFiltersList:
         from datetime import datetime, timezone
 
         prior_bill = CreditCardBill(
-            user_id=test_user.id, account_id=cc_account.id,
-            external_id="may", due_date=date(2026, 5, 10),
-            total_amount=Decimal("100"), currency="BRL",
+            user_id=test_user.id,
+            account_id=cc_account.id,
+            external_id="may",
+            due_date=date(2026, 5, 10),
+            total_amount=Decimal("100"),
+            currency="BRL",
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
@@ -991,8 +1109,11 @@ class TestEffectiveBillDateFiltersList:
         # Tx already linked to the May bill, dated within the in-progress
         # June cycle window
         billed = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 5, 5), Decimal("50"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 5, 5),
+            Decimal("50"),
             effective_date=date(2026, 5, 10),
         )
         billed.bill_id = prior_bill.id
@@ -1002,8 +1123,12 @@ class TestEffectiveBillDateFiltersList:
         # `unbilled_only` flag set (which account-detail uses for the
         # in-progress cycle), the prior-bill tx must NOT appear.
         txs, _, _ = await get_transactions(
-            session, test_workspace.id, test_user.id, account_id=cc_account.id,
-            from_date=date(2026, 4, 30), to_date=date(2026, 5, 29),
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
+            from_date=date(2026, 4, 30),
+            to_date=date(2026, 5, 29),
             accounting_mode="cash",
             unbilled_only=True,
         )
@@ -1012,8 +1137,12 @@ class TestEffectiveBillDateFiltersList:
         # Without unbilled_only (e.g., the global /transactions list page),
         # the same tx IS visible — the flag is opt-in.
         txs_unfiltered, _, _ = await get_transactions(
-            session, test_workspace.id, test_user.id, account_id=cc_account.id,
-            from_date=date(2026, 4, 30), to_date=date(2026, 5, 29),
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
+            from_date=date(2026, 4, 30),
+            to_date=date(2026, 5, 29),
             accounting_mode="cash",
         )
         assert billed.id in {t.id for t in txs_unfiltered}
@@ -1034,8 +1163,11 @@ class TestEffectiveBillDateFiltersList:
         from app.services.transaction_service import get_transactions
 
         pending = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 30), Decimal("91.51"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 30),
+            Decimal("91.51"),
             effective_date=date(2026, 6, 10),
             source="sync",
         )
@@ -1044,8 +1176,12 @@ class TestEffectiveBillDateFiltersList:
 
         for mode in ("cash", "accrual"):
             txs, _, _ = await get_transactions(
-                session, test_workspace.id, test_user.id, account_id=cc_account.id,
-                from_date=date(2026, 4, 30), to_date=date(2026, 5, 29),
+                session,
+                test_workspace.id,
+                test_user.id,
+                account_id=cc_account.id,
+                from_date=date(2026, 4, 30),
+                to_date=date(2026, 5, 29),
                 accounting_mode=mode,
                 unbilled_only=True,
             )
@@ -1066,8 +1202,11 @@ class TestEffectiveBillDateFiltersList:
         from app.services.transaction_service import get_transactions
 
         tx = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 30), Decimal("91.51"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 30),
+            Decimal("91.51"),
             effective_date=date(2026, 6, 10),
             source="sync",
         )
@@ -1075,8 +1214,12 @@ class TestEffectiveBillDateFiltersList:
 
         # Cash mode: filtered by purchase date → in April window
         txs_cash_apr, _, _ = await get_transactions(
-            session, test_workspace.id, test_user.id, account_id=cc_account.id,
-            from_date=date(2026, 4, 1), to_date=date(2026, 4, 30),
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
+            from_date=date(2026, 4, 1),
+            to_date=date(2026, 4, 30),
             accounting_mode="cash",
         )
         assert tx.id in {t.id for t in txs_cash_apr}
@@ -1085,15 +1228,23 @@ class TestEffectiveBillDateFiltersList:
         # but IS in June window. This is the existing mode-aware semantic
         # callers outside the bill view rely on.
         txs_accrual_apr, _, _ = await get_transactions(
-            session, test_workspace.id, test_user.id, account_id=cc_account.id,
-            from_date=date(2026, 4, 1), to_date=date(2026, 4, 30),
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
+            from_date=date(2026, 4, 1),
+            to_date=date(2026, 4, 30),
             accounting_mode="accrual",
         )
         assert tx.id not in {t.id for t in txs_accrual_apr}
 
         txs_accrual_jun, _, _ = await get_transactions(
-            session, test_workspace.id, test_user.id, account_id=cc_account.id,
-            from_date=date(2026, 6, 1), to_date=date(2026, 6, 30),
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
+            from_date=date(2026, 6, 1),
+            to_date=date(2026, 6, 30),
             accounting_mode="accrual",
         )
         assert tx.id in {t.id for t in txs_accrual_jun}
@@ -1110,9 +1261,12 @@ class TestEffectiveBillDateFiltersList:
         from datetime import datetime, timezone
 
         april_bill = CreditCardBill(
-            user_id=test_user.id, account_id=cc_account.id,
-            external_id="apr", due_date=date(2026, 4, 10),
-            total_amount=Decimal("100"), currency="BRL",
+            user_id=test_user.id,
+            account_id=cc_account.id,
+            external_id="apr",
+            due_date=date(2026, 4, 10),
+            total_amount=Decimal("100"),
+            currency="BRL",
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
@@ -1121,8 +1275,11 @@ class TestEffectiveBillDateFiltersList:
 
         # Pending tx whose cycle math classified it to a DIFFERENT bill (May)
         pending = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 8), Decimal("99"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 8),
+            Decimal("99"),
             effective_date=date(2026, 5, 10),  # NOT April's due_date
             source="sync",
         )
@@ -1131,9 +1288,13 @@ class TestEffectiveBillDateFiltersList:
 
         # Viewing April bill — must NOT include this pending tx
         txs, _, _ = await get_transactions(
-            session, test_workspace.id, test_user.id, account_id=cc_account.id,
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
             bill_id=april_bill.id,
-            from_date=date(2026, 3, 11), to_date=date(2026, 4, 10),
+            from_date=date(2026, 3, 11),
+            to_date=date(2026, 4, 10),
             accounting_mode="cash",
         )
         assert pending.id not in {t.id for t in txs}
@@ -1153,9 +1314,12 @@ class TestEffectiveBillDateFiltersList:
         # Active bill (April), plus an existing future bill (May) the
         # pending tx will be cycle-math-classified to.
         april = CreditCardBill(
-            user_id=test_user.id, account_id=cc_account.id,
-            external_id="bill-z", due_date=date(2026, 4, 16),
-            total_amount=Decimal("100"), currency="BRL",
+            user_id=test_user.id,
+            account_id=cc_account.id,
+            external_id="bill-z",
+            due_date=date(2026, 4, 16),
+            total_amount=Decimal("100"),
+            currency="BRL",
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
@@ -1165,8 +1329,11 @@ class TestEffectiveBillDateFiltersList:
         # Pending sync tx with effective_date pointing to a DIFFERENT bill
         # (May) — cycle math classified it elsewhere, must NOT show in April
         pending = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 8), Decimal("99"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 8),
+            Decimal("99"),
             effective_date=date(2026, 5, 16),  # ≠ April's due_date
             source="sync",
         )
@@ -1175,8 +1342,11 @@ class TestEffectiveBillDateFiltersList:
         # Posted sync tx in window without billId — SHOULD count (provider
         # returned but didn't tag, reasonable to fill in by date)
         posted_synced = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 9), Decimal("50"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 9),
+            Decimal("50"),
             effective_date=date(2026, 4, 16),
             source="sync",
         )
@@ -1184,23 +1354,29 @@ class TestEffectiveBillDateFiltersList:
 
         # Manual user entry in window — SHOULD count (explicit intent)
         manual = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 10), Decimal("75"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 10),
+            Decimal("75"),
             effective_date=date(2026, 4, 16),
             source="manual",
         )
         await session.commit()
 
         txs, _, _ = await get_transactions(
-            session, test_workspace.id, test_user.id, account_id=cc_account.id,
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
             bill_id=april.id,
-            from_date=date(2026, 3, 17), to_date=date(2026, 4, 16),
+            from_date=date(2026, 3, 17),
+            to_date=date(2026, 4, 16),
             accounting_mode="cash",
         )
         ids = {t.id for t in txs}
         assert pending.id not in ids, (
-            "pending sync pointing to a different bill must NOT be counted "
-            "in this bill"
+            "pending sync pointing to a different bill must NOT be counted in this bill"
         )
         assert posted_synced.id in ids
         assert manual.id in ids
@@ -1216,9 +1392,12 @@ class TestEffectiveBillDateFiltersList:
         from datetime import datetime, timezone
 
         bill = CreditCardBill(
-            user_id=test_user.id, account_id=cc_account.id,
-            external_id="bill-y", due_date=date(2026, 4, 16),
-            total_amount=Decimal("100"), currency="BRL",
+            user_id=test_user.id,
+            account_id=cc_account.id,
+            external_id="bill-y",
+            due_date=date(2026, 4, 16),
+            total_amount=Decimal("100"),
+            currency="BRL",
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
@@ -1227,16 +1406,23 @@ class TestEffectiveBillDateFiltersList:
 
         # Unlinked tx in a totally different month — should NOT be in cycle
         outside = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 1, 5), Decimal("99"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 1, 5),
+            Decimal("99"),
             effective_date=date(2026, 1, 16),
         )
         await session.commit()
 
         txs, _, _ = await get_transactions(
-            session, test_workspace.id, test_user.id, account_id=cc_account.id,
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
             bill_id=bill.id,
-            from_date=date(2026, 3, 17), to_date=date(2026, 4, 16),
+            from_date=date(2026, 3, 17),
+            to_date=date(2026, 4, 16),
             accounting_mode="cash",
         )
         assert outside.id not in {t.id for t in txs}
@@ -1254,9 +1440,12 @@ class TestEffectiveBillDateFiltersList:
         from datetime import datetime, timezone
 
         bill = CreditCardBill(
-            user_id=test_user.id, account_id=cc_account.id,
-            external_id="bill-pending-tagged", due_date=date(2026, 4, 16),
-            total_amount=Decimal("100"), currency="BRL",
+            user_id=test_user.id,
+            account_id=cc_account.id,
+            external_id="bill-pending-tagged",
+            due_date=date(2026, 4, 16),
+            total_amount=Decimal("100"),
+            currency="BRL",
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
@@ -1265,8 +1454,11 @@ class TestEffectiveBillDateFiltersList:
 
         # Pluggy tagged a pending tx — bill_id is set even though status is pending
         tx = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 8), Decimal("50"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 8),
+            Decimal("50"),
             effective_date=date(2026, 4, 16),
             source="sync",
         )
@@ -1275,9 +1467,13 @@ class TestEffectiveBillDateFiltersList:
         await session.commit()
 
         txs, _, _ = await get_transactions(
-            session, test_workspace.id, test_user.id, account_id=cc_account.id,
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
             bill_id=bill.id,
-            from_date=date(2026, 3, 17), to_date=date(2026, 4, 16),
+            from_date=date(2026, 3, 17),
+            to_date=date(2026, 4, 16),
             accounting_mode="cash",
         )
         assert tx.id in {t.id for t in txs}
@@ -1295,9 +1491,12 @@ class TestEffectiveBillDateFiltersList:
         from datetime import datetime, timezone
 
         bill = CreditCardBill(
-            user_id=test_user.id, account_id=cc_account.id,
-            external_id="bill-posted-untagged", due_date=date(2026, 4, 16),
-            total_amount=Decimal("100"), currency="BRL",
+            user_id=test_user.id,
+            account_id=cc_account.id,
+            external_id="bill-posted-untagged",
+            due_date=date(2026, 4, 16),
+            total_amount=Decimal("100"),
+            currency="BRL",
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
@@ -1305,8 +1504,11 @@ class TestEffectiveBillDateFiltersList:
         await session.flush()
 
         tx = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 8), Decimal("50"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 8),
+            Decimal("50"),
             effective_date=date(2026, 4, 16),
             source="sync",
         )
@@ -1315,9 +1517,13 @@ class TestEffectiveBillDateFiltersList:
         await session.commit()
 
         txs, _, _ = await get_transactions(
-            session, test_workspace.id, test_user.id, account_id=cc_account.id,
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
             bill_id=bill.id,
-            from_date=date(2026, 3, 17), to_date=date(2026, 4, 16),
+            from_date=date(2026, 3, 17),
+            to_date=date(2026, 4, 16),
             accounting_mode="cash",
         )
         assert tx.id in {t.id for t in txs}
@@ -1334,9 +1540,12 @@ class TestEffectiveBillDateFiltersList:
         from datetime import datetime, timezone
 
         bill = CreditCardBill(
-            user_id=test_user.id, account_id=cc_account.id,
-            external_id="bill-ofx", due_date=date(2026, 4, 16),
-            total_amount=Decimal("100"), currency="BRL",
+            user_id=test_user.id,
+            account_id=cc_account.id,
+            external_id="bill-ofx",
+            due_date=date(2026, 4, 16),
+            total_amount=Decimal("100"),
+            currency="BRL",
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
@@ -1344,17 +1553,24 @@ class TestEffectiveBillDateFiltersList:
         await session.flush()
 
         tx = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 8), Decimal("50"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 8),
+            Decimal("50"),
             effective_date=date(2026, 4, 16),
             source="ofx",
         )
         await session.commit()
 
         txs, _, _ = await get_transactions(
-            session, test_workspace.id, test_user.id, account_id=cc_account.id,
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
             bill_id=bill.id,
-            from_date=date(2026, 3, 17), to_date=date(2026, 4, 16),
+            from_date=date(2026, 3, 17),
+            to_date=date(2026, 4, 16),
             accounting_mode="cash",
         )
         assert tx.id in {t.id for t in txs}
@@ -1371,8 +1587,11 @@ class TestEffectiveBillDateFiltersList:
         from app.schemas.transaction import TransactionUpdate
 
         tx = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 18), Decimal("55.90"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 18),
+            Decimal("55.90"),
             effective_date=date(2026, 5, 16),
             source="manual",
         )
@@ -1380,7 +1599,10 @@ class TestEffectiveBillDateFiltersList:
 
         # No bill exists for 2099-01-01 — override still takes effect
         await update_transaction(
-            session, tx.id, test_workspace.id, test_user.id,
+            session,
+            tx.id,
+            test_workspace.id,
+            test_user.id,
             TransactionUpdate(effective_bill_date=date(2099, 1, 1)),
         )
         await session.commit()
@@ -1402,9 +1624,12 @@ class TestEffectiveBillDateFiltersList:
         from datetime import datetime, timezone
 
         bill = CreditCardBill(
-            user_id=test_user.id, account_id=cc_account.id,
-            external_id="bill-refund", due_date=date(2026, 4, 16),
-            total_amount=Decimal("0"), currency="BRL",
+            user_id=test_user.id,
+            account_id=cc_account.id,
+            external_id="bill-refund",
+            due_date=date(2026, 4, 16),
+            total_amount=Decimal("0"),
+            currency="BRL",
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
@@ -1412,8 +1637,11 @@ class TestEffectiveBillDateFiltersList:
         await session.flush()
 
         refund = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 8), Decimal("80"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 8),
+            Decimal("80"),
             effective_date=date(2026, 4, 16),
             tx_type="credit",
         )
@@ -1421,8 +1649,11 @@ class TestEffectiveBillDateFiltersList:
         await session.commit()
 
         summary = await get_account_summary(
-            session, cc_account.id, test_workspace.id,
-            date_from=date(2026, 3, 17), date_to=date(2026, 4, 16),
+            session,
+            cc_account.id,
+            test_workspace.id,
+            date_from=date(2026, 3, 17),
+            date_to=date(2026, 4, 16),
             bill_id=bill.id,
         )
         assert summary["monthly_income"] == 80.0
@@ -1441,9 +1672,12 @@ class TestEffectiveBillDateFiltersList:
         from datetime import datetime, timezone
 
         bill = CreditCardBill(
-            user_id=test_user.id, account_id=cc_account.id,
-            external_id="bill-net", due_date=date(2026, 4, 16),
-            total_amount=Decimal("0"), currency="BRL",
+            user_id=test_user.id,
+            account_id=cc_account.id,
+            external_id="bill-net",
+            due_date=date(2026, 4, 16),
+            total_amount=Decimal("0"),
+            currency="BRL",
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
@@ -1452,16 +1686,22 @@ class TestEffectiveBillDateFiltersList:
 
         # Original charge (debit)
         charge = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 17), Decimal("44.90"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 17),
+            Decimal("44.90"),
             effective_date=date(2026, 4, 16),
         )
         charge.bill_id = bill.id
 
         # Same-day refund (credit) — fully reverses the charge
         refund = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 17), Decimal("44.90"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 17),
+            Decimal("44.90"),
             effective_date=date(2026, 4, 16),
             tx_type="credit",
         )
@@ -1469,16 +1709,22 @@ class TestEffectiveBillDateFiltersList:
 
         # An unrelated charge that should still appear in the bill
         other = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 18), Decimal("32.50"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 18),
+            Decimal("32.50"),
             effective_date=date(2026, 4, 16),
         )
         other.bill_id = bill.id
         await session.commit()
 
         summary = await get_account_summary(
-            session, cc_account.id, test_workspace.id,
-            date_from=date(2026, 3, 17), date_to=date(2026, 4, 16),
+            session,
+            cc_account.id,
+            test_workspace.id,
+            date_from=date(2026, 3, 17),
+            date_to=date(2026, 4, 16),
             bill_id=bill.id,
         )
         # 44.90 (charge) - 44.90 (refund) + 32.50 (other) = 32.50
@@ -1494,31 +1740,43 @@ class TestEffectiveBillDateFiltersList:
         from app.services.account_service import get_account_summary
 
         checking = Account(
-            id=uuid.uuid4(), user_id=test_user.id,
+            id=uuid.uuid4(),
+            user_id=test_user.id,
             connection_id=test_connection.id,
-            name="Checking", type="checking",
-            balance=Decimal("100"), currency="BRL",
+            name="Checking",
+            type="checking",
+            balance=Decimal("100"),
+            currency="BRL",
         )
         session.add(checking)
         await session.flush()
 
         await _make_tx(
-            session, test_user.id, checking.id,
-            date(2026, 4, 5), Decimal("50"),
+            session,
+            test_user.id,
+            checking.id,
+            date(2026, 4, 5),
+            Decimal("50"),
             effective_date=date(2026, 4, 5),
         )
         # Salary credit — must NOT subtract from expenses
         await _make_tx(
-            session, test_user.id, checking.id,
-            date(2026, 4, 10), Decimal("3000"),
+            session,
+            test_user.id,
+            checking.id,
+            date(2026, 4, 10),
+            Decimal("3000"),
             effective_date=date(2026, 4, 10),
             tx_type="credit",
         )
         await session.commit()
 
         summary = await get_account_summary(
-            session, checking.id, test_workspace.id,
-            date_from=date(2026, 4, 1), date_to=date(2026, 4, 30),
+            session,
+            checking.id,
+            test_workspace.id,
+            date_from=date(2026, 4, 1),
+            date_to=date(2026, 4, 30),
         )
         assert summary["monthly_expenses"] == 50.0
         assert summary["monthly_income"] == 3000.0
@@ -1533,8 +1791,11 @@ class TestEffectiveBillDateFiltersList:
         from app.services.transaction_service import get_transactions
 
         tx = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2025, 12, 27), Decimal("100"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2025, 12, 27),
+            Decimal("100"),
             effective_date=date(2025, 12, 27),
             source="manual",
         )
@@ -1543,16 +1804,24 @@ class TestEffectiveBillDateFiltersList:
 
         # December window: tx must NOT appear (override moved it to Jan)
         dec_txs, _, _ = await get_transactions(
-            session, test_workspace.id, test_user.id, account_id=cc_account.id,
-            from_date=date(2025, 12, 1), to_date=date(2025, 12, 31),
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
+            from_date=date(2025, 12, 1),
+            to_date=date(2025, 12, 31),
             accounting_mode="cash",
         )
         assert tx.id not in {t.id for t in dec_txs}
 
         # January window: tx must appear
         jan_txs, _, _ = await get_transactions(
-            session, test_workspace.id, test_user.id, account_id=cc_account.id,
-            from_date=date(2026, 1, 1), to_date=date(2026, 1, 31),
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
+            from_date=date(2026, 1, 1),
+            to_date=date(2026, 1, 31),
             accounting_mode="cash",
         )
         assert tx.id in {t.id for t in jan_txs}
@@ -1570,9 +1839,12 @@ class TestEffectiveBillDateFiltersList:
         from datetime import datetime, timezone
 
         bill = CreditCardBill(
-            user_id=test_user.id, account_id=cc_account.id,
-            external_id="bill-summary", due_date=date(2026, 4, 16),
-            total_amount=Decimal("100"), currency="BRL",
+            user_id=test_user.id,
+            account_id=cc_account.id,
+            external_id="bill-summary",
+            due_date=date(2026, 4, 16),
+            total_amount=Decimal("100"),
+            currency="BRL",
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
@@ -1581,8 +1853,11 @@ class TestEffectiveBillDateFiltersList:
 
         # Pending sync, no billId, effective_date points to a different bill
         pending = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 8), Decimal("99"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 8),
+            Decimal("99"),
             effective_date=date(2026, 5, 16),  # NOT this bill's due_date
             source="sync",
         )
@@ -1590,16 +1865,22 @@ class TestEffectiveBillDateFiltersList:
 
         # Manual entry in the same window — must be included
         await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 9), Decimal("50"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 9),
+            Decimal("50"),
             effective_date=date(2026, 4, 16),
             source="manual",
         )
         await session.commit()
 
         summary = await get_account_summary(
-            session, cc_account.id, test_workspace.id,
-            date_from=date(2026, 3, 17), date_to=date(2026, 4, 16),
+            session,
+            cc_account.id,
+            test_workspace.id,
+            date_from=date(2026, 3, 17),
+            date_to=date(2026, 4, 16),
             bill_id=bill.id,
         )
         # Manual 50 counted, pending 99 excluded
@@ -1612,18 +1893,26 @@ class TestEffectiveBillDateFiltersList:
         """Without an override, the configured accounting mode's column
         (date for cash, effective_date for accrual) drives bucketing."""
         from app.services.transaction_service import get_transactions
+
         await _set_mode(session, "cash")
         tx = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 4, 18), Decimal("55.90"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 4, 18),
+            Decimal("55.90"),
             effective_date=date(2026, 5, 22),
         )
         await session.commit()
 
         # April window: cash mode uses date (Apr 18), should include
         apr_txs, _, _ = await get_transactions(
-            session, test_workspace.id, test_user.id, account_id=cc_account.id,
-            from_date=date(2026, 4, 1), to_date=date(2026, 4, 30),
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
+            from_date=date(2026, 4, 1),
+            to_date=date(2026, 4, 30),
             accounting_mode="cash",
         )
         assert any(t.id == tx.id for t in apr_txs)
@@ -1644,9 +1933,12 @@ class TestEffectiveBillDateFiltersList:
         from datetime import datetime, timezone
 
         may = CreditCardBill(
-            user_id=test_user.id, account_id=cc_account.id,
-            external_id="bill-may", due_date=date(2026, 5, 16),
-            total_amount=Decimal("100"), currency="BRL",
+            user_id=test_user.id,
+            account_id=cc_account.id,
+            external_id="bill-may",
+            due_date=date(2026, 5, 16),
+            total_amount=Decimal("100"),
+            currency="BRL",
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
@@ -1657,8 +1949,11 @@ class TestEffectiveBillDateFiltersList:
         # window but NOT equal to May's due_date 2026-05-16, so the
         # auto-relink leaves bill_id null).
         tx = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 5, 11), Decimal("105"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 5, 11),
+            Decimal("105"),
             effective_date=date(2026, 5, 10),
             source="sync",
         )
@@ -1667,14 +1962,17 @@ class TestEffectiveBillDateFiltersList:
         await session.commit()
 
         may_txs, _, _ = await get_transactions(
-            session, test_workspace.id, test_user.id, account_id=cc_account.id,
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
             bill_id=may.id,
-            from_date=date(2026, 4, 17), to_date=date(2026, 5, 16),
+            from_date=date(2026, 4, 17),
+            to_date=date(2026, 5, 16),
             accounting_mode="cash",
         )
         assert any(t.id == tx.id for t in may_txs), (
-            "pending sync tx with manual override in window must be "
-            "visible in the target bill view"
+            "pending sync tx with manual override in window must be visible in the target bill view"
         )
 
     @pytest.mark.asyncio
@@ -1691,9 +1989,12 @@ class TestEffectiveBillDateFiltersList:
         from datetime import datetime, timezone
 
         may = CreditCardBill(
-            user_id=test_user.id, account_id=cc_account.id,
-            external_id="bill-may-sum", due_date=date(2026, 5, 16),
-            total_amount=Decimal("0"), currency="BRL",
+            user_id=test_user.id,
+            account_id=cc_account.id,
+            external_id="bill-may-sum",
+            due_date=date(2026, 5, 16),
+            total_amount=Decimal("0"),
+            currency="BRL",
             created_at=datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
         )
@@ -1701,8 +2002,11 @@ class TestEffectiveBillDateFiltersList:
         await session.flush()
 
         tx = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 5, 11), Decimal("105"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 5, 11),
+            Decimal("105"),
             effective_date=date(2026, 5, 10),
             source="sync",
         )
@@ -1711,8 +2015,11 @@ class TestEffectiveBillDateFiltersList:
         await session.commit()
 
         summary = await get_account_summary(
-            session, cc_account.id, test_workspace.id,
-            date_from=date(2026, 4, 17), date_to=date(2026, 5, 16),
+            session,
+            cc_account.id,
+            test_workspace.id,
+            date_from=date(2026, 4, 17),
+            date_to=date(2026, 5, 16),
             bill_id=may.id,
         )
         assert summary["monthly_expenses"] == 105.0
@@ -1732,8 +2039,11 @@ class TestEffectiveBillDateFiltersList:
 
         # Tx with override well past the in-progress cycle's right edge
         tx = await _make_tx(
-            session, test_user.id, cc_account.id,
-            date(2026, 3, 22), Decimal("59.90"),
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 3, 22),
+            Decimal("59.90"),
             effective_date=date(2026, 6, 11),
             source="sync",
         )
@@ -1744,8 +2054,12 @@ class TestEffectiveBillDateFiltersList:
         # In-progress cycle window for close=11/due=16 around early May:
         # cycle = [Apr 12, May 11]. Override 6/11 lies past 5/11.
         in_prog_txs, _, _ = await get_transactions(
-            session, test_workspace.id, test_user.id, account_id=cc_account.id,
-            from_date=date(2026, 4, 12), to_date=date(2026, 5, 11),
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
+            from_date=date(2026, 4, 12),
+            to_date=date(2026, 5, 11),
             unbilled_only=True,
             accounting_mode="cash",
         )
@@ -1755,8 +2069,11 @@ class TestEffectiveBillDateFiltersList:
         )
 
         summary = await get_account_summary(
-            session, cc_account.id, test_workspace.id,
-            date_from=date(2026, 4, 12), date_to=date(2026, 5, 11),
+            session,
+            cc_account.id,
+            test_workspace.id,
+            date_from=date(2026, 4, 12),
+            date_to=date(2026, 5, 11),
             unbilled_only=True,
         )
         assert summary["monthly_expenses"] == 59.90

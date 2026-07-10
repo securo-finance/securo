@@ -3,7 +3,11 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from app.providers.tesouro_direto import TesouroDiretoProvider, parse_brl_decimal, tesouro_symbol_for
+from app.providers.tesouro_direto import (
+    TesouroDiretoProvider,
+    parse_brl_decimal,
+    tesouro_symbol_for,
+)
 
 
 CSV = """Tipo Titulo;Data Vencimento;Data Base;Taxa Compra Manha;Taxa Venda Manha;PU Compra Manha;PU Venda Manha;PU Base Manha

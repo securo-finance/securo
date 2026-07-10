@@ -14,7 +14,9 @@ class Agent(Base):
     __tablename__ = "agents"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
     workspace_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
     )
@@ -58,11 +60,19 @@ class Agent(Base):
     # unique index). The global slide-over chat panel uses this agent.
     is_default: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
-    tools: Mapped[list["AgentTool"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
-    conversations: Mapped[list["Conversation"]] = relationship(back_populates="agent", cascade="all, delete-orphan")  # noqa: F821
-    knowledge_docs: Mapped[list["KnowledgeDoc"]] = relationship(back_populates="agent", cascade="all, delete-orphan")  # noqa: F821
+    tools: Mapped[list["AgentTool"]] = relationship(
+        back_populates="agent", cascade="all, delete-orphan"
+    )
+    conversations: Mapped[list["Conversation"]] = relationship(
+        back_populates="agent", cascade="all, delete-orphan"
+    )  # noqa: F821
+    knowledge_docs: Mapped[list["KnowledgeDoc"]] = relationship(
+        back_populates="agent", cascade="all, delete-orphan"
+    )  # noqa: F821
 
 
 class AgentTool(Base):
@@ -70,9 +80,12 @@ class AgentTool(Base):
     servers; this row records that the user has enabled a given tool for a
     given agent. Absence = disabled (closed-by-default for safety on writes).
     """
+
     __tablename__ = "agent_tools"
 
-    agent_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), primary_key=True)
+    agent_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), primary_key=True
+    )
     server: Mapped[str] = mapped_column(String(80), primary_key=True)
     tool_name: Mapped[str] = mapped_column(String(120), primary_key=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")

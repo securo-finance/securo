@@ -34,7 +34,9 @@ async def _generate_all() -> int:
                 async with session_maker() as session:
                     count = await recurring_transaction_service.generate_pending(session, user_id)
                     if count:
-                        logger.info("Generated %d recurring transactions for user %s", count, user_id)
+                        logger.info(
+                            "Generated %d recurring transactions for user %s", count, user_id
+                        )
                         total += count
             except Exception:
                 logger.exception("Failed to generate recurring transactions for user %s", user_id)

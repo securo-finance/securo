@@ -33,7 +33,11 @@ class BankConnection(Base):
     settings: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=dict)
     status: Mapped[str] = mapped_column(String(50), default="active")  # active, error, expired
     last_sync_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
 
     user: Mapped["User"] = relationship(back_populates="bank_connections")
-    accounts: Mapped[list["Account"]] = relationship(back_populates="connection", cascade="all, delete-orphan")
+    accounts: Mapped[list["Account"]] = relationship(
+        back_populates="connection", cascade="all, delete-orphan"
+    )

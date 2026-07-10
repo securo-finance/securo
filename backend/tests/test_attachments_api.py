@@ -102,9 +102,7 @@ async def test_upload_sanitizes_filename(
 
 
 @pytest.mark.asyncio
-async def test_upload_pdf(
-    client: AsyncClient, auth_headers, test_transactions: list[Transaction]
-):
+async def test_upload_pdf(client: AsyncClient, auth_headers, test_transactions: list[Transaction]):
     txn = test_transactions[0]
     with patch(STORAGE_PATCH, return_value=_make_mock_storage()):
         response = await client.post(
@@ -148,9 +146,7 @@ async def test_upload_file_too_large(
 
 
 @pytest.mark.asyncio
-async def test_upload_transaction_not_found(
-    client: AsyncClient, auth_headers, test_transactions
-):
+async def test_upload_transaction_not_found(client: AsyncClient, auth_headers, test_transactions):
     fake_id = "00000000-0000-0000-0000-000000000000"
     with patch(STORAGE_PATCH, return_value=_make_mock_storage()):
         response = await client.post(
@@ -169,9 +165,7 @@ async def test_list_attachments_empty(
     client: AsyncClient, auth_headers, test_transactions: list[Transaction]
 ):
     txn = test_transactions[0]
-    response = await client.get(
-        f"/api/transactions/{txn.id}/attachments", headers=auth_headers
-    )
+    response = await client.get(f"/api/transactions/{txn.id}/attachments", headers=auth_headers)
     assert response.status_code == 200
     assert response.json() == []
 
@@ -195,9 +189,7 @@ async def test_list_attachments(
             files={"file": ("b.jpg", TINY_PNG, "image/jpeg")},
         )
 
-    response = await client.get(
-        f"/api/transactions/{txn.id}/attachments", headers=auth_headers
-    )
+    response = await client.get(f"/api/transactions/{txn.id}/attachments", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 2
@@ -210,9 +202,7 @@ async def test_list_attachments_transaction_not_found(
     client: AsyncClient, auth_headers, test_transactions
 ):
     fake_id = "00000000-0000-0000-0000-000000000000"
-    response = await client.get(
-        f"/api/transactions/{fake_id}/attachments", headers=auth_headers
-    )
+    response = await client.get(f"/api/transactions/{fake_id}/attachments", headers=auth_headers)
     assert response.status_code == 404
 
 
@@ -437,9 +427,7 @@ async def test_attachments_unauthenticated(
 
 
 @pytest.mark.asyncio
-async def test_upload_unauthenticated(
-    client: AsyncClient, test_transactions: list[Transaction]
-):
+async def test_upload_unauthenticated(client: AsyncClient, test_transactions: list[Transaction]):
     txn = test_transactions[0]
     response = await client.post(
         f"/api/transactions/{txn.id}/attachments",

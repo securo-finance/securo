@@ -78,9 +78,7 @@ async def _setup(session, test_user, workspace_id, n_others=2):
 async def test_balances_each_friend_owes_their_share(
     session: AsyncSession, test_user, test_workspace
 ):
-    group, self_m, friends = await _setup(
-        session, test_user, test_workspace.id, n_others=3
-    )
+    group, self_m, friends = await _setup(session, test_user, test_workspace.id, n_others=3)
     account = await _make_account(session, test_user.id)
     tx = await _make_tx(session, test_user.id, account.id, "120.00")
 
@@ -106,12 +104,8 @@ async def test_balances_each_friend_owes_their_share(
 
 
 @pytest.mark.asyncio
-async def test_settlement_reduces_balance(
-    session: AsyncSession, test_user, test_workspace
-):
-    group, self_m, friends = await _setup(
-        session, test_user, test_workspace.id, n_others=2
-    )
+async def test_settlement_reduces_balance(session: AsyncSession, test_user, test_workspace):
+    group, self_m, friends = await _setup(session, test_user, test_workspace.id, n_others=2)
     friend = friends[0]
     account = await _make_account(session, test_user.id)
     tx = await _make_tx(session, test_user.id, account.id, "100.00")
@@ -122,12 +116,8 @@ async def test_settlement_reduces_balance(
         TransactionSplitsInput(
             share_type="exact",
             splits=[
-                TransactionSplitInput(
-                    group_member_id=self_m.id, share_amount=Decimal("60.00")
-                ),
-                TransactionSplitInput(
-                    group_member_id=friend.id, share_amount=Decimal("40.00")
-                ),
+                TransactionSplitInput(group_member_id=self_m.id, share_amount=Decimal("60.00")),
+                TransactionSplitInput(group_member_id=friend.id, share_amount=Decimal("40.00")),
             ],
         ),
         test_user.id,
@@ -156,14 +146,10 @@ async def test_settlement_reduces_balance(
 
 
 @pytest.mark.asyncio
-async def test_self_loan_increases_balance_owed(
-    session: AsyncSession, test_user, test_workspace
-):
+async def test_self_loan_increases_balance_owed(session: AsyncSession, test_user, test_workspace):
     """Self lending money to a friend should make them owe more, even
     without an associated split (e.g. a direct cash advance)."""
-    group, self_m, friends = await _setup(
-        session, test_user, test_workspace.id, n_others=1
-    )
+    group, self_m, friends = await _setup(session, test_user, test_workspace.id, n_others=1)
     friend = friends[0]
 
     await settlement_service.create_settlement(
@@ -189,12 +175,8 @@ async def test_self_loan_increases_balance_owed(
 
 
 @pytest.mark.asyncio
-async def test_balances_segregated_by_currency(
-    session: AsyncSession, test_user, test_workspace
-):
-    group, self_m, friends = await _setup(
-        session, test_user, test_workspace.id, n_others=1
-    )
+async def test_balances_segregated_by_currency(session: AsyncSession, test_user, test_workspace):
+    group, self_m, friends = await _setup(session, test_user, test_workspace.id, n_others=1)
     friend = friends[0]
     account = await _make_account(session, test_user.id)
 
@@ -220,9 +202,7 @@ async def test_balances_segregated_by_currency(
         session, group.id, test_workspace.id, test_user.id
     )
     by_currency = {
-        ln["currency"]: ln["amount"]
-        for ln in balances["lines"]
-        if ln["member_id"] == friend.id
+        ln["currency"]: ln["amount"] for ln in balances["lines"] if ln["member_id"] == friend.id
     }
     assert by_currency["USD"] == Decimal("30.00")
     assert by_currency["EUR"] == Decimal("20.00")
@@ -234,9 +214,7 @@ async def test_balance_line_dropped_when_settlement_zeroes_out_split(
 ):
     """A friend who pays back exactly their share should drop off the
     balance ledger — no zero-amount line should be returned."""
-    group, self_m, friends = await _setup(
-        session, test_user, test_workspace.id, n_others=1
-    )
+    group, self_m, friends = await _setup(session, test_user, test_workspace.id, n_others=1)
     friend = friends[0]
     account = await _make_account(session, test_user.id)
     tx = await _make_tx(session, test_user.id, account.id, "40.00")
@@ -282,9 +260,7 @@ async def test_cross_member_settlements_are_ignored_in_owner_ledger(
 ):
     """Settlements between two non-self members don't affect the
     owner-ledger view (balance_service is owner-centric in v1)."""
-    group, self_m, friends = await _setup(
-        session, test_user, test_workspace.id, n_others=2
-    )
+    group, self_m, friends = await _setup(session, test_user, test_workspace.id, n_others=2)
     a, b = friends
     account = await _make_account(session, test_user.id)
 

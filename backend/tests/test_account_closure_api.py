@@ -1,4 +1,5 @@
 """Tests for account closure and reopen endpoints (Phase 2)."""
+
 import pytest
 from httpx import AsyncClient
 
@@ -39,9 +40,7 @@ async def test_close_bank_connected_account_keeps_connection_link(
     assert test_account.connection_id is not None
     original_connection_id = str(test_account.connection_id)
 
-    close_resp = await client.post(
-        f"/api/accounts/{test_account.id}/close", headers=auth_headers
-    )
+    close_resp = await client.post(f"/api/accounts/{test_account.id}/close", headers=auth_headers)
     assert close_resp.status_code == 200
     data = close_resp.json()
     assert data["is_closed"] is True
@@ -155,7 +154,12 @@ async def test_closed_account_excluded_from_dashboard_balance(client: AsyncClien
     resp = await client.post(
         "/api/accounts",
         headers=auth_headers,
-        json={"name": "Dashboard Test", "type": "checking", "balance": "5000.00", "currency": "BRL"},
+        json={
+            "name": "Dashboard Test",
+            "type": "checking",
+            "balance": "5000.00",
+            "currency": "BRL",
+        },
     )
     account_id = resp.json()["id"]
 

@@ -76,9 +76,7 @@ def upgrade() -> None:
         for tx_id, tx_date in rows:
             new_effective = _compute_effective_date(tx_date, close_day, due_day)
             conn.execute(
-                text(
-                    "UPDATE transactions SET effective_date = :eff WHERE id = :tx_id"
-                ),
+                text("UPDATE transactions SET effective_date = :eff WHERE id = :tx_id"),
                 {"eff": new_effective, "tx_id": str(tx_id)},
             )
 

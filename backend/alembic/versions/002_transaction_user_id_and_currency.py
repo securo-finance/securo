@@ -4,6 +4,7 @@ Revision ID: 002
 Revises: 001
 Create Date: 2026-02-25
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -18,7 +19,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     # Add user_id column (not null with FK)
-    op.add_column("transactions", sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=True))
+    op.add_column(
+        "transactions", sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=True)
+    )
     op.create_foreign_key("fk_transactions_user_id", "transactions", "users", ["user_id"], ["id"])
 
     # Backfill user_id from account -> bank_connection -> user
@@ -35,7 +38,9 @@ def upgrade() -> None:
     op.create_index("ix_transactions_user_id", "transactions", ["user_id"])
 
     # Add currency column
-    op.add_column("transactions", sa.Column("currency", sa.String(3), nullable=False, server_default="BRL"))
+    op.add_column(
+        "transactions", sa.Column("currency", sa.String(3), nullable=False, server_default="BRL")
+    )
 
     # Make account_id nullable
     op.alter_column("transactions", "account_id", nullable=True)

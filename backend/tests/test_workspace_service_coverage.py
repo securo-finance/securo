@@ -5,6 +5,7 @@ create_workspace with self_membership + seed_defaults, add_member error
 paths, update_member_role validation, get_workspace_stats, archive_workspace,
 and remove_member.
 """
+
 import uuid
 
 import bcrypt as _bcrypt
@@ -78,7 +79,9 @@ async def test_get_default_workspace_none(session: AsyncSession):
 
 
 @pytest.mark.asyncio
-async def test_create_workspace_with_self_membership_and_seed(session: AsyncSession, test_user: User):
+async def test_create_workspace_with_self_membership_and_seed(
+    session: AsyncSession, test_user: User
+):
     ws = await workspace_service.create_workspace(
         session,
         name="Day To Day",
@@ -98,9 +101,8 @@ async def test_create_workspace_with_self_membership_and_seed(session: AsyncSess
 
     # seed_defaults created categories for the workspace.
     from app.models.category import Category
-    cats = await session.execute(
-        select(Category).where(Category.workspace_id == ws.id)
-    )
+
+    cats = await session.execute(select(Category).where(Category.workspace_id == ws.id))
     assert len(cats.scalars().all()) > 0
 
 
@@ -118,27 +120,21 @@ async def test_add_member_invalid_role(session: AsyncSession, test_user: User, t
     other = await _make_user(session, "addinvalid@example.com")
     await session.commit()
     with pytest.raises(HTTPException) as exc:
-        await workspace_service.add_member(
-            session, test_workspace.id, other.id, role="superadmin"
-        )
+        await workspace_service.add_member(session, test_workspace.id, other.id, role="superadmin")
     assert exc.value.status_code == 400
 
 
 @pytest.mark.asyncio
 async def test_add_member_duplicate(session: AsyncSession, test_user: User, test_workspace):
     with pytest.raises(HTTPException) as exc:
-        await workspace_service.add_member(
-            session, test_workspace.id, test_user.id, role="editor"
-        )
+        await workspace_service.add_member(session, test_workspace.id, test_user.id, role="editor")
     assert exc.value.status_code == 409
 
 
 @pytest.mark.asyncio
 async def test_update_member_role_invalid(session: AsyncSession, test_user: User, test_workspace):
     with pytest.raises(HTTPException) as exc:
-        await workspace_service.update_member_role(
-            session, test_workspace.id, test_user.id, "boss"
-        )
+        await workspace_service.update_member_role(session, test_workspace.id, test_user.id, "boss")
     assert exc.value.status_code == 400
 
 
@@ -152,12 +148,12 @@ async def test_update_member_role_member_not_found(session: AsyncSession, test_w
 
 
 @pytest.mark.asyncio
-async def test_update_member_role_demote_with_other_owner(session: AsyncSession, test_user: User, test_workspace):
+async def test_update_member_role_demote_with_other_owner(
+    session: AsyncSession, test_user: User, test_workspace
+):
     other = await _make_user(session, "coowner@example.com")
     await session.commit()
-    await workspace_service.add_member(
-        session, test_workspace.id, other.id, role="owner"
-    )
+    await workspace_service.add_member(session, test_workspace.id, other.id, role="owner")
     await session.commit()
     # Now demoting test_user is allowed since another owner exists.
     member = await workspace_service.update_member_role(
@@ -168,7 +164,9 @@ async def test_update_member_role_demote_with_other_owner(session: AsyncSession,
 
 
 @pytest.mark.asyncio
-async def test_get_workspace_stats(session: AsyncSession, test_user: User, test_workspace, test_account, test_transactions):
+async def test_get_workspace_stats(
+    session: AsyncSession, test_user: User, test_workspace, test_account, test_transactions
+):
     stats = await workspace_service.get_workspace_stats(session, test_workspace.id)
     assert stats["members"] == 1
     assert stats["accounts"] >= 1
@@ -176,7 +174,9 @@ async def test_get_workspace_stats(session: AsyncSession, test_user: User, test_
 
 
 @pytest.mark.asyncio
-async def test_archive_workspace_blocks_last(session: AsyncSession, test_user: User, test_workspace):
+async def test_archive_workspace_blocks_last(
+    session: AsyncSession, test_user: User, test_workspace
+):
     with pytest.raises(HTTPException) as exc:
         await workspace_service.archive_workspace(session, test_workspace.id, test_user.id)
     assert exc.value.status_code == 400
@@ -184,21 +184,19 @@ async def test_archive_workspace_blocks_last(session: AsyncSession, test_user: U
 
 
 @pytest.mark.asyncio
-async def test_archive_workspace_succeeds_with_other(session: AsyncSession, test_user: User, test_workspace):
+async def test_archive_workspace_succeeds_with_other(
+    session: AsyncSession, test_user: User, test_workspace
+):
     await workspace_service.create_workspace(
         session, name="Second", creator=test_user, self_membership=True, seed_defaults=False
     )
     await session.commit()
-    archived = await workspace_service.archive_workspace(
-        session, test_workspace.id, test_user.id
-    )
+    archived = await workspace_service.archive_workspace(session, test_workspace.id, test_user.id)
     await session.commit()
     assert archived.is_archived is True
 
     # Archiving an already-archived workspace is a no-op return.
-    again = await workspace_service.archive_workspace(
-        session, test_workspace.id, test_user.id
-    )
+    again = await workspace_service.archive_workspace(session, test_workspace.id, test_user.id)
     assert again.is_archived is True
 
 
@@ -217,12 +215,12 @@ async def test_remove_member_not_found(session: AsyncSession, test_workspace):
 
 
 @pytest.mark.asyncio
-async def test_remove_member_non_owner_succeeds(session: AsyncSession, test_user: User, test_workspace):
+async def test_remove_member_non_owner_succeeds(
+    session: AsyncSession, test_user: User, test_workspace
+):
     other = await _make_user(session, "removeme@example.com")
     await session.commit()
-    await workspace_service.add_member(
-        session, test_workspace.id, other.id, role="editor"
-    )
+    await workspace_service.add_member(session, test_workspace.id, other.id, role="editor")
     await session.commit()
     await workspace_service.remove_member(session, test_workspace.id, other.id)
     await session.commit()
@@ -238,12 +236,12 @@ async def test_remove_sole_owner_blocked(session: AsyncSession, test_user: User,
 
 
 @pytest.mark.asyncio
-async def test_remove_owner_succeeds_with_co_owner(session: AsyncSession, test_user: User, test_workspace):
+async def test_remove_owner_succeeds_with_co_owner(
+    session: AsyncSession, test_user: User, test_workspace
+):
     other = await _make_user(session, "coowner2@example.com")
     await session.commit()
-    await workspace_service.add_member(
-        session, test_workspace.id, other.id, role="owner"
-    )
+    await workspace_service.add_member(session, test_workspace.id, other.id, role="owner")
     await session.commit()
     # With a second owner, removing one owner is allowed.
     await workspace_service.remove_member(session, test_workspace.id, other.id)
@@ -285,9 +283,7 @@ async def test_is_workspace_manager(session: AsyncSession, test_user: User):
 
 @pytest.mark.asyncio
 async def test_get_membership_none(session: AsyncSession, test_workspace):
-    assert await workspace_service.get_membership(
-        session, test_workspace.id, uuid.uuid4()
-    ) is None
+    assert await workspace_service.get_membership(session, test_workspace.id, uuid.uuid4()) is None
 
 
 @pytest.mark.asyncio
@@ -320,12 +316,12 @@ async def test_require_membership_manager_path_and_role_floor(session: AsyncSess
 
 
 @pytest.mark.asyncio
-async def test_require_membership_viewer_role_floor_403(session: AsyncSession, test_user: User, test_workspace):
+async def test_require_membership_viewer_role_floor_403(
+    session: AsyncSession, test_user: User, test_workspace
+):
     viewer = await _make_user(session, "vfloor@example.com")
     await session.commit()
-    await workspace_service.add_member(
-        session, test_workspace.id, viewer.id, role="viewer"
-    )
+    await workspace_service.add_member(session, test_workspace.id, viewer.id, role="viewer")
     await session.commit()
     # Viewer trying for editor floor -> 403.
     with pytest.raises(HTTPException) as exc:
@@ -341,12 +337,8 @@ async def test_create_personal_workspace_english_name(session: AsyncSession):
     user = await _make_user(session, "english@example.com")
     user.preferences = {"language": "en", "currency_display": "USD"}
     await session.flush()
-    ws1 = await workspace_service.create_personal_workspace_for_user(
-        session, user, commit=True
-    )
+    ws1 = await workspace_service.create_personal_workspace_for_user(session, user, commit=True)
     assert ws1.name == "Personal"
     # Second call returns the existing one (idempotent found branch).
-    ws2 = await workspace_service.create_personal_workspace_for_user(
-        session, user, commit=True
-    )
+    ws2 = await workspace_service.create_personal_workspace_for_user(session, user, commit=True)
     assert ws2.id == ws1.id

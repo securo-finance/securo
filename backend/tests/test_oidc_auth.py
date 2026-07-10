@@ -119,7 +119,9 @@ async def test_oidc_config_disabled_by_default(client: AsyncClient, clean_db):
 
 
 @pytest.mark.asyncio
-async def test_oidc_login_redirects_to_provider(client: AsyncClient, clean_db, oidc_settings, monkeypatch):
+async def test_oidc_login_redirects_to_provider(
+    client: AsyncClient, clean_db, oidc_settings, monkeypatch
+):
     fake_redis = FakeRedis()
 
     async def fake_discover():
@@ -170,7 +172,12 @@ async def test_oidc_callback_creates_user_and_redirects_with_securo_token(
     async def fake_decode(discovery, id_token, nonce, access_token=""):
         assert id_token == "id-token"
         assert nonce == "nonce123"
-        return {"sub": "user-sub", "email": "oidc@example.com", "email_verified": True, "name": "OIDC User"}
+        return {
+            "sub": "user-sub",
+            "email": "oidc@example.com",
+            "email_verified": True,
+            "name": "OIDC User",
+        }
 
     async def fake_userinfo(discovery, access_token):
         assert access_token == "provider-token"
@@ -185,7 +192,9 @@ async def test_oidc_callback_creates_user_and_redirects_with_securo_token(
     monkeypatch.setattr(oidc_auth, "_decode_id_token", fake_decode)
     monkeypatch.setattr(oidc_auth, "_fetch_userinfo", fake_userinfo)
 
-    response = await client.get("/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False)
+    response = await client.get(
+        "/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False
+    )
     assert response.status_code == 307
     location = response.headers["location"]
     assert location.startswith("http://test/auth/oidc/callback#access_token=")
@@ -242,7 +251,9 @@ async def test_oidc_callback_syncs_existing_user_admin_and_workspace_role(
     monkeypatch.setattr(oidc_auth, "_decode_id_token", fake_decode)
     monkeypatch.setattr(oidc_auth, "_fetch_userinfo", fake_userinfo)
 
-    response = await client.get("/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False)
+    response = await client.get(
+        "/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False
+    )
     assert response.status_code == 307
     token = parse_qs(urlparse(response.headers["location"]).fragment)["access_token"][0]
 
@@ -250,13 +261,21 @@ async def test_oidc_callback_syncs_existing_user_admin_and_workspace_role(
     assert me.status_code == 200
     assert me.json()["is_superuser"] is True
 
-    workspace = await client.get("/api/workspaces/current", headers={"Authorization": f"Bearer {token}"})
+    workspace = await client.get(
+        "/api/workspaces/current", headers={"Authorization": f"Bearer {token}"}
+    )
     assert workspace.status_code == 200
     assert workspace.json()["role"] == "owner"
 
     member = (
-        await session.execute(select(WorkspaceMember).where(WorkspaceMember.user_id == test_user.id))
-    ).scalars().first()
+        (
+            await session.execute(
+                select(WorkspaceMember).where(WorkspaceMember.user_id == test_user.id)
+            )
+        )
+        .scalars()
+        .first()
+    )
     assert member.role == "owner"
 
 
@@ -299,7 +318,9 @@ async def test_oidc_callback_sync_roles_can_revoke_admin(
     monkeypatch.setattr(oidc_auth, "_decode_id_token", fake_decode)
     monkeypatch.setattr(oidc_auth, "_fetch_userinfo", fake_userinfo)
 
-    response = await client.get("/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False)
+    response = await client.get(
+        "/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False
+    )
     assert response.status_code == 307
     token = parse_qs(urlparse(response.headers["location"]).fragment)["access_token"][0]
 
@@ -348,7 +369,9 @@ async def test_oidc_callback_signed_claims_override_userinfo_roles(
     monkeypatch.setattr(oidc_auth, "_decode_id_token", fake_decode)
     monkeypatch.setattr(oidc_auth, "_fetch_userinfo", fake_userinfo)
 
-    response = await client.get("/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False)
+    response = await client.get(
+        "/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False
+    )
     assert response.status_code == 307
     token = parse_qs(urlparse(response.headers["location"]).fragment)["access_token"][0]
 
@@ -487,7 +510,9 @@ async def test_oidc_callback_verified_email_link_mode_links_existing_user(
     monkeypatch.setattr(oidc_auth, "_decode_id_token", fake_decode)
     monkeypatch.setattr(oidc_auth, "_fetch_userinfo", fake_userinfo)
 
-    response = await client.get("/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False)
+    response = await client.get(
+        "/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False
+    )
 
     assert response.status_code == 307
     await session.refresh(test_user)
@@ -601,7 +626,9 @@ async def test_oidc_callback_email_link_mode_links_existing_user_without_verifie
     monkeypatch.setattr(oidc_auth, "_decode_id_token", fake_decode)
     monkeypatch.setattr(oidc_auth, "_fetch_userinfo", fake_userinfo)
 
-    response = await client.get("/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False)
+    response = await client.get(
+        "/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False
+    )
 
     assert response.status_code == 307
     await session.refresh(test_user)
@@ -643,7 +670,9 @@ async def test_oidc_callback_linked_user_can_login_without_verified_email_when_r
     monkeypatch.setattr(oidc_auth, "_decode_id_token", fake_decode)
     monkeypatch.setattr(oidc_auth, "_fetch_userinfo", fake_userinfo)
 
-    response = await client.get("/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False)
+    response = await client.get(
+        "/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False
+    )
 
     assert response.status_code == 307
 
@@ -681,7 +710,9 @@ async def test_oidc_callback_linked_user_can_login_without_email_claim(
     monkeypatch.setattr(oidc_auth, "_decode_id_token", fake_decode)
     monkeypatch.setattr(oidc_auth, "_fetch_userinfo", fake_userinfo)
 
-    response = await client.get("/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False)
+    response = await client.get(
+        "/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False
+    )
 
     assert response.status_code == 307
 
@@ -717,7 +748,9 @@ async def test_oidc_callback_registration_disabled_does_not_block_existing_email
     monkeypatch.setattr(oidc_auth, "_decode_id_token", fake_decode)
     monkeypatch.setattr(oidc_auth, "_fetch_userinfo", fake_userinfo)
 
-    response = await client.get("/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False)
+    response = await client.get(
+        "/api/auth/oidc/callback?code=abc&state=state123", follow_redirects=False
+    )
 
     assert response.status_code == 307
     await session.refresh(test_user)

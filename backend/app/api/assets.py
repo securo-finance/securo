@@ -97,8 +97,6 @@ async def market_quote(
     return quote
 
 
-
-
 @router.post("/{asset_id}/refresh-price", response_model=AssetRead)
 async def refresh_asset_price(
     asset_id: uuid.UUID,
@@ -153,12 +151,18 @@ async def refresh_asset_price(
     primary_currency = ctx.user.primary_currency
     if refreshed.currency != primary_currency and refreshed.current_value is not None:
         converted, _ = await convert(
-            session, Decimal(str(refreshed.current_value)), refreshed.currency, primary_currency,
+            session,
+            Decimal(str(refreshed.current_value)),
+            refreshed.currency,
+            primary_currency,
         )
         refreshed.current_value_primary = float(converted)
         if refreshed.gain_loss is not None:
             gl_converted, _ = await convert(
-                session, Decimal(str(refreshed.gain_loss)), refreshed.currency, primary_currency,
+                session,
+                Decimal(str(refreshed.gain_loss)),
+                refreshed.currency,
+                primary_currency,
             )
             refreshed.gain_loss_primary = float(gl_converted)
     return refreshed
@@ -170,17 +174,25 @@ async def list_assets(
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    assets = await asset_service.get_assets(session, ctx.workspace.id, include_archived=include_archived)
+    assets = await asset_service.get_assets(
+        session, ctx.workspace.id, include_archived=include_archived
+    )
     primary_currency = ctx.user.primary_currency
     for asset in assets:
         if asset.currency != primary_currency and asset.current_value is not None:
             converted, _ = await convert(
-                session, Decimal(str(asset.current_value)), asset.currency, primary_currency,
+                session,
+                Decimal(str(asset.current_value)),
+                asset.currency,
+                primary_currency,
             )
             asset.current_value_primary = float(converted)
             if asset.gain_loss is not None:
                 gl_converted, _ = await convert(
-                    session, Decimal(str(asset.gain_loss)), asset.currency, primary_currency,
+                    session,
+                    Decimal(str(asset.gain_loss)),
+                    asset.currency,
+                    primary_currency,
                 )
                 asset.gain_loss_primary = float(gl_converted)
     return assets
@@ -287,9 +299,7 @@ async def delete_asset_transaction(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    asset = await asset_transaction_service.delete_transaction(
-        session, tx_id, ctx.workspace.id
-    )
+    asset = await asset_transaction_service.delete_transaction(session, tx_id, ctx.workspace.id)
     if asset is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
     return asset
@@ -362,13 +372,17 @@ async def get_asset_value_trend(
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    trend = await asset_service.get_asset_value_trend(session, asset_id, ctx.workspace.id, months=months)
+    trend = await asset_service.get_asset_value_trend(
+        session, asset_id, ctx.workspace.id, months=months
+    )
     if trend is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
     return trend
 
 
-@router.post("/{asset_id}/values", response_model=AssetValueRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{asset_id}/values", response_model=AssetValueRead, status_code=status.HTTP_201_CREATED
+)
 async def add_asset_value(
     asset_id: uuid.UUID,
     data: AssetValueCreate,

@@ -4,6 +4,7 @@ Covers: JWT signing/claims, transaction fingerprint stability, account-type
 mapping, nested vs flat transaction page shapes, restricted-mode handling.
 HTTP is mocked end-to-end via httpx.MockTransport.
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
@@ -32,10 +33,14 @@ def _rsa_pem() -> tuple[str, str]:
         format=serialization.PrivateFormat.PKCS8,
         encryption_algorithm=serialization.NoEncryption(),
     ).decode("utf-8")
-    public_pem = key.public_key().public_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo,
-    ).decode("utf-8")
+    public_pem = (
+        key.public_key()
+        .public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        .decode("utf-8")
+    )
     return private_pem, public_pem
 
 
@@ -70,9 +75,7 @@ def test_jwt_token_has_expected_claims_and_kid(eb_keys):
     assert header["kid"] == "test-app-id-123"
     assert header["typ"] == "JWT"
 
-    claims = jwt.decode(
-        token, public_pem, algorithms=["RS256"], audience="api.enablebanking.com"
-    )
+    claims = jwt.decode(token, public_pem, algorithms=["RS256"], audience="api.enablebanking.com")
     assert claims["iss"] == "enablebanking.com"
     assert claims["aud"] == "api.enablebanking.com"
     assert isinstance(claims["iat"], int)
@@ -220,9 +223,7 @@ async def test_get_oauth_url_returns_consent_url(eb_keys):
 async def test_get_oauth_url_rejects_missing_flow_params(eb_keys):
     provider = EnableBankingProvider()
     with pytest.raises(ValueError):
-        await provider.get_oauth_url(
-            "https://x/cb", "s", flow_params={"country": "DE"}
-        )
+        await provider.get_oauth_url("https://x/cb", "s", flow_params={"country": "DE"})
 
 
 @pytest.mark.asyncio
@@ -332,7 +333,11 @@ async def test_get_transactions_parses_nested_and_flat_shapes(eb_keys):
         assert request.url.path == "/accounts/acc-1/transactions"
         return httpx.Response(200, json=nested_page)
 
-    credentials = {"session_id_enc": None, "session_id": "sess-x", "valid_until": "2099-01-01T00:00:00Z"}
+    credentials = {
+        "session_id_enc": None,
+        "session_id": "sess-x",
+        "valid_until": "2099-01-01T00:00:00Z",
+    }
     with _patch_client(provider, handler):
         nested = await provider.get_transactions(credentials, "acc-1", date(2026, 5, 1))
 
@@ -378,9 +383,7 @@ async def test_get_transactions_parses_nested_and_flat_shapes(eb_keys):
 @pytest.mark.asyncio
 async def test_refresh_credentials_expired_raises(eb_keys):
     provider = EnableBankingProvider()
-    expired = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat().replace(
-        "+00:00", "Z"
-    )
+    expired = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat().replace("+00:00", "Z")
     with pytest.raises(SessionExpiredError):
         await provider.refresh_credentials({"valid_until": expired})
 
@@ -388,9 +391,7 @@ async def test_refresh_credentials_expired_raises(eb_keys):
 @pytest.mark.asyncio
 async def test_refresh_credentials_valid_passes(eb_keys):
     provider = EnableBankingProvider()
-    future = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat().replace(
-        "+00:00", "Z"
-    )
+    future = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat().replace("+00:00", "Z")
     creds = {"valid_until": future, "session_id_enc": "enc"}
     out = await provider.refresh_credentials(creds)
     assert out is creds

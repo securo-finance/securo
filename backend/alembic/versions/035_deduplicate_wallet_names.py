@@ -18,6 +18,7 @@ Runs once and is safe to re-run — it only touches rows whose name is
 still exactly the duplicate base; wallets the user already renamed are
 left alone.
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa

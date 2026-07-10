@@ -64,9 +64,7 @@ async def _make_account(session, user_id, account_type="checking"):
 
 
 @pytest.mark.asyncio
-async def test_create_settlement_happy_path(
-    session: AsyncSession, test_user, test_workspace
-):
+async def test_create_settlement_happy_path(session: AsyncSession, test_user, test_workspace):
     group, a, b = await _setup_group(session, test_user.id, test_workspace.id)
     s = await settlement_service.create_settlement(
         session,
@@ -126,9 +124,7 @@ async def test_settlement_from_to_must_differ_at_creation(
 
 
 @pytest.mark.asyncio
-async def test_settlement_update_keeps_invariants(
-    session: AsyncSession, test_user, test_workspace
-):
+async def test_settlement_update_keeps_invariants(session: AsyncSession, test_user, test_workspace):
     group, a, b = await _setup_group(session, test_user.id, test_workspace.id)
     s = await settlement_service.create_settlement(
         session,
@@ -168,15 +164,11 @@ async def test_settlement_update_keeps_invariants(
 
 
 @pytest.mark.asyncio
-async def test_settlement_owner_isolation(
-    session: AsyncSession, test_user, test_workspace
-):
+async def test_settlement_owner_isolation(session: AsyncSession, test_user, test_workspace):
     group, a, b = await _setup_group(session, test_user.id, test_workspace.id)
     # A different workspace with a different user — neither can see the
     # group through their own scope.
-    other_user, other_ws = await _make_user_with_workspace(
-        session, "isolated@example.com"
-    )
+    other_user, other_ws = await _make_user_with_workspace(session, "isolated@example.com")
     result = await settlement_service.create_settlement(
         session,
         group.id,
@@ -205,9 +197,7 @@ async def test_settlement_owner_isolation(
 async def test_receiver_credit_created_when_to_member_is_linked_with_account(
     session: AsyncSession, test_user, test_workspace
 ):
-    receiver, _receiver_ws = await _make_user_with_workspace(
-        session, "rx-with-acc@example.com"
-    )
+    receiver, _receiver_ws = await _make_user_with_workspace(session, "rx-with-acc@example.com")
     receiver_account = await _make_account(session, receiver.id)
     payer_account = await _make_account(session, test_user.id)
 
@@ -299,9 +289,7 @@ async def test_receiver_credit_skipped_when_linked_user_has_no_cash_account(
     """Linked receiver, but their only account is a credit card (not
     checking/savings). The mirror credit can't be placed and is silently
     skipped — settlement is still recorded."""
-    receiver, _receiver_ws = await _make_user_with_workspace(
-        session, "rx-cc-only@example.com"
-    )
+    receiver, _receiver_ws = await _make_user_with_workspace(session, "rx-cc-only@example.com")
     await _make_account(session, receiver.id, account_type="credit_card")
     payer_account = await _make_account(session, test_user.id)
 

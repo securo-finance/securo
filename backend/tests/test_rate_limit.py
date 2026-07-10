@@ -25,7 +25,7 @@ def _override_redis_with_counter(_mock_redis):
         async def execute():
             key = _path[0]
             count = counters.get(key, 0)  # count BEFORE this request (zcard result)
-            counters[key] = count + 1     # zadd increments
+            counters[key] = count + 1  # zadd increments
             return [0, count, True, True]
 
         pipe.execute = AsyncMock(side_effect=execute)
@@ -40,10 +40,12 @@ def _override_redis_with_counter(_mock_redis):
     async def _fake():
         return mock
 
-    with patch("app.core.redis.get_redis", _fake), \
-         patch("app.core.rate_limit.get_redis", _fake), \
-         patch("app.api.custom_auth.get_redis", _fake), \
-         patch("app.api.two_factor.get_redis", _fake):
+    with (
+        patch("app.core.redis.get_redis", _fake),
+        patch("app.core.rate_limit.get_redis", _fake),
+        patch("app.api.custom_auth.get_redis", _fake),
+        patch("app.api.two_factor.get_redis", _fake),
+    ):
         yield counters
 
 
@@ -56,7 +58,7 @@ async def test_login_rate_limit(client: AsyncClient, test_user):
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         # Should get 400 (bad credentials), not 429
-        assert response.status_code == 400, f"Request {i+1} got {response.status_code}"
+        assert response.status_code == 400, f"Request {i + 1} got {response.status_code}"
 
     # 6th request should be rate limited
     response = await client.post(

@@ -1,4 +1,5 @@
 """Tests for fuzzy transaction matching logic (Phase 2)."""
+
 import pytest
 
 from app.services.connection_service import _description_similarity

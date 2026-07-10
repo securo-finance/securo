@@ -21,6 +21,7 @@ User intent is respected — already-categorized transactions are never
 touched. The PT rule is a harmless no-op for users whose bank data
 doesn't contain those patterns.
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -82,9 +83,7 @@ def upgrade() -> None:
     # 2. Resolve each user's language from preferences JSON. Default to
     #    pt-BR if unreadable — the app is Brazilian-first and the rule
     #    patterns won't match EN descriptions anyway.
-    users = bind.execute(
-        sa.text("SELECT id, preferences FROM users")
-    ).fetchall()
+    users = bind.execute(sa.text("SELECT id, preferences FROM users")).fetchall()
 
     for row in users:
         user_id = row[0]
@@ -104,9 +103,7 @@ def upgrade() -> None:
         # 3. Upsert the category — idempotent on re-run; don't clobber
         #    an existing one the user may have renamed or customized.
         category_id = bind.execute(
-            sa.text(
-                "SELECT id FROM categories WHERE user_id = :uid AND name = :name"
-            ),
+            sa.text("SELECT id FROM categories WHERE user_id = :uid AND name = :name"),
             {"uid": user_id, "name": cat_name},
         ).scalar()
 
@@ -129,30 +126,27 @@ def upgrade() -> None:
         else:
             # Ensure the flag is set even if the category already existed.
             bind.execute(
-                sa.text(
-                    "UPDATE categories SET treat_as_transfer = true WHERE id = :cid"
-                ),
+                sa.text("UPDATE categories SET treat_as_transfer = true WHERE id = :cid"),
                 {"cid": category_id},
             )
 
         # 4. Seed the default rule if missing.
         existing_rule = bind.execute(
-            sa.text(
-                "SELECT id FROM rules WHERE user_id = :uid AND name = :name"
-            ),
+            sa.text("SELECT id FROM rules WHERE user_id = :uid AND name = :name"),
             {"uid": user_id, "name": RULE_NAME},
         ).scalar()
 
         if existing_rule is None:
             import json
 
-            conditions = json.dumps([
-                {"field": "description", "op": "contains", "value": kw}
-                for kw in RULE_KEYWORDS
-            ])
-            actions = json.dumps([
-                {"op": "set_category", "value": str(category_id)},
-            ])
+            conditions = json.dumps(
+                [{"field": "description", "op": "contains", "value": kw} for kw in RULE_KEYWORDS]
+            )
+            actions = json.dumps(
+                [
+                    {"op": "set_category", "value": str(category_id)},
+                ]
+            )
             bind.execute(
                 sa.text(
                     "INSERT INTO rules "

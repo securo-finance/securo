@@ -3,6 +3,7 @@
 Exercises list/create/get-current/update, member invite/list/role-change/
 remove, stats, and archive — plus the error branches (404, 403, 400).
 """
+
 import uuid
 
 import pytest
@@ -119,9 +120,7 @@ async def test_update_workspace_not_member_404(client: AsyncClient, auth_headers
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_list_members(client: AsyncClient, auth_headers, test_workspace, test_user):
-    resp = await client.get(
-        f"/api/workspaces/{test_workspace.id}/members", headers=auth_headers
-    )
+    resp = await client.get(f"/api/workspaces/{test_workspace.id}/members", headers=auth_headers)
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert any(m["email"] == "test@example.com" and m["role"] == "owner" for m in body)
@@ -141,7 +140,9 @@ async def test_invite_new_user_member(client: AsyncClient, auth_headers, test_wo
 
 
 @pytest.mark.asyncio
-async def test_invite_unknown_user_without_password_400(client: AsyncClient, auth_headers, test_workspace):
+async def test_invite_unknown_user_without_password_400(
+    client: AsyncClient, auth_headers, test_workspace
+):
     resp = await client.post(
         f"/api/workspaces/{test_workspace.id}/members",
         headers=auth_headers,
@@ -151,7 +152,9 @@ async def test_invite_unknown_user_without_password_400(client: AsyncClient, aut
 
 
 @pytest.mark.asyncio
-async def test_invite_member_into_unknown_workspace_404(client: AsyncClient, auth_headers, test_user):
+async def test_invite_member_into_unknown_workspace_404(
+    client: AsyncClient, auth_headers, test_user
+):
     resp = await client.post(
         f"/api/workspaces/{uuid.uuid4()}/members",
         headers=auth_headers,
@@ -228,9 +231,7 @@ async def test_remove_sole_owner_400(client: AsyncClient, auth_headers, test_wor
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_workspace_stats(client: AsyncClient, auth_headers, test_workspace):
-    resp = await client.get(
-        f"/api/workspaces/{test_workspace.id}/stats", headers=auth_headers
-    )
+    resp = await client.get(f"/api/workspaces/{test_workspace.id}/stats", headers=auth_headers)
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["members"] >= 1
@@ -241,9 +242,7 @@ async def test_workspace_stats(client: AsyncClient, auth_headers, test_workspace
 @pytest.mark.asyncio
 async def test_archive_last_workspace_400(client: AsyncClient, auth_headers, test_workspace):
     # The personal workspace is the user's only one -> can't archive it.
-    resp = await client.post(
-        f"/api/workspaces/{test_workspace.id}/archive", headers=auth_headers
-    )
+    resp = await client.post(f"/api/workspaces/{test_workspace.id}/archive", headers=auth_headers)
     assert resp.status_code == 400
 
 
@@ -257,8 +256,6 @@ async def test_archive_workspace_success(client: AsyncClient, auth_headers, test
     )
     assert second.status_code == 201, second.text
 
-    resp = await client.post(
-        f"/api/workspaces/{test_workspace.id}/archive", headers=auth_headers
-    )
+    resp = await client.post(f"/api/workspaces/{test_workspace.id}/archive", headers=auth_headers)
     assert resp.status_code == 200, resp.text
     assert resp.json()["is_archived"] is True

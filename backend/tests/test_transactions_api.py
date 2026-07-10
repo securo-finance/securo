@@ -30,9 +30,7 @@ async def test_list_transactions(
 async def test_list_transactions_pagination(
     client: AsyncClient, auth_headers, test_transactions: list[Transaction]
 ):
-    response = await client.get(
-        "/api/transactions?page=1&limit=2", headers=auth_headers
-    )
+    response = await client.get("/api/transactions?page=1&limit=2", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert data["total"] == 5
@@ -55,13 +53,13 @@ async def test_list_transactions_filter_by_account(
 
 @pytest.mark.asyncio
 async def test_list_transactions_filter_by_category(
-    client: AsyncClient, auth_headers, test_transactions: list[Transaction],
+    client: AsyncClient,
+    auth_headers,
+    test_transactions: list[Transaction],
     test_categories: list[Category],
 ):
     cat_id = test_categories[0].id  # Alimentação
-    response = await client.get(
-        f"/api/transactions?category_id={cat_id}", headers=auth_headers
-    )
+    response = await client.get(f"/api/transactions?category_id={cat_id}", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert data["total"] == 1  # only IFOOD
@@ -69,12 +67,14 @@ async def test_list_transactions_filter_by_category(
 
 @pytest.mark.asyncio
 async def test_list_transactions_filter_by_category_ids_multi(
-    client: AsyncClient, auth_headers, test_transactions: list[Transaction],
+    client: AsyncClient,
+    auth_headers,
+    test_transactions: list[Transaction],
     test_categories: list[Category],
 ):
     """Passing multiple ``category_ids`` should return the union of matches."""
     alimentacao = test_categories[0].id  # IFOOD
-    transporte = test_categories[1].id   # UBER
+    transporte = test_categories[1].id  # UBER
     response = await client.get(
         f"/api/transactions?category_ids={alimentacao}&category_ids={transporte}",
         headers=auth_headers,
@@ -88,14 +88,14 @@ async def test_list_transactions_filter_by_category_ids_multi(
 
 @pytest.mark.asyncio
 async def test_list_transactions_filter_by_category_ids_single_element(
-    client: AsyncClient, auth_headers, test_transactions: list[Transaction],
+    client: AsyncClient,
+    auth_headers,
+    test_transactions: list[Transaction],
     test_categories: list[Category],
 ):
     """A one-element ``category_ids`` list should behave like the legacy single filter."""
     cat_id = test_categories[0].id  # Alimentação
-    response = await client.get(
-        f"/api/transactions?category_ids={cat_id}", headers=auth_headers
-    )
+    response = await client.get(f"/api/transactions?category_ids={cat_id}", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert data["total"] == 1
@@ -104,7 +104,9 @@ async def test_list_transactions_filter_by_category_ids_single_element(
 
 @pytest.mark.asyncio
 async def test_list_transactions_merge_category_id_and_category_ids(
-    client: AsyncClient, auth_headers, test_transactions: list[Transaction],
+    client: AsyncClient,
+    auth_headers,
+    test_transactions: list[Transaction],
     test_categories: list[Category],
 ):
     """When both the legacy ``category_id`` and the new ``category_ids`` are sent,
@@ -124,13 +126,13 @@ async def test_list_transactions_merge_category_id_and_category_ids(
 
 @pytest.mark.asyncio
 async def test_list_transactions_filter_by_category_ids_no_match(
-    client: AsyncClient, auth_headers, test_transactions: list[Transaction],
+    client: AsyncClient,
+    auth_headers,
+    test_transactions: list[Transaction],
 ):
     """A non-existent ``category_ids`` filter should return zero rows, not leak other txns."""
     ghost_id = uuid.uuid4()
-    response = await client.get(
-        f"/api/transactions?category_ids={ghost_id}", headers=auth_headers
-    )
+    response = await client.get(f"/api/transactions?category_ids={ghost_id}", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert data["total"] == 0
@@ -139,7 +141,9 @@ async def test_list_transactions_filter_by_category_ids_no_match(
 
 @pytest.mark.asyncio
 async def test_list_transactions_filter_by_exact_amount(
-    client: AsyncClient, auth_headers, test_transactions: list[Transaction],
+    client: AsyncClient,
+    auth_headers,
+    test_transactions: list[Transaction],
 ):
     """Setting min_amount==max_amount matches only that exact amount (issue #212)."""
     response = await client.get(
@@ -153,12 +157,12 @@ async def test_list_transactions_filter_by_exact_amount(
 
 @pytest.mark.asyncio
 async def test_list_transactions_filter_by_min_amount(
-    client: AsyncClient, auth_headers, test_transactions: list[Transaction],
+    client: AsyncClient,
+    auth_headers,
+    test_transactions: list[Transaction],
 ):
     """min_amount alone is an open-ended lower bound."""
-    response = await client.get(
-        "/api/transactions?min_amount=40", headers=auth_headers
-    )
+    response = await client.get("/api/transactions?min_amount=40", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     descriptions = {item["description"] for item in data["items"]}
@@ -169,12 +173,12 @@ async def test_list_transactions_filter_by_min_amount(
 
 @pytest.mark.asyncio
 async def test_list_transactions_filter_by_max_amount(
-    client: AsyncClient, auth_headers, test_transactions: list[Transaction],
+    client: AsyncClient,
+    auth_headers,
+    test_transactions: list[Transaction],
 ):
     """max_amount alone is an open-ended upper bound."""
-    response = await client.get(
-        "/api/transactions?max_amount=50", headers=auth_headers
-    )
+    response = await client.get("/api/transactions?max_amount=50", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     descriptions = {item["description"] for item in data["items"]}
@@ -185,7 +189,9 @@ async def test_list_transactions_filter_by_max_amount(
 
 @pytest.mark.asyncio
 async def test_list_transactions_filter_by_amount_range(
-    client: AsyncClient, auth_headers, test_transactions: list[Transaction],
+    client: AsyncClient,
+    auth_headers,
+    test_transactions: list[Transaction],
 ):
     """Combining min_amount + max_amount filters to a closed range."""
     response = await client.get(
@@ -199,12 +205,12 @@ async def test_list_transactions_filter_by_amount_range(
 
 @pytest.mark.asyncio
 async def test_list_transactions_amount_filter_combines_with_type(
-    client: AsyncClient, auth_headers, test_transactions: list[Transaction],
+    client: AsyncClient,
+    auth_headers,
+    test_transactions: list[Transaction],
 ):
     """Amount filters compose with other filters (here: type=debit)."""
-    response = await client.get(
-        "/api/transactions?max_amount=50&type=debit", headers=auth_headers
-    )
+    response = await client.get("/api/transactions?max_amount=50&type=debit", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     descriptions = {item["description"] for item in data["items"]}
@@ -373,8 +379,11 @@ async def test_create_transaction(
 
 @pytest.mark.asyncio
 async def test_create_transaction_auto_categorize(
-    client: AsyncClient, auth_headers, test_account: Account,
-    test_rules, test_categories: list[Category],
+    client: AsyncClient,
+    auth_headers,
+    test_account: Account,
+    test_rules,
+    test_categories: list[Category],
 ):
     """Transaction with UBER in description should auto-categorize to Transporte."""
     response = await client.post(
@@ -394,9 +403,7 @@ async def test_create_transaction_auto_categorize(
 
 
 @pytest.mark.asyncio
-async def test_create_transaction_invalid_account(
-    client: AsyncClient, auth_headers, test_account
-):
+async def test_create_transaction_invalid_account(client: AsyncClient, auth_headers, test_account):
     response = await client.post(
         "/api/transactions",
         headers=auth_headers,
@@ -413,7 +420,9 @@ async def test_create_transaction_invalid_account(
 
 @pytest.mark.asyncio
 async def test_update_transaction(
-    client: AsyncClient, auth_headers, test_transactions: list[Transaction],
+    client: AsyncClient,
+    auth_headers,
+    test_transactions: list[Transaction],
     test_categories: list[Category],
 ):
     txn_id = str(test_transactions[4].id)  # NETFLIX, no category
@@ -429,7 +438,9 @@ async def test_update_transaction(
 
 @pytest.mark.asyncio
 async def test_update_transaction_remove_category(
-    client: AsyncClient, auth_headers, test_transactions: list[Transaction],
+    client: AsyncClient,
+    auth_headers,
+    test_transactions: list[Transaction],
     test_categories: list[Category],
 ):
     """Setting category_id to null must clear an existing category."""
@@ -453,7 +464,9 @@ async def test_update_transaction_remove_category(
 
 @pytest.mark.asyncio
 async def test_update_transaction_date(
-    client: AsyncClient, auth_headers, test_transactions: list[Transaction],
+    client: AsyncClient,
+    auth_headers,
+    test_transactions: list[Transaction],
 ):
     """Regression: updating the date field must not fail with 'input should be none'."""
     txn_id = str(test_transactions[0].id)
@@ -469,7 +482,9 @@ async def test_update_transaction_date(
 
 @pytest.mark.asyncio
 async def test_update_transaction_all_fields(
-    client: AsyncClient, auth_headers, test_transactions: list[Transaction],
+    client: AsyncClient,
+    auth_headers,
+    test_transactions: list[Transaction],
     test_categories: list[Category],
 ):
     """Regression: updating multiple fields including date must succeed."""
@@ -544,9 +559,12 @@ async def test_create_transaction_without_account_fails(
 
 # --- exclude_transfers tests ---
 
+
 @pytest_asyncio.fixture
 async def test_transactions_with_transfers(
-    session: AsyncSession, test_user: User, test_account: Account,
+    session: AsyncSession,
+    test_user: User,
+    test_account: Account,
 ) -> list[Transaction]:
     """Create a mix of regular and transfer transactions."""
     today = date.today()
@@ -582,7 +600,9 @@ async def test_transactions_with_transfers(
 
 @pytest.mark.asyncio
 async def test_list_transactions_includes_transfers_by_default(
-    client: AsyncClient, auth_headers, test_transactions_with_transfers,
+    client: AsyncClient,
+    auth_headers,
+    test_transactions_with_transfers,
 ):
     """Without exclude_transfers, all transactions including transfers are returned."""
     response = await client.get("/api/transactions", headers=auth_headers)
@@ -596,12 +616,12 @@ async def test_list_transactions_includes_transfers_by_default(
 
 @pytest.mark.asyncio
 async def test_list_transactions_exclude_transfers(
-    client: AsyncClient, auth_headers, test_transactions_with_transfers,
+    client: AsyncClient,
+    auth_headers,
+    test_transactions_with_transfers,
 ):
     """With exclude_transfers=true, transfer transactions are hidden."""
-    response = await client.get(
-        "/api/transactions?exclude_transfers=true", headers=auth_headers
-    )
+    response = await client.get("/api/transactions?exclude_transfers=true", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert data["total"] == 2
@@ -614,12 +634,12 @@ async def test_list_transactions_exclude_transfers(
 
 @pytest.mark.asyncio
 async def test_exclude_transfers_false_includes_all(
-    client: AsyncClient, auth_headers, test_transactions_with_transfers,
+    client: AsyncClient,
+    auth_headers,
+    test_transactions_with_transfers,
 ):
     """Explicitly setting exclude_transfers=false still includes transfers."""
-    response = await client.get(
-        "/api/transactions?exclude_transfers=false", headers=auth_headers
-    )
+    response = await client.get("/api/transactions?exclude_transfers=false", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert data["total"] == 4
@@ -659,7 +679,10 @@ async def test_export_csv_uncategorized(client: AsyncClient, auth_headers, test_
 
 @pytest.mark.asyncio
 async def test_bulk_categorize(
-    client: AsyncClient, auth_headers, test_transactions, test_categories,
+    client: AsyncClient,
+    auth_headers,
+    test_transactions,
+    test_categories,
 ):
     txn_id = str(test_transactions[4].id)
     resp = await client.patch(
@@ -732,9 +755,7 @@ async def test_list_transactions_summary_spans_all_pages(
 ):
     """The summary covers every matching row, not just the current page —
     so a paginated request still totals the full result set."""
-    response = await client.get(
-        "/api/transactions?page=1&limit=2", headers=auth_headers
-    )
+    response = await client.get("/api/transactions?page=1&limit=2", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert len(data["items"]) == 2  # page is capped
@@ -743,14 +764,14 @@ async def test_list_transactions_summary_spans_all_pages(
 
 @pytest.mark.asyncio
 async def test_list_transactions_summary_respects_filters(
-    client: AsyncClient, auth_headers, test_transactions: list[Transaction],
+    client: AsyncClient,
+    auth_headers,
+    test_transactions: list[Transaction],
     test_categories: list[Category],
 ):
     """Filtering narrows the summary the same way it narrows the rows."""
     cat_id = test_categories[1].id  # Transporte → UBER TRIP, 25.50 debit
-    response = await client.get(
-        f"/api/transactions?category_id={cat_id}", headers=auth_headers
-    )
+    response = await client.get(f"/api/transactions?category_id={cat_id}", headers=auth_headers)
     assert response.status_code == 200
     summary = response.json()["summary"]
     assert summary["income"] == pytest.approx(0.0)

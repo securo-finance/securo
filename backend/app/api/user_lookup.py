@@ -40,9 +40,7 @@ async def lookup_user_by_email(
     session: AsyncSession = Depends(get_async_session),
     _: User = Depends(current_active_user),
 ):
-    result = await session.execute(
-        select(User).where(func.lower(User.email) == email.lower())
-    )
+    result = await session.execute(select(User).where(func.lower(User.email) == email.lower()))
     user = result.scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")

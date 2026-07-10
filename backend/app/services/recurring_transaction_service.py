@@ -50,8 +50,10 @@ async def get_recurring_transaction(
     session: AsyncSession, recurring_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> Optional[RecurringTransaction]:
     result = await session.execute(
-        select(RecurringTransaction)
-        .where(RecurringTransaction.id == recurring_id, RecurringTransaction.workspace_id == workspace_id)
+        select(RecurringTransaction).where(
+            RecurringTransaction.id == recurring_id,
+            RecurringTransaction.workspace_id == workspace_id,
+        )
     )
     return result.scalar_one_or_none()
 
@@ -66,7 +68,8 @@ async def create_recurring_transaction(
     next_occ = data.start_date
     if data.skip_first:
         next_occ = _advance_date(
-            data.start_date, data.frequency,
+            data.start_date,
+            data.frequency,
             intended_day=data.day_of_month or data.start_date.day,
         )
     recurring = RecurringTransaction(
@@ -88,7 +91,9 @@ async def create_recurring_transaction(
     session.add(recurring)
     await session.flush()
     await stamp_primary_amount(
-        session, user_id, recurring,
+        session,
+        user_id,
+        recurring,
         date_field="start_date",
     )
     await session.commit()
@@ -97,7 +102,10 @@ async def create_recurring_transaction(
 
 
 async def update_recurring_transaction(
-    session: AsyncSession, recurring_id: uuid.UUID, workspace_id: uuid.UUID, data: RecurringTransactionUpdate
+    session: AsyncSession,
+    recurring_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    data: RecurringTransactionUpdate,
 ) -> Optional[RecurringTransaction]:
     recurring = await get_recurring_transaction(session, recurring_id, workspace_id)
     if not recurring:
@@ -135,7 +143,9 @@ async def delete_recurring_transaction(
 
 
 def _advance_date(
-    current: date, frequency: str, intended_day: Optional[int] = None,
+    current: date,
+    frequency: str,
+    intended_day: Optional[int] = None,
 ) -> date:
     """Advance a date by the given frequency.
 
@@ -161,8 +171,11 @@ def _advance_date(
 
 
 def get_occurrences_in_range(
-    start: date, frequency: str, end_date: Optional[date],
-    range_start: date, range_end: date,
+    start: date,
+    frequency: str,
+    end_date: Optional[date],
+    range_start: date,
+    range_end: date,
     intended_day: Optional[int] = None,
 ) -> list[date]:
     """Compute all occurrence dates for a recurring pattern within [range_start, range_end).
@@ -196,8 +209,7 @@ async def generate_pending(
     cutoff = up_to or date.today()
 
     result = await session.execute(
-        select(RecurringTransaction)
-        .where(
+        select(RecurringTransaction).where(
             RecurringTransaction.user_id == user_id,
             RecurringTransaction.is_active == True,
             RecurringTransaction.auto_generate == True,
@@ -252,7 +264,8 @@ async def generate_pending(
 
             # Advance to next occurrence
             recurring.next_occurrence = _advance_date(
-                recurring.next_occurrence, recurring.frequency,
+                recurring.next_occurrence,
+                recurring.frequency,
                 intended_day=recurring.day_of_month or recurring.start_date.day,
             )
 

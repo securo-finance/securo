@@ -38,10 +38,7 @@ def _normalize_conditions(conditions: list[dict]) -> list[dict]:
 
 def _rule_match_definition_changed(rule: RuleRead, data: RuleUpdate) -> bool:
     update_data = data.model_dump(exclude_unset=True)
-    if (
-        "conditions_op" in update_data
-        and update_data["conditions_op"] != rule.conditions_op
-    ):
+    if "conditions_op" in update_data and update_data["conditions_op"] != rule.conditions_op:
         return True
     if "conditions" not in update_data:
         return False
@@ -136,9 +133,7 @@ async def update_rule(
     if not rule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
     applied_count = (
-        await rule_service.apply_single_rule(session, ctx.workspace.id, rule)
-        if should_apply
-        else 0
+        await rule_service.apply_single_rule(session, ctx.workspace.id, rule) if should_apply else 0
     )
     response = RuleMutationResponse.model_validate(rule)
     response.applied_count = applied_count
@@ -165,13 +160,15 @@ async def list_rule_packs(
     installed_map = await rule_service.get_installed_packs(session, ctx.user_id)
     packs = []
     for code, pack in rule_service.RULE_PACKS.items():
-        packs.append({
-            "code": code,
-            "name": pack["name"],
-            "flag": pack["flag"],
-            "rule_count": len(pack["rules"]),
-            "installed": installed_map.get(code, False),
-        })
+        packs.append(
+            {
+                "code": code,
+                "name": pack["name"],
+                "flag": pack["flag"],
+                "rule_count": len(pack["rules"]),
+                "installed": installed_map.get(code, False),
+            }
+        )
     return packs
 
 

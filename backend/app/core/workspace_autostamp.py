@@ -10,6 +10,7 @@ Resolution caches per `(session, user_id)` to avoid re-querying for the
 common case of many rows being inserted under the same user (imports,
 seed data, test fixtures).
 """
+
 from __future__ import annotations
 
 import uuid
@@ -141,6 +142,7 @@ def _before_insert(mapper: Mapper, connection: Any, target: Any) -> None:
     # inside a flush, so the session is reachable via the target's
     # InstanceState.
     from sqlalchemy.orm import object_session
+
     session = object_session(target)
     if session is None:
         return

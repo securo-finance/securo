@@ -4,6 +4,7 @@ We do NOT actually download or run fastembed in CI — these tests stub
 the underlying _get_native_embedder factory so the dispatch logic can
 be exercised without the 120MB model download.
 """
+
 from __future__ import annotations
 
 from unittest.mock import patch
@@ -42,8 +43,10 @@ async def test_native_dispatch_calls_lazy_factory():
             for _ in texts:
                 yield [0.1, 0.2, 0.3, 0.4]  # 4-dim — far below target 1536
 
-    with patch.object(embedding, "_get_native_embedder", return_value=_FakeEmbedder()), \
-         patch.object(embedding.get_agent_settings(), "embedding_provider", "native"):
+    with (
+        patch.object(embedding, "_get_native_embedder", return_value=_FakeEmbedder()),
+        patch.object(embedding.get_agent_settings(), "embedding_provider", "native"),
+    ):
         # The lru_cache on _get_native_embedder caches the FAKE for the
         # rest of this session — fine because it's a fresh fake each test.
         embedding._get_native_embedder.cache_clear()
@@ -69,8 +72,10 @@ async def test_remote_dispatch_when_provider_is_not_native():
     fake_provider = AsyncMock()
     fake_provider.embed = AsyncMock(return_value=[[1.0] * 768])
 
-    with patch.object(embedding, "_build_remote_provider", return_value=fake_provider), \
-         patch.object(embedding.get_agent_settings(), "embedding_provider", "ollama"):
+    with (
+        patch.object(embedding, "_build_remote_provider", return_value=fake_provider),
+        patch.object(embedding.get_agent_settings(), "embedding_provider", "ollama"),
+    ):
         vecs, label = await embedding.embed_texts(["hi"])
 
     assert len(vecs) == 1
@@ -82,6 +87,7 @@ async def test_remote_dispatch_when_provider_is_not_native():
 async def test_empty_input_short_circuits():
     """No texts → no work, no provider import, no remote call."""
     from app.agents.services import embedding
+
     vecs, _ = await embedding.embed_texts([])
     assert vecs == []
 
@@ -91,6 +97,7 @@ async def test_dimension_padding_preserves_signal():
     just rounds out to the target dim. Cosine similarity is unaffected
     because zero dims contribute nothing to the dot product."""
     from app.agents.services.embedding import _adjust_dim
+
     assert _adjust_dim([0.5, -0.3], 4) == [0.5, -0.3, 0.0, 0.0]
     assert _adjust_dim([0.1] * 1600, 1536) == [0.1] * 1536  # truncated
     assert _adjust_dim([1.0, 2.0, 3.0], 3) == [1.0, 2.0, 3.0]

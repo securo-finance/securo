@@ -19,7 +19,11 @@ from app.services.asset_service import refresh_all_market_prices
 class FakeMarketProvider(MarketPriceProvider):
     name = "fake"
 
-    def __init__(self, quotes: dict[str, MarketSymbolQuote], batch_prices: dict[str, Optional[Decimal]] | None = None):
+    def __init__(
+        self,
+        quotes: dict[str, MarketSymbolQuote],
+        batch_prices: dict[str, Optional[Decimal]] | None = None,
+    ):
         self.quotes = {k.upper(): v for k, v in quotes.items()}
         self.batch_prices = {k.upper(): v for k, v in (batch_prices or {}).items()}
         self.bulk_calls = 0
@@ -35,7 +39,11 @@ class FakeMarketProvider(MarketPriceProvider):
         if self.batch_prices:
             return {symbol.upper(): self.batch_prices.get(symbol.upper()) for symbol in symbols}
         return {
-            symbol.upper(): (Decimal(str(self.quotes[symbol.upper()].price)) if symbol.upper() in self.quotes else None)
+            symbol.upper(): (
+                Decimal(str(self.quotes[symbol.upper()].price))
+                if symbol.upper() in self.quotes
+                else None
+            )
             for symbol in symbols
         }
 
@@ -111,9 +119,15 @@ async def test_refresh_all_market_prices_updates_tesouro_symbol_through_market_p
     db_asset = await session.get(Asset, created.id)
     assert db_asset.last_price == Decimal("15200.000000")
     values = (
-        await session.execute(
-            select(AssetValue).where(AssetValue.asset_id == db_asset.id).order_by(AssetValue.date)
+        (
+            await session.execute(
+                select(AssetValue)
+                .where(AssetValue.asset_id == db_asset.id)
+                .order_by(AssetValue.date)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert values[-1].price == Decimal("15200.000000")
     assert values[-1].amount == Decimal("30400.00")

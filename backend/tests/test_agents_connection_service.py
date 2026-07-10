@@ -5,6 +5,7 @@ the largest function in the module — we drive it through a fake
 httpx.AsyncClient so each provider branch is exercised without real
 network calls.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -15,6 +16,7 @@ import app.agents.services.connection_service as cs
 
 
 # --------------------------------------------------------------------- CRUD
+
 
 @pytest.mark.asyncio
 async def test_create_connection_rejects_unknown_kind(session, test_user):
@@ -31,8 +33,11 @@ async def test_create_connection_requires_base_url_for_openai_compatible(session
 @pytest.mark.asyncio
 async def test_create_and_get_and_list(session, test_user):
     conn = await cs.create_connection(
-        session, test_user.id,
-        name="My OpenAI", kind="openai", api_key="sk-secret",
+        session,
+        test_user.id,
+        name="My OpenAI",
+        kind="openai",
+        api_key="sk-secret",
         default_model="gpt-4o-mini",
     )
     assert conn.id is not None
@@ -54,10 +59,18 @@ async def test_create_and_get_and_list(session, test_user):
 @pytest.mark.asyncio
 async def test_default_is_unique_per_user(session, test_user):
     a = await cs.create_connection(
-        session, test_user.id, name="a", kind="openai", is_default=True,
+        session,
+        test_user.id,
+        name="a",
+        kind="openai",
+        is_default=True,
     )
     b = await cs.create_connection(
-        session, test_user.id, name="b", kind="openai", is_default=True,
+        session,
+        test_user.id,
+        name="b",
+        kind="openai",
+        is_default=True,
     )
     # Re-fetch a — its default flag should be cleared.
     refreshed_a = await cs.get_connection(session, a.id, test_user.id)
@@ -78,9 +91,14 @@ async def test_update_connection_handles_partial_and_default_swap(session, test_
     b = await cs.create_connection(session, test_user.id, name="b", kind="openai")
 
     updated = await cs.update_connection(
-        session, b.id, test_user.id,
-        name="renamed", api_key="new-key", default_model="gpt-4o",
-        extra={"note": "yo"}, is_default=True,
+        session,
+        b.id,
+        test_user.id,
+        name="renamed",
+        api_key="new-key",
+        default_model="gpt-4o",
+        extra={"note": "yo"},
+        is_default=True,
     )
     assert updated is not None
     assert updated.name == "renamed"
@@ -108,7 +126,11 @@ async def test_update_connection_returns_none_for_unknown(session, test_user):
 async def test_update_connection_can_clear_api_key(session, test_user):
     """Passing api_key='' should null out the stored encrypted key."""
     conn = await cs.create_connection(
-        session, test_user.id, name="x", kind="openai", api_key="sk-old",
+        session,
+        test_user.id,
+        name="x",
+        kind="openai",
+        api_key="sk-old",
     )
     assert conn.api_key_encrypted is not None
 
@@ -130,8 +152,10 @@ def test_build_provider_for_connection(session):
     from app.agents.models.connection import LlmConnection
 
     conn = LlmConnection(
-        id=uuid.uuid4(), user_id=uuid.uuid4(),
-        name="x", kind="openai",
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        name="x",
+        kind="openai",
         base_url="https://api.openai.com/v1",
         api_key_encrypted=None,
         default_model="gpt-4o-mini",
@@ -143,6 +167,7 @@ def test_build_provider_for_connection(session):
 
 # --------------------------------------------------------------------- test_connection (probe)
 
+
 class _FakeResp:
     def __init__(self, *, status_code=200, json_body=None, text=""):
         self.status_code = status_code
@@ -152,6 +177,7 @@ class _FakeResp:
     def raise_for_status(self):
         if self.status_code >= 400:
             import httpx
+
             raise httpx.HTTPError(f"HTTP {self.status_code}")
 
     def json(self):
@@ -183,17 +209,23 @@ def fake_httpx(monkeypatch):
     _FakeAsyncClient.queue = []
     _FakeAsyncClient.calls = []
     import httpx
+
     monkeypatch.setattr(httpx, "AsyncClient", _FakeAsyncClient)
     yield _FakeAsyncClient
 
 
 def _conn(**overrides):
     from app.agents.models.connection import LlmConnection
+
     defaults = dict(
-        id=uuid.uuid4(), user_id=uuid.uuid4(),
-        name="x", kind="openai",
-        base_url=None, api_key_encrypted=None,
-        default_model=None, extra={},
+        id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        name="x",
+        kind="openai",
+        base_url=None,
+        api_key_encrypted=None,
+        default_model=None,
+        extra={},
     )
     defaults.update(overrides)
     return LlmConnection(**defaults)
@@ -201,9 +233,13 @@ def _conn(**overrides):
 
 @pytest.mark.asyncio
 async def test_probe_ollama_returns_model_count(fake_httpx):
-    fake_httpx.queue.append(_FakeResp(json_body={
-        "models": [{"name": "llama3"}, {"name": "nomic"}],
-    }))
+    fake_httpx.queue.append(
+        _FakeResp(
+            json_body={
+                "models": [{"name": "llama3"}, {"name": "nomic"}],
+            }
+        )
+    )
     out = await cs.test_connection(_conn(kind="ollama"))
     assert out["ok"] is True
     assert "2 models" in out["detail"]
@@ -212,9 +248,13 @@ async def test_probe_ollama_returns_model_count(fake_httpx):
 
 @pytest.mark.asyncio
 async def test_probe_openai_returns_models_on_success(fake_httpx):
-    fake_httpx.queue.append(_FakeResp(json_body={
-        "data": [{"id": "gpt-4o-mini"}, {"id": "gpt-4o"}],
-    }))
+    fake_httpx.queue.append(
+        _FakeResp(
+            json_body={
+                "data": [{"id": "gpt-4o-mini"}, {"id": "gpt-4o"}],
+            }
+        )
+    )
     out = await cs.test_connection(_conn(kind="openai"))
     assert out["ok"] is True
     assert "2 models" in out["detail"]
@@ -239,9 +279,12 @@ async def test_probe_openai_returns_http_error_text(fake_httpx):
 @pytest.mark.asyncio
 async def test_probe_openai_compatible_warns_when_no_models(fake_httpx):
     fake_httpx.queue.append(_FakeResp(json_body={"data": []}))
-    out = await cs.test_connection(_conn(
-        kind="openai_compatible", base_url="http://lmstudio:1234/v1",
-    ))
+    out = await cs.test_connection(
+        _conn(
+            kind="openai_compatible",
+            base_url="http://lmstudio:1234/v1",
+        )
+    )
     assert out["ok"] is False
     assert "no models" in out["detail"]
 
@@ -249,18 +292,25 @@ async def test_probe_openai_compatible_warns_when_no_models(fake_httpx):
 @pytest.mark.asyncio
 async def test_probe_openai_compatible_warns_when_bad_json(fake_httpx):
     fake_httpx.queue.append(_FakeResp(json_body=ValueError("not json")))
-    out = await cs.test_connection(_conn(
-        kind="openai_compatible", base_url="http://lmstudio:1234/v1",
-    ))
+    out = await cs.test_connection(
+        _conn(
+            kind="openai_compatible",
+            base_url="http://lmstudio:1234/v1",
+        )
+    )
     assert out["ok"] is False
     assert "did not return JSON" in out["detail"]
 
 
 @pytest.mark.asyncio
 async def test_probe_anthropic_success(fake_httpx):
-    fake_httpx.queue.append(_FakeResp(json_body={
-        "data": [{"id": "claude-3-5-sonnet"}],
-    }))
+    fake_httpx.queue.append(
+        _FakeResp(
+            json_body={
+                "data": [{"id": "claude-3-5-sonnet"}],
+            }
+        )
+    )
     out = await cs.test_connection(_conn(kind="anthropic"))
     assert out["ok"] is True
     assert "1 models" in out["detail"]

@@ -5,6 +5,7 @@ We don't talk to real LLM providers in unit tests. Instead:
   - Test the registry's build_provider dispatch.
   - Test the high-level chat() helper assembles streaming chunks correctly.
 """
+
 import json
 from typing import AsyncIterator
 
@@ -85,10 +86,12 @@ def test_openai_tools_payload_shape():
 
 
 def test_anthropic_split_system_extracts_system_messages():
-    sys, rest = _split_system([
-        ChatMessage(role="system", content="primary instructions"),
-        ChatMessage(role="user", content="hello"),
-    ])
+    sys, rest = _split_system(
+        [
+            ChatMessage(role="system", content="primary instructions"),
+            ChatMessage(role="user", content="hello"),
+        ]
+    )
     assert sys == "primary instructions"
     assert len(rest) == 1
     assert rest[0].role == "user"
@@ -116,18 +119,21 @@ def test_anthropic_tool_result_block():
     assert blk["tool_use_id"] == "toolu_1"
 
 
-@pytest.mark.parametrize("raw,expected", [
-    ("http://192.168.1.142:1234", "http://192.168.1.142:1234/v1"),
-    ("http://lmstudio:1234/", "http://lmstudio:1234/v1"),
-    ("http://lmstudio:1234/v1", "http://lmstudio:1234/v1"),
-    ("http://lmstudio:1234/v1/", "http://lmstudio:1234/v1"),
-    ("https://api.openai.com/v1", "https://api.openai.com/v1"),
-    ("https://api.groq.com/openai/v1", "https://api.groq.com/openai/v1"),
-    ("https://api.example.com/v2", "https://api.example.com/v2"),
-    ("https://api.example.com/beta", "https://api.example.com/beta"),
-    ("https://api.example.com/", "https://api.example.com/v1"),
-    ("", ""),
-])
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("http://192.168.1.142:1234", "http://192.168.1.142:1234/v1"),
+        ("http://lmstudio:1234/", "http://lmstudio:1234/v1"),
+        ("http://lmstudio:1234/v1", "http://lmstudio:1234/v1"),
+        ("http://lmstudio:1234/v1/", "http://lmstudio:1234/v1"),
+        ("https://api.openai.com/v1", "https://api.openai.com/v1"),
+        ("https://api.groq.com/openai/v1", "https://api.groq.com/openai/v1"),
+        ("https://api.example.com/v2", "https://api.example.com/v2"),
+        ("https://api.example.com/beta", "https://api.example.com/beta"),
+        ("https://api.example.com/", "https://api.example.com/v1"),
+        ("", ""),
+    ],
+)
 def test_normalize_openai_base_url(raw, expected):
     assert normalize_openai_base_url(raw) == expected
 
@@ -161,21 +167,31 @@ async def test_openai_parser_handles_index_keyed_tool_call_chunks():
         b'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"transaction_ids\\":"}}]}}]}\n',
         b'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"[\\"abc\\"],\\"category_id\\":\\"def\\"}"}}]}}]}\n',
         b'data: {"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":12,"completion_tokens":34}}\n',
-        b'data: [DONE]\n',
+        b"data: [DONE]\n",
     ]
 
     class _StreamResp:
         status_code = 200
-        async def __aenter__(self): return self
-        async def __aexit__(self, *_a): pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_a):
+            pass
+
         async def aiter_lines(self):
             for line in sse_chunks:
                 yield line.decode().rstrip("\n")
 
     class _Client:
-        async def __aenter__(self): return self
-        async def __aexit__(self, *_a): pass
-        def stream(self, *_a, **_kw): return _StreamResp()
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_a):
+            pass
+
+        def stream(self, *_a, **_kw):
+            return _StreamResp()
 
     p = OpenAIProvider(api_key="x", base_url="http://lmstudio:1234")
     chunks = []
@@ -197,6 +213,7 @@ async def test_openai_parser_handles_index_keyed_tool_call_chunks():
 
 # --- chat() helper assembly -------------------------------------------------
 
+
 class _ScriptedProvider(LLMProvider):
     name = "scripted"
 
@@ -215,15 +232,17 @@ class _ScriptedProvider(LLMProvider):
 
 
 async def test_chat_helper_aggregates_text_and_tool_calls():
-    p = _ScriptedProvider([
-        ChatChunk(type="text_delta", text="Hello "),
-        ChatChunk(type="text_delta", text="world"),
-        ChatChunk(type="tool_call_start", tool_call_id="t1", tool_name="list_accounts"),
-        ChatChunk(type="tool_call_args_delta", tool_call_id="t1", args_delta='{"x": 1}'),
-        ChatChunk(type="tool_call_end", tool_call_id="t1"),
-        ChatChunk(type="usage", usage=Usage(input_tokens=12, output_tokens=4)),
-        ChatChunk(type="finish", finish_reason="tool_calls"),
-    ])
+    p = _ScriptedProvider(
+        [
+            ChatChunk(type="text_delta", text="Hello "),
+            ChatChunk(type="text_delta", text="world"),
+            ChatChunk(type="tool_call_start", tool_call_id="t1", tool_name="list_accounts"),
+            ChatChunk(type="tool_call_args_delta", tool_call_id="t1", args_delta='{"x": 1}'),
+            ChatChunk(type="tool_call_end", tool_call_id="t1"),
+            ChatChunk(type="usage", usage=Usage(input_tokens=12, output_tokens=4)),
+            ChatChunk(type="finish", finish_reason="tool_calls"),
+        ]
+    )
     res = await p.chat([ChatMessage(role="user", content="hi")], model="m")
     assert isinstance(res, ChatResponse)
     assert res.content == "Hello world"

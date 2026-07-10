@@ -27,7 +27,9 @@ async def list_payees(
         {
             "id": str(p.id),
             "name": p.name,
-            "default_category_id": str(p.default_category_id) if getattr(p, "default_category_id", None) else None,
+            "default_category_id": str(p.default_category_id)
+            if getattr(p, "default_category_id", None)
+            else None,
         }
         for p in payees
     ]

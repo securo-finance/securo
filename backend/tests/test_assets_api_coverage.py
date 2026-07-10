@@ -4,6 +4,7 @@ Covers the market search/quote proxy endpoints (with the provider mocked),
 the single-asset price refresh branches, portfolio-trend, value-trend, and
 the 404 branches on the value sub-resources.
 """
+
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -95,7 +96,9 @@ async def test_market_search_rate_limited_429(client: AsyncClient, auth_headers,
 
 
 @pytest.mark.asyncio
-async def test_market_search_generic_error_returns_empty(client: AsyncClient, auth_headers, test_user):
+async def test_market_search_generic_error_returns_empty(
+    client: AsyncClient, auth_headers, test_user
+):
     fake = AsyncMock()
     fake.search = AsyncMock(side_effect=RuntimeError("boom"))
     with patch("app.api.assets.get_market_price_provider", return_value=fake):
@@ -146,17 +149,13 @@ async def test_market_quote_rate_limited_429(client: AsyncClient, auth_headers, 
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_refresh_price_asset_not_found_404(client: AsyncClient, auth_headers, test_user):
-    resp = await client.post(
-        f"/api/assets/{uuid.uuid4()}/refresh-price", headers=auth_headers
-    )
+    resp = await client.post(f"/api/assets/{uuid.uuid4()}/refresh-price", headers=auth_headers)
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_refresh_price_non_market_asset_422(client: AsyncClient, auth_headers, manual_asset):
-    resp = await client.post(
-        f"/api/assets/{manual_asset.id}/refresh-price", headers=auth_headers
-    )
+    resp = await client.post(f"/api/assets/{manual_asset.id}/refresh-price", headers=auth_headers)
     assert resp.status_code == 422
 
 
@@ -243,7 +242,9 @@ async def test_get_asset_not_found_404(client: AsyncClient, auth_headers, test_u
 
 
 @pytest.mark.asyncio
-async def test_refresh_price_fx_conversion(client: AsyncClient, auth_headers, market_asset, session):
+async def test_refresh_price_fx_conversion(
+    client: AsyncClient, auth_headers, market_asset, session
+):
     # Seed a USD value so the refreshed asset has a current_value the
     # endpoint converts into the BRL primary currency (FX branch).
     session.add(
@@ -328,8 +329,6 @@ async def test_add_value_then_value_trend(client: AsyncClient, auth_headers, man
     )
     assert add.status_code == 201, add.text
 
-    trend = await client.get(
-        f"/api/assets/{manual_asset.id}/value-trend", headers=auth_headers
-    )
+    trend = await client.get(f"/api/assets/{manual_asset.id}/value-trend", headers=auth_headers)
     assert trend.status_code == 200
     assert isinstance(trend.json(), list)

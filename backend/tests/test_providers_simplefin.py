@@ -4,6 +4,7 @@ The bridge is fully fakeable via ``httpx.MockTransport`` — no SimpleFIN
 credentials needed, no network. Each test stands up the smallest payload
 required and asserts the parse / dispatch behavior we care about.
 """
+
 from __future__ import annotations
 
 import base64
@@ -42,10 +43,7 @@ def _patched_client(handler):
 
 def test_decode_setup_token_round_trips():
     raw = _encode_token("https://bridge.simplefin.org/simplefin/claim/abc123")
-    assert (
-        _decode_setup_token(raw)
-        == "https://bridge.simplefin.org/simplefin/claim/abc123"
-    )
+    assert _decode_setup_token(raw) == "https://bridge.simplefin.org/simplefin/claim/abc123"
 
 
 def test_decode_setup_token_strips_whitespace_and_repads():
@@ -101,9 +99,7 @@ async def test_handle_oauth_callback_claims_and_parses_accounts():
             200,
             json={
                 "errlist": [],
-                "connections": [
-                    {"conn_id": "CON-1", "name": "Demo Bank"}
-                ],
+                "connections": [{"conn_id": "CON-1", "name": "Demo Bank"}],
                 "accounts": [
                     {
                         "id": "acc-1",
@@ -159,9 +155,7 @@ async def test_auth_errlist_raises_user_action_required():
         return httpx.Response(
             200,
             json={
-                "errlist": [
-                    {"code": "con.auth", "msg": "Authentication failed", "conn_id": "C"}
-                ],
+                "errlist": [{"code": "con.auth", "msg": "Authentication failed", "conn_id": "C"}],
                 "accounts": [],
             },
         )
@@ -183,9 +177,7 @@ async def test_act_failed_is_soft_warning(caplog):
         return httpx.Response(
             200,
             json={
-                "errlist": [
-                    {"code": "act.failed", "msg": "transient", "account_id": "X"}
-                ],
+                "errlist": [{"code": "act.failed", "msg": "transient", "account_id": "X"}],
                 "accounts": [
                     {
                         "id": "acc-1",
@@ -199,7 +191,10 @@ async def test_act_failed_is_soft_warning(caplog):
 
     creds = {"access_url": "https://u:p@bridge.example/simplefin"}
     provider = SimpleFinProvider()
-    with caplog.at_level(stdlogging.WARNING, logger="app.providers.simplefin"), _patched_client(handler):
+    with (
+        caplog.at_level(stdlogging.WARNING, logger="app.providers.simplefin"),
+        _patched_client(handler),
+    ):
         accounts = await provider.get_accounts(creds)
     assert len(accounts) == 1
     assert any("act.failed" in rec.getMessage() for rec in caplog.records)
@@ -272,9 +267,7 @@ async def test_get_transactions_filters_by_account_and_parses_signs():
     creds = {"access_url": "https://u:p@bridge.example/simplefin"}
     provider = SimpleFinProvider()
     with _patched_client(handler):
-        txns = await provider.get_transactions(
-            creds, "acc-1", since=date(2023, 1, 1)
-        )
+        txns = await provider.get_transactions(creds, "acc-1", since=date(2023, 1, 1))
     by_id = {t.external_id: t for t in txns}
     assert set(by_id) == {"t1", "t2"}
     assert by_id["t1"].type == "debit"
@@ -297,9 +290,7 @@ async def test_get_transactions_chunks_long_windows():
                 request.url.params.get("end-date", ""),
             )
         )
-        return httpx.Response(
-            200, json={"accounts": [{"id": "acc-1", "transactions": []}]}
-        )
+        return httpx.Response(200, json={"accounts": [{"id": "acc-1", "transactions": []}]})
 
     creds = {"access_url": "https://u:p@bridge.example/simplefin"}
     today = date.today()

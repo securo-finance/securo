@@ -97,9 +97,7 @@ async def compute_balances(
             if currency == default_currency:
                 amount_in_default = amount
             else:
-                converted, _ = await _fx_convert(
-                    session, amount, currency, default_currency
-                )
+                converted, _ = await _fx_convert(session, amount, currency, default_currency)
                 amount_in_default = converted
             lines.append(
                 {

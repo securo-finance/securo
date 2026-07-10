@@ -50,14 +50,18 @@ async def _discover() -> dict[str, Any]:
 
 def _redirect_uri() -> str:
     settings = get_settings()
-    return settings.oidc_redirect_uri or f"{settings.frontend_url.rstrip('/')}/api/auth/oidc/callback"
+    return (
+        settings.oidc_redirect_uri or f"{settings.frontend_url.rstrip('/')}/api/auth/oidc/callback"
+    )
 
 
 @router.get("/config", response_model=OIDCConfigResponse)
 async def oidc_config():
     settings = get_settings()
     return OIDCConfigResponse(
-        enabled=bool(settings.oidc_enabled and settings.oidc_client_id and settings.oidc_discovery_url),
+        enabled=bool(
+            settings.oidc_enabled and settings.oidc_client_id and settings.oidc_discovery_url
+        ),
         provider_name=settings.oidc_provider_name or "OIDC",
     )
 
@@ -70,14 +74,18 @@ async def oidc_login():
     discovery = await _discover()
     authorization_endpoint = discovery.get("authorization_endpoint")
     if not authorization_endpoint:
-        raise HTTPException(status_code=500, detail="OIDC discovery is missing authorization_endpoint")
+        raise HTTPException(
+            status_code=500, detail="OIDC discovery is missing authorization_endpoint"
+        )
 
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)
     code_verifier = secrets.token_urlsafe(64)
-    code_challenge = base64.urlsafe_b64encode(
-        hashlib.sha256(code_verifier.encode()).digest()
-    ).rstrip(b"=").decode()
+    code_challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest())
+        .rstrip(b"=")
+        .decode()
+    )
     r = await get_redis()
     await r.set(
         f"oidc_state:{state}",
@@ -98,7 +106,9 @@ async def oidc_login():
     return RedirectResponse(f"{authorization_endpoint}?{urlencode(params)}")
 
 
-async def _exchange_code(discovery: dict[str, Any], code: str, code_verifier: str) -> dict[str, Any]:
+async def _exchange_code(
+    discovery: dict[str, Any], code: str, code_verifier: str
+) -> dict[str, Any]:
     settings = get_settings()
     token_endpoint = discovery.get("token_endpoint")
     if not token_endpoint:
@@ -122,7 +132,9 @@ async def _fetch_userinfo(discovery: dict[str, Any], access_token: str) -> dict[
     if not userinfo_endpoint:
         return {}
     async with httpx.AsyncClient(timeout=10) as client:
-        response = await client.get(userinfo_endpoint, headers={"Authorization": f"Bearer {access_token}"})
+        response = await client.get(
+            userinfo_endpoint, headers={"Authorization": f"Bearer {access_token}"}
+        )
         response.raise_for_status()
         return response.json()
 
@@ -181,7 +193,9 @@ def _parse_workspace_role_map(raw: str) -> dict[str, str]:
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=500, detail="OIDC_WORKSPACE_ROLE_MAP must be valid JSON") from exc
+        raise HTTPException(
+            status_code=500, detail="OIDC_WORKSPACE_ROLE_MAP must be valid JSON"
+        ) from exc
     if not isinstance(parsed, dict):
         raise HTTPException(status_code=500, detail="OIDC_WORKSPACE_ROLE_MAP must be a JSON object")
     role_map = {str(k): str(v).lower() for k, v in parsed.items()}
@@ -205,7 +219,9 @@ def _desired_workspace_role(provider_roles: set[str], role_map: dict[str, str]) 
 OIDC_EXISTING_USER_LINK_MODES = {"disabled", "verified_email", "email"}
 
 
-async def _sync_oidc_roles(user: User, merged_claims: dict[str, Any], session: AsyncSession) -> None:
+async def _sync_oidc_roles(
+    user: User, merged_claims: dict[str, Any], session: AsyncSession
+) -> None:
     settings = get_settings()
     if not settings.oidc_sync_roles:
         return
@@ -256,7 +272,9 @@ async def _get_or_create_oidc_user(
 ) -> User:
     settings = get_settings()
     if userinfo.get("sub") is not None and userinfo.get("sub") != claims.get("sub"):
-        raise HTTPException(status_code=400, detail="OIDC userinfo subject does not match id_token subject")
+        raise HTTPException(
+            status_code=400, detail="OIDC userinfo subject does not match id_token subject"
+        )
     # Userinfo is fetched with a bearer token, but the id_token is the signed,
     # audience-validated source of truth. Let signed claims win for overlapping
     # identity and authorization fields such as email, email_verified, and groups.
@@ -270,9 +288,14 @@ async def _get_or_create_oidc_user(
 
     link_mode = settings.oidc_existing_user_link_mode
     if link_mode not in OIDC_EXISTING_USER_LINK_MODES:
-        raise HTTPException(status_code=500, detail="OIDC_EXISTING_USER_LINK_MODE must be disabled, verified_email, or email")
+        raise HTTPException(
+            status_code=500,
+            detail="OIDC_EXISTING_USER_LINK_MODE must be disabled, verified_email, or email",
+        )
 
-    linked = await session.execute(select(User).where(User.oidc_issuer == issuer, User.oidc_subject == subject))
+    linked = await session.execute(
+        select(User).where(User.oidc_issuer == issuer, User.oidc_subject == subject)
+    )
     user = linked.scalar_one_or_none()
     if user is not None:
         await _sync_oidc_roles(user, merged, session)
@@ -290,9 +313,13 @@ async def _get_or_create_oidc_user(
     user = existing.scalar_one_or_none()
     if user is not None:
         if user.oidc_issuer or user.oidc_subject:
-            raise HTTPException(status_code=403, detail="OIDC identity is linked to a different account")
+            raise HTTPException(
+                status_code=403, detail="OIDC identity is linked to a different account"
+            )
         if link_mode == "disabled":
-            raise HTTPException(status_code=403, detail="Existing account is not linked to this OIDC identity")
+            raise HTTPException(
+                status_code=403, detail="Existing account is not linked to this OIDC identity"
+            )
         if link_mode == "verified_email" and email_verified not in (True, "true"):
             raise HTTPException(status_code=400, detail="OIDC email is not verified")
         user.oidc_issuer = issuer
@@ -307,7 +334,9 @@ async def _get_or_create_oidc_user(
     if not await admin_service.is_registration_enabled(session):
         raise HTTPException(status_code=403, detail="Registration is disabled")
     if not settings.oidc_auto_register:
-        raise HTTPException(status_code=403, detail="No local account is linked to this OIDC identity")
+        raise HTTPException(
+            status_code=403, detail="No local account is linked to this OIDC identity"
+        )
 
     display_name = merged.get("name") or merged.get("preferred_username") or email.split("@", 1)[0]
     preferences = {
@@ -324,12 +353,16 @@ async def _get_or_create_oidc_user(
         email=email,
         password=secrets.token_urlsafe(32),
         is_verified=True,
-        is_superuser=bool(settings.oidc_sync_roles and admin_roles and provider_roles & admin_roles),
+        is_superuser=bool(
+            settings.oidc_sync_roles and admin_roles and provider_roles & admin_roles
+        ),
     )
     try:
         user = await user_manager.create(user_create, safe=True, request=None)
     except UserAlreadyExists:
-        user = (await session.execute(select(User).where(func.lower(User.email) == email))).scalar_one()
+        user = (
+            await session.execute(select(User).where(func.lower(User.email) == email))
+        ).scalar_one()
 
     db_session = user_manager.user_db.session
     await db_session.execute(
@@ -383,9 +416,13 @@ async def oidc_callback(
         discovery, id_token, state_data["nonce"], token_response.get("access_token", "")
     )
     userinfo = await _fetch_userinfo(discovery, token_response.get("access_token", ""))
-    user = await _get_or_create_oidc_user(claims, userinfo, discovery.get("issuer", ""), session, user_manager)
+    user = await _get_or_create_oidc_user(
+        claims, userinfo, discovery.get("issuer", ""), session, user_manager
+    )
     if not user.is_active:
         raise HTTPException(status_code=403, detail="User is inactive")
     token = await get_jwt_strategy().write_token(user)
     frontend_url = get_settings().frontend_url.rstrip("/")
-    return RedirectResponse(f"{frontend_url}/auth/oidc/callback#access_token={token}&token_type=bearer")
+    return RedirectResponse(
+        f"{frontend_url}/auth/oidc/callback#access_token={token}&token_type=bearer"
+    )

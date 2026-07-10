@@ -6,14 +6,14 @@ from pydantic import BaseModel, ConfigDict
 
 
 class RuleCondition(BaseModel):
-    field: str   # description, notes, amount, type, account_id, payee_id, date
-    op: str      # contains, not_contains, equals, not_equals, starts_with, ends_with, regex, gt, gte, lt, lte
-    value: Any   # str or number depending on field
+    field: str  # description, notes, amount, type, account_id, payee_id, date
+    op: str  # contains, not_contains, equals, not_equals, starts_with, ends_with, regex, gt, gte, lt, lte
+    value: Any  # str or number depending on field
 
 
 class RuleAction(BaseModel):
-    op: str      # set_category, append_notes
-    value: Any   # category UUID str or notes string
+    op: str  # set_category, append_notes
+    value: Any  # category UUID str or notes string
 
 
 class RuleCreate(BaseModel):

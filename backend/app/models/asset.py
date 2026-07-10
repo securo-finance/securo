@@ -24,19 +24,35 @@ class Asset(Base):
         UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
     )
     name: Mapped[str] = mapped_column(String(255))
-    type: Mapped[str] = mapped_column(String(50))  # real_estate, vehicle, valuable, investment, other
+    type: Mapped[str] = mapped_column(
+        String(50)
+    )  # real_estate, vehicle, valuable, investment, other
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     units: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=6), nullable=True)
-    valuation_method: Mapped[str] = mapped_column(String(20), default="manual")  # manual, growth_rule
+    valuation_method: Mapped[str] = mapped_column(
+        String(20), default="manual"
+    )  # manual, growth_rule
     purchase_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
-    purchase_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
+    purchase_price: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(precision=15, scale=2), nullable=True
+    )
     sell_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
-    sell_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
-    growth_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # percentage, absolute
-    growth_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=6), nullable=True)
-    growth_frequency: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # daily, weekly, monthly, yearly
+    sell_price: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(precision=15, scale=2), nullable=True
+    )
+    growth_type: Mapped[Optional[str]] = mapped_column(
+        String(20), nullable=True
+    )  # percentage, absolute
+    growth_rate: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(precision=15, scale=6), nullable=True
+    )
+    growth_frequency: Mapped[Optional[str]] = mapped_column(
+        String(20), nullable=True
+    )  # daily, weekly, monthly, yearly
     growth_start_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
-    purchase_price_primary: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
+    purchase_price_primary: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(precision=15, scale=2), nullable=True
+    )
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
     position: Mapped[int] = mapped_column(Integer, default=0)
 
@@ -67,7 +83,9 @@ class Asset(Base):
     last_price: Mapped[Optional[Decimal]] = mapped_column(
         Numeric(precision=18, scale=6), nullable=True
     )
-    last_price_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_price_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     # Weighted-average cost per unit (preço médio), derived from the
     # asset_transactions ledger and cached here for cheap list reads. For
     # ledger-backed holdings `purchase_price` caches the total cost basis of
@@ -85,7 +103,9 @@ class Asset(Base):
     # the type icon". Frontend swaps to the type icon on <img> load error.
     logo_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
-    values: Mapped[list["AssetValue"]] = relationship(back_populates="asset", cascade="all, delete-orphan")
+    values: Mapped[list["AssetValue"]] = relationship(
+        back_populates="asset", cascade="all, delete-orphan"
+    )
     transactions: Mapped[list["AssetTransaction"]] = relationship(
         back_populates="asset", cascade="all, delete-orphan"
     )

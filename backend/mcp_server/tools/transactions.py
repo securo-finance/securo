@@ -9,7 +9,13 @@ from app.models.group import GroupMember
 from app.services import transaction_service
 from mcp_server.auth import CallContext
 from mcp_server.registry import tool
-from mcp_server.tools._helpers import num, parse_date, parse_uuid, parse_uuid_list, resolve_workspace_id
+from mcp_server.tools._helpers import (
+    num,
+    parse_date,
+    parse_uuid,
+    parse_uuid_list,
+    resolve_workspace_id,
+)
 
 
 @tool(
@@ -37,18 +43,56 @@ from mcp_server.tools._helpers import num, parse_date, parse_uuid, parse_uuid_li
     parameters={
         "type": "object",
         "properties": {
-            "account_ids": {"type": "array", "items": {"type": "string", "format": "uuid"}, "description": "Filter to specific accounts (by id)"},
+            "account_ids": {
+                "type": "array",
+                "items": {"type": "string", "format": "uuid"},
+                "description": "Filter to specific accounts (by id)",
+            },
             "account_types": {
                 "type": "array",
-                "items": {"type": "string", "enum": ["checking", "savings", "credit_card", "wallet", "investment", "loan", "other"]},
+                "items": {
+                    "type": "string",
+                    "enum": [
+                        "checking",
+                        "savings",
+                        "credit_card",
+                        "wallet",
+                        "investment",
+                        "loan",
+                        "other",
+                    ],
+                },
                 "description": "Filter by account type — e.g. ['credit_card'] for 'all my credit-card transactions'",
             },
-            "category_ids": {"type": "array", "items": {"type": "string", "format": "uuid"}, "description": "Filter to specific categories"},
-            "payee_id": {"type": "string", "format": "uuid", "description": "Filter to a single payee"},
-            "group_id": {"type": "string", "format": "uuid", "description": "Filter to transactions split with this expense-sharing group (Splitwise-style). The id comes from `list_groups`. Use this — NOT a `search:'group_id:...'` hack — to ask 'show all transactions in group X'."},
-            "from_date": {"type": "string", "format": "date", "description": "Inclusive lower bound (YYYY-MM-DD)"},
-            "to_date": {"type": "string", "format": "date", "description": "Inclusive upper bound (YYYY-MM-DD)"},
-            "search": {"type": "string", "description": "Substring match against description or payee"},
+            "category_ids": {
+                "type": "array",
+                "items": {"type": "string", "format": "uuid"},
+                "description": "Filter to specific categories",
+            },
+            "payee_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "Filter to a single payee",
+            },
+            "group_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "Filter to transactions split with this expense-sharing group (Splitwise-style). The id comes from `list_groups`. Use this — NOT a `search:'group_id:...'` hack — to ask 'show all transactions in group X'.",
+            },
+            "from_date": {
+                "type": "string",
+                "format": "date",
+                "description": "Inclusive lower bound (YYYY-MM-DD)",
+            },
+            "to_date": {
+                "type": "string",
+                "format": "date",
+                "description": "Inclusive upper bound (YYYY-MM-DD)",
+            },
+            "search": {
+                "type": "string",
+                "description": "Substring match against description or payee",
+            },
             "currency": {
                 "type": "string",
                 "description": "ISO currency code (BRL, USD, EUR, GBP, ...). Matches each transaction's native currency exactly. Use this — not search — for currency questions.",
@@ -63,13 +107,38 @@ from mcp_server.tools._helpers import num, parse_date, parse_uuid, parse_uuid_li
                 "exclusiveMinimum": 0,
                 "description": "Maximum absolute amount (primary-currency view).",
             },
-            "tx_type": {"type": "string", "enum": ["debit", "credit"], "description": "debit = expense, credit = income"},
-            "uncategorized": {"type": "boolean", "default": False, "description": "Only transactions without a category"},
-            "exclude_transfers": {"type": "boolean", "default": False, "description": "Exclude transfers between user's own accounts"},
-            "tags": {"type": "array", "items": {"type": "string"}, "description": "Match any of these tags"},
+            "tx_type": {
+                "type": "string",
+                "enum": ["debit", "credit"],
+                "description": "debit = expense, credit = income",
+            },
+            "uncategorized": {
+                "type": "boolean",
+                "default": False,
+                "description": "Only transactions without a category",
+            },
+            "exclude_transfers": {
+                "type": "boolean",
+                "default": False,
+                "description": "Exclude transfers between user's own accounts",
+            },
+            "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Match any of these tags",
+            },
             "sort_by": {
                 "type": "string",
-                "enum": ["transaction_date", "date", "amount", "description", "payee", "category", "account", "created_at"],
+                "enum": [
+                    "transaction_date",
+                    "date",
+                    "amount",
+                    "description",
+                    "payee",
+                    "category",
+                    "account",
+                    "created_at",
+                ],
                 "default": "transaction_date",
                 "description": (
                     "transaction_date = purchase date (default, intuitive 'latest'); "
@@ -85,7 +154,13 @@ from mcp_server.tools._helpers import num, parse_date, parse_uuid, parse_uuid_li
                 "enum": ["cash", "accrual"],
                 "description": "Override the global accounting mode for this query. Affects how credit-card transactions are bucketed by date.",
             },
-            "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 25, "description": "Max rows per page. Capped at 50 — bigger pages blow up token budgets on small models. Use `total` for counts and pagination via `page` to walk longer lists."},
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 50,
+                "default": 25,
+                "description": "Max rows per page. Capped at 50 — bigger pages blow up token budgets on small models. Use `total` for counts and pagination via `page` to walk longer lists.",
+            },
             "page": {"type": "integer", "minimum": 1, "default": 1},
         },
         "additionalProperties": False,
@@ -152,13 +227,15 @@ async def list_transactions(
     # solo expense?" → "no, split with Marcelo + Tereza in Amigos").
     member_ids: set[Any] = set()
     for t in txs:
-        for s in (getattr(t, "splits", None) or []):
+        for s in getattr(t, "splits", None) or []:
             member_ids.add(s.group_member_id)
     member_lookup: dict[Any, GroupMember] = {}
     if member_ids:
-        rows = (await session.execute(
-            select(GroupMember).where(GroupMember.id.in_(member_ids))
-        )).scalars().all()
+        rows = (
+            (await session.execute(select(GroupMember).where(GroupMember.id.in_(member_ids))))
+            .scalars()
+            .all()
+        )
         member_lookup = {m.id: m for m in rows}
 
     def _splits_summary(t: Any) -> dict[str, Any] | None:
@@ -174,14 +251,16 @@ async def list_transactions(
             mem = member_lookup.get(s.group_member_id)
             if mem is not None and group_id is None:
                 group_id = str(mem.group_id)
-            items.append({
-                "member_id": str(s.group_member_id),
-                "member_name": mem.name if mem else None,
-                "is_self": bool(getattr(mem, "is_self", False)) if mem else False,
-                "share_amount": num(s.share_amount),
-                "share_type": s.share_type,
-                "share_pct": num(s.share_pct),
-            })
+            items.append(
+                {
+                    "member_id": str(s.group_member_id),
+                    "member_name": mem.name if mem else None,
+                    "is_self": bool(getattr(mem, "is_self", False)) if mem else False,
+                    "share_amount": num(s.share_amount),
+                    "share_type": s.share_type,
+                    "share_pct": num(s.share_pct),
+                }
+            )
         return {
             "is_split": True,
             "group_id": group_id,
@@ -193,7 +272,9 @@ async def list_transactions(
         {
             "id": str(t.id),
             "date": t.date.isoformat() if t.date else None,
-            "effective_date": t.effective_date.isoformat() if getattr(t, "effective_date", None) else None,
+            "effective_date": t.effective_date.isoformat()
+            if getattr(t, "effective_date", None)
+            else None,
             "description": t.description,
             "amount": num(t.amount),
             "currency": t.currency,

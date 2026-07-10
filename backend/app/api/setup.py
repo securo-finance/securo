@@ -54,15 +54,17 @@ async def create_admin(
     user = await user_manager.create(user_create)
 
     # Build preferences dict
-    prefs = {"currency_display": body.currency, "language": body.language, "onboarding_completed": False}
+    prefs = {
+        "currency_display": body.currency,
+        "language": body.language,
+        "onboarding_completed": False,
+    }
     if body.name:
         prefs["display_name"] = body.name
 
     # Use direct SQL update to avoid session expiry issues after user_manager.create() commits
     db_session = user_manager.user_db.session
-    await db_session.execute(
-        sql_update(User).where(User.id == user.id).values(preferences=prefs)
-    )
+    await db_session.execute(sql_update(User).where(User.id == user.id).values(preferences=prefs))
 
     # Personal workspace gets auto-created here too (setup endpoint runs
     # programmatically, so the registration hook's `request is None` early

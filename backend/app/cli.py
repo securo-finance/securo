@@ -1,4 +1,5 @@
 """CLI commands for managing the application."""
+
 import asyncio
 import sys
 import uuid

@@ -36,7 +36,5 @@ async def test_lookup_missing_user(client, auth_headers, test_user):
 
 @pytest.mark.asyncio
 async def test_lookup_requires_auth(client):
-    resp = await client.get(
-        "/api/users/lookup", params={"email": "anyone@example.com"}
-    )
+    resp = await client.get("/api/users/lookup", params={"email": "anyone@example.com"})
     assert resp.status_code == 401

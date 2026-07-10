@@ -305,7 +305,9 @@ class YFinanceProvider(MarketPriceProvider):
                 sym_df = df[sym]
             except KeyError:
                 continue
-            close_series = sym_df.get("Close") if "Close" in getattr(sym_df, "columns", []) else None
+            close_series = (
+                sym_df.get("Close") if "Close" in getattr(sym_df, "columns", []) else None
+            )
             out[sym] = _last_decimal_close(close_series)
         return out
 
@@ -354,9 +356,7 @@ class YFinanceProvider(MarketPriceProvider):
                 "website": info.get("website") or None,
             }
         except _rate_limit_exception_types():
-            raise MarketPriceRateLimitedError(
-                f"Yahoo Finance rate-limited while quoting {symbol}"
-            )
+            raise MarketPriceRateLimitedError(f"Yahoo Finance rate-limited while quoting {symbol}")
         except Exception as e:  # pragma: no cover
             logger.warning("yfinance quote failed for %s: %s", symbol, e)
             return None
@@ -435,7 +435,6 @@ class _UnreachableException(Exception):
     """Placeholder used when yfinance doesn't expose its rate-limit exception."""
 
 
-
 class CompositeMarketPriceProvider(MarketPriceProvider):
     """Market-price provider that routes provider-specific symbols.
 
@@ -496,7 +495,9 @@ class CompositeMarketPriceProvider(MarketPriceProvider):
             quotes = [
                 q
                 for q in quotes
-                if all(tok in _normalize(f"{q.title_type} {q.maturity_date.year}") for tok in tokens)
+                if all(
+                    tok in _normalize(f"{q.title_type} {q.maturity_date.year}") for tok in tokens
+                )
             ]
         return [
             MarketSymbolMatch(
@@ -529,6 +530,7 @@ class CompositeMarketPriceProvider(MarketPriceProvider):
         quotes = await get_tesouro_direto_provider().get_quotes_by_symbol(symbols)
         return {symbol.upper(): (q.pu_base if q else None) for symbol, q in quotes.items()}
 
+
 def _tesouro_enabled() -> bool:
     try:
         from app.core.config import get_settings
@@ -536,6 +538,7 @@ def _tesouro_enabled() -> bool:
         return bool(get_settings().tesouro_direto_enabled)
     except Exception:
         return False
+
 
 # Bond-name keywords that route the shared search to Tesouro Direto. A bare
 # "td" prefix is deliberately excluded — it collides with real tickers like TD
@@ -548,6 +551,7 @@ def _looks_like_tesouro_query(query: str) -> bool:
     normalized = query.strip().casefold()
     return any(keyword in normalized for keyword in _TESOURO_KEYWORDS)
 
+
 def _is_tesouro_symbol(symbol: str | None) -> bool:
     try:
         from app.providers.tesouro_direto import is_tesouro_symbol
@@ -555,6 +559,7 @@ def _is_tesouro_symbol(symbol: str | None) -> bool:
         return is_tesouro_symbol(symbol)
     except Exception:
         return False
+
 
 # Module-level singleton — cheap to construct, stateless beyond the yfinance
 # import, and consumers need a stable instance for dependency overrides.

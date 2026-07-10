@@ -4,6 +4,7 @@ Goes through the FastAPI router with the conftest `client` and
 `auth_headers` fixtures so we exercise auth + route + service in one
 trip. Celery dispatch is mocked because we don't run a worker in tests.
 """
+
 from __future__ import annotations
 
 import io
@@ -163,7 +164,5 @@ async def test_delete_knowledge_removes_doc(client, auth_headers, test_user):
 @pytest.mark.asyncio
 async def test_delete_knowledge_404_for_unknown_doc(client, auth_headers, test_user):
     aid = await _make_agent(client, auth_headers)
-    r = await client.delete(
-        f"/api/agents/{aid}/knowledge/{uuid.uuid4()}", headers=auth_headers
-    )
+    r = await client.delete(f"/api/agents/{aid}/knowledge/{uuid.uuid4()}", headers=auth_headers)
     assert r.status_code == 404

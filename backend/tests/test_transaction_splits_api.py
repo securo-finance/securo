@@ -226,9 +226,7 @@ async def test_create_rejects_exact_under_total(client, auth_headers, test_user)
 
 
 @pytest.mark.asyncio
-async def test_update_rejects_invalid_splits_and_keeps_old(
-    client, auth_headers, test_user
-):
+async def test_update_rejects_invalid_splits_and_keeps_old(client, auth_headers, test_user):
     """A failed split update must leave the transaction intact (no
     half-applied state) and keep the previous splits."""
     account = await _create_account(client, auth_headers)

@@ -25,12 +25,14 @@ async def list_conversations(
 async def get_conversation(
     session: AsyncSession, conversation_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> Optional[Conversation]:
-    return (await session.execute(
-        select(Conversation).where(
-            Conversation.id == conversation_id,
-            Conversation.workspace_id == workspace_id,
+    return (
+        await session.execute(
+            select(Conversation).where(
+                Conversation.id == conversation_id,
+                Conversation.workspace_id == workspace_id,
+            )
         )
-    )).scalar_one_or_none()
+    ).scalar_one_or_none()
 
 
 async def create_conversation(
@@ -90,11 +92,13 @@ async def append_message(
     input_tokens: Optional[int] = None,
     output_tokens: Optional[int] = None,
 ) -> Message:
-    next_ord = (await session.execute(
-        select(func.coalesce(func.max(Message.ordinal), 0) + 1).where(
-            Message.conversation_id == conversation_id
+    next_ord = (
+        await session.execute(
+            select(func.coalesce(func.max(Message.ordinal), 0) + 1).where(
+                Message.conversation_id == conversation_id
+            )
         )
-    )).scalar_one()
+    ).scalar_one()
     msg = Message(
         conversation_id=conversation_id,
         ordinal=int(next_ord),
@@ -115,9 +119,9 @@ async def append_message(
 async def update_title_if_empty(
     session: AsyncSession, conversation_id: uuid.UUID, candidate: str
 ) -> None:
-    conv = (await session.execute(
-        select(Conversation).where(Conversation.id == conversation_id)
-    )).scalar_one_or_none()
+    conv = (
+        await session.execute(select(Conversation).where(Conversation.id == conversation_id))
+    ).scalar_one_or_none()
     if conv is None or conv.title:
         return
     conv.title = (candidate or "").strip()[:200] or None

@@ -62,7 +62,9 @@ def _report_start_date(today: date, months: int, period: str | None = None) -> d
 
 
 async def _asset_value_at(
-    session: AsyncSession, workspace_id: uuid.UUID, cutoff: date,
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    cutoff: date,
     primary_currency: str = "USD",
     group_ids: Optional[list[uuid.UUID]] = None,
 ) -> float:
@@ -101,7 +103,9 @@ async def _asset_value_at(
 
 
 async def _net_worth_at(
-    session: AsyncSession, workspace_id: uuid.UUID, cutoff: date,
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    cutoff: date,
     primary_currency: str = "USD",
     account_ids: Optional[list[uuid.UUID]] = None,
     asset_group_ids: Optional[list[uuid.UUID]] = None,
@@ -126,23 +130,27 @@ async def _net_worth_at(
         if account.type == "credit_card" or bal < 0:
             liabilities_total += converted_val
             if converted_val > 0:
-                composition.append(ReportCompositionItem(
-                    key=str(account.id),
-                    label=get_account_name(account),
-                    value=round(converted_val, 2),
-                    color=_ACCOUNT_TYPE_COLORS.get(account.type, "#6B7280"),
-                    group="liabilities",
-                ))
+                composition.append(
+                    ReportCompositionItem(
+                        key=str(account.id),
+                        label=get_account_name(account),
+                        value=round(converted_val, 2),
+                        color=_ACCOUNT_TYPE_COLORS.get(account.type, "#6B7280"),
+                        group="liabilities",
+                    )
+                )
         else:
             accounts_total += converted_val
             if converted_val > 0:
-                composition.append(ReportCompositionItem(
-                    key=str(account.id),
-                    label=get_account_name(account),
-                    value=round(converted_val, 2),
-                    color=_ACCOUNT_TYPE_COLORS.get(account.type, "#6B7280"),
-                    group="accounts",
-                ))
+                composition.append(
+                    ReportCompositionItem(
+                        key=str(account.id),
+                        label=get_account_name(account),
+                        value=round(converted_val, 2),
+                        color=_ACCOUNT_TYPE_COLORS.get(account.type, "#6B7280"),
+                        group="accounts",
+                    )
+                )
 
     # Per-asset composition at the cutoff date
     filtered = account_ids is not None
@@ -177,13 +185,15 @@ async def _net_worth_at(
             )
             converted_val = round(float(converted), 2)
             assets_total += converted_val
-            composition.append(ReportCompositionItem(
-                key=str(asset.id),
-                label=asset.name,
-                value=converted_val,
-                color=_ASSET_TYPE_COLORS.get(asset.type, "#6B7280"),
-                group="assets",
-            ))
+            composition.append(
+                ReportCompositionItem(
+                    key=str(asset.id),
+                    label=asset.name,
+                    value=converted_val,
+                    color=_ASSET_TYPE_COLORS.get(asset.type, "#6B7280"),
+                    group="assets",
+                )
+            )
 
     net_worth = accounts_total + assets_total - liabilities_total
 
@@ -213,9 +223,7 @@ def _format_date_label(d: date, interval: str) -> str:
     return d.isoformat()
 
 
-def _date_points(
-    start: date, end: date, interval: str
-) -> list[date]:
+def _date_points(start: date, end: date, interval: str) -> list[date]:
     """Generate date points between start and end for the given interval."""
     points: list[date] = []
     current = start
@@ -285,24 +293,28 @@ async def get_net_worth_report(
     # Compute snapshot at each date point
     trend: list[ReportDataPoint] = []
     for point in points:
-        dp = await _net_worth_at(session, workspace_id, point, primary_currency, account_ids, asset_group_ids)
+        dp = await _net_worth_at(
+            session, workspace_id, point, primary_currency, account_ids, asset_group_ids
+        )
         dp.date = _format_date_label(point, interval)
         dp.change = round(dp.value - trend[-1].value, 2) if trend else None
         trend.append(dp)
 
     # Current snapshot (last point) for summary; baseline at period start for delta
-    current = trend[-1] if trend else ReportDataPoint(
-        date="", value=0, breakdowns={"accounts": 0, "assets": 0, "liabilities": 0}
+    current = (
+        trend[-1]
+        if trend
+        else ReportDataPoint(
+            date="", value=0, breakdowns={"accounts": 0, "assets": 0, "liabilities": 0}
+        )
     )
-    baseline = await _net_worth_at(session, workspace_id, start, primary_currency, account_ids, asset_group_ids)
+    baseline = await _net_worth_at(
+        session, workspace_id, start, primary_currency, account_ids, asset_group_ids
+    )
     previous = baseline if trend else current
 
     change_amount = current.value - previous.value
-    change_percent = (
-        (change_amount / abs(previous.value) * 100)
-        if previous.value != 0
-        else None
-    )
+    change_percent = (change_amount / abs(previous.value) * 100) if previous.value != 0 else None
 
     summary = ReportSummary(
         primary_value=current.value,
@@ -348,17 +360,17 @@ def _interval_label_expr(interval: str, date_col=None):
     """SQL expression that groups transaction dates into interval buckets."""
     col = date_col if date_col is not None else Transaction.date
     if interval == "daily":
-        return func.to_char(col, 'YYYY-MM-DD')
+        return func.to_char(col, "YYYY-MM-DD")
     elif interval == "weekly":
         return func.concat(
-            func.extract('isoyear', col).cast(String),
-            '-W',
-            func.lpad(func.extract('week', col).cast(String), 2, '0'),
+            func.extract("isoyear", col).cast(String),
+            "-W",
+            func.lpad(func.extract("week", col).cast(String), 2, "0"),
         )
     elif interval == "yearly":
-        return func.to_char(col, 'YYYY')
+        return func.to_char(col, "YYYY")
     else:  # monthly (default)
-        return func.to_char(col, 'YYYY-MM')
+        return func.to_char(col, "YYYY-MM")
 
 
 async def get_income_expenses_report(
@@ -383,7 +395,7 @@ async def get_income_expenses_report(
     accounting_mode = await get_credit_card_accounting_mode(session)
     report_date = reporting_date_col(accounting_mode)
 
-    label_expr = _interval_label_expr(interval, report_date).label('period')
+    label_expr = _interval_label_expr(interval, report_date).label("period")
 
     # Use amount_primary when available, fall back to amount
     amount_expr = func.coalesce(Transaction.amount_primary, Transaction.amount)
@@ -462,7 +474,7 @@ async def get_income_expenses_report(
         )
         .group_by(label_expr, Transaction.currency)
     )
-    for row in (owner_offset_result.all() if not filtered else []):
+    for row in owner_offset_result.all() if not filtered else []:
         period, currency, raw_credit, raw_debit = row
         sub_inc = 0.0
         sub_exp = 0.0
@@ -526,7 +538,8 @@ async def get_income_expenses_report(
         .group_by(label_expr, Transaction.currency)
     )
     from app.services.fx_rate_service import convert as fx_convert
-    for row in (shared_result.all() if not filtered else []):
+
+    for row in shared_result.all() if not filtered else []:
         period, currency, raw_credit, raw_debit = row
         share_income_pri = 0.0
         share_expenses_pri = 0.0
@@ -552,11 +565,16 @@ async def get_income_expenses_report(
     cursor = start
     while cursor <= today:
         m_start, m_end = _month_range(cursor)
-        projections = await _get_recurring_projections(session, workspace_id, m_start, m_end, account_ids)
+        projections = await _get_recurring_projections(
+            session, workspace_id, m_start, m_end, account_ids
+        )
         for proj in projections:
             # Convert to primary currency
             converted, _ = await fx_convert(
-                session, Decimal(str(proj["amount"])), proj["currency"], primary_currency,
+                session,
+                Decimal(str(proj["amount"])),
+                proj["currency"],
+                primary_currency,
             )
             proj_amount = float(converted)
             label = _format_date_label(cursor, interval)
@@ -583,14 +601,16 @@ async def get_income_expenses_report(
         net = round(income - expenses, 2)
         total_income += income
         total_expenses += expenses
-        trend.append(ReportDataPoint(
-            date=label,
-            value=net,
-            breakdowns={
-                "income": round(income, 2),
-                "expenses": round(expenses, 2),
-            },
-        ))
+        trend.append(
+            ReportDataPoint(
+                date=label,
+                value=net,
+                breakdowns={
+                    "income": round(income, 2),
+                    "expenses": round(expenses, 2),
+                },
+            )
+        )
 
     total_net = round(total_income - total_expenses, 2)
 
@@ -598,11 +618,7 @@ async def get_income_expenses_report(
     current_net = trend[-1].value if trend else 0.0
     previous_net = trend[0].value if len(trend) > 1 else 0.0
     change_amount = current_net - previous_net
-    change_percent = (
-        (change_amount / abs(previous_net) * 100)
-        if previous_net != 0
-        else None
-    )
+    change_percent = (change_amount / abs(previous_net) * 100) if previous_net != 0 else None
 
     summary = ReportSummary(
         primary_value=total_net,
@@ -680,10 +696,17 @@ async def get_income_expenses_report(
     # Subtract non-owner shares of own splits from composition (debit only —
     # owner_split_offset_by_category is debit-only). Keeps the report's
     # composition consistent with summary totals under share-only model.
-    full_range_offset = {} if filtered else await owner_split_offset_by_category(
-        session, user_id, start, today + timedelta(days=1),
-        use_effective_date=accounting_mode == "accrual",
-        primary_currency=primary_currency,
+    full_range_offset = (
+        {}
+        if filtered
+        else await owner_split_offset_by_category(
+            session,
+            user_id,
+            start,
+            today + timedelta(days=1),
+            use_effective_date=accounting_mode == "accrual",
+            primary_currency=primary_currency,
+        )
     )
     for cat_uuid, offset_total in full_range_offset.items():
         cat_key = str(cat_uuid) if cat_uuid else "uncategorized"
@@ -806,7 +829,9 @@ async def get_income_expenses_report(
         )
         .group_by(label_expr, Transaction.category_id, Transaction.currency)
     )
-    for period_label, cat_id, currency, raw_total in (cat_offset_result.all() if not filtered else []):
+    for period_label, cat_id, currency, raw_total in (
+        cat_offset_result.all() if not filtered else []
+    ):
         if not raw_total:
             continue
         cat_key = str(cat_id) if cat_id else "uncategorized"
@@ -817,9 +842,7 @@ async def get_income_expenses_report(
         map_key = (cat_key, "expenses")
         if map_key not in cat_trend_map:
             continue
-        cat_trend_map[map_key]["total"] = max(
-            0.0, cat_trend_map[map_key]["total"] - offset
-        )
+        cat_trend_map[map_key]["total"] = max(0.0, cat_trend_map[map_key]["total"] - offset)
         cur_period = cat_trend_map[map_key]["periods"].get(period_label, 0.0)
         cat_trend_map[map_key]["periods"][period_label] = max(0.0, cur_period - offset)
     # Drop categories that fully zeroed out
@@ -832,7 +855,9 @@ async def get_income_expenses_report(
     cursor2 = start
     while cursor2 <= today:
         m_start, m_end = _month_range(cursor2)
-        projections = await _get_recurring_projections(session, workspace_id, m_start, m_end, account_ids)
+        projections = await _get_recurring_projections(
+            session, workspace_id, m_start, m_end, account_ids
+        )
         period_label = _format_date_label(cursor2, interval)
         for proj in projections:
             cat_id_str = str(proj["category_id"]) if proj["category_id"] else "uncategorized"
@@ -841,8 +866,7 @@ async def get_income_expenses_report(
             # Fetch category info if needed
             if cat_id_str != "uncategorized" and cat_id_str not in cat_cache:
                 cat_row = await session.execute(
-                    select(Category.name, Category.color)
-                    .where(Category.id == proj["category_id"])
+                    select(Category.name, Category.color).where(Category.id == proj["category_id"])
                 )
                 row = cat_row.one_or_none()
                 cat_cache[cat_id_str] = {
@@ -854,7 +878,10 @@ async def get_income_expenses_report(
 
             # Convert projection amount to primary currency
             converted, _ = await fx_convert(
-                session, Decimal(str(proj["amount"])), proj["currency"], primary_currency,
+                session,
+                Decimal(str(proj["amount"])),
+                proj["currency"],
+                primary_currency,
             )
             proj_amount = float(converted)
 
@@ -892,13 +919,15 @@ async def get_income_expenses_report(
     for (cat_key, group), info in comp_map.items():
         if info["value"] <= 0:
             continue
-        composition.append(ReportCompositionItem(
-            key=cat_key,
-            label=info["label"],
-            value=round(info["value"], 2),
-            color=info["color"],
-            group=group,
-        ))
+        composition.append(
+            ReportCompositionItem(
+                key=cat_key,
+                label=info["label"],
+                value=round(info["value"], 2),
+                color=info["color"],
+                group=group,
+            )
+        )
 
     # Build period labels from the same points used by the trend
     period_labels = [_format_date_label(p, interval) for p in points]
@@ -906,9 +935,7 @@ async def get_income_expenses_report(
     # Top 6 + Other per group
     category_trend: list[CategoryTrendItem] = []
     for group in ("expenses", "income"):
-        group_items = [
-            (k, v) for (k, g), v in cat_trend_map.items() if g == group
-        ]
+        group_items = [(k, v) for (k, g), v in cat_trend_map.items() if g == group]
         group_items.sort(key=lambda x: x[1]["total"], reverse=True)
         top = group_items[:CATEGORY_TREND_TOP_N]
         rest = group_items[CATEGORY_TREND_TOP_N:]
@@ -922,14 +949,16 @@ async def get_income_expenses_report(
                 )
                 for pl in period_labels
             ]
-            category_trend.append(CategoryTrendItem(
-                key=cat_key,
-                label=info["label"],
-                color=info["color"],
-                total=round(info["total"], 2),
-                group=group,
-                series=series,
-            ))
+            category_trend.append(
+                CategoryTrendItem(
+                    key=cat_key,
+                    label=info["label"],
+                    color=info["color"],
+                    total=round(info["total"], 2),
+                    group=group,
+                    series=series,
+                )
+            )
 
         if rest:
             other_total = sum(v["total"] for _, v in rest)
@@ -945,14 +974,16 @@ async def get_income_expenses_report(
                 )
                 for pl in period_labels
             ]
-            category_trend.append(CategoryTrendItem(
-                key="other",
-                label="Other",
-                color="#6B7280",
-                total=round(other_total, 2),
-                group=group,
-                series=series,
-            ))
+            category_trend.append(
+                CategoryTrendItem(
+                    key="other",
+                    label="Other",
+                    color="#6B7280",
+                    total=round(other_total, 2),
+                    group=group,
+                    series=series,
+                )
+            )
 
     # Populate each trend point's composition from the per-period category data,
     # so the frontend can show a per-period donut when a bar is clicked.
@@ -960,17 +991,22 @@ async def get_income_expenses_report(
         for (cat_key, group), info in cat_trend_map.items():
             v = info["periods"].get(dp.date, 0.0)
             if v > 0:
-                dp.composition.append(ReportCompositionItem(
-                    key=cat_key,
-                    label=info["label"],
-                    value=round(v, 2),
-                    color=info["color"],
-                    group=group,
-                ))
+                dp.composition.append(
+                    ReportCompositionItem(
+                        key=cat_key,
+                        label=info["label"],
+                        value=round(v, 2),
+                        color=info["color"],
+                        group=group,
+                    )
+                )
 
     return ReportResponse(
-        summary=summary, trend=trend, meta=meta,
-        composition=composition, category_trend=category_trend,
+        summary=summary,
+        trend=trend,
+        meta=meta,
+        composition=composition,
+        category_trend=category_trend,
     )
 
 
@@ -1080,21 +1116,25 @@ async def _get_baseline_projection(
     cursor = today + timedelta(days=1)
     while cursor <= end:
         if daily_inflow > 0:
-            projections.append({
-                "date": cursor,
-                "amount": daily_inflow,
-                "currency": primary_currency,
-                "type": "credit",
-                "category_id": None,
-            })
+            projections.append(
+                {
+                    "date": cursor,
+                    "amount": daily_inflow,
+                    "currency": primary_currency,
+                    "type": "credit",
+                    "category_id": None,
+                }
+            )
         if daily_outflow > 0:
-            projections.append({
-                "date": cursor,
-                "amount": daily_outflow,
-                "currency": primary_currency,
-                "type": "debit",
-                "category_id": None,
-            })
+            projections.append(
+                {
+                    "date": cursor,
+                    "amount": daily_outflow,
+                    "currency": primary_currency,
+                    "type": "debit",
+                    "category_id": None,
+                }
+            )
         cursor = cursor + timedelta(days=1)
     return projections, lookback_days
 
@@ -1144,7 +1184,10 @@ async def get_cash_flow_report(
     # value (not at balance-at-chart_start) so opening-balance transactions
     # inside the past-history window can't introduce drift.
     current_balance = await _balance_at(
-        session, workspace_id, today, primary_currency_hint=primary_currency,
+        session,
+        workspace_id,
+        today,
+        primary_currency_hint=primary_currency,
         account_ids=account_ids,
     )
 
@@ -1277,11 +1320,20 @@ async def get_cash_flow_report(
 
     if baseline:
         projections, baseline_lookback_days = await _get_baseline_projection(
-            session, workspace_id, today, end, primary_currency, _to_primary, account_ids,
+            session,
+            workspace_id,
+            today,
+            end,
+            primary_currency,
+            _to_primary,
+            account_ids,
         )
     else:
         projections = await _get_recurring_projections(
-            session, workspace_id, today + timedelta(days=1), end + timedelta(days=1),
+            session,
+            workspace_id,
+            today + timedelta(days=1),
+            end + timedelta(days=1),
             account_ids,
         )
 
@@ -1289,9 +1341,7 @@ async def get_cash_flow_report(
         d = proj["date"]
         if d <= today or d > end:
             continue
-        amount_primary = await _to_primary(
-            Decimal(str(proj["amount"])), proj["currency"]
-        )
+        amount_primary = await _to_primary(Decimal(str(proj["amount"])), proj["currency"])
         if amount_primary == 0:
             continue
         _add_flow(d, amount_primary, proj["type"] == "credit")
@@ -1370,11 +1420,13 @@ async def get_cash_flow_report(
             bal = daily_balance.get(p, running)
             inf = daily_inflow.get(p, 0.0)
             outf = daily_outflow.get(p, 0.0)
-            trend.append(ReportDataPoint(
-                date=_format_date_label(p, "daily"),
-                value=round(bal, 2),
-                breakdowns={"inflow": round(inf, 2), "outflow": round(outf, 2)},
-            ))
+            trend.append(
+                ReportDataPoint(
+                    date=_format_date_label(p, "daily"),
+                    value=round(bal, 2),
+                    breakdowns={"inflow": round(inf, 2), "outflow": round(outf, 2)},
+                )
+            )
     else:
         groups: dict[str, dict] = {}
         cur = chart_start
@@ -1382,8 +1434,12 @@ async def get_cash_flow_report(
             label = _format_date_label(cur, interval)
             g = groups.setdefault(
                 label,
-                {"balance": daily_balance.get(cur, running), "last_d": cur,
-                 "inflow": 0.0, "outflow": 0.0},
+                {
+                    "balance": daily_balance.get(cur, running),
+                    "last_d": cur,
+                    "inflow": 0.0,
+                    "outflow": 0.0,
+                },
             )
             if cur >= g["last_d"]:
                 g["balance"] = daily_balance.get(cur, running)
@@ -1401,14 +1457,16 @@ async def get_cash_flow_report(
             g = groups.get(label)
             if g is None:
                 continue
-            trend.append(ReportDataPoint(
-                date=label,
-                value=round(g["balance"], 2),
-                breakdowns={
-                    "inflow": round(g["inflow"], 2),
-                    "outflow": round(g["outflow"], 2),
-                },
-            ))
+            trend.append(
+                ReportDataPoint(
+                    date=label,
+                    value=round(g["balance"], 2),
+                    breakdowns={
+                        "inflow": round(g["inflow"], 2),
+                        "outflow": round(g["outflow"], 2),
+                    },
+                )
+            )
 
     # 6. Summary. "Projected income/expenses" sums only the forward portion,
     #    not the past actuals that the chart now also includes.
@@ -1422,9 +1480,7 @@ async def get_cash_flow_report(
     total_inflow = round(forward_inflow, 2)
     total_outflow = round(forward_outflow, 2)
     change_amount = round(ending_balance - current_balance, 2)
-    change_percent = (
-        (change_amount / abs(current_balance) * 100) if current_balance != 0 else None
-    )
+    change_percent = (change_amount / abs(current_balance) * 100) if current_balance != 0 else None
 
     summary = ReportSummary(
         primary_value=ending_balance,
@@ -1432,20 +1488,28 @@ async def get_cash_flow_report(
         change_percent=round(change_percent, 2) if change_percent is not None else None,
         breakdowns=[
             ReportBreakdown(
-                key="startingBalance", label="Starting Balance",
-                value=round(current_balance, 2), color="#6366F1",
+                key="startingBalance",
+                label="Starting Balance",
+                value=round(current_balance, 2),
+                color="#6366F1",
             ),
             ReportBreakdown(
-                key="projectedIncome", label="Projected Income",
-                value=total_inflow, color="#10B981",
+                key="projectedIncome",
+                label="Projected Income",
+                value=total_inflow,
+                color="#10B981",
             ),
             ReportBreakdown(
-                key="projectedExpenses", label="Projected Expenses",
-                value=total_outflow, color="#F43F5E",
+                key="projectedExpenses",
+                label="Projected Expenses",
+                value=total_outflow,
+                color="#F43F5E",
             ),
             ReportBreakdown(
-                key="endingBalance", label="Ending Balance",
-                value=ending_balance, color="#8B5CF6",
+                key="endingBalance",
+                label="Ending Balance",
+                value=ending_balance,
+                color="#8B5CF6",
             ),
         ],
     )
@@ -1464,15 +1528,20 @@ async def get_cash_flow_report(
     for (cat_key, group), info in cat_totals.items():
         if info["value"] <= 0:
             continue
-        composition.append(ReportCompositionItem(
-            key=cat_key,
-            label=info["label"],
-            value=round(info["value"], 2),
-            color=info["color"],
-            group=group,
-        ))
+        composition.append(
+            ReportCompositionItem(
+                key=cat_key,
+                label=info["label"],
+                value=round(info["value"], 2),
+                color=info["color"],
+                group=group,
+            )
+        )
 
     return ReportResponse(
-        summary=summary, trend=trend, meta=meta,
-        composition=composition, category_trend=[],
+        summary=summary,
+        trend=trend,
+        meta=meta,
+        composition=composition,
+        category_trend=[],
     )

@@ -17,6 +17,7 @@ pay them, so bank-synced charges stop duplicating generated recurring rows.
 Both changes are additive and nullable/defaulted, so existing rows are
 unaffected: every current recurring bill keeps auto_generate = True.
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa

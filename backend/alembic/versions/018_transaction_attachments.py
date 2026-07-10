@@ -36,7 +36,9 @@ def upgrade() -> None:
             "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
         ),
     )
-    op.create_index("ix_transaction_attachments_transaction_id", "transaction_attachments", ["transaction_id"])
+    op.create_index(
+        "ix_transaction_attachments_transaction_id", "transaction_attachments", ["transaction_id"]
+    )
     op.create_index("ix_transaction_attachments_user_id", "transaction_attachments", ["user_id"])
 
 

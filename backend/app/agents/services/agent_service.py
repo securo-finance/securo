@@ -28,18 +28,22 @@ async def list_agents(
     if rows:
         ids = [a.id for a in rows]
         conv_counts = dict(
-            (await session.execute(
-                select(Conversation.agent_id, func.count(Conversation.id))
-                .where(Conversation.agent_id.in_(ids))
-                .group_by(Conversation.agent_id)
-            )).all()
+            (
+                await session.execute(
+                    select(Conversation.agent_id, func.count(Conversation.id))
+                    .where(Conversation.agent_id.in_(ids))
+                    .group_by(Conversation.agent_id)
+                )
+            ).all()
         )
         kb_counts = dict(
-            (await session.execute(
-                select(KnowledgeDoc.agent_id, func.count(KnowledgeDoc.id))
-                .where(KnowledgeDoc.agent_id.in_(ids))
-                .group_by(KnowledgeDoc.agent_id)
-            )).all()
+            (
+                await session.execute(
+                    select(KnowledgeDoc.agent_id, func.count(KnowledgeDoc.id))
+                    .where(KnowledgeDoc.agent_id.in_(ids))
+                    .group_by(KnowledgeDoc.agent_id)
+                )
+            ).all()
         )
         # Stash on the model instances; pydantic AgentRead reads them.
         for a in rows:
@@ -53,9 +57,11 @@ async def get_agent(
     agent_id: uuid.UUID,
     workspace_id: uuid.UUID,
 ) -> Optional[Agent]:
-    return (await session.execute(
-        select(Agent).where(Agent.id == agent_id, Agent.workspace_id == workspace_id)
-    )).scalar_one_or_none()
+    return (
+        await session.execute(
+            select(Agent).where(Agent.id == agent_id, Agent.workspace_id == workspace_id)
+        )
+    ).scalar_one_or_none()
 
 
 async def create_agent(
@@ -118,32 +124,32 @@ async def update_agent(
     return agent
 
 
-async def get_default_agent(
-    session: AsyncSession, workspace_id: uuid.UUID
-) -> Optional[Agent]:
+async def get_default_agent(session: AsyncSession, workspace_id: uuid.UUID) -> Optional[Agent]:
     """The default agent is what the global slide-over chat panel uses.
     Falls back to the most-recently-created non-archived agent so the
     panel still works for workspaces that haven't picked one yet."""
-    explicit = (await session.execute(
-        select(Agent).where(
-            Agent.workspace_id == workspace_id,
-            Agent.is_default.is_(True),
-            Agent.is_archived.is_(False),
+    explicit = (
+        await session.execute(
+            select(Agent).where(
+                Agent.workspace_id == workspace_id,
+                Agent.is_default.is_(True),
+                Agent.is_archived.is_(False),
+            )
         )
-    )).scalar_one_or_none()
+    ).scalar_one_or_none()
     if explicit is not None:
         return explicit
-    return (await session.execute(
-        select(Agent)
-        .where(Agent.workspace_id == workspace_id, Agent.is_archived.is_(False))
-        .order_by(Agent.created_at.desc())
-        .limit(1)
-    )).scalar_one_or_none()
+    return (
+        await session.execute(
+            select(Agent)
+            .where(Agent.workspace_id == workspace_id, Agent.is_archived.is_(False))
+            .order_by(Agent.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
 
 
-async def delete_agent(
-    session: AsyncSession, agent_id: uuid.UUID, workspace_id: uuid.UUID
-) -> bool:
+async def delete_agent(session: AsyncSession, agent_id: uuid.UUID, workspace_id: uuid.UUID) -> bool:
     agent = await get_agent(session, agent_id, workspace_id)
     if agent is None:
         return False
@@ -153,21 +159,25 @@ async def delete_agent(
 
 
 async def list_tools(session: AsyncSession, agent_id: uuid.UUID) -> list[AgentTool]:
-    return list((await session.execute(
-        select(AgentTool).where(AgentTool.agent_id == agent_id)
-    )).scalars().all())
+    return list(
+        (await session.execute(select(AgentTool).where(AgentTool.agent_id == agent_id)))
+        .scalars()
+        .all()
+    )
 
 
 async def set_tool_enabled(
     session: AsyncSession, agent_id: uuid.UUID, server: str, tool_name: str, enabled: bool
 ) -> AgentTool:
-    existing = (await session.execute(
-        select(AgentTool).where(
-            AgentTool.agent_id == agent_id,
-            AgentTool.server == server,
-            AgentTool.tool_name == tool_name,
+    existing = (
+        await session.execute(
+            select(AgentTool).where(
+                AgentTool.agent_id == agent_id,
+                AgentTool.server == server,
+                AgentTool.tool_name == tool_name,
+            )
         )
-    )).scalar_one_or_none()
+    ).scalar_one_or_none()
     if existing is None:
         existing = AgentTool(agent_id=agent_id, server=server, tool_name=tool_name, enabled=enabled)
         session.add(existing)
@@ -177,7 +187,9 @@ async def set_tool_enabled(
     return existing
 
 
-async def allowed_tool_pairs(session: AsyncSession, agent_id: uuid.UUID) -> Optional[set[tuple[str, str]]]:
+async def allowed_tool_pairs(
+    session: AsyncSession, agent_id: uuid.UUID
+) -> Optional[set[tuple[str, str]]]:
     """Returns the set of (server, tool_name) pairs the agent is permitted
     to call. Returns None when no rows exist — interpreted as 'allow all'
     so first-run agents work without setup."""

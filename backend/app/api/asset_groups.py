@@ -39,7 +39,9 @@ async def update_group(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    group = await asset_group_service.update_group(session, group_id, ctx.workspace.id, ctx.user_id, data)
+    group = await asset_group_service.update_group(
+        session, group_id, ctx.workspace.id, ctx.user_id, data
+    )
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     return group

@@ -37,9 +37,7 @@ async def _make_user(session: AsyncSession, email: str) -> User:
     return user
 
 
-async def _make_user_with_workspace(
-    session: AsyncSession, email: str
-) -> tuple[User, Workspace]:
+async def _make_user_with_workspace(session: AsyncSession, email: str) -> tuple[User, Workspace]:
     user = await _make_user(session, email)
     workspace = await workspace_service.create_personal_workspace_for_user(
         session, user, commit=True
@@ -48,9 +46,7 @@ async def _make_user_with_workspace(
 
 
 @pytest.mark.asyncio
-async def test_email_auto_resolves_to_linked_user(
-    session: AsyncSession, test_user, test_workspace
-):
+async def test_email_auto_resolves_to_linked_user(session: AsyncSession, test_user, test_workspace):
     other = await _make_user(session, "friend@example.com")
     group = await group_service.create_group(
         session, test_workspace.id, test_user.id, GroupCreate(name="Trip")
@@ -65,9 +61,7 @@ async def test_email_auto_resolves_to_linked_user(
 
 
 @pytest.mark.asyncio
-async def test_email_unknown_creates_shadow(
-    session: AsyncSession, test_user, test_workspace
-):
+async def test_email_unknown_creates_shadow(session: AsyncSession, test_user, test_workspace):
     group = await group_service.create_group(
         session, test_workspace.id, test_user.id, GroupCreate(name="Trip")
     )
@@ -82,9 +76,7 @@ async def test_email_unknown_creates_shadow(
 
 
 @pytest.mark.asyncio
-async def test_linked_member_sees_group_in_list(
-    session: AsyncSession, test_user, test_workspace
-):
+async def test_linked_member_sees_group_in_list(session: AsyncSession, test_user, test_workspace):
     other, other_ws = await _make_user_with_workspace(session, "viewer@example.com")
     group = await group_service.create_group(
         session, test_workspace.id, test_user.id, GroupCreate(name="Shared")
@@ -101,19 +93,13 @@ async def test_linked_member_sees_group_in_list(
     # Linked member sees is_owner=False; the original owner sees True.
     assert visible[0].is_owner is False
 
-    owners_view = await group_service.list_groups(
-        session, test_workspace.id, test_user.id
-    )
+    owners_view = await group_service.list_groups(session, test_workspace.id, test_user.id)
     assert owners_view[0].is_owner is True
 
 
 @pytest.mark.asyncio
-async def test_unrelated_user_does_not_see_group(
-    session: AsyncSession, test_user, test_workspace
-):
-    stranger, stranger_ws = await _make_user_with_workspace(
-        session, "stranger@example.com"
-    )
+async def test_unrelated_user_does_not_see_group(session: AsyncSession, test_user, test_workspace):
+    stranger, stranger_ws = await _make_user_with_workspace(session, "stranger@example.com")
     await group_service.create_group(
         session, test_workspace.id, test_user.id, GroupCreate(name="Private")
     )
@@ -137,9 +123,7 @@ async def test_visible_get_works_for_linked_member(
         GroupMemberCreate(name="V", email="viewer@example.com"),
     )
 
-    via_visible = await group_service.get_group_visible(
-        session, group.id, other_ws.id, other.id
-    )
+    via_visible = await group_service.get_group_visible(session, group.id, other_ws.id, other.id)
     assert via_visible is not None
     assert via_visible.is_owner is False
 
@@ -150,9 +134,7 @@ async def test_visible_get_works_for_linked_member(
 
 
 @pytest.mark.asyncio
-async def test_linked_member_cannot_modify_group(
-    session: AsyncSession, test_user, test_workspace
-):
+async def test_linked_member_cannot_modify_group(session: AsyncSession, test_user, test_workspace):
     other, other_ws = await _make_user_with_workspace(session, "viewer@example.com")
     group = await group_service.create_group(
         session, test_workspace.id, test_user.id, GroupCreate(name="Shared")
@@ -200,9 +182,7 @@ async def test_linked_member_can_read_balances_and_settlements(
         GroupMemberCreate(name="V", email="viewer@example.com"),
     )
 
-    balances = await balance_service.compute_balances(
-        session, group.id, other_ws.id, other.id
-    )
+    balances = await balance_service.compute_balances(session, group.id, other_ws.id, other.id)
     assert balances is not None
     assert balances["lines"] == []
 
@@ -213,9 +193,7 @@ async def test_linked_member_can_read_balances_and_settlements(
 
 
 @pytest.mark.asyncio
-async def test_linked_member_can_settle_own_debt(
-    session: AsyncSession, test_user, test_workspace
-):
+async def test_linked_member_can_settle_own_debt(session: AsyncSession, test_user, test_workspace):
     """A linked member CAN record a settlement when they are the
     from_member (i.e., they're recording a payment they made)."""
     other, other_ws = await _make_user_with_workspace(session, "viewer@example.com")

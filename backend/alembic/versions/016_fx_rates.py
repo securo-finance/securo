@@ -4,6 +4,7 @@ Revision ID: 016
 Revises: 015
 Create Date: 2026-03-23
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -27,11 +28,13 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )
     op.create_unique_constraint(
-        "uq_fx_rate_base_quote_date", "fx_rates",
+        "uq_fx_rate_base_quote_date",
+        "fx_rates",
         ["base_currency", "quote_currency", "date"],
     )
     op.create_index(
-        "ix_fx_rates_quote_date", "fx_rates",
+        "ix_fx_rates_quote_date",
+        "fx_rates",
         ["quote_currency", "date"],
     )
 

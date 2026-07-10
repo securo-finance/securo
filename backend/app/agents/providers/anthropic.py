@@ -35,21 +35,27 @@ def _serialize_messages(messages: list[ChatMessage]) -> list[dict]:
     out: list[dict] = []
     for m in messages:
         if m.role == "tool":
-            out.append({
-                "role": "user",
-                "content": [{
-                    "type": "tool_result",
-                    "tool_use_id": m.tool_call_id or "",
-                    "content": m.content or "",
-                }],
-            })
+            out.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": m.tool_call_id or "",
+                            "content": m.content or "",
+                        }
+                    ],
+                }
+            )
             continue
         if m.role == "assistant" and m.tool_calls:
             blocks: list[dict] = []
             if m.content:
                 blocks.append({"type": "text", "text": m.content})
             for tc in m.tool_calls:
-                blocks.append({"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments})
+                blocks.append(
+                    {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments}
+                )
             out.append({"role": "assistant", "content": blocks})
             continue
         out.append({"role": m.role, "content": m.content or ""})
@@ -59,7 +65,9 @@ def _serialize_messages(messages: list[ChatMessage]) -> list[dict]:
 def _serialize_tools(tools: Optional[list[ToolDefinition]]) -> Optional[list[dict]]:
     if not tools:
         return None
-    return [{"name": t.name, "description": t.description, "input_schema": t.parameters} for t in tools]
+    return [
+        {"name": t.name, "description": t.description, "input_schema": t.parameters} for t in tools
+    ]
 
 
 def _raise_for_status(status: int, body: str) -> None:
@@ -77,7 +85,13 @@ class AnthropicProvider(LLMProvider):
     name = "anthropic"
     supports_embeddings = False
 
-    def __init__(self, *, api_key: str, base_url: str = "https://api.anthropic.com/v1", model: Optional[str] = None):
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        base_url: str = "https://api.anthropic.com/v1",
+        model: Optional[str] = None,
+    ):
         super().__init__(api_key=api_key, base_url=base_url, model=model)
 
     def _headers(self) -> dict[str, str]:
@@ -112,7 +126,9 @@ class AnthropicProvider(LLMProvider):
 
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
-                async with client.stream("POST", url, json=payload, headers=self._headers()) as resp:
+                async with client.stream(
+                    "POST", url, json=payload, headers=self._headers()
+                ) as resp:
                     if resp.status_code >= 400:
                         body = (await resp.aread()).decode("utf-8", errors="replace")
                         _raise_for_status(resp.status_code, body)
@@ -131,8 +147,16 @@ class AnthropicProvider(LLMProvider):
                             idx = evt.get("index", 0)
                             if block.get("type") == "tool_use":
                                 tcid = block.get("id") or f"toolu_{idx}"
-                                open_block[idx] = {"kind": "tool", "id": tcid, "name": block.get("name") or ""}
-                                yield ChatChunk(type="tool_call_start", tool_call_id=tcid, tool_name=open_block[idx]["name"])
+                                open_block[idx] = {
+                                    "kind": "tool",
+                                    "id": tcid,
+                                    "name": block.get("name") or "",
+                                }
+                                yield ChatChunk(
+                                    type="tool_call_start",
+                                    tool_call_id=tcid,
+                                    tool_name=open_block[idx]["name"],
+                                )
                             elif block.get("type") == "text":
                                 open_block[idx] = {"kind": "text"}
                         elif et == "content_block_delta":
@@ -141,7 +165,10 @@ class AnthropicProvider(LLMProvider):
                             blk = open_block.get(idx) or {}
                             if delta.get("type") == "text_delta" and delta.get("text"):
                                 yield ChatChunk(type="text_delta", text=delta["text"])
-                            elif delta.get("type") == "input_json_delta" and blk.get("kind") == "tool":
+                            elif (
+                                delta.get("type") == "input_json_delta"
+                                and blk.get("kind") == "tool"
+                            ):
                                 yield ChatChunk(
                                     type="tool_call_args_delta",
                                     tool_call_id=blk["id"],
@@ -153,7 +180,7 @@ class AnthropicProvider(LLMProvider):
                             if blk and blk.get("kind") == "tool":
                                 yield ChatChunk(type="tool_call_end", tool_call_id=blk["id"])
                         elif et == "message_delta":
-                            u = (evt.get("usage") or {})
+                            u = evt.get("usage") or {}
                             usage = Usage(
                                 input_tokens=usage.input_tokens or int(u.get("input_tokens") or 0),
                                 output_tokens=int(u.get("output_tokens") or usage.output_tokens),
@@ -163,7 +190,7 @@ class AnthropicProvider(LLMProvider):
                                 yield ChatChunk(type="usage", usage=usage)
                                 yield ChatChunk(type="finish", finish_reason=stop)
                         elif et == "message_start":
-                            u = ((evt.get("message") or {}).get("usage") or {})
+                            u = (evt.get("message") or {}).get("usage") or {}
                             usage = Usage(
                                 input_tokens=int(u.get("input_tokens") or 0),
                                 output_tokens=int(u.get("output_tokens") or 0),

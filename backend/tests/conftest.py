@@ -32,6 +32,7 @@ class _VectorJSON(sqlalchemy.types.JSON):
         # Tests for similarity_search are exercised against the real Postgres;
         # the SQLite path just needs a valid SQL fragment.
         from sqlalchemy import literal
+
         return literal(0.5)
 
 
@@ -63,6 +64,7 @@ from app.models.group import Group, GroupMember  # noqa: E402,F401
 from app.models.transaction_split import TransactionSplit  # noqa: E402,F401
 from app.models.group_settlement import GroupSettlement  # noqa: E402,F401
 from app.models.workspace import Workspace, WorkspaceMember  # noqa: E402,F401
+
 # Agent models — gated by AGENTS_ENABLED above so tests always cover them.
 from app.agents.models import (  # noqa: E402,F401
     Agent,
@@ -109,6 +111,7 @@ async def setup_database():
         await conn.run_sync(Base.metadata.drop_all)
     # Clean up test db file
     import os
+
     try:
         os.remove("/tmp/securo_test.db")
     except FileNotFoundError:
@@ -204,6 +207,7 @@ async def test_user(session: AsyncSession, clean_db) -> User:
 async def test_workspace(session: AsyncSession, test_user: User) -> Workspace:
     """Return the test user's default workspace (created by `test_user`)."""
     from sqlalchemy import select as _select
+
     result = await session.execute(
         _select(Workspace)
         .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
@@ -322,7 +326,9 @@ async def test_connection(session: AsyncSession, test_user: User) -> BankConnect
 
 
 @pytest_asyncio.fixture
-async def test_account(session: AsyncSession, test_user: User, test_connection: BankConnection) -> Account:
+async def test_account(
+    session: AsyncSession, test_user: User, test_connection: BankConnection
+) -> Account:
     """Create a test account."""
     account = Account(
         id=uuid.uuid4(),
@@ -348,9 +354,27 @@ async def test_transactions(
     today = date.today()
     transactions = []
     data = [
-        ("UBER TRIP", Decimal("25.50"), today.replace(day=min(3, today.day)), "debit", test_categories[1].id),
-        ("IFOOD RESTAURANTE", Decimal("45.00"), today.replace(day=min(4, today.day)), "debit", test_categories[0].id),
-        ("SALARIO FEV", Decimal("8000.00"), today.replace(day=min(2, today.day)), "credit", test_categories[2].id),
+        (
+            "UBER TRIP",
+            Decimal("25.50"),
+            today.replace(day=min(3, today.day)),
+            "debit",
+            test_categories[1].id,
+        ),
+        (
+            "IFOOD RESTAURANTE",
+            Decimal("45.00"),
+            today.replace(day=min(4, today.day)),
+            "debit",
+            test_categories[0].id,
+        ),
+        (
+            "SALARIO FEV",
+            Decimal("8000.00"),
+            today.replace(day=min(2, today.day)),
+            "credit",
+            test_categories[2].id,
+        ),
         ("PIX RECEBIDO", Decimal("150.00"), today.replace(day=min(5, today.day)), "credit", None),
         ("NETFLIX", Decimal("39.90"), today.replace(day=1), "debit", None),
     ]
@@ -443,7 +467,9 @@ async def test_agent(session: AsyncSession, test_user: User) -> Agent:
 
 
 @pytest_asyncio.fixture
-async def test_conversation(session: AsyncSession, test_user: User, test_agent: Agent) -> Conversation:
+async def test_conversation(
+    session: AsyncSession, test_user: User, test_agent: Agent
+) -> Conversation:
     conv = Conversation(
         id=uuid.uuid4(),
         user_id=test_user.id,
@@ -508,13 +534,16 @@ def _mock_redis():
 
     # Reset the cached singleton so no real Redis connection leaks into tests
     import app.core.redis as redis_mod
+
     original = redis_mod._redis
     redis_mod._redis = None
 
-    with patch("app.core.redis.get_redis", _fake_get_redis), \
-         patch("app.core.rate_limit.get_redis", _fake_get_redis), \
-         patch("app.api.custom_auth.get_redis", _fake_get_redis), \
-         patch("app.api.two_factor.get_redis", _fake_get_redis):
+    with (
+        patch("app.core.redis.get_redis", _fake_get_redis),
+        patch("app.core.rate_limit.get_redis", _fake_get_redis),
+        patch("app.api.custom_auth.get_redis", _fake_get_redis),
+        patch("app.api.two_factor.get_redis", _fake_get_redis),
+    ):
         yield mock
 
     redis_mod._redis = original

@@ -5,6 +5,7 @@ user always belongs to at least one workspace — their auto-created
 Personal workspace from registration. Additional workspaces (Freelancer,
 Small Business, etc.) can be created later via templates.
 """
+
 import uuid
 from typing import Optional
 
@@ -259,13 +260,13 @@ async def create_workspace(
         await create_default_categories(
             session, creator.id, workspace_locale, workspace_id=workspace.id
         )
-        await create_default_rules(
-            session, creator.id, workspace_locale, workspace_id=workspace.id
-        )
+        await create_default_rules(session, creator.id, workspace_locale, workspace_id=workspace.id)
     return workspace
 
 
-async def list_members(session: AsyncSession, workspace_id: uuid.UUID) -> list[tuple[WorkspaceMember, User]]:
+async def list_members(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> list[tuple[WorkspaceMember, User]]:
     """Return (membership, user) tuples for everyone in the workspace.
 
     Implemented as two queries instead of a JOIN — the User table comes
@@ -339,9 +340,7 @@ async def update_member_role(
     return member
 
 
-async def get_workspace_stats(
-    session: AsyncSession, workspace_id: uuid.UUID
-) -> dict:
+async def get_workspace_stats(session: AsyncSession, workspace_id: uuid.UUID) -> dict:
     """Counts surfaced on the settings page header strip."""
     from sqlalchemy import func
 
@@ -349,17 +348,13 @@ async def get_workspace_stats(
     from app.models.transaction import Transaction
 
     members_q = await session.execute(
-        select(func.count(WorkspaceMember.id)).where(
-            WorkspaceMember.workspace_id == workspace_id
-        )
+        select(func.count(WorkspaceMember.id)).where(WorkspaceMember.workspace_id == workspace_id)
     )
     accounts_q = await session.execute(
         select(func.count(Account.id)).where(Account.workspace_id == workspace_id)
     )
     transactions_q = await session.execute(
-        select(func.count(Transaction.id)).where(
-            Transaction.workspace_id == workspace_id
-        )
+        select(func.count(Transaction.id)).where(Transaction.workspace_id == workspace_id)
     )
     return {
         "members": int(members_q.scalar() or 0),

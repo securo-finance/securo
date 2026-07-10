@@ -5,6 +5,7 @@ exercise auth + JSON-RPC routing without needing the agents backend
 running. Tool calls go against the SQLite test DB and are limited to
 read-only paths (avoid pgvector-dependent tools).
 """
+
 from __future__ import annotations
 
 import json

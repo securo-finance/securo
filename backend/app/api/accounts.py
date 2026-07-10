@@ -31,12 +31,17 @@ async def list_accounts(
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    accounts = await account_service.get_accounts(session, ctx.workspace.id, include_closed=include_closed)
+    accounts = await account_service.get_accounts(
+        session, ctx.workspace.id, include_closed=include_closed
+    )
     primary_currency = ctx.user.primary_currency
     for acc in accounts:
         if acc["currency"] != primary_currency:
             converted, _ = await convert(
-                session, Decimal(str(acc["current_balance"])), acc["currency"], primary_currency,
+                session,
+                Decimal(str(acc["current_balance"])),
+                acc["currency"],
+                primary_currency,
             )
             acc["balance_primary"] = float(converted)
     return accounts
@@ -47,16 +52,25 @@ async def get_account_summary(
     account_id: uuid.UUID,
     date_from: Optional[str] = Query(None, alias="from", description="YYYY-MM-DD"),
     date_to: Optional[str] = Query(None, alias="to", description="YYYY-MM-DD"),
-    bill_id: Optional[uuid.UUID] = Query(None, description="Aggregate by bill_id (issue #92); takes precedence over from/to"),
-    unbilled_only: bool = Query(False, description="Cycle-math fallback only: exclude txs already linked to any bill"),
+    bill_id: Optional[uuid.UUID] = Query(
+        None, description="Aggregate by bill_id (issue #92); takes precedence over from/to"
+    ),
+    unbilled_only: bool = Query(
+        False, description="Cycle-math fallback only: exclude txs already linked to any bill"
+    ),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
     from_date = date.fromisoformat(date_from) if date_from else None
     to_date = date.fromisoformat(date_to) if date_to else None
     summary = await account_service.get_account_summary(
-        session, account_id, ctx.workspace.id, date_from=from_date, date_to=to_date,
-        bill_id=bill_id, unbilled_only=unbilled_only,
+        session,
+        account_id,
+        ctx.workspace.id,
+        date_from=from_date,
+        date_to=to_date,
+        bill_id=bill_id,
+        unbilled_only=unbilled_only,
     )
     if not summary:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
@@ -64,9 +78,15 @@ async def get_account_summary(
     account = await account_service.get_account(session, account_id, ctx.workspace.id)
     primary_currency = ctx.user.primary_currency
     if account and account.currency != primary_currency:
-        bal, _ = await convert(session, Decimal(str(summary["current_balance"])), account.currency, primary_currency)
-        inc, _ = await convert(session, Decimal(str(summary["monthly_income"])), account.currency, primary_currency)
-        exp, _ = await convert(session, Decimal(str(summary["monthly_expenses"])), account.currency, primary_currency)
+        bal, _ = await convert(
+            session, Decimal(str(summary["current_balance"])), account.currency, primary_currency
+        )
+        inc, _ = await convert(
+            session, Decimal(str(summary["monthly_income"])), account.currency, primary_currency
+        )
+        exp, _ = await convert(
+            session, Decimal(str(summary["monthly_expenses"])), account.currency, primary_currency
+        )
         summary["current_balance_primary"] = float(bal)
         summary["monthly_income_primary"] = float(inc)
         summary["monthly_expenses_primary"] = float(exp)
@@ -85,7 +105,11 @@ async def get_account_balance_history(
     from_date = date.fromisoformat(date_from) if date_from else None
     to_date = date.fromisoformat(date_to) if date_to else None
     history = await account_service.get_account_balance_history(
-        session, account_id, ctx.workspace.id, date_from=from_date, date_to=to_date,
+        session,
+        account_id,
+        ctx.workspace.id,
+        date_from=from_date,
+        date_to=to_date,
     )
     if history is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
@@ -96,7 +120,11 @@ async def get_account_balance_history(
         for point in history:
             point_date = date.fromisoformat(point["date"])
             converted, _ = await convert(
-                session, Decimal(str(point["balance"])), account.currency, primary_currency, target_date=point_date,
+                session,
+                Decimal(str(point["balance"])),
+                account.currency,
+                primary_currency,
+                target_date=point_date,
             )
             point["balance_primary"] = float(converted)
 
@@ -117,7 +145,10 @@ async def get_account_bills(
     happened). Issue #92.
     """
     bills = await account_service.get_credit_card_bills(
-        session, account_id, ctx.workspace.id, limit=limit,
+        session,
+        account_id,
+        ctx.workspace.id,
+        limit=limit,
     )
     if bills is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")

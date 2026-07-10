@@ -37,9 +37,7 @@ async def test_create_group_b2b_kind(session: AsyncSession, test_user, test_work
 
 
 @pytest.mark.asyncio
-async def test_duplicate_group_name_rejected(
-    session: AsyncSession, test_user, test_workspace
-):
+async def test_duplicate_group_name_rejected(session: AsyncSession, test_user, test_workspace):
     await group_service.create_group(
         session, test_workspace.id, test_user.id, GroupCreate(name="Trip")
     )
@@ -73,9 +71,7 @@ async def test_list_groups_excludes_archived_by_default(
 
 
 @pytest.mark.asyncio
-async def test_get_group_scoped_to_owner(
-    session: AsyncSession, test_user, test_workspace
-):
+async def test_get_group_scoped_to_owner(session: AsyncSession, test_user, test_workspace):
     group = await group_service.create_group(
         session, test_workspace.id, test_user.id, GroupCreate(name="X")
     )
@@ -86,9 +82,7 @@ async def test_get_group_scoped_to_owner(
 
 
 @pytest.mark.asyncio
-async def test_create_member_and_unique_name(
-    session: AsyncSession, test_user, test_workspace
-):
+async def test_create_member_and_unique_name(session: AsyncSession, test_user, test_workspace):
     group = await group_service.create_group(
         session, test_workspace.id, test_user.id, GroupCreate(name="G")
     )
@@ -108,9 +102,7 @@ async def test_create_member_and_unique_name(
 
 
 @pytest.mark.asyncio
-async def test_only_one_self_member_allowed(
-    session: AsyncSession, test_user, test_workspace
-):
+async def test_only_one_self_member_allowed(session: AsyncSession, test_user, test_workspace):
     group = await group_service.create_group(
         session, test_workspace.id, test_user.id, GroupCreate(name="G")
     )
@@ -124,9 +116,7 @@ async def test_only_one_self_member_allowed(
         GroupMemberCreate(name="Also Me", is_self=True),
     )
     # m1 should have been demoted automatically.
-    refreshed = await group_service.list_members(
-        session, group.id, test_workspace.id, test_user.id
-    )
+    refreshed = await group_service.list_members(session, group.id, test_workspace.id, test_user.id)
     by_id = {m.id: m for m in refreshed}
     assert by_id[m1.id].is_self is False
     assert by_id[m2.id].is_self is True
@@ -153,9 +143,7 @@ async def test_update_member_promotes_to_self_demotes_others(
         test_workspace.id,
         GroupMemberUpdate(is_self=True),
     )
-    refreshed = await group_service.list_members(
-        session, group.id, test_workspace.id, test_user.id
-    )
+    refreshed = await group_service.list_members(session, group.id, test_workspace.id, test_user.id)
     by_id = {m.id: m for m in refreshed}
     assert by_id[m1.id].is_self is False
     assert by_id[m2.id].is_self is True

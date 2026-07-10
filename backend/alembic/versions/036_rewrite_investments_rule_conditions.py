@@ -13,6 +13,7 @@ sides), much easier to skim and tweak. Idempotent: rules already in the
 new shape are left alone, and user-edited rules are only touched if they
 still match the original single-regex signature.
 """
+
 from typing import Sequence, Union
 
 import json
@@ -46,15 +47,12 @@ def upgrade() -> None:
     bind = op.get_bind()
 
     rows = bind.execute(
-        sa.text(
-            "SELECT id, conditions, conditions_op FROM rules WHERE name = :name"
-        ),
+        sa.text("SELECT id, conditions, conditions_op FROM rules WHERE name = :name"),
         {"name": RULE_NAME},
     ).fetchall()
 
     new_conditions = [
-        {"field": "description", "op": "contains", "value": kw}
-        for kw in NEW_KEYWORDS
+        {"field": "description", "op": "contains", "value": kw} for kw in NEW_KEYWORDS
     ]
     payload = json.dumps(new_conditions)
 

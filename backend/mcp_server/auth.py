@@ -4,6 +4,7 @@ The agent runtime (in the backend) mints a short-lived JWT per call,
 signed with `AGENTS_MCP_JWT_SECRET`. We verify here. Same secret on both
 sides; mismatched secret = 401 every time.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -55,7 +56,9 @@ def verify_request(request: Request) -> CallContext:
             issuer=JWT_ISSUER,
         )
     except JWTError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=f"invalid token: {exc}") from exc
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=f"invalid token: {exc}"
+        ) from exc
 
     sub = payload.get("sub")
     if not sub:

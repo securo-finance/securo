@@ -5,9 +5,7 @@ from app.models.account import Account
 
 
 @pytest.mark.asyncio
-async def test_list_accounts(
-    client: AsyncClient, auth_headers, test_account: Account
-):
+async def test_list_accounts(client: AsyncClient, auth_headers, test_account: Account):
     response = await client.get("/api/accounts", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
@@ -26,12 +24,8 @@ async def test_list_accounts_empty(client: AsyncClient, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_get_account(
-    client: AsyncClient, auth_headers, test_account: Account
-):
-    response = await client.get(
-        f"/api/accounts/{test_account.id}", headers=auth_headers
-    )
+async def test_get_account(client: AsyncClient, auth_headers, test_account: Account):
+    response = await client.get(f"/api/accounts/{test_account.id}", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert data["name"] == "Conta Corrente"
@@ -125,9 +119,7 @@ async def test_delete_manual_account(client: AsyncClient, auth_headers):
 async def test_delete_bank_connected_account_rejected(
     client: AsyncClient, auth_headers, test_account: Account
 ):
-    response = await client.delete(
-        f"/api/accounts/{test_account.id}", headers=auth_headers
-    )
+    response = await client.delete(f"/api/accounts/{test_account.id}", headers=auth_headers)
     assert response.status_code == 400
     assert "bank-connected" in response.json()["detail"].lower()
 
@@ -198,9 +190,7 @@ async def test_create_account_zero_balance_no_opening_transaction(
 
 
 @pytest.mark.asyncio
-async def test_account_summary(
-    client: AsyncClient, auth_headers, test_account, test_transactions
-):
+async def test_account_summary(client: AsyncClient, auth_headers, test_account, test_transactions):
     """Summary endpoint returns computed balance from transactions (current month).
 
     Fixture transactions (current month, no opening_balance):
@@ -210,8 +200,8 @@ async def test_account_summary(
     Note: test_account is bank-connected so current_balance uses the stored
     Account.balance (1500.00), not the computed sum from transactions.
     """
-    expected_income = 8000.00 + 150.00          # 8150.00
-    expected_expenses = 25.50 + 45.00 + 39.90   # 110.40
+    expected_income = 8000.00 + 150.00  # 8150.00
+    expected_expenses = 25.50 + 45.00 + 39.90  # 110.40
 
     account_id = str(test_account.id)
     response = await client.get(f"/api/accounts/{account_id}/summary", headers=auth_headers)
@@ -326,7 +316,12 @@ async def test_dashboard_total_balance_subtracts_credit_card_debt(
     cc_resp = await client.post(
         "/api/accounts",
         headers=auth_headers,
-        json={"name": "Credit Card", "type": "credit_card", "balance": "2000.00", "currency": "BRL"},
+        json={
+            "name": "Credit Card",
+            "type": "credit_card",
+            "balance": "2000.00",
+            "currency": "BRL",
+        },
     )
     assert cc_resp.status_code == 201
 
@@ -341,9 +336,7 @@ async def test_dashboard_total_balance_subtracts_credit_card_debt(
 
 
 @pytest.mark.asyncio
-async def test_credit_card_summary_returns_negative_balance(
-    client: AsyncClient, auth_headers
-):
+async def test_credit_card_summary_returns_negative_balance(client: AsyncClient, auth_headers):
     """Account summary for a credit card should return negative current_balance."""
     create_resp = await client.post(
         "/api/accounts",
@@ -358,9 +351,7 @@ async def test_credit_card_summary_returns_negative_balance(
     assert create_resp.status_code == 201
     account_id = create_resp.json()["id"]
 
-    response = await client.get(
-        f"/api/accounts/{account_id}/summary", headers=auth_headers
-    )
+    response = await client.get(f"/api/accounts/{account_id}/summary", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
 
@@ -432,6 +423,7 @@ async def test_get_account_balance_history_with_dates(client: AsyncClient, auth_
     )
     acct_id = resp.json()["id"]
     from datetime import date
+
     today = date.today().isoformat()
     resp = await client.get(
         f"/api/accounts/{acct_id}/balance-history",
@@ -444,6 +436,7 @@ async def test_get_account_balance_history_with_dates(client: AsyncClient, auth_
 @pytest.mark.asyncio
 async def test_get_account_balance_history_not_found(client: AsyncClient, auth_headers):
     import uuid
+
     resp = await client.get(f"/api/accounts/{uuid.uuid4()}/balance-history", headers=auth_headers)
     assert resp.status_code == 404
 
@@ -478,6 +471,7 @@ async def test_reopen_account(client: AsyncClient, auth_headers):
 @pytest.mark.asyncio
 async def test_close_account_not_found(client: AsyncClient, auth_headers):
     import uuid
+
     resp = await client.post(f"/api/accounts/{uuid.uuid4()}/close", headers=auth_headers)
     assert resp.status_code == 404
 
@@ -485,6 +479,7 @@ async def test_close_account_not_found(client: AsyncClient, auth_headers):
 @pytest.mark.asyncio
 async def test_reopen_account_not_found(client: AsyncClient, auth_headers):
     import uuid
+
     resp = await client.post(f"/api/accounts/{uuid.uuid4()}/reopen", headers=auth_headers)
     assert resp.status_code == 404
 
@@ -498,6 +493,7 @@ async def test_get_account_summary_with_dates(client: AsyncClient, auth_headers)
     )
     acct_id = resp.json()["id"]
     from datetime import date
+
     today = date.today().isoformat()
     resp = await client.get(
         f"/api/accounts/{acct_id}/summary",
@@ -602,7 +598,9 @@ from app.models.account import Account as _Account  # noqa: E402
 from app.models.credit_card_bill import CreditCardBill as _CreditCardBill  # noqa: E402
 
 
-async def _make_cc_account(session: AsyncSession, user_id: _uuid.UUID, name: str = "CC") -> _Account:
+async def _make_cc_account(
+    session: AsyncSession, user_id: _uuid.UUID, name: str = "CC"
+) -> _Account:
     acc = _Account(
         id=_uuid.uuid4(),
         user_id=user_id,
@@ -618,8 +616,13 @@ async def _make_cc_account(session: AsyncSession, user_id: _uuid.UUID, name: str
 
 
 async def _make_bill(
-    session: AsyncSession, user_id: _uuid.UUID, account_id: _uuid.UUID,
-    *, external_id: str, due_date: _date, total: str = "100.00",
+    session: AsyncSession,
+    user_id: _uuid.UUID,
+    account_id: _uuid.UUID,
+    *,
+    external_id: str,
+    due_date: _date,
+    total: str = "100.00",
     minimum: str | None = "10.00",
 ) -> _CreditCardBill:
     bill = _CreditCardBill(
@@ -639,7 +642,10 @@ async def _make_bill(
 
 @pytest.mark.asyncio
 async def test_get_account_bills_returns_newest_first(
-    client: AsyncClient, auth_headers, session: AsyncSession, test_user,
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user,
 ):
     cc = await _make_cc_account(session, test_user.id, "Itaú")
     await _make_bill(session, test_user.id, cc.id, external_id="b-old", due_date=_date(2026, 1, 5))
@@ -659,7 +665,9 @@ async def test_get_account_bills_returns_newest_first(
 
 @pytest.mark.asyncio
 async def test_get_account_bills_empty_for_non_cc_account(
-    client: AsyncClient, auth_headers, test_account: Account,
+    client: AsyncClient,
+    auth_headers,
+    test_account: Account,
 ):
     """Checking accounts return [] — caller treats this same as "no bills"."""
     resp = await client.get(f"/api/accounts/{test_account.id}/bills", headers=auth_headers)
@@ -669,7 +677,10 @@ async def test_get_account_bills_empty_for_non_cc_account(
 
 @pytest.mark.asyncio
 async def test_get_account_bills_empty_for_cc_with_no_bills(
-    client: AsyncClient, auth_headers, session: AsyncSession, test_user,
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user,
 ):
     """A CC account that hasn't synced bills yet returns [] — the UI must
     fall back to cycle math, not 404 / error."""
@@ -681,27 +692,37 @@ async def test_get_account_bills_empty_for_cc_with_no_bills(
 
 @pytest.mark.asyncio
 async def test_get_account_bills_404_for_nonexistent_account(
-    client: AsyncClient, auth_headers,
+    client: AsyncClient,
+    auth_headers,
 ):
     resp = await client.get(
-        "/api/accounts/00000000-0000-0000-0000-000000000000/bills", headers=auth_headers,
+        "/api/accounts/00000000-0000-0000-0000-000000000000/bills",
+        headers=auth_headers,
     )
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_get_account_bills_respects_limit_param(
-    client: AsyncClient, auth_headers, session: AsyncSession, test_user,
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user,
 ):
     cc = await _make_cc_account(session, test_user.id, "Many Bills")
     for i in range(5):
         await _make_bill(
-            session, test_user.id, cc.id,
-            external_id=f"b-{i}", due_date=_date(2026, i + 1, 5),
+            session,
+            test_user.id,
+            cc.id,
+            external_id=f"b-{i}",
+            due_date=_date(2026, i + 1, 5),
         )
 
     resp = await client.get(
-        f"/api/accounts/{cc.id}/bills", headers=auth_headers, params={"limit": 2},
+        f"/api/accounts/{cc.id}/bills",
+        headers=auth_headers,
+        params={"limit": 2},
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -713,10 +734,15 @@ async def test_get_account_bills_respects_limit_param(
 
 @pytest.mark.asyncio
 async def test_get_account_bills_rejects_invalid_limit(
-    client: AsyncClient, auth_headers, session: AsyncSession, test_user,
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user,
 ):
     cc = await _make_cc_account(session, test_user.id, "X")
     resp = await client.get(
-        f"/api/accounts/{cc.id}/bills", headers=auth_headers, params={"limit": 0},
+        f"/api/accounts/{cc.id}/bills",
+        headers=auth_headers,
+        params={"limit": 0},
     )
     assert resp.status_code == 422  # Query(ge=1) bound

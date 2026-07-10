@@ -6,6 +6,7 @@ bearing and must never be overwritten. These tests pin the full matrix:
 new/existing × active/withdrawn, same-day vs next-day re-syncs,
 historical seeding idempotency, and sparse-field merging.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -62,7 +63,9 @@ class _MockProvider(BankProvider):
     async def get_accounts(self, credentials: dict) -> list[AccountData]:  # pragma: no cover
         return []
 
-    async def get_transactions(self, credentials: dict, account_external_id: str, since=None, payee_source: str = "auto") -> list[TransactionData]:  # pragma: no cover
+    async def get_transactions(
+        self, credentials: dict, account_external_id: str, since=None, payee_source: str = "auto"
+    ) -> list[TransactionData]:  # pragma: no cover
         return []
 
     async def refresh_credentials(self, credentials: dict) -> dict:  # pragma: no cover
@@ -286,9 +289,7 @@ async def test_user_sold_active_on_provider_stops_value_updates(
     session.add(asset)
     await session.commit()
 
-    _MockProvider._holdings = [
-        _holding(external_id="h-1", current_value=Decimal("999.99"))
-    ]
+    _MockProvider._holdings = [_holding(external_id="h-1", current_value=Decimal("999.99"))]
     await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
     await session.commit()
     await session.refresh(asset)
@@ -583,9 +584,7 @@ async def test_next_day_sync_appends_new_asset_value(
         currency="BRL",
     )
     session.add(asset)
-    session.add(
-        AssetValue(asset_id=asset.id, amount=Decimal("100"), date=yesterday, source="sync")
-    )
+    session.add(AssetValue(asset_id=asset.id, amount=Decimal("100"), date=yesterday, source="sync"))
     await session.commit()
 
     _MockProvider._holdings = [_holding(external_id="h-1", current_value=Decimal("105"))]

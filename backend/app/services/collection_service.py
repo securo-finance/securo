@@ -59,9 +59,7 @@ async def _wallets_in_workspace(
     return list(result.scalars().all())
 
 
-async def get_collections(
-    session: AsyncSession, workspace_id: uuid.UUID
-) -> list[CollectionRead]:
+async def get_collections(session: AsyncSession, workspace_id: uuid.UUID) -> list[CollectionRead]:
     result = await session.execute(
         select(Collection)
         .where(Collection.workspace_id == workspace_id)

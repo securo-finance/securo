@@ -5,6 +5,7 @@ separate key file. If the operator rotates SECRET_KEY, existing
 ciphertexts become unreadable — that's by design (rotation = re-enter
 your provider keys).
 """
+
 from __future__ import annotations
 
 import base64

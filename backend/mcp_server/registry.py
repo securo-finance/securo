@@ -3,6 +3,7 @@
 Each tool is a Python coroutine registered via the @tool decorator. The
 registry holds (name → ToolSpec) for /mcp's `tools/list` and `tools/call`.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -42,6 +43,7 @@ def tool(
     """Decorator. The handler must be an async function with signature
     `async def handler(session: AsyncSession, ctx: CallContext, **kwargs)`.
     """
+
     def deco(fn: ToolHandler) -> ToolHandler:
         if name in REGISTRY:
             raise RuntimeError(f"duplicate tool registration: {name}")
@@ -54,6 +56,7 @@ def tool(
             tags=list(tags or []),
         )
         return fn
+
     return deco
 
 

@@ -4,6 +4,7 @@ Fintoc is fully fakeable via httpx.MockTransport — no Fintoc credentials neede
 no network. Each test stands up the smallest payload required and asserts the
 parse / dispatch behavior we care about.
 """
+
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -151,6 +152,7 @@ async def test_get_oauth_url_raises_not_implemented():
 @pytest.mark.asyncio
 async def test_create_connect_token_success():
     """create_connect_token calls /v1/link_intents and returns the widget_token."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "POST"
         assert "/link_intents" in str(request.url)
@@ -176,6 +178,7 @@ async def test_create_connect_token_success():
 @pytest.mark.asyncio
 async def test_handle_oauth_callback_success():
     """exchange_token -> GET /links/exchange -> ConnectionData with accounts."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "GET"
         assert "/links/exchange" in str(request.url)
@@ -216,6 +219,7 @@ async def test_handle_oauth_callback_success():
 @pytest.mark.asyncio
 async def test_handle_oauth_callback_fallback_institution_name():
     """Falls back to 'Chilean Bank' when institution field is absent."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "GET"
         assert "/links/exchange" in str(request.url)
@@ -307,10 +311,22 @@ async def test_get_transactions_negative_is_debit_positive_is_credit():
         return httpx.Response(
             200,
             json=[
-                {"id": "t1", "amount": -5000, "post_date": "2026-05-01",
-                 "description": "Compra", "type": "transfer", "currency": "CLP"},
-                {"id": "t2", "amount": 100000, "post_date": "2026-05-10",
-                 "description": "Transferencia recibida", "type": "transfer", "currency": "CLP"},
+                {
+                    "id": "t1",
+                    "amount": -5000,
+                    "post_date": "2026-05-01",
+                    "description": "Compra",
+                    "type": "transfer",
+                    "currency": "CLP",
+                },
+                {
+                    "id": "t2",
+                    "amount": 100000,
+                    "post_date": "2026-05-10",
+                    "description": "Transferencia recibida",
+                    "type": "transfer",
+                    "currency": "CLP",
+                },
             ],
         )
 
@@ -331,15 +347,29 @@ async def test_get_transactions_pagination_follows_link_header():
     """Fintoc paginates via the RFC 5988 Link header (rel="next"), not a body cursor."""
     pages = [
         {
-            "body": [{"id": "t1", "amount": -1000, "post_date": "2026-01-01",
-                      "type": "transfer", "currency": "CLP"}],
+            "body": [
+                {
+                    "id": "t1",
+                    "amount": -1000,
+                    "post_date": "2026-01-01",
+                    "type": "transfer",
+                    "currency": "CLP",
+                }
+            ],
             "headers": {
                 "link": '<https://api.fintoc.com/v1/accounts/acc-cl-1/movements?page=2>; rel="next"'
             },
         },
         {
-            "body": [{"id": "t2", "amount": 2000, "post_date": "2026-01-02",
-                      "type": "transfer", "currency": "CLP"}],
+            "body": [
+                {
+                    "id": "t2",
+                    "amount": 2000,
+                    "post_date": "2026-01-02",
+                    "type": "transfer",
+                    "currency": "CLP",
+                }
+            ],
             "headers": {},
         },
     ]
@@ -399,6 +429,7 @@ def test_refresh_credentials_returns_unchanged():
     """Fintoc link tokens have no expiry timer — refresh is a no-op."""
     creds = {"link_token": "lt_abc"}
     import asyncio
+
     result = asyncio.get_event_loop().run_until_complete(
         FintocProvider().refresh_credentials(creds)
     )
@@ -416,8 +447,12 @@ async def test_list_institutions_returns_cl_banks():
             200,
             json=[
                 {"id": "banco_de_chile", "name": "Banco de Chile", "country": "cl"},
-                {"id": "santander", "name": "Banco Santander", "country": "cl",
-                 "logo_url": "https://cdn.fintoc.com/santander.png"},
+                {
+                    "id": "santander",
+                    "name": "Banco Santander",
+                    "country": "cl",
+                    "logo_url": "https://cdn.fintoc.com/santander.png",
+                },
             ],
         )
 

@@ -30,12 +30,8 @@ async def rates_status(
     user: User = Depends(current_active_user),
 ):
     """Return last sync date and total stored rates."""
-    last_date = await session.scalar(
-        select(func.max(FxRate.date))
-    )
-    total = await session.scalar(
-        select(func.count()).select_from(FxRate)
-    ) or 0
+    last_date = await session.scalar(select(func.max(FxRate.date)))
+    total = await session.scalar(select(func.count()).select_from(FxRate)) or 0
 
     settings = get_settings()
     return {

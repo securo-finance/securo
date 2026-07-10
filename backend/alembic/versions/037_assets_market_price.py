@@ -11,6 +11,7 @@ PETR4.SA...), enters quantity, and a scheduled task keeps the price fresh.
 
 Nothing is backfilled — existing assets stay on their current method.
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa

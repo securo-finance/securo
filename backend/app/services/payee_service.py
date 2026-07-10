@@ -38,6 +38,7 @@ async def get_payees(
 
     if q:
         from sqlalchemy import or_
+
         pattern = f"%{q.strip()}%"
         stmt = stmt.where(or_(Payee.name.ilike(pattern), Payee.notes.ilike(pattern)))
 
@@ -57,7 +58,9 @@ async def get_payees(
     return payees
 
 
-async def get_payee(session: AsyncSession, payee_id: uuid.UUID, workspace_id: uuid.UUID) -> Optional[Payee]:
+async def get_payee(
+    session: AsyncSession, payee_id: uuid.UUID, workspace_id: uuid.UUID
+) -> Optional[Payee]:
     result = await session.execute(
         select(Payee).where(Payee.id == payee_id, Payee.workspace_id == workspace_id)
     )
@@ -107,7 +110,9 @@ async def create_payee(
 ) -> Payee:
     # Check uniqueness
     existing = await session.execute(
-        select(Payee).where(Payee.workspace_id == workspace_id, func.lower(Payee.name) == data.name.strip().lower())
+        select(Payee).where(
+            Payee.workspace_id == workspace_id, func.lower(Payee.name) == data.name.strip().lower()
+        )
     )
     if existing.scalar_one_or_none():
         raise ValueError("A payee with this name already exists")
@@ -117,7 +122,9 @@ async def create_payee(
     await session.flush()
 
     # Self-mapping for merge tracking
-    mapping = PayeeMapping(id=payee.id, user_id=user_id, workspace_id=workspace_id, target_id=payee.id)
+    mapping = PayeeMapping(
+        id=payee.id, user_id=user_id, workspace_id=workspace_id, target_id=payee.id
+    )
     session.add(mapping)
 
     await session.commit()
@@ -162,15 +169,11 @@ async def delete_payee(session: AsyncSession, payee_id: uuid.UUID, workspace_id:
 
     # Null out transaction references
     await session.execute(
-        update(Transaction)
-        .where(Transaction.payee_id == payee_id)
-        .values(payee_id=None)
+        update(Transaction).where(Transaction.payee_id == payee_id).values(payee_id=None)
     )
 
     # Delete mappings pointing to this payee
-    await session.execute(
-        delete(PayeeMapping).where(PayeeMapping.target_id == payee_id)
-    )
+    await session.execute(delete(PayeeMapping).where(PayeeMapping.target_id == payee_id))
 
     await session.delete(payee)
     await session.commit()
@@ -199,9 +202,7 @@ async def merge_payees(
 
     # Reassign transactions
     result = await session.execute(
-        update(Transaction)
-        .where(Transaction.payee_id.in_(source_ids))
-        .values(payee_id=target_id)
+        update(Transaction).where(Transaction.payee_id.in_(source_ids)).values(payee_id=target_id)
     )
     reassigned = result.rowcount
 
@@ -251,22 +252,27 @@ async def get_payee_summary(
     # Totals
     totals = await session.execute(
         select(
-            func.coalesce(func.sum(
-                case(
-                    (Transaction.type == "debit", Transaction.amount),
-                    else_=Decimal("0"),
-                )
-            ), Decimal("0")).label("total_spent"),
-            func.coalesce(func.sum(
-                case(
-                    (Transaction.type == "credit", Transaction.amount),
-                    else_=Decimal("0"),
-                )
-            ), Decimal("0")).label("total_received"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (Transaction.type == "debit", Transaction.amount),
+                        else_=Decimal("0"),
+                    )
+                ),
+                Decimal("0"),
+            ).label("total_spent"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (Transaction.type == "credit", Transaction.amount),
+                        else_=Decimal("0"),
+                    )
+                ),
+                Decimal("0"),
+            ).label("total_received"),
             func.count(Transaction.id).label("count"),
             func.max(Transaction.date).label("last_date"),
-        )
-        .where(
+        ).where(
             Transaction.payee_id == payee_id,
             Transaction.workspace_id == workspace_id,
         )
@@ -288,9 +294,7 @@ async def get_payee_summary(
     cat_row = cat_result.first()
     most_common_category = None
     if cat_row:
-        cat = await session.execute(
-            select(Category).where(Category.id == cat_row[0])
-        )
+        cat = await session.execute(select(Category).where(Category.id == cat_row[0]))
         most_common_category = cat.scalar_one_or_none()
 
     payee.transaction_count = row.count

@@ -4,6 +4,7 @@ Revision ID: 062
 Revises: 061
 Create Date: 2026-06-14
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -38,7 +39,9 @@ def upgrade() -> None:
         sa.Column("last_used_at", sa.DateTime(timezone=True), nullable=True),
     )
     op.create_index("ix_user_passkeys_user_id", "user_passkeys", ["user_id"])
-    op.create_index("ix_user_passkeys_credential_id", "user_passkeys", ["credential_id"], unique=True)
+    op.create_index(
+        "ix_user_passkeys_credential_id", "user_passkeys", ["credential_id"], unique=True
+    )
 
 
 def downgrade() -> None:

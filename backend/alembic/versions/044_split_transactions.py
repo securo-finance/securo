@@ -55,9 +55,7 @@ def upgrade() -> None:
         sa.Column("default_currency", sa.String(3), server_default="USD", nullable=False),
         sa.Column("icon", sa.String(50), server_default="users", nullable=False),
         sa.Column("color", sa.String(7), server_default="#6B7280", nullable=False),
-        sa.Column(
-            "is_archived", sa.Boolean, server_default=sa.text("false"), nullable=False
-        ),
+        sa.Column("is_archived", sa.Boolean, server_default=sa.text("false"), nullable=False),
         sa.Column("notes", sa.String(1000), nullable=True),
         sa.Column(
             "created_at",
@@ -103,9 +101,7 @@ def upgrade() -> None:
         ),
     )
     op.create_index("ix_group_members_group_id", "group_members", ["group_id"])
-    op.create_index(
-        "ix_group_members_linked_user_id", "group_members", ["linked_user_id"]
-    )
+    op.create_index("ix_group_members_linked_user_id", "group_members", ["linked_user_id"])
     op.create_unique_constraint(
         "uq_group_members_group_id_name", "group_members", ["group_id", "name"]
     )
@@ -217,20 +213,12 @@ def downgrade() -> None:
     op.drop_index("ix_group_settlements_group_id", table_name="group_settlements")
     op.drop_table("group_settlements")
 
-    op.drop_constraint(
-        "uq_transaction_splits_tx_member", "transaction_splits", type_="unique"
-    )
-    op.drop_index(
-        "ix_transaction_splits_group_member_id", table_name="transaction_splits"
-    )
-    op.drop_index(
-        "ix_transaction_splits_transaction_id", table_name="transaction_splits"
-    )
+    op.drop_constraint("uq_transaction_splits_tx_member", "transaction_splits", type_="unique")
+    op.drop_index("ix_transaction_splits_group_member_id", table_name="transaction_splits")
+    op.drop_index("ix_transaction_splits_transaction_id", table_name="transaction_splits")
     op.drop_table("transaction_splits")
 
-    op.drop_constraint(
-        "uq_group_members_group_id_name", "group_members", type_="unique"
-    )
+    op.drop_constraint("uq_group_members_group_id_name", "group_members", type_="unique")
     op.drop_index("ix_group_members_linked_user_id", table_name="group_members")
     op.drop_index("ix_group_members_group_id", table_name="group_members")
     op.drop_table("group_members")

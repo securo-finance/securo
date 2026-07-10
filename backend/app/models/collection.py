@@ -81,9 +81,7 @@ class Collection(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # Eager-load members so reads can expose account_ids without an N+1.
-    accounts: Mapped[list["Account"]] = relationship(
-        secondary=collection_accounts, lazy="selectin"
-    )
+    accounts: Mapped[list["Account"]] = relationship(secondary=collection_accounts, lazy="selectin")
     asset_groups: Mapped[list["AssetGroup"]] = relationship(
         secondary=collection_asset_groups, lazy="selectin"
     )

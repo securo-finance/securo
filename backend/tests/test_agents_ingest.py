@@ -5,6 +5,7 @@ plus a monkeypatched embed_texts (so we don't pull ONNX / fastembed
 into the test env). The KnowledgeChunk.embedding column is shimmed to
 JSON in conftest, so writing a Python list works on SQLite.
 """
+
 from __future__ import annotations
 
 import tempfile

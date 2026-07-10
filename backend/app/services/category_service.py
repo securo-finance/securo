@@ -15,22 +15,120 @@ from app.services.category_group_service import CATEGORY_TO_GROUP, create_defaul
 # income/expense — they're excluded from report aggregations like paired
 # transfers are.
 DEFAULT_CATEGORIES_I18N = {
-    "housing":       {"en": "Housing",       "pt-BR": "Moradia",        "de": "Wohnen",            "icon": "house",            "color": "#8B5CF6"},
-    "food":          {"en": "Food & Dining", "pt-BR": "Alimentação",    "de": "Essen & Trinken",   "icon": "utensils-crossed", "color": "#F59E0B"},
-    "transport":     {"en": "Transport",     "pt-BR": "Transporte",     "de": "Transport",         "icon": "car",              "color": "#3B82F6"},
-    "groceries":     {"en": "Groceries",     "pt-BR": "Mercado",        "de": "Lebensmittel",      "icon": "shopping-cart",    "color": "#10B981"},
-    "health":        {"en": "Health",        "pt-BR": "Saúde",          "de": "Gesundheit",        "icon": "pill",             "color": "#EF4444"},
-    "leisure":       {"en": "Leisure",       "pt-BR": "Lazer",          "de": "Freizeit",          "icon": "gamepad-2",        "color": "#EC4899"},
-    "subscriptions": {"en": "Subscriptions", "pt-BR": "Assinaturas",    "de": "Abonnements",       "icon": "smartphone",       "color": "#6366F1"},
-    "education":     {"en": "Education",     "pt-BR": "Educação",       "de": "Bildung",           "icon": "book-open",        "color": "#22C55E"},
-    "transfers":     {"en": "Transfers",     "pt-BR": "Transferências", "de": "Umbuchungen",       "icon": "arrow-left-right", "color": "#64748B", "treat_as_transfer": True},
-    "investments":   {"en": "Investments",   "pt-BR": "Investimentos",  "de": "Investitionen",     "icon": "trending-up",      "color": "#0EA5E9", "treat_as_transfer": True},
-    "salary":        {"en": "Salary & Income",  "pt-BR": "Salário & Renda",     "de": "Gehalt & Einnahmen", "icon": "banknote",         "color": "#16A34A"},
-    "shopping":      {"en": "Shopping",         "pt-BR": "Compras",             "de": "Shopping",           "icon": "shopping-bag",     "color": "#F97316"},
-    "donations":     {"en": "Donations",        "pt-BR": "Doações",             "de": "Spenden",            "icon": "heart-handshake",  "color": "#D946EF"},
-    "personal_care": {"en": "Personal Care",    "pt-BR": "Cuidados Pessoais",   "de": "Körperpflege",       "icon": "scissors",         "color": "#F472B6"},
-    "taxes":         {"en": "Taxes & Fees",     "pt-BR": "Impostos & Taxas",    "de": "Steuern & Gebühren", "icon": "landmark",         "color": "#78716C"},
-    "other":         {"en": "Other",         "pt-BR": "Outros",         "de": "Sonstiges",          "icon": "circle-help",      "color": "#6B7280"},
+    "housing": {
+        "en": "Housing",
+        "pt-BR": "Moradia",
+        "de": "Wohnen",
+        "icon": "house",
+        "color": "#8B5CF6",
+    },
+    "food": {
+        "en": "Food & Dining",
+        "pt-BR": "Alimentação",
+        "de": "Essen & Trinken",
+        "icon": "utensils-crossed",
+        "color": "#F59E0B",
+    },
+    "transport": {
+        "en": "Transport",
+        "pt-BR": "Transporte",
+        "de": "Transport",
+        "icon": "car",
+        "color": "#3B82F6",
+    },
+    "groceries": {
+        "en": "Groceries",
+        "pt-BR": "Mercado",
+        "de": "Lebensmittel",
+        "icon": "shopping-cart",
+        "color": "#10B981",
+    },
+    "health": {
+        "en": "Health",
+        "pt-BR": "Saúde",
+        "de": "Gesundheit",
+        "icon": "pill",
+        "color": "#EF4444",
+    },
+    "leisure": {
+        "en": "Leisure",
+        "pt-BR": "Lazer",
+        "de": "Freizeit",
+        "icon": "gamepad-2",
+        "color": "#EC4899",
+    },
+    "subscriptions": {
+        "en": "Subscriptions",
+        "pt-BR": "Assinaturas",
+        "de": "Abonnements",
+        "icon": "smartphone",
+        "color": "#6366F1",
+    },
+    "education": {
+        "en": "Education",
+        "pt-BR": "Educação",
+        "de": "Bildung",
+        "icon": "book-open",
+        "color": "#22C55E",
+    },
+    "transfers": {
+        "en": "Transfers",
+        "pt-BR": "Transferências",
+        "de": "Umbuchungen",
+        "icon": "arrow-left-right",
+        "color": "#64748B",
+        "treat_as_transfer": True,
+    },
+    "investments": {
+        "en": "Investments",
+        "pt-BR": "Investimentos",
+        "de": "Investitionen",
+        "icon": "trending-up",
+        "color": "#0EA5E9",
+        "treat_as_transfer": True,
+    },
+    "salary": {
+        "en": "Salary & Income",
+        "pt-BR": "Salário & Renda",
+        "de": "Gehalt & Einnahmen",
+        "icon": "banknote",
+        "color": "#16A34A",
+    },
+    "shopping": {
+        "en": "Shopping",
+        "pt-BR": "Compras",
+        "de": "Shopping",
+        "icon": "shopping-bag",
+        "color": "#F97316",
+    },
+    "donations": {
+        "en": "Donations",
+        "pt-BR": "Doações",
+        "de": "Spenden",
+        "icon": "heart-handshake",
+        "color": "#D946EF",
+    },
+    "personal_care": {
+        "en": "Personal Care",
+        "pt-BR": "Cuidados Pessoais",
+        "de": "Körperpflege",
+        "icon": "scissors",
+        "color": "#F472B6",
+    },
+    "taxes": {
+        "en": "Taxes & Fees",
+        "pt-BR": "Impostos & Taxas",
+        "de": "Steuern & Gebühren",
+        "icon": "landmark",
+        "color": "#78716C",
+    },
+    "other": {
+        "en": "Other",
+        "pt-BR": "Outros",
+        "de": "Sonstiges",
+        "icon": "circle-help",
+        "color": "#6B7280",
+    },
 }
 
 
@@ -58,6 +156,7 @@ async def create_default_categories(
         )
         if existing.scalar_one_or_none():
             from app.models.workspace import Workspace, WorkspaceMember
+
             row = await session.execute(
                 select(Workspace.id)
                 .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
@@ -104,9 +203,7 @@ async def get_category(
     session: AsyncSession, category_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> Optional[Category]:
     result = await session.execute(
-        select(Category).where(
-            Category.id == category_id, Category.workspace_id == workspace_id
-        )
+        select(Category).where(Category.id == category_id, Category.workspace_id == workspace_id)
     )
     return result.scalar_one_or_none()
 

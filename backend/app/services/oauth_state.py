@@ -6,6 +6,7 @@ We need to know which workspace/user/provider that flow belonged to and
 what flow params (country, institution) were chosen. Stash that here,
 keyed by an unguessable token, and consume it exactly once on callback.
 """
+
 from __future__ import annotations
 
 import json

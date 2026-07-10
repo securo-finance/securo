@@ -66,7 +66,9 @@ async def test_create_recurring_transaction(
 
 
 @pytest.mark.asyncio
-async def test_create_with_skip_first(session: AsyncSession, test_user, test_workspace, test_account_for_recurring):
+async def test_create_with_skip_first(
+    session: AsyncSession, test_user, test_workspace, test_account_for_recurring
+):
     data = RecurringTransactionCreate(
         description="Rent",
         amount=Decimal("2000"),
@@ -90,7 +92,8 @@ async def test_get_recurring_transactions(
     for desc, dt in [("Sub1", date(2025, 1, 1)), ("Sub2", date(2025, 2, 1))]:
         await create_recurring_transaction(
             session,
-            test_workspace.id, test_user.id,
+            test_workspace.id,
+            test_user.id,
             RecurringTransactionCreate(
                 description=desc,
                 amount=Decimal("10"),
@@ -115,7 +118,8 @@ async def test_get_recurring_transaction_by_id(
 ):
     created = await create_recurring_transaction(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         RecurringTransactionCreate(
             description="Lookup",
             amount=Decimal("50"),
@@ -131,7 +135,9 @@ async def test_get_recurring_transaction_by_id(
 
 
 @pytest.mark.asyncio
-async def test_get_recurring_transaction_not_found(session: AsyncSession, test_user, test_workspace):
+async def test_get_recurring_transaction_not_found(
+    session: AsyncSession, test_user, test_workspace
+):
     result = await get_recurring_transaction(session, uuid.uuid4(), test_workspace.id)
     assert result is None
 
@@ -142,7 +148,8 @@ async def test_update_recurring_transaction(
 ):
     rec = await create_recurring_transaction(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         RecurringTransactionCreate(
             description="Old",
             amount=Decimal("100"),
@@ -180,7 +187,8 @@ async def test_delete_recurring_transaction(
 ):
     rec = await create_recurring_transaction(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         RecurringTransactionCreate(
             description="ToDelete",
             amount=Decimal("10"),
@@ -373,10 +381,13 @@ def test_get_occurrences_in_range_monthly_day_29_does_not_drift():
 
 
 @pytest.mark.asyncio
-async def test_generate_pending(session: AsyncSession, test_user, test_workspace, test_account_for_recurring):
+async def test_generate_pending(
+    session: AsyncSession, test_user, test_workspace, test_account_for_recurring
+):
     rec = await create_recurring_transaction(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         RecurringTransactionCreate(
             description="Monthly Sub",
             amount=Decimal("29.90"),
@@ -412,7 +423,8 @@ async def test_generate_pending_deactivates_past_end_date(
 ):
     rec = await create_recurring_transaction(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         RecurringTransactionCreate(
             description="Short Sub",
             amount=Decimal("10"),
@@ -438,7 +450,8 @@ async def test_generate_pending_no_duplicates(
 ):
     await create_recurring_transaction(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         RecurringTransactionCreate(
             description="NoDup",
             amount=Decimal("5"),

@@ -119,9 +119,7 @@ async def update_user(
             raise ValueError("Cannot deactivate your own account")
 
     if data.email is not None and data.email != user.email:
-        existing = await session.execute(
-            select(User).where(User.email == data.email)
-        )
+        existing = await session.execute(select(User).where(User.email == data.email))
         if existing.scalar_one_or_none():
             raise ValueError("A user with this email already exists")
         user.email = data.email
@@ -158,7 +156,9 @@ async def delete_user(
     # Check last superuser protection
     if user.is_superuser:
         count_result = await session.execute(
-            select(func.count()).select_from(User).where(
+            select(func.count())
+            .select_from(User)
+            .where(
                 User.is_superuser == True,  # noqa: E712
                 User.is_active == True,  # noqa: E712
             )
@@ -185,23 +185,21 @@ async def delete_user(
     # Delete attachments for user's transactions
     tx_ids_query = select(Transaction.id).where(Transaction.user_id == user_id)
     await session.execute(
-        delete(TransactionAttachment).where(
-            TransactionAttachment.transaction_id.in_(tx_ids_query)
-        )
+        delete(TransactionAttachment).where(TransactionAttachment.transaction_id.in_(tx_ids_query))
     )
 
     # Delete in dependency order
     await session.execute(delete(Transaction).where(Transaction.user_id == user_id))
     await session.execute(delete(Budget).where(Budget.user_id == user_id))
-    await session.execute(delete(RecurringTransaction).where(RecurringTransaction.user_id == user_id))
+    await session.execute(
+        delete(RecurringTransaction).where(RecurringTransaction.user_id == user_id)
+    )
     await session.execute(delete(ImportLog).where(ImportLog.user_id == user_id))
     await session.execute(delete(Rule).where(Rule.user_id == user_id))
 
     # Asset values depend on assets
     asset_ids_query = select(Asset.id).where(Asset.user_id == user_id)
-    await session.execute(
-        delete(AssetValue).where(AssetValue.asset_id.in_(asset_ids_query))
-    )
+    await session.execute(delete(AssetValue).where(AssetValue.asset_id.in_(asset_ids_query)))
     await session.execute(delete(Asset).where(Asset.user_id == user_id))
 
     await session.execute(delete(PayeeMapping).where(PayeeMapping.user_id == user_id))
@@ -218,9 +216,7 @@ async def delete_user(
 
 
 async def get_app_setting(session: AsyncSession, key: str) -> Optional[AppSetting]:
-    result = await session.execute(
-        select(AppSetting).where(AppSetting.key == key)
-    )
+    result = await session.execute(select(AppSetting).where(AppSetting.key == key))
     return result.scalar_one_or_none()
 
 

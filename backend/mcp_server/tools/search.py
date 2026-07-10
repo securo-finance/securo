@@ -35,5 +35,7 @@ async def search_all(
     per_type_limit: int = 5,
 ) -> dict[str, Any]:
     ws_id = await resolve_workspace_id(session, ctx)
-    hits = await search_service.search_all(session, ws_id, ctx.user_id, query, per_type_limit=int(per_type_limit))
+    hits = await search_service.search_all(
+        session, ws_id, ctx.user_id, query, per_type_limit=int(per_type_limit)
+    )
     return {"items": hits, "total": len(hits)}

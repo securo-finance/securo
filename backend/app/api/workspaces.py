@@ -5,6 +5,7 @@ Workspaces are auto-created at user registration; additional workspaces
 (Freelancer / Small Business / Accountant Firm) ship as part of the
 templates feature in a later phase.
 """
+
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -190,15 +191,11 @@ async def invite_member(
     user: User = Depends(current_active_user),
     user_manager: UserManager = Depends(get_user_manager),
 ):
-    await workspace_service.require_membership(
-        session, workspace_id, user.id, min_role="owner"
-    )
+    await workspace_service.require_membership(session, workspace_id, user.id, min_role="owner")
 
     # Find existing user by email (case-insensitive — fastapi-users
     # stores email lowercased on register, but be safe).
-    existing = await session.execute(
-        select(User).where(User.email == body.email.lower())
-    )
+    existing = await session.execute(select(User).where(User.email == body.email.lower()))
     target = existing.scalar_one_or_none()
 
     if target is None:
@@ -264,9 +261,7 @@ async def change_member_role(
     session: AsyncSession = Depends(get_async_session),
     user: User = Depends(current_active_user),
 ):
-    await workspace_service.require_membership(
-        session, workspace_id, user.id, min_role="owner"
-    )
+    await workspace_service.require_membership(session, workspace_id, user.id, min_role="owner")
     member = await workspace_service.update_member_role(
         session, workspace_id, member_user_id, body.role
     )
@@ -301,9 +296,7 @@ async def archive_workspace_endpoint(
 ):
     """Soft-delete: flips is_archived. Requires owner role. Refuses to
     archive the requester's last accessible workspace."""
-    await workspace_service.require_membership(
-        session, workspace_id, user.id, min_role="owner"
-    )
+    await workspace_service.require_membership(session, workspace_id, user.id, min_role="owner")
     workspace = await workspace_service.archive_workspace(session, workspace_id, user.id)
     await session.commit()
     item = WorkspaceRead.model_validate(workspace)

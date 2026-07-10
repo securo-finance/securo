@@ -40,9 +40,7 @@ async def _create_account(client, headers, name="Wallet"):
     return resp.json()
 
 
-async def _create_group_with_self_and_friend(
-    client, owner_headers, friend_email
-):
+async def _create_group_with_self_and_friend(client, owner_headers, friend_email):
     g = (
         await client.post(
             "/api/groups",
@@ -68,9 +66,7 @@ async def _create_group_with_self_and_friend(
 
 
 @pytest.mark.asyncio
-async def test_linked_member_sees_shared_transaction_in_their_list(
-    client, auth_headers, test_user
-):
+async def test_linked_member_sees_shared_transaction_in_their_list(client, auth_headers, test_user):
     # Owner = the existing test_user.
     # Friend = a freshly registered user we'll link.
     friend_email = "shared-tx-friend@example.com"
@@ -123,9 +119,7 @@ async def test_owner_does_not_see_shared_duplicate(client, auth_headers, test_us
     await _register(client, friend_email, "friendpassword12")
 
     account = await _create_account(client, auth_headers)
-    _, me, friend = await _create_group_with_self_and_friend(
-        client, auth_headers, friend_email
-    )
+    _, me, friend = await _create_group_with_self_and_friend(client, auth_headers, friend_email)
 
     await client.post(
         "/api/transactions",
@@ -159,9 +153,7 @@ async def test_owner_does_not_see_shared_duplicate(client, auth_headers, test_us
 
 
 @pytest.mark.asyncio
-async def test_owner_viewer_share_null_when_owner_not_in_splits(
-    client, auth_headers, test_user
-):
+async def test_owner_viewer_share_null_when_owner_not_in_splits(client, auth_headers, test_user):
     """If the owner paid for others without including themselves in the
     split (e.g. covering a friend's expense), viewer_share stays None
     so the UI doesn't render a misleading 'your share: $0' line."""
@@ -169,9 +161,7 @@ async def test_owner_viewer_share_null_when_owner_not_in_splits(
     await _register(client, friend_email, "friendpassword12")
 
     account = await _create_account(client, auth_headers)
-    _, _me, friend = await _create_group_with_self_and_friend(
-        client, auth_headers, friend_email
-    )
+    _, _me, friend = await _create_group_with_self_and_friend(client, auth_headers, friend_email)
 
     await client.post(
         "/api/transactions",
@@ -211,9 +201,7 @@ async def test_settlement_with_account_id_creates_settlement_source_tx(
     friend_headers = await _login(client, friend_email, "friendpassword12")
 
     account = await _create_account(client, auth_headers)
-    group, me, friend = await _create_group_with_self_and_friend(
-        client, auth_headers, friend_email
-    )
+    group, me, friend = await _create_group_with_self_and_friend(client, auth_headers, friend_email)
 
     # Owner pays $100, splits equally — friend ends up owing $50.
     await client.post(
@@ -272,9 +260,7 @@ async def test_settlement_with_account_id_creates_settlement_source_tx(
 
 
 @pytest.mark.asyncio
-async def test_group_filter_still_works_for_linked_member(
-    client, auth_headers, test_user
-):
+async def test_group_filter_still_works_for_linked_member(client, auth_headers, test_user):
     """Sanity: the group_id filter on /transactions still scopes to
     the group's transactions for a linked member."""
     friend_email = "group-filter-shared@example.com"
@@ -282,9 +268,7 @@ async def test_group_filter_still_works_for_linked_member(
     friend_headers = await _login(client, friend_email, "friendpassword12")
 
     account = await _create_account(client, auth_headers)
-    group, me, friend = await _create_group_with_self_and_friend(
-        client, auth_headers, friend_email
-    )
+    group, me, friend = await _create_group_with_self_and_friend(client, auth_headers, friend_email)
     await client.post(
         "/api/transactions",
         headers=auth_headers,

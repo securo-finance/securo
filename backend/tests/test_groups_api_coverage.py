@@ -4,6 +4,7 @@ Complements test_groups_api.py: exercises update/delete, transactions,
 member 404 branches, settlement update + 404s, and the various not-found
 paths across the router.
 """
+
 import uuid
 
 import pytest
@@ -21,9 +22,7 @@ async def _create_group(client: AsyncClient, auth_headers: dict, **overrides) ->
 async def _add_member(client, auth_headers, group_id, **fields) -> dict:
     payload = {"name": "Member"}
     payload.update(fields)
-    resp = await client.post(
-        f"/api/groups/{group_id}/members", headers=auth_headers, json=payload
-    )
+    resp = await client.post(f"/api/groups/{group_id}/members", headers=auth_headers, json=payload)
     assert resp.status_code == 201, resp.text
     return resp.json()
 
@@ -149,18 +148,14 @@ async def test_create_member_validation_422(client: AsyncClient, auth_headers, t
 @pytest.mark.asyncio
 async def test_group_transactions_empty(client: AsyncClient, auth_headers, test_user):
     group = await _create_group(client, auth_headers, name="Txns")
-    resp = await client.get(
-        f"/api/groups/{group['id']}/transactions?limit=5", headers=auth_headers
-    )
+    resp = await client.get(f"/api/groups/{group['id']}/transactions?limit=5", headers=auth_headers)
     assert resp.status_code == 200
     assert resp.json() == []
 
 
 @pytest.mark.asyncio
 async def test_group_transactions_unknown_group_404(client: AsyncClient, auth_headers, test_user):
-    resp = await client.get(
-        f"/api/groups/{uuid.uuid4()}/transactions", headers=auth_headers
-    )
+    resp = await client.get(f"/api/groups/{uuid.uuid4()}/transactions", headers=auth_headers)
     assert resp.status_code == 404
 
 
@@ -178,9 +173,7 @@ async def test_balances_unknown_group_404(client: AsyncClient, auth_headers, tes
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_settlements_unknown_group_404(client: AsyncClient, auth_headers, test_user):
-    resp = await client.get(
-        f"/api/groups/{uuid.uuid4()}/settlements", headers=auth_headers
-    )
+    resp = await client.get(f"/api/groups/{uuid.uuid4()}/settlements", headers=auth_headers)
     assert resp.status_code == 404
 
 
@@ -212,9 +205,7 @@ async def test_settlement_full_lifecycle(client: AsyncClient, auth_headers, test
     assert upd.status_code == 200, upd.text
     assert float(upd.json()["amount"]) == 25.00
 
-    listing = await client.get(
-        f"/api/groups/{group['id']}/settlements", headers=auth_headers
-    )
+    listing = await client.get(f"/api/groups/{group['id']}/settlements", headers=auth_headers)
     assert listing.status_code == 200
     assert any(s["id"] == settlement_id for s in listing.json())
 

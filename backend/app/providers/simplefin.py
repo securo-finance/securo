@@ -17,6 +17,7 @@ them client-side; the bridge surfaces warnings in the ``errlist`` response.
 All SimpleFIN-specific shapes (Setup Token base64, ``errlist`` codes, 90-day
 window, ``balance-date`` epoch seconds) are contained in this module.
 """
+
 from __future__ import annotations
 
 import base64
@@ -171,13 +172,25 @@ class SimpleFinProvider(BankProvider):
         if pending:
             params["pending"] = "1"
         if start_date:
-            params["start-date"] = str(int(datetime.combine(
-                start_date, datetime.min.time(), tzinfo=timezone.utc,
-            ).timestamp()))
+            params["start-date"] = str(
+                int(
+                    datetime.combine(
+                        start_date,
+                        datetime.min.time(),
+                        tzinfo=timezone.utc,
+                    ).timestamp()
+                )
+            )
         if end_date:
-            params["end-date"] = str(int(datetime.combine(
-                end_date, datetime.min.time(), tzinfo=timezone.utc,
-            ).timestamp()))
+            params["end-date"] = str(
+                int(
+                    datetime.combine(
+                        end_date,
+                        datetime.min.time(),
+                        tzinfo=timezone.utc,
+                    ).timestamp()
+                )
+            )
         if account_id:
             params["account"] = account_id
         async with await self._client(credentials) as client:
@@ -208,13 +221,9 @@ class SimpleFinProvider(BankProvider):
         claim_url = _decode_setup_token(code)
         async with await self._client() as client:
             try:
-                claim_resp = await client.post(
-                    claim_url, headers={"Content-Length": "0"}
-                )
+                claim_resp = await client.post(claim_url, headers={"Content-Length": "0"})
             except httpx.HTTPError as exc:
-                raise RuntimeError(
-                    f"SimpleFIN claim request failed: {exc}"
-                ) from exc
+                raise RuntimeError(f"SimpleFIN claim request failed: {exc}") from exc
         if claim_resp.status_code == 403:
             # The bridge returns 403 when a setup token is reused.
             raise ProviderUserActionRequired(
@@ -225,8 +234,7 @@ class SimpleFinProvider(BankProvider):
             )
         if claim_resp.status_code >= 400:
             raise RuntimeError(
-                f"SimpleFIN claim returned {claim_resp.status_code}: "
-                f"{claim_resp.text[:200]}"
+                f"SimpleFIN claim returned {claim_resp.status_code}: {claim_resp.text[:200]}"
             )
         access_url = (claim_resp.text or "").strip().strip('"')
         if not access_url.startswith(("http://", "https://")):
@@ -264,11 +272,11 @@ class SimpleFinProvider(BankProvider):
         an ``org`` object (``url``/``domain``) to each account, so we check
         that too. Returns None when nothing usable is present.
         """
-        for src in (payload.get("connections") or []):
+        for src in payload.get("connections") or []:
             url = src.get("org_url") or src.get("url") or src.get("sfin_url")
             if url:
                 return url
-        for acc in (payload.get("accounts") or []):
+        for acc in payload.get("accounts") or []:
             org = acc.get("org") or {}
             url = org.get("url") or org.get("domain") or org.get("sfin-url")
             if url:
@@ -305,9 +313,7 @@ class SimpleFinProvider(BankProvider):
     @staticmethod
     def _parse_accounts(payload: dict) -> tuple[str, list[AccountData]]:
         connections = payload.get("connections") or []
-        institution_name = (
-            connections[0].get("name") if connections else "SimpleFIN Connection"
-        )
+        institution_name = connections[0].get("name") if connections else "SimpleFIN Connection"
         accounts: list[AccountData] = []
         for raw in payload.get("accounts") or []:
             balance = _to_decimal(raw.get("balance")) or Decimal("0")
@@ -386,10 +392,7 @@ class SimpleFinProvider(BankProvider):
         if not txn_date:
             return None
         description = (
-            raw.get("description")
-            or raw.get("payee")
-            or raw.get("memo")
-            or "Transaction"
+            raw.get("description") or raw.get("payee") or raw.get("memo") or "Transaction"
         ).strip()[:500]
         status = "pending" if raw.get("pending") else "posted"
         payee: Optional[str]
@@ -429,9 +432,10 @@ class SimpleFinProvider(BankProvider):
                         currency=raw.get("currency") or acc_currency,
                         current_value=market_value,
                         quantity=_to_decimal(raw.get("shares")),
-                        unit_price=_to_decimal(raw.get("market_value")) / _to_decimal(
-                            raw.get("shares")
-                        ) if _to_decimal(raw.get("shares")) else None,
+                        unit_price=_to_decimal(raw.get("market_value"))
+                        / _to_decimal(raw.get("shares"))
+                        if _to_decimal(raw.get("shares"))
+                        else None,
                         purchase_price=_to_decimal(raw.get("purchase_price")),
                         purchase_date=_epoch_to_date(raw.get("created")),
                         isin=raw.get("isin"),

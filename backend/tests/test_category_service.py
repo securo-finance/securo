@@ -56,7 +56,9 @@ async def test_create_default_categories_german(session: AsyncSession, test_user
 
 
 @pytest.mark.asyncio
-async def test_create_default_categories_creates_groups(session: AsyncSession, test_user, test_workspace):
+async def test_create_default_categories_creates_groups(
+    session: AsyncSession, test_user, test_workspace
+):
     await create_default_categories(session, test_user.id, lang="pt-BR")
 
     result = await session.execute(
@@ -67,7 +69,9 @@ async def test_create_default_categories_creates_groups(session: AsyncSession, t
 
 
 @pytest.mark.asyncio
-async def test_create_default_categories_links_to_groups(session: AsyncSession, test_user, test_workspace):
+async def test_create_default_categories_links_to_groups(
+    session: AsyncSession, test_user, test_workspace
+):
     categories = await create_default_categories(session, test_user.id, lang="pt-BR")
 
     with_group = [c for c in categories if c.group_id is not None]
@@ -85,7 +89,9 @@ async def test_create_default_categories_english(session: AsyncSession, test_use
 
 
 @pytest.mark.asyncio
-async def test_create_default_categories_race_guard(session: AsyncSession, test_user, test_workspace):
+async def test_create_default_categories_race_guard(
+    session: AsyncSession, test_user, test_workspace
+):
     """Second call should return existing instead of duplicating."""
     first = await create_default_categories(session, test_user.id, lang="pt-BR")
     second = await create_default_categories(session, test_user.id, lang="pt-BR")
@@ -156,12 +162,14 @@ async def test_create_category_with_group(session: AsyncSession, test_user, test
 
     group = await create_group(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         CategoryGroupCreate(name="CustomGroup", icon="folder", color="#000"),
     )
     cat = await create_category(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         CategoryCreate(name="WithGroup", icon="star", color="#FFF", group_id=group.id),
     )
     assert cat.group_id == group.id
@@ -171,7 +179,8 @@ async def test_create_category_with_group(session: AsyncSession, test_user, test
 async def test_get_category_by_id(session: AsyncSession, test_user, test_workspace):
     created = await create_category(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         CategoryCreate(name="Lookup", icon="search", color="#000000"),
     )
     fetched = await get_category(session, created.id, test_workspace.id)
@@ -189,7 +198,8 @@ async def test_get_category_not_found(session: AsyncSession, test_user, test_wor
 async def test_update_category(session: AsyncSession, test_user, test_workspace):
     cat = await create_category(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         CategoryCreate(name="OldName", icon="x", color="#111111"),
     )
     updated = await update_category(
@@ -205,7 +215,9 @@ async def test_update_category(session: AsyncSession, test_user, test_workspace)
 
 
 @pytest.mark.asyncio
-async def test_update_category_partial(session: AsyncSession, test_user, test_workspace, test_categories):
+async def test_update_category_partial(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
     cat = test_categories[1]
     original_icon = cat.icon
     original_color = cat.color
@@ -241,7 +253,8 @@ async def test_update_category_not_found(session: AsyncSession, test_user, test_
 async def test_delete_custom_category(session: AsyncSession, test_user, test_workspace):
     cat = await create_category(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         CategoryCreate(name="ToDelete", icon="trash", color="#FF0000"),
     )
     assert await delete_category(session, cat.id, test_workspace.id) is True

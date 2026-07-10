@@ -47,21 +47,15 @@ def _tag_member_self(
     """
     from sqlalchemy.orm.attributes import set_committed_value
 
-    is_linked_to_caller = (
-        member.linked_user_id is not None and member.linked_user_id == user_id
-    )
+    is_linked_to_caller = member.linked_user_id is not None and member.linked_user_id == user_id
     is_owner_self_unlinked = (
-        group_owner_id == user_id
-        and member.linked_user_id is None
-        and bool(member.is_self)
+        group_owner_id == user_id and member.linked_user_id is None and bool(member.is_self)
     )
     set_committed_value(member, "is_self", is_linked_to_caller or is_owner_self_unlinked)
     return member
 
 
-async def _resolve_member_email(
-    session: AsyncSession, email: Optional[str]
-) -> Optional[uuid.UUID]:
+async def _resolve_member_email(session: AsyncSession, email: Optional[str]) -> Optional[uuid.UUID]:
     """If `email` matches an existing Securo user, return their id.
     Otherwise return None — the member is created as a shadow row."""
     if not email:
@@ -221,8 +215,7 @@ async def delete_group(
         # blocks the cascade. Translate into a 409-friendly error.
         await session.rollback()
         raise ValueError(
-            "Group has members referenced by transaction splits or settlements. "
-            "Remove those first."
+            "Group has members referenced by transaction splits or settlements. Remove those first."
         ) from e
     return True
 
@@ -241,9 +234,7 @@ async def list_members(
     if not group:
         return None
     result = await session.execute(
-        select(GroupMember)
-        .where(GroupMember.group_id == group_id)
-        .order_by(GroupMember.created_at)
+        select(GroupMember).where(GroupMember.group_id == group_id).order_by(GroupMember.created_at)
     )
     return [_tag_member_self(m, user_id, group.user_id) for m in result.scalars().all()]
 
@@ -278,9 +269,7 @@ async def create_member(
     # caller can override by passing linked_user_id explicitly.
     if payload.get("linked_user_id") is None:
         payload["linked_user_id"] = await _resolve_member_email(session, payload.get("email"))
-    member = GroupMember(
-        group_id=group_id, workspace_id=workspace_id, **payload
-    )
+    member = GroupMember(group_id=group_id, workspace_id=workspace_id, **payload)
     session.add(member)
     await session.commit()
     await session.refresh(member)
@@ -299,9 +288,7 @@ async def update_member(
         return None
 
     result = await session.execute(
-        select(GroupMember).where(
-            GroupMember.id == member_id, GroupMember.group_id == group_id
-        )
+        select(GroupMember).where(GroupMember.id == member_id, GroupMember.group_id == group_id)
     )
     member = result.scalar_one_or_none()
     if not member:
@@ -350,9 +337,7 @@ async def delete_member(
         return False
 
     result = await session.execute(
-        select(GroupMember).where(
-            GroupMember.id == member_id, GroupMember.group_id == group_id
-        )
+        select(GroupMember).where(GroupMember.id == member_id, GroupMember.group_id == group_id)
     )
     member = result.scalar_one_or_none()
     if not member:
@@ -364,8 +349,7 @@ async def delete_member(
     except IntegrityError as e:
         await session.rollback()
         raise ValueError(
-            "Member is referenced by transaction splits or settlements. "
-            "Remove those first."
+            "Member is referenced by transaction splits or settlements. Remove those first."
         ) from e
     return True
 

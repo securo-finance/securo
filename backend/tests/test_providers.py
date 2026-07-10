@@ -73,6 +73,7 @@ def test_all_known_providers():
 
 def test_get_storage_provider_local():
     import app.providers as providers_mod
+
     original = providers_mod._storage_provider
     providers_mod._storage_provider = None
     try:
@@ -87,6 +88,7 @@ def test_get_storage_provider_local():
 
 def test_get_storage_provider_unsupported():
     import app.providers as providers_mod
+
     original = providers_mod._storage_provider
     providers_mod._storage_provider = None
     try:

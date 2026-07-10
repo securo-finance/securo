@@ -54,19 +54,55 @@ async def backup(
     """
     ws_id = ctx.workspace.id
 
-    accounts = (await session.execute(select(Account).where(Account.workspace_id == ws_id))).scalars().all()
-    transactions = (await session.execute(select(Transaction).where(Transaction.workspace_id == ws_id))).scalars().all()
-    categories = (await session.execute(select(Category).where(Category.workspace_id == ws_id))).scalars().all()
-    category_groups = (await session.execute(select(CategoryGroup).where(CategoryGroup.workspace_id == ws_id))).scalars().all()
+    accounts = (
+        (await session.execute(select(Account).where(Account.workspace_id == ws_id)))
+        .scalars()
+        .all()
+    )
+    transactions = (
+        (await session.execute(select(Transaction).where(Transaction.workspace_id == ws_id)))
+        .scalars()
+        .all()
+    )
+    categories = (
+        (await session.execute(select(Category).where(Category.workspace_id == ws_id)))
+        .scalars()
+        .all()
+    )
+    category_groups = (
+        (await session.execute(select(CategoryGroup).where(CategoryGroup.workspace_id == ws_id)))
+        .scalars()
+        .all()
+    )
     rules = (await session.execute(select(Rule).where(Rule.workspace_id == ws_id))).scalars().all()
-    recurring_transactions = (await session.execute(select(RecurringTransaction).where(RecurringTransaction.workspace_id == ws_id))).scalars().all()
-    budgets = (await session.execute(select(Budget).where(Budget.workspace_id == ws_id))).scalars().all()
-    assets = (await session.execute(select(Asset).where(Asset.workspace_id == ws_id))).scalars().all()
-    import_logs = (await session.execute(select(ImportLog).where(ImportLog.workspace_id == ws_id))).scalars().all()
+    recurring_transactions = (
+        (
+            await session.execute(
+                select(RecurringTransaction).where(RecurringTransaction.workspace_id == ws_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    budgets = (
+        (await session.execute(select(Budget).where(Budget.workspace_id == ws_id))).scalars().all()
+    )
+    assets = (
+        (await session.execute(select(Asset).where(Asset.workspace_id == ws_id))).scalars().all()
+    )
+    import_logs = (
+        (await session.execute(select(ImportLog).where(ImportLog.workspace_id == ws_id)))
+        .scalars()
+        .all()
+    )
 
     asset_ids = [a.id for a in assets]
     if asset_ids:
-        asset_values = (await session.execute(select(AssetValue).where(AssetValue.asset_id.in_(asset_ids)))).scalars().all()
+        asset_values = (
+            (await session.execute(select(AssetValue).where(AssetValue.asset_id.in_(asset_ids))))
+            .scalars()
+            .all()
+        )
     else:
         asset_values = []
 

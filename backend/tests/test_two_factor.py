@@ -43,10 +43,12 @@ def _override_redis_with_store(_mock_redis):
     async def _fake():
         return mock
 
-    with patch("app.core.redis.get_redis", _fake), \
-         patch("app.core.rate_limit.get_redis", _fake), \
-         patch("app.api.custom_auth.get_redis", _fake), \
-         patch("app.api.two_factor.get_redis", _fake):
+    with (
+        patch("app.core.redis.get_redis", _fake),
+        patch("app.core.rate_limit.get_redis", _fake),
+        patch("app.api.custom_auth.get_redis", _fake),
+        patch("app.api.two_factor.get_redis", _fake),
+    ):
         yield mock
 
 
@@ -209,9 +211,11 @@ async def test_verify_2fa_with_valid_token(client: AsyncClient, test_user_with_2
     async def _fake():
         return mock_r
 
-    with patch("app.api.two_factor.get_redis", _fake), \
-         patch("app.core.rate_limit.get_redis", _fake), \
-         patch("app.api.custom_auth.get_redis", _fake):
+    with (
+        patch("app.api.two_factor.get_redis", _fake),
+        patch("app.core.rate_limit.get_redis", _fake),
+        patch("app.api.custom_auth.get_redis", _fake),
+    ):
         totp = pyotp.TOTP(test_user_with_2fa.totp_secret)
         resp = await client.post(
             "/api/auth/2fa/verify",

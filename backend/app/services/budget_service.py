@@ -137,7 +137,8 @@ async def get_budgets(
         )
     )
     recurring = [
-        b for b in recurring_result.scalars().all()
+        b
+        for b in recurring_result.scalars().all()
         if str(b.category_id) not in override_category_ids
     ]
 
@@ -283,7 +284,10 @@ async def get_budget_vs_actual(
 
     # Subtract non-owner shares of own splits — only the user's share counts.
     own_offset = await owner_split_offset_by_category(
-        session, user_id, month_start, month_end,
+        session,
+        user_id,
+        month_start,
+        month_end,
         use_effective_date=accounting_mode == "accrual",
         primary_currency=primary_currency,
         workspace_id=workspace_id,
@@ -304,7 +308,10 @@ async def get_budget_vs_actual(
     from app.services._query_filters import viewer_shared_spending_by_category
 
     shared_by_cat = await viewer_shared_spending_by_category(
-        session, user_id, month_start, month_end,
+        session,
+        user_id,
+        month_start,
+        month_end,
         use_effective_date=accounting_mode == "accrual",
         primary_currency=primary_currency,
     )
@@ -321,7 +328,10 @@ async def get_budget_vs_actual(
             continue
         cat_id = str(proj["category_id"])
         converted, _ = await convert(
-            session, Decimal(str(proj["amount"])), proj["currency"], primary_currency,
+            session,
+            Decimal(str(proj["amount"])),
+            proj["currency"],
+            primary_currency,
         )
         spending_map[cat_id] = spending_map.get(cat_id, Decimal("0")) + converted
 
@@ -347,7 +357,10 @@ async def get_budget_vs_actual(
         prev_spending_map[str(row[0])] = abs(row[1] or Decimal("0"))
 
     prev_own_offset = await owner_split_offset_by_category(
-        session, user_id, prev_month_start, prev_month_end,
+        session,
+        user_id,
+        prev_month_start,
+        prev_month_end,
         use_effective_date=accounting_mode == "accrual",
         primary_currency=primary_currency,
         workspace_id=workspace_id,
@@ -364,7 +377,10 @@ async def get_budget_vs_actual(
     # Same shared-share layer for the previous month so the trend
     # comparison is apples-to-apples.
     prev_shared_by_cat = await viewer_shared_spending_by_category(
-        session, user_id, prev_month_start, prev_month_end,
+        session,
+        user_id,
+        prev_month_start,
+        prev_month_end,
         use_effective_date=accounting_mode == "accrual",
         primary_currency=primary_currency,
     )
@@ -372,16 +388,23 @@ async def get_budget_vs_actual(
         if cat_uuid is None:
             continue
         cat_id = str(cat_uuid)
-        prev_spending_map[cat_id] = prev_spending_map.get(cat_id, Decimal("0")) + Decimal(str(total))
+        prev_spending_map[cat_id] = prev_spending_map.get(cat_id, Decimal("0")) + Decimal(
+            str(total)
+        )
 
     # Add projected recurring transactions for previous month (converted to primary currency)
-    prev_projections = await _get_recurring_projections(session, workspace_id, prev_month_start, prev_month_end)
+    prev_projections = await _get_recurring_projections(
+        session, workspace_id, prev_month_start, prev_month_end
+    )
     for proj in prev_projections:
         if proj["type"] != "debit" or not proj["category_id"]:
             continue
         cat_id = str(proj["category_id"])
         converted, _ = await convert(
-            session, Decimal(str(proj["amount"])), proj["currency"], primary_currency,
+            session,
+            Decimal(str(proj["amount"])),
+            proj["currency"],
+            primary_currency,
         )
         prev_spending_map[cat_id] = prev_spending_map.get(cat_id, Decimal("0")) + converted
 
@@ -402,18 +425,20 @@ async def get_budget_vs_actual(
         if budget_amount and budget_amount > 0:
             percentage = round(float(actual / budget_amount * 100), 1)
 
-        comparisons.append(BudgetVsActual(
-            category_id=category.id,
-            category_name=category.name,
-            category_icon=category.icon,
-            category_color=category.color,
-            group_id=group.id if group else None,
-            group_name=group.name if group else None,
-            budget_amount=budget_amount,
-            actual_amount=actual,
-            prev_month_amount=prev_actual,
-            percentage_used=percentage,
-            is_recurring=is_recurring,
-        ))
+        comparisons.append(
+            BudgetVsActual(
+                category_id=category.id,
+                category_name=category.name,
+                category_icon=category.icon,
+                category_color=category.color,
+                group_id=group.id if group else None,
+                group_name=group.name if group else None,
+                budget_amount=budget_amount,
+                actual_amount=actual,
+                prev_month_amount=prev_actual,
+                percentage_used=percentage,
+                is_recurring=is_recurring,
+            )
+        )
 
     return sorted(comparisons, key=lambda x: float(x.actual_amount), reverse=True)

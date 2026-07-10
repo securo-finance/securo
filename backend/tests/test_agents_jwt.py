@@ -6,6 +6,7 @@ Both sides share AGENTS_MCP_JWT_SECRET. We test that:
   - Expired tokens are rejected.
   - Missing audience / issuer is rejected.
 """
+
 import time
 import uuid
 

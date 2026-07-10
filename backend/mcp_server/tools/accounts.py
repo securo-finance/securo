@@ -36,16 +36,18 @@ async def list_accounts(
     # rows is already a list of dicts (per service contract), but normalize keys.
     items: list[dict[str, Any]] = []
     for r in rows:
-        items.append({
-            "id": str(r.get("id")) if r.get("id") else None,
-            "name": r.get("name"),
-            "type": r.get("type"),
-            "currency": r.get("currency"),
-            "balance": num(r.get("balance")),
-            "balance_primary": num(r.get("balance_primary")),
-            "is_closed": bool(r.get("is_closed", False)),
-            "institution": r.get("institution"),
-        })
+        items.append(
+            {
+                "id": str(r.get("id")) if r.get("id") else None,
+                "name": r.get("name"),
+                "type": r.get("type"),
+                "currency": r.get("currency"),
+                "balance": num(r.get("balance")),
+                "balance_primary": num(r.get("balance_primary")),
+                "is_closed": bool(r.get("is_closed", False)),
+                "institution": r.get("institution"),
+            }
+        )
     return {"items": items, "total": len(items)}
 
 

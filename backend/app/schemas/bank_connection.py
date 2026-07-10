@@ -74,6 +74,8 @@ class ReconnectTokenResponse(BaseModel):
 
 class ConnectionSettingsUpdate(BaseModel):
     display_name: Optional[str] = None
-    payee_source: Optional[Literal["auto", "merchant", "payment_data", "description", "none"]] = None
+    payee_source: Optional[Literal["auto", "merchant", "payment_data", "description", "none"]] = (
+        None
+    )
     import_pending: Optional[bool] = None
     sync_assets: Optional[bool] = None

@@ -39,10 +39,7 @@ def normalize_openai_base_url(url: str) -> str:
     url = url.rstrip("/")
     path_segments = [s for s in (urlparse(url).path or "").split("/") if s]
     for seg in path_segments:
-        if (
-            (seg.startswith("v") and seg[1:].isdigit())
-            or seg in {"beta", "latest"}
-        ):
+        if (seg.startswith("v") and seg[1:].isdigit()) or seg in {"beta", "latest"}:
             return url
     return url + "/v1"
 
@@ -95,7 +92,13 @@ def _raise_for_status(status: int, body: str) -> None:
 class OpenAIProvider(LLMProvider):
     name = "openai"
 
-    def __init__(self, *, api_key: str = "", base_url: str = "https://api.openai.com/v1", model: Optional[str] = None):
+    def __init__(
+        self,
+        *,
+        api_key: str = "",
+        base_url: str = "https://api.openai.com/v1",
+        model: Optional[str] = None,
+    ):
         # Normalize at construction so every URL helper sees a `/v1`-rooted base.
         super().__init__(api_key=api_key, base_url=normalize_openai_base_url(base_url), model=model)
 
@@ -133,7 +136,9 @@ class OpenAIProvider(LLMProvider):
 
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
-                async with client.stream("POST", url, json=payload, headers=self._headers()) as resp:
+                async with client.stream(
+                    "POST", url, json=payload, headers=self._headers()
+                ) as resp:
                     if resp.status_code >= 400:
                         body = (await resp.aread()).decode("utf-8", errors="replace")
                         _raise_for_status(resp.status_code, body)
@@ -168,12 +173,15 @@ class OpenAIProvider(LLMProvider):
                             for tc in delta.get("tool_calls") or []:
                                 idx = int(tc.get("index", 0))
                                 fn = tc.get("function") or {}
-                                state = idx_state.setdefault(idx, {
-                                    "id": None,
-                                    "name": "",
-                                    "started": False,
-                                    "pending_args": "",
-                                })
+                                state = idx_state.setdefault(
+                                    idx,
+                                    {
+                                        "id": None,
+                                        "name": "",
+                                        "started": False,
+                                        "pending_args": "",
+                                    },
+                                )
                                 # First chunk usually carries both id and name;
                                 # some servers split the name across chunks.
                                 if tc.get("id") and not state["id"]:
@@ -223,7 +231,9 @@ class OpenAIProvider(LLMProvider):
         url = f"{self.base_url.rstrip('/')}/embeddings"
         try:
             async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
-                resp = await client.post(url, json={"model": model, "input": texts}, headers=self._headers())
+                resp = await client.post(
+                    url, json={"model": model, "input": texts}, headers=self._headers()
+                )
                 if resp.status_code >= 400:
                     _raise_for_status(resp.status_code, resp.text)
                 data = resp.json()

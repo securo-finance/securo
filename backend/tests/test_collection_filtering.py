@@ -23,8 +23,12 @@ from app.services import dashboard_service, report_service
 
 async def _account(session, user, name) -> Account:
     acc = Account(
-        id=uuid.uuid4(), user_id=user.id, name=name, type="checking",
-        balance=Decimal("0"), currency="BRL",
+        id=uuid.uuid4(),
+        user_id=user.id,
+        name=name,
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
     )
     session.add(acc)
     await session.commit()
@@ -33,12 +37,19 @@ async def _account(session, user, name) -> Account:
 
 
 async def _txn(session, user, account, amount, typ):
-    session.add(Transaction(
-        id=uuid.uuid4(), user_id=user.id, account_id=account.id,
-        description="t", amount=Decimal(str(amount)),
-        date=date.today().replace(day=min(5, date.today().day)),
-        type=typ, source="manual", created_at=datetime.now(timezone.utc),
-    ))
+    session.add(
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=user.id,
+            account_id=account.id,
+            description="t",
+            amount=Decimal(str(amount)),
+            date=date.today().replace(day=min(5, date.today().day)),
+            type=typ,
+            source="manual",
+            created_at=datetime.now(timezone.utc),
+        )
+    )
     await session.commit()
 
 
@@ -76,9 +87,7 @@ async def test_summary_balances_and_pnl_filter_by_collection(
 
 
 @pytest.mark.asyncio
-async def test_empty_collection_yields_zero(
-    session: AsyncSession, test_user: User, test_workspace
-):
+async def test_empty_collection_yields_zero(session: AsyncSession, test_user: User, test_workspace):
     a = await _account(session, test_user, "A")
     await _txn(session, test_user, a, 1000, "credit")
 
@@ -99,17 +108,26 @@ async def test_net_worth_excludes_assets_when_filtered(
 
     # An asset that should count toward unfiltered net worth but be excluded
     # under a collection filter.
-    session.add(Asset(
-        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
-        name="House", type="real_estate", currency="BRL",
-        purchase_price=Decimal("5000"), purchase_date=date.today().replace(day=1),
-        valuation_method="manual",
-    ))
+    session.add(
+        Asset(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            name="House",
+            type="real_estate",
+            currency="BRL",
+            purchase_price=Decimal("5000"),
+            purchase_date=date.today().replace(day=1),
+            valuation_method="manual",
+        )
+    )
     await session.commit()
 
     ws = test_workspace.id
     unfiltered = await report_service.get_net_worth_report(session, ws, test_user.id)
-    filtered = await report_service.get_net_worth_report(session, ws, test_user.id, account_ids=[a.id])
+    filtered = await report_service.get_net_worth_report(
+        session, ws, test_user.id, account_ids=[a.id]
+    )
 
     # Asset present unfiltered, gone when filtered.
     assert unfiltered.summary.breakdowns[1].key == "assets"
@@ -129,24 +147,42 @@ async def test_net_worth_includes_collection_wallet_assets(
     await _txn(session, test_user, a, 1000, "credit")  # account balance 1000
 
     wallet = AssetGroup(
-        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
         name="Investments",
     )
     session.add(wallet)
     await session.commit()
     # Asset inside the wallet (counts) vs. one outside (excluded).
-    session.add(Asset(
-        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
-        name="In wallet", type="investment", currency="BRL", group_id=wallet.id,
-        purchase_price=Decimal("3000"), purchase_date=date.today().replace(day=1),
-        valuation_method="manual",
-    ))
-    session.add(Asset(
-        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
-        name="Outside", type="investment", currency="BRL", group_id=None,
-        purchase_price=Decimal("9999"), purchase_date=date.today().replace(day=1),
-        valuation_method="manual",
-    ))
+    session.add(
+        Asset(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            name="In wallet",
+            type="investment",
+            currency="BRL",
+            group_id=wallet.id,
+            purchase_price=Decimal("3000"),
+            purchase_date=date.today().replace(day=1),
+            valuation_method="manual",
+        )
+    )
+    session.add(
+        Asset(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            name="Outside",
+            type="investment",
+            currency="BRL",
+            group_id=None,
+            purchase_price=Decimal("9999"),
+            purchase_date=date.today().replace(day=1),
+            valuation_method="manual",
+        )
+    )
     await session.commit()
 
     ws = test_workspace.id
@@ -180,17 +216,27 @@ async def test_wallet_only_collection_shows_assets_no_accounts(
     await _txn(session, test_user, other, 7777, "credit")
 
     wallet = AssetGroup(
-        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
         name="Crypto",
     )
     session.add(wallet)
     await session.commit()
-    session.add(Asset(
-        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
-        name="BTC", type="crypto", currency="BRL", group_id=wallet.id,
-        purchase_price=Decimal("2500"), purchase_date=date.today().replace(day=1),
-        valuation_method="manual",
-    ))
+    session.add(
+        Asset(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            name="BTC",
+            type="crypto",
+            currency="BRL",
+            group_id=wallet.id,
+            purchase_price=Decimal("2500"),
+            purchase_date=date.today().replace(day=1),
+            valuation_method="manual",
+        )
+    )
     await session.commit()
 
     ws = test_workspace.id

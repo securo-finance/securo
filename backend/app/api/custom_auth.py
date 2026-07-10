@@ -44,7 +44,11 @@ async def login(
             json.dumps({"user_id": str(user.id), "available_methods": available_methods}),
             ex=TEMP_TOKEN_TTL,
         )
-        return {"requires_2fa": True, "temp_token": temp_token, "available_methods": available_methods}
+        return {
+            "requires_2fa": True,
+            "temp_token": temp_token,
+            "available_methods": available_methods,
+        }
 
     # Normal login — generate JWT
     strategy = get_jwt_strategy()

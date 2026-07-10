@@ -7,6 +7,7 @@ Goals:
     use tools for precise queries (balances, transactions, etc.).
   - Locale-aware: respects the user's primary currency and language.
 """
+
 from __future__ import annotations
 
 import uuid

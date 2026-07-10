@@ -9,6 +9,7 @@ knowing about the upstream service. Populated at creation time for
 market-priced assets when the quote provider returns a company website;
 left null for manual assets and tickers without a website (most crypto).
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa

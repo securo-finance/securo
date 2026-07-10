@@ -92,9 +92,7 @@ async def _rollup(
         if asset.currency == primary_currency:
             current_value_primary += latest
         else:
-            converted, _ = await convert(
-                session, latest, asset.currency, primary_currency
-            )
+            converted, _ = await convert(session, latest, asset.currency, primary_currency)
             current_value_primary += converted
     return asset_count, current_value, current_value_primary
 
@@ -295,9 +293,7 @@ async def ensure_group_for_connection(
     return group
 
 
-async def _unique_default_name(
-    session: AsyncSession, user_id: uuid.UUID, base: str
-) -> str:
+async def _unique_default_name(session: AsyncSession, user_id: uuid.UUID, base: str) -> str:
     """Return `base` or the first free `base N` for this user."""
     existing_rows = await session.execute(
         select(AssetGroup.name).where(AssetGroup.user_id == user_id)

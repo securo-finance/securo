@@ -1,5 +1,6 @@
 """HTTP coverage for /api/agents/connections — LLM connection CRUD plus
 the /test probe endpoint."""
+
 from __future__ import annotations
 
 import uuid
@@ -44,7 +45,9 @@ async def test_create_connection_400_for_unknown_kind(client, auth_headers, test
 
 
 @pytest.mark.asyncio
-async def test_create_connection_400_for_openai_compat_without_base_url(client, auth_headers, test_user):
+async def test_create_connection_400_for_openai_compat_without_base_url(
+    client, auth_headers, test_user
+):
     r = await client.post(
         "/api/agents/connections",
         json={"name": "x", "kind": "openai_compatible"},
@@ -88,9 +91,7 @@ async def test_get_update_delete_connection(client, auth_headers, test_user):
 
 @pytest.mark.asyncio
 async def test_get_connection_404(client, auth_headers, test_user):
-    r = await client.get(
-        f"/api/agents/connections/{uuid.uuid4()}", headers=auth_headers
-    )
+    r = await client.get(f"/api/agents/connections/{uuid.uuid4()}", headers=auth_headers)
     assert r.status_code == 404
 
 
@@ -106,9 +107,7 @@ async def test_update_connection_404(client, auth_headers, test_user):
 
 @pytest.mark.asyncio
 async def test_delete_connection_404(client, auth_headers, test_user):
-    r = await client.delete(
-        f"/api/agents/connections/{uuid.uuid4()}", headers=auth_headers
-    )
+    r = await client.delete(f"/api/agents/connections/{uuid.uuid4()}", headers=auth_headers)
     assert r.status_code == 404
 
 
@@ -130,9 +129,7 @@ async def test_test_connection_uses_service_probe(client, auth_headers, test_use
         "app.agents.api.connections.connection_service.test_connection",
         side_effect=fake_probe,
     ):
-        r = await client.post(
-            f"/api/agents/connections/{cid}/test", headers=auth_headers
-        )
+        r = await client.post(f"/api/agents/connections/{cid}/test", headers=auth_headers)
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["ok"] is True
@@ -142,9 +139,7 @@ async def test_test_connection_uses_service_probe(client, auth_headers, test_use
 
 @pytest.mark.asyncio
 async def test_test_connection_404_for_unknown(client, auth_headers, test_user):
-    r = await client.post(
-        f"/api/agents/connections/{uuid.uuid4()}/test", headers=auth_headers
-    )
+    r = await client.post(f"/api/agents/connections/{uuid.uuid4()}/test", headers=auth_headers)
     assert r.status_code == 404
 
 

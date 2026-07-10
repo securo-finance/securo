@@ -20,7 +20,11 @@ from mcp_server.tools._helpers import num, parse_date, resolve_workspace_id
     parameters={
         "type": "object",
         "properties": {
-            "month": {"type": "string", "format": "date", "description": "Any date inside the target month (YYYY-MM-DD)"},
+            "month": {
+                "type": "string",
+                "format": "date",
+                "description": "Any date inside the target month (YYYY-MM-DD)",
+            },
         },
         "additionalProperties": False,
     },
@@ -39,12 +43,14 @@ async def get_budget_vs_actual(
     for r in rows:
         # BudgetVsActual is a Pydantic model; serialize defensively.
         d = r.model_dump() if hasattr(r, "model_dump") else r.__dict__
-        items.append({
-            "category_id": str(d.get("category_id")) if d.get("category_id") else None,
-            "category_name": d.get("category_name"),
-            "budget_amount": num(d.get("budget_amount") or d.get("amount")),
-            "actual_amount": num(d.get("actual_amount") or d.get("actual") or d.get("spent")),
-            "remaining": num(d.get("remaining")),
-            "currency": d.get("currency"),
-        })
+        items.append(
+            {
+                "category_id": str(d.get("category_id")) if d.get("category_id") else None,
+                "category_name": d.get("category_name"),
+                "budget_amount": num(d.get("budget_amount") or d.get("amount")),
+                "actual_amount": num(d.get("actual_amount") or d.get("actual") or d.get("spent")),
+                "remaining": num(d.get("remaining")),
+                "currency": d.get("currency"),
+            }
+        )
     return {"month": target.isoformat(), "items": items, "total": len(items)}

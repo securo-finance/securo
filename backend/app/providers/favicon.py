@@ -5,6 +5,7 @@ the bank providers (institution logos when an integration exposes the bank's
 URL but no logo image — e.g. SimpleFIN). No API key, works for any public
 domain; the frontend falls back to a type icon on image-load failure.
 """
+
 from typing import Optional
 from urllib.parse import urlparse
 

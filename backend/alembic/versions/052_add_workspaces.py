@@ -74,7 +74,9 @@ def upgrade() -> None:
         sa.Column("locale", sa.String(10), nullable=True),
         sa.Column("icon", sa.String(50), nullable=True),
         sa.Column("color", sa.String(7), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
     )
     op.create_index("ix_workspaces_kind", "workspaces", ["kind"])
 
@@ -101,7 +103,9 @@ def upgrade() -> None:
             sa.ForeignKey("users.id", ondelete="SET NULL"),
             nullable=True,
         ),
-        sa.Column("joined_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "joined_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
         sa.UniqueConstraint("workspace_id", "user_id", name="uq_workspace_member"),
     )
     op.create_index("ix_workspace_members_user", "workspace_members", ["user_id"])

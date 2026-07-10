@@ -15,7 +15,15 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("goals", sa.Column("initial_amount", sa.Numeric(precision=15, scale=2), nullable=False, server_default="0.00"))
+    op.add_column(
+        "goals",
+        sa.Column(
+            "initial_amount",
+            sa.Numeric(precision=15, scale=2),
+            nullable=False,
+            server_default="0.00",
+        ),
+    )
     # Backfill existing goals: set initial_amount = current_amount so existing
     # goals don't falsely show progress from zero.
     op.execute("UPDATE goals SET initial_amount = current_amount")

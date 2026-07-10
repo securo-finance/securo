@@ -3,6 +3,7 @@
 Keep payloads small and stable: a transaction returned to the LLM should
 have a small set of obviously-named fields, not the full SQLAlchemy row.
 """
+
 from __future__ import annotations
 
 import uuid

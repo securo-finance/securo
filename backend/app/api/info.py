@@ -3,6 +3,7 @@
 Tells the frontend which optional features are enabled so it can hide
 nav items, routes, etc. Lightweight — no auth required.
 """
+
 import os
 
 from fastapi import APIRouter

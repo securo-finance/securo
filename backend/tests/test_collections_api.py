@@ -66,12 +66,8 @@ async def test_create_and_list_collection(
 
 
 @pytest.mark.asyncio
-async def test_create_empty_collection_allowed(
-    client: AsyncClient, auth_headers, test_user: User
-):
-    resp = await client.post(
-        "/api/collections", headers=auth_headers, json={"name": "Empty"}
-    )
+async def test_create_empty_collection_allowed(client: AsyncClient, auth_headers, test_user: User):
+    resp = await client.post("/api/collections", headers=auth_headers, json={"name": "Empty"})
     assert resp.status_code == 201, resp.text
     assert resp.json()["account_count"] == 0
     assert resp.json()["account_ids"] == []
@@ -85,14 +81,18 @@ async def test_update_replaces_membership(
     a2 = await _make_account(session, test_user, "A2")
     a3 = await _make_account(session, test_user, "A3")
 
-    cid = (await client.post(
-        "/api/collections", headers=auth_headers,
-        json={"name": "C", "account_ids": [str(a1.id), str(a2.id)]},
-    )).json()["id"]
+    cid = (
+        await client.post(
+            "/api/collections",
+            headers=auth_headers,
+            json={"name": "C", "account_ids": [str(a1.id), str(a2.id)]},
+        )
+    ).json()["id"]
 
     # Replace membership with a different set + rename.
     resp = await client.patch(
-        f"/api/collections/{cid}", headers=auth_headers,
+        f"/api/collections/{cid}",
+        headers=auth_headers,
         json={"name": "Renamed", "account_ids": [str(a3.id)]},
     )
     assert resp.status_code == 200, resp.text
@@ -112,9 +112,9 @@ async def test_update_replaces_membership(
 
 @pytest.mark.asyncio
 async def test_delete_collection(client: AsyncClient, auth_headers, test_user: User):
-    cid = (await client.post(
-        "/api/collections", headers=auth_headers, json={"name": "Temp"}
-    )).json()["id"]
+    cid = (
+        await client.post("/api/collections", headers=auth_headers, json={"name": "Temp"})
+    ).json()["id"]
 
     assert (await client.delete(f"/api/collections/{cid}", headers=auth_headers)).status_code == 204
     assert (await client.get("/api/collections", headers=auth_headers)).json() == []
@@ -136,14 +136,20 @@ async def test_membership_scoped_to_workspace(
     session.add(other_ws)
     await session.commit()
     foreign = Account(
-        id=uuid.uuid4(), user_id=test_user.id, workspace_id=other_ws.id,
-        name="Foreign", type="checking", balance=Decimal("0"), currency="BRL",
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=other_ws.id,
+        name="Foreign",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
     )
     session.add(foreign)
     await session.commit()
 
     resp = await client.post(
-        "/api/collections", headers=auth_headers,
+        "/api/collections",
+        headers=auth_headers,
         json={"name": "Scoped", "account_ids": [str(mine.id), str(foreign.id)]},
     )
     assert resp.status_code == 201, resp.text
@@ -161,8 +167,13 @@ async def test_collection_with_wallets(
     w2 = await _make_wallet(session, test_user, "Crypto")
 
     resp = await client.post(
-        "/api/collections", headers=auth_headers,
-        json={"name": "Wealth", "account_ids": [str(acc.id)], "wallet_ids": [str(w1.id), str(w2.id)]},
+        "/api/collections",
+        headers=auth_headers,
+        json={
+            "name": "Wealth",
+            "account_ids": [str(acc.id)],
+            "wallet_ids": [str(w1.id), str(w2.id)],
+        },
     )
     assert resp.status_code == 201, resp.text
     body = resp.json()
@@ -196,9 +207,15 @@ async def test_same_account_and_wallet_shared_across_collections(
     wallet = await _make_wallet(session, test_user, "Shared wallet")
 
     payload = {"account_ids": [str(acc.id)], "wallet_ids": [str(wallet.id)]}
-    c1 = (await client.post("/api/collections", headers=auth_headers, json={"name": "C1", **payload})).json()
-    c2 = (await client.post("/api/collections", headers=auth_headers, json={"name": "C2", **payload})).json()
-    c3 = (await client.post("/api/collections", headers=auth_headers, json={"name": "C3", **payload})).json()
+    c1 = (
+        await client.post("/api/collections", headers=auth_headers, json={"name": "C1", **payload})
+    ).json()
+    c2 = (
+        await client.post("/api/collections", headers=auth_headers, json={"name": "C2", **payload})
+    ).json()
+    c3 = (
+        await client.post("/api/collections", headers=auth_headers, json={"name": "C3", **payload})
+    ).json()
 
     # All three independently reference the same account + wallet.
     for c in (c1, c2, c3):
@@ -223,7 +240,8 @@ async def test_wallet_only_collection(
     """A collection can hold only wallets (no accounts)."""
     w = await _make_wallet(session, test_user, "Only wallet")
     resp = await client.post(
-        "/api/collections", headers=auth_headers,
+        "/api/collections",
+        headers=auth_headers,
         json={"name": "Wallet-only", "wallet_ids": [str(w.id)]},
     )
     assert resp.status_code == 201, resp.text

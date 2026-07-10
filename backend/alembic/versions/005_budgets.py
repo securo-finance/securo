@@ -4,6 +4,7 @@ Revision ID: 005
 Revises: 004
 Create Date: 2026-02-25
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -20,8 +21,15 @@ def upgrade() -> None:
     op.create_table(
         "budgets",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
-        sa.Column("category_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("categories.id"), nullable=False),
+        sa.Column(
+            "user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False
+        ),
+        sa.Column(
+            "category_id",
+            postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("categories.id"),
+            nullable=False,
+        ),
         sa.Column("amount", sa.Numeric(precision=15, scale=2), nullable=False),
         sa.Column("month", sa.Date, nullable=False),  # First day of month
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),

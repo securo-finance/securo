@@ -1,4 +1,5 @@
 """Pure rule evaluation engine — no DB access."""
+
 import re
 import unicodedata
 import uuid
@@ -31,7 +32,15 @@ def _match_condition(condition: dict, tx: "Transaction") -> bool:
     tx_val = getattr(tx, field, None)
 
     # String operators
-    if op in ("contains", "not_contains", "starts_with", "ends_with", "equals", "not_equals", "regex"):
+    if op in (
+        "contains",
+        "not_contains",
+        "starts_with",
+        "ends_with",
+        "equals",
+        "not_equals",
+        "regex",
+    ):
         tx_str = _normalize(str(tx_val or ""))
         val_str = _normalize(str(value or ""))
 

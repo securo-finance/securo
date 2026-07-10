@@ -10,6 +10,7 @@ Search path:
   2. Cosine-distance similarity search against agent's chunks (pgvector).
   3. Filter by similarity_threshold, sort by score, top_n.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -36,15 +37,27 @@ def _disk_path(doc_id: uuid.UUID, filename: str) -> str:
 
 
 async def list_docs(session: AsyncSession, agent_id: uuid.UUID) -> list[KnowledgeDoc]:
-    return list((await session.execute(
-        select(KnowledgeDoc).where(KnowledgeDoc.agent_id == agent_id).order_by(KnowledgeDoc.created_at.desc())
-    )).scalars().all())
+    return list(
+        (
+            await session.execute(
+                select(KnowledgeDoc)
+                .where(KnowledgeDoc.agent_id == agent_id)
+                .order_by(KnowledgeDoc.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
 
 
-async def get_doc(session: AsyncSession, doc_id: uuid.UUID, user_id: uuid.UUID) -> Optional[KnowledgeDoc]:
-    return (await session.execute(
-        select(KnowledgeDoc).where(KnowledgeDoc.id == doc_id, KnowledgeDoc.user_id == user_id)
-    )).scalar_one_or_none()
+async def get_doc(
+    session: AsyncSession, doc_id: uuid.UUID, user_id: uuid.UUID
+) -> Optional[KnowledgeDoc]:
+    return (
+        await session.execute(
+            select(KnowledgeDoc).where(KnowledgeDoc.id == doc_id, KnowledgeDoc.user_id == user_id)
+        )
+    ).scalar_one_or_none()
 
 
 async def upload_doc(
@@ -97,7 +110,9 @@ async def delete_doc(session: AsyncSession, doc_id: uuid.UUID, user_id: uuid.UUI
     return True
 
 
-async def set_pinned(session: AsyncSession, doc_id: uuid.UUID, user_id: uuid.UUID, pinned: bool) -> Optional[KnowledgeDoc]:
+async def set_pinned(
+    session: AsyncSession, doc_id: uuid.UUID, user_id: uuid.UUID, pinned: bool
+) -> Optional[KnowledgeDoc]:
     doc = await get_doc(session, doc_id, user_id)
     if doc is None:
         return None
@@ -119,14 +134,16 @@ async def replace_chunks(
     pairs. Used by the Celery ingest task."""
     await session.execute(delete(KnowledgeChunk).where(KnowledgeChunk.doc_id == doc_id))
     for ordinal, (content, embedding) in enumerate(chunks):
-        session.add(KnowledgeChunk(
-            doc_id=doc_id,
-            agent_id=agent_id,
-            ordinal=ordinal,
-            content=content,
-            embedding=embedding,
-            embedding_model=embedding_model,
-        ))
+        session.add(
+            KnowledgeChunk(
+                doc_id=doc_id,
+                agent_id=agent_id,
+                ordinal=ordinal,
+                content=content,
+                embedding=embedding,
+                embedding_model=embedding_model,
+            )
+        )
     await session.commit()
     return len(chunks)
 
@@ -139,7 +156,9 @@ async def mark_status(
     error: Optional[str] = None,
     chunk_count: Optional[int] = None,
 ) -> None:
-    doc = (await session.execute(select(KnowledgeDoc).where(KnowledgeDoc.id == doc_id))).scalar_one_or_none()
+    doc = (
+        await session.execute(select(KnowledgeDoc).where(KnowledgeDoc.id == doc_id))
+    ).scalar_one_or_none()
     if doc is None:
         return
     doc.status = status
@@ -184,13 +203,15 @@ async def similarity_search(
         score = 1.0 - float(r.distance)
         if score < similarity_threshold:
             continue
-        out.append({
-            "id": str(r.id),
-            "doc_id": str(r.doc_id),
-            "ordinal": int(r.ordinal),
-            "content": r.content,
-            "score": score,
-        })
+        out.append(
+            {
+                "id": str(r.id),
+                "doc_id": str(r.doc_id),
+                "ordinal": int(r.ordinal),
+                "content": r.content,
+                "score": score,
+            }
+        )
         if len(out) >= top_n:
             break
     return out
@@ -200,7 +221,9 @@ async def list_pinned_chunks(
     session: AsyncSession, *, agent_id: uuid.UUID, max_chunks: int = 20
 ) -> list[dict[str, Any]]:
     q = (
-        select(KnowledgeChunk.id, KnowledgeChunk.doc_id, KnowledgeChunk.ordinal, KnowledgeChunk.content)
+        select(
+            KnowledgeChunk.id, KnowledgeChunk.doc_id, KnowledgeChunk.ordinal, KnowledgeChunk.content
+        )
         .join(KnowledgeDoc, KnowledgeDoc.id == KnowledgeChunk.doc_id)
         .where(KnowledgeChunk.agent_id == agent_id, KnowledgeDoc.pinned.is_(True))
         .order_by(KnowledgeChunk.doc_id, KnowledgeChunk.ordinal)

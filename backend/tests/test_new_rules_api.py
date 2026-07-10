@@ -11,7 +11,6 @@ from app.services.category_service import create_default_categories
 from app.services.rule_service import create_default_rules, create_rule
 
 
-
 @pytest.mark.asyncio
 async def test_list_rules_empty(client: AsyncClient, auth_headers, test_categories):
     """Listing rules with no data should return an empty list."""
@@ -60,7 +59,10 @@ async def test_create_rule(client: AsyncClient, auth_headers, test_categories):
 
 @pytest.mark.asyncio
 async def test_create_rule_applies_to_existing_transactions(
-    client: AsyncClient, auth_headers, test_transactions, test_categories,
+    client: AsyncClient,
+    auth_headers,
+    test_transactions,
+    test_categories,
 ):
     """Creating a rule immediately applies it to existing transactions and
     reports how many were affected, without needing apply-all.
@@ -89,7 +91,10 @@ async def test_create_rule_applies_to_existing_transactions(
 
 @pytest.mark.asyncio
 async def test_create_rule_does_not_overwrite_existing_category(
-    client: AsyncClient, auth_headers, test_transactions, test_categories,
+    client: AsyncClient,
+    auth_headers,
+    test_transactions,
+    test_categories,
 ):
     """Auto-apply on create is non-destructive: an already-categorised
     transaction keeps its category instead of being clobbered."""
@@ -114,7 +119,10 @@ async def test_create_rule_does_not_overwrite_existing_category(
 
 @pytest.mark.asyncio
 async def test_create_rule_no_match_reports_zero(
-    client: AsyncClient, auth_headers, test_transactions, test_categories,
+    client: AsyncClient,
+    auth_headers,
+    test_transactions,
+    test_categories,
 ):
     """A rule that matches nothing reports applied_count == 0."""
     payload = {
@@ -185,7 +193,10 @@ async def test_update_rule_name_does_not_apply_to_existing_transactions(
 
 @pytest.mark.asyncio
 async def test_update_rule_applies_to_existing_transactions(
-    client: AsyncClient, auth_headers, test_transactions, test_categories,
+    client: AsyncClient,
+    auth_headers,
+    test_transactions,
+    test_categories,
 ):
     """Updating a rule immediately applies the new definition to history.
 
@@ -241,7 +252,11 @@ async def test_apply_all_rules(client: AsyncClient, auth_headers, test_rules, te
 
 @pytest.mark.asyncio
 async def test_apply_all_verifies_category_assignment(
-    client: AsyncClient, auth_headers, test_rules, test_transactions, test_categories,
+    client: AsyncClient,
+    auth_headers,
+    test_rules,
+    test_transactions,
+    test_categories,
 ):
     """After apply-all, GET transactions and confirm correct category_id."""
     await client.post("/api/rules/apply-all", headers=auth_headers)
@@ -271,7 +286,11 @@ async def test_apply_all_verifies_category_assignment(
 
 @pytest.mark.asyncio
 async def test_apply_all_resets_before_reapply(
-    client: AsyncClient, auth_headers, test_rules, test_transactions, test_categories,
+    client: AsyncClient,
+    auth_headers,
+    test_rules,
+    test_transactions,
+    test_categories,
 ):
     """Category/notes are reset before re-applying, so results are idempotent."""
     # Apply once
@@ -290,7 +309,10 @@ async def test_apply_all_resets_before_reapply(
 
 @pytest.mark.asyncio
 async def test_conflicting_rules_priority(
-    client: AsyncClient, auth_headers, test_transactions, test_categories,
+    client: AsyncClient,
+    auth_headers,
+    test_transactions,
+    test_categories,
 ):
     """Two rules match same transaction; lower priority number wins category."""
     cat_food = str(test_categories[0].id)  # Alimentação
@@ -333,7 +355,10 @@ async def test_conflicting_rules_priority(
 
 @pytest.mark.asyncio
 async def test_tag_attribution_via_rules(
-    client: AsyncClient, auth_headers, test_transactions, test_categories,
+    client: AsyncClient,
+    auth_headers,
+    test_transactions,
+    test_categories,
 ):
     """Rule with append_notes applies tags, verify on transaction."""
     cat_transport = str(test_categories[1].id)
@@ -365,7 +390,10 @@ async def test_tag_attribution_via_rules(
 
 @pytest.mark.asyncio
 async def test_multiple_tags_from_multiple_rules(
-    client: AsyncClient, auth_headers, test_transactions, test_categories,
+    client: AsyncClient,
+    auth_headers,
+    test_transactions,
+    test_categories,
 ):
     """Two rules append different tags to the same transaction."""
     rule1 = {
@@ -404,7 +432,10 @@ async def test_multiple_tags_from_multiple_rules(
 
 @pytest.mark.asyncio
 async def test_inactive_rule_is_skipped(
-    client: AsyncClient, auth_headers, test_transactions, test_categories,
+    client: AsyncClient,
+    auth_headers,
+    test_transactions,
+    test_categories,
 ):
     """Disabled rule should not apply."""
     cat_food = str(test_categories[0].id)
@@ -433,7 +464,11 @@ async def test_inactive_rule_is_skipped(
 
 @pytest.mark.asyncio
 async def test_rule_user_isolation(
-    client: AsyncClient, auth_headers, test_rules, test_transactions, session: AsyncSession,
+    client: AsyncClient,
+    auth_headers,
+    test_rules,
+    test_transactions,
+    session: AsyncSession,
 ):
     """One user's rules don't affect another user's transactions."""
     import bcrypt as _bcrypt
@@ -448,8 +483,12 @@ async def test_rule_user_isolation(
         is_active=True,
         is_superuser=False,
         is_verified=True,
-        preferences={"language": "pt-BR", "date_format": "DD/MM/YYYY",
-                      "timezone": "America/Sao_Paulo", "currency_display": "BRL"},
+        preferences={
+            "language": "pt-BR",
+            "date_format": "DD/MM/YYYY",
+            "timezone": "America/Sao_Paulo",
+            "currency_display": "BRL",
+        },
     )
     session.add(user2)
     await session.flush()
@@ -478,7 +517,9 @@ async def test_rule_user_isolation(
 
 
 @pytest.mark.asyncio
-async def test_export_rules_serializes_category_actions_by_name(client: AsyncClient, auth_headers, test_rules, test_categories):
+async def test_export_rules_serializes_category_actions_by_name(
+    client: AsyncClient, auth_headers, test_rules, test_categories
+):
     response = await client.get("/api/rules/export", headers=auth_headers)
 
     assert response.status_code == 200
@@ -514,7 +555,9 @@ async def test_import_rules_requires_overwrite_confirmation_when_rules_exist(
         ],
     }
 
-    response = await client.post("/api/rules/import", json={"payload": payload}, headers=auth_headers)
+    response = await client.post(
+        "/api/rules/import", json={"payload": payload}, headers=auth_headers
+    )
 
     assert response.status_code == 409
     assert "overwrite" in response.json()["detail"].lower()

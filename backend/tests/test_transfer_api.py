@@ -13,7 +13,9 @@ from app.models.user import User
 
 
 @pytest_asyncio.fixture
-async def second_account(session: AsyncSession, test_user: User, test_connection: BankConnection) -> Account:
+async def second_account(
+    session: AsyncSession, test_user: User, test_connection: BankConnection
+) -> Account:
     """Create a second test account (same currency)."""
     account = Account(
         id=uuid.uuid4(),
@@ -32,7 +34,9 @@ async def second_account(session: AsyncSession, test_user: User, test_connection
 
 
 @pytest_asyncio.fixture
-async def usd_account(session: AsyncSession, test_user: User, test_connection: BankConnection) -> Account:
+async def usd_account(
+    session: AsyncSession, test_user: User, test_connection: BankConnection
+) -> Account:
     """Create a USD test account for cross-currency tests."""
     account = Account(
         id=uuid.uuid4(),
@@ -205,14 +209,16 @@ async def test_delete_cascades_to_paired_transaction(
     credit_id = data["credit"]["id"]
 
     # Delete debit — should cascade to credit
-    del_response = await client.delete(
-        f"/api/transactions/{debit_id}", headers=auth_headers
-    )
+    del_response = await client.delete(f"/api/transactions/{debit_id}", headers=auth_headers)
     assert del_response.status_code == 204
 
     # Both should be gone
-    assert (await client.get(f"/api/transactions/{debit_id}", headers=auth_headers)).status_code == 404
-    assert (await client.get(f"/api/transactions/{credit_id}", headers=auth_headers)).status_code == 404
+    assert (
+        await client.get(f"/api/transactions/{debit_id}", headers=auth_headers)
+    ).status_code == 404
+    assert (
+        await client.get(f"/api/transactions/{credit_id}", headers=auth_headers)
+    ).status_code == 404
 
 
 @pytest.mark.asyncio
@@ -246,9 +252,7 @@ async def test_update_cascades_to_paired_transaction(
     assert update_response.status_code == 200
 
     # Check credit was also updated
-    credit_response = await client.get(
-        f"/api/transactions/{credit_id}", headers=auth_headers
-    )
+    credit_response = await client.get(f"/api/transactions/{credit_id}", headers=auth_headers)
     assert credit_response.status_code == 200
     credit_data = credit_response.json()
     assert credit_data["description"] == "Updated description"
@@ -287,9 +291,7 @@ async def test_update_transfer_category_only_updates_edited_side_without_flag(
     assert update_response.status_code == 200
     assert update_response.json()["category_id"] == str(test_categories[0].id)
 
-    credit_response = await client.get(
-        f"/api/transactions/{credit_id}", headers=auth_headers
-    )
+    credit_response = await client.get(f"/api/transactions/{credit_id}", headers=auth_headers)
     assert credit_response.status_code == 200
     assert credit_response.json()["category_id"] is None
 
@@ -329,9 +331,7 @@ async def test_update_transfer_category_can_apply_to_paired_transaction(
     assert update_response.status_code == 200
     assert update_response.json()["category_id"] == str(test_categories[1].id)
 
-    credit_response = await client.get(
-        f"/api/transactions/{credit_id}", headers=auth_headers
-    )
+    credit_response = await client.get(f"/api/transactions/{credit_id}", headers=auth_headers)
     assert credit_response.status_code == 200
     assert credit_response.json()["category_id"] == str(test_categories[1].id)
 
@@ -378,9 +378,7 @@ async def test_clear_transfer_category_can_apply_to_paired_transaction(
     assert clear_response.status_code == 200
     assert clear_response.json()["category_id"] is None
 
-    credit_response = await client.get(
-        f"/api/transactions/{credit_id}", headers=auth_headers
-    )
+    credit_response = await client.get(f"/api/transactions/{credit_id}", headers=auth_headers)
     assert credit_response.status_code == 200
     assert credit_response.json()["category_id"] is None
 
@@ -418,7 +416,12 @@ async def test_link_existing_transactions_as_transfer(
         client, auth_headers, test_account.id, type="debit", amount=200.00, description="Sent"
     )
     credit = await _create_manual_tx(
-        client, auth_headers, second_account.id, type="credit", amount=200.00, description="Received"
+        client,
+        auth_headers,
+        second_account.id,
+        type="credit",
+        amount=200.00,
+        description="Received",
     )
 
     response = await client.post(
@@ -441,10 +444,20 @@ async def test_link_transfer_permissive_with_amount_mismatch(
 ):
     """Linking should succeed even if amounts differ — user is asserting intent."""
     debit = await _create_manual_tx(
-        client, auth_headers, test_account.id, type="debit", amount=100.00, description="Sent with fee"
+        client,
+        auth_headers,
+        test_account.id,
+        type="debit",
+        amount=100.00,
+        description="Sent with fee",
     )
     credit = await _create_manual_tx(
-        client, auth_headers, second_account.id, type="credit", amount=98.50, description="Received minus fee"
+        client,
+        auth_headers,
+        second_account.id,
+        type="credit",
+        amount=98.50,
+        description="Received minus fee",
     )
 
     response = await client.post(
@@ -536,7 +549,12 @@ async def test_link_transfer_excludes_from_reports(
         client, auth_headers, test_account.id, type="debit", amount=300.00, description="To exclude"
     )
     credit = await _create_manual_tx(
-        client, auth_headers, second_account.id, type="credit", amount=300.00, description="To exclude"
+        client,
+        auth_headers,
+        second_account.id,
+        type="credit",
+        amount=300.00,
+        description="To exclude",
     )
 
     await client.post(
@@ -562,27 +580,43 @@ async def test_transfer_candidates_returns_ranked_matches(
     """Closest date and amount candidates should rank first."""
     today = date.today()
     anchor = await _create_manual_tx(
-        client, auth_headers, test_account.id,
-        type="debit", amount=500.00, description="Anchor",
+        client,
+        auth_headers,
+        test_account.id,
+        type="debit",
+        amount=500.00,
+        description="Anchor",
         tx_date=today.isoformat(),
     )
 
     # Best match: same date, exact amount
     best = await _create_manual_tx(
-        client, auth_headers, second_account.id,
-        type="credit", amount=500.00, description="Best",
+        client,
+        auth_headers,
+        second_account.id,
+        type="credit",
+        amount=500.00,
+        description="Best",
         tx_date=today.isoformat(),
     )
     # Same amount but a few days off
     far_date = await _create_manual_tx(
-        client, auth_headers, second_account.id,
-        type="credit", amount=500.00, description="Far date",
+        client,
+        auth_headers,
+        second_account.id,
+        type="credit",
+        amount=500.00,
+        description="Far date",
         tx_date=(today - __import__("datetime").timedelta(days=5)).isoformat(),
     )
     # Same date but different amount
     different_amount = await _create_manual_tx(
-        client, auth_headers, second_account.id,
-        type="credit", amount=499.00, description="Different amount",
+        client,
+        auth_headers,
+        second_account.id,
+        type="credit",
+        amount=499.00,
+        description="Different amount",
         tx_date=today.isoformat(),
     )
 
@@ -607,12 +641,20 @@ async def test_transfer_candidates_excludes_same_account(
     client: AsyncClient, auth_headers, test_account: Account
 ):
     anchor = await _create_manual_tx(
-        client, auth_headers, test_account.id,
-        type="debit", amount=100.00, description="Anchor",
+        client,
+        auth_headers,
+        test_account.id,
+        type="debit",
+        amount=100.00,
+        description="Anchor",
     )
     same_account = await _create_manual_tx(
-        client, auth_headers, test_account.id,
-        type="credit", amount=100.00, description="Same account",
+        client,
+        auth_headers,
+        test_account.id,
+        type="credit",
+        amount=100.00,
+        description="Same account",
     )
 
     response = await client.get(
@@ -629,12 +671,20 @@ async def test_transfer_candidates_excludes_same_type(
     client: AsyncClient, auth_headers, test_account: Account, second_account: Account
 ):
     anchor = await _create_manual_tx(
-        client, auth_headers, test_account.id,
-        type="debit", amount=100.00, description="Anchor",
+        client,
+        auth_headers,
+        test_account.id,
+        type="debit",
+        amount=100.00,
+        description="Anchor",
     )
     same_type = await _create_manual_tx(
-        client, auth_headers, second_account.id,
-        type="debit", amount=100.00, description="Same type",
+        client,
+        auth_headers,
+        second_account.id,
+        type="debit",
+        amount=100.00,
+        description="Same type",
     )
 
     response = await client.get(
@@ -651,8 +701,12 @@ async def test_transfer_candidates_excludes_already_linked(
     client: AsyncClient, auth_headers, test_account: Account, second_account: Account
 ):
     anchor = await _create_manual_tx(
-        client, auth_headers, test_account.id,
-        type="debit", amount=100.00, description="Anchor",
+        client,
+        auth_headers,
+        test_account.id,
+        type="debit",
+        amount=100.00,
+        description="Anchor",
     )
     # Create a transfer pair that already exists in second_account
     pair_response = await client.post(
@@ -682,15 +736,24 @@ async def test_transfer_candidates_respects_date_window(
     client: AsyncClient, auth_headers, test_account: Account, second_account: Account
 ):
     from datetime import timedelta
+
     today = date.today()
     anchor = await _create_manual_tx(
-        client, auth_headers, test_account.id,
-        type="debit", amount=100.00, description="Anchor",
+        client,
+        auth_headers,
+        test_account.id,
+        type="debit",
+        amount=100.00,
+        description="Anchor",
         tx_date=today.isoformat(),
     )
     out_of_window = await _create_manual_tx(
-        client, auth_headers, second_account.id,
-        type="credit", amount=100.00, description="Old",
+        client,
+        auth_headers,
+        second_account.id,
+        type="credit",
+        amount=100.00,
+        description="Old",
         tx_date=(today - timedelta(days=60)).isoformat(),
     )
 
@@ -721,8 +784,12 @@ async def test_create_counterpart_from_debit(
 ):
     """Auto-create the credit counterpart for a debit anchor."""
     anchor = await _create_manual_tx(
-        client, auth_headers, test_account.id,
-        type="debit", amount=200.00, description="Sent from checking",
+        client,
+        auth_headers,
+        test_account.id,
+        type="debit",
+        amount=200.00,
+        description="Sent from checking",
     )
 
     response = await client.post(
@@ -754,8 +821,12 @@ async def test_create_counterpart_from_credit(
 ):
     """Auto-create the debit counterpart for a credit anchor."""
     anchor = await _create_manual_tx(
-        client, auth_headers, test_account.id,
-        type="credit", amount=150.00, description="Money in",
+        client,
+        auth_headers,
+        test_account.id,
+        type="credit",
+        amount=150.00,
+        description="Money in",
     )
 
     response = await client.post(
@@ -780,8 +851,12 @@ async def test_create_counterpart_cross_currency(
 ):
     """Counterpart in another currency takes the destination account's currency."""
     anchor = await _create_manual_tx(
-        client, auth_headers, test_account.id,
-        type="debit", amount=1000.00, description="BRL to USD",
+        client,
+        auth_headers,
+        test_account.id,
+        type="debit",
+        amount=1000.00,
+        description="BRL to USD",
     )
 
     response = await client.post(
@@ -803,8 +878,12 @@ async def test_create_counterpart_rejects_same_account(
     client: AsyncClient, auth_headers, test_account: Account
 ):
     anchor = await _create_manual_tx(
-        client, auth_headers, test_account.id,
-        type="debit", amount=50.00, description="Anchor",
+        client,
+        auth_headers,
+        test_account.id,
+        type="debit",
+        amount=50.00,
+        description="Anchor",
     )
 
     response = await client.post(
@@ -821,8 +900,12 @@ async def test_create_counterpart_rejects_unknown_account(
     client: AsyncClient, auth_headers, test_account: Account
 ):
     anchor = await _create_manual_tx(
-        client, auth_headers, test_account.id,
-        type="debit", amount=50.00, description="Anchor",
+        client,
+        auth_headers,
+        test_account.id,
+        type="debit",
+        amount=50.00,
+        description="Anchor",
     )
 
     response = await client.post(
@@ -906,9 +989,7 @@ async def test_create_counterpart_preserves_anchor_category(
     )
     assert response.status_code == 201
 
-    refreshed = await client.get(
-        f"/api/transactions/{anchor['id']}", headers=auth_headers
-    )
+    refreshed = await client.get(f"/api/transactions/{anchor['id']}", headers=auth_headers)
     assert refreshed.status_code == 200
     assert refreshed.json()["category_id"] == str(test_categories[0].id)
 
@@ -919,8 +1000,12 @@ async def test_create_counterpart_excludes_pair_from_reports(
 ):
     """Both sides drop out of the list when exclude_transfers=true."""
     anchor = await _create_manual_tx(
-        client, auth_headers, test_account.id,
-        type="debit", amount=300.00, description="To exclude",
+        client,
+        auth_headers,
+        test_account.id,
+        type="debit",
+        amount=300.00,
+        description="To exclude",
     )
 
     response = await client.post(
@@ -946,8 +1031,12 @@ async def test_create_counterpart_cascades_on_delete(
 ):
     """Deleting the anchor removes the auto-created counterpart too."""
     anchor = await _create_manual_tx(
-        client, auth_headers, test_account.id,
-        type="debit", amount=90.00, description="Cascade delete",
+        client,
+        auth_headers,
+        test_account.id,
+        type="debit",
+        amount=90.00,
+        description="Cascade delete",
     )
     response = await client.post(
         f"/api/transactions/{anchor['id']}/create-counterpart",
@@ -957,12 +1046,14 @@ async def test_create_counterpart_cascades_on_delete(
     assert response.status_code == 201
     counterpart_id = response.json()["credit"]["id"]
 
-    del_response = await client.delete(
-        f"/api/transactions/{anchor['id']}", headers=auth_headers
-    )
+    del_response = await client.delete(f"/api/transactions/{anchor['id']}", headers=auth_headers)
     assert del_response.status_code == 204
-    assert (await client.get(f"/api/transactions/{anchor['id']}", headers=auth_headers)).status_code == 404
-    assert (await client.get(f"/api/transactions/{counterpart_id}", headers=auth_headers)).status_code == 404
+    assert (
+        await client.get(f"/api/transactions/{anchor['id']}", headers=auth_headers)
+    ).status_code == 404
+    assert (
+        await client.get(f"/api/transactions/{counterpart_id}", headers=auth_headers)
+    ).status_code == 404
 
 
 @pytest.mark.asyncio

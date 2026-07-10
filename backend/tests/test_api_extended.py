@@ -1,5 +1,6 @@
 """Extended API tests covering missing lines in transactions, rules, assets,
 accounts, and import endpoints."""
+
 import uuid
 from datetime import date
 
@@ -17,7 +18,9 @@ from app.models.transaction import Transaction
 
 @pytest.mark.asyncio
 async def test_export_transactions_csv(
-    client: AsyncClient, auth_headers, test_transactions: list[Transaction],
+    client: AsyncClient,
+    auth_headers,
+    test_transactions: list[Transaction],
 ):
     """GET /api/transactions/export returns CSV with proper headers."""
     response = await client.get("/api/transactions/export", headers=auth_headers)
@@ -35,7 +38,10 @@ async def test_export_transactions_csv(
 
 @pytest.mark.asyncio
 async def test_export_transactions_with_filters(
-    client: AsyncClient, auth_headers, test_transactions, test_account,
+    client: AsyncClient,
+    auth_headers,
+    test_transactions,
+    test_account,
 ):
     """Export with filters returns filtered results."""
     response = await client.get(
@@ -49,7 +55,9 @@ async def test_export_transactions_with_filters(
 
 @pytest.mark.asyncio
 async def test_export_transactions_with_search(
-    client: AsyncClient, auth_headers, test_transactions,
+    client: AsyncClient,
+    auth_headers,
+    test_transactions,
 ):
     """Export with search query returns filtered results."""
     response = await client.get(
@@ -64,7 +72,9 @@ async def test_export_transactions_with_search(
 
 @pytest.mark.asyncio
 async def test_export_transactions_by_type(
-    client: AsyncClient, auth_headers, test_transactions,
+    client: AsyncClient,
+    auth_headers,
+    test_transactions,
 ):
     """Export filtered by type."""
     response = await client.get(
@@ -78,7 +88,9 @@ async def test_export_transactions_by_type(
 
 @pytest.mark.asyncio
 async def test_export_uncategorized(
-    client: AsyncClient, auth_headers, test_transactions,
+    client: AsyncClient,
+    auth_headers,
+    test_transactions,
 ):
     """Export uncategorized transactions."""
     response = await client.get(
@@ -91,13 +103,14 @@ async def test_export_uncategorized(
 
 @pytest.mark.asyncio
 async def test_bulk_categorize(
-    client: AsyncClient, auth_headers, test_transactions, test_categories,
+    client: AsyncClient,
+    auth_headers,
+    test_transactions,
+    test_categories,
 ):
     """PATCH /api/transactions/bulk-categorize updates multiple transactions."""
     # Get uncategorized transactions (NETFLIX and PIX RECEBIDO)
-    uncategorized_ids = [
-        str(t.id) for t in test_transactions if t.category_id is None
-    ]
+    uncategorized_ids = [str(t.id) for t in test_transactions if t.category_id is None]
     assert len(uncategorized_ids) >= 1
 
     response = await client.patch(
@@ -115,7 +128,9 @@ async def test_bulk_categorize(
 
 @pytest.mark.asyncio
 async def test_update_transaction_not_found(
-    client: AsyncClient, auth_headers, test_transactions,
+    client: AsyncClient,
+    auth_headers,
+    test_transactions,
 ):
     """PATCH nonexistent transaction returns 404."""
     response = await client.patch(
@@ -133,7 +148,10 @@ async def test_update_transaction_not_found(
 
 @pytest.mark.asyncio
 async def test_create_duplicate_rule(
-    client: AsyncClient, auth_headers, test_rules, test_categories,
+    client: AsyncClient,
+    auth_headers,
+    test_rules,
+    test_categories,
 ):
     """Creating a rule with duplicate name returns 409."""
     existing_name = test_rules[0].name
@@ -371,7 +389,8 @@ async def test_update_asset_not_found(client: AsyncClient, auth_headers):
 async def test_delete_asset_not_found(client: AsyncClient, auth_headers):
     """DELETE nonexistent asset returns 404."""
     response = await client.delete(
-        f"/api/assets/{uuid.uuid4()}", headers=auth_headers,
+        f"/api/assets/{uuid.uuid4()}",
+        headers=auth_headers,
     )
     assert response.status_code == 404
 
@@ -380,7 +399,8 @@ async def test_delete_asset_not_found(client: AsyncClient, auth_headers):
 async def test_list_asset_values_not_found(client: AsyncClient, auth_headers):
     """GET values for nonexistent asset returns 404."""
     response = await client.get(
-        f"/api/assets/{uuid.uuid4()}/values", headers=auth_headers,
+        f"/api/assets/{uuid.uuid4()}/values",
+        headers=auth_headers,
     )
     assert response.status_code == 404
 
@@ -400,7 +420,8 @@ async def test_add_asset_value_not_found(client: AsyncClient, auth_headers):
 async def test_delete_asset_value_not_found(client: AsyncClient, auth_headers):
     """DELETE nonexistent asset value returns 404."""
     response = await client.delete(
-        f"/api/assets/values/{uuid.uuid4()}", headers=auth_headers,
+        f"/api/assets/values/{uuid.uuid4()}",
+        headers=auth_headers,
     )
     assert response.status_code == 404
 
@@ -409,7 +430,8 @@ async def test_delete_asset_value_not_found(client: AsyncClient, auth_headers):
 async def test_get_asset_value_trend_not_found(client: AsyncClient, auth_headers):
     """GET value-trend for nonexistent asset returns 404."""
     response = await client.get(
-        f"/api/assets/{uuid.uuid4()}/value-trend", headers=auth_headers,
+        f"/api/assets/{uuid.uuid4()}/value-trend",
+        headers=auth_headers,
     )
     assert response.status_code == 404
 
@@ -423,7 +445,8 @@ async def test_get_asset_value_trend_not_found(client: AsyncClient, auth_headers
 async def test_detect_transfers_api(client: AsyncClient, auth_headers):
     """POST /api/connections/transfers/detect returns pairs_created count."""
     response = await client.post(
-        "/api/connections/transfers/detect", headers=auth_headers,
+        "/api/connections/transfers/detect",
+        headers=auth_headers,
     )
     assert response.status_code == 200
     assert "pairs_created" in response.json()
@@ -433,7 +456,8 @@ async def test_detect_transfers_api(client: AsyncClient, auth_headers):
 async def test_unlink_transfer_not_found(client: AsyncClient, auth_headers):
     """DELETE nonexistent transfer pair returns 404."""
     response = await client.delete(
-        f"/api/connections/transfers/{uuid.uuid4()}", headers=auth_headers,
+        f"/api/connections/transfers/{uuid.uuid4()}",
+        headers=auth_headers,
     )
     assert response.status_code == 404
 
@@ -450,7 +474,9 @@ async def test_reconnect_token_not_found(client: AsyncClient, auth_headers):
 
 @pytest.mark.asyncio
 async def test_reconnect_token_no_item_id(
-    client: AsyncClient, auth_headers, test_connection,
+    client: AsyncClient,
+    auth_headers,
+    test_connection,
 ):
     """POST reconnect-token when connection has no item_id returns 400."""
     response = await client.post(
@@ -468,7 +494,10 @@ async def test_reconnect_token_no_item_id(
 
 @pytest.mark.asyncio
 async def test_dashboard_projected_transactions(
-    client: AsyncClient, auth_headers, test_categories, test_account,
+    client: AsyncClient,
+    auth_headers,
+    test_categories,
+    test_account,
 ):
     """GET /api/dashboard/projected-transactions returns projections."""
     # Create a recurring transaction
@@ -514,7 +543,8 @@ async def test_dashboard_balance_history(client: AsyncClient, auth_headers):
     )
 
     response = await client.get(
-        "/api/dashboard/balance-history", headers=auth_headers,
+        "/api/dashboard/balance-history",
+        headers=auth_headers,
     )
     assert response.status_code == 200
     data = response.json()
@@ -531,7 +561,9 @@ async def test_dashboard_balance_history(client: AsyncClient, auth_headers):
 
 @pytest.mark.asyncio
 async def test_import_duplicate_skips(
-    client: AsyncClient, auth_headers, test_account: Account,
+    client: AsyncClient,
+    auth_headers,
+    test_account: Account,
 ):
     """Re-importing the same transactions skips duplicates."""
     transactions = [
@@ -634,7 +666,9 @@ async def test_preview_csv_with_flip_amount(client: AsyncClient, auth_headers):
 @pytest.mark.asyncio
 async def test_preview_csv_split_columns(client: AsyncClient, auth_headers):
     """Preview CSV with inflow/outflow split columns."""
-    csv_content = b"date,description,inflow,outflow\n2026-01-15,Salary,5000,\n2026-01-16,Rent,,1500\n"
+    csv_content = (
+        b"date,description,inflow,outflow\n2026-01-15,Salary,5000,\n2026-01-16,Rent,,1500\n"
+    )
     response = await client.post(
         "/api/transactions/import/preview",
         headers=auth_headers,

@@ -115,7 +115,9 @@ async def _apply_growth_rules() -> int:
                         total += created
                         logger.info(
                             "Growth rule applied for asset %s: %d values created, latest=%.2f",
-                            asset.id, created, current_amount,
+                            asset.id,
+                            created,
+                            current_amount,
                         )
             except Exception:
                 logger.exception("Failed to apply growth rule for asset %s", asset.id)

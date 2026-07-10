@@ -1,4 +1,5 @@
 """Tests for dashboard API endpoints."""
+
 import calendar
 from datetime import date, timedelta
 
@@ -315,9 +316,7 @@ async def test_accounts_count_includes_manual_accounts(client, auth_headers):
     resp = await client.get("/api/dashboard/summary", headers=auth_headers)
     assert resp.status_code == 200
     data = resp.json()
-    assert data["accounts_count"] >= 2, (
-        f"Expected ≥2 accounts, got {data['accounts_count']}"
-    )
+    assert data["accounts_count"] >= 2, f"Expected ≥2 accounts, got {data['accounts_count']}"
 
 
 @pytest.mark.asyncio
@@ -359,7 +358,6 @@ async def test_future_month_balance_includes_recurring_projections(
     """When viewing a future month, total_balance must reflect projected recurring cash flows."""
     next_month = _next_month_str()
     month_after = _future_month_str(2)
-
 
     # Create an account with 2000 starting balance
     acc_resp = await client.post(

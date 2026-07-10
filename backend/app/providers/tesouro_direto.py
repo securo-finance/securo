@@ -29,6 +29,7 @@ TESOURO_SYMBOL_PREFIX = "TD"
 _CACHE_TTL_SECONDS = 6 * 60 * 60
 _latest_cache: dict = {"ts": 0.0, "quotes": None}
 
+
 def tesouro_symbol_for(title_type: str, maturity_date: date) -> str:
     """Return a compact market-price symbol for a Tesouro Direto bond.
 
@@ -39,15 +40,16 @@ def tesouro_symbol_for(title_type: str, maturity_date: date) -> str:
     digest = hashlib.sha1(_normalize(title_type).encode("utf-8")).hexdigest()[:8].upper()
     return f"{TESOURO_SYMBOL_PREFIX}:{digest}:{maturity_date.isoformat()}"
 
+
 def is_tesouro_symbol(symbol: str | None) -> bool:
     return bool(symbol and symbol.upper().startswith(f"{TESOURO_SYMBOL_PREFIX}:"))
+
 
 def parse_tesouro_symbol(symbol: str) -> tuple[str, date]:
     parts = (symbol or "").strip().upper().split(":", 2)
     if len(parts) != 3 or parts[0] != TESOURO_SYMBOL_PREFIX or not parts[1]:
         raise ValueError(f"invalid Tesouro Direto symbol: {symbol}")
     return parts[1], _parse_date(parts[2])
-
 
 
 @dataclass(frozen=True)
@@ -104,7 +106,9 @@ class TesouroDiretoProvider:
         self._csv_text = csv_text
         self.url = url
 
-    async def get_latest_price(self, title_type: str, maturity_date: date) -> Optional[TesouroDiretoQuote]:
+    async def get_latest_price(
+        self, title_type: str, maturity_date: date
+    ) -> Optional[TesouroDiretoQuote]:
         target = (_normalize(title_type), maturity_date)
         for quote in await self._latest_quotes():
             if (_normalize(quote.title_type), quote.maturity_date) == target:
@@ -137,11 +141,16 @@ class TesouroDiretoProvider:
         for quote in await self._latest_quotes():
             if quote.maturity_date != maturity_date:
                 continue
-            if tesouro_symbol_for(quote.title_type, quote.maturity_date).split(":")[1] == title_hash:
+            if (
+                tesouro_symbol_for(quote.title_type, quote.maturity_date).split(":")[1]
+                == title_hash
+            ):
                 return quote
         return None
 
-    async def get_quotes_by_symbol(self, symbols: list[str]) -> dict[str, Optional[TesouroDiretoQuote]]:
+    async def get_quotes_by_symbol(
+        self, symbols: list[str]
+    ) -> dict[str, Optional[TesouroDiretoQuote]]:
         return {symbol.upper(): await self.get_quote_by_symbol(symbol) for symbol in symbols}
 
     async def _latest_quotes(self) -> list[TesouroDiretoQuote]:
@@ -200,7 +209,10 @@ class TesouroDiretoProvider:
         for quote in self._iter_quotes(csv_text or self._csv_text or ""):
             if quote.maturity_date != maturity_date:
                 continue
-            if tesouro_symbol_for(quote.title_type, quote.maturity_date).split(":")[1] != title_hash:
+            if (
+                tesouro_symbol_for(quote.title_type, quote.maturity_date).split(":")[1]
+                != title_hash
+            ):
                 continue
             if latest is None or quote.price_date > latest.price_date:
                 latest = quote

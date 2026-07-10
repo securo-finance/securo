@@ -81,7 +81,6 @@ async def test_create_default_groups_german(session: AsyncSession, test_user, te
     assert groups["income"].name == "Einkommen"
 
 
-
 # ---------------------------------------------------------------------------
 # get_groups
 # ---------------------------------------------------------------------------
@@ -141,7 +140,8 @@ async def test_create_custom_group(session: AsyncSession, test_user, test_worksp
 async def test_get_group_by_id(session: AsyncSession, test_user, test_workspace):
     created = await create_group(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         CategoryGroupCreate(name="Lookup", icon="search", color="#000000"),
     )
     fetched = await get_group(session, created.id, test_workspace.id)
@@ -159,7 +159,8 @@ async def test_get_group_not_found(session: AsyncSession, test_user, test_worksp
 async def test_update_group(session: AsyncSession, test_user, test_workspace):
     group = await create_group(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         CategoryGroupCreate(name="Old", icon="x", color="#111111"),
     )
     updated = await update_group(
@@ -194,7 +195,8 @@ async def test_update_group_not_found(session: AsyncSession, test_user, test_wor
 async def test_delete_custom_group(session: AsyncSession, test_user, test_workspace):
     group = await create_group(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         CategoryGroupCreate(name="ToDelete", icon="trash", color="#FF0000"),
     )
     assert await delete_group(session, group.id, test_workspace.id) is True
@@ -217,7 +219,8 @@ async def test_delete_system_group_rejected(session: AsyncSession, test_user, te
 async def test_delete_group_unlinks_categories(session: AsyncSession, test_user, test_workspace):
     group = await create_group(
         session,
-        test_workspace.id, test_user.id,
+        test_workspace.id,
+        test_user.id,
         CategoryGroupCreate(name="UnlinkMe", icon="link", color="#00FF00"),
     )
     cat = Category(

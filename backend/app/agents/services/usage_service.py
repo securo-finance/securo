@@ -3,6 +3,7 @@
 Every provider call (chat or embedding) writes one row to `agent_llm_usage`.
 Drives the per-user cost dashboard and any future rate-limiting.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -31,7 +32,9 @@ _PRICING_PER_M = {
 }
 
 
-def estimate_cost_usd(provider: str, model: str, input_tokens: int, output_tokens: int) -> Optional[float]:
+def estimate_cost_usd(
+    provider: str, model: str, input_tokens: int, output_tokens: int
+) -> Optional[float]:
     rates = _PRICING_PER_M.get((provider, model))
     if rates is None:
         return None

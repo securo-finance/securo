@@ -51,7 +51,12 @@ def upgrade() -> None:
     # Add payee_id FK to transactions
     op.add_column(
         "transactions",
-        sa.Column("payee_id", UUID(as_uuid=True), sa.ForeignKey("payees.id", ondelete="SET NULL"), nullable=True),
+        sa.Column(
+            "payee_id",
+            UUID(as_uuid=True),
+            sa.ForeignKey("payees.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
     )
     op.create_index("ix_transactions_payee_id", "transactions", ["payee_id"])
 

@@ -4,6 +4,7 @@ Registered with the existing celery_app. Only fires when AGENTS_ENABLED
 is on, because the upload endpoint that dispatches it lives behind the
 same flag.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -20,7 +21,9 @@ from app.worker import celery_app
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(name="app.agents.tasks.ingest.ingest_doc", bind=True, max_retries=2, default_retry_delay=30)
+@celery_app.task(
+    name="app.agents.tasks.ingest.ingest_doc", bind=True, max_retries=2, default_retry_delay=30
+)
 def ingest_doc(self, doc_id_str: str, agent_id_str: str) -> dict:
     """Sync entry point that runs the async ingest in a fresh loop."""
     return asyncio.run(_async_ingest(doc_id_str, agent_id_str))
@@ -52,26 +55,34 @@ async def _do_ingest(session_maker, doc_id: uuid.UUID, agent_id: uuid.UUID) -> d
 
     async with session_maker() as session:
         await knowledge_service.mark_status(session, doc_id, status="processing")
-        doc = (await session.execute(select(KnowledgeDoc).where(KnowledgeDoc.id == doc_id))).scalar_one_or_none()
+        doc = (
+            await session.execute(select(KnowledgeDoc).where(KnowledgeDoc.id == doc_id))
+        ).scalar_one_or_none()
         if doc is None or not doc.storage_path:
             return {"ok": False, "reason": "doc missing"}
 
         try:
             payload = Path(doc.storage_path).read_bytes()
         except Exception as exc:  # noqa: BLE001
-            await knowledge_service.mark_status(session, doc_id, status="failed", error=f"read failed: {exc}")
+            await knowledge_service.mark_status(
+                session, doc_id, status="failed", error=f"read failed: {exc}"
+            )
             return {"ok": False, "reason": "read failed"}
 
         chunks = list(chunks_from_upload(payload, doc.mime, doc.title))
         if not chunks:
-            await knowledge_service.mark_status(session, doc_id, status="failed", error="no extractable text", chunk_count=0)
+            await knowledge_service.mark_status(
+                session, doc_id, status="failed", error="no extractable text", chunk_count=0
+            )
             return {"ok": False, "reason": "no text"}
 
         try:
             embeddings, model_label = await embed_texts(chunks)
         except Exception as exc:  # noqa: BLE001
             logger.exception("embedding failed for doc %s", doc_id)
-            await knowledge_service.mark_status(session, doc_id, status="failed", error=f"embed failed: {exc}")
+            await knowledge_service.mark_status(
+                session, doc_id, status="failed", error=f"embed failed: {exc}"
+            )
             return {"ok": False, "reason": "embed failed"}
 
         n = await knowledge_service.replace_chunks(
@@ -81,5 +92,7 @@ async def _do_ingest(session_maker, doc_id: uuid.UUID, agent_id: uuid.UUID) -> d
             chunks=list(zip(chunks, embeddings)),
             embedding_model=model_label,
         )
-        await knowledge_service.mark_status(session, doc_id, status="ready", error=None, chunk_count=n)
+        await knowledge_service.mark_status(
+            session, doc_id, status="ready", error=None, chunk_count=n
+        )
         return {"ok": True, "chunks": n}

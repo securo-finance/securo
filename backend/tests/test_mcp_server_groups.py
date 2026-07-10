@@ -3,6 +3,7 @@ tools exposed to the agent. Service-layer behaviour is already covered
 in tests/test_groups.py; here we focus on the MCP serialization layer:
 name resolution, error pass-through, decimal coercion, etc.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -21,6 +22,7 @@ def _ctx(user_id):
 
 
 # --------------------------------------------------------------------- list_groups
+
 
 @pytest.mark.asyncio
 async def test_list_groups_serializes_group_with_members(session, test_user, monkeypatch):
@@ -96,10 +98,12 @@ async def test_list_groups_defaults_include_archived_false(session, test_user, m
 
 # --------------------------------------------------------------------- get_group_balances
 
+
 @pytest.mark.asyncio
 async def test_get_group_balances_returns_error_when_group_missing(session, test_user, monkeypatch):
     async def fake_compute(s, gid, ws_id, uid):
         return None  # service signals not-visible/not-found via None
+
     monkeypatch.setattr(groups_tool.balance_service, "compute_balances", fake_compute)
 
     result = await groups_tool.get_group_balances(
@@ -115,8 +119,12 @@ async def test_get_group_balances_resolves_member_names(session, test_user, monk
     from app.models.group import Group, GroupMember
 
     g = Group(
-        id=uuid.uuid4(), user_id=test_user.id, name="Roomies",
-        kind="expense", default_currency="USD", is_archived=False,
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Roomies",
+        kind="expense",
+        default_currency="USD",
+        is_archived=False,
     )
     me = GroupMember(id=uuid.uuid4(), group_id=g.id, name="Me", is_self=True)
     them = GroupMember(id=uuid.uuid4(), group_id=g.id, name="Alex", is_self=False)
@@ -130,8 +138,12 @@ async def test_get_group_balances_resolves_member_names(session, test_user, monk
             "self_member_id": me.id,
             "default_currency": "USD",
             "lines": [
-                {"member_id": them.id, "currency": "USD", "amount": Decimal("12.50"),
-                 "amount_in_default_currency": Decimal("12.50")},
+                {
+                    "member_id": them.id,
+                    "currency": "USD",
+                    "amount": Decimal("12.50"),
+                    "amount_in_default_currency": Decimal("12.50"),
+                },
             ],
         }
 
@@ -160,9 +172,12 @@ async def test_get_group_balances_handles_none_self_member(session, test_user, m
 
     async def fake_compute(s, g, ws_id, u):
         return {
-            "group_id": gid, "self_member_id": None, "default_currency": "BRL",
+            "group_id": gid,
+            "self_member_id": None,
+            "default_currency": "BRL",
             "lines": [],
         }
+
     monkeypatch.setattr(groups_tool.balance_service, "compute_balances", fake_compute)
     result = await groups_tool.get_group_balances(
         session=session, ctx=_ctx(test_user.id), group_id=str(gid)
@@ -172,10 +187,14 @@ async def test_get_group_balances_handles_none_self_member(session, test_user, m
 
 # --------------------------------------------------------------------- list_group_settlements
 
+
 @pytest.mark.asyncio
-async def test_list_group_settlements_returns_error_when_group_missing(session, test_user, monkeypatch):
+async def test_list_group_settlements_returns_error_when_group_missing(
+    session, test_user, monkeypatch
+):
     async def fake_list(s, gid, ws_id, uid):
         return None
+
     monkeypatch.setattr(groups_tool.settlement_service, "list_settlements", fake_list)
 
     result = await groups_tool.list_group_settlements(
@@ -211,6 +230,7 @@ async def test_list_group_settlements_serializes_rows(session, test_user, monkey
 
     async def fake(s, gid, ws_id, uid):
         return [s1, s2]
+
     monkeypatch.setattr(groups_tool.settlement_service, "list_settlements", fake)
 
     result = await groups_tool.list_group_settlements(

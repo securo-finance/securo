@@ -84,10 +84,16 @@ async def _get_second_factor_user_id(temp_token: str) -> str:
     redis = await get_redis()
     raw_payload = await redis.get(f"2fa_temp:{temp_token}")
     if not raw_payload:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
+        )
     payload = _parse_temp_token_payload(raw_payload)
     available_methods = payload.get("available_methods", []) if payload else []
-    if payload is None or not isinstance(available_methods, list) or "passkey" not in available_methods:
+    if (
+        payload is None
+        or not isinstance(available_methods, list)
+        or "passkey" not in available_methods
+    ):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     return str(payload["user_id"])
 
@@ -156,7 +162,9 @@ async def _verify_passkey_credential(
             require_user_verification=True,
         )
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid passkey") from exc
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid passkey"
+        ) from exc
 
     verified_credential_id = _as_base64url(verification.credential_id)
     if verified_credential_id != passkey.credential_id:
@@ -233,7 +241,9 @@ async def verify_passkey_registration(
     settings = get_settings()
     challenge = await _pop_challenge(REGISTER_CHALLENGE_PREFIX, body.challenge_id)
     if not challenge or challenge.get("user_id") != str(user.id):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired challenge")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired challenge"
+        )
 
     try:
         verification = verify_registration_response(
@@ -244,7 +254,9 @@ async def verify_passkey_registration(
             require_user_verification=True,
         )
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid passkey registration") from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid passkey registration"
+        ) from exc
 
     credential_id = _as_base64url(verification.credential_id)
     passkey = UserPasskey(
@@ -263,7 +275,9 @@ async def verify_passkey_registration(
         await session.commit()
     except IntegrityError as exc:
         await session.rollback()
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Passkey is already registered") from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Passkey is already registered"
+        ) from exc
     await session.refresh(passkey)
     return passkey
 
@@ -326,13 +340,17 @@ async def verify_passkey_authentication(
 ):
     challenge = await _pop_challenge(AUTHENTICATE_CHALLENGE_PREFIX, body.challenge_id)
     if not challenge:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired challenge")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired challenge"
+        )
 
     credential_id = body.credential.get("rawId") or body.credential.get("id")
     if not credential_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing credential ID")
 
-    result = await session.execute(select(UserPasskey).where(UserPasskey.credential_id == credential_id))
+    result = await session.execute(
+        select(UserPasskey).where(UserPasskey.credential_id == credential_id)
+    )
     passkey = result.scalar_one_or_none()
     if passkey is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid passkey")
@@ -354,7 +372,11 @@ async def verify_passkey_authentication(
     return {"access_token": token, "token_type": "bearer"}
 
 
-@router.post("/passkeys/2fa/options", response_model=PasskeyOptionsResponse, dependencies=[Depends(login_rate_limit)])
+@router.post(
+    "/passkeys/2fa/options",
+    response_model=PasskeyOptionsResponse,
+    dependencies=[Depends(login_rate_limit)],
+)
 async def passkey_second_factor_options(
     body: PasskeySecondFactorOptionsRequest,
     session: AsyncSession = Depends(get_async_session),
@@ -362,7 +384,9 @@ async def passkey_second_factor_options(
     settings = get_settings()
     user_id = await _get_second_factor_user_id(body.temp_token)
     result = await session.execute(
-        select(UserPasskey).where(UserPasskey.user_id == uuid.UUID(user_id)).order_by(UserPasskey.created_at.asc())
+        select(UserPasskey)
+        .where(UserPasskey.user_id == uuid.UUID(user_id))
+        .order_by(UserPasskey.created_at.asc())
     )
     passkeys = result.scalars().all()
     if not passkeys:
@@ -391,7 +415,9 @@ async def verify_passkey_second_factor(
     user_id = await _get_second_factor_user_id(body.temp_token)
     challenge = await _pop_challenge(SECOND_FACTOR_CHALLENGE_PREFIX, body.challenge_id)
     if not challenge or challenge.get("user_id") != user_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired challenge")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired challenge"
+        )
 
     credential_id = body.credential.get("rawId") or body.credential.get("id")
     if not credential_id:

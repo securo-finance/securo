@@ -2,6 +2,7 @@
 
 Tests: detect_transfer_pairs, unlink_transfer_pair.
 """
+
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
@@ -23,11 +24,17 @@ from app.services.transfer_detection_service import (
 
 
 async def _make_account(
-    session: AsyncSession, user_id: uuid.UUID, name: str,
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    name: str,
 ) -> Account:
     account = Account(
-        id=uuid.uuid4(), user_id=user_id, name=name,
-        type="checking", balance=Decimal("0.00"), currency="BRL",
+        id=uuid.uuid4(),
+        user_id=user_id,
+        name=name,
+        type="checking",
+        balance=Decimal("0.00"),
+        currency="BRL",
     )
     session.add(account)
     await session.commit()
@@ -36,16 +43,26 @@ async def _make_account(
 
 
 async def _add_txn(
-    session: AsyncSession, user_id: uuid.UUID, account_id: uuid.UUID,
-    amount: float, txn_type: str, txn_date: date,
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    account_id: uuid.UUID,
+    amount: float,
+    txn_type: str,
+    txn_date: date,
     source: str = "manual",
 ) -> Transaction:
     from datetime import datetime, timezone
+
     txn = Transaction(
-        id=uuid.uuid4(), user_id=user_id, account_id=account_id,
+        id=uuid.uuid4(),
+        user_id=user_id,
+        account_id=account_id,
         description=f"Transfer {txn_type} {amount}",
-        amount=Decimal(str(amount)), date=txn_date, type=txn_type,
-        source=source, currency="BRL",
+        amount=Decimal(str(amount)),
+        date=txn_date,
+        type=txn_type,
+        source=source,
+        currency="BRL",
         created_at=datetime.now(timezone.utc),
     )
     session.add(txn)
@@ -146,7 +163,9 @@ async def test_detect_within_tolerance(session: AsyncSession, test_user, test_wo
     today = date.today()
 
     debit = await _add_txn(session, test_user.id, acc1.id, 400, "debit", today)
-    credit = await _add_txn(session, test_user.id, acc2.id, 400, "credit", today + timedelta(days=1))
+    credit = await _add_txn(
+        session, test_user.id, acc2.id, 400, "credit", today + timedelta(days=1)
+    )
 
     pairs = await detect_transfer_pairs(session, test_workspace.id, date_tolerance_days=2)
     await session.commit()
@@ -239,7 +258,7 @@ async def test_unlink_transfer_pair(session: AsyncSession, test_user, test_works
     pair_id = debit.transfer_pair_id
     assert pair_id is not None
 
-    unlinked = await unlink_transfer_pair(session, test_workspace.id,pair_id)
+    unlinked = await unlink_transfer_pair(session, test_workspace.id, pair_id)
     await session.commit()
     assert unlinked == 2
 
@@ -252,7 +271,7 @@ async def test_unlink_transfer_pair(session: AsyncSession, test_user, test_works
 @pytest.mark.asyncio
 async def test_unlink_nonexistent_pair(session: AsyncSession, test_user, test_workspace):
     """Unlinking a nonexistent pair returns 0."""
-    unlinked = await unlink_transfer_pair(session, test_workspace.id,uuid.uuid4())
+    unlinked = await unlink_transfer_pair(session, test_workspace.id, uuid.uuid4())
     assert unlinked == 0
 
 
@@ -262,7 +281,9 @@ async def test_unlink_nonexistent_pair(session: AsyncSession, test_user, test_wo
 
 
 @pytest.mark.asyncio
-async def test_candidate_credit_matches_existing_debit(session: AsyncSession, test_user, test_workspace):
+async def test_candidate_credit_matches_existing_debit(
+    session: AsyncSession, test_user, test_workspace
+):
     """When candidate_ids contains only a credit, it pairs with an existing debit.
 
     Simulates: Account A synced first (debit already exists), then Account B
@@ -290,7 +311,9 @@ async def test_candidate_credit_matches_existing_debit(session: AsyncSession, te
 
 
 @pytest.mark.asyncio
-async def test_candidate_debit_matches_existing_credit(session: AsyncSession, test_user, test_workspace):
+async def test_candidate_debit_matches_existing_credit(
+    session: AsyncSession, test_user, test_workspace
+):
     """When candidate_ids contains only a debit, it pairs with an existing credit.
 
     Simulates: Account B synced first (credit already exists), then Account A
@@ -318,7 +341,9 @@ async def test_candidate_debit_matches_existing_credit(session: AsyncSession, te
 
 
 @pytest.mark.asyncio
-async def test_reverse_detection_does_not_pair_two_old_transactions(session: AsyncSession, test_user, test_workspace):
+async def test_reverse_detection_does_not_pair_two_old_transactions(
+    session: AsyncSession, test_user, test_workspace
+):
     """Reverse detection must not pair two transactions that are both outside candidate_ids."""
     acc1 = await _make_account(session, test_user.id, "Guard A")
     acc2 = await _make_account(session, test_user.id, "Guard B")
@@ -354,7 +379,9 @@ async def test_both_sides_imported_together(session: AsyncSession, test_user, te
     credit = await _add_txn(session, test_user.id, acc2.id, 200, "credit", today)
 
     pairs = await detect_transfer_pairs(
-        session, test_workspace.id, candidate_ids=[debit.id, credit.id],
+        session,
+        test_workspace.id,
+        candidate_ids=[debit.id, credit.id],
     )
     await session.commit()
     assert pairs == 1

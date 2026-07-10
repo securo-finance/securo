@@ -29,6 +29,7 @@ def make_tx(**kwargs) -> types.SimpleNamespace:
 
 # --- evaluate_conditions tests ---
 
+
 def test_contains_match():
     conditions = [{"field": "description", "op": "contains", "value": "UBER"}]
     tx = make_tx(description="UBER TRIP")
@@ -110,13 +111,14 @@ def test_and_partial_match():
 def test_or_one_match():
     conditions = [
         {"field": "description", "op": "contains", "value": "IFOOD"},  # fails
-        {"field": "description", "op": "contains", "value": "UBER"},   # passes
+        {"field": "description", "op": "contains", "value": "UBER"},  # passes
     ]
     tx = make_tx(description="UBER TRIP")
     assert evaluate_conditions("or", conditions, tx) is True
 
 
 # --- apply_rule_actions tests ---
+
 
 def test_set_category():
     cat_id = uuid.uuid4()
@@ -172,6 +174,7 @@ def test_ignore_action_sets_flag():
 
 
 # --- Edge-case: evaluate_conditions ---
+
 
 def test_not_equals():
     conditions = [{"field": "type", "op": "not_equals", "value": "credit"}]
@@ -252,6 +255,7 @@ def test_invalid_regex_returns_false():
 
 
 # --- Edge-case: apply_rule_actions ---
+
 
 def test_invalid_uuid_set_category_skips():
     actions = [{"op": "set_category", "value": "not-a-uuid"}]

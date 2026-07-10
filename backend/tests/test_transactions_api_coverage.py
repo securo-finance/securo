@@ -4,6 +4,7 @@ Covers list filters, export (filtered + selection), get/create/update/delete,
 ignore toggle, bulk endpoints, transfer/link/counterpart/candidates, and
 error branches (404/400/422).
 """
+
 from datetime import date
 
 import pytest
@@ -17,7 +18,8 @@ NONEXISTENT = "00000000-0000-0000-0000-000000000000"
 
 async def _manual_account(client: AsyncClient, auth_headers, name: str) -> str:
     resp = await client.post(
-        "/api/accounts", headers=auth_headers,
+        "/api/accounts",
+        headers=auth_headers,
         json={"name": name, "type": "checking", "balance": "0.00"},
     )
     assert resp.status_code == 201, resp.text
@@ -134,7 +136,8 @@ async def test_get_transaction_not_found(client: AsyncClient, auth_headers, test
 @pytest.mark.asyncio
 async def test_create_transaction(client: AsyncClient, auth_headers, test_account: Account):
     resp = await client.post(
-        "/api/transactions", headers=auth_headers,
+        "/api/transactions",
+        headers=auth_headers,
         json={
             "account_id": str(test_account.id),
             "description": "Padaria",
@@ -150,7 +153,8 @@ async def test_create_transaction(client: AsyncClient, auth_headers, test_accoun
 @pytest.mark.asyncio
 async def test_create_transaction_bad_account_400(client: AsyncClient, auth_headers, test_account):
     resp = await client.post(
-        "/api/transactions", headers=auth_headers,
+        "/api/transactions",
+        headers=auth_headers,
         json={
             "account_id": NONEXISTENT,
             "description": "Ghost",
@@ -166,7 +170,8 @@ async def test_create_transaction_bad_account_400(client: AsyncClient, auth_head
 async def test_update_transaction(client: AsyncClient, auth_headers, test_transactions):
     tx = test_transactions[0]
     resp = await client.patch(
-        f"/api/transactions/{tx.id}", headers=auth_headers,
+        f"/api/transactions/{tx.id}",
+        headers=auth_headers,
         json={"description": "UBER updated", "notes": "trip"},
     )
     assert resp.status_code == 200
@@ -178,7 +183,8 @@ async def test_update_transaction(client: AsyncClient, auth_headers, test_transa
 @pytest.mark.asyncio
 async def test_update_transaction_not_found(client: AsyncClient, auth_headers, test_account):
     resp = await client.patch(
-        f"/api/transactions/{NONEXISTENT}", headers=auth_headers,
+        f"/api/transactions/{NONEXISTENT}",
+        headers=auth_headers,
         json={"description": "X"},
     )
     assert resp.status_code == 404
@@ -218,10 +224,13 @@ async def test_delete_transaction_not_found(client: AsyncClient, auth_headers, t
 
 
 @pytest.mark.asyncio
-async def test_bulk_categorize(client: AsyncClient, auth_headers, test_transactions, test_categories):
+async def test_bulk_categorize(
+    client: AsyncClient, auth_headers, test_transactions, test_categories
+):
     ids = [str(t.id) for t in test_transactions[:2]]
     resp = await client.patch(
-        "/api/transactions/bulk-categorize", headers=auth_headers,
+        "/api/transactions/bulk-categorize",
+        headers=auth_headers,
         json={"transaction_ids": ids, "category_id": str(test_categories[0].id)},
     )
     assert resp.status_code == 200
@@ -232,14 +241,16 @@ async def test_bulk_categorize(client: AsyncClient, auth_headers, test_transacti
 async def test_bulk_add_and_remove_tags(client: AsyncClient, auth_headers, test_transactions):
     ids = [str(t.id) for t in test_transactions[:2]]
     add = await client.patch(
-        "/api/transactions/bulk-add-tags", headers=auth_headers,
+        "/api/transactions/bulk-add-tags",
+        headers=auth_headers,
         json={"transaction_ids": ids, "tags": ["viagem", "reembolso"]},
     )
     assert add.status_code == 200
     assert add.json()["updated"] == 2
 
     remove = await client.patch(
-        "/api/transactions/bulk-remove-tags", headers=auth_headers,
+        "/api/transactions/bulk-remove-tags",
+        headers=auth_headers,
         json={"transaction_ids": ids, "tags": ["viagem"]},
     )
     assert remove.status_code == 200
@@ -247,10 +258,13 @@ async def test_bulk_add_and_remove_tags(client: AsyncClient, auth_headers, test_
 
 
 @pytest.mark.asyncio
-async def test_bulk_add_to_group_bad_group_400(client: AsyncClient, auth_headers, test_transactions):
+async def test_bulk_add_to_group_bad_group_400(
+    client: AsyncClient, auth_headers, test_transactions
+):
     ids = [str(t.id) for t in test_transactions[:1]]
     resp = await client.patch(
-        "/api/transactions/bulk-add-to-group", headers=auth_headers,
+        "/api/transactions/bulk-add-to-group",
+        headers=auth_headers,
         json={"transaction_ids": ids, "group_id": NONEXISTENT, "share_type": "equal"},
     )
     assert resp.status_code == 400
@@ -265,7 +279,8 @@ async def test_bulk_add_to_group_bad_group_400(client: AsyncClient, auth_headers
 async def test_create_transfer(client: AsyncClient, auth_headers, test_account: Account):
     other = await _manual_account(client, auth_headers, "Destino")
     resp = await client.post(
-        "/api/transactions/transfer", headers=auth_headers,
+        "/api/transactions/transfer",
+        headers=auth_headers,
         json={
             "from_account_id": str(test_account.id),
             "to_account_id": other,
@@ -284,7 +299,8 @@ async def test_create_transfer(client: AsyncClient, auth_headers, test_account: 
 @pytest.mark.asyncio
 async def test_create_transfer_same_account_400(client: AsyncClient, auth_headers, test_account):
     resp = await client.post(
-        "/api/transactions/transfer", headers=auth_headers,
+        "/api/transactions/transfer",
+        headers=auth_headers,
         json={
             "from_account_id": str(test_account.id),
             "to_account_id": str(test_account.id),
@@ -299,9 +315,7 @@ async def test_create_transfer_same_account_400(client: AsyncClient, auth_header
 @pytest.mark.asyncio
 async def test_transfer_candidates(client: AsyncClient, auth_headers, test_transactions):
     tx = test_transactions[0]
-    resp = await client.get(
-        f"/api/transactions/{tx.id}/transfer-candidates", headers=auth_headers
-    )
+    resp = await client.get(f"/api/transactions/{tx.id}/transfer-candidates", headers=auth_headers)
     assert resp.status_code == 200
     assert isinstance(resp.json(), list)
 
@@ -353,7 +367,8 @@ async def test_create_counterpart(
     other = await _manual_account(client, auth_headers, "Contrapartida")
     tx = test_transactions[0]
     resp = await client.post(
-        f"/api/transactions/{tx.id}/create-counterpart", headers=auth_headers,
+        f"/api/transactions/{tx.id}/create-counterpart",
+        headers=auth_headers,
         json={"to_account_id": other},
     )
     assert resp.status_code == 201, resp.text
@@ -368,7 +383,8 @@ async def test_create_counterpart_bad_target_400(
 ):
     tx = test_transactions[0]
     resp = await client.post(
-        f"/api/transactions/{tx.id}/create-counterpart", headers=auth_headers,
+        f"/api/transactions/{tx.id}/create-counterpart",
+        headers=auth_headers,
         json={"to_account_id": NONEXISTENT},
     )
     assert resp.status_code == 400

@@ -64,7 +64,7 @@ def _preprocess_ofx_for_empty_fitid(content: bytes) -> bytes:
         seed = hashlib.sha1(block.encode("utf-8", errors="replace")).hexdigest()[:16].upper()
         synthetic = f"SYNTH-{seed}"
         if fitid_match:
-            return block[: fitid_match.start(1)] + synthetic + block[fitid_match.end(1):]
+            return block[: fitid_match.start(1)] + synthetic + block[fitid_match.end(1) :]
         # No FITID tag at all — inject one right after the opening <STMTTRN>
         return re.sub(
             r"(<STMTTRN>)",
@@ -98,24 +98,26 @@ def parse_ofx(content: bytes) -> list[TransactionImport]:
 
     for account in ofx.accounts:
         for txn in account.statement.transactions:
-            raw_payee = getattr(txn, 'payee', None) or None
+            raw_payee = getattr(txn, "payee", None) or None
             description = txn.memo or txn.payee or "Unknown"
             if _is_balance_summary_row(description):
                 continue
-            external_id = getattr(txn, 'id', None)
+            external_id = getattr(txn, "id", None)
             # Synthetic IDs are added only to make ofxparse happy; do not
             # persist them as external_id since they are not stable bank
             # identifiers.
             if external_id and external_id.startswith("SYNTH-"):
                 external_id = None
-            transactions.append(TransactionImport(
-                description=description,
-                amount=abs(Decimal(str(txn.amount))),
-                date=txn.date.date() if hasattr(txn.date, 'date') else txn.date,
-                type="credit" if txn.amount > 0 else "debit",
-                external_id=external_id,
-                payee_raw=raw_payee,
-            ))
+            transactions.append(
+                TransactionImport(
+                    description=description,
+                    amount=abs(Decimal(str(txn.amount))),
+                    date=txn.date.date() if hasattr(txn.date, "date") else txn.date,
+                    type="credit" if txn.amount > 0 else "debit",
+                    external_id=external_id,
+                    payee_raw=raw_payee,
+                )
+            )
 
     return transactions
 
@@ -124,13 +126,13 @@ def parse_qif(content: bytes) -> list[TransactionImport]:
     """Parse QIF file content and return transactions."""
     # Try UTF-8 first, fall back to Latin-1 for legacy software (e.g. Microsoft Money)
     try:
-        text = content.decode('utf-8-sig')
+        text = content.decode("utf-8-sig")
     except UnicodeDecodeError:
-        text = content.decode('latin-1')
+        text = content.decode("latin-1")
     transactions = []
 
     # Split into transaction blocks by "^"
-    blocks = text.split('^')
+    blocks = text.split("^")
     for block in blocks:
         lines = block.strip().splitlines()
         if not lines:
@@ -146,39 +148,45 @@ def parse_qif(content: bytes) -> list[TransactionImport]:
             if not line:
                 continue
             tag, value = line[0], line[1:]
-            if tag == 'D':
+            if tag == "D":
                 # Try common date formats (including 2-digit year variants)
                 for fmt in [
-                    '%m/%d/%Y', '%d/%m/%Y', '%Y-%m-%d',
-                    "%m/%d'%Y", "%m/%d'%y",
-                    '%m/%d/%y', '%d/%m/%y',
+                    "%m/%d/%Y",
+                    "%d/%m/%Y",
+                    "%Y-%m-%d",
+                    "%m/%d'%Y",
+                    "%m/%d'%y",
+                    "%m/%d/%y",
+                    "%d/%m/%y",
                 ]:
                     try:
                         txn_date = datetime.strptime(value.strip(), fmt).date()
                         break
                     except ValueError:
                         continue
-            elif tag == 'T' or tag == 'U':
+            elif tag == "T" or tag == "U":
                 try:
-                    amount = Decimal(value.strip().replace(',', ''))
+                    amount = Decimal(value.strip().replace(",", ""))
                 except Exception:
                     pass
-            elif tag == 'P':
+            elif tag == "P":
                 payee = value.strip()
-            elif tag == 'M':
+            elif tag == "M":
                 memo = value.strip()
 
         if txn_date is None or amount is None:
             continue
 
         description = payee or memo or "Unknown"
-        transactions.append(TransactionImport(
-            description=description,
-            amount=abs(amount),
-            date=txn_date,
-            type="credit" if amount > 0 else "debit",
-            payee_raw=payee,
-        ))
+        transactions.append(
+            TransactionImport(
+                description=description,
+                amount=abs(amount),
+                date=txn_date,
+                type="credit" if amount > 0 else "debit",
+                payee_raw=payee,
+            )
+        )
 
     return transactions
 
@@ -188,22 +196,22 @@ def parse_camt(content: bytes) -> list[TransactionImport]:
     root = ET.fromstring(content)
 
     # Detect namespace dynamically
-    ns_match = re.match(r'\{(.+?)\}', root.tag)
-    ns = ns_match.group(1) if ns_match else ''
-    nsmap = {'ns': ns} if ns else {}
+    ns_match = re.match(r"\{(.+?)\}", root.tag)
+    ns = ns_match.group(1) if ns_match else ""
+    nsmap = {"ns": ns} if ns else {}
 
     def find(element, path):
         """Find element with or without namespace."""
         if nsmap:
-            parts = path.split('/')
-            ns_path = '/'.join(f'ns:{p}' for p in parts)
+            parts = path.split("/")
+            ns_path = "/".join(f"ns:{p}" for p in parts)
             return element.find(ns_path, nsmap)
         return element.find(path)
 
     def findall(element, path):
         if nsmap:
-            parts = path.split('/')
-            ns_path = '/'.join(f'ns:{p}' for p in parts)
+            parts = path.split("/")
+            ns_path = "/".join(f"ns:{p}" for p in parts)
             return element.findall(ns_path, nsmap)
         return element.findall(path)
 
@@ -214,10 +222,10 @@ def parse_camt(content: bytes) -> list[TransactionImport]:
     transactions = []
 
     # Navigate: Document > BkToCstmrStmt > Stmt > Ntry
-    for stmt in findall(root, 'BkToCstmrStmt/Stmt'):
-        for ntry in findall(stmt, 'Ntry'):
+    for stmt in findall(root, "BkToCstmrStmt/Stmt"):
+        for ntry in findall(stmt, "Ntry"):
             # Amount
-            amt_el = find(ntry, 'Amt')
+            amt_el = find(ntry, "Amt")
             if amt_el is None:
                 continue
             try:
@@ -226,59 +234,68 @@ def parse_camt(content: bytes) -> list[TransactionImport]:
                 continue
 
             # Credit/Debit indicator
-            cdt_dbt = find_text(ntry, 'CdtDbtInd')
+            cdt_dbt = find_text(ntry, "CdtDbtInd")
             txn_type = "credit" if cdt_dbt == "CRDT" else "debit"
 
             # Date: try BookgDt/Dt then ValDt/Dt
-            date_str = find_text(ntry, 'BookgDt/Dt') or find_text(ntry, 'ValDt/Dt')
+            date_str = find_text(ntry, "BookgDt/Dt") or find_text(ntry, "ValDt/Dt")
             if not date_str:
                 continue
             try:
-                txn_date = datetime.strptime(date_str.strip(), '%Y-%m-%d').date()
+                txn_date = datetime.strptime(date_str.strip(), "%Y-%m-%d").date()
             except ValueError:
                 continue
 
             # Description from various paths
             description = (
-                find_text(ntry, 'NtryDtls/TxDtls/RmtInf/Ustrd')
-                or find_text(ntry, 'NtryDtls/TxDtls/RltdPties/Cdtr/Nm')
-                or find_text(ntry, 'NtryDtls/TxDtls/RltdPties/Dbtr/Nm')
-                or find_text(ntry, 'AddtlNtryInf')
+                find_text(ntry, "NtryDtls/TxDtls/RmtInf/Ustrd")
+                or find_text(ntry, "NtryDtls/TxDtls/RltdPties/Cdtr/Nm")
+                or find_text(ntry, "NtryDtls/TxDtls/RltdPties/Dbtr/Nm")
+                or find_text(ntry, "AddtlNtryInf")
                 or "Unknown"
             )
 
             # Extract currency from Ccy attribute on Amt element
-            txn_currency = amt_el.get('Ccy') or None
+            txn_currency = amt_el.get("Ccy") or None
 
-            transactions.append(TransactionImport(
-                description=description,
-                amount=abs(amount),
-                date=txn_date,
-                type=txn_type,
-                currency=txn_currency,
-            ))
+            transactions.append(
+                TransactionImport(
+                    description=description,
+                    amount=abs(amount),
+                    date=txn_date,
+                    type=txn_type,
+                    currency=txn_currency,
+                )
+            )
 
     return transactions
 
 
 DATE_FORMAT_MAP = {
-    'DD/MM/YYYY': '%d/%m/%Y',
-    'MM/DD/YYYY': '%m/%d/%Y',
-    'YYYY-MM-DD': '%Y-%m-%d',
+    "DD/MM/YYYY": "%d/%m/%Y",
+    "MM/DD/YYYY": "%m/%d/%Y",
+    "YYYY-MM-DD": "%Y-%m-%d",
 }
 
 # Securo fields a CSV column can be mapped to. Used to validate the
 # user-supplied column_mapping and to drive the import-UI dropdowns.
 CSV_MAPPABLE_FIELDS = (
-    'date', 'description', 'amount', 'type',
-    'category', 'currency', 'fx_rate', 'inflow', 'outflow',
+    "date",
+    "description",
+    "amount",
+    "type",
+    "category",
+    "currency",
+    "fx_rate",
+    "inflow",
+    "outflow",
 )
 
 
 def _sniff_csv_dialect(text: str):
     """Detect the CSV dialect (delimiter/quoting), falling back to comma."""
     try:
-        return csv.Sniffer().sniff(text[:4096], delimiters=',;\t|')
+        return csv.Sniffer().sniff(text[:4096], delimiters=",;\t|")
     except csv.Error:
         return csv.excel
 
@@ -289,7 +306,7 @@ def detect_csv_columns(content: bytes) -> list[str]:
     Used by the import preview so the UI can offer accurate column-mapping
     dropdowns instead of guessing headers client-side.
     """
-    text = content.decode('utf-8-sig')  # Handle BOM
+    text = content.decode("utf-8-sig")  # Handle BOM
     dialect = _sniff_csv_dialect(text)
     reader = csv.DictReader(io.StringIO(text), dialect=dialect)
     return [f.strip() for f in (reader.fieldnames or []) if f and f.strip()]
@@ -316,7 +333,7 @@ def parse_csv(
     - column_mapping: explicit Securo-field -> CSV-header map. Any field
       present here overrides auto-detection; unmapped fields still auto-detect.
     """
-    text = content.decode('utf-8-sig')  # Handle BOM
+    text = content.decode("utf-8-sig")  # Handle BOM
     dialect = _sniff_csv_dialect(text)
     reader = csv.DictReader(io.StringIO(text), dialect=dialect)
 
@@ -324,13 +341,13 @@ def parse_csv(
     fieldnames = [f.lower().strip() for f in (reader.fieldnames or [])]
 
     # Map common column names
-    date_cols = ['date', 'data', 'dt', 'transaction_date', 'data_transacao']
-    desc_cols = ['description', 'descricao', 'desc', 'memo', 'historico', 'lancamento']
-    amount_cols = ['amount', 'valor', 'value', 'quantia']
-    type_cols = ['type', 'tipo']
-    category_cols = ['category', 'categoria']
-    currency_cols = ['currency', 'moeda', 'currency_code']
-    fx_rate_cols = ['fx_rate', 'fx_rate_used', 'taxa_cambio', 'exchange_rate', 'taxa']
+    date_cols = ["date", "data", "dt", "transaction_date", "data_transacao"]
+    desc_cols = ["description", "descricao", "desc", "memo", "historico", "lancamento"]
+    amount_cols = ["amount", "valor", "value", "quantia"]
+    type_cols = ["type", "tipo"]
+    category_cols = ["category", "categoria"]
+    currency_cols = ["currency", "moeda", "currency_code"]
+    fx_rate_cols = ["fx_rate", "fx_rate_used", "taxa_cambio", "exchange_rate", "taxa"]
 
     # Normalize the user-supplied column mapping (Securo field -> CSV header).
     mapping = {
@@ -361,26 +378,28 @@ def parse_csv(
             return mapped
         return find_col(candidates)
 
-    date_col = resolve_col('date', date_cols)
-    desc_col = resolve_col('description', desc_cols)
+    date_col = resolve_col("date", date_cols)
+    desc_col = resolve_col("description", desc_cols)
 
     # In split mode, we don't require a single amount column. The inflow/outflow
     # columns may come from the explicit args or from the column mapping.
-    inflow_col = (inflow_column or mapping.get('inflow') or '').lower().strip() or None
-    outflow_col = (outflow_column or mapping.get('outflow') or '').lower().strip() or None
+    inflow_col = (inflow_column or mapping.get("inflow") or "").lower().strip() or None
+    outflow_col = (outflow_column or mapping.get("outflow") or "").lower().strip() or None
     use_split = bool(inflow_col and outflow_col)
 
     if use_split:
         if inflow_col not in fieldnames or outflow_col not in fieldnames:
-            raise ValueError(f"Inflow/outflow columns not found in CSV. Available columns: {', '.join(fieldnames)}")
+            raise ValueError(
+                f"Inflow/outflow columns not found in CSV. Available columns: {', '.join(fieldnames)}"
+            )
         amount_col = None
     else:
-        amount_col = resolve_col('amount', amount_cols)
+        amount_col = resolve_col("amount", amount_cols)
 
-    type_col = resolve_col('type', type_cols)
-    category_col = resolve_col('category', category_cols)
-    currency_col = resolve_col('currency', currency_cols)
-    fx_rate_col = resolve_col('fx_rate', fx_rate_cols)
+    type_col = resolve_col("type", type_cols)
+    category_col = resolve_col("category", category_cols)
+    currency_col = resolve_col("currency", currency_cols)
+    fx_rate_col = resolve_col("fx_rate", fx_rate_cols)
 
     if not date_col or not desc_col:
         raise ValueError(
@@ -397,7 +416,7 @@ def parse_csv(
     if date_format and date_format in DATE_FORMAT_MAP:
         date_formats = [DATE_FORMAT_MAP[date_format]]
     else:
-        date_formats = ['%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y', '%m/%d/%Y']
+        date_formats = ["%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%m/%d/%Y"]
 
     transactions = []
     for row in reader:
@@ -423,13 +442,13 @@ def parse_csv(
             outflow_str = normalize_amount(row.get(outflow_col, ""))
 
             try:
-                inflow = Decimal(inflow_str) if inflow_str else Decimal('0')
+                inflow = Decimal(inflow_str) if inflow_str else Decimal("0")
             except Exception:
-                inflow = Decimal('0')
+                inflow = Decimal("0")
             try:
-                outflow = Decimal(outflow_str) if outflow_str else Decimal('0')
+                outflow = Decimal(outflow_str) if outflow_str else Decimal("0")
             except Exception:
-                outflow = Decimal('0')
+                outflow = Decimal("0")
 
             if inflow > 0:
                 amount = inflow
@@ -450,14 +469,16 @@ def parse_csv(
             if flip_amount:
                 amount = -amount
 
-            if type_col and row.get(type_col, '').strip() in ('credit', 'debit'):
+            if type_col and row.get(type_col, "").strip() in ("credit", "debit"):
                 txn_type = row[type_col].strip()
             else:
                 txn_type = "credit" if amount > 0 else "debit"
             amount = abs(amount)
 
         # Extract optional category, currency and fx_rate from CSV columns
-        category_name = row[category_col].strip() if category_col and row.get(category_col) else None
+        category_name = (
+            row[category_col].strip() if category_col and row.get(category_col) else None
+        )
         txn_currency = None
         txn_fx_rate = None
         if currency_col and row.get(currency_col):
@@ -470,15 +491,17 @@ def parse_csv(
                 except Exception:
                     pass
 
-        transactions.append(TransactionImport(
-            description=row[desc_col].strip(),
-            amount=abs(amount),
-            date=txn_date,
-            type=txn_type,
-            currency=txn_currency,
-            fx_rate=txn_fx_rate,
-            category_name=category_name,
-        ))
+        transactions.append(
+            TransactionImport(
+                description=row[desc_col].strip(),
+                amount=abs(amount),
+                date=txn_date,
+                type=txn_type,
+                currency=txn_currency,
+                fx_rate=txn_fx_rate,
+                category_name=category_name,
+            )
+        )
 
     return transactions
 
@@ -567,9 +590,7 @@ async def import_transactions(
     await session.flush()  # Get the import_log.id
 
     # Look up account currency for fallback
-    account_result = await session.execute(
-        select(Account).where(Account.id == account_id)
-    )
+    account_result = await session.execute(select(Account).where(Account.id == account_id))
     account = account_result.scalar_one_or_none()
     account_currency = account.currency if account else get_settings().default_currency
 
@@ -628,8 +649,13 @@ async def import_transactions(
         # fulfills a generated placeholder, merge into it instead of creating a
         # duplicate; the recurring link is preserved.
         placeholder = await recurring_match_service.find_placeholder_for_incoming(
-            session, account_id, txn_data.amount, txn_currency, txn_data.type,
-            txn_data.date, txn_data.description,
+            session,
+            account_id,
+            txn_data.amount,
+            txn_currency,
+            txn_data.type,
+            txn_data.date,
+            txn_data.description,
         )
         if placeholder and not placeholder.is_ignored:
             placeholder.source = source
@@ -643,13 +669,21 @@ async def import_transactions(
 
         # Otherwise, link to an active bill's next occurrence if this fulfills it.
         recurring_link = await recurring_match_service.find_bill_for_incoming(
-            session, user_id, account_id, txn_data.amount, txn_currency, txn_data.type,
-            txn_data.date, txn_data.description,
+            session,
+            user_id,
+            account_id,
+            txn_data.amount,
+            txn_currency,
+            txn_data.type,
+            txn_data.date,
+            txn_data.description,
         )
 
         user_category_id = txn_data.category_id
         suggested_cat_id = txn_data.suggested_category_id
-        csv_category_id = category_map.get(txn_data.category_name) if txn_data.category_name else None
+        csv_category_id = (
+            category_map.get(txn_data.category_name) if txn_data.category_name else None
+        )
         if txn_data.force_uncategorized:
             category_id = None
         else:
@@ -683,7 +717,9 @@ async def import_transactions(
         if recurring_link is not None:
             recurring_match_service.advance_past(recurring_link, txn_data.date)
 
-        await apply_rules_to_transaction(session, user_id, transaction, skip_category_rules=txn_data.force_uncategorized)
+        await apply_rules_to_transaction(
+            session, user_id, transaction, skip_category_rules=txn_data.force_uncategorized
+        )
 
         # Only auto-convert if no fx_rate was provided by the CSV
         if not txn_data.fx_rate:
@@ -697,6 +733,7 @@ async def import_transactions(
     await session.commit()
     return imported, skipped, excluded_count, import_log.id
 
+
 def normalize_amount(amount_str: str) -> str:
     """
     Normalize monetary string into a standard decimal format compatible with Decimal.
@@ -706,14 +743,14 @@ def normalize_amount(amount_str: str) -> str:
         1,442.20 -> 1442.20
     """
 
-    amount_str = amount_str.replace('R$', '').strip()
+    amount_str = amount_str.replace("R$", "").strip()
 
-    if ',' in amount_str and '.' in amount_str:
-        if amount_str.rfind(',') > amount_str.rfind('.'):
-            amount_str = amount_str.replace('.', '').replace(',', '.')
+    if "," in amount_str and "." in amount_str:
+        if amount_str.rfind(",") > amount_str.rfind("."):
+            amount_str = amount_str.replace(".", "").replace(",", ".")
         else:
-            amount_str = amount_str.replace(',', '')
-    elif ',' in amount_str:
-        amount_str = amount_str.replace(',', '.')
+            amount_str = amount_str.replace(",", "")
+    elif "," in amount_str:
+        amount_str = amount_str.replace(",", ".")
 
     return amount_str

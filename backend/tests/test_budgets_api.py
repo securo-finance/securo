@@ -1,4 +1,5 @@
 """Tests for recurring budgets API."""
+
 from datetime import date, timedelta
 
 import pytest
@@ -174,7 +175,9 @@ async def test_recurring_not_visible_before_effective_month(client, auth_headers
 
 
 @pytest.mark.asyncio
-async def test_budget_comparison_resolves_recurring(client, auth_headers, test_categories, test_transactions):
+async def test_budget_comparison_resolves_recurring(
+    client, auth_headers, test_categories, test_transactions
+):
     """Budget comparison endpoint should resolve recurring budgets correctly."""
     cat = test_categories[0]  # Alimentação — has spending in test_transactions
 

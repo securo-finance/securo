@@ -117,8 +117,15 @@ def _date_or_none(value) -> Optional[date]:
 # information we might want later (status, rates, issuer, institution,
 # nested `metadata` for pensions, etc.) without tying our schema to Pluggy.
 _HOLDING_PROMOTED_KEYS = {
-    "id", "balance", "currencyCode", "quantity", "value",
-    "amountOriginal", "dueDate", "isin", "issueDate",
+    "id",
+    "balance",
+    "currencyCode",
+    "quantity",
+    "value",
+    "amountOriginal",
+    "dueDate",
+    "isin",
+    "issueDate",
 }
 
 # Pluggy `type` values where `issueDate` equals the user's purchase date.
@@ -352,15 +359,14 @@ class PluggyProvider(BankProvider):
         item_id = credentials["item_id"]
         headers = await self._headers()
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.get(
-                f"{PLUGGY_API_BASE}/items/{item_id}", headers=headers
-            )
+            resp = await client.get(f"{PLUGGY_API_BASE}/items/{item_id}", headers=headers)
             resp.raise_for_status()
             connector = resp.json().get("connector", {})
             # The connector logo may be the demo placeholder; fetch accounts so
             # the COMPE-code fallback can recover the real bank icon.
             accts_resp = await client.get(
-                f"{PLUGGY_API_BASE}/accounts", headers=headers,
+                f"{PLUGGY_API_BASE}/accounts",
+                headers=headers,
                 params={"itemId": item_id},
             )
             accts_resp.raise_for_status()
@@ -386,8 +392,11 @@ class PluggyProvider(BankProvider):
         return accounts
 
     async def get_transactions(
-        self, credentials: dict, account_external_id: str,
-        since: Optional[date] = None, payee_source: str = "auto",
+        self,
+        credentials: dict,
+        account_external_id: str,
+        since: Optional[date] = None,
+        payee_source: str = "auto",
     ) -> list[TransactionData]:
         headers = await self._headers()
         all_transactions: list[TransactionData] = []
@@ -464,7 +473,9 @@ class PluggyProvider(BankProvider):
                     inst_purchase_date: Optional[date] = None
                     if inst_purchase_date_raw:
                         try:
-                            inst_purchase_date = date.fromisoformat(str(inst_purchase_date_raw)[:10])
+                            inst_purchase_date = date.fromisoformat(
+                                str(inst_purchase_date_raw)[:10]
+                            )
                         except ValueError:
                             inst_purchase_date = None
                     inst_total_amount_dec = (
@@ -476,9 +487,7 @@ class PluggyProvider(BankProvider):
                     # the bill it lands in. The sync layer resolves this to a
                     # credit_card_bills FK; we just capture the string here.
                     bill_external_id_raw = cc_meta.get("billId")
-                    bill_external_id = (
-                        str(bill_external_id_raw) if bill_external_id_raw else None
-                    )
+                    bill_external_id = str(bill_external_id_raw) if bill_external_id_raw else None
 
                     all_transactions.append(
                         TransactionData(
@@ -493,7 +502,9 @@ class PluggyProvider(BankProvider):
                             status=status,
                             payee=payee,
                             raw_data=txn,
-                            installment_number=inst_number if isinstance(inst_number, int) else None,
+                            installment_number=inst_number
+                            if isinstance(inst_number, int)
+                            else None,
                             total_installments=inst_total if isinstance(inst_total, int) else None,
                             installment_total_amount=inst_total_amount_dec,
                             installment_purchase_date=inst_purchase_date,
@@ -617,8 +628,7 @@ class PluggyProvider(BankProvider):
                 return "failed"
 
             logger.info(
-                "Pluggy refresh for item %s timed out after %ss; "
-                "proceeding with cached data",
+                "Pluggy refresh for item %s timed out after %ss; proceeding with cached data",
                 item_id,
                 PLUGGY_REFRESH_TIMEOUT_SECONDS,
             )
@@ -717,7 +727,9 @@ class PluggyProvider(BankProvider):
             if txn_type == "debit":
                 receiver = payment_data.get("receiver")
                 if receiver:
-                    return receiver.get("name") or (receiver.get("documentNumber") or {}).get("value")
+                    return receiver.get("name") or (receiver.get("documentNumber") or {}).get(
+                        "value"
+                    )
             else:
                 payer = payment_data.get("payer")
                 if payer:

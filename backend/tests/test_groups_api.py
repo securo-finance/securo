@@ -13,9 +13,7 @@ async def _create_group(client: AsyncClient, auth_headers: dict, **overrides) ->
 async def _add_member(client, auth_headers, group_id, **fields) -> dict:
     payload = {"name": "Alice"}
     payload.update(fields)
-    resp = await client.post(
-        f"/api/groups/{group_id}/members", headers=auth_headers, json=payload
-    )
+    resp = await client.post(f"/api/groups/{group_id}/members", headers=auth_headers, json=payload)
     assert resp.status_code == 201, resp.text
     return resp.json()
 
@@ -109,9 +107,7 @@ async def test_settlement_endpoints(client, auth_headers, test_user):
     assert resp.status_code == 201, resp.text
     settlement = resp.json()
 
-    resp = await client.get(
-        f"/api/groups/{group['id']}/settlements", headers=auth_headers
-    )
+    resp = await client.get(f"/api/groups/{group['id']}/settlements", headers=auth_headers)
     assert resp.status_code == 200
     assert any(s["id"] == settlement["id"] for s in resp.json())
 

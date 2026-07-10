@@ -14,6 +14,7 @@ one synced asset, a group is created (named after the institution) and
 its assets are linked into it. Manual assets stay ungrouped unless the
 user moves them in themselves.
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa

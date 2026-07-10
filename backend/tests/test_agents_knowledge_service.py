@@ -5,6 +5,7 @@ hit a pgvector column type that doesn't exist on SQLite. The rest of the
 file (upload, list, get, delete, set_pinned, mark_status, hash_payload,
 file_size_limit_mb) is platform-agnostic.
 """
+
 from __future__ import annotations
 
 import os
@@ -88,12 +89,20 @@ async def test_upload_doc_sanitizes_disk_filename(session, test_agent, test_user
 @pytest.mark.asyncio
 async def test_list_docs_returns_all_docs_for_agent(session, test_agent, test_user):
     a = await knowledge_service.upload_doc(
-        session, agent_id=test_agent.id, user_id=test_user.id,
-        filename="a.txt", mime="text/plain", payload=b"a",
+        session,
+        agent_id=test_agent.id,
+        user_id=test_user.id,
+        filename="a.txt",
+        mime="text/plain",
+        payload=b"a",
     )
     b = await knowledge_service.upload_doc(
-        session, agent_id=test_agent.id, user_id=test_user.id,
-        filename="b.txt", mime="text/plain", payload=b"b",
+        session,
+        agent_id=test_agent.id,
+        user_id=test_user.id,
+        filename="b.txt",
+        mime="text/plain",
+        payload=b"b",
     )
     rows = await knowledge_service.list_docs(session, test_agent.id)
     # Ordering is `created_at DESC` in code, but on fast-running test envs
@@ -104,8 +113,12 @@ async def test_list_docs_returns_all_docs_for_agent(session, test_agent, test_us
 @pytest.mark.asyncio
 async def test_get_doc_scopes_by_user(session, test_agent, test_user):
     doc = await knowledge_service.upload_doc(
-        session, agent_id=test_agent.id, user_id=test_user.id,
-        filename="x.txt", mime="text/plain", payload=b"x",
+        session,
+        agent_id=test_agent.id,
+        user_id=test_user.id,
+        filename="x.txt",
+        mime="text/plain",
+        payload=b"x",
     )
     # Wrong user → None.
     other = uuid.uuid4()
@@ -124,8 +137,12 @@ async def test_delete_doc_returns_false_when_missing(session, test_user):
 @pytest.mark.asyncio
 async def test_delete_doc_removes_row_and_file(session, test_agent, test_user):
     doc = await knowledge_service.upload_doc(
-        session, agent_id=test_agent.id, user_id=test_user.id,
-        filename="delete-me.txt", mime="text/plain", payload=b"hi",
+        session,
+        agent_id=test_agent.id,
+        user_id=test_user.id,
+        filename="delete-me.txt",
+        mime="text/plain",
+        payload=b"hi",
     )
     path = doc.storage_path
     assert os.path.exists(path)
@@ -140,8 +157,12 @@ async def test_delete_doc_swallows_missing_file_on_disk(session, test_agent, tes
     """If someone removes the file under us, the DB row should still
     delete cleanly."""
     doc = await knowledge_service.upload_doc(
-        session, agent_id=test_agent.id, user_id=test_user.id,
-        filename="ghost.txt", mime="text/plain", payload=b"x",
+        session,
+        agent_id=test_agent.id,
+        user_id=test_user.id,
+        filename="ghost.txt",
+        mime="text/plain",
+        payload=b"x",
     )
     os.remove(doc.storage_path)
     assert await knowledge_service.delete_doc(session, doc.id, test_user.id) is True
@@ -150,8 +171,12 @@ async def test_delete_doc_swallows_missing_file_on_disk(session, test_agent, tes
 @pytest.mark.asyncio
 async def test_set_pinned_toggles_flag(session, test_agent, test_user):
     doc = await knowledge_service.upload_doc(
-        session, agent_id=test_agent.id, user_id=test_user.id,
-        filename="pin.txt", mime="text/plain", payload=b"x",
+        session,
+        agent_id=test_agent.id,
+        user_id=test_user.id,
+        filename="pin.txt",
+        mime="text/plain",
+        payload=b"x",
     )
     pinned = await knowledge_service.set_pinned(session, doc.id, test_user.id, True)
     assert pinned is not None
@@ -170,8 +195,12 @@ async def test_set_pinned_returns_none_when_missing(session, test_user):
 @pytest.mark.asyncio
 async def test_mark_status_ready_clears_prior_error(session, test_agent, test_user):
     doc = await knowledge_service.upload_doc(
-        session, agent_id=test_agent.id, user_id=test_user.id,
-        filename="s.txt", mime="text/plain", payload=b"x",
+        session,
+        agent_id=test_agent.id,
+        user_id=test_user.id,
+        filename="s.txt",
+        mime="text/plain",
+        payload=b"x",
     )
     # Initial failure → error message stored.
     await knowledge_service.mark_status(session, doc.id, status="failed", error="embed failed: 500")
@@ -189,8 +218,12 @@ async def test_mark_status_ready_clears_prior_error(session, test_agent, test_us
 @pytest.mark.asyncio
 async def test_mark_status_failed_preserves_prior_status_metadata(session, test_agent, test_user):
     doc = await knowledge_service.upload_doc(
-        session, agent_id=test_agent.id, user_id=test_user.id,
-        filename="fail.txt", mime="text/plain", payload=b"x",
+        session,
+        agent_id=test_agent.id,
+        user_id=test_user.id,
+        filename="fail.txt",
+        mime="text/plain",
+        payload=b"x",
     )
     await knowledge_service.mark_status(session, doc.id, status="processing")
     await knowledge_service.mark_status(session, doc.id, status="failed", error="parse failed")

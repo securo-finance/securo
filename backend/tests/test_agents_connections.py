@@ -1,4 +1,5 @@
 """LLM connections — encryption, CRUD via HTTP, executor wiring."""
+
 import uuid
 from unittest.mock import patch, AsyncMock
 
@@ -17,6 +18,7 @@ pytestmark = pytest.mark.asyncio
 
 
 # --- Encryption ------------------------------------------------------------
+
 
 def test_encrypt_decrypt_roundtrip():
     secret = "sk-ant-totally-secret-12345"
@@ -40,9 +42,11 @@ def test_decrypt_corrupt_returns_none():
 
 # --- Service layer --------------------------------------------------------
 
+
 async def test_create_connection_with_encryption(session: AsyncSession, test_user: User):
     conn = await connection_service.create_connection(
-        session, test_user.id,
+        session,
+        test_user.id,
         name="Local Ollama",
         kind="ollama",
         base_url="http://host.docker.internal:11434",
@@ -53,7 +57,8 @@ async def test_create_connection_with_encryption(session: AsyncSession, test_use
     assert conn.api_key_encrypted is None  # ollama doesn't need a key
 
     conn2 = await connection_service.create_connection(
-        session, test_user.id,
+        session,
+        test_user.id,
         name="My Anthropic",
         kind="anthropic",
         api_key="sk-ant-real-key",
@@ -67,23 +72,37 @@ async def test_create_connection_with_encryption(session: AsyncSession, test_use
 async def test_create_connection_rejects_unknown_kind(session: AsyncSession, test_user: User):
     with pytest.raises(ValueError):
         await connection_service.create_connection(
-            session, test_user.id, name="x", kind="bogus",
+            session,
+            test_user.id,
+            name="x",
+            kind="bogus",
         )
 
 
 async def test_openai_compatible_requires_base_url(session: AsyncSession, test_user: User):
     with pytest.raises(ValueError):
         await connection_service.create_connection(
-            session, test_user.id, name="x", kind="openai_compatible",
+            session,
+            test_user.id,
+            name="x",
+            kind="openai_compatible",
         )
 
 
 async def test_only_one_default_per_user(session: AsyncSession, test_user: User):
     a = await connection_service.create_connection(
-        session, test_user.id, name="A", kind="ollama", is_default=True,
+        session,
+        test_user.id,
+        name="A",
+        kind="ollama",
+        is_default=True,
     )
     b = await connection_service.create_connection(
-        session, test_user.id, name="B", kind="ollama", is_default=True,
+        session,
+        test_user.id,
+        name="B",
+        kind="ollama",
+        is_default=True,
     )
     # Re-fetch a — should no longer be default.
     a_after = await connection_service.get_connection(session, a.id, test_user.id)
@@ -91,15 +110,24 @@ async def test_only_one_default_per_user(session: AsyncSession, test_user: User)
     assert b.is_default is True
 
 
-async def test_update_keeps_existing_key_when_api_key_omitted(session: AsyncSession, test_user: User):
+async def test_update_keeps_existing_key_when_api_key_omitted(
+    session: AsyncSession, test_user: User
+):
     conn = await connection_service.create_connection(
-        session, test_user.id, name="x", kind="openai", api_key="sk-original",
+        session,
+        test_user.id,
+        name="x",
+        kind="openai",
+        api_key="sk-original",
     )
     enc_before = conn.api_key_encrypted
 
     # Update without touching api_key.
     updated = await connection_service.update_connection(
-        session, conn.id, test_user.id, name="renamed",
+        session,
+        conn.id,
+        test_user.id,
+        name="renamed",
     )
     assert updated.api_key_encrypted == enc_before
     assert decrypt(updated.api_key_encrypted) == "sk-original"
@@ -107,15 +135,23 @@ async def test_update_keeps_existing_key_when_api_key_omitted(session: AsyncSess
 
 async def test_update_clears_key_with_empty_string(session: AsyncSession, test_user: User):
     conn = await connection_service.create_connection(
-        session, test_user.id, name="x", kind="openai", api_key="sk-original",
+        session,
+        test_user.id,
+        name="x",
+        kind="openai",
+        api_key="sk-original",
     )
     updated = await connection_service.update_connection(
-        session, conn.id, test_user.id, api_key="",
+        session,
+        conn.id,
+        test_user.id,
+        api_key="",
     )
     assert updated.api_key_encrypted is None
 
 
 # --- HTTP CRUD -------------------------------------------------------------
+
 
 async def test_unauthenticated_connections_list_rejected(client: AsyncClient):
     r = await client.get("/api/agents/connections")
@@ -170,7 +206,9 @@ async def other_auth_headers_conn(client: AsyncClient, session: AsyncSession) ->
         id=uuid.uuid4(),
         email="other-conn@example.com",
         hashed_password=hashed,
-        is_active=True, is_superuser=False, is_verified=True,
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
         preferences={"language": "en", "currency_display": "USD"},
     )
     session.add(user)
@@ -183,7 +221,9 @@ async def other_auth_headers_conn(client: AsyncClient, session: AsyncSession) ->
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
 
-async def test_connections_are_per_user(client: AsyncClient, auth_headers: dict, other_auth_headers_conn: dict):
+async def test_connections_are_per_user(
+    client: AsyncClient, auth_headers: dict, other_auth_headers_conn: dict
+):
     r = await client.post(
         "/api/agents/connections",
         json={"name": "mine", "kind": "ollama"},
@@ -199,6 +239,7 @@ async def test_connections_are_per_user(client: AsyncClient, auth_headers: dict,
 
 
 # --- Test endpoint (mocked HTTP probe) ------------------------------------
+
 
 async def test_test_endpoint_mocked_ok(client: AsyncClient, auth_headers: dict):
     r = await client.post(
@@ -233,9 +274,8 @@ async def test_test_endpoint_404_for_unknown(client: AsyncClient, auth_headers: 
 
 # --- Executor uses the connection ------------------------------------------
 
-async def test_executor_resolves_provider_from_connection(
-    session: AsyncSession, test_user: User
-):
+
+async def test_executor_resolves_provider_from_connection(session: AsyncSession, test_user: User):
     """Agent with connection_id → executor builds provider via the connection,
     inheriting its base_url and decrypted api_key. The connection's
     default_model is used when the agent doesn't override."""
@@ -243,8 +283,10 @@ async def test_executor_resolves_provider_from_connection(
     from app.agents.models.agent import Agent
 
     conn = await connection_service.create_connection(
-        session, test_user.id,
-        name="my-llm", kind="openai_compatible",
+        session,
+        test_user.id,
+        name="my-llm",
+        kind="openai_compatible",
         base_url="http://my-server:8000/v1",
         api_key="sk-some-key",
         default_model="my-custom-model",
@@ -275,9 +317,12 @@ async def test_executor_falls_back_to_user_default_connection(
     from app.agents.models.agent import Agent
 
     await connection_service.create_connection(
-        session, test_user.id,
-        name="default-anthropic", kind="anthropic",
-        api_key="sk-ant-x", default_model="claude-haiku-4-5",
+        session,
+        test_user.id,
+        name="default-anthropic",
+        kind="anthropic",
+        api_key="sk-ant-x",
+        default_model="claude-haiku-4-5",
         is_default=True,
     )
 
@@ -298,12 +343,19 @@ async def test_executor_agent_model_overrides_connection_default(
     from app.agents.models.agent import Agent
 
     conn = await connection_service.create_connection(
-        session, test_user.id,
-        name="x", kind="openai", api_key="sk", default_model="gpt-4o-mini",
+        session,
+        test_user.id,
+        name="x",
+        kind="openai",
+        api_key="sk",
+        default_model="gpt-4o-mini",
     )
     agent = Agent(
-        id=uuid.uuid4(), user_id=test_user.id, name="A",
-        connection_id=conn.id, model="gpt-4o",  # explicit override
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="A",
+        connection_id=conn.id,
+        model="gpt-4o",  # explicit override
     )
     session.add(agent)
     await session.commit()

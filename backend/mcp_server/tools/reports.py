@@ -30,7 +30,11 @@ def _serialize_report(r: Any) -> dict[str, Any]:
         "type": "object",
         "properties": {
             "months": {"type": "integer", "minimum": 1, "maximum": 60, "default": 12},
-            "interval": {"type": "string", "enum": ["daily", "weekly", "monthly", "yearly"], "default": "monthly"},
+            "interval": {
+                "type": "string",
+                "enum": ["daily", "weekly", "monthly", "yearly"],
+                "default": "monthly",
+            },
         },
         "additionalProperties": False,
     },
@@ -45,7 +49,12 @@ async def get_net_worth(
 ) -> dict[str, Any]:
     ws_id = await resolve_workspace_id(session, ctx)
     rep = await report_service.get_net_worth_report(
-        session, ws_id, ctx.user_id, months=int(months), interval=interval, currency=_pri_currency(ctx)
+        session,
+        ws_id,
+        ctx.user_id,
+        months=int(months),
+        interval=interval,
+        currency=_pri_currency(ctx),
     )
     return _serialize_report(rep)
 
@@ -57,7 +66,11 @@ async def get_net_worth(
         "type": "object",
         "properties": {
             "months": {"type": "integer", "minimum": 1, "maximum": 60, "default": 12},
-            "interval": {"type": "string", "enum": ["daily", "weekly", "monthly", "yearly"], "default": "monthly"},
+            "interval": {
+                "type": "string",
+                "enum": ["daily", "weekly", "monthly", "yearly"],
+                "default": "monthly",
+            },
         },
         "additionalProperties": False,
     },
@@ -72,7 +85,12 @@ async def get_income_expenses(
 ) -> dict[str, Any]:
     ws_id = await resolve_workspace_id(session, ctx)
     rep = await report_service.get_income_expenses_report(
-        session, ws_id, ctx.user_id, months=int(months), interval=interval, currency=_pri_currency(ctx)
+        session,
+        ws_id,
+        ctx.user_id,
+        months=int(months),
+        interval=interval,
+        currency=_pri_currency(ctx),
     )
     return _serialize_report(rep)
 
@@ -84,7 +102,11 @@ async def get_income_expenses(
         "type": "object",
         "properties": {
             "months": {"type": "integer", "minimum": 1, "maximum": 24, "default": 6},
-            "interval": {"type": "string", "enum": ["daily", "weekly", "monthly"], "default": "daily"},
+            "interval": {
+                "type": "string",
+                "enum": ["daily", "weekly", "monthly"],
+                "default": "daily",
+            },
         },
         "additionalProperties": False,
     },
@@ -99,7 +121,12 @@ async def get_cash_flow(
 ) -> dict[str, Any]:
     ws_id = await resolve_workspace_id(session, ctx)
     rep = await report_service.get_cash_flow_report(
-        session, ws_id, ctx.user_id, months=int(months), interval=interval, currency=_pri_currency(ctx)
+        session,
+        ws_id,
+        ctx.user_id,
+        months=int(months),
+        interval=interval,
+        currency=_pri_currency(ctx),
     )
     return _serialize_report(rep)
 
@@ -113,7 +140,11 @@ async def get_cash_flow(
     parameters={
         "type": "object",
         "properties": {
-            "month": {"type": "string", "format": "date", "description": "Any date inside the target month"},
+            "month": {
+                "type": "string",
+                "format": "date",
+                "description": "Any date inside the target month",
+            },
         },
         "additionalProperties": False,
     },

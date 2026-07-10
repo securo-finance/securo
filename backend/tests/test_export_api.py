@@ -104,17 +104,26 @@ async def test_backup_with_data(
 
 @pytest.mark.asyncio
 async def test_backup_with_assets(
-    client: AsyncClient, auth_headers, session: AsyncSession, test_user: User,
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
 ):
     asset = Asset(
-        id=uuid.uuid4(), user_id=test_user.id, name="Export Asset",
-        type="other", currency="BRL", purchase_price=Decimal("1000"),
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Export Asset",
+        type="other",
+        currency="BRL",
+        purchase_price=Decimal("1000"),
     )
     session.add(asset)
     await session.flush()
     av = AssetValue(
-        id=uuid.uuid4(), asset_id=asset.id,
-        amount=Decimal("1200"), date=date.today(),
+        id=uuid.uuid4(),
+        asset_id=asset.id,
+        amount=Decimal("1200"),
+        date=date.today(),
     )
     session.add(av)
     await session.commit()

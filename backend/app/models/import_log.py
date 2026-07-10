@@ -22,13 +22,21 @@ class ImportLog(Base):
     workspace_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
     )
-    account_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"))
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE")
+    )
     filename: Mapped[str] = mapped_column(String(255))
     format: Mapped[str] = mapped_column(String(10))
     transaction_count: Mapped[int] = mapped_column(Integer)
-    total_credit: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2), default=Decimal("0"))
-    total_debit: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2), default=Decimal("0"))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    total_credit: Mapped[Decimal] = mapped_column(
+        Numeric(precision=15, scale=2), default=Decimal("0")
+    )
+    total_debit: Mapped[Decimal] = mapped_column(
+        Numeric(precision=15, scale=2), default=Decimal("0")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
 
     account: Mapped[Optional["Account"]] = relationship()
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="import_log")

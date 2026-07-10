@@ -1,4 +1,5 @@
 """Tests for connection settings PATCH endpoint (Phase 2)."""
+
 import pytest
 from httpx import AsyncClient
 
