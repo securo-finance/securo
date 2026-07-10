@@ -94,7 +94,13 @@ export function McpExternalPanel() {
 
   if (!info) return null
 
-  const url = `${window.location.protocol}//${window.location.hostname}:8765/mcp`
+  // Prefer the backend-configured URL (AGENTS_EXTERNAL_MCP_URL) so deployments
+  // behind an ingress/reverse proxy can point at a custom host/subpath/port.
+  // Fall back to the direct :8765 endpoint derived from the browser location,
+  // which matches the default Docker Compose setup.
+  const url =
+    info.external_mcp_url ||
+    `${window.location.protocol}//${window.location.hostname}:8765/mcp`
 
   // The first three snippets are universal regardless of client choice.
   const universalSnippets: Snippet[] = result

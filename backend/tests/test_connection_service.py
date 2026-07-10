@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.account import Account
 from app.models.asset import Asset
 from app.models.bank_connection import BankConnection
 from app.models.category import Category
@@ -17,6 +18,7 @@ from app.providers.base import (
     ConnectionData,
     ConnectTokenData,
     HoldingData,
+    ProviderUserActionRequired,
     TransactionData,
 )
 from app.services.connection_service import (
@@ -393,6 +395,81 @@ async def test_oauth_callback_respects_state_asset_sync_opt_out(
         "institution_name": "OAuth No Assets Bank",
     }
     mock_provider.get_holdings.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_token_reconnect_updates_existing_connection_without_deleting_accounts(
+    session: AsyncSession, test_user, test_workspace
+):
+    """SimpleFIN token reconnect refreshes credentials in place."""
+    existing = await _make_connection(session, test_user.id, "Old SimpleFIN")
+    existing.provider = "simplefin"
+    existing.external_id = "old-simplefin-conn"
+    existing.credentials = {"access_url_enc": "old-encrypted-url"}
+    existing.status = "error"
+    existing.last_sync_at = datetime.now(timezone.utc)
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        connection_id=existing.id,
+        external_id="existing-account",
+        name="Checking",
+        type="checking",
+        balance=Decimal("10.00"),
+        currency="USD",
+    )
+    session.add(account)
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.handle_oauth_callback = AsyncMock(return_value=ConnectionData(
+        external_id="new-simplefin-conn",
+        institution_name="New SimpleFIN Bank",
+        credentials={"access_url_enc": "new-encrypted-url"},
+        accounts=[],
+    ))
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        reconnected = await handle_oauth_callback(
+            session,
+            test_workspace.id,
+            test_user.id,
+            "fresh-setup-token",
+            provider_name="simplefin",
+            reconnect_connection_id=existing.id,
+        )
+
+    assert reconnected.id == existing.id
+    assert reconnected.external_id == "new-simplefin-conn"
+    assert reconnected.institution_name == "New SimpleFIN Bank"
+    assert reconnected.credentials == {"access_url_enc": "new-encrypted-url"}
+    assert reconnected.status == "active"
+    assert reconnected.last_sync_at is None
+    remaining_accounts = (
+        await session.execute(select(Account).where(Account.connection_id == existing.id))
+    ).scalars().all()
+    assert [a.external_id for a in remaining_accounts] == ["existing-account"]
+    mock_provider.handle_oauth_callback.assert_awaited_once_with("fresh-setup-token")
+
+
+@pytest.mark.asyncio
+async def test_token_reconnect_rejects_provider_mismatch(
+    session: AsyncSession, test_user, test_workspace
+):
+    existing = await _make_connection(session, test_user.id, "SimpleFIN")
+    existing.provider = "simplefin"
+    existing.status = "error"
+    await session.commit()
+
+    with pytest.raises(ValueError, match="provider does not match"):
+        await handle_oauth_callback(
+            session,
+            test_workspace.id,
+            test_user.id,
+            "fresh-setup-token",
+            provider_name="pluggy",
+            reconnect_connection_id=existing.id,
+        )
 
 
 @pytest.mark.asyncio
@@ -796,6 +873,29 @@ async def test_sync_connection_error_raises(session: AsyncSession, test_user, te
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
         with pytest.raises(RuntimeError, match="API down"):
             await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_user_action_marks_error(
+    session: AsyncSession, test_user, test_workspace
+):
+    conn = await _make_connection(session, test_user.id, "SimpleFIN Auth Error")
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"access_url_enc": "stale"})
+    mock_provider.get_accounts = AsyncMock(
+        side_effect=ProviderUserActionRequired(
+            "SimpleFIN refused the request (403)",
+            code="credentials_invalid",
+            help_url="https://bridge.simplefin.org/",
+        )
+    )
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        with pytest.raises(ProviderUserActionRequired):
+            await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    refreshed = await session.get(BankConnection, conn.id)
+    assert refreshed.status == "error"
 
 
 @pytest.mark.asyncio

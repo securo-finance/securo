@@ -607,7 +607,10 @@
       "simplefin": {
         "title": "Verbindung über SimpleFIN",
         "description": "SimpleFIN is a read-only bank data protocol. Go to the SimpleFIN Bridge, pick your bank, and copy the setup token back here."
-      }
+      },
+      "reconnectTitle": "Mit einem neuen Token erneut verbinden",
+      "reconnectDescription": "Füge ein neues Setup-Token ein, um diese Verbindung direkt zu aktualisieren. Bestehende Konten, Transaktionen, Kategorien und Regeln bleiben erhalten.",
+      "reconnect": "Erneut verbinden"
     },
     "providers": {
       "pluggy": {
@@ -619,7 +622,8 @@
       "simplefin": {
         "description": "US-amerikanische und internationale Banken via SimpleFIN Bridge"
       }
-    }
+    },
+    "reconnected": "Bank erfolgreich erneut verbunden"
   },
   "connections": {
     "settings": "Verbindungseinstellungen",

@@ -1,0 +1,52 @@
+Thank you for installing the Securo Helm Chart!
+
+================================================================================
+1. Accessing Your Application
+================================================================================
+
+{{- if or .Values.ingress.enabled .Values.httpRoute.enabled }}
+Your application is configured to be available at:
+  {{ include "securo.frontendUrl" . }}
+
+If DNS is not yet configured (e.g., in local environments), ensure your `/etc/hosts`
+file or DNS server points {{ .Values.global.domain }} to your Ingress/Gateway controller's IP.
+
+{{- else if eq .Values.frontend.service.type "NodePort" }}
+Your frontend service is exposed on a NodePort. You can access the application by getting the Node IP and the assigned NodePort:
+
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "securo.fullname" . }}-frontend)
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo "Visit http://$NODE_IP:$NODE_PORT"
+
+{{- else if eq .Values.frontend.service.type "LoadBalancer" }}
+Your frontend service is exposed via a LoadBalancer. It may take a few minutes for the IP to become available.
+
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "securo.fullname" . }}-frontend --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.ip}}{{ end }}"}}")
+  echo "Visit http://$SERVICE_IP:{{ .Values.frontend.service.port }}"
+
+{{- else }}
+Your frontend service is exposed internally via ClusterIP. 
+You can access it locally by setting up a port-forward:
+
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "securo.name" . }},app.kubernetes.io/component=frontend,app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:3000
+
+Then open http://127.0.0.1:8080 in your browser.
+{{- end }}
+
+================================================================================
+2. Configuration & Features
+================================================================================
+
+Securo includes advanced features like AI Agents, OIDC authentication, and Open Banking.
+These can be configured by providing the necessary API keys in your `values.yaml` or an existing Kubernetes `Secret`.
+
+For detailed configuration instructions, please refer to the official documentation:
+  https://github.com/securo-finance/securo-docs
+
+================================================================================
+3. Check Deployment Status
+================================================================================
+
+You can watch the status of your pods by running:
+  kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/instance={{ .Release.Name }}" -w

@@ -1,0 +1,92 @@
+{{- if .Values.mcpServer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "securo.fullname" . }}-mcp-server
+  labels:
+    {{- include "securo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-server
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.mcpServer.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "securo.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: mcp-server
+  template:
+    metadata:
+      labels:
+        {{- include "securo.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: mcp-server
+    spec:
+      containers:
+        - name: mcp-server
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.mcpServer.image.pullPolicy }}
+          command:
+            - uvicorn
+            - mcp_server.main:app
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8765"
+          ports:
+            - name: http
+              containerPort: 8765
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8765
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8765
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          envFrom:
+            - configMapRef:
+                name: {{ include "securo.fullname" . }}-config
+            - secretRef:
+                {{- if .Values.global.existingSecret }}
+                name: {{ .Values.global.existingSecret }}
+                {{- else }}
+                name: {{ include "securo.fullname" . }}-secrets
+                {{- end }}
+          volumeMounts:
+            {{- if .Values.persistence.attachments.enabled }}
+            - name: attachments
+              mountPath: /app/data/attachments
+            {{- end }}
+            {{- if and (eq (.Values.config.agentsEnabled | toString) "true") .Values.persistence.agentKnowledge.enabled }}
+            - name: agent-knowledge
+              mountPath: /app/data/agent_knowledge
+            {{- end }}
+            {{- if and (eq (.Values.config.agentsEnabled | toString) "true") .Values.persistence.agentEmbeddingModels.enabled }}
+            - name: agent-embedding-models
+              mountPath: /app/data/embedding_models
+            {{- end }}
+          {{- if .Values.mcpServer.resources }}
+          resources:
+            {{- toYaml .Values.mcpServer.resources | nindent 12 }}
+          {{- end }}
+      volumes:
+        {{- if .Values.persistence.attachments.enabled }}
+        - name: attachments
+          persistentVolumeClaim:
+            claimName: {{ include "securo.fullname" . }}-attachments
+        {{- end }}
+        {{- if and (eq (.Values.config.agentsEnabled | toString) "true") .Values.persistence.agentKnowledge.enabled }}
+        - name: agent-knowledge
+          persistentVolumeClaim:
+            claimName: {{ include "securo.fullname" . }}-agent-knowledge
+        {{- end }}
+        {{- if and (eq (.Values.config.agentsEnabled | toString) "true") .Values.persistence.agentEmbeddingModels.enabled }}
+        - name: agent-embedding-models
+          persistentVolumeClaim:
+            claimName: {{ include "securo.fullname" . }}-agent-embedding-models
+        {{- end }}
+{{- end }}

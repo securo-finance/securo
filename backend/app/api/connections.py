@@ -109,6 +109,7 @@ async def oauth_callback(
             provider_name=data.provider,
             state=data.state,
             sync_assets=data.sync_assets,
+            reconnect_connection_id=data.reconnect_connection_id,
         )
         return connection
     except ProviderUserActionRequired as e:
@@ -174,6 +175,17 @@ async def sync_connection(
         return {**result.model_dump(mode="json"), "merged_count": merged_count}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except ProviderUserActionRequired as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": str(e),
+                "code": e.code,
+                "help_url": e.help_url,
+            },
+        )
+    except SessionExpiredError as e:
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail=str(e))
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

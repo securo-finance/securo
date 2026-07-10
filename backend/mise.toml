@@ -1,0 +1,15 @@
+[env]
+_.python.venv = { path = ".venv", create = true }
+
+[settings]
+idiomatic_version_file_enable_tools = ["python"]
+
+[tasks.install]
+alias = "i"
+run = "uv pip install -e '.[dev]'"
+
+[tasks.lint]
+run = "ruff check ."
+
+[tasks.test]
+run = "pytest --cov=app --cov-report=term-missing"

@@ -607,7 +607,10 @@
       "simplefin": {
         "title": "Conectar vía SimpleFIN",
         "description": "SimpleFIN es un protocolo de datos bancarios de solo lectura. Ve al SimpleFIN Bridge, elige tu banco y copia el token de configuración aquí."
-      }
+      },
+      "reconnectTitle": "Reconectar con un token nuevo",
+      "reconnectDescription": "Pega un token de configuración nuevo para actualizar esta conexión sin reemplazarla. Se conservan cuentas, transacciones, categorías y reglas existentes.",
+      "reconnect": "Reconectar"
     },
     "providers": {
       "pluggy": {
@@ -622,7 +625,8 @@
       "fintoc": {
         "description": "Conecta cuentas bancarias chilenas — Banco de Chile, Santander, BCI y más"
       }
-    }
+    },
+    "reconnected": "Banco reconectado correctamente"
   },
   "connections": {
     "settings": "Configuración de la conexión",

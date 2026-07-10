@@ -1,0 +1,75 @@
+{{- if .Values.celeryBeat.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "securo.fullname" . }}-beat
+  labels:
+    {{- include "securo.labels" . | nindent 4 }}
+    app.kubernetes.io/component: celery-beat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "securo.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: celery-beat
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/common/configmap.yaml") . | sha256sum }}
+      labels:
+        {{- include "securo.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: celery-beat
+    spec:
+      containers:
+        - name: celery-beat
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.celeryBeat.image.pullPolicy }}
+          command:
+            - celery
+            - -A
+            - app.worker
+            - beat
+            - --loglevel=info
+          envFrom:
+            - configMapRef:
+                name: {{ include "securo.fullname" . }}-config
+            - secretRef:
+                {{- if .Values.global.existingSecret }}
+                name: {{ .Values.global.existingSecret }}
+                {{- else }}
+                name: {{ include "securo.fullname" . }}-secrets
+                {{- end }}
+          volumeMounts:
+            {{- if .Values.persistence.attachments.enabled }}
+            - name: attachments
+              mountPath: /app/data/attachments
+            {{- end }}
+            {{- if .Values.persistence.agentKnowledge.enabled }}
+            - name: agent-knowledge
+              mountPath: /app/data/agent_knowledge
+            {{- end }}
+            {{- if .Values.persistence.agentEmbeddingModels.enabled }}
+            - name: agent-embedding-models
+              mountPath: /app/data/embedding_models
+            {{- end }}
+          {{- if .Values.celeryBeat.resources }}
+          resources:
+            {{- toYaml .Values.celeryBeat.resources | nindent 12 }}
+          {{- end }}
+      volumes:
+        {{- if .Values.persistence.attachments.enabled }}
+        - name: attachments
+          persistentVolumeClaim:
+            claimName: {{ include "securo.fullname" . }}-attachments
+        {{- end }}
+        {{- if .Values.persistence.agentKnowledge.enabled }}
+        - name: agent-knowledge
+          persistentVolumeClaim:
+            claimName: {{ include "securo.fullname" . }}-agent-knowledge
+        {{- end }}
+        {{- if .Values.persistence.agentEmbeddingModels.enabled }}
+        - name: agent-embedding-models
+          persistentVolumeClaim:
+            claimName: {{ include "securo.fullname" . }}-agent-embedding-models
+        {{- end }}
+{{- end }}

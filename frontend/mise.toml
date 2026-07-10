@@ -1,0 +1,12 @@
+[tools]
+node = "22"
+
+[tasks.install]
+alias = "i"
+run = "npm install"
+
+[tasks.lint]
+run = "npm run lint"
+
+[tasks.build]
+run = "npm run build"

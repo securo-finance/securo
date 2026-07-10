@@ -1,7 +1,15 @@
 from functools import lru_cache
+from os import getenv
+from pathlib import Path
 from urllib.parse import urlparse
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Use the same environment variable that systemd uses: https://systemd.io/CREDENTIALS/
+# If not defined, defaults to docker secrets defaults (https://docs.docker.com/compose/how-tos/use-secrets/)
+CREDENTIALS_DIRECTORY: list[Path] = [
+    Path(p) for p in getenv("CREDENTIALS_DIRECTORY", "/run/secrets").split(":") if p
+]
 
 
 class Settings(BaseSettings):
@@ -122,7 +130,7 @@ class Settings(BaseSettings):
     # external dependency on the Brazilian government endpoint).
     tesouro_direto_enabled: bool = True
 
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(env_file=".env", secrets_dir=CREDENTIALS_DIRECTORY)
 
 
 @lru_cache

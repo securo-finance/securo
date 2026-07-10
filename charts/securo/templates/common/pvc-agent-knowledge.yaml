@@ -1,0 +1,21 @@
+{{- if and (eq (.Values.config.agentsEnabled | toString) "true") .Values.persistence.agentKnowledge.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "securo.fullname" . }}-agent-knowledge
+  labels:
+    {{- include "securo.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.agentKnowledge.accessMode | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.agentKnowledge.size | quote }}
+  {{- if .Values.persistence.agentKnowledge.storageClass }}
+  {{- if (eq "-" .Values.persistence.agentKnowledge.storageClass) }}
+  storageClassName: ""
+  {{- else }}
+  storageClassName: "{{ .Values.persistence.agentKnowledge.storageClass }}"
+  {{- end }}
+  {{- end }}
+{{- end }}

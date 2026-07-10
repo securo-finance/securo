@@ -503,6 +503,7 @@ async def handle_oauth_callback(
     provider_name: Optional[str] = None,
     state: Optional[str] = None,
     sync_assets: Optional[bool] = None,
+    reconnect_connection_id: Optional[uuid.UUID] = None,
 ) -> BankConnection:
     state_payload: dict = {}
     if state:
@@ -516,27 +517,40 @@ async def handle_oauth_callback(
             raise ValueError("OAuth state workspace does not match active workspace")
         state_payload = consumed
         provider_name = consumed.get("provider") or provider_name
+    reconnect_id = state_payload.get("reconnect_connection_id") or reconnect_connection_id
+    existing_reconnect: BankConnection | None = None
+    if reconnect_id:
+        existing_reconnect = await session.get(BankConnection, uuid.UUID(str(reconnect_id)))
+        if not existing_reconnect or existing_reconnect.workspace_id != workspace_id:
+            raise ValueError("Reconnect target connection not found")
+        # Token reconnects do not carry OAuth state, so the request body may be
+        # the only source of provider_name. Never allow a pasted token for one
+        # provider to overwrite another provider's stored credentials.
+        if provider_name and provider_name != existing_reconnect.provider:
+            raise ValueError("Reconnect provider does not match target connection")
+        provider_name = existing_reconnect.provider
+
     if not provider_name:
         raise ValueError("OAuth callback missing provider")
 
     provider = get_provider(provider_name)
     connection_data = await provider.handle_oauth_callback(code)
 
-    reconnect_id = state_payload.get("reconnect_connection_id")
-    if reconnect_id:
-        existing = await session.get(BankConnection, uuid.UUID(reconnect_id))
-        if not existing or existing.workspace_id != workspace_id:
-            raise ValueError("Reconnect target connection not found")
-        existing.external_id = connection_data.external_id
-        existing.institution_name = connection_data.institution_name or existing.institution_name
-        existing.logo_url = _clean_logo_url(connection_data.logo_url) or existing.logo_url
-        existing.credentials = connection_data.credentials
-        existing.status = "active"
-        # Re-sync from current data on next sync cycle.
-        existing.last_sync_at = None
+    if existing_reconnect:
+        existing_reconnect.external_id = connection_data.external_id
+        existing_reconnect.institution_name = (
+            connection_data.institution_name or existing_reconnect.institution_name
+        )
+        existing_reconnect.logo_url = (
+            _clean_logo_url(connection_data.logo_url)
+            or existing_reconnect.logo_url
+        )
+        existing_reconnect.credentials = connection_data.credentials
+        existing_reconnect.status = "active"
+        existing_reconnect.last_sync_at = None
         await session.commit()
-        await session.refresh(existing)
-        return existing
+        await session.refresh(existing_reconnect)
+        return existing_reconnect
 
     flow_params = dict(state_payload.get("flow_params") or {})
     flow_sync_assets = flow_params.pop("sync_assets", None)
@@ -1482,10 +1496,15 @@ async def sync_connection(
                 conn.status = "expired"
         raise
     except ProviderUserActionRequired:
-        # User must act in the provider's portal (e.g. EB restricted-mode
-        # account linking). Don't mark the connection errored — propagate
-        # so the API layer can surface the specific code to the UI.
+        # Stale/revoked provider credentials require a non-destructive
+        # reconnect path. Mark the connection unhealthy so the accounts page
+        # shows the reconnect banner, then let the API return a typed 409
+        # instead of a generic 500.
         await session.rollback()
+        async with session.begin():
+            conn = await session.get(BankConnection, connection_id)
+            if conn:
+                conn.status = "error"
         raise
     except ProviderRateLimited:
         # The bank/aggregator is throttling data requests (PSD2 caps unattended

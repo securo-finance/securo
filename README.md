@@ -177,6 +177,30 @@ pytest
 docker compose up --build
 ```
 
+If you've [mise](https://mise.jdx.dev/) installed, you can install backend/frontend directly with it:
+
+```
+# Install the Python version specified in .python-version,
+# and create a project virtual environment using that Python.
+# Install all tools and dependencies (include Python with dedicated venv)
+mise //...:install
+
+# Install only backend tools/deps
+mise backend:install
+
+# Run backend tests
+mise backend:test
+
+# Install frontend dependencies
+mise frontend:install
+
+# Run frontend linting
+mise frontend:lint
+
+# Run frontend build
+mise frontend:build
+```
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.

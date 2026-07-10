@@ -332,11 +332,13 @@ export const connections = {
     provider: string,
     state?: string,
     settings?: Pick<ConnectionSettings, 'sync_assets'>,
+    reconnectConnectionId?: string,
   ): Promise<BankConnection> => {
     const { data } = await api.post('/connections/oauth/callback', {
       code,
       provider,
       state,
+      reconnect_connection_id: reconnectConnectionId,
       ...settings,
     })
     return data
@@ -1383,6 +1385,7 @@ export const agents = {
       default_similarity_threshold: number
       extra_mcp_servers_configured: boolean
       mcp_external_ttl_days: number
+      external_mcp_url: string
     }
   },
   mcpTokens: {

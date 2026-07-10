@@ -38,6 +38,7 @@ class OAuthCallbackRequest(BaseModel):
     state: Optional[str] = None
     provider: Optional[str] = None
     sync_assets: Optional[bool] = None
+    reconnect_connection_id: Optional[uuid.UUID] = None
 
 
 class ReauthUrlResponse(BaseModel):

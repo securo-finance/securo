@@ -1,0 +1,44 @@
+{{- if .Values.autoscaling.enabled }}
+{{- range $component := list "backend" "frontend" "worker" "mcp-server" }}
+{{- $componentEnabled := true }}
+{{- if eq $component "worker" }}
+  {{- $componentEnabled = $.Values.celeryWorker.enabled }}
+{{- else if eq $component "mcp-server" }}
+  {{- $componentEnabled = $.Values.mcpServer.enabled }}
+{{- end }}
+{{- if $componentEnabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "securo.fullname" $ }}-{{ $component }}
+  labels:
+    {{- include "securo.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "securo.fullname" $ }}-{{ $component }}
+  minReplicas: {{ $.Values.autoscaling.minReplicas }}
+  maxReplicas: {{ $.Values.autoscaling.maxReplicas }}
+  metrics:
+    {{- if $.Values.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $.Values.autoscaling.targetCPUUtilizationPercentage }}
+    {{- end }}
+    {{- if $.Values.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ $.Values.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- end }}
+---
+{{- end }}
+{{- end }}
+{{- end }}

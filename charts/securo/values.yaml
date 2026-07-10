@@ -1,0 +1,244 @@
+# Default values for securo.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+global:
+  # The public domain of the application (e.g., securo.local, app.securo.com)
+  domain: "securo.local"
+  # Set to true if the application is accessed over HTTPS (changes generated URLs)
+  tls: false
+
+  # For production, we recommend passing existingSecret instead of creating one via Helm values
+  # existingSecret: "securo-secrets"
+
+# If existingSecret is NOT set, this secret will be created with the values below
+secret:
+  # MUST change in production
+  secretKey: "dev-secret-change-in-production"
+  # If postgresql.enabled is true, the internal database will be deployed.
+  # If postgresql.enabled is false, you must provide your external database URL here or in existingSecret.
+  databaseUrl: 'postgresql+asyncpg://postgres:postgres@{{ include "securo.fullname" . }}-postgresql:5432/securo'
+
+  # Pluggy
+  pluggyClientId: ""
+  pluggyClientSecret: ""
+
+  # Enable Banking
+  enableBankingAppId: ""
+  enableBankingPrivateKey: "" # Content of the PEM file
+
+  # OIDC
+  oidcClientId: ""
+  oidcClientSecret: ""
+
+  # OpenExchangeRates
+  openexchangeratesAppId: ""
+
+  # Agents (LLM)
+  agentsMcpJwtSecret: "dev-mcp-secret-change-in-production"
+  agentsOpenaiApiKey: ""
+  agentsAnthropicApiKey: ""
+  agentsOpenaiCompatApiKey: ""
+
+# Non-sensitive configuration
+config:
+  debug: "false"
+  # Leave empty to auto-compute from global.domain (e.g. http://securo.local/oauth/callback)
+  pluggyOauthRedirectUri: ""
+  enableBankingApiUrl: "https://api.enablebanking.com"
+  # Leave empty to auto-compute from global.domain
+  enableBankingOauthRedirectUri: ""
+  simplefinEnabled: "false"
+  simplefinApiUrl: "https://beta-bridge.simplefin.org"
+  oidcEnabled: "false"
+  oidcProviderName: "OIDC"
+  oidcDiscoveryUrl: ""
+  oidcRedirectUri: ""
+  oidcScopes: "openid email profile"
+  oidcAutoRegister: "true"
+  oidcExistingUserLinkMode: "disabled"
+  oidcRequireVerifiedEmail: "true"
+  oidcSyncRoles: "false"
+  oidcRolesClaim: "groups"
+  oidcAdminRoles: ""
+  oidcWorkspaceRoleMap: ""
+  fxSyncMode: "on_demand"
+  tesouroDiretoEnabled: "true"
+
+  # Redis configuration
+  # If redis.enabled is true, the internal redis will be deployed.
+  # If redis.enabled is false, you must provide your external Redis URL here.
+  redisUrl: 'redis://{{ include "securo.fullname" . }}-redis-master:6379/0'
+  celeryBrokerUrl: 'redis://{{ include "securo.fullname" . }}-redis-master:6379/0'
+  celeryResultBackend: 'redis://{{ include "securo.fullname" . }}-redis-master:6379/0'
+
+  storageLocalPath: "/app/data/attachments"
+  agentsKnowledgeStoragePath: "/app/data/agent_knowledge"
+
+  # Agents feature
+  agentsEnabled: "false"
+  agentsBuiltinMcpUrl: 'http://{{ include "securo.fullname" . }}-mcp-server:8765/mcp'
+  agentsExternalMcpUrl: '{{ include "securo.frontendUrl" . }}/mcp'
+  agentsExtraMcpServers: ""
+  agentsMcpExternalTtlDays: "90"
+  agentsDefaultProvider: "ollama"
+  agentsDefaultModel: ""
+  agentsOllamaBaseUrl: "http://ollama:11434"
+  agentsOpenaiCompatBaseUrl: ""
+  agentsEmbeddingProvider: "native"
+  agentsEmbeddingModel: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+
+# Backend configuration
+backend:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/securo-finance/securo-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+# Frontend configuration
+frontend:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/securo-finance/securo-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 3000
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+# Celery Worker configuration
+celeryWorker:
+  enabled: true
+  replicaCount: 1
+  image:
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+# Celery Beat configuration
+celeryBeat:
+  enabled: true
+  image:
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+# Built-in MCP Server configuration
+mcpServer:
+  enabled: false
+  replicaCount: 1
+  image:
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8765
+  resources:
+    limits:
+      cpu: 300m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+# Persistence for application data
+# IMPORTANT: Since Backend, Celery Worker, and MCP Server all share the same attachment files,
+# they mount these PVCs concurrently. If your pods are scheduled across multiple nodes,
+# you MUST use a StorageClass that supports `ReadWriteMany` (RWX) access mode (e.g., NFS, CephFS).
+# `ReadWriteOnce` will only work if you restrict all pods to a single node.
+persistence:
+  attachments:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+  agentKnowledge:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+  agentEmbeddingModels:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
+
+# Standard Kubernetes Ingress
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  tls: []
+  #  - secretName: securo-tls
+  #    hosts:
+  #      - securo.local
+
+httpRoute:
+  enabled: false
+  parentRefs: []
+  # - name: external-gateway
+  #   namespace: gateway-system
+  # Path matches will route /api to backend and / to frontend.
+
+# Simple StatefulSet for PostgreSQL
+postgresql:
+  enabled: true
+  image:
+    repository: docker.io/pgvector/pgvector
+    tag: pg16
+    pullPolicy: IfNotPresent
+  resources: {}
+
+# Simple StatefulSet for Redis
+redis:
+  enabled: true
+  image:
+    repository: docker.io/library/redis
+    tag: 7-alpine
+    pullPolicy: IfNotPresent
+  resources: {}
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80

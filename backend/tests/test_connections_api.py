@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.bank_connection import BankConnection
 from app.models.user import User
+from app.providers.base import ProviderUserActionRequired, SessionExpiredError
 
 
 @pytest.mark.asyncio
@@ -174,6 +175,48 @@ async def test_oauth_callback_success(client: AsyncClient, auth_headers):
 
 
 @pytest.mark.asyncio
+async def test_oauth_callback_token_reconnect_updates_existing(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user: User
+):
+    conn = BankConnection(
+        id=uuid.uuid4(), user_id=test_user.id, provider="simplefin",
+        external_id="old-simplefin", institution_name="Old SimpleFIN",
+        credentials={"access_url_enc": "old"}, status="error",
+        last_sync_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.commit()
+
+    conn_data = MagicMock()
+    conn_data.external_id = "new-simplefin"
+    conn_data.institution_name = "New SimpleFIN"
+    conn_data.logo_url = None
+    conn_data.credentials = {"access_url_enc": "new"}
+    conn_data.accounts = []
+
+    with patch("app.services.connection_service.get_provider") as mock_gp:
+        mock_gp.return_value.handle_oauth_callback = AsyncMock(return_value=conn_data)
+        resp = await client.post(
+            "/api/connections/oauth/callback",
+            json={
+                "code": "fresh-simplefin-setup-token",
+                "provider": "simplefin",
+                "reconnect_connection_id": str(conn.id),
+            },
+            headers=auth_headers,
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"] == str(conn.id)
+    assert body["external_id"] == "new-simplefin"
+    assert body["status"] == "active"
+    await session.refresh(conn)
+    assert conn.credentials == {"access_url_enc": "new"}
+
+
+@pytest.mark.asyncio
 async def test_oauth_callback_failure(client: AsyncClient, auth_headers):
     with patch("app.services.connection_service.get_provider") as mock_gp:
         mock_gp.return_value.handle_oauth_callback = AsyncMock(
@@ -194,6 +237,42 @@ async def test_sync_connection_not_found(client: AsyncClient, auth_headers):
         headers=auth_headers,
     )
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_user_action_returns_conflict(
+    client: AsyncClient, auth_headers
+):
+    with patch("app.services.connection_service.sync_connection") as mock_sync:
+        mock_sync.side_effect = ProviderUserActionRequired(
+            "SimpleFIN refused the request (403)",
+            code="credentials_invalid",
+            help_url="https://bridge.simplefin.org/",
+        )
+        resp = await client.post(
+            f"/api/connections/{uuid.uuid4()}/sync", headers=auth_headers,
+        )
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == {
+        "message": "SimpleFIN refused the request (403)",
+        "code": "credentials_invalid",
+        "help_url": "https://bridge.simplefin.org/",
+    }
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_session_expired_returns_gone(
+    client: AsyncClient, auth_headers
+):
+    with patch("app.services.connection_service.sync_connection") as mock_sync:
+        mock_sync.side_effect = SessionExpiredError("SimpleFIN access URL is missing")
+        resp = await client.post(
+            f"/api/connections/{uuid.uuid4()}/sync", headers=auth_headers,
+        )
+
+    assert resp.status_code == 410
+    assert resp.json()["detail"] == "SimpleFIN access URL is missing"
 
 
 @pytest.mark.asyncio
