@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -52,7 +52,6 @@ export function BulkAddToGroupDialog({
             mounts fresh on every open and unmounts on close — no
             reset effects needed. */}
         <BulkAddToGroupForm
-          open={open}
           selectedCount={selectedCount}
           onCancel={onClose}
           onSubmit={onSubmit}
@@ -64,13 +63,11 @@ export function BulkAddToGroupDialog({
 }
 
 function BulkAddToGroupForm({
-  open,
   selectedCount,
   onCancel,
   onSubmit,
   isPending,
 }: {
-  open: boolean
   selectedCount: number
   onCancel: () => void
   onSubmit: (payload: BulkAddToGroupSubmission) => void
@@ -103,24 +100,6 @@ function BulkAddToGroupForm({
   // the map use defaults (selected, empty percent) so we don't need an
   // effect to seed the rows when the group query resolves.
   const [selectionByMember, setSelectionByMember] = useState<Record<string, MemberSelection>>({})
-
-  // Reset form states when modal is closed
-  useEffect(() => {
-    if (!open) {
-      setIsCreatingGroup(false)
-      setNewGroupName('')
-      setNewGroupKind('social')
-      setNewGroupCurrency(userCurrency)
-      setNewGroupNotes('')
-      setIsAddingMember(false)
-      setNewMemberName('')
-      setNewMemberEmail('')
-      setNewMemberLinkedUserId(null)
-      setExplicitGroupId(null)
-      setShareType('equal')
-      setSelectionByMember({})
-    }
-  }, [open, userCurrency])
 
   const { data: groups } = useQuery({
     queryKey: ['groups'],
