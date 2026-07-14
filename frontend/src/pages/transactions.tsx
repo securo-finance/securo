@@ -80,7 +80,7 @@ function parseHashtags(notes: string | null): string[] {
 }
 
 export default function TransactionsPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const locale = useDisplayLocale()
@@ -1138,7 +1138,7 @@ export default function TransactionsPage() {
             <MonthStepper
               value={steppedMonth}
               onChange={handleMonthChange}
-              locale={dateLocale}
+              locale={i18n.resolvedLanguage ?? i18n.language}
               prevLabel={t('transactions.monthPrevious')}
               nextLabel={t('transactions.monthNext')}
             />
