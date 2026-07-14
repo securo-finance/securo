@@ -739,6 +739,31 @@ class TestParseCamt:
         assert transactions[0].description == "No NS"
         assert transactions[0].amount == Decimal("300.00")
 
+    def test_parse_camt052_bktocstmracctrpt(self):
+        """CAMT.052 (intraday report) uses BkToCstmrAcctRpt/Rpt instead of
+        BkToCstmrStmt/Stmt. Several European banks — including German
+        Volksbanken/Raiffeisenbanken — only offer CAMT.052 exports, not .053.
+        """
+        xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.052.001.08">'
+            '<BkToCstmrAcctRpt><Rpt>'
+            '<Ntry>'
+            '<Amt Ccy="EUR">42.50</Amt>'
+            '<CdtDbtInd>DBIT</CdtDbtInd>'
+            '<BookgDt><Dt>2026-07-14</Dt></BookgDt>'
+            '<NtryDtls><TxDtls><RmtInf><Ustrd>Supermarket</Ustrd></RmtInf></TxDtls></NtryDtls>'
+            '</Ntry>'
+            '</Rpt></BkToCstmrAcctRpt>'
+            '</Document>'
+        ).encode('utf-8')
+        transactions = parse_camt(xml)
+        assert len(transactions) == 1
+        assert transactions[0].description == "Supermarket"
+        assert transactions[0].amount == Decimal("42.50")
+        assert transactions[0].type == "debit"
+        assert transactions[0].date == date(2026, 7, 14)
+
 
 class TestParseOfx:
     """Tests for the parse_ofx function."""

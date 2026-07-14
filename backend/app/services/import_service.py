@@ -184,7 +184,7 @@ def parse_qif(content: bytes) -> list[TransactionImport]:
 
 
 def parse_camt(content: bytes) -> list[TransactionImport]:
-    """Parse CAMT.053 (ISO 20022) XML file content and return transactions."""
+    """Parse CAMT.052/CAMT.053 (ISO 20022) XML file content and return transactions."""
     root = ET.fromstring(content)
 
     # Detect namespace dynamically
@@ -213,8 +213,12 @@ def parse_camt(content: bytes) -> list[TransactionImport]:
 
     transactions = []
 
-    # Navigate: Document > BkToCstmrStmt > Stmt > Ntry
-    for stmt in findall(root, 'BkToCstmrStmt/Stmt'):
+    # Navigate: Document > BkToCstmrStmt > Stmt > Ntry (CAMT.053, end-of-day statement)
+    # Fallback: Document > BkToCstmrAcctRpt > Rpt > Ntry (CAMT.052, intraday report —
+    # same Ntry sub-schema, different root/container element). Several European banks,
+    # including German Volksbanken/Raiffeisenbanken, only offer CAMT.052 exports.
+    stmts = findall(root, 'BkToCstmrStmt/Stmt') or findall(root, 'BkToCstmrAcctRpt/Rpt')
+    for stmt in stmts:
         for ntry in findall(stmt, 'Ntry'):
             # Amount
             amt_el = find(ntry, 'Amt')
