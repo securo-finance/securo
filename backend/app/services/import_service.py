@@ -220,6 +220,17 @@ def parse_camt(content: bytes) -> list[TransactionImport]:
     stmts = findall(root, 'BkToCstmrStmt/Stmt') or findall(root, 'BkToCstmrAcctRpt/Rpt')
     for stmt in stmts:
         for ntry in findall(stmt, 'Ntry'):
+            # Entry status: BOOK (final) vs. PDNG/INFO (pending/informational).
+            # CAMT.052 intraday reports commonly include PDNG entries for
+            # transactions that haven't settled yet; the same transaction is
+            # reported again as BOOK once it settles. Skip anything that
+            # isn't BOOK to avoid importing it twice. Status is either a
+            # plain code (<Sts>BOOK</Sts>) or wrapped (<Sts><Cd>BOOK</Cd></Sts>)
+            # depending on the schema version.
+            status = find_text(ntry, 'Sts') or find_text(ntry, 'Sts/Cd')
+            if status and status.strip().upper() != 'BOOK':
+                continue
+
             # Amount
             amt_el = find(ntry, 'Amt')
             if amt_el is None:
