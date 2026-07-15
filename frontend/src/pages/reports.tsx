@@ -1193,6 +1193,7 @@ export default function ReportsPage() {
                       <button
                         onClick={() => setSparklinePage((p) => Math.max(0, p - 1))}
                         disabled={sparklinePage === 0}
+                        aria-label={t('common.previous')}
                         className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
@@ -1200,6 +1201,7 @@ export default function ReportsPage() {
                       <button
                         onClick={() => setSparklinePage((p) => Math.min(totalPages - 1, p + 1))}
                         disabled={sparklinePage >= totalPages - 1}
+                        aria-label={t('common.next')}
                         className="p-1 rounded text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                       >
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>

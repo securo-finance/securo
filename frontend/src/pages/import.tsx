@@ -591,7 +591,7 @@ export default function ImportPage() {
                   <th className="text-right px-3 sm:px-4 py-3 font-medium text-muted-foreground">{t('import.historyCount')}</th>
                   <th className="text-right px-4 py-3 font-medium text-muted-foreground hidden sm:table-cell">{t('import.historyCredit')}</th>
                   <th className="text-right px-4 py-3 font-medium text-muted-foreground hidden sm:table-cell">{t('import.historyDebit')}</th>
-                  <th className="px-3 sm:px-4 py-3"></th>
+                  <th className="px-3 sm:px-4 py-3" aria-label={t('common.more')}></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -619,6 +619,7 @@ export default function ImportPage() {
                         <button
                           onClick={() => setDeleteTarget(log)}
                           className="text-muted-foreground hover:text-rose-500 transition-colors"
+                          aria-label={t('import.undoImport')}
                           title={t('import.undoImport')}
                         >
                           <Trash2 className="w-4 h-4" />

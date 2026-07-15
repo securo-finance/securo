@@ -586,6 +586,8 @@ export default function GoalsPage() {
                       <button
                         key={c}
                         type="button"
+                        aria-label={c}
+                        title={c}
                         onClick={() => setSelectedColor(c)}
                         className={`w-7 h-7 rounded-full transition-all ${
                           selectedColor === c ? 'ring-2 ring-offset-1 ring-primary scale-110' : 'hover:scale-110'

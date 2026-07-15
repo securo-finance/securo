@@ -610,7 +610,7 @@ function UserMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="relative h-8 w-8 rounded-full p-0">
+        <Button variant="ghost" className="relative h-8 w-8 rounded-full p-0" aria-label={t('common.userMenu')}>
           <Avatar className="h-8 w-8">
             <AvatarFallback
               className={

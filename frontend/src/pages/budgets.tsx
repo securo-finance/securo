@@ -217,6 +217,7 @@ export default function BudgetsPage() {
                         <button
                           className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
                           onClick={() => { setEditing(budget); setDialogOpen(true) }}
+                          aria-label={t('common.edit')}
                           title={t('common.edit')}
                         >
                           <Pencil size={13} />
@@ -225,6 +226,7 @@ export default function BudgetsPage() {
                           className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
                           onClick={() => deleteMutation.mutate(budget.id)}
                           disabled={deleteMutation.isPending}
+                          aria-label={t('common.delete')}
                           title={t('common.delete')}
                         >
                           <Trash2 size={13} />
