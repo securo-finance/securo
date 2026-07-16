@@ -262,6 +262,7 @@
     "drillDownTotal_many": "{{count}} transakcji · {{total}}",
     "drillDownTotal_other": "{{count}} transakcji · {{total}}",
     "drillDownEmpty": "Nie znaleziono transakcji",
+    "drillDownExcludedTooltip": "Nie wliczone do tej sumy",
     "drillDownClose": "Zamknij",
     "accrualNote": "Transakcje kartą kredytową są grupowane wg terminu płatności rachunku (tryb memoriałowy).",
     "savingsRate": "Stopa oszczędności",

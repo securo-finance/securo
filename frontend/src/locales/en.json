@@ -259,6 +259,7 @@
     "drillDownDay": "Transactions — {{date}}",
     "drillDownTotal": "{{count}} transactions · {{total}}",
     "drillDownEmpty": "No transactions found",
+    "drillDownExcludedTooltip": "Not counted in this total",
     "drillDownClose": "Close",
     "accrualNote": "Credit-card transactions are grouped by bill due date (accrual mode).",
     "savingsRate": "Savings Rate",

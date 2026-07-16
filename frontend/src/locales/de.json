@@ -259,6 +259,7 @@
     "drillDownDay": "Transaktionen — {{date}}",
     "drillDownTotal": "{{count}} Transaktionen · {{total}}",
     "drillDownEmpty": "Keine Transaktionen gefunden",
+    "drillDownExcludedTooltip": "Nicht in dieser Summe enthalten",
     "drillDownClose": "Schließen",
     "accrualNote": "Kreditkartentransaktionen werden nach dem Fälligkeitsdatum der Abrechnung gruppiert (Soll-Modus).",
     "savingsRate": "Sparquote",

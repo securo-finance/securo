@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery } from '@tanstack/react-query'
 import { transactions as transactionsApi, dashboard, admin } from '@/lib/api'
-import { AlertTriangle, Info, Paperclip, X } from 'lucide-react'
+import { AlertTriangle, EyeClosed, Info, Paperclip, X } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
 import { useAuth } from '@/contexts/auth-context'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -33,6 +33,11 @@ type DisplayItem = {
   categoryName: string | null
   categoryColor: string | null
   isProjected: boolean
+  // Row is shown for transparency but kept out of the total — ignored
+  // split-originals and settlement legs, i.e. what the dashboard category
+  // figure excludes. Keeps the panel's total matching the number that
+  // opened it while still surfacing the excluded rows.
+  isExcluded: boolean
   attachmentCount: number
   transaction: Transaction | null
 }
@@ -108,6 +113,7 @@ export function TransactionDrillDown({
         categoryName: tx.category?.name ?? null,
         categoryColor: tx.category?.color ?? null,
         isProjected: false,
+        isExcluded: tx.is_ignored === true || tx.source === 'settlement',
         attachmentCount: tx.attachment_count ?? 0,
         transaction: tx,
       })
@@ -133,6 +139,7 @@ export function TransactionDrillDown({
         categoryName: pt.category_name,
         categoryColor: pt.category_color ?? null,
         isProjected: true,
+        isExcluded: false,
         attachmentCount: 0,
         transaction: null,
       })
@@ -174,15 +181,18 @@ export function TransactionDrillDown({
   // amount_primary; if it's missing we can't convert, so skip the row
   // instead of adding a raw foreign amount as if it were primary. This
   // matches how get_summary computes monthly_*_primary on the backend.
-  const absTotal = displayItems.reduce((sum, item) => {
-    if (item.currency === userCurrency) {
-      return sum + Math.abs(item.amount)
-    }
-    if (item.amountPrimary != null) {
-      return sum + Math.abs(item.amountPrimary)
-    }
-    return sum
-  }, 0)
+  const primaryAbs = (item: DisplayItem): number => {
+    if (item.currency === userCurrency) return Math.abs(item.amount)
+    if (item.amountPrimary != null) return Math.abs(item.amountPrimary)
+    return 0
+  }
+  // Excluded rows are listed for transparency but kept out of the total, so
+  // it matches the dashboard category figure that opened this panel.
+  const countedItems = displayItems.filter((i) => !i.isExcluded)
+  const absTotal = countedItems.reduce((sum, item) => sum + primaryAbs(item), 0)
+  const excludedTotal = displayItems
+    .filter((i) => i.isExcluded)
+    .reduce((sum, item) => sum + primaryAbs(item), 0)
 
   return (
     <>
@@ -252,10 +262,19 @@ export function TransactionDrillDown({
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-foreground truncate">{item.description}</p>
+                      <p className={`text-sm font-medium truncate ${item.isExcluded ? 'text-muted-foreground' : 'text-foreground'}`}>{item.description}</p>
                       {item.isProjected && (
                         <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-600 shrink-0">
                           {t('transactions.recurringBadge')}
+                        </span>
+                      )}
+                      {item.isExcluded && (
+                        <span
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-gray-100 text-gray-500 border border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700 shrink-0"
+                          title={t('transactions.drillDownExcludedTooltip')}
+                        >
+                          <EyeClosed className="h-3 w-3" />
+                          {t('transactions.ignored')}
                         </span>
                       )}
                       {item.attachmentCount > 0 && (
@@ -270,7 +289,9 @@ export function TransactionDrillDown({
                   <div className="text-right shrink-0">
                     <span
                       className={`text-sm font-semibold tabular-nums ${
-                        item.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'
+                        item.isExcluded
+                          ? 'text-muted-foreground line-through'
+                          : item.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'
                       }`}
                     >
                       {item.type === 'credit' ? '+' : '-'}
@@ -295,11 +316,19 @@ export function TransactionDrillDown({
 
         {/* Footer */}
         {displayItems.length > 0 && (
-          <div className="px-5 py-3 border-t border-border bg-muted/50 shrink-0">
+          <div className="px-5 py-3 border-t border-border bg-muted/50 shrink-0 space-y-1">
+            {excludedTotal > 0 && (
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>{t('transactions.summaryExcluded')}</span>
+                <span className="tabular-nums line-through">
+                  {mask(formatCurrency(excludedTotal, userCurrency, locale))}
+                </span>
+              </div>
+            )}
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground">
                 {t('dashboard.drillDownTotal', {
-                  count: displayItems.length,
+                  count: countedItems.length,
                   total: mask(formatCurrency(absTotal, userCurrency, locale)),
                 })}
               </span>

@@ -259,6 +259,7 @@
     "drillDownDay": "Transacciones — {{date}}",
     "drillDownTotal": "{{count}} transacciones · {{total}}",
     "drillDownEmpty": "No se encontraron transacciones",
+    "drillDownExcludedTooltip": "No se incluye en este total",
     "drillDownClose": "Cerrar",
     "accrualNote": "Las transacciones con tarjeta de crédito se agrupan por la fecha de vencimiento de la factura (modo acumulado).",
     "savingsRate": "Tasa de ahorro",

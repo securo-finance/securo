@@ -259,6 +259,7 @@
     "drillDownDay": "Транзакції — {{date}}",
     "drillDownTotal": "{{count}} транзакцій · {{total}}",
     "drillDownEmpty": "Транзакції не знайдено",
+    "drillDownExcludedTooltip": "Не враховується в цій сумі",
     "drillDownClose": "Закрити",
     "accrualNote": "Кредитні картки: транзакції групуються за датою платежу (метод нарахування).",
     "savingsRate": "Норма заощаджень",

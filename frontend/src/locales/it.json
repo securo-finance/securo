@@ -259,6 +259,7 @@
     "drillDownDay": "Transazioni — {{date}}",
     "drillDownTotal": "{{count}} transazioni · {{total}}",
     "drillDownEmpty": "Nessuna transazione trovata",
+    "drillDownExcludedTooltip": "Non conteggiato in questo totale",
     "drillDownClose": "Chiudi",
     "accrualNote": "Le transazioni con carta di credito sono raggruppate per scadenza dell'estratto conto (modalità per competenza).",
     "savingsRate": "Tasso di risparmio",
