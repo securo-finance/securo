@@ -678,7 +678,7 @@ function TransactionForm({
         hasPreview && 'mt-4'
       )}
     >
-      <div className="space-y-4 overflow-y-auto flex-1 min-h-0 pb-2">
+      <div className="space-y-4 overflow-y-auto flex-1 min-h-0 pb-2 pr-3">
       {error && (
         <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
           {error}

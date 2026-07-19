@@ -1,14 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Users } from 'lucide-react'
+import { toast } from 'sonner'
 
-import { groups as groupsApi } from '@/lib/api'
+import { groups as groupsApi, type GroupCreatePayload } from '@/lib/api'
 import { formatCurrency } from '@/lib/format'
-import type { Group, ShareType, TransactionSplitsInput } from '@/types'
+import type { Group, GroupKind, ShareType, TransactionSplitsInput } from '@/types'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Button } from '@/components/ui/button'
+import { GroupForm } from '@/components/group-form'
+import { MemberForm } from '@/components/member-form'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 interface RowState {
   member_id: string
@@ -71,6 +76,77 @@ export function TransactionSplitsSection({
   // it — further edits are user-driven.
   const hydratedRef = useRef(false)
 
+  const queryClient = useQueryClient()
+  const [isCreatingGroup, setIsCreatingGroup] = useState(false)
+  const [newGroupName, setNewGroupName] = useState('')
+  const [newGroupKind, setNewGroupKind] = useState<GroupKind>('social')
+  const [newGroupCurrency, setNewGroupCurrency] = useState(currency)
+  const [newGroupNotes, setNewGroupNotes] = useState('')
+
+  // Sync newGroupCurrency default value if currency prop changes.
+  useEffect(() => {
+    setNewGroupCurrency(currency)
+  }, [currency])
+
+  const createGroupMutation = useMutation({
+    mutationFn: (payload: GroupCreatePayload) => groupsApi.create(payload),
+    onSuccess: (newGroup) => {
+      queryClient.invalidateQueries({ queryKey: ['groups'] })
+      setGroupId(newGroup.id)
+      setIsCreatingGroup(false)
+      setNewGroupName('')
+      setNewGroupNotes('')
+      toast.success(t('splitGroups.created'))
+    },
+    onError: () => toast.error(t('common.error')),
+  })
+
+  const handleCreateGroup = () => {
+    if (!newGroupName.trim()) return
+    createGroupMutation.mutate({
+      name: newGroupName.trim(),
+      kind: newGroupKind,
+      default_currency: newGroupCurrency,
+      notes: newGroupNotes.trim() || null,
+    })
+  }
+
+  const [isAddingMember, setIsAddingMember] = useState(false)
+  const [newMemberName, setNewMemberName] = useState('')
+  const [newMemberEmail, setNewMemberEmail] = useState('')
+  const [newMemberLinkedUserId, setNewMemberLinkedUserId] = useState<string | null>(null)
+
+  const createMemberMutation = useMutation({
+    mutationFn: (payload: { name: string; email?: string | null; linked_user_id?: string | null }) =>
+      groupsApi.members.create(groupId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['groups', groupId] })
+      setIsAddingMember(false)
+      setNewMemberName('')
+      setNewMemberEmail('')
+      setNewMemberLinkedUserId(null)
+      toast.success(t('splitGroups.memberAdded'))
+    },
+    onError: () => toast.error(t('common.error')),
+  })
+
+  const handleCreateMember = () => {
+    if (!newMemberName.trim()) return
+    createMemberMutation.mutate({
+      name: newMemberName.trim(),
+      email: newMemberEmail.trim() || null,
+      linked_user_id: newMemberLinkedUserId,
+    })
+  }
+
+  // Reset creation state if splits are disabled
+  useEffect(() => {
+    if (!enabled) {
+      setIsCreatingGroup(false)
+      setIsAddingMember(false)
+    }
+  }, [enabled])
+
   const { data: groups } = useQuery({
     queryKey: ['groups'],
     queryFn: () => groupsApi.list(false),
@@ -79,7 +155,7 @@ export function TransactionSplitsSection({
   const { data: group } = useQuery({
     queryKey: ['groups', groupId],
     queryFn: () => groupsApi.get(groupId),
-    enabled: !!groupId,
+    enabled: !!groupId && !isCreatingGroup && !isAddingMember,
   })
 
   // Auto-pick the group when splits are enabled. If the parent seeded a
@@ -99,16 +175,40 @@ export function TransactionSplitsSection({
     setGroupId(groups[0].id)
   }, [enabled, groupId, groups])
 
-  // Rebuild rows when the group changes. Use the seed snapshot the
-  // first time so the parent's value can't have been zeroed out by
-  // the push-state-up effect before the group finished loading.
+  const lastGroupIdRef = useRef<string | null>(null)
+
+  // Rebuild rows when the group changes or when members are added.
+  // Use the seed snapshot only on the first hydration so the parent's
+  // value doesn't get zeroed by the push-state-up effect.
   useEffect(() => {
     if (!group) return
-    const source = hydratedRef.current ? null : seedRef.current
-    setRows(buildRows(group, source))
+
+    const groupChanged = lastGroupIdRef.current !== group.id
+    lastGroupIdRef.current = group.id
+
+    setRows((prevRows) => {
+      // If first hydration or switched groups, rebuild completely
+      if (!hydratedRef.current || groupChanged) {
+        const source = hydratedRef.current ? null : seedRef.current
+        return buildRows(group, source)
+      }
+
+      // Otherwise, merge new group members into existing rows state to preserve user selections
+      const prevMap = new Map(prevRows.map((r) => [r.member_id, r]))
+      return group.members.map((m) => {
+        const existing = prevMap.get(m.id)
+        if (existing) return existing
+        return {
+          member_id: m.id,
+          selected: false,
+          amount: '',
+          percent: '',
+        }
+      })
+    })
+
     hydratedRef.current = true
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [group?.id])
+  }, [group])
 
   // Push state up whenever it changes meaningfully.
   useEffect(() => {
@@ -195,14 +295,48 @@ export function TransactionSplitsSection({
       {enabled && (
         <div className="space-y-3 pl-6">
           {!groups || groups.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              {t('splitGroups.splitNoGroups')}
-            </p>
+            <div className="space-y-2 py-2">
+              <p className="text-xs text-muted-foreground font-semibold">
+                {t('splitGroups.splitNoGroups')}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t('splitGroups.splitNoGroupsLinkPrefix')}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCreatingGroup(true)
+                    setNewGroupName('')
+                    setNewGroupKind('social')
+                    setNewGroupCurrency(currency)
+                    setNewGroupNotes('')
+                  }}
+                  className="text-primary hover:underline font-semibold"
+                >
+                  {t('splitGroups.splitNoGroupsLinkSuffix')}
+                </button>
+                .
+              </p>
+            </div>
           ) : (
             <>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-xs">{t('splitGroups.group')}</Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">{t('splitGroups.group')}</Label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCreatingGroup(true)
+                        setNewGroupName('')
+                        setNewGroupKind('social')
+                        setNewGroupCurrency(currency)
+                        setNewGroupNotes('')
+                      }}
+                      className="text-xs text-primary hover:underline font-medium"
+                    >
+                      + {t('splitGroups.add')}
+                    </button>
+                  </div>
                   <select
                     className="w-full border border-border rounded-md px-2 py-1.5 text-sm bg-background"
                     value={groupId}
@@ -231,8 +365,42 @@ export function TransactionSplitsSection({
 
               {group && (
                 <div className="space-y-2">
+                  {group.members.length > 0 && (
+                    <div className="flex items-center justify-between border-t border-border pt-2 mt-2">
+                      <Label className="text-xs">{t('splitGroups.members')}</Label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsAddingMember(true)
+                          setNewMemberName('')
+                          setNewMemberEmail('')
+                          setNewMemberLinkedUserId(null)
+                        }}
+                        className="text-xs text-primary hover:underline font-medium"
+                      >
+                        + {t('splitGroups.addMember')}
+                      </button>
+                    </div>
+                  )}
                   {group.members.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">{t('splitGroups.splitNoMembers')}</p>
+                    <div className="py-2 text-center">
+                      <p className="text-xs text-muted-foreground mb-2">
+                        {t('splitGroups.splitNoMembers')}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setIsAddingMember(true)
+                          setNewMemberName('')
+                          setNewMemberEmail('')
+                          setNewMemberLinkedUserId(null)
+                        }}
+                      >
+                        + {t('splitGroups.addMember')}
+                      </Button>
+                    </div>
                   ) : (
                     (() => {
                       const selectedCount = rows.filter((r) => r.selected).length
@@ -332,6 +500,78 @@ export function TransactionSplitsSection({
           )}
         </div>
       )}
+
+      <Dialog open={isCreatingGroup} onOpenChange={setIsCreatingGroup}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('splitGroups.add')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <GroupForm
+              name={newGroupName}
+              onChangeName={setNewGroupName}
+              kind={newGroupKind}
+              onChangeKind={setNewGroupKind}
+              defaultCurrency={newGroupCurrency}
+              onChangeDefaultCurrency={setNewGroupCurrency}
+              notes={newGroupNotes}
+              onChangeNotes={setNewGroupNotes}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsCreatingGroup(false)}
+              disabled={createGroupMutation.isPending}
+            >
+              {t('common.cancel', 'Cancel')}
+            </Button>
+            <Button
+              type="button"
+              onClick={handleCreateGroup}
+              disabled={!newGroupName.trim() || createGroupMutation.isPending}
+            >
+              {createGroupMutation.isPending ? t('common.saving') : t('splitGroups.add')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isAddingMember} onOpenChange={setIsAddingMember}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('splitGroups.addMember')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <MemberForm
+              name={newMemberName}
+              onChangeName={setNewMemberName}
+              email={newMemberEmail}
+              onChangeEmail={setNewMemberEmail}
+              linkedUserId={newMemberLinkedUserId}
+              onChangeLinkedUserId={setNewMemberLinkedUserId}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsAddingMember(false)}
+              disabled={createMemberMutation.isPending}
+            >
+              {t('common.cancel', 'Cancel')}
+            </Button>
+            <Button
+              type="button"
+              onClick={handleCreateMember}
+              disabled={!newMemberName.trim() || createMemberMutation.isPending}
+            >
+              {createMemberMutation.isPending ? t('common.saving') : t('common.save')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
