@@ -408,6 +408,46 @@ async def test_get_holdings_parses_investment_data():
     assert (h.metadata or {}).get("symbol") == "AAPL"
 
 
+@pytest.mark.asyncio
+async def test_get_holdings_crypto_ticker_currency_falls_back_to_account_currency():
+    """A connector-supplied ticker like ``DOGE`` isn't an ISO currency code.
+
+    ``HoldingData.currency`` maps to a ``VARCHAR(3)`` DB column — writing a
+    4-letter ticker there overflows and used to crash the entire sync for
+    the account (see issue #448). It should fall back to the account's
+    currency instead.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "accounts": [
+                    {
+                        "id": "acc-1",
+                        "currency": "USD",
+                        "holdings": [
+                            {
+                                "id": "h-crypto",
+                                "description": "Dogecoin",
+                                "symbol": "DOGE",
+                                "currency": "DOGE",
+                                "market_value": "42.00",
+                                "shares": "100",
+                            },
+                        ],
+                    }
+                ]
+            },
+        )
+
+    creds = {"access_url": "https://u:p@bridge.example/simplefin"}
+    with _patched_client(handler):
+        holdings = await SimpleFinProvider().get_holdings(creds)
+    assert len(holdings) == 1
+    assert holdings[0].currency == "USD"
+
+
 # ----- misc -------------------------------------------------------------------
 
 

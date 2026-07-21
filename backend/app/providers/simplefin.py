@@ -121,6 +121,23 @@ def _to_decimal(value: Any) -> Optional[Decimal]:
         return None
 
 
+def _holding_currency(raw: dict, acc_currency: str) -> str:
+    """Pick a currency code for a holding, guarding against non-ISO tickers.
+
+    SimpleFIN's per-holding ``currency`` field is populated by the bank
+    connector, and for crypto/brokerage holdings some connectors put the
+    asset's ticker there instead (e.g. ``"DOGE"``) rather than an ISO 4217
+    code. The ``currency`` column is ``VARCHAR(3)``, so anything longer
+    overflows the DB write and takes down the whole account sync — fall back
+    to the account-level currency whenever the value isn't a plausible
+    3-letter code.
+    """
+    candidate = raw.get("currency")
+    if isinstance(candidate, str) and len(candidate) == 3 and candidate.isalpha():
+        return candidate.upper()
+    return acc_currency
+
+
 def _surface_errors(errlist: list[dict], context: str) -> None:
     """Raise a typed exception for auth errors; log everything else.
 
@@ -453,7 +470,7 @@ class SimpleFinProvider(BankProvider):
                     HoldingData(
                         external_id=holding_id,
                         name=raw.get("description") or raw.get("symbol") or holding_id,
-                        currency=raw.get("currency") or acc_currency,
+                        currency=_holding_currency(raw, acc_currency),
                         current_value=market_value,
                         quantity=_to_decimal(raw.get("shares")),
                         unit_price=_to_decimal(raw.get("market_value")) / _to_decimal(
