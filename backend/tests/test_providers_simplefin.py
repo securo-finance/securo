@@ -79,6 +79,13 @@ def test_epoch_to_date_parses_seconds():
     assert _epoch_to_date(1672531200) == date(2023, 1, 1)
 
 
+def test_epoch_to_date_zero_is_technically_the_epoch():
+    # _epoch_to_date(0) legitimately returns 1970-01-01 — it's callers that
+    # must decide whether 0 means "no value" for their field. See
+    # test_get_transactions_pending_tx_uses_transacted_at_not_epoch below.
+    assert _epoch_to_date(0) == date(1970, 1, 1)
+
+
 # ----- claim flow -------------------------------------------------------------
 
 
@@ -282,6 +289,52 @@ async def test_get_transactions_filters_by_account_and_parses_signs():
     assert by_id["t1"].status == "posted"
     assert by_id["t2"].status == "pending"
     assert by_id["t2"].type == "credit"
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_pending_tx_uses_transacted_at_not_epoch():
+    """A pending tx's "posted": 0 must not shadow the real transacted_at date.
+
+    Regression test for the bug where pending transactions were stored dated
+    1970-01-01 (the Unix epoch), making them invisible in any date-filtered
+    view even though the sync itself succeeded.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "accounts": [
+                    {
+                        "id": "acc-1",
+                        "currency": "USD",
+                        "balance": "0",
+                        "transactions": [
+                            {
+                                "id": "pending-1",
+                                "amount": "-56.28",
+                                "posted": 0,
+                                "transacted_at": 1752624000,  # 2025-07-16 UTC
+                                "pending": True,
+                                "description": "Gas Station",
+                            },
+                        ],
+                    },
+                ]
+            },
+        )
+
+    creds = {"access_url": "https://u:p@bridge.example/simplefin"}
+    provider = SimpleFinProvider()
+    with _patched_client(handler):
+        txns = await provider.get_transactions(
+            creds, "acc-1", since=date(2025, 7, 1)
+        )
+    assert len(txns) == 1
+    txn = txns[0]
+    assert txn.status == "pending"
+    assert txn.date == date(2025, 7, 16)
+    assert txn.date != date(1970, 1, 1)
 
 
 @pytest.mark.asyncio

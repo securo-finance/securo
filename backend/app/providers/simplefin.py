@@ -380,7 +380,11 @@ class SimpleFinProvider(BankProvider):
             return None
         txn_type = "debit" if amount_raw < 0 else "credit"
         amount = amount_raw.copy_abs()
-        posted = _epoch_to_date(raw.get("posted"))
+        # SimpleFIN sends "posted": 0 (not null) for transactions that haven't
+        # posted yet — a falsy epoch, not a real one, so treat it as unset
+        # rather than letting it resolve to 1970-01-01 and shadow the correct
+        # transacted_at date below.
+        posted = _epoch_to_date(raw.get("posted")) if raw.get("posted") else None
         transacted = _epoch_to_date(raw.get("transacted_at"))
         txn_date = posted or transacted
         if not txn_date:
