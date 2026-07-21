@@ -226,8 +226,10 @@ def parse_camt(content: bytes) -> list[TransactionImport]:
             # reported again as BOOK once it settles. Skip anything that
             # isn't BOOK to avoid importing it twice. Status is either a
             # plain code (<Sts>BOOK</Sts>) or wrapped (<Sts><Cd>BOOK</Cd></Sts>)
-            # depending on the schema version.
-            status = find_text(ntry, 'Sts') or find_text(ntry, 'Sts/Cd')
+            # depending on the schema version. Check the wrapped form first:
+            # in pretty-printed XML the <Sts> element's own text is the
+            # whitespace before <Cd>, which would otherwise mask the real code.
+            status = find_text(ntry, 'Sts/Cd') or find_text(ntry, 'Sts')
             if status and status.strip().upper() != 'BOOK':
                 continue
 

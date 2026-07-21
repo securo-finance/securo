@@ -795,6 +795,35 @@ class TestParseCamt:
         assert len(transactions) == 1
         assert transactions[0].description == "Supermarket (booked)"
 
+    def test_parse_camt_keeps_pretty_printed_booked_entries(self):
+        """A wrapped <Sts><Cd>BOOK</Cd></Sts> in pretty-printed (indented) XML
+        must still be recognized as BOOK. The <Sts> element's own text is the
+        whitespace before <Cd>, so the status lookup has to prefer Sts/Cd -
+        otherwise the whitespace masks the code and booked entries get skipped.
+        """
+        xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.08">\n'
+            '  <BkToCstmrStmt>\n'
+            '    <Stmt>\n'
+            '      <Ntry>\n'
+            '        <Amt Ccy="EUR">42.50</Amt>\n'
+            '        <CdtDbtInd>DBIT</CdtDbtInd>\n'
+            '        <Sts>\n'
+            '          <Cd>BOOK</Cd>\n'
+            '        </Sts>\n'
+            '        <BookgDt><Dt>2026-07-15</Dt></BookgDt>\n'
+            '        <NtryDtls><TxDtls><RmtInf><Ustrd>Booked</Ustrd></RmtInf></TxDtls></NtryDtls>\n'
+            '      </Ntry>\n'
+            '    </Stmt>\n'
+            '  </BkToCstmrStmt>\n'
+            '</Document>\n'
+        ).encode('utf-8')
+        transactions = parse_camt(xml)
+        assert len(transactions) == 1
+        assert transactions[0].description == "Booked"
+        assert transactions[0].amount == Decimal("42.50")
+
 
 class TestParseOfx:
     """Tests for the parse_ofx function."""
