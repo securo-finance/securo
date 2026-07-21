@@ -1192,6 +1192,7 @@
   "common": {
     "view": "Visualizza",
     "save": "Salva",
+    "saving": "Salvataggio…",
     "cancel": "Annulla",
     "close": "Chiudi",
     "more": "Altre azioni",
