@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { Toaster } from '@/components/ui/sonner'
 import { ThemeProvider } from '@/components/theme-provider'
 import { AuthProvider } from '@/contexts/auth-context'
@@ -48,9 +49,12 @@ const queryClient = new QueryClient({
 })
 
 function LoadingFallback() {
+  const { t } = useTranslation()
+
   return (
-    <div className="flex items-center justify-center min-h-[50vh]">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+    <div className="flex flex-col items-center justify-center gap-3 min-h-[50vh]" role="status">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" aria-hidden="true" />
+      <span className="text-sm text-muted-foreground">{t('common.loading')}</span>
     </div>
   )
 }
