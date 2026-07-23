@@ -279,7 +279,7 @@ function RecurringForm({
   recurring: RecurringTransaction | null
   categories: Category[]
   categoryGroups: CategoryGroup[]
-  accounts: { id: string; name: string }[]
+  accounts: Array<{ id: string; name: string; type?: string; display_name?: string | null }>
   onSave: (data: Partial<RecurringTransaction>) => void
   onCancel: () => void
   loading: boolean
@@ -295,15 +295,18 @@ function RecurringForm({
   const [description, setDescription] = useState(recurring?.description ?? '')
   const [amount, setAmount] = useState(recurring?.amount?.toString() ?? '')
   const [currency, setCurrency] = useState(recurring?.currency ?? userCurrency)
-  const [type, setType] = useState<'debit' | 'credit'>(recurring?.type ?? 'debit')
+  const [type, setType] = useState<'debit' | 'credit' | 'repayment'>(((recurring?.type as string) === 'transfer' ? 'repayment' : recurring?.type) ?? 'debit')
   const [frequency, setFrequency] = useState(recurring?.frequency ?? 'monthly')
   const [dayOfMonth, setDayOfMonth] = useState(recurring?.day_of_month?.toString() ?? '')
   const [startDate, setStartDate] = useState(recurring?.start_date ?? new Date().toISOString().split('T')[0])
   const [endDate, setEndDate] = useState(recurring?.end_date ?? '')
   const [categoryId, setCategoryId] = useState(recurring?.category_id ?? '')
   const [accountId, setAccountId] = useState(recurring?.account_id ?? accounts[0]?.id ?? '')
+  const [targetAccountId, setTargetAccountId] = useState(recurring?.target_account_id ?? '')
   const [isActive, setIsActive] = useState(recurring?.is_active ?? true)
   const [autoGenerate, setAutoGenerate] = useState(recurring?.auto_generate ?? true)
+
+  const isRepayment = type === 'repayment'
 
   const selectClass = 'w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary'
 
@@ -322,6 +325,7 @@ function RecurringForm({
           end_date: endDate || null,
           category_id: categoryId || null,
           account_id: accountId || null,
+          target_account_id: isRepayment ? (targetAccountId || null) : null,
           is_active: isActive,
           auto_generate: autoGenerate,
         } as Partial<RecurringTransaction>)
@@ -347,9 +351,10 @@ function RecurringForm({
         </div>
         <div className="space-y-2">
           <Label>{t('recurring.type')}</Label>
-          <select className={selectClass} value={type} onChange={(e) => setType(e.target.value as 'debit' | 'credit')}>
+          <select className={selectClass} value={type} onChange={(e) => setType(e.target.value as 'debit' | 'credit' | 'repayment')}>
             <option value="debit">{t('recurring.expense')}</option>
             <option value="credit">{t('recurring.income')}</option>
+            <option value="repayment">{t('recurring.repayment')}</option>
           </select>
         </div>
       </div>
@@ -392,7 +397,7 @@ function RecurringForm({
           />
         </div>
         <div className="space-y-2">
-          <Label>{t('recurring.account')}</Label>
+          <Label>{isRepayment ? t('recurring.sourceAccount') : t('recurring.account')}</Label>
           <select
             className={selectClass}
             value={accountId}
@@ -406,6 +411,33 @@ function RecurringForm({
           </select>
         </div>
       </div>
+
+      {isRepayment && (
+        <div className="space-y-2">
+          <Label>{t('recurring.loanAccount')}</Label>
+          <select
+            className={selectClass}
+            value={targetAccountId}
+            onChange={(e) => setTargetAccountId(e.target.value)}
+            required
+          >
+            <option value="">{t('recurring.selectLoanAccount')}</option>
+            {accounts.filter((a) => a.type === 'loan' && a.id !== accountId).map((acc) => (
+              <option key={acc.id} value={acc.id}>
+                {getAccountName(acc)}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {isRepayment && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400 flex items-start gap-2">
+          <Info className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>{t('recurring.loanRepaymentHint')}</span>
+        </div>
+      )}
+
       <label className="flex items-start gap-2 cursor-pointer">
         <input
           type="checkbox"

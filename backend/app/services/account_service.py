@@ -11,9 +11,10 @@ from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.credit_card_bill import CreditCardBill
 from app.models.transaction import Transaction
-from app.schemas.account import AccountCreate, AccountUpdate
+from app.schemas.account import AccountCreate, AccountUpdate, LoanRepayRequest, LoanPartPaymentRequest
 from app.services._query_filters import counts_as_pnl
 from app.services.credit_card_service import apply_effective_date, compute_available_credit, get_cycle_dates
+from app.services.loan_service import build_loan_summary, compute_repayment_breakdown
 from app.models.category import Category
 
 
@@ -38,7 +39,7 @@ def _simplefin_to_internal_balance(provider: str, account_type: str, balance: De
 
 def _opening_balance_values(account_type: str, balance: Decimal) -> tuple[Decimal, str]:
     amount = abs(balance)
-    is_credit = (balance > 0) == (account_type != "credit_card")
+    is_credit = (balance > 0) == (account_type not in ("credit_card", "loan"))
     return amount, "credit" if is_credit else "debit"
 
 
@@ -164,6 +165,11 @@ def serialize_account(
         "minimum_payment": float(acc.minimum_payment) if acc.minimum_payment is not None else None,
         "card_brand": acc.card_brand,
         "card_level": acc.card_level,
+        "interest_rate": float(acc.interest_rate) if acc.interest_rate is not None else None,
+        "interest_type": acc.interest_type,
+        "loan_term_months": acc.loan_term_months,
+        "original_principal": float(acc.original_principal) if acc.original_principal is not None else None,
+        "disburse_as_income": acc.disburse_as_income,
         "institution_name": _institution_name(connection),
         "institution_logo_url": connection.logo_url if connection else None,
         "available_credit": None,
@@ -232,12 +238,17 @@ async def create_account(
     data: AccountCreate,
 ) -> Account:
     is_cc = data.type == "credit_card"
+    is_loan = data.type == "loan"
+
+    principal = data.original_principal or data.balance
+    initial_balance = principal if is_loan else data.balance
+
     account = Account(
         user_id=user_id,
         workspace_id=workspace_id,
         name=data.name,
         type=data.type,
-        balance=data.balance,
+        balance=initial_balance,
         currency=data.currency,
         credit_limit=data.credit_limit if is_cc else None,
         statement_close_day=data.statement_close_day if is_cc else None,
@@ -245,17 +256,45 @@ async def create_account(
         minimum_payment=data.minimum_payment if is_cc else None,
         card_brand=data.card_brand if is_cc else None,
         card_level=data.card_level if is_cc else None,
+        interest_rate=data.interest_rate if is_loan else None,
+        interest_type=data.interest_type if is_loan else None,
+        loan_term_months=data.loan_term_months if is_loan else None,
+        original_principal=principal if is_loan else None,
+        monthly_emi=data.monthly_emi if is_loan else None,
+        disburse_as_income=data.disburse_as_income if is_loan else False,
     )
     session.add(account)
     await session.flush()  # get account.id without committing
 
-    if data.balance != Decimal("0.00"):
-        amount, opening_type = _opening_balance_values(data.type, data.balance)
+    if is_loan and data.monthly_emi and data.monthly_emi > Decimal("0.00"):
+        funding_acc_id = data.emi_payment_account_id or data.disburse_to_account_id
+        if funding_acc_id:
+            from app.models.recurring_transaction import RecurringTransaction
+            start_d = data.emi_start_date or (data.balance_date or _Date.today())
+            rec_tx = RecurringTransaction(
+                user_id=user_id,
+                workspace_id=workspace_id,
+                account_id=funding_acc_id,
+                target_account_id=account.id,
+                description=f"Pagamento EMI: {account.name}",
+                amount=data.monthly_emi,
+                currency=data.currency,
+                type="repayment",
+                frequency="monthly",
+                start_date=start_d,
+                next_occurrence=start_d,
+                is_active=True,
+                auto_generate=True,
+            )
+            session.add(rec_tx)
+
+    if initial_balance != Decimal("0.00"):
+        amount, opening_type = _opening_balance_values(data.type, initial_balance)
         opening_tx = Transaction(
             user_id=user_id,
             workspace_id=workspace_id,
             account_id=account.id,
-            description="Saldo inicial",
+            description="Principal Empréstimo" if is_loan else "Saldo inicial",
             amount=amount,
             currency=data.currency,
             date=data.balance_date or _Date.today(),
@@ -264,10 +303,137 @@ async def create_account(
         )
         apply_effective_date(opening_tx, account)
         session.add(opening_tx)
+        await session.flush()
+
+        if is_loan and data.disburse_to_account_id:
+            dest_acc = await get_account(session, data.disburse_to_account_id, workspace_id)
+            if dest_acc:
+                disburse_tx = Transaction(
+                    user_id=user_id,
+                    workspace_id=workspace_id,
+                    account_id=dest_acc.id,
+                    description=f"Desembolso: {account.name}",
+                    amount=amount,
+                    currency=data.currency,
+                    date=data.balance_date or _Date.today(),
+                    type="credit",
+                    source="loan_disbursement",
+                )
+                apply_effective_date(disburse_tx, dest_acc)
+
+                if not data.disburse_as_income:
+                    pair_id = uuid.uuid4()
+                    opening_tx.transfer_pair_id = pair_id
+                    disburse_tx.transfer_pair_id = pair_id
+
+                session.add(disburse_tx)
 
     await session.commit()
     await session.refresh(account)
     return account
+
+
+async def repay_loan(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    account: Account,
+    data: LoanRepayRequest,
+) -> tuple[Account, Transaction]:
+    if account.type != "loan":
+        raise ValueError("Loan account not found")
+
+    if data.amount <= Decimal("0.00"):
+        raise ValueError("Repayment amount must be greater than zero")
+
+    tx_date = data.date or _Date.today()
+    payment_acc_id = data.payment_account_id or account.id
+    payment_acc = await get_account(session, payment_acc_id, workspace_id) if data.payment_account_id else account
+
+    principal_val = account.original_principal or account.balance or Decimal("0.00")
+    rate_val = account.interest_rate or Decimal("0.00")
+    itype_val = (account.interest_type or "reducing").lower()
+    term_val = account.loan_term_months or 12
+
+    principal_portion, _ = compute_repayment_breakdown(
+        principal=principal_val,
+        current_balance=account.balance,
+        rate_percent=rate_val,
+        interest_type=itype_val,
+        term_months=term_val,
+        repayment_amount=data.amount,
+    )
+
+    repay_expense_tx = Transaction(
+        user_id=user_id,
+        workspace_id=workspace_id,
+        account_id=payment_acc_id,
+        category_id=data.category_id,
+        description=data.description or f"Pagamento Empréstimo: {account.name}",
+        amount=data.amount,
+        currency=account.currency,
+        date=tx_date,
+        type="debit",
+        source="loan_repayment",
+    )
+    if payment_acc:
+        apply_effective_date(repay_expense_tx, payment_acc)
+    session.add(repay_expense_tx)
+
+    account.balance = max(Decimal("0.00"), account.balance - principal_portion)
+
+    await session.commit()
+    await session.refresh(account)
+    return account, repay_expense_tx
+
+
+async def part_pay_loan(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    account: Account,
+    data: LoanPartPaymentRequest,
+) -> tuple[Account, Transaction]:
+    if account.type != "loan":
+        raise ValueError("Loan account not found")
+
+    if data.amount <= Decimal("0.00"):
+        raise ValueError("Part payment amount must be greater than zero")
+
+    tx_date = data.date or _Date.today()
+    payment_acc_id = data.payment_account_id or account.id
+    payment_acc = await get_account(session, payment_acc_id, workspace_id) if data.payment_account_id else account
+
+    fee = data.amount * (data.charges_percent / Decimal("100"))
+    gst = fee * (data.gst_percent / Decimal("100"))
+    total_charges = fee + gst
+    total_debited = data.amount + total_charges
+
+    desc = data.description or f"Amortização / Pagamento Parcial: {account.name}"
+    if total_charges > Decimal("0.00"):
+        desc += f" (Taxas/GST: {float(total_charges):.2f})"
+
+    expense_tx = Transaction(
+        user_id=user_id,
+        workspace_id=workspace_id,
+        account_id=payment_acc_id,
+        category_id=data.category_id,
+        description=desc,
+        amount=total_debited,
+        currency=account.currency,
+        date=tx_date,
+        type="debit",
+        source="loan_repayment",
+    )
+    if payment_acc:
+        apply_effective_date(expense_tx, payment_acc)
+    session.add(expense_tx)
+
+    account.balance = max(Decimal("0.00"), account.balance - data.amount)
+
+    await session.commit()
+    await session.refresh(account)
+    return account, expense_tx
 
 
 async def update_account(

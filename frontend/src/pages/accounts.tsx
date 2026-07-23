@@ -54,6 +54,7 @@ const ACCOUNT_TYPE_OPTIONS = [
   { value: 'credit_card', labelKey: 'accounts.typeCreditCard' },
   { value: 'investment', labelKey: 'accounts.typeInvestment' },
   { value: 'wallet', labelKey: 'accounts.typeWallet' },
+  { value: 'loan', labelKey: 'accounts.typeLoan' },
 ] as const
 
 function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
@@ -717,6 +718,13 @@ function AccountDialog({
     credit_limit?: number | null
     statement_close_day?: number | null
     payment_due_day?: number | null
+    interest_rate?: number | null
+    interest_type?: 'flat' | 'reducing' | null
+    loan_term_months?: number | null
+    original_principal?: number | null
+    monthly_emi?: number | null
+    disburse_as_income?: boolean
+    disburse_to_account_id?: string | null
   }) => void
   loading: boolean
 }) {
@@ -728,6 +736,11 @@ function AccountDialog({
     queryFn: currencies.list,
     staleTime: Infinity,
   })
+  const { data: allAccounts } = useQuery({
+    queryKey: ['accounts'],
+    queryFn: () => accounts.list(),
+    staleTime: 60000,
+  })
   const [name, setName] = useState(account?.name ?? '')
   const [displayName, setDisplayName] = useState(account?.display_name ?? '')
   const [type, setType] = useState(account?.type ?? 'checking')
@@ -737,6 +750,38 @@ function AccountDialog({
   const [creditLimit, setCreditLimit] = useState(account?.credit_limit?.toString() ?? '')
   const [statementCloseDay, setStatementCloseDay] = useState(account?.statement_close_day?.toString() ?? '')
   const [paymentDueDay, setPaymentDueDay] = useState(account?.payment_due_day?.toString() ?? '')
+  const [interestRate, setInterestRate] = useState(account?.interest_rate?.toString() ?? '5.0')
+  const [interestType, setInterestType] = useState<'flat' | 'reducing'>(account?.interest_type ?? 'reducing')
+  const [loanTermMonths, setLoanTermMonths] = useState(account?.loan_term_months?.toString() ?? '12')
+  const [originalPrincipal, setOriginalPrincipal] = useState(account?.original_principal?.toString() ?? account?.balance?.toString() ?? '10000')
+  const [monthlyEmi, setMonthlyEmi] = useState(account?.monthly_emi?.toString() ?? '')
+  const [emiStartDate, setEmiStartDate] = useState(new Date().toISOString().slice(0, 10))
+  const [emiPaymentAccountId, setEmiPaymentAccountId] = useState('')
+  const [disburseAsIncome, setDisburseAsIncome] = useState(account?.disburse_as_income ?? false)
+  const [disburseToAccountId, setDisburseToAccountId] = useState('')
+
+  useEffect(() => {
+    if (!account && type === 'loan') {
+      const p = parseFloat(originalPrincipal)
+      const r = parseFloat(interestRate) / 100 / 12
+      const n = parseInt(loanTermMonths, 10)
+      if (p > 0 && n > 0) {
+        let emi = 0
+        if (interestType === 'reducing') {
+          if (r > 0) {
+            emi = (p * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1)
+          } else {
+            emi = p / n
+          }
+        } else {
+          const years = n / 12
+          const totalInterest = p * (parseFloat(interestRate) / 100) * years
+          emi = (p + totalInterest) / n
+        }
+        setMonthlyEmi(emi.toFixed(2))
+      }
+    }
+  }, [originalPrincipal, interestRate, interestType, loanTermMonths, type, account])
 
   useEffect(() => {
     setName(account?.name ?? '')
@@ -748,6 +793,15 @@ function AccountDialog({
     setCreditLimit(account?.credit_limit?.toString() ?? '')
     setStatementCloseDay(account?.statement_close_day?.toString() ?? '')
     setPaymentDueDay(account?.payment_due_day?.toString() ?? '')
+    setInterestRate(account?.interest_rate?.toString() ?? '5.0')
+    setInterestType(account?.interest_type ?? 'reducing')
+    setLoanTermMonths(account?.loan_term_months?.toString() ?? '12')
+    setOriginalPrincipal(account?.original_principal?.toString() ?? account?.balance?.toString() ?? '10000')
+    setMonthlyEmi(account?.monthly_emi?.toString() ?? '')
+    setEmiStartDate(new Date().toISOString().slice(0, 10))
+    setEmiPaymentAccountId('')
+    setDisburseAsIncome(account?.disburse_as_income ?? false)
+    setDisburseToAccountId('')
   }, [account])
 
   return (
@@ -763,19 +817,31 @@ function AccountDialog({
           onSubmit={(e) => {
             e.preventDefault()
             const isCC = type === 'credit_card'
+            const isLoan = type === 'loan'
             const parseDay = (v: string) => {
               const n = parseInt(v, 10)
               return Number.isFinite(n) && n >= 1 && n <= 31 ? n : null
             }
             const isConnected = !!account?.connection_id
             onSave({
-              ...(!isConnected && { name, balance: parseFloat(balance), balance_date: balanceDate, currency }),
+              ...(!isConnected && { name, balance: isLoan ? parseFloat(originalPrincipal || '0') : parseFloat(balance), balance_date: balanceDate, currency }),
               type,
               display_name: displayName.trim() || null,
               ...(isCC && {
                 credit_limit: creditLimit !== '' ? parseFloat(creditLimit) : null,
                 statement_close_day: parseDay(statementCloseDay),
                 payment_due_day: parseDay(paymentDueDay),
+              }),
+              ...(isLoan && {
+                interest_rate: interestRate !== '' ? parseFloat(interestRate) : null,
+                interest_type: interestType,
+                loan_term_months: loanTermMonths !== '' ? parseInt(loanTermMonths, 10) : null,
+                original_principal: originalPrincipal !== '' ? parseFloat(originalPrincipal) : null,
+                monthly_emi: monthlyEmi !== '' ? parseFloat(monthlyEmi) : null,
+                emi_start_date: emiStartDate,
+                emi_payment_account_id: emiPaymentAccountId || disburseToAccountId || null,
+                disburse_as_income: disburseAsIncome,
+                disburse_to_account_id: disburseToAccountId || null,
               }),
             })
           }}
@@ -839,36 +905,160 @@ function AccountDialog({
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>
-                    {type === 'credit_card'
-                      ? t('accounts.balanceCreditCard')
-                      : t('accounts.balance')}
-                  </Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min={type === 'credit_card' ? '0' : undefined}
-                    value={balance}
-                    onChange={(e) => setBalance(e.target.value)}
-                  />
+              {type !== 'loan' && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>
+                      {type === 'credit_card'
+                        ? t('accounts.balanceCreditCard')
+                        : t('accounts.balance')}
+                    </Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min={type === 'credit_card' ? '0' : undefined}
+                      value={balance}
+                      onChange={(e) => setBalance(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t('accounts.balanceDate')}</Label>
+                    <DatePickerInput
+                      value={balanceDate}
+                      onChange={setBalanceDate}
+                      className="w-full justify-start"
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>{t('accounts.balanceDate')}</Label>
-                  <DatePickerInput
-                    value={balanceDate}
-                    onChange={setBalanceDate}
-                    className="w-full justify-start"
-                  />
-                </div>
-              </div>
+              )}
               {type === 'credit_card' && (
                 <p className="text-xs text-muted-foreground -mt-2">
                   {t('accounts.balanceCreditCardHint')}
                 </p>
               )}
             </>
+          )}
+          {type === 'loan' && (
+            <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>{t('accounts.principalAmount')}</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={originalPrincipal}
+                    onChange={(e) => setOriginalPrincipal(e.target.value)}
+                    placeholder="10000.00"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('accounts.interestRate')}</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={interestRate}
+                    onChange={(e) => setInterestRate(e.target.value)}
+                    placeholder="5.00"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>{t('accounts.interestType')}</Label>
+                  <select
+                    className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                    value={interestType}
+                    onChange={(e) => setInterestType(e.target.value as 'flat' | 'reducing')}
+                  >
+                    <option value="reducing">{t('accounts.reducingBalance')}</option>
+                    <option value="flat">{t('accounts.flatInterest')}</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label>{t('accounts.termMonths')}</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={loanTermMonths}
+                    onChange={(e) => setLoanTermMonths(e.target.value)}
+                    placeholder="12"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>{t('accounts.monthlyEMI')}</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={monthlyEmi}
+                  onChange={(e) => setMonthlyEmi(e.target.value)}
+                  placeholder="Auto-calculated from principal, rate & term"
+                />
+              </div>
+              {!account && (
+                <>
+                  <div className="space-y-2">
+                    <Label>{t('accounts.disburseToAccount')}</Label>
+                    <select
+                      className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                      value={disburseToAccountId}
+                      onChange={(e) => setDisburseToAccountId(e.target.value)}
+                    >
+                      <option value="">{t('accounts.noneOrDirect')}</option>
+                      {allAccounts?.filter((a) => a.type !== 'loan').map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {getAccountName(a)} ({a.currency})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 pt-2 border-t border-border/50">
+                    <div className="space-y-2">
+                      <Label>{t('accounts.emiStartDate')}</Label>
+                      <DatePickerInput
+                        value={emiStartDate}
+                        onChange={setEmiStartDate}
+                        className="w-full justify-start"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t('accounts.deductEmiFrom')}</Label>
+                      <select
+                        className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                        value={emiPaymentAccountId}
+                        onChange={(e) => setEmiPaymentAccountId(e.target.value)}
+                      >
+                        <option value="">{t('accounts.selectFundingAccount')}</option>
+                        {allAccounts?.filter((a) => a.type !== 'loan').map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {getAccountName(a)} ({a.currency})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {t('accounts.recurringEmiHint')}
+                  </p>
+                </>
+              )}
+              <div className="flex items-center space-x-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="disburseAsIncome"
+                  checked={disburseAsIncome}
+                  onChange={(e) => setDisburseAsIncome(e.target.checked)}
+                  className="h-4 w-4 rounded border-border text-primary focus:ring-primary"
+                />
+                <label htmlFor="disburseAsIncome" className="text-xs font-medium leading-none cursor-pointer">
+                  {t('accounts.disburseAsIncomeLabel')}
+                </label>
+              </div>
+            </div>
           )}
           {type === 'credit_card' && (
             <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">

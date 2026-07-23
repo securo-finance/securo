@@ -18,9 +18,13 @@ from app.schemas.account import (
     AccountSummary,
     AccountUpdate,
     CreditCardBillRead,
+    LoanRepayRequest,
+    LoanPartPaymentRequest,
+    LoanSummaryRead,
 )
 from app.services import account_service
 from app.services.fx_rate_service import convert
+from app.services.loan_service import build_loan_summary
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
@@ -204,3 +208,62 @@ async def reopen_account(
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
     return account
+
+
+@router.get("/{account_id}/loan-summary", response_model=LoanSummaryRead)
+async def get_loan_summary(
+    account_id: uuid.UUID,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    account = await account_service.get_account(session, account_id, ctx.workspace.id)
+    if not account or account.type != "loan":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loan account not found")
+
+    accounts_list = await account_service.get_accounts(session, ctx.workspace.id, include_closed=True)
+    cur_bal_float = 0.0
+    for a in accounts_list:
+        if a["id"] == account.id:
+            cur_bal_float = a["current_balance"]
+            break
+
+    return build_loan_summary(account, Decimal(str(cur_bal_float)))
+
+
+@router.post("/{account_id}/repay", response_model=AccountRead)
+async def repay_loan(
+    account_id: uuid.UUID,
+    data: LoanRepayRequest,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    account = await account_service.get_account(session, account_id, ctx.workspace.id)
+    if not account or account.type != "loan":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loan account not found")
+    try:
+        account, _ = await account_service.repay_loan(
+            session, ctx.user_id, ctx.workspace.id, account, data
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return account_service.serialize_account(account, None, None)
+
+
+@router.post("/{account_id}/part-pay", response_model=AccountRead)
+async def part_pay_loan(
+    account_id: uuid.UUID,
+    data: LoanPartPaymentRequest,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    account = await account_service.get_account(session, account_id, ctx.workspace.id)
+    if not account or account.type != "loan":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Loan account not found")
+    try:
+        account, _ = await account_service.part_pay_loan(
+            session, ctx.user_id, ctx.workspace.id, account, data
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return account_service.serialize_account(account, None, None)
+

@@ -66,6 +66,7 @@ def counts_as_pnl():
         # parent transaction. So we keep credits, drop debits.
         ~and_(Transaction.source == "settlement", Transaction.type == "debit"),
         or_(
+            Transaction.source.in_(("loan_repayment", "loan_disbursement")),
             Transaction.category_id.is_(None),
             Transaction.category_id.not_in(
                 select(Category.id).where(

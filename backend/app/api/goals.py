@@ -10,7 +10,7 @@ from app.core.workspace_context import (
     current_workspace,
     current_writable_workspace,
 )
-from app.schemas.goal import GoalCreate, GoalRead, GoalSummary, GoalUpdate
+from app.schemas.goal import GoalCreate, GoalRead, GoalSummary, GoalUpdate, GoalContributionCreate
 from app.services import goal_service
 
 router = APIRouter(prefix="/api/goals", tags=["goals"])
@@ -83,3 +83,19 @@ async def delete_goal(
     deleted = await goal_service.delete_goal(session, goal_id, ctx.workspace.id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Goal not found")
+
+
+@router.post("/{goal_id}/contribute", response_model=GoalRead)
+async def contribute_goal(
+    goal_id: uuid.UUID,
+    data: GoalContributionCreate,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        goal, _, _ = await goal_service.contribute_to_goal(
+            session, ctx.user_id, ctx.workspace.id, goal_id, data
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return await goal_service.get_goal(session, goal.id, ctx.workspace.id, ctx.user_id)

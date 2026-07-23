@@ -25,6 +25,15 @@ class AccountCreate(BaseModel):
     minimum_payment: Optional[Decimal] = None
     card_brand: Optional[str] = None
     card_level: Optional[str] = None
+    interest_rate: Optional[Decimal] = None
+    interest_type: Optional[str] = None
+    loan_term_months: Optional[int] = None
+    original_principal: Optional[Decimal] = None
+    monthly_emi: Optional[Decimal] = None
+    emi_start_date: Optional[date] = None
+    emi_payment_account_id: Optional[uuid.UUID] = None
+    disburse_as_income: Optional[bool] = False
+    disburse_to_account_id: Optional[uuid.UUID] = None
 
 
 class AccountUpdate(BaseModel):
@@ -39,6 +48,12 @@ class AccountUpdate(BaseModel):
     minimum_payment: Optional[Decimal] = None
     card_brand: Optional[str] = None
     card_level: Optional[str] = None
+    interest_rate: Optional[Decimal] = None
+    interest_type: Optional[str] = None
+    loan_term_months: Optional[int] = None
+    original_principal: Optional[Decimal] = None
+    monthly_emi: Optional[Decimal] = None
+    disburse_as_income: Optional[bool] = None
 
 
 class AccountRead(AccountBase):
@@ -67,6 +82,12 @@ class AccountRead(AccountBase):
     minimum_payment: Optional[float] = None
     card_brand: Optional[str] = None
     card_level: Optional[str] = None
+    interest_rate: Optional[float] = None
+    interest_type: Optional[str] = None
+    loan_term_months: Optional[int] = None
+    original_principal: Optional[float] = None
+    monthly_emi: Optional[float] = None
+    disburse_as_income: Optional[bool] = False
     is_closed: bool = False
     closed_at: Optional[datetime] = None
 
@@ -99,3 +120,38 @@ class AccountSummary(BaseModel):
     current_balance_primary: Optional[float] = None
     monthly_income_primary: Optional[float] = None
     monthly_expenses_primary: Optional[float] = None
+
+
+class LoanRepayRequest(BaseModel):
+    amount: Decimal
+    date: Optional[date] = None
+    payment_account_id: Optional[uuid.UUID] = None
+    category_id: Optional[uuid.UUID] = None
+    description: Optional[str] = None
+
+
+class LoanPartPaymentRequest(BaseModel):
+    amount: Decimal
+    charges_percent: Decimal = Decimal("0.00")
+    gst_percent: Decimal = Decimal("18.00")
+    date: Optional[date] = None
+    payment_account_id: Optional[uuid.UUID] = None
+    category_id: Optional[uuid.UUID] = None
+    description: Optional[str] = None
+
+
+class LoanSummaryRead(BaseModel):
+    account_id: uuid.UUID
+    original_principal: float
+    current_balance: float
+    interest_rate: float
+    interest_type: str
+    loan_term_months: int
+    monthly_emi: float
+    total_interest: float
+    total_payable: float
+    principal_paid: float
+    interest_paid: float
+    next_payment_principal: float
+    next_payment_interest: float
+

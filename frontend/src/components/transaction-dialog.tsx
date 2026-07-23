@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useDateLocale } from '@/hooks/use-display-locale'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
-import { currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi } from '@/lib/api'
+import { currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, accounts as accountsApi, goals as goalsApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { normalizeRuleMatchValue } from '@/lib/rule-match-utils'
 import { cn, normalizeText } from '@/lib/utils'
@@ -356,12 +356,54 @@ function TransactionForm({
   const [description, setDescription] = useState(seed?.description ?? '')
   const [amount, setAmount] = useState(seed?.amount?.toString() ?? '')
   const [date, setDate] = useState(seed?.date ?? new Date().toISOString().split('T')[0])
-  const [type, setType] = useState<'debit' | 'credit'>(seed?.type ?? 'debit')
+  const [type, setType] = useState<'debit' | 'credit' | 'loan_repayment' | 'goal_contribution'>(seed?.type ?? 'debit')
+  const [targetLoanAccountId, setTargetLoanAccountId] = useState('')
+  const [targetGoalId, setTargetGoalId] = useState('')
   const [currency, setCurrency] = useState(seed?.currency ?? userCurrency)
   const [categoryId, setCategoryId] = useState(seed?.category_id ?? '')
   const [payeeId, setPayeeId] = useState(seed?.payee_id ?? '')
   const [accountId, setAccountId] = useState(seed?.account_id ?? accounts[0]?.id ?? '')
   const [notes, setNotes] = useState(seed?.notes ?? '')
+
+  const { data: goalsList } = useQuery({
+    queryKey: ['goals'],
+    queryFn: () => goalsApi.list(),
+    enabled: !transaction,
+  })
+
+  const loanRepayMutation = useMutation({
+    mutationFn: (loanAccId: string) =>
+      accountsApi.repayLoan(loanAccId, {
+        amount: parseFloat(amount),
+        date,
+        payment_account_id: accountId || undefined,
+        category_id: categoryId || undefined,
+        description: description.trim() || undefined,
+      }),
+    onSuccess: () => {
+      invalidateFinancialQueries(queryClient)
+      toast.success(t('accounts.repaymentSuccess'))
+      onCancel()
+    },
+    onError: (err) => toast.error(extractApiError(err)),
+  })
+
+  const goalContributeMutation = useMutation({
+    mutationFn: (goalId: string) =>
+      goalsApi.contribute(goalId, {
+        amount: parseFloat(amount),
+        funding_account_id: accountId,
+        date,
+        category_id: categoryId || undefined,
+        description: description.trim() || undefined,
+      }),
+    onSuccess: () => {
+      invalidateFinancialQueries(queryClient)
+      toast.success(t('goals.contributionSuccess'))
+      onCancel()
+    },
+    onError: (err) => toast.error(extractApiError(err)),
+  })
   // Manual CC bucketing override (issue #92). Empty = auto. Visible only
   // when the selected account is a credit card.
   const [effectiveBillDate, setEffectiveBillDate] = useState(seed?.effective_bill_date ?? '')
@@ -611,6 +653,22 @@ function TransactionForm({
       ref={formRef}
       onSubmit={(e) => {
         e.preventDefault()
+        if (type === 'loan_repayment' && isCreating) {
+          if (!targetLoanAccountId) {
+            toast.error(t('recurring.selectLoanAccount'))
+            return
+          }
+          loanRepayMutation.mutate(targetLoanAccountId)
+          return
+        }
+        if (type === 'goal_contribution' && isCreating) {
+          if (!targetGoalId) {
+            toast.error(t('goals.selectGoalPlaceholder'))
+            return
+          }
+          goalContributeMutation.mutate(targetGoalId)
+          return
+        }
         const action = pendingActionRef.current
         pendingActionRef.current = 'save'
         const fxFields: Partial<Transaction> = {}
@@ -739,6 +797,99 @@ function TransactionForm({
           </Button>
         </div>
       )}
+      {isCreating && (
+        <div className="space-y-2">
+          <Label>{t('transactions.type')}</Label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <button
+              type="button"
+              className={cn(
+                "px-3 py-2 text-xs font-semibold rounded-lg border transition-all text-center",
+                type === 'debit'
+                  ? "bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-400 font-bold"
+                  : "border-border bg-card text-muted-foreground hover:bg-muted"
+              )}
+              onClick={() => setType('debit')}
+            >
+              {t('transactions.expense')}
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "px-3 py-2 text-xs font-semibold rounded-lg border transition-all text-center",
+                type === 'credit'
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-bold"
+                  : "border-border bg-card text-muted-foreground hover:bg-muted"
+              )}
+              onClick={() => setType('credit')}
+            >
+              {t('transactions.income')}
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "px-3 py-2 text-xs font-semibold rounded-lg border transition-all text-center",
+                type === 'loan_repayment'
+                  ? "bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400 font-bold"
+                  : "border-border bg-card text-muted-foreground hover:bg-muted"
+              )}
+              onClick={() => setType('loan_repayment')}
+            >
+              {t('accounts.repayLoan')}
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "px-3 py-2 text-xs font-semibold rounded-lg border transition-all text-center",
+                type === 'goal_contribution'
+                  ? "bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400 font-bold"
+                  : "border-border bg-card text-muted-foreground hover:bg-muted"
+              )}
+              onClick={() => setType('goal_contribution')}
+            >
+              {t('goals.goalTransfer')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {type === 'loan_repayment' && isCreating && (
+        <div className="space-y-2 border border-amber-500/30 bg-amber-500/5 p-3 rounded-lg">
+          <Label>{t('accounts.targetLoanAccount')}</Label>
+          <select
+            className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus-visible:ring-ring/30"
+            value={targetLoanAccountId}
+            onChange={(e) => setTargetLoanAccountId(e.target.value)}
+            required
+          >
+            <option value="">{t('recurring.selectLoanAccount')}</option>
+            {accounts.filter((a) => a.type === 'loan').map((acc) => (
+              <option key={acc.id} value={acc.id}>{getAccountLabel(acc)}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {type === 'goal_contribution' && isCreating && (
+        <div className="space-y-2 border border-blue-500/30 bg-blue-500/5 p-3 rounded-lg">
+          <Label>{t('goals.selectGoal')}</Label>
+          <select
+            className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus-visible:ring-ring/30"
+            value={targetGoalId}
+            onChange={(e) => setTargetGoalId(e.target.value)}
+            required
+          >
+            <option value="">{t('goals.selectGoalPlaceholder')}</option>
+            {(goalsList ?? []).map((g) => (
+              <option key={g.id} value={g.id}>{g.name} ({g.currency})</option>
+            ))}
+          </select>
+          <p className="text-xs text-muted-foreground mt-1">
+            {t('goals.transferHint')}
+          </p>
+        </div>
+      )}
+
       <div className="space-y-2">
         <Label>{t('transactions.description')}</Label>
         {isSynced ? (
