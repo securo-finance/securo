@@ -63,6 +63,8 @@ async def create_recurring_transaction(
     data: RecurringTransactionCreate,
 ) -> RecurringTransaction:
     await _verify_account_in_workspace(session, workspace_id, data.account_id)
+    if data.target_account_id:
+        await _verify_account_in_workspace(session, workspace_id, data.target_account_id)
     next_occ = data.start_date
     if data.skip_first:
         next_occ = _advance_date(
@@ -73,6 +75,7 @@ async def create_recurring_transaction(
         user_id=user_id,
         workspace_id=workspace_id,
         account_id=data.account_id,
+        target_account_id=data.target_account_id,
         category_id=data.category_id,
         description=data.description,
         amount=data.amount,
@@ -105,14 +108,15 @@ async def update_recurring_transaction(
 
     update_data = data.model_dump(exclude_unset=True)
 
-    # A recurring transaction must always have an account — reject an explicit
-    # null, and verify ownership of any new account_id.
     if "account_id" in update_data:
         new_account_id = update_data["account_id"]
         if new_account_id is None:
             raise ValueError("account_id is required")
         if new_account_id != recurring.account_id:
             await _verify_account_in_workspace(session, workspace_id, new_account_id)
+
+    if "target_account_id" in update_data and update_data["target_account_id"]:
+        await _verify_account_in_workspace(session, workspace_id, update_data["target_account_id"])
 
     for key, value in update_data.items():
         setattr(recurring, key, value)
@@ -137,12 +141,7 @@ async def delete_recurring_transaction(
 def _advance_date(
     current: date, frequency: str, intended_day: Optional[int] = None,
 ) -> date:
-    """Advance a date by the given frequency.
-
-    For monthly/yearly, ``intended_day`` is the day the user actually wants
-    (e.g. 31). We cap it to the target month's length so Feb clamps to 28/29,
-    but subsequent months recover to 31/30 instead of sticking at 28.
-    Falls back to ``current.day`` when not provided."""
+    """Advance a date by the given frequency."""
     if frequency == "weekly":
         return current + timedelta(weeks=1)
     target_day = intended_day if intended_day else current.day
@@ -165,23 +164,20 @@ def get_occurrences_in_range(
     range_start: date, range_end: date,
     intended_day: Optional[int] = None,
 ) -> list[date]:
-    """Compute all occurrence dates for a recurring pattern within [range_start, range_end).
-    Pure date math — no DB writes. Used by dashboard for virtual projections."""
+    """Compute all occurrence dates for a recurring pattern within [range_start, range_end)."""
     day = intended_day if intended_day else start.day
     occurrences: list[date] = []
     current = start
-    # Advance to range_start without collecting
     while current < range_start:
         if end_date and current > end_date:
             return occurrences
         current = _advance_date(current, frequency, intended_day=day)
-    # Collect occurrences within range
     while current < range_end:
         if end_date and current > end_date:
             break
         occurrences.append(current)
         current = _advance_date(current, frequency, intended_day=day)
-        if len(occurrences) > 200:  # safety limit
+        if len(occurrences) > 200:
             break
     return occurrences
 
@@ -189,10 +185,7 @@ def get_occurrences_in_range(
 async def generate_pending(
     session: AsyncSession, user_id: uuid.UUID, up_to: Optional[date] = None
 ) -> int:
-    """Generate transactions for all pending recurring transactions up to a given date.
-    If up_to is None, defaults to today. This allows the dashboard to pre-generate
-    transactions for future months when the user navigates ahead.
-    Returns the count of transactions generated."""
+    """Generate transactions for all pending recurring transactions up to a given date."""
     cutoff = up_to or date.today()
 
     result = await session.execute(
@@ -208,55 +201,91 @@ async def generate_pending(
 
     count = 0
     for recurring in recurring_list:
-        # Legacy rows may exist with a null account_id from before account_id
-        # was required. Skip them rather than crashing on Transaction's NOT NULL
-        # constraint — the user should edit the recurring to fix it.
         if recurring.account_id is None:
             continue
-        # Generate transactions until next_occurrence is past the cutoff
+
         while recurring.next_occurrence <= cutoff:
-            # Check if past end_date
             if recurring.end_date and recurring.next_occurrence > recurring.end_date:
                 recurring.is_active = False
                 break
 
-            # If a real transaction (synced/imported/manual) already covers this
-            # occurrence, link it to the bill instead of writing a duplicate
-            # placeholder (issue #116). Otherwise materialize the placeholder,
-            # stamped with the recurring link so a later synced charge merges
-            # into it rather than duplicating.
             existing_real = await recurring_match_service.find_real_tx_for_occurrence(
                 session, recurring, recurring.next_occurrence
             )
             if existing_real is not None:
                 existing_real.recurring_transaction_id = recurring.id
             else:
-                transaction = Transaction(
-                    user_id=user_id,
-                    account_id=recurring.account_id,
-                    category_id=recurring.category_id,
-                    description=recurring.description,
-                    amount=recurring.amount,
-                    currency=recurring.currency,
-                    date=recurring.next_occurrence,
-                    type=recurring.type,
-                    source="recurring",
-                    recurring_transaction_id=recurring.id,
-                )
                 account = await session.get(Account, recurring.account_id)
-                apply_effective_date(transaction, account)
-                session.add(transaction)
-                await session.flush()
-                await stamp_primary_amount(session, user_id, transaction)
-                count += 1
+                target_acc = await session.get(Account, recurring.target_account_id) if recurring.target_account_id else None
 
-            # Advance to next occurrence
+                is_loan_repayment = (
+                    recurring.type == "repayment" or
+                    (target_acc and target_acc.type == "loan") or
+                    (account and account.type == "loan")
+                )
+
+                if is_loan_repayment:
+                    loan_acc = target_acc if target_acc and target_acc.type == "loan" else (account if account and account.type == "loan" else None)
+                    funding_acc = account if account and account.id == recurring.account_id else (target_acc if target_acc and target_acc.id == recurring.account_id else None)
+
+                    if loan_acc and loan_acc.balance <= Decimal("0.00"):
+                        # Loan debt is 0 or paid off: deactivate recurring EMI payments
+                        recurring.is_active = False
+                        session.add(recurring)
+                        continue
+
+                    funding_acc_id = recurring.account_id or (funding_acc.id if funding_acc else (loan_acc.id if loan_acc else None))
+                    tx_debit = Transaction(
+                        user_id=user_id,
+                        workspace_id=recurring.workspace_id,
+                        account_id=funding_acc_id,
+                        category_id=recurring.category_id,
+                        description=recurring.description,
+                        amount=recurring.amount,
+                        currency=recurring.currency,
+                        date=recurring.next_occurrence,
+                        type="debit",
+                        source="loan_repayment",
+                        recurring_transaction_id=recurring.id,
+                    )
+                    if funding_acc:
+                        apply_effective_date(tx_debit, funding_acc)
+                    session.add(tx_debit)
+                    await session.flush()
+                    await stamp_primary_amount(session, user_id, tx_debit)
+
+                    if loan_acc:
+                        loan_acc.balance = max(Decimal("0.00"), loan_acc.balance - recurring.amount)
+                        session.add(loan_acc)
+
+                    count += 1
+                else:
+                    # Standard debit/credit transaction
+                    transaction = Transaction(
+                        user_id=user_id,
+                        workspace_id=recurring.workspace_id,
+                        account_id=recurring.account_id,
+                        category_id=recurring.category_id,
+                        description=recurring.description,
+                        amount=recurring.amount,
+                        currency=recurring.currency,
+                        date=recurring.next_occurrence,
+                        type=recurring.type,
+                        source="recurring",
+                        recurring_transaction_id=recurring.id,
+                    )
+                    if account:
+                        apply_effective_date(transaction, account)
+                    session.add(transaction)
+                    await session.flush()
+                    await stamp_primary_amount(session, user_id, transaction)
+                    count += 1
+
             recurring.next_occurrence = _advance_date(
                 recurring.next_occurrence, recurring.frequency,
                 intended_day=recurring.day_of_month or recurring.start_date.day,
             )
 
-            # Check again if past end_date after advancing
             if recurring.end_date and recurring.next_occurrence > recurring.end_date:
                 recurring.is_active = False
 

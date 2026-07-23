@@ -150,8 +150,56 @@ export interface Account {
   minimum_payment: number | null
   card_brand: string | null
   card_level: string | null
+  interest_rate: number | null
+  interest_type: 'flat' | 'reducing' | null
+  loan_term_months: number | null
+  original_principal: number | null
+  monthly_emi: number | null
+  disburse_as_income: boolean
   is_closed: boolean
   closed_at: string | null
+}
+
+export interface LoanSummary {
+  account_id: string
+  original_principal: number
+  current_balance: number
+  interest_rate: number
+  interest_type: 'flat' | 'reducing'
+  loan_term_months: number
+  monthly_emi: number
+  total_interest: number
+  total_payable: number
+  principal_paid: number
+  interest_paid: number
+  next_payment_principal: number
+  next_payment_interest: number
+}
+
+export interface LoanRepaymentPayload {
+  amount: number
+  date?: string
+  payment_account_id?: string
+  category_id?: string
+  description?: string
+}
+
+export interface LoanPartPaymentPayload {
+  amount: number
+  charges_percent?: number
+  gst_percent?: number
+  date?: string
+  payment_account_id?: string
+  category_id?: string
+  description?: string
+}
+
+export interface GoalContributionPayload {
+  amount: number
+  funding_account_id: string
+  date?: string
+  category_id?: string
+  description?: string
 }
 
 export interface CreditCardBill {
@@ -423,11 +471,12 @@ export interface RecurringTransaction {
   id: string
   user_id: string
   account_id: string | null
+  target_account_id?: string | null
   category_id: string | null
   description: string
   amount: number
   currency: string
-  type: 'debit' | 'credit'
+  type: 'debit' | 'credit' | 'repayment'
   frequency: 'monthly' | 'weekly' | 'yearly'
   day_of_month: number | null
   start_date: string

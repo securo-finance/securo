@@ -11,8 +11,10 @@ from app.models.account import Account
 from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
 from app.models.goal import Goal
+from app.models.transaction import Transaction
 from app.models.user import User
-from app.schemas.goal import GoalCreate, GoalRead, GoalSummary, GoalUpdate
+from app.schemas.goal import GoalCreate, GoalRead, GoalSummary, GoalUpdate, GoalContributionCreate
+from app.services.credit_card_service import apply_effective_date
 from app.services.asset_service import _compute_current_value, _get_latest_value, get_asset_values_at
 from app.services.dashboard_service import _account_balance_at, _get_open_accounts
 from app.services.account_service import get_account_name
@@ -387,3 +389,66 @@ async def get_goal_summary(
             on_track=on_track,
         ))
     return summaries
+
+
+async def contribute_to_goal(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    goal_id: uuid.UUID,
+    data: GoalContributionCreate,
+) -> tuple[Goal, Transaction, Transaction]:
+    goal = await get_goal_model(session, goal_id, workspace_id)
+    if not goal:
+        raise ValueError("Goal not found")
+
+    funding_acc = await session.get(Account, data.funding_account_id)
+    if not funding_acc or funding_acc.workspace_id != workspace_id:
+        raise ValueError("Funding account not found")
+
+    if data.amount <= Decimal("0.00"):
+        raise ValueError("Contribution amount must be greater than zero")
+
+    tx_date = data.date or date.today()
+
+    # 1. Debit (-) transaction on source funding account
+    debit_tx = Transaction(
+        user_id=user_id,
+        workspace_id=workspace_id,
+        account_id=funding_acc.id,
+        category_id=data.category_id,
+        description=data.description or f"Transferência para Meta: {goal.name}",
+        amount=data.amount,
+        currency=funding_acc.currency,
+        date=tx_date,
+        type="debit",
+        source="goal_contribution",
+    )
+    apply_effective_date(debit_tx, funding_acc)
+    session.add(debit_tx)
+
+    # 2. Credit (+) transaction representing Goal deposit
+    credit_tx = Transaction(
+        user_id=user_id,
+        workspace_id=workspace_id,
+        account_id=goal.account_id or funding_acc.id,
+        category_id=data.category_id,
+        description=data.description or f"Depósito recebido na Meta: {goal.name}",
+        amount=data.amount,
+        currency=goal.currency,
+        date=tx_date,
+        type="credit",
+        source="goal_contribution",
+    )
+    apply_effective_date(credit_tx, funding_acc)
+    session.add(credit_tx)
+
+    # 3. Update goal current_amount
+    goal.current_amount += data.amount
+    if goal.current_amount >= goal.target_amount and goal.status == "active":
+        goal.status = "completed"
+
+    session.add(goal)
+    await session.commit()
+    await session.refresh(goal)
+    return goal, debit_tx, credit_tx

@@ -40,6 +40,12 @@ class Account(Base):
     minimum_payment: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
     card_brand: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     card_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    interest_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=5, scale=2), nullable=True)
+    interest_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # flat, reducing
+    loan_term_months: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
+    original_principal: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
+    monthly_emi: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
+    disburse_as_income: Mapped[Optional[bool]] = mapped_column(Boolean, default=False, nullable=True)
     is_closed: Mapped[bool] = mapped_column(Boolean, default=False)
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 

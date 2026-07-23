@@ -29,11 +29,12 @@ class RecurringTransaction(Base):
         UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
     )
     account_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=True)
+    target_account_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True)
     category_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("categories.id"), nullable=True)
     description: Mapped[str] = mapped_column(String(500))
     amount: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2))
     currency: Mapped[str] = mapped_column(String(3), default="USD")
-    type: Mapped[str] = mapped_column(String(10))  # debit, credit
+    type: Mapped[str] = mapped_column(String(10))  # debit, credit, transfer
     frequency: Mapped[str] = mapped_column(String(20))  # monthly, weekly, yearly
     day_of_month: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     start_date: Mapped[date] = mapped_column(Date)
@@ -51,7 +52,8 @@ class RecurringTransaction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped["User"] = relationship()
-    account: Mapped[Optional["Account"]] = relationship()
+    account: Mapped[Optional["Account"]] = relationship(foreign_keys=[account_id])
+    target_account: Mapped[Optional["Account"]] = relationship(foreign_keys=[target_account_id])
     category: Mapped[Optional["Category"]] = relationship()
     transactions: Mapped[list["Transaction"]] = relationship(
         back_populates="recurring_transaction"

@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import select, func, or_, not_, update
+from sqlalchemy import select, func, or_, and_, not_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -195,6 +195,9 @@ async def get_transactions(
     # Exclude opening_balance transactions from the normal list unless explicitly requested
     if not include_opening_balance:
         base_query = base_query.where(Transaction.source != "opening_balance")
+
+    # Exclude internal loan repayment credit legs from general transaction lists
+    base_query = base_query.where(~and_(Transaction.source == "loan_repayment", Transaction.type == "credit"))
 
     # Apply filters
     # Multi-id filters take precedence over single-id filters.
@@ -1130,8 +1133,14 @@ async def update_transaction(
     restamp_fields = {"amount", "currency", "date"}
     needs_restamp = bool(restamp_fields & update_data.keys())
 
+    old_amount = transaction.amount
     for key, value in update_data.items():
         setattr(transaction, key, value)
+
+    if "amount" in update_data:
+        amount_delta = transaction.amount - old_amount
+        if amount_delta != Decimal("0.00"):
+            await _adjust_loan_balance_on_change(session, workspace_id, transaction, amount_delta, is_delete=False)
 
     if has_fx_override:
         if override_amount_primary is None and override_fx_rate is None:
@@ -1437,6 +1446,39 @@ async def unlink_recurring_transaction(
     return transaction
 
 
+async def _adjust_loan_balance_on_change(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    transaction: Transaction,
+    amount_delta: Decimal,
+    is_delete: bool = False,
+):
+    if transaction.source != "loan_repayment":
+        return
+
+    acc = await session.get(Account, transaction.account_id)
+    target_loan_acc = acc if acc and acc.type == "loan" else None
+
+    if not target_loan_acc:
+        res = await session.execute(
+            select(Account).where(Account.workspace_id == workspace_id, Account.type == "loan")
+        )
+        loan_accs = res.scalars().all()
+        for l_acc in loan_accs:
+            if l_acc.name in (transaction.description or ""):
+                target_loan_acc = l_acc
+                break
+        if not target_loan_acc and len(loan_accs) == 1:
+            target_loan_acc = loan_accs[0]
+
+    if target_loan_acc:
+        if is_delete:
+            target_loan_acc.balance = target_loan_acc.balance + transaction.amount
+        else:
+            target_loan_acc.balance = max(Decimal("0.00"), target_loan_acc.balance - amount_delta)
+        session.add(target_loan_acc)
+
+
 async def delete_transaction(
     session: AsyncSession,
     transaction_id: uuid.UUID,
@@ -1445,6 +1487,8 @@ async def delete_transaction(
     transaction = await get_transaction(session, transaction_id, workspace_id)
     if not transaction:
         return False
+
+    await _adjust_loan_balance_on_change(session, workspace_id, transaction, Decimal("0.00"), is_delete=True)
 
     # Clean up attachment files from storage before ORM cascade deletes DB records
     from app.services.attachment_service import cleanup_attachment_files
@@ -1463,6 +1507,21 @@ async def delete_transaction(
         paired_tx = paired_result.scalar_one_or_none()
         if paired_tx:
             tx_ids_to_cleanup.append(paired_tx.id)
+
+    # Cascade delete any related counterpart legs for loan_repayment or goal_contribution
+    if transaction.source in ("loan_repayment", "goal_contribution"):
+        counterparts = await session.execute(
+            select(Transaction).where(
+                Transaction.workspace_id == workspace_id,
+                Transaction.source == transaction.source,
+                Transaction.id != transaction.id,
+                Transaction.amount == transaction.amount,
+                Transaction.date == transaction.date,
+            )
+        )
+        for cp in counterparts.scalars().all():
+            tx_ids_to_cleanup.append(cp.id)
+            await session.delete(cp)
 
     await cleanup_attachment_files(session, tx_ids_to_cleanup)
 

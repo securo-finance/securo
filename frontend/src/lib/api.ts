@@ -13,6 +13,10 @@ import type {
   ConnectionSettings,
   Account,
   AccountSummary,
+  LoanSummary,
+  LoanRepaymentPayload,
+  LoanPartPaymentPayload,
+  GoalContributionPayload,
   Collection,
   CreditCardBill,
   Transaction,
@@ -415,6 +419,18 @@ export const accounts = {
   },
   reopen: async (id: string): Promise<Account> => {
     const { data } = await api.post(`/accounts/${id}/reopen`)
+    return data
+  },
+  loanSummary: async (id: string): Promise<LoanSummary> => {
+    const { data } = await api.get(`/accounts/${id}/loan-summary`)
+    return data
+  },
+  repayLoan: async (id: string, payload: LoanRepaymentPayload): Promise<Account> => {
+    const { data } = await api.post(`/accounts/${id}/repay`, payload)
+    return data
+  },
+  partPayLoan: async (id: string, payload: LoanPartPaymentPayload): Promise<Account> => {
+    const { data } = await api.post(`/accounts/${id}/part-pay`, payload)
     return data
   },
 }
@@ -925,6 +941,10 @@ export const goals = {
   },
   summary: async (limit = 3): Promise<GoalSummary[]> => {
     const { data } = await api.get('/goals/summary', { params: { limit } })
+    return data
+  },
+  contribute: async (id: string, payload: GoalContributionPayload): Promise<Goal> => {
+    const { data } = await api.post(`/goals/${id}/contribute`, payload)
     return data
   },
 }

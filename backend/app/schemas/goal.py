@@ -107,3 +107,11 @@ class GoalSummary(BaseModel):
     percentage: float = 0
     monthly_contribution: Optional[float] = None
     on_track: Optional[str] = None
+
+
+class GoalContributionCreate(BaseModel):
+    amount: Decimal
+    funding_account_id: uuid.UUID
+    date: Optional[_Date] = None
+    category_id: Optional[uuid.UUID] = None
+    description: Optional[str] = None

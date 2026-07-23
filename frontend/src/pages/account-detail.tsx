@@ -8,10 +8,10 @@ import { format, addDays, addMonths, parseISO } from 'date-fns'
 import { accounts, transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
-import type { CreditCardBill, Transaction } from '@/types'
+import type { CreditCardBill, Transaction, LoanSummary, LoanRepaymentPayload, LoanPartPaymentPayload, Account } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, EyeClosed, HelpCircle, Paperclip, Pencil, X } from 'lucide-react'
+import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, EyeClosed, HelpCircle, Paperclip, Pencil, X, Landmark } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
 import { TransactionDialog, extractApiError } from '@/components/transaction-dialog'
 import { TransferDialog } from '@/components/transfer-dialog'
@@ -616,9 +616,51 @@ export default function AccountDetailPage() {
 
   // Whether to use primary currency amounts (for foreign-currency accounts with toggle, or domestic accounts with foreign txs)
   const isCreditCard = account?.type === 'credit_card'
+  const isLoan = account?.type === 'loan'
   const isForeignCurrency = account ? account.currency !== userCurrency : false
   const usePrimary = !isForeignCurrency || showPrimary
   const displayCurrency = (isForeignCurrency && !showPrimary) ? (account?.currency || userCurrency) : userCurrency
+
+  const { data: loanSummary } = useQuery({
+    queryKey: ['loan-summary', id],
+    queryFn: () => accounts.loanSummary(id!),
+    enabled: !!id && isLoan,
+  })
+
+  const { data: allAccountsList } = useQuery({
+    queryKey: ['accounts'],
+    queryFn: () => accounts.list(),
+    enabled: !!id && isLoan,
+  })
+
+  const [repayDialogOpen, setRepayDialogOpen] = useState(false)
+  const [partPayDialogOpen, setPartPayDialogOpen] = useState(false)
+
+  const repayMutation = useMutation({
+    mutationFn: (data: LoanRepaymentPayload) => accounts.repayLoan(id!, data),
+    onSuccess: () => {
+      invalidateFinancialQueries(queryClient)
+      queryClient.invalidateQueries({ queryKey: ['loan-summary', id] })
+      setRepayDialogOpen(false)
+      toast.success(t('accounts.repaymentSuccess'))
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
+
+  const partPayMutation = useMutation({
+    mutationFn: (data: LoanPartPaymentPayload) => accounts.partPayLoan(id!, data),
+    onSuccess: () => {
+      invalidateFinancialQueries(queryClient)
+      queryClient.invalidateQueries({ queryKey: ['loan-summary', id] })
+      setPartPayDialogOpen(false)
+      toast.success(t('accounts.partPaymentSuccess'))
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
 
   // Chart data:
   // - Non-CC: daily running balance from /balance-history
@@ -1010,7 +1052,90 @@ export default function AccountDetailPage() {
       })()}
 
       {/* Compact stat bar */}
-      {isCreditCard ? (() => {
+      {isLoan ? (
+        <div className="space-y-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+            <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4">
+              <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1">
+                {t('accounts.outstandingDebt')}
+              </p>
+              <p className="text-base sm:text-2xl font-bold tabular-nums text-rose-500">
+                {mask(formatCurrency(loanSummary?.current_balance ?? account.balance, displayCurrency, locale))}
+              </p>
+            </div>
+            <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4">
+              <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1">
+                {t('accounts.monthlyEMI')}
+              </p>
+              <p className="text-base sm:text-2xl font-bold tabular-nums text-foreground">
+                {mask(formatCurrency(loanSummary?.monthly_emi ?? 0, displayCurrency, locale))}
+              </p>
+              {loanSummary && (
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  {t('accounts.principal')}: {formatCurrency(loanSummary.next_payment_principal, displayCurrency, locale)} | {t('accounts.interest')}: {formatCurrency(loanSummary.next_payment_interest, displayCurrency, locale)}
+                </p>
+              )}
+            </div>
+            <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4">
+              <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1">
+                {t('accounts.interestRate')}
+              </p>
+              <p className="text-base sm:text-2xl font-bold tabular-nums text-amber-600">
+                {loanSummary?.interest_rate ?? account.interest_rate ?? 0}%
+              </p>
+              <p className="text-[10px] text-muted-foreground capitalize mt-0.5">
+                {loanSummary?.interest_type === 'flat' ? t('accounts.flatInterest') : t('accounts.reducingBalance')}
+              </p>
+            </div>
+            <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4">
+              <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1">
+                {t('accounts.totalPayable')}
+              </p>
+              <p className="text-base sm:text-2xl font-bold tabular-nums text-foreground">
+                {mask(formatCurrency(loanSummary?.total_payable ?? 0, displayCurrency, locale))}
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-card rounded-xl border border-border shadow-sm p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="space-y-2 flex-1 w-full">
+              <div className="flex items-center justify-between text-xs sm:text-sm">
+                <span className="font-semibold">{t('accounts.repaymentProgress')}</span>
+                <span className="text-muted-foreground tabular-nums">
+                  {mask(formatCurrency(loanSummary?.principal_paid ?? 0, displayCurrency, locale))} / {mask(formatCurrency(loanSummary?.original_principal ?? account.balance, displayCurrency, locale))}
+                </span>
+              </div>
+              <div className="h-2.5 w-full bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                  style={{
+                    width: `${Math.min(100, Math.max(0, loanSummary && loanSummary.original_principal > 0 ? (loanSummary.principal_paid / loanSummary.original_principal) * 100 : 0))}%`,
+                  }}
+                />
+              </div>
+            </div>
+            {canWrite && (
+              <div className="flex flex-col sm:flex-row gap-2 shrink-0 w-full sm:w-auto">
+                <Button
+                  onClick={() => setRepayDialogOpen(true)}
+                  className="w-full sm:w-auto bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  <Landmark className="h-4 w-4 mr-2" />
+                  {t('accounts.repayLoan')}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setPartPayDialogOpen(true)}
+                  className="w-full sm:w-auto border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
+                >
+                  <Landmark className="h-4 w-4 mr-2" />
+                  {t('accounts.partPayment')}
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : isCreditCard ? (() => {
         // Total da fatura. When a real bill is active, sum debits from the
         // bill_id-filtered tx list (matches the bank app — bills' total_amount
         // can lag any charges added since the last sync). Otherwise use the
@@ -1491,6 +1616,31 @@ export default function AccountDetailPage() {
         defaultFromAccountId={id}
       />
 
+      {account && isLoan && (
+        <>
+          <LoanRepayDialog
+            open={repayDialogOpen}
+            onClose={() => setRepayDialogOpen(false)}
+            account={account}
+            loanSummary={loanSummary}
+            accountsList={allAccountsList}
+            categoriesList={categoriesList}
+            onRepay={(payload) => repayMutation.mutate(payload)}
+            loading={repayMutation.isPending}
+          />
+          <LoanPartPaymentDialog
+            open={partPayDialogOpen}
+            onClose={() => setPartPayDialogOpen(false)}
+            account={account}
+            summary={loanSummary ?? undefined}
+            accountsList={allAccountsList}
+            categoriesList={categoriesList}
+            onPartPay={(payload) => partPayMutation.mutate(payload)}
+            loading={partPayMutation.isPending}
+          />
+        </>
+      )}
+
       {account && (
         <CreditCardSettingsDialog
           open={ccSettingsOpen}
@@ -1501,6 +1651,388 @@ export default function AccountDetailPage() {
         />
       )}
     </div>
+  )
+}
+
+function LoanRepayDialog({
+  open,
+  onClose,
+  account,
+  loanSummary,
+  accountsList,
+  categoriesList,
+  onRepay,
+  loading,
+}: {
+  open: boolean
+  onClose: () => void
+  account: Account
+  loanSummary?: LoanSummary | null
+  accountsList?: Account[]
+  categoriesList?: Array<{ id: string; name: string }>
+  onRepay: (payload: LoanRepaymentPayload) => void
+  loading: boolean
+}) {
+  const { t } = useTranslation()
+  const locale = useDisplayLocale()
+  const [amount, setAmount] = useState(loanSummary?.monthly_emi?.toString() ?? '')
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
+  const [paymentAccountId, setPaymentAccountId] = useState('')
+  const [categoryId, setCategoryId] = useState('')
+  const [description, setDescription] = useState('')
+
+  useEffect(() => {
+    setAmount(loanSummary?.monthly_emi?.toString() ?? '')
+    setDate(new Date().toISOString().slice(0, 10))
+    setPaymentAccountId('')
+    setCategoryId('')
+    setDescription('')
+  }, [open, loanSummary])
+
+  const amountNum = parseFloat(amount || '0')
+  const isFlat = loanSummary?.interest_type === 'flat'
+  const rate = loanSummary?.interest_rate ?? 0
+  const curBal = loanSummary?.current_balance ?? 0
+  const principal = loanSummary?.original_principal ?? 0
+  const term = loanSummary?.loan_term_months ?? 12
+
+  let estInterest = 0
+  let estPrincipal = 0
+  if (amountNum > 0) {
+    if (isFlat) {
+      const totalInterest = principal * (rate / 100) * (term / 12)
+      const totalPayable = principal + totalInterest
+      if (totalPayable > 0) {
+        estInterest = Math.round(amountNum * (totalInterest / totalPayable) * 100) / 100
+        estPrincipal = Math.max(0, amountNum - estInterest)
+      } else {
+        estPrincipal = amountNum
+      }
+    } else {
+      const monthlyRate = (rate / 100) / 12
+      const periodInterest = Math.round(curBal * monthlyRate * 100) / 100
+      estInterest = Math.min(amountNum, periodInterest)
+      estPrincipal = Math.max(0, amountNum - estInterest)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t('accounts.repayLoanTitle')}</DialogTitle>
+        </DialogHeader>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            onRepay({
+              amount: parseFloat(amount),
+              date,
+              payment_account_id: paymentAccountId || undefined,
+              category_id: categoryId || undefined,
+              description: description.trim() || undefined,
+            })
+          }}
+          className="space-y-4"
+        >
+          <div className="space-y-2">
+            <Label>{t('transactions.amount')}</Label>
+            <Input
+              type="number"
+              step="0.01"
+              min="0.01"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              required
+            />
+          </div>
+
+          {amountNum > 0 && (
+            <div className="rounded-lg border border-border bg-muted/40 p-3 text-xs space-y-1">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">{t('accounts.principalPortion')}:</span>
+                <span className="font-semibold text-emerald-600">
+                  {new Intl.NumberFormat(locale, { style: 'currency', currency: account.currency }).format(estPrincipal)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">{t('accounts.interestPortion')}:</span>
+                <span className="font-semibold text-amber-600">
+                  {new Intl.NumberFormat(locale, { style: 'currency', currency: account.currency }).format(estInterest)}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label>{t('accounts.paymentAccount')}</Label>
+            <select
+              className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              value={paymentAccountId}
+              onChange={(e) => setPaymentAccountId(e.target.value)}
+            >
+              <option value="">{t('accounts.selectPaymentAccount')}</option>
+              {accountsList?.filter((a) => a.id !== account.id && a.type !== 'loan').map((a) => (
+                <option key={a.id} value={a.id}>
+                  {getAccountName(a)} ({a.currency})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>{t('transactions.date')}</Label>
+              <DatePickerInput value={date} onChange={setDate} className="w-full justify-start" />
+            </div>
+            <div className="space-y-2">
+              <Label>{t('transactions.category')}</Label>
+              <select
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+              >
+                <option value="">{t('transactions.uncategorized')}</option>
+                {categoriesList?.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>{t('transactions.description')}</Label>
+            <Input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={`${t('accounts.repayLoan')}: ${account.name}`}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? t('common.loading') : t('accounts.confirmRepayment')}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function LoanPartPaymentDialog({
+  open,
+  onClose,
+  account,
+  summary,
+  accountsList,
+  categoriesList,
+  onPartPay,
+  loading,
+}: {
+  open: boolean
+  onClose: () => void
+  account: Account
+  summary: LoanSummary | undefined
+  accountsList: Account[] | undefined
+  categoriesList?: Array<{ id: string; name: string }>
+  onPartPay: (payload: LoanPartPaymentPayload) => void
+  loading: boolean
+}) {
+  const { t, i18n } = useTranslation()
+  const locale = i18n.language === 'pt-BR' ? 'pt-BR' : 'en-US'
+
+  const [amount, setAmount] = useState('')
+  const [chargesPercent, setChargesPercent] = useState('0.00')
+  const [gstPercent, setGstPercent] = useState('18.00')
+  const [paymentAccountId, setPaymentAccountId] = useState('')
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [categoryId, setCategoryId] = useState('')
+  const [description, setDescription] = useState('')
+
+  useEffect(() => {
+    if (open) {
+      setAmount('')
+      setChargesPercent('0.00')
+      setGstPercent('18.00')
+      setPaymentAccountId('')
+      setDate(new Date().toISOString().split('T')[0])
+      setCategoryId('')
+      setDescription('')
+    }
+  }, [open])
+
+  const amountNum = parseFloat(amount) || 0
+  const chargesPctNum = parseFloat(chargesPercent) || 0
+  const gstPctNum = parseFloat(gstPercent) || 0
+
+  const fee = amountNum * (chargesPctNum / 100)
+  const gst = fee * (gstPctNum / 100)
+  const totalCharges = fee + gst
+  const totalDebited = amountNum + totalCharges
+
+  const curBal = summary?.current_balance ?? account.current_balance ?? account.balance ?? 0
+  const newBal = Math.max(0, curBal - amountNum)
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t('accounts.partPaymentTitle')}</DialogTitle>
+        </DialogHeader>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            onPartPay({
+              amount: amountNum,
+              charges_percent: chargesPctNum,
+              gst_percent: gstPctNum,
+              date,
+              payment_account_id: paymentAccountId || undefined,
+              category_id: categoryId || undefined,
+              description: description.trim() || undefined,
+            })
+          }}
+          className="space-y-4"
+        >
+          <div className="space-y-2">
+            <Label>{t('accounts.partPaymentAmount')}</Label>
+            <Input
+              type="number"
+              step="0.01"
+              min="0.01"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="e.g. 50000.00"
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>{t('accounts.prepaymentChargesPct')}</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={chargesPercent}
+                onChange={(e) => setChargesPercent(e.target.value)}
+                placeholder="0.00"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{t('accounts.gstOnChargesPct')}</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={gstPercent}
+                onChange={(e) => setGstPercent(e.target.value)}
+                placeholder="18.00"
+              />
+            </div>
+          </div>
+
+          {amountNum > 0 && (
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">{t('accounts.principalReduction')}:</span>
+                <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                  {formatCurrency(amountNum, account.currency, locale)}
+                </span>
+              </div>
+              {chargesPctNum > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{t('accounts.prepaymentFee')}:</span>
+                  <span className="font-medium text-amber-600 dark:text-amber-400">
+                    {formatCurrency(fee, account.currency, locale)}
+                  </span>
+                </div>
+              )}
+              {gstPctNum > 0 && chargesPctNum > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">{t('accounts.gstOnFee')}:</span>
+                  <span className="font-medium text-amber-600 dark:text-amber-400">
+                    {formatCurrency(gst, account.currency, locale)}
+                  </span>
+                </div>
+              )}
+              <div className="flex justify-between border-t border-border/50 pt-1 font-semibold">
+                <span>{t('accounts.totalDebited')}:</span>
+                <span className="text-rose-600 dark:text-rose-400">
+                  {formatCurrency(totalDebited, account.currency, locale)}
+                </span>
+              </div>
+              <div className="flex justify-between text-[11px] text-muted-foreground">
+                <span>{t('accounts.newOutstandingDebt')}:</span>
+                <span>{formatCurrency(newBal, account.currency, locale)}</span>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label>{t('accounts.paymentAccount')}</Label>
+            <select
+              className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              value={paymentAccountId}
+              onChange={(e) => setPaymentAccountId(e.target.value)}
+            >
+              <option value="">{t('accounts.selectPaymentAccount')}</option>
+              {accountsList?.filter((a) => a.id !== account.id && a.type !== 'loan').map((a) => (
+                <option key={a.id} value={a.id}>
+                  {getAccountName(a)} ({a.currency})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>{t('transactions.date')}</Label>
+              <DatePickerInput value={date} onChange={setDate} className="w-full justify-start" />
+            </div>
+            <div className="space-y-2">
+              <Label>{t('transactions.category')}</Label>
+              <select
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                value={categoryId}
+                onChange={(e) => setCategoryId(e.target.value)}
+              >
+                <option value="">{t('transactions.uncategorized')}</option>
+                {categoriesList?.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>{t('transactions.description')}</Label>
+            <Input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={`Amortização: ${account.name}`}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={onClose}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" disabled={loading || amountNum <= 0}>
+              {loading ? t('common.loading') : t('accounts.confirmPartPayment')}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 

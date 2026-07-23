@@ -10,12 +10,13 @@ class RecurringTransactionCreate(BaseModel):
     description: str
     amount: Decimal
     currency: str = "USD"
-    type: str  # debit, credit
+    type: str  # debit, credit, repayment
     frequency: str  # monthly, weekly, yearly
     day_of_month: Optional[int] = None
     start_date: _Date
     end_date: Optional[_Date] = None
     account_id: uuid.UUID
+    target_account_id: Optional[uuid.UUID] = None
     category_id: Optional[uuid.UUID] = None
     skip_first: bool = False  # Set true when first occurrence already created as a transaction
     auto_generate: bool = True  # Materialize occurrences; when false, wait for the real charge
@@ -31,6 +32,7 @@ class RecurringTransactionUpdate(BaseModel):
     start_date: Optional[_Date] = None
     end_date: Optional[_Date] = None
     account_id: Optional[uuid.UUID] = None
+    target_account_id: Optional[uuid.UUID] = None
     category_id: Optional[uuid.UUID] = None
     is_active: Optional[bool] = None
     auto_generate: Optional[bool] = None
@@ -40,6 +42,7 @@ class RecurringTransactionRead(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
     account_id: Optional[uuid.UUID] = None
+    target_account_id: Optional[uuid.UUID] = None
     category_id: Optional[uuid.UUID] = None
     description: str
     amount: Decimal
