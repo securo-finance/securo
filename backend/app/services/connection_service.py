@@ -237,6 +237,7 @@ async def _upsert_asset_from_holding(
             purchase_price=holding.purchase_price,
             purchase_date=holding.purchase_date,
             isin=holding.isin,
+            ticker=holding.ticker,
             maturity_date=holding.maturity_date,
             external_metadata=holding.metadata,
             valuation_method="manual",
@@ -269,6 +270,8 @@ async def _upsert_asset_from_holding(
         asset.purchase_date = holding.purchase_date
     if holding.isin:
         asset.isin = holding.isin
+    if holding.ticker:
+        asset.ticker = holding.ticker
     if holding.maturity_date:
         asset.maturity_date = holding.maturity_date
     return asset

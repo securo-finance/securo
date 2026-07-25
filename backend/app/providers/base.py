@@ -136,6 +136,11 @@ class HoldingData:
     purchase_price: Optional[Decimal] = None
     purchase_date: Optional[date] = None
     isin: Optional[str] = None
+    # Exchange/asset symbol (e.g. "AAPL", "DOGE") for the dedicated
+    # `assets.ticker` column. Kept separate from `currency`: connectors that
+    # report a crypto position put the ticker in both, and only one of them
+    # belongs in a 3-char ISO currency field.
+    ticker: Optional[str] = None
     maturity_date: Optional[date] = None
     is_withdrawn: bool = False  # provider signaled the position was sold/transferred
     metadata: Optional[dict] = None

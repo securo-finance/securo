@@ -121,21 +121,35 @@ def _to_decimal(value: Any) -> Optional[Decimal]:
         return None
 
 
-def _holding_currency(raw: dict, acc_currency: str) -> str:
-    """Pick a currency code for a holding, guarding against non-ISO tickers.
+def _iso_currency(value: Any, fallback: Optional[str]) -> Optional[str]:
+    """Normalize a connector-supplied currency, guarding against non-ISO values.
 
-    SimpleFIN's per-holding ``currency`` field is populated by the bank
-    connector, and for crypto/brokerage holdings some connectors put the
-    asset's ticker there instead (e.g. ``"DOGE"``) rather than an ISO 4217
-    code. The ``currency`` column is ``VARCHAR(3)``, so anything longer
-    overflows the DB write and takes down the whole account sync — fall back
-    to the account-level currency whenever the value isn't a plausible
-    3-letter code.
+    SimpleFIN's ``currency`` fields are populated by the bank connector, and
+    for crypto/brokerage positions some connectors put the asset's ticker
+    there instead (e.g. ``"DOGE"``) rather than an ISO 4217 code. Every
+    column these land in — ``accounts.currency``, ``transactions.currency``,
+    ``assets.currency`` — is ``VARCHAR(3)``, so anything longer overflows the
+    write and takes down the whole connection's sync (issue #448).
+
+    This is a shape check, not a validity check: a 3-letter ticker like
+    ``BTC`` still passes. It exists to keep an oversized value from ever
+    reaching the DB, so use it at every site that forwards a raw
+    provider currency.
     """
-    candidate = raw.get("currency")
-    if isinstance(candidate, str) and len(candidate) == 3 and candidate.isalpha():
-        return candidate.upper()
-    return acc_currency
+    if isinstance(value, str) and len(value) == 3 and value.isalpha():
+        return value.upper()
+    return fallback
+
+
+def _ticker(value: Any) -> Optional[str]:
+    """Normalize a holding's symbol for the ``assets.ticker`` column.
+
+    Truncated to the column's 32 chars so an unexpectedly long symbol can't
+    reproduce the overflow this module already guards against for currency.
+    """
+    if not isinstance(value, str):
+        return None
+    return value.strip().upper()[:32] or None
 
 
 def _surface_errors(errlist: list[dict], context: str) -> None:
@@ -355,7 +369,7 @@ class SimpleFinProvider(BankProvider):
         accounts: list[AccountData] = []
         for raw in payload.get("accounts") or []:
             balance = _to_decimal(raw.get("balance")) or Decimal("0")
-            currency = raw.get("currency") or "USD"
+            currency = _iso_currency(raw.get("currency"), "USD")
             account_id = str(raw.get("id") or "")
             if not account_id:
                 continue
@@ -447,7 +461,10 @@ class SimpleFinProvider(BankProvider):
             amount=amount,
             date=txn_date,
             type=txn_type,
-            currency=raw.get("currency"),
+            # None (not a fallback) when the connector sends something that
+            # isn't an ISO code: the sync layer already resolves a null
+            # transaction currency to the account's, then the user's.
+            currency=_iso_currency(raw.get("currency"), None),
             status=status,
             payee=payee,
             raw_data=raw,
@@ -470,7 +487,8 @@ class SimpleFinProvider(BankProvider):
                     HoldingData(
                         external_id=holding_id,
                         name=raw.get("description") or raw.get("symbol") or holding_id,
-                        currency=_holding_currency(raw, acc_currency),
+                        currency=_iso_currency(raw.get("currency"), acc_currency),
+                        ticker=_ticker(raw.get("symbol")),
                         current_value=market_value,
                         quantity=_to_decimal(raw.get("shares")),
                         unit_price=_to_decimal(raw.get("market_value")) / _to_decimal(

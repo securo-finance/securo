@@ -406,6 +406,8 @@ async def test_get_holdings_parses_investment_data():
     assert h.current_value == Decimal("105884.80")
     assert h.quantity == Decimal("550.0")
     assert (h.metadata or {}).get("symbol") == "AAPL"
+    # Also promoted to the dedicated column, not just the metadata blob.
+    assert h.ticker == "AAPL"
 
 
 @pytest.mark.asyncio
@@ -446,6 +448,61 @@ async def test_get_holdings_crypto_ticker_currency_falls_back_to_account_currenc
         holdings = await SimpleFinProvider().get_holdings(creds)
     assert len(holdings) == 1
     assert holdings[0].currency == "USD"
+    # The ticker itself belongs in the dedicated 32-char column, not in
+    # `currency` — that's the pairing issue #448 asks for.
+    assert holdings[0].ticker == "DOGE"
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_non_iso_currency_falls_back_to_usd():
+    """The same connector quirk on an *account* would overflow accounts.currency.
+
+    Accounts are upserted before holdings during a sync, so an unguarded
+    account currency crashes the connection before the holdings guard is
+    ever reached.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "accounts": [
+                    {
+                        "id": "acc-1",
+                        "name": "Crypto Wallet",
+                        "currency": "DOGE",
+                        "balance": "10.00",
+                        "transactions": [],
+                    }
+                ]
+            },
+        )
+
+    creds = {"access_url": "https://u:p@bridge.example/simplefin"}
+    with _patched_client(handler):
+        accounts = await SimpleFinProvider().get_accounts(creds)
+    assert accounts[0].currency == "USD"
+
+
+def test_build_transaction_non_iso_currency_is_none():
+    """A bogus transaction currency resolves to None, not a bad 3-char write.
+
+    The sync layer reads `txn_data.currency or acc_data.currency or
+    user_currency`, so None correctly defers to the account's currency.
+    """
+    raw = {
+        "id": "t1",
+        "amount": "-1.00",
+        "posted": 1672531200,
+        "currency": "DOGE",
+        "description": "buy",
+    }
+    txn = SimpleFinProvider._build_transaction(raw, "description")
+    assert txn is not None
+    assert txn.currency is None
+    # A real ISO code still passes through, normalized.
+    ok = SimpleFinProvider._build_transaction({**raw, "currency": "eur"}, "description")
+    assert ok.currency == "EUR"
 
 
 # ----- misc -------------------------------------------------------------------
