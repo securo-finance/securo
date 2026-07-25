@@ -630,7 +630,12 @@ async def import_transactions(
                         Transaction.description == txn_data.description,
                     )
                 )
-            if existing.scalar_one_or_none():
+            # `.first()` rather than `.scalar_one_or_none()`: the dedup key can
+            # legitimately match more than one row (e.g. a prior sync/import race
+            # left a duplicate, or a bank reuses one FITID across statements),
+            # and we only need to know whether *any* match exists. Requiring
+            # exactly one would raise MultipleResultsFound and abort the import.
+            if existing.scalars().first() is not None:
                 skipped += 1
                 continue
 

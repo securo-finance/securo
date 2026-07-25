@@ -1282,12 +1282,21 @@ async def sync_connection(
 
             for txn_data in transactions_data:
                 existing = await session.execute(
-                    select(Transaction).where(
+                    select(Transaction)
+                    .where(
                         Transaction.account_id == account.id,
                         Transaction.external_id == txn_data.external_id,
                     )
+                    .order_by(Transaction.created_at)
                 )
-                existing_tx = existing.scalar_one_or_none()
+                # `.first()` rather than `.scalar_one_or_none()`: a prior sync
+                # race (two overlapping passes both select-then-insert the same
+                # external_id before either commits) can leave two rows sharing
+                # (account_id, external_id). scalar_one_or_none() would raise
+                # MultipleResultsFound and abort the whole connection's sync;
+                # we instead reconcile onto the oldest matching row and skip
+                # re-inserting, so a stray duplicate is harmless and never grows.
+                existing_tx = existing.scalars().first()
                 if existing_tx:
                     # User-flagged rows are frozen: skip status/bill drift so
                     # a re-sync can't revive a transaction the user hid.

@@ -2158,3 +2158,46 @@ class TestForceUncategorized:
             select(Transaction).where(Transaction.import_id == import_log_id)
         )).scalar_one()
         assert tx.category_id == cat.id
+
+
+@pytest.mark.asyncio
+@patch("app.services.fx_rate_service._provider")
+async def test_import_tolerates_duplicate_external_id_rows(
+    mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+):
+    """Two existing rows sharing (account_id, external_id, date) must not crash
+    the importer's duplicate check. Regression for the MultipleResultsFound
+    crash: the incoming charge is skipped as a duplicate, no exception raised.
+    """
+    from app.models.transaction import Transaction
+    from app.schemas.transaction import TransactionImport
+    from sqlalchemy import select
+
+    d = date(2026, 1, 15)
+    for _ in range(2):
+        session.add(Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, account_id=test_account.id,
+            external_id="FITID-DUP", description="SPOTIFY", amount=Decimal("23.90"),
+            date=d, type="debit", source="ofx",
+        ))
+    await session.commit()
+
+    txns = [TransactionImport(
+        description="SPOTIFY", amount=Decimal("23.90"), date=d,
+        type="debit", external_id="FITID-DUP",
+    )]
+
+    imported, skipped, _, _ = await import_transactions(
+        session, test_workspace.id, test_user.id, test_account.id, txns, "ofx",
+        detected_format="ofx",
+    )
+
+    assert imported == 0
+    assert skipped == 1
+    remaining = (await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == test_account.id,
+            Transaction.external_id == "FITID-DUP",
+        )
+    )).scalars().all()
+    assert len(remaining) == 2
