@@ -656,6 +656,7 @@ export default function AdminSettingsPage() {
                     <option value="ru">Русский</option>
                     <option value="uk">Українська</option>
                     <option value="pt-BR">Português (BR)</option>
+                    <option value="pt-PT">Português (PT)</option>
                     <option value="es">Español</option>
                     <option value="pl">Polski</option>
                     <option value="it">Italiano</option>

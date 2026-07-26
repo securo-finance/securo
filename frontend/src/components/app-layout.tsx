@@ -719,8 +719,17 @@ function UserMenu({
                 onClick={() => i18n.changeLanguage('pt-BR')}
                 className="flex items-center gap-2"
               >
-                <span className="flex-1">Português</span>
+                <span className="flex-1">Português (BR)</span>
                 {currentLang === 'pt-BR' && (
+                  <Check size={13} className="text-primary" />
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => i18n.changeLanguage('pt-PT')}
+                className="flex items-center gap-2"
+              >
+                <span className="flex-1">Português (PT)</span>
+                {currentLang === 'pt-PT' && (
                   <Check size={13} className="text-primary" />
                 )}
               </DropdownMenuItem>

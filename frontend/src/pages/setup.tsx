@@ -196,7 +196,19 @@ export default function SetupPage() {
                         : 'text-muted-foreground hover:text-foreground'
                     )}
                   >
-                    PT
+                    PT-BR
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => i18n.changeLanguage('pt-PT')}
+                    className={cn(
+                      'px-2.5 py-1 rounded text-[11px] font-semibold transition-colors',
+                      currentLang === 'pt-PT'
+                        ? 'bg-primary/15 text-primary'
+                        : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    PT-PT
                   </button>
                   <button
                     type="button"
