@@ -264,7 +264,7 @@ export default function CategoriesPage() {
 
       {/* Category Dialog */}
       <Dialog open={catDialogOpen} onOpenChange={() => { setCatDialogOpen(false); setEditingCat(null) }}>
-        <DialogContent>
+        <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle>{editingCat ? t('categories.editCategory') : t('categories.newCategory')}</DialogTitle>
           </DialogHeader>
@@ -287,61 +287,63 @@ export default function CategoriesPage() {
                 createCatMutation.mutate(data)
               }
             }}
-            className="space-y-4"
+            className="flex min-h-0 flex-1 flex-col"
           >
-            <div className="space-y-2">
-              <Label>{t('groups.name')}</Label>
-              <Input name="name" defaultValue={editingCat?.name ?? ''} required />
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-3">
+              <div className="space-y-2">
+                <Label>{t('groups.name')}</Label>
+                <Input name="name" defaultValue={editingCat?.name ?? ''} required />
+              </div>
+              <div className="space-y-2">
+                <Label>{t('categories.group')}</Label>
+                <select
+                  name="group_id"
+                  defaultValue={editingCat?.group_id ?? ''}
+                  className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">{t('categories.noGroup')}</option>
+                  {groups?.map((g) => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>{t('groups.color')}</Label>
+                <Input name="color" type="color" value={formColor} onChange={(e) => setFormColor(e.target.value)} required className="h-9 px-2 py-1" />
+              </div>
+              <div className="space-y-2">
+                <Label>{t('groups.icon')}</Label>
+                <IconPicker value={formIcon} color={formColor} onChange={setFormIcon} />
+                <input type="hidden" name="icon" value={formIcon} />
+              </div>
+              <div className="pt-2 border-t border-border">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formTreatAsTransfer}
+                    onChange={(e) => setFormTreatAsTransfer(e.target.checked)}
+                    className="h-4 w-4 mt-0.5 rounded border-border shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium text-foreground">{t('categories.treatAsTransfer')}</span>
+                    <p className="text-xs text-muted-foreground mt-0.5">{t('categories.treatAsTransferDesc')}</p>
+                  </div>
+                </label>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formIgnoreTransfer}
+                    onChange={(e) => setFormIgnoreTransfer(e.target.checked)}
+                    className="h-4 w-4 mt-0.5 rounded border-border shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium text-foreground">{t('categories.ignoreTransfer')}</span>
+                    <p className="text-xs text-muted-foreground mt-0.5">{t('categories.ignoreTransferDesc')}</p>
+                  </div>
+                </label>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label>{t('categories.group')}</Label>
-              <select
-                name="group_id"
-                defaultValue={editingCat?.group_id ?? ''}
-                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option value="">{t('categories.noGroup')}</option>
-                {groups?.map((g) => (
-                  <option key={g.id} value={g.id}>{g.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label>{t('groups.color')}</Label>
-              <Input name="color" type="color" value={formColor} onChange={(e) => setFormColor(e.target.value)} required className="h-9 px-2 py-1" />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('groups.icon')}</Label>
-              <IconPicker value={formIcon} color={formColor} onChange={setFormIcon} />
-              <input type="hidden" name="icon" value={formIcon} />
-            </div>
-            <div className="pt-2 border-t border-border">
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formTreatAsTransfer}
-                  onChange={(e) => setFormTreatAsTransfer(e.target.checked)}
-                  className="h-4 w-4 mt-0.5 rounded border-border shrink-0"
-                />
-                <div className="flex-1 min-w-0">
-                  <span className="text-sm font-medium text-foreground">{t('categories.treatAsTransfer')}</span>
-                  <p className="text-xs text-muted-foreground mt-0.5">{t('categories.treatAsTransferDesc')}</p>
-                </div>
-              </label>
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formIgnoreTransfer}
-                  onChange={(e) => setFormIgnoreTransfer(e.target.checked)}
-                  className="h-4 w-4 mt-0.5 rounded border-border shrink-0"
-                />
-                <div className="flex-1 min-w-0">
-                  <span className="text-sm font-medium text-foreground">{t('categories.ignoreTransfer')}</span>
-                  <p className="text-xs text-muted-foreground mt-0.5">{t('categories.ignoreTransferDesc')}</p>
-                </div>
-              </label>
-            </div>
-            <DialogFooter>
+            <DialogFooter className="mt-2 shrink-0 border-t pt-4">
               <Button type="button" variant="outline" onClick={() => { setCatDialogOpen(false); setEditingCat(null) }}>
                 {t('common.cancel')}
               </Button>
