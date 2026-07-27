@@ -10,11 +10,15 @@ if TYPE_CHECKING:
     from app.models.transaction import Transaction
 
 
+def _strip_accents(text: str) -> str:
+    """Remove diacritics (accents), preserving case."""
+    nfkd = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in nfkd if not unicodedata.combining(c))
+
+
 def _normalize(text: str) -> str:
     """Normalize text: uppercase and remove diacritics (accents)."""
-    upper = text.upper()
-    nfkd = unicodedata.normalize("NFKD", upper)
-    return "".join(c for c in nfkd if not unicodedata.combining(c))
+    return _strip_accents(text.upper())
 
 
 def _to_decimal(val) -> Decimal:
@@ -63,8 +67,11 @@ def _match_condition(condition: dict, tx: "Transaction") -> bool:
             return tx_str != val_str
         if op == "regex":
             try:
-                # Normalize both sides so accents don't break matches
-                pattern = _normalize(str(value or ""))
+                # Strip accents from the pattern so it lines up with the
+                # normalized text, but keep its case: uppercasing a regex
+                # inverts escape classes (\s -> \S, \b -> \B, \d -> \D) and
+                # breaks inline flags. Case is already handled by IGNORECASE.
+                pattern = _strip_accents(str(value or ""))
                 return bool(re.search(pattern, tx_str, re.IGNORECASE))
             except re.error:
                 return False
