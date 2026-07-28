@@ -716,8 +716,13 @@ export default function AccountDetailPage() {
     let running = endBalance
     return sorted.map((tx) => {
       const balanceAtPoint = running
-      const amt = usePrimary && tx.amount_primary != null ? Number(tx.amount_primary) : Number(tx.amount)
-      running -= tx.type === 'credit' ? amt : -amt
+      // Mirror the backend's balance exclusion (account_service.py: tx.is_ignored
+      // or tx.category.is_ignored) — those rows never counted toward endBalance,
+      // so walking past them must not shift it either.
+      if (!tx.is_ignored && !tx.category?.is_ignored) {
+        const amt = usePrimary && tx.amount_primary != null ? Number(tx.amount_primary) : Number(tx.amount)
+        running -= tx.type === 'credit' ? amt : -amt
+      }
       return { ...tx, runningBalance: balanceAtPoint }
     })
   }, [txData, summary, isCreditCard, balanceHistory, usePrimary])
