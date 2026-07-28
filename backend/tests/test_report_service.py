@@ -765,6 +765,54 @@ async def _add_txn(session, user_id, account_id, amount, txn_type, txn_date, sou
 
 
 @pytest.mark.asyncio
+async def test_cash_flow_history_respects_archived_account_history_choice(
+    session: AsyncSession, test_user, test_workspace: User
+):
+    account = await _make_manual_account(session, test_user.id, "Archived History")
+    transaction_date = date.today() - timedelta(days=1)
+    await _add_txn(
+        session,
+        test_user.id,
+        account.id,
+        250,
+        "debit",
+        transaction_date,
+    )
+    account.is_closed = True
+    account.exclude_from_history = False
+    await session.commit()
+
+    retained = await get_cash_flow_report(
+        session,
+        test_workspace.id,
+        test_user.id,
+        months=1,
+        interval="daily",
+    )
+    retained_point = next(
+        point for point in retained.trend
+        if point.date == transaction_date.isoformat()
+    )
+    assert retained_point.breakdowns["outflow"] == 250
+
+    account.exclude_from_history = True
+    await session.commit()
+
+    excluded = await get_cash_flow_report(
+        session,
+        test_workspace.id,
+        test_user.id,
+        months=1,
+        interval="daily",
+    )
+    excluded_point = next(
+        point for point in excluded.trend
+        if point.date == transaction_date.isoformat()
+    )
+    assert excluded_point.breakdowns["outflow"] == 0
+
+
+@pytest.mark.asyncio
 async def test_asset_value_at_with_entries(session: AsyncSession, test_user, test_workspace: User):
     asset = Asset(
         id=uuid.uuid4(), user_id=test_user.id, name="House",

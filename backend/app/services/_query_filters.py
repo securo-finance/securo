@@ -11,8 +11,17 @@ from typing import Optional
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.account import Account
 from app.models.category import Category
 from app.models.transaction import Transaction
+
+
+def account_history_is_visible():
+    """Include active accounts and archived accounts whose history was retained."""
+    return or_(
+        Account.is_closed.is_(False),
+        Account.exclude_from_history.is_(False),
+    )
 
 
 def reporting_date_col(accounting_mode: str):

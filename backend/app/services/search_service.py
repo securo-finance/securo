@@ -23,6 +23,7 @@ from app.models.category import Category
 from app.models.goal import Goal
 from app.models.payee import Payee
 from app.models.transaction import Transaction
+from app.services._query_filters import account_history_is_visible
 
 
 EntityType = Literal[
@@ -109,11 +110,13 @@ async def search_all(
     )
     tx_result = await session.execute(
         select(Transaction)
+        .join(Account, Transaction.account_id == Account.id)
         .where(
             or_(
                 Transaction.workspace_id == workspace_id,
                 Transaction.id.in_(shared_tx_ids),
             ),
+            account_history_is_visible(),
             or_(
                 Transaction.description.ilike(pattern, escape="\\"),
                 Transaction.payee.ilike(pattern, escape="\\"),

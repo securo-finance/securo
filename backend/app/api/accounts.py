@@ -179,11 +179,20 @@ async def delete_account(
 @router.post("/{account_id}/close", response_model=AccountRead)
 async def close_account(
     account_id: uuid.UUID,
+    exclude_history: bool = Query(
+        False,
+        description="Exclude this account's past transactions from normal history and reports",
+    ),
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        account = await account_service.close_account(session, account_id, ctx.workspace.id)
+        account = await account_service.close_account(
+            session,
+            account_id,
+            ctx.workspace.id,
+            exclude_history=exclude_history,
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not account:

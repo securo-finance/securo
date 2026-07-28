@@ -158,6 +158,7 @@ def serialize_account(
         "previous_balance": float(previous_balance or 0),
         "is_closed": acc.is_closed,
         "closed_at": acc.closed_at,
+        "exclude_from_history": acc.exclude_from_history,
         "credit_limit": float(acc.credit_limit) if acc.credit_limit is not None else None,
         "statement_close_day": acc.statement_close_day,
         "payment_due_day": acc.payment_due_day,
@@ -577,7 +578,10 @@ async def delete_account(session: AsyncSession, account_id: uuid.UUID, workspace
 
 
 async def close_account(
-    session: AsyncSession, account_id: uuid.UUID, workspace_id: uuid.UUID
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    exclude_history: bool = False,
 ) -> Optional[Account]:
     account = await get_account(session, account_id, workspace_id)
     if not account:
@@ -587,6 +591,7 @@ async def close_account(
 
     account.is_closed = True
     account.closed_at = datetime.now(timezone.utc)
+    account.exclude_from_history = exclude_history
 
     # Keep `connection_id` intact for connected accounts so the sync loop in
     # connection_service can find the account by (connection_id, external_id)
@@ -611,6 +616,7 @@ async def reopen_account(
 
     account.is_closed = False
     account.closed_at = None
+    account.exclude_from_history = False
 
     await session.commit()
     await session.refresh(account)

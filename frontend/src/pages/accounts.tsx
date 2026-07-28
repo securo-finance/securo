@@ -86,6 +86,7 @@ export default function AccountsPage() {
   const [settingsConnection, setSettingsConnection] = useState<BankConnection | null>(null)
   const [disconnectingConnection, setDisconnectingConnection] = useState<BankConnection | null>(null)
   const [closingAccountId, setClosingAccountId] = useState<string | null>(null)
+  const [excludeArchivedHistory, setExcludeArchivedHistory] = useState(false)
   const [reconnectConnId, setReconnectConnId] = useState<string | null>(null)
   const [reconnectItemId, setReconnectItemId] = useState<string | null>(null)
   const [tokenReconnectConnection, setTokenReconnectConnection] = useState<BankConnection | null>(null)
@@ -208,10 +209,12 @@ export default function AccountsPage() {
   })
 
   const closeMutation = useMutation({
-    mutationFn: (id: string) => accounts.close(id),
+    mutationFn: ({ id, excludeHistory }: { id: string; excludeHistory: boolean }) =>
+      accounts.close(id, excludeHistory),
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
       setClosingAccountId(null)
+      setExcludeArchivedHistory(false)
       toast.success(t('accounts.accountClosed'))
     },
     onError: () => toast.error(t('common.error')),
@@ -518,7 +521,14 @@ export default function AccountsPage() {
                     <div key={acc.id} className="flex items-center px-5 py-3">
                       <div className="flex items-center gap-3 flex-1 min-w-0">
                         <AccountIcon account={acc} />
-                        <p className="text-sm font-medium text-muted-foreground truncate">{getAccountLabel(acc)}</p>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-muted-foreground truncate">{getAccountLabel(acc)}</p>
+                          <p className="text-[11px] text-muted-foreground">
+                            {acc.exclude_from_history
+                              ? t('accounts.historyExcluded')
+                              : t('accounts.historyKept')}
+                          </p>
+                        </div>
                       </div>
                       {canWrite && (
                         <Button
@@ -592,7 +602,13 @@ export default function AccountsPage() {
       </Dialog>
 
       {/* Confirm close dialog */}
-      <Dialog open={!!closingAccountId} onOpenChange={() => setClosingAccountId(null)}>
+      <Dialog
+        open={!!closingAccountId}
+        onOpenChange={() => {
+          setClosingAccountId(null)
+          setExcludeArchivedHistory(false)
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('accounts.close')}</DialogTitle>
@@ -600,6 +616,49 @@ export default function AccountsPage() {
           <p className="text-sm text-muted-foreground">
             {t('accounts.confirmClose')}
           </p>
+          <fieldset className="space-y-2">
+            <legend className="mb-2 text-sm font-medium text-foreground">
+              {t('accounts.archiveHistoryQuestion')}
+            </legend>
+            <label className={`flex cursor-pointer gap-3 rounded-lg border p-3 transition-colors ${
+              !excludeArchivedHistory ? 'border-primary bg-primary/5' : 'border-border'
+            }`}>
+              <input
+                type="radio"
+                name="archive-history"
+                checked={!excludeArchivedHistory}
+                onChange={() => setExcludeArchivedHistory(false)}
+                className="mt-1 h-4 w-4 shrink-0 self-start accent-primary"
+              />
+              <span>
+                <span className="block text-sm font-medium text-foreground">
+                  {t('accounts.keepHistory')}
+                </span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {t('accounts.keepHistoryHelp')}
+                </span>
+              </span>
+            </label>
+            <label className={`flex cursor-pointer gap-3 rounded-lg border p-3 transition-colors ${
+              excludeArchivedHistory ? 'border-primary bg-primary/5' : 'border-border'
+            }`}>
+              <input
+                type="radio"
+                name="archive-history"
+                checked={excludeArchivedHistory}
+                onChange={() => setExcludeArchivedHistory(true)}
+                className="mt-1 h-4 w-4 shrink-0 self-start accent-primary"
+              />
+              <span>
+                <span className="block text-sm font-medium text-foreground">
+                  {t('accounts.excludeHistory')}
+                </span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {t('accounts.excludeHistoryHelp')}
+                </span>
+              </span>
+            </label>
+          </fieldset>
           {accountsList?.find(a => a.id === closingAccountId)?.connection_id && (
             <p className="text-sm text-amber-600 font-medium">
               {t('accounts.confirmCloseBank')}
@@ -611,7 +670,10 @@ export default function AccountsPage() {
             </Button>
             <Button
               variant="default"
-              onClick={() => closingAccountId && closeMutation.mutate(closingAccountId)}
+              onClick={() => closingAccountId && closeMutation.mutate({
+                id: closingAccountId,
+                excludeHistory: excludeArchivedHistory,
+              })}
               disabled={closeMutation.isPending}
             >
               {closeMutation.isPending ? t('common.loading') : t('accounts.close')}

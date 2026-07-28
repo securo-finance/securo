@@ -15,6 +15,7 @@ from app.models.transaction import Transaction
 from app.models.category import Category
 from app.models.user import User
 from app.services._query_filters import (
+    account_history_is_visible,
     counts_as_pnl,
     counts_as_user_pnl,
     owner_split_offset_by_category,
@@ -407,7 +408,7 @@ async def get_income_expenses_report(
         .join(Account, Transaction.account_id == Account.id)
         .where(
             Transaction.workspace_id == workspace_id,
-            Account.is_closed == False,
+            account_history_is_visible(),
             report_date >= start,
             report_date <= today,
             Transaction.source != "opening_balance",
@@ -665,7 +666,7 @@ async def get_income_expenses_report(
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
             Transaction.workspace_id == workspace_id,
-            Account.is_closed == False,
+            account_history_is_visible(),
             report_date >= start,
             report_date <= today,
             Transaction.source != "opening_balance",
@@ -727,7 +728,7 @@ async def get_income_expenses_report(
         .join(Category, Transaction.category_id == Category.id)
         .where(
             Transaction.workspace_id == workspace_id,
-            Account.is_closed == False,
+            account_history_is_visible(),
             report_date >= start,
             report_date <= today,
             Transaction.source != "opening_balance",
@@ -765,7 +766,7 @@ async def get_income_expenses_report(
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
             Transaction.workspace_id == workspace_id,
-            Account.is_closed == False,
+            account_history_is_visible(),
             report_date >= start,
             report_date <= today,
             Transaction.source != "opening_balance",
@@ -1197,7 +1198,7 @@ async def get_cash_flow_report(
         .join(Account, Transaction.account_id == Account.id)
         .where(
             Transaction.workspace_id == workspace_id,
-            Account.is_closed == False,
+            account_history_is_visible(),
             flow_date_col > chart_start,
             flow_date_col <= today,
             Transaction.source != "opening_balance",

@@ -36,11 +36,13 @@ async def _make_account(
     balance: str = "0.00", currency: str = "BRL",
     connection_id: uuid.UUID | None = None,
     is_closed: bool = False,
+    exclude_from_history: bool = False,
 ) -> Account:
     account = Account(
         id=uuid.uuid4(), user_id=user_id, name=name,
         type=acc_type, balance=Decimal(balance), currency=currency,
         connection_id=connection_id, is_closed=is_closed,
+        exclude_from_history=exclude_from_history,
     )
     session.add(account)
     await session.commit()
@@ -241,7 +243,11 @@ async def test_summary_matches_drilldown_and_excludes_closed_accounts(
     month_start, month_end = _month_range(month)
     open_account = await _make_account(session, test_user.id, "Open")
     closed_account = await _make_account(
-        session, test_user.id, "Closed", is_closed=True
+        session,
+        test_user.id,
+        "Closed",
+        is_closed=True,
+        exclude_from_history=True,
     )
 
     await _add_txn(session, test_user.id, open_account.id, 100, "credit", month_start)

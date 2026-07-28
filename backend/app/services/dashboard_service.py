@@ -14,6 +14,7 @@ from app.models.category import Category
 from app.models.recurring_transaction import RecurringTransaction
 from app.schemas.dashboard import DashboardSummary, SpendingByCategory, MonthlyTrend, ProjectedTransaction, DailyBalance, BalanceHistory
 from app.services._query_filters import (
+    account_history_is_visible,
     counts_as_user_pnl,
     owner_split_offset_by_category,
     owner_split_offset_pnl,
@@ -164,7 +165,7 @@ async def get_summary(
         .join(Account, Transaction.account_id == Account.id)
         .where(
             Transaction.workspace_id == workspace_id,
-            Account.is_closed == False,
+            account_history_is_visible(),
             report_date >= month_start,
             report_date < month_end,
             Transaction.source != "opening_balance",
@@ -285,7 +286,7 @@ async def get_summary(
         .join(Account, Transaction.account_id == Account.id)
         .where(
             Transaction.workspace_id == workspace_id,
-            Account.is_closed == False,
+            account_history_is_visible(),
             report_date >= month_start,
             report_date < month_end,
             Transaction.source != "opening_balance",
@@ -511,7 +512,7 @@ async def get_spending_by_category(
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
             Transaction.workspace_id == workspace_id,
-            Account.is_closed == False,
+            account_history_is_visible(),
             Transaction.type == "debit",
             report_date >= month_start,
             report_date < month_end,
@@ -668,7 +669,7 @@ async def get_monthly_trend(
         .join(Account, Transaction.account_id == Account.id)
         .where(
             Transaction.workspace_id == workspace_id,
-            Account.is_closed == False,
+            account_history_is_visible(),
             Transaction.source != "opening_balance",
             counts_as_user_pnl(),
             *acct_filter,
@@ -975,7 +976,7 @@ async def _daily_deltas(
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
             Transaction.workspace_id == workspace_id,
-            Account.is_closed == False,
+            account_history_is_visible(),
             Transaction.date >= start,
             Transaction.date < end,
             Transaction.is_ignored == False,

@@ -409,8 +409,10 @@ export const accounts = {
     const { data } = await api.get(`/accounts/${id}/bills`, { params: { limit } })
     return data
   },
-  close: async (id: string): Promise<Account> => {
-    const { data } = await api.post(`/accounts/${id}/close`)
+  close: async (id: string, excludeHistory = false): Promise<Account> => {
+    const { data } = await api.post(`/accounts/${id}/close`, null, {
+      params: { exclude_history: excludeHistory },
+    })
     return data
   },
   reopen: async (id: string): Promise<Account> => {

@@ -93,6 +93,10 @@ async def list_transactions(
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=500),
     include_opening_balance: bool = Query(False),
+    include_excluded_history: bool = Query(
+        False,
+        description="Include transactions hidden by an archived account's history preference",
+    ),
     exclude_transfers: bool = Query(False),
     user_pnl_only: bool = Query(False, description="Return only rows that count toward dashboard/user income/expense totals"),
     tags: Optional[List[str]] = Query(None),
@@ -110,6 +114,7 @@ async def list_transactions(
         category_ids=_merge_id_filters(category_id, category_ids),
         payee_id=payee_id, from_date=from_date, to_date=to_date, page=page, limit=limit,
         include_opening_balance=include_opening_balance, search=q, uncategorized=uncategorized,
+        include_excluded_history=include_excluded_history,
         txn_type=type, exclude_transfers=exclude_transfers,
         user_pnl_only=user_pnl_only,
         accounting_mode=accounting_mode,

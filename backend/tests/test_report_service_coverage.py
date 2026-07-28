@@ -90,11 +90,13 @@ async def _make_account(
     session: AsyncSession, user_id: uuid.UUID, name: str,
     acc_type: str = "checking", balance: str = "0.00", currency: str = "BRL",
     connection_id: uuid.UUID | None = None, is_closed: bool = False,
+    exclude_from_history: bool = False,
 ) -> Account:
     acct = Account(
         id=uuid.uuid4(), user_id=user_id, name=name, type=acc_type,
         balance=Decimal(balance), currency=currency,
         connection_id=connection_id, is_closed=is_closed,
+        exclude_from_history=exclude_from_history,
     )
     session.add(acct)
     await session.commit()
@@ -268,7 +270,13 @@ async def test_income_expenses_yearly_interval(session, test_user, test_workspac
 
 async def test_income_expenses_excludes_opening_and_closed(session, test_user, test_workspace):
     """opening_balance source and closed accounts contribute nothing."""
-    closed = await _make_account(session, test_user.id, "IE Closed", is_closed=True)
+    closed = await _make_account(
+        session,
+        test_user.id,
+        "IE Closed",
+        is_closed=True,
+        exclude_from_history=True,
+    )
     today = date.today()
     await _add_txn(session, test_user.id, closed.id, 1000, "credit", today)
 
