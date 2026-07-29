@@ -255,6 +255,17 @@ class TestParseCsv:
         assert transactions[0].amount == Decimal("5000.00")
         assert transactions[1].amount == Decimal("1200.00")
 
+    def test_parse_csv_autodetects_payee_external_id_notes(self):
+        """CSV with common headers for payee, external_id, and notes should auto-detect them."""
+        csv_content = (
+            "date,description,amount,merchant,transaction_id,notes\n"
+            "2026-05-01,AMAZON,-25.00,Amazon.com,txn_123,Gift for John\n"
+        )
+        transactions = parse_csv(csv_content.encode("utf-8"))
+        assert len(transactions) == 1
+        assert transactions[0].payee_raw == "Amazon.com"
+        assert transactions[0].external_id == "txn_123"
+        assert transactions[0].notes == "Gift for John"
 
 class TestParseCsvColumnMapping:
     """Tests for customizable CSV column mapping (issue #201)."""
@@ -443,6 +454,28 @@ class TestParseCsvColumnMapping:
         assert transactions[0].type == "credit"
         assert transactions[1].amount == Decimal("200.00")
         assert transactions[1].type == "debit"
+
+    def test_column_mapping_payee_external_id_notes(self):
+        """Explicitly mapping payee, external_id, and notes should extract them correctly."""
+        csv_content = (
+            "Txn Date,Memo,Value,Counterparty,ExtRef,Comment\n"
+            "2026-08-01,Purchase,-15.00,Target,ref999,Groceries\n"
+        )
+        transactions = parse_csv(
+            csv_content.encode("utf-8"),
+            column_mapping={
+                "date": "Txn Date",
+                "description": "Memo",
+                "amount": "Value",
+                "payee": "Counterparty",
+                "external_id": "ExtRef",
+                "notes": "Comment",
+            },
+        )
+        assert len(transactions) == 1
+        assert transactions[0].payee_raw == "Target"
+        assert transactions[0].external_id == "ref999"
+        assert transactions[0].notes == "Groceries"
 
 
 class TestDetectCsvColumns:
@@ -1178,6 +1211,32 @@ class TestImportTransactionsFx:
         tx = (await session.execute(select(Transaction).where(Transaction.payee_id == payee.id))).scalar_one()
         assert payee.workspace_id == test_workspace.id
         assert tx.workspace_id == test_workspace.id
+
+    @pytest.mark.asyncio
+    async def test_import_csv_preserves_notes_and_external_id(self, session: AsyncSession, test_user: User, test_workspace, test_account: Account):
+        from app.models.transaction import Transaction
+        from app.schemas.transaction import TransactionImport
+        from sqlalchemy import select
+
+        txns = [
+            TransactionImport(
+                description="Hardware Store",
+                amount=Decimal("50.00"),
+                date=date(2026, 2, 10),
+                type="debit",
+                currency=test_account.currency,
+                external_id="ext_456",
+                notes="Tools for repair",
+            ),
+        ]
+
+        imported, _, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id, txns, "csv",
+        )
+
+        assert imported == 1
+        tx = (await session.execute(select(Transaction).where(Transaction.external_id == "ext_456"))).scalar_one()
+        assert tx.notes == "Tools for repair"
 
     @pytest.mark.asyncio
     @patch("app.services.fx_rate_service._provider")

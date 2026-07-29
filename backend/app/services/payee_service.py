@@ -81,6 +81,9 @@ async def get_or_create_payee(
     if not name:
         raise ValueError("Payee name cannot be empty")
 
+    if len(name) > 255:
+        name = name[:255]
+
     lookup = select(Payee).where(func.lower(Payee.name) == name.lower())
     if workspace_id is not None:
         lookup = lookup.where(Payee.workspace_id == workspace_id)

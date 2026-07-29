@@ -3,19 +3,19 @@ from datetime import date as _Date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.category import CategoryRead
 
 
 class PayeeCreate(BaseModel):
-    name: str
+    name: str = Field(..., max_length=255)
     type: str = "merchant"
-    notes: Optional[str] = None
+    notes: Optional[str] = Field(None, max_length=1000)
 
 
 class PayeeUpdate(BaseModel):
-    name: Optional[str] = None
+    name: Optional[str] = Field(None, max_length=255)
     type: Optional[str] = None
     is_favorite: Optional[bool] = None
     notes: Optional[str] = None

@@ -413,6 +413,7 @@ export interface ImportPreviewTransaction {
   excluded?: boolean
   category_id?: string | null
   force_uncategorized?: boolean
+  notes?: string | null
 }
 
 export interface ImportReviewTransaction extends ImportPreviewTransaction {

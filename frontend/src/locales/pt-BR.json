@@ -975,7 +975,10 @@
     "balanceImpact": "Impacto no saldo",
     "importedWithExcluded": "{{imported}} importadas, {{skipped}} ignoradas, {{excluded}} excluídas",
     "suggested": "Sugerida",
-    "page": "Página {{current}} de {{total}}"
+    "page": "Página {{current}} de {{total}}",
+    "mapPayee": "Coluna de beneficiário",
+    "mapExternalId": "Coluna de ID da transação",
+    "mapNotes": "Coluna de notas"
   },
   "assets": {
     "title": "Patrimônio",

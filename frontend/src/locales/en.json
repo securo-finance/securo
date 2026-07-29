@@ -975,7 +975,10 @@
     "balanceImpact": "Balance impact",
     "importedWithExcluded": "{{imported}} imported, {{skipped}} skipped, {{excluded}} excluded",
     "suggested": "Suggested",
-    "page": "Page {{current}} of {{total}}"
+    "page": "Page {{current}} of {{total}}",
+    "mapPayee": "Payee column",
+    "mapExternalId": "Transaction ID column",
+    "mapNotes": "Notes column"
   },
   "assets": {
     "title": "Assets",

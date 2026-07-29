@@ -975,7 +975,10 @@
     "balanceImpact": "Влияние на баланс",
     "importedWithExcluded": "{{imported}} импортировано, {{skipped}} пропущено, {{excluded}} исключено",
     "suggested": "Предложено",
-    "page": "Страница {{current}} из {{total}}"
+    "page": "Страница {{current}} из {{total}}",
+    "mapPayee": "Колонка получателя",
+    "mapExternalId": "Колонка ID транзакции",
+    "mapNotes": "Колонка заметок"
   },
   "assets": {
     "title": "Активы",

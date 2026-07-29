@@ -1044,7 +1044,10 @@
     "balanceImpact": "Wpływ na saldo",
     "importedWithExcluded": "Zaimportowano: {{imported}}, pominięto: {{skipped}}, wykluczono: {{excluded}}",
     "suggested": "Sugerowane",
-    "page": "Strona {{current}} z {{total}}"
+    "page": "Strona {{current}} z {{total}}",
+    "mapPayee": "Kolumna odbiorcy",
+    "mapExternalId": "Kolumna ID transakcji",
+    "mapNotes": "Kolumna notatek"
   },
   "assets": {
     "title": "Aktywa",

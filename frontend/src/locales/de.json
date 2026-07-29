@@ -975,7 +975,10 @@
     "balanceImpact": "Auswirkung auf den Saldo",
     "importedWithExcluded": "{{imported}} importiert, {{skipped}} übersprungen, {{excluded}} ausgeschlossen",
     "suggested": "Vorgeschlagen",
-    "page": "Seite {{current}} von {{total}}"
+    "page": "Seite {{current}} von {{total}}",
+    "mapPayee": "Spalte Zahlungsempfänger",
+    "mapExternalId": "Spalte Transaktions-ID",
+    "mapNotes": "Spalte Notizen"
   },
   "assets": {
     "title": "Vermögenswerte",

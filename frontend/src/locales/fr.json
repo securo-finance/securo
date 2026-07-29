@@ -975,7 +975,10 @@
     "balanceImpact": "Impact sur le solde",
     "importedWithExcluded": "{{imported}} importées, {{skipped}} ignorées, {{excluded}} exclues",
     "suggested": "Suggérée",
-    "page": "Page {{current}} sur {{total}}"
+    "page": "Page {{current}} sur {{total}}",
+    "mapPayee": "Colonne du bénéficiaire",
+    "mapExternalId": "Colonne d'ID de transaction",
+    "mapNotes": "Colonne des notes"
   },
   "assets": {
     "title": "Actifs",

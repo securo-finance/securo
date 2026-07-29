@@ -975,7 +975,10 @@
     "balanceImpact": "Вплив на баланс",
     "importedWithExcluded": "{{imported}} імпортовано, {{skipped}} пропущено, {{excluded}} виключено",
     "suggested": "Запропоновано",
-    "page": "Сторінка {{current}} із {{total}}"
+    "page": "Сторінка {{current}} із {{total}}",
+    "mapPayee": "Стовпець одержувача",
+    "mapExternalId": "Стовпець ID транзакції",
+    "mapNotes": "Стовпець приміток"
   },
   "assets": {
     "title": "Активи",

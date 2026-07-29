@@ -975,7 +975,10 @@
     "balanceImpact": "Impatto sul saldo",
     "importedWithExcluded": "{{imported}} importate, {{skipped}} saltate, {{excluded}} escluse",
     "suggested": "Suggerita",
-    "page": "Pagina {{current}} di {{total}}"
+    "page": "Pagina {{current}} di {{total}}",
+    "mapPayee": "Colonna del beneficiario",
+    "mapExternalId": "Colonna dell'ID transazione",
+    "mapNotes": "Colonna delle note"
   },
   "assets": {
     "title": "Beni",
