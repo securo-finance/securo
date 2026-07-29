@@ -1221,7 +1221,8 @@
     "typeCompany": "Компанія",
     "allTypes": "Всі типи",
     "filterByType": "Фільтрувати за типом",
-    "favoritesOnly": "Тільки обрані"
+    "favoritesOnly": "Тільки обрані",
+    "deletedMultiple": "Видалено {{count}} одержувачів"
   },
   "common": {
     "view": "Переглянути",

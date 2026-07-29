@@ -230,6 +230,42 @@ async def test_delete_payee_not_found(client: AsyncClient, auth_headers):
 
 
 # ---------------------------------------------------------------------------
+# Bulk Delete
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_payees(client: AsyncClient, auth_headers):
+    created1 = await _create_payee(client, auth_headers, "BulkDelete1")
+    created2 = await _create_payee(client, auth_headers, "BulkDelete2")
+    created3 = await _create_payee(client, auth_headers, "BulkDelete3")
+
+    resp = await client.post(
+        "/api/payees/bulk-delete", headers=auth_headers,
+        json={"ids": [created1['id'], created2['id']]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == 2
+
+    # Confirm deleted
+    assert (await client.get(f"/api/payees/{created1['id']}", headers=auth_headers)).status_code == 404
+    assert (await client.get(f"/api/payees/{created2['id']}", headers=auth_headers)).status_code == 404
+    
+    # Confirm not deleted
+    assert (await client.get(f"/api/payees/{created3['id']}", headers=auth_headers)).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_payees_empty(client: AsyncClient, auth_headers):
+    resp = await client.post(
+        "/api/payees/bulk-delete", headers=auth_headers,
+        json={"ids": []},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == 0
+
+
+# ---------------------------------------------------------------------------
 # Merge
 # ---------------------------------------------------------------------------
 

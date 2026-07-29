@@ -1296,7 +1296,8 @@
     "typeCompany": "Firma",
     "allTypes": "Wszystkie typy",
     "filterByType": "Filtruj według typu",
-    "favoritesOnly": "Tylko ulubione"
+    "favoritesOnly": "Tylko ulubione",
+    "deletedMultiple": "Usunięto {{count}} odbiorców"
   },
   "common": {
     "view": "Zobacz",

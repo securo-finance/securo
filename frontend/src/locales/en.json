@@ -1221,7 +1221,8 @@
     "typeCompany": "Company",
     "allTypes": "All Types",
     "filterByType": "Filter by Type",
-    "favoritesOnly": "Favorites Only"
+    "favoritesOnly": "Favorites Only",
+    "deletedMultiple": "{{count}} payees deleted"
   },
   "common": {
     "view": "View",

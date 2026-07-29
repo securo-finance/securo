@@ -1221,7 +1221,8 @@
     "typeCompany": "Empresa",
     "allTypes": "Todos os tipos",
     "filterByType": "Filtrar por tipo",
-    "favoritesOnly": "Apenas favoritos"
+    "favoritesOnly": "Apenas favoritos",
+    "deletedMultiple": "{{count}} beneficiários excluídos"
   },
   "common": {
     "view": "Ver",

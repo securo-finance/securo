@@ -41,7 +41,7 @@ import {
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
 import { calculateRangeSelection } from '@/lib/selection-utils'
-import { Search, Star, Merge, Trash2, ArrowRight, ListFilter, X, Check } from 'lucide-react'
+import { Search, Star, Merge, Trash2, ArrowRight, ListFilter, X, Check, Pencil } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
@@ -180,7 +180,9 @@ export default function PayeesPage() {
       invalidateFinancialQueries(queryClient)
       queryClient.invalidateQueries({ queryKey: ['payees'] })
       setDialogOpen(false)
-      setEditingPayee(null)
+      if (editingPayee?.id === id) {
+        setEditingPayee(null)
+      }
       setSelectedIds(prev => {
         const next = new Set(prev)
         next.delete(id)
@@ -216,6 +218,21 @@ export default function PayeesPage() {
         setSummaryPayee(null)
       }
       toast.success(t('payees.merged', { count: result.transactions_reassigned }))
+    },
+    onError: () => toast.error(t('common.error')),
+  })
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => payeesApi.bulkDelete(ids),
+    onSuccess: (result) => {
+      invalidateFinancialQueries(queryClient)
+      queryClient.invalidateQueries({ queryKey: ['payees'] })
+      setSelectedIds(new Set())
+      setLastSelectedId(null)
+      if (summaryPayee && selectedIds.has(summaryPayee)) {
+        setSummaryPayee(null)
+      }
+      toast.success(t('payees.deletedMultiple', { count: result.deleted, defaultValue: `${result.deleted} payees deleted` }))
     },
     onError: () => toast.error(t('common.error')),
   })
@@ -275,10 +292,16 @@ export default function PayeesPage() {
           canWrite ? (
             <div className="flex items-center gap-2">
               {selectedIds.size >= 2 && (
-                <Button variant="outline" onClick={() => { setMergeTargetId(''); setMergeDialogOpen(true) }}>
-                  <Merge size={16} className="mr-1.5" />
-                  {t('payees.merge')} ({selectedIds.size})
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" onClick={() => { setMergeTargetId(''); setMergeDialogOpen(true) }}>
+                    <Merge size={16} className="mr-1.5" />
+                    {t('payees.merge')} ({selectedIds.size})
+                  </Button>
+                  <Button variant="destructive" onClick={() => bulkDeleteMutation.mutate(Array.from(selectedIds))} disabled={bulkDeleteMutation.isPending}>
+                    <Trash2 size={16} className="mr-1.5" />
+                    {t('common.delete')} ({selectedIds.size})
+                  </Button>
+                </div>
               )}
               <Button onClick={openCreate}>
                 + {t('payees.add')}
@@ -478,7 +501,7 @@ export default function PayeesPage() {
                 <TableHead className="text-xs font-medium text-muted-foreground py-3">{t('payees.name')}</TableHead>
                 <TableHead className="hidden md:table-cell text-xs font-medium text-muted-foreground py-3 w-[120px]">{t('payees.type')}</TableHead>
                 <TableHead className="text-xs font-medium text-muted-foreground py-3 text-right w-[120px]">{t('payees.transactionCount')}</TableHead>
-                {canWrite && <TableHead className="w-[60px]" />}
+                {canWrite && <TableHead className="w-[100px]" />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -541,14 +564,27 @@ export default function PayeesPage() {
                     <span className="text-sm tabular-nums text-muted-foreground">{payee.transaction_count}</span>
                   </TableCell>
                   {canWrite && (
-                    <TableCell className="py-2.5 pr-4">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => { e.stopPropagation(); openEdit(payee) }}
-                      >
-                        {t('common.edit')}
-                      </Button>
+                    <TableCell className="py-2.5 pr-4 sm:pr-5">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
+                          onClick={(e) => { e.stopPropagation(); openEdit(payee) }}
+                          title={t('common.edit')}
+                        >
+                          <Pencil size={13} />
+                        </button>
+                        <button
+                          className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
+                          onClick={(e) => { 
+                            e.stopPropagation(); 
+                            deleteMutation.mutate(payee.id)
+                          }}
+                          disabled={deleteMutation.isPending}
+                          title={t('common.delete')}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </TableCell>
                   )}
                 </TableRow>

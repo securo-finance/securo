@@ -1221,7 +1221,8 @@
     "typeCompany": "Компания",
     "allTypes": "Все типы",
     "filterByType": "Фильтровать по типу",
-    "favoritesOnly": "Только избранные"
+    "favoritesOnly": "Только избранные",
+    "deletedMultiple": "Удалено {{count}} получателей"
   },
   "common": {
     "view": "Просмотр",

@@ -19,6 +19,7 @@ from app.services.payee_service import (
     get_payee_summary,
     merge_payees,
     update_payee,
+    bulk_delete_payees,
 )
 
 
@@ -280,6 +281,40 @@ async def test_delete_payee_nulls_transaction_refs(session: AsyncSession, test_u
 
     await session.refresh(tx)
     assert tx.payee_id is None
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_payees(session: AsyncSession, test_user, test_workspace):
+    p1 = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="Bulk1"))
+    p2 = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="Bulk2"))
+    p3 = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="Bulk3"))
+
+    account = await _make_account(session, test_user)
+
+    tx = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, account_id=account.id,
+        description="Linked Tx", amount=Decimal("50"), date=date.today(),
+        type="debit", source="manual", payee_id=p1.id,
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(tx)
+    await session.commit()
+
+    deleted = await bulk_delete_payees(session, test_workspace.id, [p1.id, p2.id])
+    assert deleted == 2
+
+    assert await get_payee(session, p1.id, test_workspace.id) is None
+    assert await get_payee(session, p2.id, test_workspace.id) is None
+    assert await get_payee(session, p3.id, test_workspace.id) is not None
+
+    await session.refresh(tx)
+    assert tx.payee_id is None
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_payees_invalid_ids(session: AsyncSession, test_user, test_workspace):
+    deleted = await bulk_delete_payees(session, test_workspace.id, [uuid.uuid4(), uuid.uuid4()])
+    assert deleted == 0
 
 
 # ---------------------------------------------------------------------------

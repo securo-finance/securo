@@ -46,3 +46,7 @@ class PayeeSummary(BaseModel):
 class PayeeMergeRequest(BaseModel):
     source_ids: list[uuid.UUID]
     target_id: uuid.UUID
+
+
+class PayeeBulkDeleteRequest(BaseModel):
+    ids: list[uuid.UUID]

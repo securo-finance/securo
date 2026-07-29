@@ -1221,7 +1221,8 @@
     "typeCompany": "Unternehmen",
     "allTypes": "Alle Typen",
     "filterByType": "Nach Typ filtern",
-    "favoritesOnly": "Nur Favoriten"
+    "favoritesOnly": "Nur Favoriten",
+    "deletedMultiple": "{{count}} Zahlungsempfänger gelöscht"
   },
   "common": {
     "view": "Ansehen",

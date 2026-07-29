@@ -688,6 +688,10 @@ export const payees = {
     const { data } = await api.post('/payees/merge', { target_id: targetId, source_ids: sourceIds })
     return data
   },
+  bulkDelete: async (ids: string[]): Promise<{ deleted: number }> => {
+    const { data } = await api.post('/payees/bulk-delete', { ids })
+    return data
+  },
 }
 
 // Groups (split transactions)
