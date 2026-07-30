@@ -64,6 +64,7 @@ function DesktopActionButton({ action, deletePending }: {
       onClick={runAction}
       disabled={action.tone === 'destructive' && deletePending}
       title={action.label}
+      aria-label={action.label}
     >
       <action.icon size={13} />
     </button>
