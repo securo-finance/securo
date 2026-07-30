@@ -1204,6 +1204,7 @@
   },
   "common": {
     "view": "Ver",
+    "add": "Añadir",
     "save": "Guardar",
     "saving": "Guardando…",
     "cancel": "Cancelar",

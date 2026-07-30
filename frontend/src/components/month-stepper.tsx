@@ -24,6 +24,11 @@ interface MonthStepperProps {
 export function MonthStepper({ value, onChange, locale = 'pt-BR', prevLabel, nextLabel }: MonthStepperProps) {
   const [open, setOpen] = useState(false)
   const label = monthLabel(value, locale).replace(/^\w/, (c) => c.toUpperCase())
+  const [year, month] = value.split('-').map(Number)
+  const compactLabel = new Date(year, month - 1, 2).toLocaleDateString(locale, {
+    month: '2-digit',
+    year: 'numeric',
+  })
   const dateFnsLocale = resolveDateFnsLocale(locale)
 
   return (
@@ -40,9 +45,12 @@ export function MonthStepper({ value, onChange, locale = 'pt-BR', prevLabel, nex
         <PopoverTrigger asChild>
           <button
             type="button"
-            className="inline-flex items-center justify-center border border-border rounded-lg px-3 py-1.5 text-sm bg-card text-foreground min-w-0 sm:min-w-[160px] truncate hover:bg-muted/50 transition-all cursor-pointer"
+            aria-label={label}
+            title={label}
+            className="inline-flex min-w-0 items-center justify-center truncate rounded-lg border border-border bg-card px-2 py-1.5 text-sm text-foreground transition-all hover:bg-muted/50 sm:min-w-[160px] sm:px-3"
           >
-            {label}
+            <span className="sm:hidden">{compactLabel}</span>
+            <span className="hidden sm:inline">{label}</span>
           </button>
         </PopoverTrigger>
         <PopoverContent align="center" className="w-auto p-0">
@@ -69,4 +77,3 @@ export function MonthStepper({ value, onChange, locale = 'pt-BR', prevLabel, nex
     </div>
   )
 }
-
