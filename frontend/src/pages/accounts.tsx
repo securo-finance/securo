@@ -35,6 +35,7 @@ import {
   Archive,
   Layers,
   MoreHorizontal,
+  type LucideIcon,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -74,6 +75,86 @@ function daysUntil(dateStr: string | null): number | null {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+}
+
+type AccountRowActionsProps = {
+  accountName: string
+  onEdit: () => void
+  onClose: () => void
+  onDelete?: () => void
+  deletePending: boolean
+}
+
+function AccountRowActions({ accountName, onEdit, onClose, onDelete, deletePending }: AccountRowActionsProps) {
+  const { t } = useTranslation()
+  const actionItems: Array<{
+    label: string
+    icon: LucideIcon
+    run: () => void
+    tone: 'default' | 'warning' | 'destructive'
+  }> = [
+    { label: t('common.edit'), icon: Pencil, run: onEdit, tone: 'default' },
+    { label: t('accounts.close'), icon: Archive, run: onClose, tone: 'warning' },
+  ]
+  if (onDelete) {
+    actionItems.push({
+      label: t('common.delete'),
+      icon: Trash2,
+      run: onDelete,
+      tone: 'destructive',
+    })
+  }
+
+  return (
+    <>
+      <div className="mr-3 hidden items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 sm:flex">
+        {actionItems.map((action) => (
+          <button
+            key={action.label}
+            className={
+              action.tone === 'destructive'
+                ? 'rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-rose-50 hover:text-rose-500'
+                : action.tone === 'warning'
+                  ? 'rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-amber-50 hover:text-amber-600'
+                  : 'rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground'
+            }
+            onClick={(event) => {
+              event.preventDefault()
+              action.run()
+            }}
+            disabled={action.tone === 'destructive' && deletePending}
+            title={action.label}
+          >
+            <action.icon size={13} />
+          </button>
+        ))}
+      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="mr-2 rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground sm:hidden"
+            aria-label={`${t('common.more')}: ${accountName}`}
+          >
+            <MoreHorizontal size={16} />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {actionItems.map((action) => (
+            <DropdownMenuItem
+              key={action.label}
+              variant={action.tone === 'destructive' ? 'destructive' : 'default'}
+              disabled={action.tone === 'destructive' && deletePending}
+              onSelect={action.run}
+            >
+              <action.icon size={14} />
+              {action.label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </>
+  )
 }
 
 export default function AccountsPage() {
@@ -339,30 +420,13 @@ export default function AccountsPage() {
                         </div>
                       </Link>
                       {canWrite && (
-                        <div className="flex items-center gap-1 mr-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                            onClick={() => { setEditingAccount(acc); setDialogOpen(true) }}
-                            title={t('common.edit')}
-                          >
-                            <Pencil size={13} />
-                          </button>
-                          <button
-                            className="p-1.5 rounded-md text-muted-foreground hover:text-amber-600 hover:bg-amber-50 transition-colors"
-                            onClick={() => setClosingAccountId(acc.id)}
-                            title={t('accounts.close')}
-                          >
-                            <Archive size={13} />
-                          </button>
-                          <button
-                            className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
-                            onClick={() => setDeletingId(acc.id)}
-                            disabled={deleteMutation.isPending}
-                            title={t('common.delete')}
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
+                        <AccountRowActions
+                          accountName={getAccountName(acc)}
+                          onEdit={() => { setEditingAccount(acc); setDialogOpen(true) }}
+                          onClose={() => setClosingAccountId(acc.id)}
+                          onDelete={() => setDeletingId(acc.id)}
+                          deletePending={deleteMutation.isPending}
+                        />
                       )}
                       <div className="text-right">
                         <p className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
@@ -499,22 +563,12 @@ export default function AccountsPage() {
                                 </div>
                               </Link>
                               {canWrite && (
-                                <div className="flex items-center gap-1 mr-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button
-                                    className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                                    onClick={(e) => { e.preventDefault(); setEditingAccount(acc); setDialogOpen(true) }}
-                                    title={t('common.edit')}
-                                  >
-                                    <Pencil size={13} />
-                                  </button>
-                                  <button
-                                    className="p-1.5 rounded-md text-muted-foreground hover:text-amber-600 hover:bg-amber-50 transition-colors"
-                                    onClick={(e) => { e.preventDefault(); setClosingAccountId(acc.id) }}
-                                    title={t('accounts.close')}
-                                  >
-                                    <Archive size={13} />
-                                  </button>
-                                </div>
+                                <AccountRowActions
+                                  accountName={getAccountName(acc)}
+                                  onEdit={() => { setEditingAccount(acc); setDialogOpen(true) }}
+                                  onClose={() => setClosingAccountId(acc.id)}
+                                  deletePending={deleteMutation.isPending}
+                                />
                               )}
                               <div className="text-right">
                                 <p className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
