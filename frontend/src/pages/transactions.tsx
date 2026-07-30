@@ -1516,6 +1516,117 @@ export default function TransactionsPage() {
       >
         <div className="mx-auto max-w-7xl px-3 md:px-6 pb-4 md:pb-6">
           <div className="flex items-stretch gap-1.5 bg-card border border-border shadow-xl rounded-2xl p-2">
+            <div className="flex w-full items-center gap-1.5 sm:hidden">
+              <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                {selectedIds.size}
+              </span>
+
+              <div className="min-w-0 flex-1">
+                <CategorySelect
+                  key={`mobile-${bulkCategory}`}
+                  value={bulkCategory}
+                  onChange={(next) => {
+                    setBulkCategory(next)
+                    if (next) {
+                      bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: next })
+                    }
+                  }}
+                  categories={categoriesList ?? []}
+                  groups={categoryGroupsList ?? []}
+                  placeholder={t('transactions.selectCategory')}
+                  disabled={bulkCategorizeMutation.isPending}
+                  className="h-9 min-w-0 border-transparent bg-transparent px-2 shadow-none hover:bg-muted/60 focus:bg-muted/60 focus-visible:ring-0"
+                  contentProps={{ side: 'top', sideOffset: 8 }}
+                />
+              </div>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-9 shrink-0 px-2.5">
+                    <MoreHorizontal size={16} />
+                    {t('rules.actions')}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent side="top" align="end" sideOffset={8} className="w-64">
+                  <DropdownMenuItem
+                    disabled={bulkAddToGroupMutation.isPending}
+                    onSelect={() => setBulkAddToGroupOpen(true)}
+                  >
+                    <Users size={15} />
+                    {t('transactions.addToGroup')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={!canOpenLinkDialog}
+                    title={linkDisabledTooltip ?? t('transactions.linkAsTransfer')}
+                    onSelect={() => setLinkTransferDialogOpen(true)}
+                  >
+                    <ArrowLeftRight size={15} />
+                    {t('transactions.linkAsTransfer')}
+                  </DropdownMenuItem>
+                  {selectedSingleTx && !selectedSingleTx.is_shared && (
+                    <DropdownMenuItem onSelect={() => handleCreateRuleFromTransaction(selectedSingleTx)}>
+                      <SlidersHorizontal size={15} />
+                      {t('transactions.createRule')}
+                    </DropdownMenuItem>
+                  )}
+                  <div className="mt-1 border-t border-border px-2 pt-2">
+                    <input
+                      type="text"
+                      value={bulkTagInput}
+                      onChange={(e) => setBulkTagInput(e.target.value)}
+                      placeholder={t('transactions.addTagsPlaceholder', '#tag…')}
+                      className="h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-ring"
+                      onKeyDown={(e) => {
+                        e.stopPropagation()
+                        if (e.key === 'Enter' && bulkTagInput.trim()) {
+                          e.preventDefault()
+                          const tagList = bulkTagInput.trim().split(/[\s,]+/).filter(Boolean)
+                          bulkAddTagsMutation.mutate({ ids: Array.from(selectedIds), tags: tagList })
+                        }
+                      }}
+                    />
+                    <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={!bulkTagInput.trim() || bulkAddTagsMutation.isPending}
+                        onClick={() => {
+                          const tagList = bulkTagInput.trim().split(/[\s,]+/).filter(Boolean)
+                          if (tagList.length === 0) return
+                          bulkAddTagsMutation.mutate({ ids: Array.from(selectedIds), tags: tagList })
+                        }}
+                      >
+                        <Check size={15} />
+                        {t('transactions.bulkAddTags', 'Add tags')}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={!bulkTagInput.trim() || bulkRemoveTagsMutation.isPending}
+                        onClick={() => {
+                          const tagList = bulkTagInput.trim().split(/[\s,]+/).filter(Boolean)
+                          if (tagList.length === 0) return
+                          bulkRemoveTagsMutation.mutate({ ids: Array.from(selectedIds), tags: tagList })
+                        }}
+                      >
+                        <X size={15} />
+                        {t('transactions.bulkRemoveTags', 'Remove tags')}
+                      </Button>
+                    </div>
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <button
+                onClick={() => { setSelectedIds(new Set()); setBulkCategory(''); setBulkTagInput('') }}
+                className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                title={t('common.close', 'Close')}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="hidden w-full items-stretch gap-1.5 sm:flex">
             {/* Selection count + net total — stacked vertically so the
                 sum (issue #185) adds no horizontal width to an already
                 crowded bar. The sum is hidden below sm where only the
@@ -1673,6 +1784,7 @@ export default function TransactionsPage() {
             >
               <X size={16} />
             </button>
+            </div>
           </div>
         </div>
       </div>
