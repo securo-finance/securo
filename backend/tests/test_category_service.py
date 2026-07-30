@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.category import Category
 from app.models.category_group import CategoryGroup
 from app.schemas.category import CategoryCreate, CategoryUpdate
+from app.services.category_group_service import get_groups
 from app.services.category_service import (
     DEFAULT_CATEGORIES_I18N,
     create_category,
@@ -140,6 +141,17 @@ async def test_get_categories_ordered(session: AsyncSession, test_user, test_wor
         system_idx = categories.index(system_cats[0])
         custom_idx = categories.index(custom_cats[0])
         assert system_idx < custom_idx
+
+
+@pytest.mark.asyncio
+async def test_get_categories_group_ordered_by_name(session: AsyncSession, test_user, test_workspace):
+    await create_default_categories(session, test_user.id, lang="pt-BR")
+
+    groups = await get_groups(session, test_workspace.id)
+    food_group = [g for g in groups if g.name == "Alimentação"][0]
+
+    names = [c.name for c in food_group.categories]
+    assert names == sorted(names)
 
 
 @pytest.mark.asyncio
