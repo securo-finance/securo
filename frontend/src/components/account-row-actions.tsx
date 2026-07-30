@@ -75,7 +75,7 @@ function DesktopAccountActions({ actions, deletePending }: {
   deletePending: boolean
 }) {
   return (
-    <div className="mr-3 hidden items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 sm:flex">
+    <div className="ml-2 hidden items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 sm:flex">
       {actions.map((action) => (
         <DesktopActionButton key={action.label} action={action} deletePending={deletePending} />
       ))}
@@ -108,7 +108,7 @@ function MobileAccountActions({ accountName, actions, deletePending }: {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" className="mr-2 rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground sm:hidden" aria-label={`${t('common.more')}: ${accountName}`}>
+        <button type="button" className="ml-1 rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground sm:hidden" aria-label={`${t('common.more')}: ${accountName}`}>
           <MoreHorizontal size={16} />
         </button>
       </DropdownMenuTrigger>

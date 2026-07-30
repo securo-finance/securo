@@ -276,16 +276,7 @@ export default function AccountsPage() {
                           </p>
                         </div>
                       </Link>
-                      {canWrite && (
-                        <AccountRowActions
-                          accountName={getAccountName(acc)}
-                          onEdit={() => { setEditingAccount(acc); setDialogOpen(true) }}
-                          onClose={() => setClosingAccountId(acc.id)}
-                          onDelete={() => setDeletingId(acc.id)}
-                          deletePending={deleteMutation.isPending}
-                        />
-                      )}
-                      <div className="text-right">
+                      <div className="shrink-0 text-right">
                         <p className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
                           {mask(formatCurrency(bal, acc.currency, locale))}
                         </p>
@@ -299,6 +290,15 @@ export default function AccountsPage() {
                           </p>
                         )}
                       </div>
+                      {canWrite && (
+                        <AccountRowActions
+                          accountName={getAccountName(acc)}
+                          onEdit={() => { setEditingAccount(acc); setDialogOpen(true) }}
+                          onClose={() => setClosingAccountId(acc.id)}
+                          onDelete={() => setDeletingId(acc.id)}
+                          deletePending={deleteMutation.isPending}
+                        />
+                      )}
                     </div>
                   )
                 })}
@@ -419,15 +419,7 @@ export default function AccountsPage() {
                                   </p>
                                 </div>
                               </Link>
-                              {canWrite && (
-                                <AccountRowActions
-                                  accountName={getAccountName(acc)}
-                                  onEdit={() => { setEditingAccount(acc); setDialogOpen(true) }}
-                                  onClose={() => setClosingAccountId(acc.id)}
-                                  deletePending={deleteMutation.isPending}
-                                />
-                              )}
-                              <div className="text-right">
+                              <div className="shrink-0 text-right">
                                 <p className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
                                   {mask(formatCurrency(bal, acc.currency, locale))}
                                 </p>
@@ -441,6 +433,14 @@ export default function AccountsPage() {
                                   </p>
                                 )}
                               </div>
+                              {canWrite && (
+                                <AccountRowActions
+                                  accountName={getAccountName(acc)}
+                                  onEdit={() => { setEditingAccount(acc); setDialogOpen(true) }}
+                                  onClose={() => setClosingAccountId(acc.id)}
+                                  deletePending={deleteMutation.isPending}
+                                />
+                              )}
                             </div>
                           )
                         })}
