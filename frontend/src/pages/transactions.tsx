@@ -3,7 +3,6 @@ import { useRegisterPageChatContext } from '@/lib/page-chat-context'
 import { getAccountName } from '@/lib/account-utils'
 import { AccountIcon } from '@/components/account-icon'
 import { currentMonth, monthRange, monthFromRange } from '@/lib/month-utils'
-import { MonthStepper } from '@/components/month-stepper'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
@@ -35,13 +34,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Copy, Download, HelpCircle, Info, MoreHorizontal, Paperclip, Users, X, EyeClosed, SlidersHorizontal } from 'lucide-react'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, HelpCircle, Info, Paperclip, Users, X, EyeClosed, SlidersHorizontal } from 'lucide-react'
 import type { Transaction, Rule } from '@/types'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { PageHeader } from '@/components/page-header'
@@ -50,6 +43,8 @@ import { CategoryIcon } from '@/components/category-icon'
 import { CategorySelect } from '@/components/category-select'
 import { TransactionDialog, extractApiError, type SaveAction } from '@/components/transaction-dialog'
 import { TransactionsColumnPicker } from '@/components/transactions-column-picker'
+import { TransactionsPageActions } from '@/components/transactions-page-actions'
+import { MobileBulkSelectionActions } from '@/components/mobile-bulk-selection-actions'
 import { type ColumnDef, type ColumnId, useTransactionsGridState } from '@/components/transactions-grid-columns'
 import { TransferDialog } from '@/components/transfer-dialog'
 import { LinkTransferDialog } from '@/components/link-transfer-dialog'
@@ -1152,88 +1147,22 @@ export default function TransactionsPage() {
         section={t('transactions.section')}
         title={t('transactions.title')}
         action={
-          // Single row at every width: [month stepper] [+ Add Transaction] [⋯].
-          // The stepper is compact and shrinks first so all three fit on a
-          // phone (#257). On desktop the secondary actions (Columns, Export,
-          // Duplicate, Transfer) are inline labelled buttons; on mobile they
-          // collapse into the overflow menu so the row stays uncrowded.
-          <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto sm:flex-wrap sm:justify-end">
-            <div className="min-w-0 flex-1 sm:flex-none">
-              <MonthStepper
-                value={steppedMonth}
-                onChange={handleMonthChange}
-                locale={i18n.resolvedLanguage ?? i18n.language}
-                prevLabel={t('transactions.monthPrevious')}
-                nextLabel={t('transactions.monthNext')}
-              />
-            </div>
-
-            {/* Secondary actions: inline labelled buttons on desktop. */}
-            <div className="hidden sm:contents">
-              <TransactionsColumnPicker state={grid} />
-              <Button variant="outline" disabled={exporting} onClick={handleExport}>
-                <Download size={16} className="mr-1.5" />
-                {exportLabel}
-              </Button>
-              {/* Duplicate (issue #158): single non-shared, non-transfer row
-                  selected. Pre-fills Add Transaction from its fields. */}
-              {duplicableTx && (
-                <Button variant="outline" onClick={() => handleDuplicateTransaction(duplicableTx)}>
-                  <Copy size={16} className="mr-1.5" />
-                  {t('transactions.duplicate')}
-                </Button>
-              )}
-              {canWrite && (
-                <Button variant="outline" onClick={() => setTransferDialogOpen(true)}>
-                  <ArrowLeftRight size={16} className="mr-1.5" />
-                  {t('transactions.transfer')}
-                </Button>
-              )}
-            </div>
-
-            {/* Primary action: present at every width. */}
-            {canWrite && (
-              <Button
-                className="shrink-0 px-3"
-                onClick={() => { setEditingTx(null); setDialogOpen(true) }}
-              >
-                + <span className="sm:hidden">{t('common.add')}</span>
-                <span className="hidden sm:inline">{t('transactions.addManual')}</span>
-              </Button>
-            )}
-
-            {/* Secondary actions: overflow menu on mobile only. */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="!size-9 sm:hidden"
-                  aria-label={t('common.more')}
-                >
-                  <MoreHorizontal size={18} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem disabled={exporting} onClick={handleExport}>
-                  <Download size={16} className="mr-2" />
-                  {exportLabel}
-                </DropdownMenuItem>
-                {duplicableTx && (
-                  <DropdownMenuItem onClick={() => handleDuplicateTransaction(duplicableTx)}>
-                    <Copy size={16} className="mr-2" />
-                    {t('transactions.duplicate')}
-                  </DropdownMenuItem>
-                )}
-                {canWrite && (
-                  <DropdownMenuItem onClick={() => setTransferDialogOpen(true)}>
-                    <ArrowLeftRight size={16} className="mr-2" />
-                    {t('transactions.transfer')}
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+          <TransactionsPageActions
+            month={{
+              value: steppedMonth,
+              onChange: handleMonthChange,
+              locale: i18n.resolvedLanguage ?? i18n.language,
+              prevLabel: t('transactions.monthPrevious'),
+              nextLabel: t('transactions.monthNext'),
+            }}
+            columnPicker={<TransactionsColumnPicker state={grid} />}
+            exportLabel={exportLabel}
+            exporting={exporting}
+            onExport={handleExport}
+            onAdd={canWrite ? () => { setEditingTx(null); setDialogOpen(true) } : undefined}
+            onDuplicate={duplicableTx ? () => handleDuplicateTransaction(duplicableTx) : undefined}
+            onTransfer={canWrite ? () => setTransferDialogOpen(true) : undefined}
+          />
         }
       />
 
@@ -1522,115 +1451,32 @@ export default function TransactionsPage() {
       >
         <div className="mx-auto max-w-7xl px-3 md:px-6 pb-4 md:pb-6">
           <div className="flex items-stretch gap-1.5 bg-card border border-border shadow-xl rounded-2xl p-2">
-            <div className="flex w-full items-center gap-1.5 sm:hidden">
-              <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                {selectedIds.size}
-              </span>
-
-              <div className="min-w-0 flex-1">
-                <CategorySelect
-                  key={`mobile-${bulkCategory}`}
-                  value={bulkCategory}
-                  onChange={(next) => {
-                    setBulkCategory(next)
-                    if (next) {
-                      bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: next })
-                    }
-                  }}
-                  categories={categoriesList ?? []}
-                  groups={categoryGroupsList ?? []}
-                  placeholder={t('transactions.selectCategory')}
-                  disabled={bulkCategorizeMutation.isPending}
-                  className="h-9 min-w-0 border-transparent bg-transparent px-2 shadow-none hover:bg-muted/60 focus:bg-muted/60 focus-visible:ring-0"
-                  contentProps={{ side: 'top', sideOffset: 8 }}
-                />
-              </div>
-
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-9 shrink-0 px-2.5">
-                    <MoreHorizontal size={16} />
-                    {t('rules.actions')}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent side="top" align="end" sideOffset={8} className="w-64">
-                  <DropdownMenuItem
-                    disabled={bulkAddToGroupMutation.isPending}
-                    onSelect={() => setBulkAddToGroupOpen(true)}
-                  >
-                    <Users size={15} />
-                    {t('transactions.addToGroup')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={!canOpenLinkDialog}
-                    title={linkDisabledTooltip ?? t('transactions.linkAsTransfer')}
-                    onSelect={() => setLinkTransferDialogOpen(true)}
-                  >
-                    <ArrowLeftRight size={15} />
-                    {t('transactions.linkAsTransfer')}
-                  </DropdownMenuItem>
-                  {selectedSingleTx && !selectedSingleTx.is_shared && (
-                    <DropdownMenuItem onSelect={() => handleCreateRuleFromTransaction(selectedSingleTx)}>
-                      <SlidersHorizontal size={15} />
-                      {t('transactions.createRule')}
-                    </DropdownMenuItem>
-                  )}
-                  <div className="mt-1 border-t border-border px-2 pt-2">
-                    <input
-                      type="text"
-                      value={bulkTagInput}
-                      onChange={(e) => setBulkTagInput(e.target.value)}
-                      placeholder={t('transactions.addTagsPlaceholder', '#tag…')}
-                      className="h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-ring"
-                      onKeyDown={(e) => {
-                        e.stopPropagation()
-                        if (e.key === 'Enter' && bulkTagInput.trim()) {
-                          e.preventDefault()
-                          const tagList = bulkTagInput.trim().split(/[\s,]+/).filter(Boolean)
-                          bulkAddTagsMutation.mutate({ ids: Array.from(selectedIds), tags: tagList })
-                        }
-                      }}
-                    />
-                    <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={!bulkTagInput.trim() || bulkAddTagsMutation.isPending}
-                        onClick={() => {
-                          const tagList = bulkTagInput.trim().split(/[\s,]+/).filter(Boolean)
-                          if (tagList.length === 0) return
-                          bulkAddTagsMutation.mutate({ ids: Array.from(selectedIds), tags: tagList })
-                        }}
-                      >
-                        <Check size={15} />
-                        {t('transactions.bulkAddTags', 'Add tags')}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={!bulkTagInput.trim() || bulkRemoveTagsMutation.isPending}
-                        onClick={() => {
-                          const tagList = bulkTagInput.trim().split(/[\s,]+/).filter(Boolean)
-                          if (tagList.length === 0) return
-                          bulkRemoveTagsMutation.mutate({ ids: Array.from(selectedIds), tags: tagList })
-                        }}
-                      >
-                        <X size={15} />
-                        {t('transactions.bulkRemoveTags', 'Remove tags')}
-                      </Button>
-                    </div>
-                  </div>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              <button
-                onClick={() => { setSelectedIds(new Set()); setBulkCategory(''); setBulkTagInput('') }}
-                className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                title={t('common.close', 'Close')}
-              >
-                <X size={16} />
-              </button>
-            </div>
+            <MobileBulkSelectionActions
+              selectedCount={selectedIds.size}
+              categoryValue={bulkCategory}
+              categories={categoriesList ?? []}
+              categoryGroups={categoryGroupsList ?? []}
+              categoryPending={bulkCategorizeMutation.isPending}
+              groupPending={bulkAddToGroupMutation.isPending}
+              tagInput={bulkTagInput}
+              addTagsPending={bulkAddTagsMutation.isPending}
+              removeTagsPending={bulkRemoveTagsMutation.isPending}
+              transferDisabled={!canOpenLinkDialog}
+              transferTitle={linkDisabledTooltip ?? t('transactions.linkAsTransfer')}
+              onCategoryChange={(next) => {
+                setBulkCategory(next)
+                if (next) bulkCategorizeMutation.mutate({ ids: Array.from(selectedIds), categoryId: next })
+              }}
+              onOpenGroup={() => setBulkAddToGroupOpen(true)}
+              onOpenTransfer={() => setLinkTransferDialogOpen(true)}
+              onCreateRule={selectedSingleTx && !selectedSingleTx.is_shared
+                ? () => handleCreateRuleFromTransaction(selectedSingleTx)
+                : undefined}
+              onTagInputChange={setBulkTagInput}
+              onAddTags={(tags) => bulkAddTagsMutation.mutate({ ids: Array.from(selectedIds), tags })}
+              onRemoveTags={(tags) => bulkRemoveTagsMutation.mutate({ ids: Array.from(selectedIds), tags })}
+              onClear={() => { setSelectedIds(new Set()); setBulkCategory(''); setBulkTagInput('') }}
+            />
 
             <div className="hidden w-full items-stretch gap-1.5 sm:flex">
             {/* Selection count + net total — stacked vertically so the

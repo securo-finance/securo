@@ -24,26 +24,10 @@ import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { Account, BankConnection } from '@/types'
-import {
-  Pencil,
-  Trash2,
-  RefreshCw,
-  TriangleAlert,
-  Unlink,
-  Plus,
-  Settings,
-  Archive,
-  Layers,
-  MoreHorizontal,
-  type LucideIcon,
-} from 'lucide-react'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { RefreshCw, TriangleAlert, Unlink, Settings } from 'lucide-react'
 import { AccountIcon, ConnectionLogo, getAccountTypeConfig } from '@/components/account-icon'
+import { AccountPageActions } from '@/components/account-page-actions'
+import { AccountRowActions } from '@/components/account-row-actions'
 import { PageHeader } from '@/components/page-header'
 import { BankConnectDialog } from '@/components/bank-connect-dialog'
 import { ConnectorSelectDialog, type Provider } from '@/components/connector-select-dialog'
@@ -75,86 +59,6 @@ function daysUntil(dateStr: string | null): number | null {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-}
-
-type AccountRowActionsProps = {
-  accountName: string
-  onEdit: () => void
-  onClose: () => void
-  onDelete?: () => void
-  deletePending: boolean
-}
-
-function AccountRowActions({ accountName, onEdit, onClose, onDelete, deletePending }: AccountRowActionsProps) {
-  const { t } = useTranslation()
-  const actionItems: Array<{
-    label: string
-    icon: LucideIcon
-    run: () => void
-    tone: 'default' | 'warning' | 'destructive'
-  }> = [
-    { label: t('common.edit'), icon: Pencil, run: onEdit, tone: 'default' },
-    { label: t('accounts.close'), icon: Archive, run: onClose, tone: 'warning' },
-  ]
-  if (onDelete) {
-    actionItems.push({
-      label: t('common.delete'),
-      icon: Trash2,
-      run: onDelete,
-      tone: 'destructive',
-    })
-  }
-
-  return (
-    <>
-      <div className="mr-3 hidden items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 sm:flex">
-        {actionItems.map((action) => (
-          <button
-            key={action.label}
-            className={
-              action.tone === 'destructive'
-                ? 'rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-rose-50 hover:text-rose-500'
-                : action.tone === 'warning'
-                  ? 'rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-amber-50 hover:text-amber-600'
-                  : 'rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground'
-            }
-            onClick={(event) => {
-              event.preventDefault()
-              action.run()
-            }}
-            disabled={action.tone === 'destructive' && deletePending}
-            title={action.label}
-          >
-            <action.icon size={13} />
-          </button>
-        ))}
-      </div>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            className="mr-2 rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground sm:hidden"
-            aria-label={`${t('common.more')}: ${accountName}`}
-          >
-            <MoreHorizontal size={16} />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {actionItems.map((action) => (
-            <DropdownMenuItem
-              key={action.label}
-              variant={action.tone === 'destructive' ? 'destructive' : 'default'}
-              disabled={action.tone === 'destructive' && deletePending}
-              onSelect={action.run}
-            >
-              <action.icon size={14} />
-              {action.label}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </>
-  )
 }
 
 export default function AccountsPage() {
@@ -325,59 +229,12 @@ export default function AccountsPage() {
         section={t('accounts.title')}
         title={t('accounts.title')}
         action={
-          <div className="flex w-full items-center gap-2 sm:w-auto">
-            <Button
-              variant="outline"
-              className="hidden gap-1.5 sm:inline-flex"
-              onClick={() => navigate('/collections')}
-            >
-              <Layers size={16} />
-              {t('collections.title')}
-            </Button>
-            {canWrite && (
-              <>
-                <Button
-                  variant="outline"
-                  className="hidden gap-1.5 sm:inline-flex"
-                  onClick={() => setConnectorSelectOpen(true)}
-                >
-                  <Plus size={16} />
-                  {t('accounts.connectBank')}
-                </Button>
-                <Button
-                  onClick={() => { setEditingAccount(null); setDialogOpen(true) }}
-                  className="flex-1 gap-1.5 sm:flex-none"
-                >
-                  <Plus size={16} />
-                  {t('accounts.addManual')}
-                </Button>
-              </>
-            )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="size-9 shrink-0 sm:hidden"
-                  aria-label={t('common.more')}
-                >
-                  <MoreHorizontal size={18} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onSelect={() => navigate('/collections')}>
-                  <Layers size={16} />
-                  {t('collections.title')}
-                </DropdownMenuItem>
-                {canWrite && (
-                  <DropdownMenuItem onSelect={() => setConnectorSelectOpen(true)}>
-                    <Plus size={16} />
-                    {t('accounts.connectBank')}
-                  </DropdownMenuItem>
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+          <AccountPageActions
+            canWrite={canWrite}
+            onAddAccount={() => { setEditingAccount(null); setDialogOpen(true) }}
+            onConnectBank={() => setConnectorSelectOpen(true)}
+            onOpenCollections={() => navigate('/collections')}
+          />
         }
       />
 
