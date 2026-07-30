@@ -17,6 +17,7 @@ import pytest
 from app.providers.base import ProviderUserActionRequired, SessionExpiredError
 from app.providers.simplefin import (
     SimpleFinProvider,
+    _accounts_url_and_auth,
     _decode_setup_token,
     _epoch_to_date,
 )
@@ -73,10 +74,17 @@ def test_decode_setup_token_rejects_garbage():
 def test_epoch_to_date_handles_unset():
     assert _epoch_to_date(None) is None
     assert _epoch_to_date("") is None
+    assert _epoch_to_date(0) is None
 
 
 def test_epoch_to_date_parses_seconds():
     assert _epoch_to_date(1672531200) == date(2023, 1, 1)
+
+
+def test_accounts_url_and_auth_strips_userinfo():
+    url, auth = _accounts_url_and_auth("https://u:p@bridge.example/simplefin")
+    assert url == "https://bridge.example/simplefin/accounts"
+    assert auth == ("u", "p")
 
 
 # ----- claim flow -------------------------------------------------------------
@@ -217,6 +225,18 @@ async def test_401_response_signals_credentials_invalid():
 
 
 @pytest.mark.asyncio
+async def test_accounts_request_moves_url_userinfo_to_auth_header():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.userinfo == b""
+        assert "authorization" in request.headers
+        return httpx.Response(200, json={"accounts": []})
+
+    creds = {"access_url": "https://u:p@bridge.example/simplefin"}
+    with _patched_client(handler):
+        await SimpleFinProvider().get_accounts(creds)
+
+
+@pytest.mark.asyncio
 async def test_missing_access_url_raises_session_expired():
     with pytest.raises(SessionExpiredError):
         await SimpleFinProvider().get_accounts({})
@@ -231,6 +251,8 @@ async def test_get_transactions_filters_by_account_and_parses_signs():
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/simplefin/accounts"
+        assert "u:p@" not in str(request.url)
+        assert request.headers["authorization"].startswith("Basic ")
         # We always request a specific account
         assert request.url.params.get("account") == "acc-1"
         assert request.url.params.get("pending") == "1"
@@ -282,6 +304,38 @@ async def test_get_transactions_filters_by_account_and_parses_signs():
     assert by_id["t1"].status == "posted"
     assert by_id["t2"].status == "pending"
     assert by_id["t2"].type == "credit"
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_uses_transacted_at_when_posted_zero():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "accounts": [
+                    {
+                        "id": "acc-1",
+                        "transactions": [
+                            {
+                                "id": "t1",
+                                "amount": "-12.34",
+                                "posted": 0,
+                                "transacted_at": 1672617600,
+                                "description": "Coffee",
+                            },
+                        ],
+                    },
+                ]
+            },
+        )
+
+    creds = {"access_url": "https://u:p@bridge.example/simplefin"}
+    with _patched_client(handler):
+        txns = await SimpleFinProvider().get_transactions(
+            creds, "acc-1", since=date(2023, 1, 1)
+        )
+
+    assert txns[0].date == date(2023, 1, 2)
 
 
 @pytest.mark.asyncio
@@ -352,6 +406,103 @@ async def test_get_holdings_parses_investment_data():
     assert h.current_value == Decimal("105884.80")
     assert h.quantity == Decimal("550.0")
     assert (h.metadata or {}).get("symbol") == "AAPL"
+    # Also promoted to the dedicated column, not just the metadata blob.
+    assert h.ticker == "AAPL"
+
+
+@pytest.mark.asyncio
+async def test_get_holdings_crypto_ticker_currency_falls_back_to_account_currency():
+    """A connector-supplied ticker like ``DOGE`` isn't an ISO currency code.
+
+    ``HoldingData.currency`` maps to a ``VARCHAR(3)`` DB column — writing a
+    4-letter ticker there overflows and used to crash the entire sync for
+    the account (see issue #448). It should fall back to the account's
+    currency instead.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "accounts": [
+                    {
+                        "id": "acc-1",
+                        "currency": "USD",
+                        "holdings": [
+                            {
+                                "id": "h-crypto",
+                                "description": "Dogecoin",
+                                "symbol": "DOGE",
+                                "currency": "DOGE",
+                                "market_value": "42.00",
+                                "shares": "100",
+                            },
+                        ],
+                    }
+                ]
+            },
+        )
+
+    creds = {"access_url": "https://u:p@bridge.example/simplefin"}
+    with _patched_client(handler):
+        holdings = await SimpleFinProvider().get_holdings(creds)
+    assert len(holdings) == 1
+    assert holdings[0].currency == "USD"
+    # The ticker itself belongs in the dedicated 32-char column, not in
+    # `currency` — that's the pairing issue #448 asks for.
+    assert holdings[0].ticker == "DOGE"
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_non_iso_currency_falls_back_to_usd():
+    """The same connector quirk on an *account* would overflow accounts.currency.
+
+    Accounts are upserted before holdings during a sync, so an unguarded
+    account currency crashes the connection before the holdings guard is
+    ever reached.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "accounts": [
+                    {
+                        "id": "acc-1",
+                        "name": "Crypto Wallet",
+                        "currency": "DOGE",
+                        "balance": "10.00",
+                        "transactions": [],
+                    }
+                ]
+            },
+        )
+
+    creds = {"access_url": "https://u:p@bridge.example/simplefin"}
+    with _patched_client(handler):
+        accounts = await SimpleFinProvider().get_accounts(creds)
+    assert accounts[0].currency == "USD"
+
+
+def test_build_transaction_non_iso_currency_is_none():
+    """A bogus transaction currency resolves to None, not a bad 3-char write.
+
+    The sync layer reads `txn_data.currency or acc_data.currency or
+    user_currency`, so None correctly defers to the account's currency.
+    """
+    raw = {
+        "id": "t1",
+        "amount": "-1.00",
+        "posted": 1672531200,
+        "currency": "DOGE",
+        "description": "buy",
+    }
+    txn = SimpleFinProvider._build_transaction(raw, "description")
+    assert txn is not None
+    assert txn.currency is None
+    # A real ISO code still passes through, normalized.
+    ok = SimpleFinProvider._build_transaction({**raw, "currency": "eur"}, "description")
+    assert ok.currency == "EUR"
 
 
 # ----- misc -------------------------------------------------------------------

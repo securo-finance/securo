@@ -113,6 +113,31 @@ async def test_create_rule_does_not_overwrite_existing_category(
 
 
 @pytest.mark.asyncio
+async def test_create_rule_can_overwrite_existing_category_when_requested(
+    client: AsyncClient, auth_headers, test_transactions, test_categories,
+):
+    original = str(test_categories[0].id)  # IFOOD RESTAURANTE is pre-set to this
+    other = str(test_categories[1].id)
+    payload = {
+        "name": "iFood overwrite",
+        "conditions_op": "and",
+        "conditions": [{"field": "description", "op": "contains", "value": "IFOOD"}],
+        "actions": [{"op": "set_category", "value": other}],
+        "priority": 5,
+        "is_active": True,
+        "overwrite_existing_categories": True,
+    }
+    response = await client.post("/api/rules", json=payload, headers=auth_headers)
+    assert response.status_code == 201
+    assert response.json()["applied_count"] >= 1
+
+    items = (await client.get("/api/transactions", headers=auth_headers)).json()["items"]
+    ifood = {t["description"]: t for t in items}.get("IFOOD RESTAURANTE")
+    assert ifood["category_id"] != original
+    assert ifood["category_id"] == other
+
+
+@pytest.mark.asyncio
 async def test_create_rule_no_match_reports_zero(
     client: AsyncClient, auth_headers, test_transactions, test_categories,
 ):
@@ -209,6 +234,105 @@ async def test_update_rule_applies_to_existing_transactions(
     update_response = await client.patch(
         f"/api/rules/{rule_id}",
         json={"conditions": [{"field": "description", "op": "contains", "value": "NETFLIX"}]},
+        headers=auth_headers,
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["applied_count"] >= 1
+
+    items = (await client.get("/api/transactions", headers=auth_headers)).json()["items"]
+    netflix = {t["description"]: t for t in items}.get("NETFLIX")
+    assert netflix is not None
+    assert netflix["category_id"] == cat_food
+
+
+@pytest.mark.asyncio
+async def test_update_rule_can_skip_existing_transactions(
+    client: AsyncClient, auth_headers, test_transactions, test_categories,
+):
+    cat_food = str(test_categories[0].id)
+    create_payload = {
+        "name": "Streaming skip",
+        "conditions_op": "and",
+        "conditions": [{"field": "description", "op": "contains", "value": "ZZZ_NOMATCH"}],
+        "actions": [{"op": "set_category", "value": cat_food}],
+        "priority": 5,
+        "is_active": True,
+    }
+    create_response = await client.post("/api/rules", json=create_payload, headers=auth_headers)
+    assert create_response.status_code == 201
+
+    update_response = await client.patch(
+        f"/api/rules/{create_response.json()['id']}",
+        json={
+            "conditions": [{"field": "description", "op": "contains", "value": "NETFLIX"}],
+            "apply_to_existing": False,
+        },
+        headers=auth_headers,
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["applied_count"] == 0
+
+    items = (await client.get("/api/transactions", headers=auth_headers)).json()["items"]
+    netflix = {t["description"]: t for t in items}.get("NETFLIX")
+    assert netflix is not None
+    assert netflix["category_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_rule_can_overwrite_existing_category_when_requested(
+    client: AsyncClient, auth_headers, test_transactions, test_categories,
+):
+    original = str(test_categories[0].id)  # IFOOD RESTAURANTE is pre-set to this
+    other = str(test_categories[1].id)
+    create_payload = {
+        "name": "iFood update overwrite",
+        "conditions_op": "and",
+        "conditions": [{"field": "description", "op": "contains", "value": "ZZZ_NOMATCH"}],
+        "actions": [{"op": "set_category", "value": other}],
+        "priority": 5,
+        "is_active": True,
+    }
+    create_response = await client.post("/api/rules", json=create_payload, headers=auth_headers)
+    assert create_response.status_code == 201
+    assert create_response.json()["applied_count"] == 0
+
+    update_response = await client.patch(
+        f"/api/rules/{create_response.json()['id']}",
+        json={
+            "conditions": [{"field": "description", "op": "contains", "value": "IFOOD"}],
+            "overwrite_existing_categories": True,
+        },
+        headers=auth_headers,
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["applied_count"] >= 1
+
+    items = (await client.get("/api/transactions", headers=auth_headers)).json()["items"]
+    ifood = {t["description"]: t for t in items}.get("IFOOD RESTAURANTE")
+    assert ifood["category_id"] != original
+    assert ifood["category_id"] == other
+
+
+@pytest.mark.asyncio
+async def test_update_rule_inactive_to_active_applies_to_existing_transactions(
+    client: AsyncClient, auth_headers, test_transactions, test_categories,
+):
+    cat_food = str(test_categories[0].id)
+    create_payload = {
+        "name": "Inactive Netflix",
+        "conditions_op": "and",
+        "conditions": [{"field": "description", "op": "contains", "value": "NETFLIX"}],
+        "actions": [{"op": "set_category", "value": cat_food}],
+        "priority": 5,
+        "is_active": False,
+    }
+    create_response = await client.post("/api/rules", json=create_payload, headers=auth_headers)
+    assert create_response.status_code == 201
+    assert create_response.json()["applied_count"] == 0
+
+    update_response = await client.patch(
+        f"/api/rules/{create_response.json()['id']}",
+        json={"is_active": True},
         headers=auth_headers,
     )
     assert update_response.status_code == 200
@@ -475,6 +599,40 @@ async def test_rule_user_isolation(
     items = response.json()["items"]
     # Verify user1 still has transactions
     assert len(items) >= 5
+
+
+@pytest.mark.asyncio
+async def test_rule_pack_install_is_scoped_to_selected_workspace(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+):
+    from app.services.workspace_service import create_workspace
+
+    second = await create_workspace(
+        session,
+        name="Second",
+        creator=test_user,
+        self_membership=True,
+        seed_defaults=True,
+    )
+    second_headers = {**auth_headers, "X-Workspace-Id": str(second.id)}
+
+    response = await client.post("/api/rules/packs/BR/install", headers=second_headers)
+    assert response.status_code == 200
+    assert response.json()["installed"] > 0
+
+    second_packs = (await client.get("/api/rules/packs", headers=second_headers)).json()
+    assert next(p for p in second_packs if p["code"] == "BR")["installed"] is True
+
+    default_packs = (await client.get("/api/rules/packs", headers=auth_headers)).json()
+    assert next(p for p in default_packs if p["code"] == "BR")["installed"] is False
+
+    default_rules = (await client.get("/api/rules", headers=auth_headers)).json()
+    second_rules = (await client.get("/api/rules", headers=second_headers)).json()
+    assert "iFood / Rappi" not in {rule["name"] for rule in default_rules}
+    assert "iFood / Rappi" in {rule["name"] for rule in second_rules}
 
 
 @pytest.mark.asyncio

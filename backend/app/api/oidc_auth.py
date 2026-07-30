@@ -106,7 +106,7 @@ async def _exchange_code(discovery: dict[str, Any], code: str, code_verifier: st
     data = {
         "grant_type": "authorization_code",
         "client_id": settings.oidc_client_id,
-        "client_secret": settings.oidc_client_secret,
+        "client_secret": settings.oidc_client_secret.get_secret_value(),
         "code": code,
         "redirect_uri": _redirect_uri(),
         "code_verifier": code_verifier,

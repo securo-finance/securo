@@ -6,8 +6,10 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.category import Category
+from app.models.payee import Payee
 from app.models.transaction import Transaction
-from app.schemas.rule import RuleAction, RuleCondition, RuleCreate, RuleUpdate
+from app.schemas.rule import RuleAction, RuleCondition, RuleCreate, RuleExportItem, RuleExportPayload, RuleUpdate
 from app.services.rule_service import (
     DuplicateRuleError,
     RULE_PACKS,
@@ -19,6 +21,7 @@ from app.services.rule_service import (
     get_installed_packs,
     get_rule,
     get_rules,
+    import_rules,
     install_rule_pack,
     update_rule,
 )
@@ -191,6 +194,108 @@ async def test_update_rule_duplicate_name_raises(session: AsyncSession, test_use
             test_workspace.id,
             RuleUpdate(name="Name B"),
         )
+
+
+@pytest.mark.asyncio
+async def test_create_rule_rejects_unknown_action(session: AsyncSession, test_user, test_workspace):
+    with pytest.raises(ValueError, match="Invalid rule action"):
+        await create_rule(
+            session,
+            test_workspace.id,
+            test_user.id,
+            RuleCreate(
+                name="Bad Action",
+                conditions=[RuleCondition(field="description", op="contains", value="X")],
+                actions=[RuleAction(op="explode", value="nope")],
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_create_rule_rejects_category_outside_workspace(
+    session: AsyncSession, test_user, test_workspace
+):
+    with pytest.raises(ValueError, match="Category not found"):
+        await create_rule(
+            session,
+            test_workspace.id,
+            test_user.id,
+            RuleCreate(
+                name="Wrong Category",
+                conditions=[RuleCondition(field="description", op="contains", value="X")],
+                actions=[RuleAction(op="set_category", value=str(uuid.uuid4()))],
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_rule_rejects_payee_outside_workspace(
+    session: AsyncSession, test_user, test_workspace
+):
+    payee = Payee(user_id=test_user.id, workspace_id=uuid.uuid4(), name="Foreign")
+    session.add(payee)
+    await session.commit()
+
+    rule = await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Safe",
+            conditions=[RuleCondition(field="description", op="contains", value="X")],
+            actions=[RuleAction(op="append_notes", value="#safe")],
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Payee not found"):
+        await update_rule(
+            session,
+            rule.id,
+            test_workspace.id,
+            RuleUpdate(actions=[RuleAction(op="set_payee", value=str(payee.id))]),
+        )
+
+
+@pytest.mark.asyncio
+async def test_import_rules_skips_invalid_rules(
+    session: AsyncSession, test_user, test_workspace
+):
+    category = Category(
+        user_id=test_user.id,
+        workspace_id=uuid.uuid4(),
+        name="Foreign",
+        icon="x",
+        color="#000000",
+    )
+    session.add(category)
+    await session.commit()
+
+    payload = RuleExportPayload(
+        rules=[
+            RuleExportItem(
+                name="Foreign category",
+                conditions=[RuleCondition(field="description", op="contains", value="X")],
+                actions=[RuleAction(op="set_category", value=str(category.id))],
+            ),
+            RuleExportItem(
+                name="Invalid condition",
+                conditions=[RuleCondition(field="description", op="invalid", value="X")],
+                actions=[RuleAction(op="append_notes", value="#bad")],
+            ),
+            RuleExportItem(
+                name="Valid",
+                conditions=[RuleCondition(field="description", op="contains", value="X")],
+                actions=[RuleAction(op="append_notes", value="#valid")],
+            ),
+        ]
+    )
+
+    result = await import_rules(
+        session, test_workspace.id, test_user.id, payload, overwrite=True
+    )
+
+    assert result.imported == 1
+    assert result.skipped == 2
 
 
 # ---------------------------------------------------------------------------

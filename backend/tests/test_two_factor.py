@@ -1,8 +1,11 @@
-from unittest.mock import AsyncMock, patch
+from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pyotp
 import pytest
 from httpx import AsyncClient
+
+from app.api.two_factor import _verify_totp
 
 
 def _make_redis_mock_with_store():
@@ -24,11 +27,7 @@ def _make_redis_mock_with_store():
     mock.delete = AsyncMock(side_effect=mock_delete)
 
     # Pipeline for rate limiter (always allow)
-    pipe_mock = AsyncMock()
-    pipe_mock.zremrangebyscore = AsyncMock()
-    pipe_mock.zcard = AsyncMock()
-    pipe_mock.zadd = AsyncMock()
-    pipe_mock.expire = AsyncMock()
+    pipe_mock = MagicMock()
     pipe_mock.execute = AsyncMock(return_value=[0, 0, True, True])
     mock.pipeline = lambda: pipe_mock
 
@@ -87,6 +86,23 @@ async def test_enable_2fa_invalid_code(client: AsyncClient, auth_headers: dict, 
         headers=auth_headers,
     )
     assert response.status_code == 400
+
+
+def test_verify_totp_allows_adjacent_time_windows():
+    secret = pyotp.random_base32()
+    fixed_time = datetime(2026, 7, 19, 12, 0)
+    totp = pyotp.TOTP(secret)
+    previous_code = totp.at(fixed_time, counter_offset=-1)
+    next_code = totp.at(fixed_time, counter_offset=1)
+
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 7, 19, 12, 0, tzinfo=tz)
+
+    with patch("pyotp.totp.datetime.datetime", FrozenDateTime):
+        assert _verify_totp(secret, previous_code)
+        assert _verify_totp(secret, next_code)
 
 
 async def test_login_with_2fa(client: AsyncClient, test_user_with_2fa):
@@ -202,7 +218,7 @@ async def test_verify_2fa_with_valid_token(client: AsyncClient, test_user_with_2
     mock_r = AsyncMock()
     mock_r.get = AsyncMock(return_value=str(test_user_with_2fa.id))
     mock_r.delete = AsyncMock()
-    pipe = AsyncMock()
+    pipe = MagicMock()
     pipe.execute = AsyncMock(return_value=[0, 0, True, True])
     mock_r.pipeline = lambda: pipe
 

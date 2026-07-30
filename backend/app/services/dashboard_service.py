@@ -54,10 +54,19 @@ async def _get_recurring_projections(
         return []
     stmt = (
         select(RecurringTransaction)
+        .outerjoin(Category, RecurringTransaction.category_id == Category.id)
         .where(
             RecurringTransaction.workspace_id == workspace_id,
             RecurringTransaction.is_active == True,
             RecurringTransaction.start_date < month_end,
+            or_(
+                RecurringTransaction.category_id.is_(None),
+                Category.treat_as_transfer.is_not(True),
+            ),
+            or_(
+                RecurringTransaction.category_id.is_(None),
+                Category.is_ignored.is_not(True),
+            ),
         )
     )
     if account_ids:
@@ -731,10 +740,19 @@ async def get_projected_transactions(
 
     result = await session.execute(
         select(RecurringTransaction)
+        .outerjoin(Category, RecurringTransaction.category_id == Category.id)
         .where(
             RecurringTransaction.workspace_id == workspace_id,
             RecurringTransaction.is_active == True,
             RecurringTransaction.start_date < month_end,
+            or_(
+                RecurringTransaction.category_id.is_(None),
+                Category.treat_as_transfer.is_not(True),
+            ),
+            or_(
+                RecurringTransaction.category_id.is_(None),
+                Category.is_ignored.is_not(True),
+            ),
         )
     )
     recurring_list = list(result.scalars().all())

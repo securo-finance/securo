@@ -184,7 +184,7 @@ def parse_qif(content: bytes) -> list[TransactionImport]:
 
 
 def parse_camt(content: bytes) -> list[TransactionImport]:
-    """Parse CAMT.053 (ISO 20022) XML file content and return transactions."""
+    """Parse CAMT.052/CAMT.053 (ISO 20022) XML file content and return transactions."""
     root = ET.fromstring(content)
 
     # Detect namespace dynamically
@@ -213,9 +213,26 @@ def parse_camt(content: bytes) -> list[TransactionImport]:
 
     transactions = []
 
-    # Navigate: Document > BkToCstmrStmt > Stmt > Ntry
-    for stmt in findall(root, 'BkToCstmrStmt/Stmt'):
+    # Navigate: Document > BkToCstmrStmt > Stmt > Ntry (CAMT.053, end-of-day statement)
+    # Fallback: Document > BkToCstmrAcctRpt > Rpt > Ntry (CAMT.052, intraday report —
+    # same Ntry sub-schema, different root/container element). Several European banks,
+    # including German Volksbanken/Raiffeisenbanken, only offer CAMT.052 exports.
+    stmts = findall(root, 'BkToCstmrStmt/Stmt') or findall(root, 'BkToCstmrAcctRpt/Rpt')
+    for stmt in stmts:
         for ntry in findall(stmt, 'Ntry'):
+            # Entry status: BOOK (final) vs. PDNG/INFO (pending/informational).
+            # CAMT.052 intraday reports commonly include PDNG entries for
+            # transactions that haven't settled yet; the same transaction is
+            # reported again as BOOK once it settles. Skip anything that
+            # isn't BOOK to avoid importing it twice. Status is either a
+            # plain code (<Sts>BOOK</Sts>) or wrapped (<Sts><Cd>BOOK</Cd></Sts>)
+            # depending on the schema version. Check the wrapped form first:
+            # in pretty-printed XML the <Sts> element's own text is the
+            # whitespace before <Cd>, which would otherwise mask the real code.
+            status = find_text(ntry, 'Sts/Cd') or find_text(ntry, 'Sts')
+            if status and status.strip().upper() != 'BOOK':
+                continue
+
             # Amount
             amt_el = find(ntry, 'Amt')
             if amt_el is None:
@@ -613,7 +630,12 @@ async def import_transactions(
                         Transaction.description == txn_data.description,
                     )
                 )
-            if existing.scalar_one_or_none():
+            # `.first()` rather than `.scalar_one_or_none()`: the dedup key can
+            # legitimately match more than one row (e.g. a prior sync/import race
+            # left a duplicate, or a bank reuses one FITID across statements),
+            # and we only need to know whether *any* match exists. Requiring
+            # exactly one would raise MultipleResultsFound and abort the import.
+            if existing.scalars().first() is not None:
                 skipped += 1
                 continue
 
@@ -621,7 +643,9 @@ async def import_transactions(
         import_payee_id = None
         import_payee_raw = getattr(txn_data, "payee_raw", None)
         if import_payee_raw:
-            import_payee_entity = await get_or_create_payee(session, user_id, import_payee_raw)
+            import_payee_entity = await get_or_create_payee(
+                session, user_id, import_payee_raw, workspace_id=workspace_id
+            )
             import_payee_id = import_payee_entity.id
 
         # Recurring bill reconciliation (issue #116): if this imported charge

@@ -12,7 +12,19 @@ import type { AxiosError } from 'axios'
 import { isServerUnreachable } from '@/lib/auth-errors'
 import { useTheme } from 'next-themes'
 import { setThemeBasedOnSystem } from '@/lib/theme-utils'
-import { isPasskeySupported, startPasskeyAuthentication } from '@/lib/webauthn'
+import { isPasskeySupported, passkeyFailure, startPasskeyAuthentication } from '@/lib/webauthn'
+import type { PasskeyFailure } from '@/lib/webauthn'
+
+const PASSKEY_LOGIN_FAILURE_KEYS: Record<PasskeyFailure, string> = {
+  cancelled: 'auth.passkeyCancelled',
+  domain: 'auth.passkeyDomainError',
+  mismatch: 'auth.passkeyDomainMismatch',
+  ip: 'auth.passkeyIpAddress',
+  insecure: 'auth.passkeyInsecureContext',
+  unsupported: 'auth.passkeyUnsupported',
+  duplicate: 'auth.passkeyLoginError',
+  unknown: 'auth.passkeyLoginError',
+}
 
 export default function LoginPage() {
   const { t } = useTranslation()
@@ -100,13 +112,10 @@ export default function LoginPage() {
       navigate('/')
     } catch (err) {
       const axiosErr = err as AxiosError
-      const domErr = err as { name?: string }
-      if (domErr?.name === 'NotAllowedError') {
-        setError(t('auth.passkeyCancelled'))
-      } else if (axiosErr?.response?.status === 429) {
+      if (axiosErr?.response?.status === 429) {
         setError(t('auth.tooManyAttempts'))
       } else {
-        setError(t('auth.passkeyLoginError'))
+        setError(t(PASSKEY_LOGIN_FAILURE_KEYS[passkeyFailure(err)]))
       }
     } finally {
       setIsPasskeyLoading(false)

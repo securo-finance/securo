@@ -39,9 +39,13 @@ dev = [
     "pytest>=7.4.0",
     "pytest-asyncio>=0.23.0,<1.0",
     "pytest-cov>=4.1.0",
+    "pytest-xdist>=3.6.1",
     "httpx>=0.26.0",
     "aiosqlite>=0.19.0",
-    "ruff>=0.1.0",
+    # Upper-bounded so CI lint stays deterministic: ruff 0.16 reformats the
+    # historical alembic/ migration import blocks. Bump deliberately (with the
+    # accompanying reformat) rather than letting CI float to a newer release.
+    "ruff>=0.1.0,<0.16",
 ]
 
 [tool.setuptools.packages.find]

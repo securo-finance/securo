@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
-import { getAccountName } from '@/lib/account-utils'
+import { getAccountLabel } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
+import { localDateString } from '@/lib/date-utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -42,7 +43,7 @@ export function TransferDialog({
   const [fromAccountId, setFromAccountId] = useState(defaultFromAccountId || (accounts[0]?.id ?? ''))
   const [toAccountId, setToAccountId] = useState('')
   const [amount, setAmount] = useState('')
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [date, setDate] = useState(localDateString)
   const [description, setDescription] = useState('')
   const [notes, setNotes] = useState('')
   const [fxRate, setFxRate] = useState('')
@@ -53,7 +54,7 @@ export function TransferDialog({
     setFromAccountId(defaultFromAccountId || (accounts[0]?.id ?? ''))
     setToAccountId('')
     setAmount('')
-    setDate(new Date().toISOString().split('T')[0])
+    setDate(localDateString())
     setDescription('')
     setNotes('')
     setFxRate('')
@@ -137,7 +138,7 @@ export function TransferDialog({
                 <option value="" disabled>{t('transactions.account')}</option>
                 {accounts.map((acc) => (
                   <option key={acc.id} value={acc.id}>
-                    {getAccountName(acc)} ({acc.currency})
+                    {getAccountLabel(acc)} ({acc.currency})
                   </option>
                 ))}
               </select>
@@ -160,7 +161,7 @@ export function TransferDialog({
                 <option value="" disabled>{t('transactions.account')}</option>
                 {availableToAccounts.map((acc) => (
                   <option key={acc.id} value={acc.id}>
-                    {getAccountName(acc)} ({acc.currency})
+                    {getAccountLabel(acc)} ({acc.currency})
                   </option>
                 ))}
               </select>

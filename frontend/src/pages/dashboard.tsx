@@ -149,7 +149,8 @@ export default function DashboardPage() {
   const dateFnsLocale = resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language)
   const { from: monthStart, to: monthEnd } = monthRange(selectedMonth)
   const monthParam = monthStart
-  const monthLabelStr = monthLabel(selectedMonth, dateLocale)
+  const uiLocale = i18n.resolvedLanguage ?? i18n.language
+  const monthLabelStr = monthLabel(selectedMonth, uiLocale)
 
   const handleMonthChange = (newMonth: string) => {
     setSelectedMonth(newMonth)
@@ -273,12 +274,18 @@ export default function DashboardPage() {
 
   const createRuleMutation = useMutation({
     mutationFn: (data: Omit<Rule, 'id' | 'user_id'>) => rulesApi.create(data),
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['rules'] })
-      invalidateFinancialQueries(queryClient)
       setCreateRuleOpen(false)
       setCreateRuleInitialData(undefined)
-      toast.success(t('rules.created'))
+      const applied = result.applied_count ?? 0
+      if (applied > 0) {
+        invalidateFinancialQueries(queryClient)
+        queryClient.invalidateQueries({ queryKey: ['payees'] })
+        toast.success(t('rules.createdAndApplied', { count: applied }))
+      } else {
+        toast.success(t('rules.created'))
+      }
     },
     onError: (error: unknown) => {
       const err = error as { response?: { status?: number } }
@@ -489,7 +496,7 @@ export default function DashboardPage() {
         groupId: null,
         parentOwnerName: null,
         groupName: null,
-        isIgnored: pt.is_ignored
+        isIgnored: false
       })
     }
     rows.sort((a, b) => txSortDesc ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date))
@@ -518,7 +525,7 @@ export default function DashboardPage() {
       {/* Header */}
       <PageHeader
         section={greeting}
-        title={new Date(selectedMonth + '-02').toLocaleDateString(dateLocale, { month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase())}
+        title={monthLabel(selectedMonth, uiLocale).replace(/^\w/, c => c.toUpperCase())}
         action={
           <div className="flex items-center gap-1">
             <button
@@ -532,7 +539,7 @@ export default function DashboardPage() {
                   className="inline-flex items-center justify-center gap-2 border border-border rounded-lg px-3 py-1.5 text-sm bg-card text-foreground hover:bg-muted/50 transition-all cursor-pointer min-w-[180px]"
                 >
                   <CalendarIcon className="size-3.5 text-muted-foreground" />
-                  {new Date(selectedMonth + '-02').toLocaleDateString(dateLocale, { month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase())}
+                  {monthLabel(selectedMonth, uiLocale).replace(/^\w/, c => c.toUpperCase())}
                 </button>
               </PopoverTrigger>
               <PopoverContent align="center" className="w-auto p-0">
@@ -891,7 +898,7 @@ export default function DashboardPage() {
                   <Tooltip
                     formatter={(value, name) => [
                       value !== null ? (privacyMode ? MASK : formatCurrency(Number(value), userCurrency, locale)) : '\u2014',
-                      name === 'current' ? monthLabel(selectedMonth, dateLocale).split(' ')[0] : monthLabel(prevMonth, dateLocale).split(' ')[0],
+                      name === 'current' ? monthLabel(selectedMonth, uiLocale).split(' ')[0] : monthLabel(prevMonth, uiLocale).split(' ')[0],
                     ]}
                     labelFormatter={(day) => t('dashboard.day', { day })}
                     contentStyle={{
@@ -938,7 +945,7 @@ export default function DashboardPage() {
               <div className="px-5 pb-4 pt-0 shrink-0">
                 <p className="text-xs text-muted-foreground">
                   {t('dashboard.balanceFlowVsPrev', {
-                    month: monthLabel(prevMonth, dateLocale).split(' ')[0],
+                    month: monthLabel(prevMonth, uiLocale).split(' ')[0],
                     day: footerDay,
                     amount: mask(formatCurrency(footerPrev, userCurrency, locale)),
                     delta: `${footerPct >= 0 ? '+' : ''}${footerPct.toFixed(1)}%`,
@@ -1257,7 +1264,7 @@ export default function DashboardPage() {
         }}
         loading={updateMutation.isPending || deleteMutation.isPending || unlinkTransferMutation.isPending}
         error={updateMutation.error ? extractApiError(updateMutation.error) : deleteMutation.error ? extractApiError(deleteMutation.error) : null}
-        isSynced={!!editingTx?.external_id}
+        isSynced={editingTx?.source === 'sync'}
       />
 
       <RuleDialog

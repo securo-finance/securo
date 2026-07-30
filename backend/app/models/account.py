@@ -26,6 +26,10 @@ class Account(Base):
     external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     name: Mapped[str] = mapped_column(String(255))
     display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # Last 4 chars of the bank's identifier (IBAN, account or card number), when
+    # the provider exposes one. Provider-owned like `name`: refreshed on sync,
+    # not user-editable. Never holds the full identifier.
+    masked_number: Mapped[Optional[str]] = mapped_column(String(4), nullable=True)
     type: Mapped[str] = mapped_column(String(50))  # checking, savings, credit_card
     balance: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2), default=Decimal("0.00"))
     currency: Mapped[str] = mapped_column(String(3), default="USD")

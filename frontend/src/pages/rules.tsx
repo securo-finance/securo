@@ -173,6 +173,7 @@ export default function RulesPage() {
       const applied = result.applied_count ?? 0
       if (applied > 0) {
         invalidateFinancialQueries(queryClient)
+        queryClient.invalidateQueries({ queryKey: ['payees'] })
         toast.success(t('rules.createdAndApplied', { count: applied }))
       } else {
         toast.success(t('rules.created'))
@@ -198,6 +199,7 @@ export default function RulesPage() {
       const applied = result.applied_count ?? 0
       if (applied > 0) {
         invalidateFinancialQueries(queryClient)
+        queryClient.invalidateQueries({ queryKey: ['payees'] })
         toast.success(t('rules.updatedAndApplied', { count: applied }))
       } else {
         toast.success(t('rules.updated'))
@@ -226,6 +228,7 @@ export default function RulesPage() {
     mutationFn: () => rulesApi.applyAll(),
     onSuccess: (data) => {
       invalidateFinancialQueries(queryClient)
+      queryClient.invalidateQueries({ queryKey: ['payees'] })
       toast.success(t('rules.applied', { count: data.applied }))
     },
     onError: () => toast.error(t('common.error')),
@@ -344,11 +347,15 @@ export default function RulesPage() {
                   variant="outline"
                   size="sm"
                   className="gap-1.5 h-8"
-                  onClick={() => applyAllMutation.mutate()}
+                  onClick={() => {
+                    if (window.confirm(t('rules.confirmResetAndReapplyAll', 'Reset matching transaction categories and notes, then reapply all active rules?'))) {
+                      applyAllMutation.mutate()
+                    }
+                  }}
                   disabled={applyAllMutation.isPending}
                 >
                   <RefreshCw size={12} />
-                  <span className="hidden sm:inline">{t('rules.reapplyAll')}</span>
+                  <span className="hidden sm:inline">{t('rules.resetAndReapplyAll', 'Reset and reapply')}</span>
                 </Button>
                 <Button size="sm" className="gap-1.5 h-8" onClick={openCreate}>
                   <Plus size={13} /> <span className="hidden sm:inline">{t('rules.add')}</span>

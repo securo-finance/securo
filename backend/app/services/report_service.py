@@ -52,8 +52,17 @@ _ASSET_TYPE_COLORS: dict[str, str] = {
 }
 
 
-def _report_start_date(today: date, months: int, period: str | None = None) -> date:
-    """Resolve historical report start date."""
+def _report_start_date(
+    today: date, months: int, period: str | None = None, days: int | None = None
+) -> date:
+    """Resolve historical report start date.
+
+    `days` requests an exact rolling window ending today (inclusive), instead of
+    the month-aligned window the `months` ranges use.
+    """
+    if days:
+        return today - timedelta(days=days - 1)
+
     if period == "ytd":
         return date(today.year, 1, 1)
 
@@ -370,12 +379,13 @@ async def get_income_expenses_report(
     currency: str = "USD",
     account_ids: Optional[list[uuid.UUID]] = None,
     period: str | None = None,
+    days: int | None = None,
 ) -> ReportResponse:
     """Build a ReportResponse for income vs expenses over time."""
     filtered = account_ids is not None
     acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
     today = date.today()
-    start = _report_start_date(today, months, period)
+    start = _report_start_date(today, months, period, days)
 
     # Get user's primary currency + global reporting mode
     user = await session.get(User, user_id)
@@ -552,7 +562,11 @@ async def get_income_expenses_report(
     cursor = start
     while cursor <= today:
         m_start, m_end = _month_range(cursor)
-        projections = await _get_recurring_projections(session, workspace_id, m_start, m_end, account_ids)
+        # A day-window range can start mid-month: only project occurrences that
+        # fall inside the requested window.
+        projections = await _get_recurring_projections(
+            session, workspace_id, max(m_start, start), m_end, account_ids
+        )
         for proj in projections:
             # Convert to primary currency
             converted, _ = await fx_convert(

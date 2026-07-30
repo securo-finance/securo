@@ -2,6 +2,7 @@
 import re
 import unicodedata
 import uuid
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING
 
@@ -9,11 +10,15 @@ if TYPE_CHECKING:
     from app.models.transaction import Transaction
 
 
+def _strip_accents(text: str) -> str:
+    """Remove diacritics (accents), preserving case."""
+    nfkd = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in nfkd if not unicodedata.combining(c))
+
+
 def _normalize(text: str) -> str:
     """Normalize text: uppercase and remove diacritics (accents)."""
-    upper = text.upper()
-    nfkd = unicodedata.normalize("NFKD", upper)
-    return "".join(c for c in nfkd if not unicodedata.combining(c))
+    return _strip_accents(text.upper())
 
 
 def _to_decimal(val) -> Decimal:
@@ -21,6 +26,19 @@ def _to_decimal(val) -> Decimal:
         return Decimal(str(val))
     except InvalidOperation:
         return Decimal("0")
+
+
+def _to_date(val) -> date | None:
+    if isinstance(val, datetime):
+        return val.date()
+    if isinstance(val, date):
+        return val
+    if isinstance(val, str):
+        try:
+            return date.fromisoformat(val)
+        except ValueError:
+            return None
+    return None
 
 
 def _match_condition(condition: dict, tx: "Transaction") -> bool:
@@ -49,14 +67,31 @@ def _match_condition(condition: dict, tx: "Transaction") -> bool:
             return tx_str != val_str
         if op == "regex":
             try:
-                # Normalize both sides so accents don't break matches
-                pattern = _normalize(str(value or ""))
+                # Strip accents from the pattern so it lines up with the
+                # normalized text, but keep its case: uppercasing a regex
+                # inverts escape classes (\s -> \S, \b -> \B, \d -> \D) and
+                # breaks inline flags. Case is already handled by IGNORECASE.
+                pattern = _strip_accents(str(value or ""))
                 return bool(re.search(pattern, tx_str, re.IGNORECASE))
             except re.error:
                 return False
 
     # Numeric operators
     if op in ("gt", "gte", "lt", "lte"):
+        if field == "date":
+            tx_date = _to_date(tx_val)
+            val_date = _to_date(value)
+            if tx_date is None or val_date is None:
+                return False
+            if op == "gt":
+                return tx_date > val_date
+            if op == "gte":
+                return tx_date >= val_date
+            if op == "lt":
+                return tx_date < val_date
+            if op == "lte":
+                return tx_date <= val_date
+
         tx_num = _to_decimal(tx_val)
         val_num = _to_decimal(value)
         if op == "gt":

@@ -318,8 +318,15 @@ export function WorkspaceSwitcher({
                   onClick={() => i18n.changeLanguage('pt-BR')}
                   className="flex items-center gap-2"
                 >
-                  <span className="flex-1">Português</span>
+                  <span className="flex-1">Português (BR)</span>
                   {currentLang === 'pt-BR' && <Check size={13} className="text-primary" />}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => i18n.changeLanguage('pt-PT')}
+                  className="flex items-center gap-2"
+                >
+                  <span className="flex-1">Português (PT)</span>
+                  {currentLang === 'pt-PT' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => i18n.changeLanguage('en')}
@@ -348,6 +355,13 @@ export function WorkspaceSwitcher({
                 >
                   <span className="flex-1">Italiano</span>
                   {currentLang === 'it' && <Check size={13} className="text-primary" />}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => i18n.changeLanguage('fr')}
+                  className="flex items-center gap-2"
+                >
+                  <span className="flex-1">Français</span>
+                  {currentLang === 'fr' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
               </DropdownMenuSubContent>
             </DropdownMenuPortal>

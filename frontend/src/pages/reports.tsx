@@ -64,7 +64,9 @@ function formatCompact(value: number, currency = 'USD', locale = 'en-US') {
 
 
 
-type RangeOption = { key: string; months: number; period?: 'ytd' }
+// `days` (when set) asks for an exact rolling window ending today rather than
+// the month-aligned window `months` produces.
+type RangeOption = { key: string; months: number; period?: 'ytd'; days?: number }
 
 const HISTORICAL_RANGE_OPTIONS: readonly RangeOption[] = [
   { key: '6m', months: 6 },
@@ -82,7 +84,7 @@ const FORWARD_RANGE_OPTIONS: readonly RangeOption[] = [
 // The Money Map answers "where did my money go lately", so it leans on recent
 // windows (down to 30 days) and drops the 2Y trend view the other tabs keep.
 const MONEY_MAP_RANGE_OPTIONS: readonly RangeOption[] = [
-  { key: '30d', months: 1 },
+  { key: '30d', months: 1, days: 30 },
   { key: '3m', months: 3 },
   { key: '6m', months: 6 },
   { key: 'ytd', months: 12, period: 'ytd' },
@@ -172,6 +174,7 @@ export default function ReportsPage() {
   const selectedRange = rangeOptions.find((r) => r.key === rangeKey) ?? rangeOptions[0]
   const months = selectedRange.months
   const period = selectedRange.period
+  const days = selectedRange.days
 
   const handleSelectTab = (key: string) => {
     setActiveTab(key)
@@ -194,12 +197,12 @@ export default function ReportsPage() {
   }
 
   const { data, isLoading } = useQuery<ReportResponse>({
-    queryKey: ['reports', activeTab, rangeKey, months, period ?? null, interval, isCashFlow ? cashFlowBaseline : false, activeAccountIds, activeWalletIds],
+    queryKey: ['reports', activeTab, rangeKey, months, period ?? null, days ?? null, interval, isCashFlow ? cashFlowBaseline : false, activeAccountIds, activeWalletIds],
     queryFn: () =>
       isCashFlow
         ? reports.cashFlow(months, interval, cashFlowBaseline, acctIds)
         : activeTab === 'income_expenses' || isMoneyMap
-          ? reports.incomeExpenses(months, interval, acctIds, period)
+          ? reports.incomeExpenses(months, interval, acctIds, period, days)
           : reports.netWorth(months, interval, acctIds, walletIds, period),
     enabled: currentTab.enabled && !(noAccounts && activeTab !== 'net_worth'),
   })

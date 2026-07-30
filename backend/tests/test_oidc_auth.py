@@ -4,6 +4,7 @@ import json
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from pydantic import SecretStr
 from httpx import AsyncClient
 from sqlalchemy import select
 
@@ -35,7 +36,7 @@ def oidc_settings(monkeypatch):
     settings.oidc_provider_name = "Pocket ID"
     settings.oidc_discovery_url = "https://id.example.com/.well-known/openid-configuration"
     settings.oidc_client_id = "securo"
-    settings.oidc_client_secret = "secret"
+    settings.oidc_client_secret = SecretStr("secret")
     settings.frontend_url = "http://test"
     settings.oidc_sync_roles = False
     settings.oidc_roles_claim = "groups"

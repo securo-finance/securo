@@ -129,6 +129,23 @@ OIDC_WORKSPACE_ROLE_MAP={"securo-owners":"owner","securo-editors":"editor","secu
 
 `OIDC_ADMIN_ROLES` grants or revokes Securo admin (`is_superuser`) on each OIDC login. `OIDC_WORKSPACE_ROLE_MAP` maps provider roles/groups to the user's Personal workspace role (`owner`, `editor`, or `viewer`); if multiple mapped roles are present, Securo applies the highest permission. Leave `OIDC_SYNC_ROLES=false` to keep all Securo roles managed locally.
 
+## Passkeys (Optional)
+
+Sign in with Touch ID, Face ID, Windows Hello, or a security key. Passkeys are on by default and need no configuration: they follow whatever address you open Securo on.
+
+Two rules come from the WebAuthn standard itself, and no setting can work around them:
+
+- **An IP address is never valid.** `http://192.168.1.10:3000` cannot register passkeys.
+- **Plain HTTP is never valid, except on `localhost`.**
+
+So use passkeys on `http://localhost:3000`, or put Securo on a domain behind an HTTPS reverse proxy. When serving from a domain, point `FRONTEND_URL` at it (this also covers CORS and OAuth callbacks):
+
+```
+FRONTEND_URL=https://securo.example.com
+```
+
+To pin passkeys to one domain, set `WEBAUTHN_RP_ID` (use the parent domain if you reach Securo on several subdomains). Otherwise Securo follows the browser, and requests from an unusable address get an explanation in the UI instead of a silent failure.
+
 ## Exchange Rates (Optional)
 
 For automatic currency conversion, add a free [Open Exchange Rates](https://openexchangerates.org/) key to `.env`:

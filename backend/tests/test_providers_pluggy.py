@@ -345,3 +345,30 @@ async def test_get_transactions_follows_cursor_until_next_is_null():
     assert first.kwargs["params"]["createdAtFrom"] == "2026-01-01"
     assert "after" not in first.kwargs["params"]
     assert client.get.await_args_list[1].kwargs["params"]["after"] == "CUR2"
+
+
+# ----- masked account number (issue #408) -----
+
+
+def test_build_account_data_masks_account_number():
+    """Brazil has no IBAN; Pluggy's `number` is the branch/account number."""
+    from app.providers.pluggy import _build_account_data
+
+    acc = {
+        "id": "acc-1",
+        "name": "Conta Corrente",
+        "type": "BANK",
+        "number": "1234-56789",
+        "balance": 100,
+        "currencyCode": "BRL",
+    }
+    out = _build_account_data(acc, PluggyProvider._map_account_type)
+    assert out.masked_number == "6789"
+
+
+def test_build_account_data_without_number_leaves_mask_none():
+    from app.providers.pluggy import _build_account_data
+
+    acc = {"id": "acc-2", "name": "Conta", "type": "BANK", "balance": 0}
+    out = _build_account_data(acc, PluggyProvider._map_account_type)
+    assert out.masked_number is None

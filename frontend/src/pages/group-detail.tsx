@@ -31,6 +31,7 @@ import {
   type GroupMemberPayload,
   type GroupSettlementPayload,
 } from '@/lib/api'
+import { localDateString } from '@/lib/date-utils'
 import { MemberForm } from '@/components/member-form'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
@@ -287,7 +288,7 @@ export default function GroupDetailPage() {
   const [settleFrom, setSettleFrom] = useState('')
   const [settleTo, setSettleTo] = useState('')
   const [settleAmount, setSettleAmount] = useState('')
-  const [settleDate, setSettleDate] = useState(new Date().toISOString().split('T')[0])
+  const [settleDate, setSettleDate] = useState(localDateString)
   const [settleNotes, setSettleNotes] = useState('')
   const [settleCurrency, setSettleCurrency] = useState('USD')
   // Optional ledger integration for the payer: 'none' records the
@@ -368,7 +369,7 @@ export default function GroupDetailPage() {
     setSettleFrom(from ?? '')
     setSettleTo(to ?? '')
     setSettleAmount(amount != null ? amount.toFixed(2) : '')
-    setSettleDate(new Date().toISOString().split('T')[0])
+    setSettleDate(localDateString())
     setSettleNotes('')
     // Use the line's currency when settling a specific debt, falling
     // back to the group's default for free-form settlements. This

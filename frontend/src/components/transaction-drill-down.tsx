@@ -70,7 +70,7 @@ export function TransactionDrillDown({
         from: filter?.from,
         to: filter?.to,
         limit: 200,
-        exclude_transfers: true,
+        user_pnl_only: true,
       }),
     enabled: !!filter,
   })

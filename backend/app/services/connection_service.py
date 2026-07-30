@@ -237,6 +237,7 @@ async def _upsert_asset_from_holding(
             purchase_price=holding.purchase_price,
             purchase_date=holding.purchase_date,
             isin=holding.isin,
+            ticker=holding.ticker,
             maturity_date=holding.maturity_date,
             external_metadata=holding.metadata,
             valuation_method="manual",
@@ -269,6 +270,8 @@ async def _upsert_asset_from_holding(
         asset.purchase_date = holding.purchase_date
     if holding.isin:
         asset.isin = holding.isin
+    if holding.ticker:
+        asset.ticker = holding.ticker
     if holding.maturity_date:
         asset.maturity_date = holding.maturity_date
     return asset
@@ -584,6 +587,7 @@ async def handle_oauth_callback(
             connection_id=connection.id,
             external_id=acc_data.external_id,
             name=acc_data.name,
+            masked_number=acc_data.masked_number,
             type=acc_data.type,
             balance=acc_data.balance,
             currency=acc_data.currency,
@@ -634,7 +638,9 @@ async def handle_oauth_callback(
             # Resolve payee entity from raw payee text
             payee_id = None
             if txn_data.payee:
-                payee_entity = await get_or_create_payee(session, user_id, txn_data.payee)
+                payee_entity = await get_or_create_payee(
+                    session, user_id, txn_data.payee, workspace_id=workspace_id
+                )
                 payee_id = payee_entity.id
 
             bill = (
@@ -1013,6 +1019,7 @@ async def _sync_bill_finance_charges(
         else:
             tx = Transaction(
                 user_id=user_id,
+                workspace_id=account.workspace_id,
                 account_id=account.id,
                 external_id=external_id,
                 description=description,
@@ -1209,6 +1216,11 @@ async def sync_connection(
                     connection.provider, account.type, acc_data.balance
                 )
                 account.name = acc_data.name
+                # Backfills existing accounts on their next sync. Only written
+                # when the provider actually returns an identifier, so a payload
+                # that intermittently omits it can't blank out a known mask.
+                if acc_data.masked_number is not None:
+                    account.masked_number = acc_data.masked_number
                 if acc_data.type == "credit_card":
                     # Preserve existing CC metadata when the provider doesn't
                     # expose it. Pluggy's creditData fields (limit, close/due
@@ -1236,6 +1248,7 @@ async def sync_connection(
                     connection_id=connection.id,
                     external_id=acc_data.external_id,
                     name=acc_data.name,
+                    masked_number=acc_data.masked_number,
                     type=acc_data.type,
                     balance=acc_data.balance,
                     currency=acc_data.currency,
@@ -1275,12 +1288,21 @@ async def sync_connection(
 
             for txn_data in transactions_data:
                 existing = await session.execute(
-                    select(Transaction).where(
+                    select(Transaction)
+                    .where(
                         Transaction.account_id == account.id,
                         Transaction.external_id == txn_data.external_id,
                     )
+                    .order_by(Transaction.created_at)
                 )
-                existing_tx = existing.scalar_one_or_none()
+                # `.first()` rather than `.scalar_one_or_none()`: a prior sync
+                # race (two overlapping passes both select-then-insert the same
+                # external_id before either commits) can leave two rows sharing
+                # (account_id, external_id). scalar_one_or_none() would raise
+                # MultipleResultsFound and abort the whole connection's sync;
+                # we instead reconcile onto the oldest matching row and skip
+                # re-inserting, so a stray duplicate is harmless and never grows.
+                existing_tx = existing.scalars().first()
                 if existing_tx:
                     # User-flagged rows are frozen: skip status/bill drift so
                     # a re-sync can't revive a transaction the user hid.
@@ -1382,7 +1404,9 @@ async def sync_connection(
                 # Resolve payee entity from raw payee text
                 sync_payee_id = None
                 if txn_data.payee:
-                    sync_payee_entity = await get_or_create_payee(session, user_id, txn_data.payee)
+                    sync_payee_entity = await get_or_create_payee(
+                        session, user_id, txn_data.payee, workspace_id=workspace_id
+                    )
                     sync_payee_id = sync_payee_entity.id
 
                 # No placeholder existed: if this charge fulfills an active bill's

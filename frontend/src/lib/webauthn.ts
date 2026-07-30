@@ -36,13 +36,60 @@ type AuthenticationCredentialJSON = {
   clientExtensionResults: AuthenticationExtensionsClientOutputs
 }
 
+/** Why passkeys cannot be used here, or null when they can. */
+export type PasskeyBlocker = 'ip' | 'insecure' | 'unsupported'
+
+/** Every failure the passkey ceremonies can surface, as an i18n-friendly code. */
+export type PasskeyFailure = PasskeyBlocker | 'cancelled' | 'duplicate' | 'domain' | 'mismatch' | 'unknown'
+
+const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/
+
+function isIpLiteral(hostname: string): boolean {
+  // Browsers bracket IPv6 hosts; a bare colon can only be IPv6 here.
+  return IPV4.test(hostname) || hostname.startsWith('[') || hostname.includes(':')
+}
+
+/**
+ * WebAuthn requires a domain name: an IP address is never a valid relying-party
+ * ID, and plain HTTP is only a secure context on localhost. Detecting that up
+ * front lets the UI explain it instead of showing an opaque SecurityError.
+ */
+export function passkeyBlocker(): PasskeyBlocker | null {
+  if (typeof window === 'undefined') return 'unsupported'
+  if (isIpLiteral(window.location.hostname)) return 'ip'
+  if (!window.isSecureContext) return 'insecure'
+  if (!('PublicKeyCredential' in window) || !navigator.credentials) return 'unsupported'
+  return null
+}
+
 export function isPasskeySupported(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    window.isSecureContext &&
-    'PublicKeyCredential' in window &&
-    !!navigator.credentials
-  )
+  return passkeyBlocker() === null
+}
+
+const SERVER_FAILURES: Record<string, PasskeyFailure> = {
+  passkey_origin_ip: 'ip',
+  passkey_origin_insecure: 'insecure',
+  passkey_origin_mismatch: 'mismatch',
+}
+
+const BROWSER_FAILURES: Record<string, PasskeyFailure> = {
+  NotAllowedError: 'cancelled',
+  AbortError: 'cancelled',
+  InvalidStateError: 'duplicate',
+  SecurityError: 'domain',
+  NotSupportedError: 'unsupported',
+}
+
+/** Classify a ceremony failure so the UI can say what actually went wrong. */
+export function passkeyFailure(error: unknown): PasskeyFailure {
+  const response = (error as { response?: { data?: { detail?: { code?: string } } } })?.response
+  const serverCode = response?.data?.detail?.code
+  if (serverCode && SERVER_FAILURES[serverCode]) return SERVER_FAILURES[serverCode]
+
+  const name = (error as { name?: string })?.name
+  if (name && BROWSER_FAILURES[name]) return BROWSER_FAILURES[name]
+
+  return 'unknown'
 }
 
 function base64urlToArrayBuffer(value: string): ArrayBuffer {

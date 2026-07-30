@@ -16,9 +16,14 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jose import jwt
 
-from app.providers.base import ProviderUserActionRequired, SessionExpiredError
+from app.providers.base import (
+    ProviderUserActionRequired,
+    SessionExpiredError,
+    mask_last4,
+)
 from app.providers.enable_banking import (
     EnableBankingProvider,
+    _account_identifier,
     _map_cash_account_type,
     _txn_fingerprint,
 )
@@ -162,7 +167,7 @@ async def test_list_institutions_maps_and_dedupes_countries(eb_keys):
                         "logo": "https://l/revolut.png",
                         "bic": "REVOLT21",
                         "psu_types": ["personal"],
-                        "maximum_consent_validity": 180,
+                        "maximum_consent_validity": 15552000,
                     },
                     {"name": "Sparkasse", "country": "DE"},
                     {"name": "BNP Paribas", "country": "FR"},
@@ -394,3 +399,53 @@ async def test_refresh_credentials_valid_passes(eb_keys):
     creds = {"valid_until": future, "session_id_enc": "enc"}
     out = await provider.refresh_credentials(creds)
     assert out is creds
+
+
+# ----- account identifier / masking (issue #408) -----
+
+
+def test_account_identifier_prefers_iban():
+    raw = {
+        "account_id": {"iban": "NL91ABNA0417164300", "other": {"identification": "999"}},
+        "all_account_ids": [{"identification": "888", "scheme_name": "BBAN"}],
+    }
+    assert _account_identifier(raw) == "NL91ABNA0417164300"
+
+
+def test_account_identifier_falls_back_to_other_scheme():
+    """Banks outside SEPA report no IBAN; we must still find an identifier."""
+    raw = {"account_id": {"other": {"identification": "12345678", "scheme_name": "BBAN"}}}
+    assert _account_identifier(raw) == "12345678"
+
+
+def test_account_identifier_falls_back_to_all_account_ids():
+    raw = {"all_account_ids": [{"identification": "87654321", "scheme_name": "BBAN"}]}
+    assert _account_identifier(raw) == "87654321"
+
+
+def test_account_identifier_returns_none_when_absent():
+    assert _account_identifier({"uid": "abc", "product": "Girokonto"}) is None
+    assert _account_identifier({"account_id": {}, "all_account_ids": []}) is None
+
+
+def test_mask_last4_keeps_only_the_tail():
+    # The whole point: the full IBAN never reaches the database.
+    assert mask_last4("NL91ABNA0417164300") == "4300"
+
+
+def test_mask_last4_ignores_separators():
+    """IBANs are commonly formatted in groups of four."""
+    assert mask_last4("NL91 ABNA 0417 1643 00") == "4300"
+    assert mask_last4("1234-5678") == "5678"
+
+
+def test_mask_last4_returns_none_when_unusable():
+    assert mask_last4(None) is None
+    assert mask_last4("") is None
+    # Too short to mask: render nothing rather than a partial identifier.
+    assert mask_last4("12") is None
+    assert mask_last4("- -") is None
+
+
+def test_mask_last4_handles_exactly_four():
+    assert mask_last4("1234") == "1234"

@@ -12,7 +12,7 @@ class RuleCondition(BaseModel):
 
 
 class RuleAction(BaseModel):
-    op: str      # set_category, append_notes
+    op: str      # set_category, set_payee, append_notes, ignore
     value: Any   # category UUID str or notes string
 
 
@@ -23,6 +23,8 @@ class RuleCreate(BaseModel):
     actions: list[RuleAction]
     priority: int = 0
     is_active: bool = True
+    apply_to_existing: bool = True
+    overwrite_existing_categories: bool = False
 
 
 class RuleUpdate(BaseModel):
@@ -32,6 +34,8 @@ class RuleUpdate(BaseModel):
     actions: Optional[list[RuleAction]] = None
     priority: Optional[int] = None
     is_active: Optional[bool] = None
+    apply_to_existing: Optional[bool] = None
+    overwrite_existing_categories: bool = False
 
 
 class RuleRead(BaseModel):

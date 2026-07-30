@@ -7,6 +7,7 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.credit_card_bill import CreditCardBill
 from app.models.rule import Rule
 from app.models.transaction import Transaction
 from app.schemas.transaction import TransactionCreate, TransactionUpdate, TransferCreate
@@ -64,6 +65,53 @@ async def test_create_transaction_manual(
     assert txn.description == "Lunch"
     assert txn.source == "manual"
     assert txn.category_id == test_categories[0].id
+
+
+@pytest.mark.asyncio
+async def test_create_transaction_honors_effective_bill_date(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Card",
+        type="credit_card",
+        balance=Decimal("0"),
+        currency="BRL",
+        statement_close_day=10,
+        payment_due_day=20,
+    )
+    bill = CreditCardBill(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        external_id="bill-1",
+        due_date=date(2025, 5, 20),
+        total_amount=Decimal("100"),
+        currency="BRL",
+    )
+    session.add_all([account, bill])
+    await session.commit()
+
+    txn = await create_transaction(
+        session,
+        test_workspace.id,
+        test_user.id,
+        TransactionCreate(
+            description="Manual charge",
+            amount=Decimal("50.00"),
+            date=date(2025, 3, 5),
+            type="debit",
+            account_id=account.id,
+            effective_bill_date=date(2025, 5, 20),
+        ),
+    )
+
+    assert txn.effective_bill_date == date(2025, 5, 20)
+    assert txn.effective_date == date(2025, 5, 20)
+    assert txn.bill_id == bill.id
 
 
 @pytest.mark.asyncio

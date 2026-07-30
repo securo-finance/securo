@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { getAccountName } from '@/lib/account-utils'
+import { formatAccountMask, getAccountLabel, getAccountName } from '@/lib/account-utils'
 import { getConnectionName } from '@/lib/connection-utils'
 import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -7,6 +7,7 @@ import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { accounts, connections, currencies } from '@/lib/api'
+import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -281,6 +282,7 @@ export default function AccountsPage() {
                       : dueIn === 0 ? t('accounts.dueToday')
                       : t('accounts.dueIn', { count: dueIn })
                   const dueClass = dueIn != null && dueIn <= 3 ? 'text-amber-600' : 'text-muted-foreground'
+                  const accountMask = formatAccountMask(acc)
                   return (
                     <div key={acc.id} className="group flex items-center px-5 py-3 hover:bg-muted/50 transition-colors">
                       <Link to={`/accounts/${acc.id}`} className="flex items-center gap-3 flex-1 min-w-0">
@@ -289,6 +291,7 @@ export default function AccountsPage() {
                           <p className="text-sm font-medium text-foreground truncate">{getAccountName(acc)}</p>
                           <p className="text-xs text-muted-foreground">
                             {t(cfg.label)}
+                            {accountMask && <> · <span className="tabular-nums">{accountMask}</span></>}
                             {dueText && <> · <span className={dueClass}>{dueText}</span></>}
                           </p>
                         </div>
@@ -439,6 +442,7 @@ export default function AccountsPage() {
                               : dueIn === 0 ? t('accounts.dueToday')
                               : t('accounts.dueIn', { count: dueIn })
                           const dueClass = dueIn != null && dueIn <= 3 ? 'text-amber-600' : 'text-muted-foreground'
+                          const accountMask = formatAccountMask(acc)
                           return (
                             <div key={acc.id} className="group flex items-center px-5 py-3 hover:bg-muted/50 transition-colors">
                               <Link to={`/accounts/${acc.id}`} className="flex items-center gap-3 flex-1 min-w-0">
@@ -447,6 +451,7 @@ export default function AccountsPage() {
                                   <p className="text-sm font-medium text-foreground truncate">{getAccountName(acc)}</p>
                                   <p className="text-xs text-muted-foreground">
                                     {t(cfg.label)}
+                                    {accountMask && <> · <span className="tabular-nums">{accountMask}</span></>}
                                     {dueText && <> · <span className={dueClass}>{dueText}</span></>}
                                   </p>
                                 </div>
@@ -514,7 +519,7 @@ export default function AccountsPage() {
                     <div key={acc.id} className="flex items-center px-5 py-3">
                       <div className="flex items-center gap-3 flex-1 min-w-0">
                         <AccountIcon account={acc} />
-                        <p className="text-sm font-medium text-muted-foreground truncate">{getAccountName(acc)}</p>
+                        <p className="text-sm font-medium text-muted-foreground truncate">{getAccountLabel(acc)}</p>
                       </div>
                       {canWrite && (
                         <Button
@@ -729,7 +734,7 @@ function AccountDialog({
   const [type, setType] = useState(account?.type ?? 'checking')
   const [balance, setBalance] = useState(account?.balance?.toString() ?? '0')
   const [currency, setCurrency] = useState(account?.currency ?? userCurrency)
-  const [balanceDate, setBalanceDate] = useState(new Date().toISOString().slice(0, 10))
+  const [balanceDate, setBalanceDate] = useState(localDateString)
   const [creditLimit, setCreditLimit] = useState(account?.credit_limit?.toString() ?? '')
   const [statementCloseDay, setStatementCloseDay] = useState(account?.statement_close_day?.toString() ?? '')
   const [paymentDueDay, setPaymentDueDay] = useState(account?.payment_due_day?.toString() ?? '')
@@ -740,7 +745,7 @@ function AccountDialog({
     setType(account?.type ?? 'checking')
     setBalance(account?.balance?.toString() ?? '0')
     setCurrency(account?.currency ?? userCurrency)
-    setBalanceDate(new Date().toISOString().slice(0, 10))
+    setBalanceDate(localDateString())
     setCreditLimit(account?.credit_limit?.toString() ?? '')
     setStatementCloseDay(account?.statement_close_day?.toString() ?? '')
     setPaymentDueDay(account?.payment_due_day?.toString() ?? '')

@@ -38,6 +38,17 @@ class _RedisStore:
         self.store.pop(key, None)
 
 
+BROWSER_ORIGIN = "https://securo.test"
+
+
+@pytest.fixture(autouse=True)
+def _browser_origin(client: AsyncClient):
+    """Passkey ceremonies are bound to the origin the browser is on."""
+    client.headers["origin"] = BROWSER_ORIGIN
+    yield
+    client.headers.pop("origin", None)
+
+
 @pytest.fixture(autouse=True)
 def _passkey_redis_store(_mock_redis):
     redis = _RedisStore()
@@ -494,3 +505,144 @@ async def test_register_verify_deletes_challenge_after_failure(
     _passkey_redis_store.getdel.assert_called_once()
     _passkey_redis_store.delete.assert_not_called()
     assert _passkey_redis_store.store == {}
+
+
+# --- Relying-party resolution -------------------------------------------------
+# The RP ID must match the domain the browser is on, or the browser refuses the
+# credential with a SecurityError. See issues #403 and #410.
+
+
+async def _register_options(client: AsyncClient, auth_headers: dict, origin: str):
+    return await client.post(
+        "/api/auth/passkeys/register/options",
+        json={"name": "YubiKey"},
+        headers={**auth_headers, "origin": origin},
+    )
+
+
+async def test_register_options_derive_rp_id_from_request_origin(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    response = await _register_options(client, auth_headers, "https://money.example.com")
+
+    assert response.status_code == 200
+    assert response.json()["options"]["rp"]["id"] == "money.example.com"
+
+
+async def test_register_options_allow_http_localhost(client: AsyncClient, auth_headers: dict):
+    response = await _register_options(client, auth_headers, "http://localhost:3000")
+
+    assert response.status_code == 200
+    assert response.json()["options"]["rp"]["id"] == "localhost"
+
+
+async def test_register_options_reject_ip_origin(client: AsyncClient, auth_headers: dict):
+    response = await _register_options(client, auth_headers, "http://192.168.4.10:3000")
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "passkey_origin_ip"
+
+
+async def test_register_options_reject_loopback_ip_origin(client: AsyncClient, auth_headers: dict):
+    # A secure context, but 127.0.0.1 is still an IP and can never be an RP ID.
+    response = await _register_options(client, auth_headers, "http://127.0.0.1:3000")
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "passkey_origin_ip"
+
+
+async def test_register_options_reject_insecure_origin(client: AsyncClient, auth_headers: dict):
+    response = await _register_options(client, auth_headers, "http://securo.example.com")
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "passkey_origin_insecure"
+
+
+async def test_register_options_use_configured_rp_id_for_subdomain(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    settings = SimpleNamespace(webauthn_rp_id="example.com", webauthn_origin="", webauthn_rp_name="Securo")
+    with patch("app.core.webauthn.get_settings", return_value=settings):
+        response = await _register_options(client, auth_headers, "https://money.example.com")
+
+    assert response.status_code == 200
+    assert response.json()["options"]["rp"]["id"] == "example.com"
+
+
+async def test_register_options_reject_origin_outside_configured_rp_id(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    settings = SimpleNamespace(webauthn_rp_id="example.com", webauthn_origin="", webauthn_rp_name="Securo")
+    with patch("app.core.webauthn.get_settings", return_value=settings):
+        response = await _register_options(client, auth_headers, "https://not-example.com")
+
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "passkey_origin_mismatch"
+
+
+async def test_register_options_fall_back_to_forwarded_host(client: AsyncClient, auth_headers: dict):
+    client.headers.pop("origin")
+    response = await client.post(
+        "/api/auth/passkeys/register/options",
+        json={"name": "YubiKey"},
+        headers={
+            **auth_headers,
+            "x-forwarded-host": "money.example.com",
+            "x-forwarded-proto": "https",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["options"]["rp"]["id"] == "money.example.com"
+
+
+async def test_authenticate_options_derive_rp_id_from_request_origin(client: AsyncClient):
+    response = await client.post(
+        "/api/auth/passkeys/authenticate/options",
+        json={},
+        headers={"origin": "https://money.example.com"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["options"]["rpId"] == "money.example.com"
+
+
+async def test_register_verify_uses_the_origin_the_challenge_was_issued_for(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    options_response = await _register_options(client, auth_headers, "https://money.example.com")
+    challenge_id = options_response.json()["challenge_id"]
+
+    verification = SimpleNamespace(
+        credential_id=b"credential-1",
+        credential_public_key=b"public-key-1",
+        sign_count=1,
+        aaguid="test-aaguid",
+        fmt="none",
+        credential_type="public-key",
+    )
+    with patch("app.api.passkeys.verify_registration_response", return_value=verification) as verify_mock:
+        response = await client.post(
+            "/api/auth/passkeys/register/verify",
+            json={
+                "challenge_id": challenge_id,
+                "name": "YubiKey",
+                "credential": {
+                    "id": "credential-1",
+                    "rawId": "Y3JlZGVudGlhbC0x",
+                    "response": {"attestationObject": "YXR0", "clientDataJSON": "Y2xp"},
+                    "type": "public-key",
+                    "clientExtensionResults": {},
+                },
+            },
+            headers=auth_headers,
+        )
+
+    assert response.status_code == 200
+    kwargs = verify_mock.call_args.kwargs
+    assert kwargs["expected_rp_id"] == "money.example.com"
+    assert kwargs["expected_origin"] == "https://money.example.com"

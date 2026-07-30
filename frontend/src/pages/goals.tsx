@@ -23,7 +23,7 @@ import {
 } from '@/components/ui/popover'
 import type { Account, Asset, AssetGroup, Goal } from '@/types'
 import {
-  Pencil, Trash2, Plus, Pause, Play, CheckCircle2, Archive, Target,
+  Pencil, Trash2, Plus, Pause, Play, CheckCircle2, Archive, ArchiveRestore, Target,
   ChevronDown,
 } from 'lucide-react'
 import { ICON_MAP } from '@/lib/category-icons'
@@ -149,6 +149,7 @@ export default function GoalsPage() {
   const [editing, setEditing] = useState<Goal | null>(null)
   const [trackingType, setTrackingType] = useState('manual')
   const [statusFilter, setStatusFilter] = useState<string>('active')
+  const [deletingGoal, setDeletingGoal] = useState<Goal | null>(null)
   const [selectedIcon, setSelectedIcon] = useState('target')
   const [selectedColor, setSelectedColor] = useState('#3B82F6')
   const [targetDate, setTargetDate] = useState('')
@@ -204,8 +205,10 @@ export default function GoalsPage() {
     mutationFn: (id: string) => goalsApi.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['goals'] })
+      setDeletingGoal(null)
       toast.success(t('goals.deleted'))
     },
+    onError: () => toast.error(t('common.error')),
   })
 
   const statusMutation = useMutation({
@@ -387,6 +390,15 @@ export default function GoalsPage() {
                             <Archive size={13} />
                           </button>
                         )}
+                        {(goal.status === 'completed' || goal.status === 'archived') && (
+                          <button
+                            className="p-1.5 rounded-md text-muted-foreground hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-colors"
+                            onClick={() => statusMutation.mutate({ id: goal.id, status: 'active' })}
+                            title={t('goals.reactivate')}
+                          >
+                            <ArchiveRestore size={13} />
+                          </button>
+                        )}
                         <button
                           className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
                           onClick={() => openEditDialog(goal)}
@@ -396,8 +408,7 @@ export default function GoalsPage() {
                         </button>
                         <button
                           className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors"
-                          onClick={() => deleteMutation.mutate(goal.id)}
-                          disabled={deleteMutation.isPending}
+                          onClick={() => setDeletingGoal(goal)}
                           title={t('common.delete')}
                         >
                           <Trash2 size={13} />
@@ -617,6 +628,30 @@ export default function GoalsPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm delete dialog */}
+      <Dialog open={!!deletingGoal} onOpenChange={() => setDeletingGoal(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('goals.confirmDeleteTitle')}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {t('goals.confirmDeleteDesc', { name: deletingGoal?.name })}
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeletingGoal(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deletingGoal && deleteMutation.mutate(deletingGoal.id)}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? t('common.loading') : t('common.delete')}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

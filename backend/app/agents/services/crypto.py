@@ -21,7 +21,7 @@ _SALT = b"securo-agents-llm-keys-v1"
 
 @functools.lru_cache(maxsize=1)
 def _fernet() -> Fernet:
-    secret = get_settings().secret_key.encode("utf-8")
+    secret = get_settings().secret_key.get_secret_value().encode("utf-8")
     raw = hashlib.pbkdf2_hmac("sha256", secret, _SALT, iterations=100_000, dklen=32)
     return Fernet(base64.urlsafe_b64encode(raw))
 

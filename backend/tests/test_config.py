@@ -1,4 +1,5 @@
 from pathlib import Path
+from pydantic import SecretStr
 import pytest
 
 from app.core.config import Settings
@@ -19,14 +20,14 @@ def test_oidc_secret_reads_from_secrets_dir(secrets: Path):
     write(secrets, "oidc_client_secret", "file-secret")
 
     settings = Settings(_secrets_dir=str(secrets))
-    assert settings.oidc_client_secret == "file-secret"
+    assert settings.oidc_client_secret.get_secret_value() == "file-secret"
 
 
 def test_oidc_secret_strips_whitespace(secrets: Path):
     write(secrets, "oidc_client_secret", "  stripped-value  \n\n")
 
     settings = Settings(_secrets_dir=str(secrets))
-    assert settings.oidc_client_secret == "stripped-value"
+    assert settings.oidc_client_secret.get_secret_value() == "stripped-value"
 
 
 def test_oidc_secret_inline_when_no_file(secrets: Path):
@@ -35,13 +36,13 @@ def test_oidc_secret_inline_when_no_file(secrets: Path):
         _secrets_dir=str(secrets),
     )
 
-    assert settings.oidc_client_secret == "inline-secret"
+    assert settings.oidc_client_secret.get_secret_value() == "inline-secret"
 
 
 def test_oidc_secret_default_when_no_file(secrets: Path):
     settings = Settings(_secrets_dir=str(secrets))
 
-    assert settings.oidc_client_secret == ""
+    assert settings.oidc_client_secret.get_secret_value() == ""
 
 
 def test_multiple_secrets_dirs_merge(tmp_path: Path):
@@ -67,4 +68,8 @@ def test_multiple_secrets_dirs_merge(tmp_path: Path):
     settings = Settings(_secrets_dir=[str(d1), str(d2)])
 
     for key, expectedValue in expectedSecrets.items():
-        assert getattr(settings, key) == expectedValue
+        value = getattr(settings, key)
+        if isinstance(value, SecretStr):
+            value = value.get_secret_value()
+
+        assert value == expectedValue

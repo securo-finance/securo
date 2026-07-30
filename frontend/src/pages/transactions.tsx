@@ -80,7 +80,7 @@ function parseHashtags(notes: string | null): string[] {
 }
 
 export default function TransactionsPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const locale = useDisplayLocale()
@@ -520,6 +520,20 @@ export default function TransactionsPage() {
     },
   })
 
+  const bulkRemoveTagsMutation = useMutation({
+    mutationFn: ({ ids, tags }: { ids: string[]; tags: string[] }) =>
+      transactions.bulkRemoveTags(ids, tags),
+    onSuccess: (result) => {
+      invalidateAfterTxMutation()
+      setSelectedIds(new Set())
+      setBulkTagInput('')
+      toast.success(t('transactions.bulkSuccess', { count: result.updated }))
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
+
   const bulkAddToGroupMutation = useMutation({
     mutationFn: ({ ids, payload }: { ids: string[]; payload: BulkAddToGroupSubmission }) =>
       transactions.bulkAddToGroup(ids, payload.groupId, {
@@ -612,6 +626,7 @@ export default function TransactionsPage() {
       const applied = result.applied_count ?? 0
       if (applied > 0) {
         invalidateAfterTxMutation()
+        queryClient.invalidateQueries({ queryKey: ['payees'] })
         toast.success(t('rules.createdAndApplied', { count: applied }))
       } else {
         toast.success(t('rules.created'))
@@ -790,10 +805,13 @@ export default function TransactionsPage() {
         await transactions.export({
           account_ids: effectiveAccountIds.length > 0 ? effectiveAccountIds : undefined,
           category_ids: filterCategoryIds.length > 0 ? filterCategoryIds : undefined,
+          payee_id: filterPayee || undefined,
+          type: filterType || undefined,
           uncategorized: filterUncategorized ? true : undefined,
           from: filterFrom || undefined,
           to: filterTo || undefined,
           q: searchQuery || undefined,
+          tags: tagFilters.length > 0 ? tagFilters : undefined,
         })
       }
       toast.success(t('transactions.exportSuccess'))
@@ -1122,6 +1140,11 @@ export default function TransactionsPage() {
   const duplicableTx = selectedSingleTx && !selectedSingleTx.is_shared && !selectedSingleTx.transfer_pair_id
     ? selectedSingleTx
     : null
+  const exportLabel = exporting
+    ? t('transactions.exporting')
+    : selectedIds.size > 0
+      ? t('transactions.exportSelected', { count: selectedIds.size })
+      : t('transactions.exportCsv')
 
   return (
     <div>
@@ -1138,7 +1161,7 @@ export default function TransactionsPage() {
             <MonthStepper
               value={steppedMonth}
               onChange={handleMonthChange}
-              locale={dateLocale}
+              locale={i18n.resolvedLanguage ?? i18n.language}
               prevLabel={t('transactions.monthPrevious')}
               nextLabel={t('transactions.monthNext')}
             />
@@ -1148,11 +1171,7 @@ export default function TransactionsPage() {
               <TransactionsColumnPicker state={grid} />
               <Button variant="outline" disabled={exporting} onClick={handleExport}>
                 <Download size={16} className="mr-1.5" />
-                {exporting
-                  ? t('transactions.exporting')
-                  : selectedIds.size > 0
-                    ? t('transactions.exportSelected', { count: selectedIds.size })
-                    : t('transactions.exportCsv')}
+                {exportLabel}
               </Button>
               {/* Duplicate (issue #158): single non-shared, non-transfer row
                   selected. Pre-fills Add Transaction from its fields. */}
@@ -1192,7 +1211,7 @@ export default function TransactionsPage() {
               <DropdownMenuContent align="end">
                 <DropdownMenuItem disabled={exporting} onClick={handleExport}>
                   <Download size={16} className="mr-2" />
-                  {t('transactions.exportCsv')}
+                  {exportLabel}
                 </DropdownMenuItem>
                 {duplicableTx && (
                   <DropdownMenuItem onClick={() => handleDuplicateTransaction(duplicableTx)}>
@@ -1592,6 +1611,20 @@ export default function TransactionsPage() {
                 title={t('transactions.bulkAddTags', 'Add tags')}
               >
                 <Check size={15} />
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={!bulkTagInput.trim() || bulkRemoveTagsMutation.isPending}
+                onClick={() => {
+                  const tagList = bulkTagInput.trim().split(/[\s,]+/).filter(Boolean)
+                  if (tagList.length === 0) return
+                  bulkRemoveTagsMutation.mutate({ ids: Array.from(selectedIds), tags: tagList })
+                }}
+                className="h-8 w-8 px-0 shrink-0"
+                title={t('transactions.bulkRemoveTags', 'Remove tags')}
+              >
+                <X size={15} />
               </Button>
             </div>
 

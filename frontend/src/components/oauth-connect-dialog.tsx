@@ -15,6 +15,7 @@ type Institution = {
   name: string
   display_name: string
   country: string
+  max_consent_days?: number | null
   logo?: string | null
 }
 
@@ -108,6 +109,7 @@ export function OAuthConnectDialog({ open, onClose, provider, supportsAssetSync 
       const url = await connections.getOAuthUrl(provider, {
         country,
         institution_name: institution.name,
+        valid_until_days: institution.max_consent_days,
         ...(supportsAssetSync ? { sync_assets: syncAssets } : {}),
       })
       window.location.assign(url)

@@ -86,6 +86,7 @@ async def _validate_members(
     session: AsyncSession,
     member_ids: list[uuid.UUID],
     user_id: uuid.UUID,
+    workspace_id: uuid.UUID,
 ) -> uuid.UUID:
     """Ensure all members belong to a single group VISIBLE to `user_id`
     (owner OR linked member). Returns that group's id."""
@@ -100,6 +101,7 @@ async def _validate_members(
         .join(Group, GroupMember.group_id == Group.id)
         .where(
             GroupMember.id.in_(member_ids),
+            Group.workspace_id == workspace_id,
             or_(Group.user_id == user_id, Group.id.in_(linked_group_ids)),
         )
     )
@@ -142,7 +144,7 @@ async def replace_splits(
     if len(set(member_ids)) != len(member_ids):
         raise ValueError("Each member can appear at most once per transaction")
 
-    await _validate_members(session, member_ids, user_id)
+    await _validate_members(session, member_ids, user_id, transaction.workspace_id)
 
     for member_id, share_amount, share_pct in _materialize(transaction.amount, payload):
         session.add(

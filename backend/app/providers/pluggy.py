@@ -18,6 +18,7 @@ from app.providers.base import (
     HoldingData,
     RefreshOutcome,
     TransactionData,
+    mask_last4,
 )
 from app.providers.pluggy_constants import pluggy_icon_for_compe
 
@@ -227,6 +228,9 @@ def _build_account_data(acc: dict, type_mapper) -> AccountData:
         minimum_payment=minimum_payment,
         card_brand=card_brand,
         card_level=card_level,
+        # Brazil has no IBAN; Pluggy's `number` is the branch/account number
+        # (or the card number for credit cards), which serves the same purpose.
+        masked_number=mask_last4(acc.get("number")),
     )
 
 
@@ -262,7 +266,7 @@ class PluggyProvider(BankProvider):
                 f"{PLUGGY_API_BASE}/auth",
                 json={
                     "clientId": settings.pluggy_client_id,
-                    "clientSecret": settings.pluggy_client_secret,
+                    "clientSecret": settings.pluggy_client_secret.get_secret_value(),
                 },
             )
             resp.raise_for_status()

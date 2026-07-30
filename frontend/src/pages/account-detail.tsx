@@ -6,6 +6,7 @@ import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, addDays, addMonths, parseISO } from 'date-fns'
 import { accounts, transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
+import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import type { CreditCardBill, Transaction } from '@/types'
@@ -35,11 +36,11 @@ import {
 
 function defaultFrom() {
   const now = new Date()
-  return format(new Date(now.getFullYear(), now.getMonth(), 1), 'yyyy-MM-dd')
+  return localDateString(new Date(now.getFullYear(), now.getMonth(), 1))
 }
 
 function defaultTo() {
-  return format(new Date(), 'yyyy-MM-dd')
+  return localDateString()
 }
 
 function daysInMonth(year: number, month: number): number {

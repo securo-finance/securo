@@ -5,11 +5,18 @@ ignore toggle, bulk endpoints, transfer/link/counterpart/candidates, and
 error branches (404/400/422).
 """
 from datetime import date
+import uuid
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.category import Category
+from app.models.group import Group, GroupMember
+from app.models.transaction import Transaction
+from app.services.workspace_service import create_workspace
 
 
 NONEXISTENT = "00000000-0000-0000-0000-000000000000"
@@ -126,6 +133,63 @@ async def test_get_transaction(client: AsyncClient, auth_headers, test_transacti
 
 
 @pytest.mark.asyncio
+async def test_editing_transaction_does_not_persist_ignored_category_state(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user, test_workspace, test_account
+):
+    ignored = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Ignored",
+        is_ignored=True,
+    )
+    normal = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Normal",
+    )
+    session.add_all([ignored, normal])
+    await session.commit()
+
+    resp = await client.post(
+        "/api/transactions", headers=auth_headers,
+        json={
+            "account_id": str(test_account.id),
+            "category_id": str(ignored.id),
+            "description": "Hidden fee",
+            "amount": "12.50",
+            "date": date.today().isoformat(),
+            "type": "debit",
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
+    transaction_id = resp.json()["id"]
+    edit = await client.patch(
+        f"/api/transactions/{transaction_id}", headers=auth_headers, json={"notes": "edited"}
+    )
+    assert edit.status_code == 200
+    assert edit.json()["is_ignored"] is True
+    persisted = await session.scalar(
+        select(Transaction.is_ignored).where(Transaction.id == uuid.UUID(transaction_id))
+    )
+    assert persisted is False
+
+    moved = await client.patch(
+        f"/api/transactions/{transaction_id}",
+        headers=auth_headers,
+        json={"category_id": str(normal.id)},
+    )
+    assert moved.status_code == 200
+    assert moved.json()["is_ignored"] is False
+    persisted = await session.scalar(
+        select(Transaction.is_ignored).where(Transaction.id == uuid.UUID(transaction_id))
+    )
+    assert persisted is False
+
+
+@pytest.mark.asyncio
 async def test_get_transaction_not_found(client: AsyncClient, auth_headers, test_account):
     resp = await client.get(f"/api/transactions/{NONEXISTENT}", headers=auth_headers)
     assert resp.status_code == 404
@@ -163,6 +227,41 @@ async def test_create_transaction_bad_account_400(client: AsyncClient, auth_head
 
 
 @pytest.mark.asyncio
+async def test_create_transaction_rejects_category_from_other_workspace(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user, test_account
+):
+    other_ws = await create_workspace(
+        session,
+        name="Other",
+        creator=test_user,
+        self_membership=True,
+        seed_defaults=False,
+    )
+    other_category = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=other_ws.id,
+        name="Other category",
+    )
+    session.add(other_category)
+    await session.commit()
+
+    resp = await client.post(
+        "/api/transactions", headers=auth_headers,
+        json={
+            "account_id": str(test_account.id),
+            "category_id": str(other_category.id),
+            "description": "Wrong category",
+            "amount": "1.00",
+            "date": date.today().isoformat(),
+            "type": "debit",
+        },
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Category not found"
+
+
+@pytest.mark.asyncio
 async def test_update_transaction(client: AsyncClient, auth_headers, test_transactions):
     tx = test_transactions[0]
     resp = await client.patch(
@@ -182,6 +281,35 @@ async def test_update_transaction_not_found(client: AsyncClient, auth_headers, t
         json={"description": "X"},
     )
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_transaction_rejects_category_from_other_workspace(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user, test_transactions
+):
+    other_ws = await create_workspace(
+        session,
+        name="Other",
+        creator=test_user,
+        self_membership=True,
+        seed_defaults=False,
+    )
+    other_category = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=other_ws.id,
+        name="Other category",
+    )
+    session.add(other_category)
+    await session.commit()
+
+    tx = test_transactions[0]
+    resp = await client.patch(
+        f"/api/transactions/{tx.id}", headers=auth_headers,
+        json={"category_id": str(other_category.id)},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Category not found"
 
 
 @pytest.mark.asyncio
@@ -229,6 +357,37 @@ async def test_bulk_categorize(client: AsyncClient, auth_headers, test_transacti
 
 
 @pytest.mark.asyncio
+async def test_bulk_categorize_rejects_category_from_other_workspace(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user, test_transactions
+):
+    other_ws = await create_workspace(
+        session,
+        name="Other",
+        creator=test_user,
+        self_membership=True,
+        seed_defaults=False,
+    )
+    other_category = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=other_ws.id,
+        name="Other category",
+    )
+    session.add(other_category)
+    await session.commit()
+
+    resp = await client.patch(
+        "/api/transactions/bulk-categorize", headers=auth_headers,
+        json={
+            "transaction_ids": [str(test_transactions[0].id)],
+            "category_id": str(other_category.id),
+        },
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Category not found"
+
+
+@pytest.mark.asyncio
 async def test_bulk_add_and_remove_tags(client: AsyncClient, auth_headers, test_transactions):
     ids = [str(t.id) for t in test_transactions[:2]]
     add = await client.patch(
@@ -254,6 +413,47 @@ async def test_bulk_add_to_group_bad_group_400(client: AsyncClient, auth_headers
         json={"transaction_ids": ids, "group_id": NONEXISTENT, "share_type": "equal"},
     )
     assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_bulk_add_to_group_rejects_group_from_other_workspace(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user, test_transactions
+):
+    other_ws = await create_workspace(
+        session,
+        name="Other",
+        creator=test_user,
+        self_membership=True,
+        seed_defaults=False,
+    )
+    group = Group(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=other_ws.id,
+        name="Other group",
+        default_currency="BRL",
+    )
+    member = GroupMember(
+        id=uuid.uuid4(),
+        group_id=group.id,
+        workspace_id=other_ws.id,
+        name="Me",
+        linked_user_id=test_user.id,
+        is_self=True,
+    )
+    session.add_all([group, member])
+    await session.commit()
+
+    resp = await client.patch(
+        "/api/transactions/bulk-add-to-group", headers=auth_headers,
+        json={
+            "transaction_ids": [str(test_transactions[0].id)],
+            "group_id": str(group.id),
+            "share_type": "equal",
+        },
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Group not found"
 
 
 # ---------------------------------------------------------------------------

@@ -18,6 +18,27 @@ from typing import Literal, Optional
 RefreshOutcome = Literal["refreshed", "skipped", "needs_user_action", "failed"]
 
 
+def mask_last4(value: Optional[str]) -> Optional[str]:
+    """Reduce a bank-assigned account identifier to its last four characters.
+
+    Providers expose different identifiers for the same purpose: an IBAN
+    (Enable Banking), a branch/account number (Pluggy), a card number. They all
+    serve one job here, telling two same-named accounts apart, so we normalize
+    them to a single shape and deliberately keep only the tail. Storing the full
+    identifier would put a payable bank reference in the database for no gain.
+
+    Separators (spaces, dashes) are stripped first, since IBANs are commonly
+    formatted in groups of four. Returns None when the source is missing or too
+    short to mask, so callers never render a partial identifier.
+    """
+    if not value:
+        return None
+    cleaned = "".join(ch for ch in str(value) if ch.isalnum())
+    if len(cleaned) < 4:
+        return None
+    return cleaned[-4:]
+
+
 @dataclass
 class AccountData:
     external_id: str
@@ -31,6 +52,10 @@ class AccountData:
     minimum_payment: Optional[Decimal] = None
     card_brand: Optional[str] = None
     card_level: Optional[str] = None
+    # Last 4 chars of the bank's own identifier for the account, when the
+    # provider exposes one. Disambiguates accounts a bank reports under an
+    # identical name (issue #408). Never the full identifier — see mask_last4.
+    masked_number: Optional[str] = None
 
 
 @dataclass
@@ -111,6 +136,11 @@ class HoldingData:
     purchase_price: Optional[Decimal] = None
     purchase_date: Optional[date] = None
     isin: Optional[str] = None
+    # Exchange/asset symbol (e.g. "AAPL", "DOGE") for the dedicated
+    # `assets.ticker` column. Kept separate from `currency`: connectors that
+    # report a crypto position put the ticker in both, and only one of them
+    # belongs in a 3-char ISO currency field.
+    ticker: Optional[str] = None
     maturity_date: Optional[date] = None
     is_withdrawn: bool = False  # provider signaled the position was sold/transferred
     metadata: Optional[dict] = None

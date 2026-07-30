@@ -34,12 +34,14 @@ async def get_income_expenses(
     interval: str = Query("monthly", pattern="^(daily|weekly|monthly|yearly)$"),
     account_ids: Optional[list[uuid.UUID]] = Query(None),
     period: str | None = Query(None, pattern="^ytd$"),
+    days: Optional[int] = Query(None, ge=1, le=730),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
+    """`days` overrides `months` with an exact rolling window ending today."""
     return await report_service.get_income_expenses_report(
         session, ctx.workspace.id, ctx.user_id, months, interval, ctx.user.primary_currency,
-        account_ids=account_ids, period=period,
+        account_ids=account_ids, period=period, days=days,
     )
 
 

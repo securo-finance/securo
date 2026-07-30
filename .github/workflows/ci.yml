@@ -16,40 +16,72 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect backend-relevant changes
+        id: backend-changes
+        working-directory: .
+        run: |
+          set -euo pipefail
+
+          # Keep the required Backend Tests check fast for PRs that only touch
+          # frontend/docs files. Pushes to main still run the full backend suite.
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run_backend=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed_files="$(git diff --name-only HEAD^1 HEAD)"
+          printf '%s\n' "$changed_files"
+
+          if printf '%s\n' "$changed_files" | grep -Eq '^(backend/.*|\.github/workflows/ci\.yml)$'; then
+            echo "run_backend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_backend=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip backend tests
+        if: steps.backend-changes.outputs.run_backend != 'true'
+        run: echo "No backend-relevant changes; skipping backend test suite."
 
       - name: Set up Python
+        if: steps.backend-changes.outputs.run_backend == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
           cache: pip
 
       - name: Install dependencies
+        if: steps.backend-changes.outputs.run_backend == 'true'
         run: |
           pip install -e ".[dev]"
 
       - name: Lint with Ruff
+        if: steps.backend-changes.outputs.run_backend == 'true'
         run: ruff check .
 
       - name: Run tests with coverage
+        if: steps.backend-changes.outputs.run_backend == 'true'
         run: |
-          pytest --cov=app --cov-report=xml --cov-report=term-missing --cov-fail-under=60
+          pytest -n auto --dist loadfile --cov=app --cov-report=xml --cov-report=term-missing --cov-fail-under=60
 
       - name: Upload coverage report
-        if: always()
+        if: ${{ always() && steps.backend-changes.outputs.run_backend == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: backend/coverage.xml
 
       - name: Extract coverage percentage
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && steps.backend-changes.outputs.run_backend == 'true'
         id: coverage
         run: |
           COVERAGE=$(python -c "import xml.etree.ElementTree as ET; print(round(float(ET.parse('coverage.xml').getroot().attrib['line-rate']) * 100))")
           echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
 
       - name: Update coverage badge
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && steps.backend-changes.outputs.run_backend == 'true'
         uses: schneegans/dynamic-badges-action@v1.7.0
         with:
           auth: ${{ secrets.GIST_TOKEN }}

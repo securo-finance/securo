@@ -739,6 +739,91 @@ class TestParseCamt:
         assert transactions[0].description == "No NS"
         assert transactions[0].amount == Decimal("300.00")
 
+    def test_parse_camt052_bktocstmracctrpt(self):
+        """CAMT.052 (intraday report) uses BkToCstmrAcctRpt/Rpt instead of
+        BkToCstmrStmt/Stmt. Several European banks — including German
+        Volksbanken/Raiffeisenbanken — only offer CAMT.052 exports, not .053.
+        """
+        xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.052.001.08">'
+            '<BkToCstmrAcctRpt><Rpt>'
+            '<Ntry>'
+            '<Amt Ccy="EUR">42.50</Amt>'
+            '<CdtDbtInd>DBIT</CdtDbtInd>'
+            '<BookgDt><Dt>2026-07-14</Dt></BookgDt>'
+            '<NtryDtls><TxDtls><RmtInf><Ustrd>Supermarket</Ustrd></RmtInf></TxDtls></NtryDtls>'
+            '</Ntry>'
+            '</Rpt></BkToCstmrAcctRpt>'
+            '</Document>'
+        ).encode('utf-8')
+        transactions = parse_camt(xml)
+        assert len(transactions) == 1
+        assert transactions[0].description == "Supermarket"
+        assert transactions[0].amount == Decimal("42.50")
+        assert transactions[0].type == "debit"
+        assert transactions[0].date == date(2026, 7, 14)
+
+    def test_parse_camt052_skips_pending_entries(self):
+        """CAMT.052 intraday reports can include PDNG (pending) entries for
+        transactions that haven't settled yet. These must be skipped, since
+        the same transaction reappears as BOOK once it settles - importing
+        both would create a duplicate.
+        """
+        xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.052.001.08">'
+            '<BkToCstmrAcctRpt><Rpt>'
+            '<Ntry>'
+            '<Amt Ccy="EUR">42.50</Amt>'
+            '<CdtDbtInd>DBIT</CdtDbtInd>'
+            '<Sts>PDNG</Sts>'
+            '<BookgDt><Dt>2026-07-14</Dt></BookgDt>'
+            '<NtryDtls><TxDtls><RmtInf><Ustrd>Supermarket (pending)</Ustrd></RmtInf></TxDtls></NtryDtls>'
+            '</Ntry>'
+            '<Ntry>'
+            '<Amt Ccy="EUR">42.50</Amt>'
+            '<CdtDbtInd>DBIT</CdtDbtInd>'
+            '<Sts><Cd>BOOK</Cd></Sts>'
+            '<BookgDt><Dt>2026-07-15</Dt></BookgDt>'
+            '<NtryDtls><TxDtls><RmtInf><Ustrd>Supermarket (booked)</Ustrd></RmtInf></TxDtls></NtryDtls>'
+            '</Ntry>'
+            '</Rpt></BkToCstmrAcctRpt>'
+            '</Document>'
+        ).encode('utf-8')
+        transactions = parse_camt(xml)
+        assert len(transactions) == 1
+        assert transactions[0].description == "Supermarket (booked)"
+
+    def test_parse_camt_keeps_pretty_printed_booked_entries(self):
+        """A wrapped <Sts><Cd>BOOK</Cd></Sts> in pretty-printed (indented) XML
+        must still be recognized as BOOK. The <Sts> element's own text is the
+        whitespace before <Cd>, so the status lookup has to prefer Sts/Cd -
+        otherwise the whitespace masks the code and booked entries get skipped.
+        """
+        xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.08">\n'
+            '  <BkToCstmrStmt>\n'
+            '    <Stmt>\n'
+            '      <Ntry>\n'
+            '        <Amt Ccy="EUR">42.50</Amt>\n'
+            '        <CdtDbtInd>DBIT</CdtDbtInd>\n'
+            '        <Sts>\n'
+            '          <Cd>BOOK</Cd>\n'
+            '        </Sts>\n'
+            '        <BookgDt><Dt>2026-07-15</Dt></BookgDt>\n'
+            '        <NtryDtls><TxDtls><RmtInf><Ustrd>Booked</Ustrd></RmtInf></TxDtls></NtryDtls>\n'
+            '      </Ntry>\n'
+            '    </Stmt>\n'
+            '  </BkToCstmrStmt>\n'
+            '</Document>\n'
+        ).encode('utf-8')
+        transactions = parse_camt(xml)
+        assert len(transactions) == 1
+        assert transactions[0].description == "Booked"
+        assert transactions[0].amount == Decimal("42.50")
+
 
 class TestParseOfx:
     """Tests for the parse_ofx function."""
@@ -1064,6 +1149,35 @@ class TestImportTransactionsFx:
         # Provider should NOT have been called since fx_rate was provided
         mock_provider.fetch_latest.assert_not_called()
         mock_provider.fetch_historical.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_import_raw_payee_uses_workspace(self, session: AsyncSession, test_user: User, test_workspace, test_account: Account):
+        from app.models.payee import Payee
+        from app.models.transaction import Transaction
+        from app.schemas.transaction import TransactionImport
+        from sqlalchemy import select
+
+        txns = [
+            TransactionImport(
+                description="Cafe memo",
+                amount=Decimal("12.00"),
+                date=date(2026, 1, 15),
+                type="debit",
+                currency=test_account.currency,
+                payee_raw="Cafe",
+            ),
+        ]
+
+        imported, skipped, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id, txns, "ofx",
+        )
+
+        assert imported == 1
+        assert skipped == 0
+        payee = (await session.execute(select(Payee).where(Payee.name == "Cafe"))).scalar_one()
+        tx = (await session.execute(select(Transaction).where(Transaction.payee_id == payee.id))).scalar_one()
+        assert payee.workspace_id == test_workspace.id
+        assert tx.workspace_id == test_workspace.id
 
     @pytest.mark.asyncio
     @patch("app.services.fx_rate_service._provider")
@@ -2073,3 +2187,46 @@ class TestForceUncategorized:
             select(Transaction).where(Transaction.import_id == import_log_id)
         )).scalar_one()
         assert tx.category_id == cat.id
+
+
+@pytest.mark.asyncio
+@patch("app.services.fx_rate_service._provider")
+async def test_import_tolerates_duplicate_external_id_rows(
+    mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+):
+    """Two existing rows sharing (account_id, external_id, date) must not crash
+    the importer's duplicate check. Regression for the MultipleResultsFound
+    crash: the incoming charge is skipped as a duplicate, no exception raised.
+    """
+    from app.models.transaction import Transaction
+    from app.schemas.transaction import TransactionImport
+    from sqlalchemy import select
+
+    d = date(2026, 1, 15)
+    for _ in range(2):
+        session.add(Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, account_id=test_account.id,
+            external_id="FITID-DUP", description="SPOTIFY", amount=Decimal("23.90"),
+            date=d, type="debit", source="ofx",
+        ))
+    await session.commit()
+
+    txns = [TransactionImport(
+        description="SPOTIFY", amount=Decimal("23.90"), date=d,
+        type="debit", external_id="FITID-DUP",
+    )]
+
+    imported, skipped, _, _ = await import_transactions(
+        session, test_workspace.id, test_user.id, test_account.id, txns, "ofx",
+        detected_format="ofx",
+    )
+
+    assert imported == 0
+    assert skipped == 1
+    remaining = (await session.execute(
+        select(Transaction).where(
+            Transaction.account_id == test_account.id,
+            Transaction.external_id == "FITID-DUP",
+        )
+    )).scalars().all()
+    assert len(remaining) == 2

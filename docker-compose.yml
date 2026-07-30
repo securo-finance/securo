@@ -11,7 +11,10 @@ x-backend-env: &backend-env
   DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/securo
   SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-production}
   DEBUG: ${DEBUG:-true}
-  FRONTEND_URL: http://localhost:${FRONTEND_PORT:-3000}
+  FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-3000}}
+  WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-Securo}
+  WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
+  WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-}
   PLUGGY_CLIENT_ID: ${PLUGGY_CLIENT_ID:-}
   PLUGGY_CLIENT_SECRET: ${PLUGGY_CLIENT_SECRET:-}
   PLUGGY_OAUTH_REDIRECT_URI: http://localhost:${FRONTEND_PORT:-3000}/oauth/callback
@@ -126,7 +129,8 @@ services:
       - "${FRONTEND_PORT:-3000}:5173"
     environment:
       BACKEND_URL: http://backend:8000
-      FRONTEND_URL: http://localhost:3000
+      # Also drives Vite's allowedHosts, so a proxied domain is not blocked.
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:${FRONTEND_PORT:-3000}}
       APP_VERSION_ROOT: /workspace
     depends_on:
       - backend

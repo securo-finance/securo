@@ -556,7 +556,7 @@ export default function ImportPage() {
             </button>
             <Button
               onClick={() => importMutation.mutate()}
-              disabled={!selectedAccount || importMutation.isPending || reviewTransactions.length === 0}
+              disabled={!selectedAccount || importMutation.isPending || includedCount === 0}
               className="gap-2"
             >
               <Upload size={14} />
