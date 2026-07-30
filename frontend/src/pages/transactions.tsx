@@ -1157,14 +1157,16 @@ export default function TransactionsPage() {
           // phone (#257). On desktop the secondary actions (Columns, Export,
           // Duplicate, Transfer) are inline labelled buttons; on mobile they
           // collapse into the overflow menu so the row stays uncrowded.
-          <div className="flex items-center gap-2 sm:flex-wrap sm:justify-end">
-            <MonthStepper
-              value={steppedMonth}
-              onChange={handleMonthChange}
-              locale={i18n.resolvedLanguage ?? i18n.language}
-              prevLabel={t('transactions.monthPrevious')}
-              nextLabel={t('transactions.monthNext')}
-            />
+          <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto sm:flex-wrap sm:justify-end">
+            <div className="min-w-0 flex-1 sm:flex-none">
+              <MonthStepper
+                value={steppedMonth}
+                onChange={handleMonthChange}
+                locale={i18n.resolvedLanguage ?? i18n.language}
+                prevLabel={t('transactions.monthPrevious')}
+                nextLabel={t('transactions.monthNext')}
+              />
+            </div>
 
             {/* Secondary actions: inline labelled buttons on desktop. */}
             <div className="hidden sm:contents">
@@ -1191,8 +1193,12 @@ export default function TransactionsPage() {
 
             {/* Primary action: present at every width. */}
             {canWrite && (
-              <Button onClick={() => { setEditingTx(null); setDialogOpen(true) }}>
-                + {t('transactions.addManual')}
+              <Button
+                className="shrink-0 px-3"
+                onClick={() => { setEditingTx(null); setDialogOpen(true) }}
+              >
+                + <span className="sm:hidden">{t('common.add')}</span>
+                <span className="hidden sm:inline">{t('transactions.addManual')}</span>
               </Button>
             )}
 
