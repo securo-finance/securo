@@ -34,7 +34,14 @@ import {
   Settings,
   Archive,
   Layers,
+  MoreHorizontal,
 } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { AccountIcon, ConnectionLogo, getAccountTypeConfig } from '@/components/account-icon'
 import { PageHeader } from '@/components/page-header'
 import { BankConnectDialog } from '@/components/bank-connect-dialog'
@@ -237,23 +244,58 @@ export default function AccountsPage() {
         section={t('accounts.title')}
         title={t('accounts.title')}
         action={
-          <div className="flex gap-2">
-            <Button variant="outline" className="gap-1.5" onClick={() => navigate('/collections')}>
+          <div className="flex w-full items-center gap-2 sm:w-auto">
+            <Button
+              variant="outline"
+              className="hidden gap-1.5 sm:inline-flex"
+              onClick={() => navigate('/collections')}
+            >
               <Layers size={16} />
               {t('collections.title')}
             </Button>
             {canWrite && (
               <>
-                <Button variant="outline" className="gap-1.5" onClick={() => setConnectorSelectOpen(true)}>
+                <Button
+                  variant="outline"
+                  className="hidden gap-1.5 sm:inline-flex"
+                  onClick={() => setConnectorSelectOpen(true)}
+                >
                   <Plus size={16} />
                   {t('accounts.connectBank')}
                 </Button>
-                <Button onClick={() => { setEditingAccount(null); setDialogOpen(true) }} className="gap-1.5">
+                <Button
+                  onClick={() => { setEditingAccount(null); setDialogOpen(true) }}
+                  className="flex-1 gap-1.5 sm:flex-none"
+                >
                   <Plus size={16} />
                   {t('accounts.addManual')}
                 </Button>
               </>
             )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="size-9 shrink-0 sm:hidden"
+                  aria-label={t('common.more')}
+                >
+                  <MoreHorizontal size={18} />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => navigate('/collections')}>
+                  <Layers size={16} />
+                  {t('collections.title')}
+                </DropdownMenuItem>
+                {canWrite && (
+                  <DropdownMenuItem onSelect={() => setConnectorSelectOpen(true)}>
+                    <Plus size={16} />
+                    {t('accounts.connectBank')}
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         }
       />
