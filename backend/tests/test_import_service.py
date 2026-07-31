@@ -966,6 +966,54 @@ class TestParseOfx:
         assert transactions[0].description == "UBER TRIP"
         assert transactions[0].amount == Decimal("100.00")
 
+    def _make_ofx_xml(self, memo: str, xml_encoding: str) -> bytes:
+        """Helper to build an OFX 2.x document: XML prolog, no SGML header
+        block (e.g. Erste Bank's "MS Money Sunset Deluxe" export)."""
+        text = (
+            f'<?xml version="1.0" encoding="{xml_encoding}" ?>'
+            '<?OFX OFXHEADER="200" VERSION="202" SECURITY="NONE" '
+            'OLDFILEUID="NONE" NEWFILEUID="NONE"?>'
+            "<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>EUR</CURDEF>"
+            "<BANKACCTFROM><BANKID>1</BANKID><ACCTID>1</ACCTID>"
+            "<ACCTTYPE>CHECKING</ACCTTYPE></BANKACCTFROM>"
+            "<BANKTRANLIST><DTSTART>20260101</DTSTART><DTEND>20260131</DTEND>"
+            "<STMTTRN><TRNTYPE>DEBIT</TRNTYPE><DTPOSTED>20260115</DTPOSTED>"
+            "<TRNAMT>-10.00</TRNAMT><FITID>1</FITID>"
+            f"<MEMO>{memo}</MEMO></STMTTRN>"
+            "</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>"
+        )
+        return text.encode(xml_encoding.lower().replace("iso-8859-1", "latin-1"))
+
+    def test_parse_ofx_xml_format_without_sgml_header(self):
+        """OFX 2.x/XML files (no SGML header block) with UTF-8 non-ASCII
+        characters should parse without raising UnicodeDecodeError."""
+        ofx = self._make_ofx_xml("1 Aufladung(en) für Konto", "utf-8")
+        transactions = parse_ofx(ofx)
+
+        assert len(transactions) == 1
+        assert transactions[0].description == "1 Aufladung(en) für Konto"
+        assert transactions[0].amount == Decimal("10.00")
+        assert transactions[0].type == "debit"
+
+    def test_parse_ofx_xml_format_latin1(self):
+        """OFX 2.x/XML files declaring and using Latin-1 should decode
+        correctly, proving the fix doesn't hardcode UTF-8."""
+        ofx = self._make_ofx_xml("Café Paris", "ISO-8859-1")
+        transactions = parse_ofx(ofx)
+
+        assert len(transactions) == 1
+        assert transactions[0].description == "Café Paris"
+
+    def test_parse_ofx_xml_format_ascii_only(self):
+        """OFX 2.x/XML files with pure-ASCII content should still parse
+        correctly after the SGML header injection."""
+        ofx = self._make_ofx_xml("Grocery Store", "utf-8")
+        transactions = parse_ofx(ofx)
+
+        assert len(transactions) == 1
+        assert transactions[0].description == "Grocery Store"
+        assert transactions[0].amount == Decimal("10.00")
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # MULTI-CURRENCY PARSING TESTS

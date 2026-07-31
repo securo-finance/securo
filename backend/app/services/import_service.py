@@ -38,7 +38,18 @@ _OFX_BALANCE_ROW_DESCRIPTIONS = (
 )
 
 
-def _preprocess_ofx_for_empty_fitid(content: bytes) -> bytes:
+def _decode_ofx_bytes(content: bytes) -> tuple[str, str]:
+    """Decode OFX content to text, trying UTF-8 then falling back to Latin-1.
+
+    Returns (text, encoding) so callers can re-encode consistently later.
+    """
+    try:
+        return content.decode("utf-8"), "utf-8"
+    except UnicodeDecodeError:
+        return content.decode("latin-1"), "latin-1"
+
+
+def _patch_empty_fitids(text: str) -> str:
     """Synthesize a FITID for STMTTRN blocks that have an empty/missing one.
 
     Banco do Brasil (and a few other Brazilian banks) emit balance-summary
@@ -47,13 +58,6 @@ def _preprocess_ofx_for_empty_fitid(content: bytes) -> bytes:
     each affected block with a deterministic synthetic FITID so parsing
     succeeds; balance rows are filtered out later by description.
     """
-    try:
-        text = content.decode("utf-8")
-        original_encoding = "utf-8"
-    except UnicodeDecodeError:
-        text = content.decode("latin-1")
-        original_encoding = "latin-1"
-
     def _replace(match: re.Match) -> str:
         block = match.group(0)
         fitid_match = re.search(r"<FITID>([^<\r\n]*)", block, re.IGNORECASE)
@@ -74,13 +78,49 @@ def _preprocess_ofx_for_empty_fitid(content: bytes) -> bytes:
             flags=re.IGNORECASE,
         )
 
-    patched = re.sub(
+    return re.sub(
         r"<STMTTRN>.*?</STMTTRN>",
         _replace,
         text,
         flags=re.IGNORECASE | re.DOTALL,
     )
-    return patched.encode(original_encoding, errors="replace")
+
+
+def _ensure_ofx_sgml_header(text: str, encoding: str) -> str:
+    """Prepend a legacy OFX 1.x SGML header for OFX 2.x files that omit it.
+
+    OFX 2.x is plain XML: an <?xml encoding="..." ?> prolog immediately
+    followed by <OFX>, with no colon-delimited SGML header block (e.g. Erste
+    Bank's "MS Money Sunset Deluxe" export). ofxparse only looks for
+    encoding hints in the bytes preceding the file's first "<"; when that's
+    empty it silently assumes ASCII and crashes on any non-ASCII byte.
+    Prepending a synthetic SGML header routes the file through ofxparse's
+    existing, correctly-working SGML decode path instead of its broken
+    auto-detection (see https://github.com/jseutter/ofxparse/issues/133).
+
+    `encoding` must match whatever the caller will re-encode `text` with,
+    so the declared header and the actual bytes stay consistent.
+    """
+    stripped = text.lstrip("\ufeff \t\r\n")
+    if not stripped.startswith("<?xml"):
+        return text
+    if encoding == "latin-1":
+        enc_lines = "ENCODING:USASCII\r\nCHARSET:8859-1\r\n"
+    else:
+        enc_lines = "ENCODING:UTF-8\r\nCHARSET:NONE\r\n"
+    header = (
+        f"OFXHEADER:100\r\nDATA:OFXSGML\r\nVERSION:102\r\nSECURITY:NONE\r\n"
+        f"{enc_lines}COMPRESSION:NONE\r\nOLDFILEUID:NONE\r\nNEWFILEUID:NONE\r\n\r\n"
+    )
+    return header + text
+
+
+def _preprocess_ofx(content: bytes) -> bytes:
+    """Apply text-level fixups ofxparse needs before it can parse the file."""
+    text, encoding = _decode_ofx_bytes(content)
+    text = _patch_empty_fitids(text)
+    text = _ensure_ofx_sgml_header(text, encoding)
+    return text.encode(encoding, errors="replace")
 
 
 def _is_balance_summary_row(description: str | None) -> bool:
@@ -92,7 +132,7 @@ def _is_balance_summary_row(description: str | None) -> bool:
 
 def parse_ofx(content: bytes) -> list[TransactionImport]:
     """Parse OFX file content and return transactions."""
-    content = _preprocess_ofx_for_empty_fitid(content)
+    content = _preprocess_ofx(content)
     ofx = OfxParser.parse(io.BytesIO(content))
     transactions = []
 
