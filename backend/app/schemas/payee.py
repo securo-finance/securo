@@ -18,7 +18,7 @@ class PayeeUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=255)
     type: Optional[str] = None
     is_favorite: Optional[bool] = None
-    notes: Optional[str] = None
+    notes: Optional[str] = Field(None, max_length=1000)
 
 
 class PayeeRead(BaseModel):

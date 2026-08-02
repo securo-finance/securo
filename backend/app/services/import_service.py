@@ -350,7 +350,7 @@ def parse_csv(
     currency_cols = ['currency', 'moeda', 'currency_code']
     fx_rate_cols = ['fx_rate', 'fx_rate_used', 'taxa_cambio', 'exchange_rate', 'taxa']
     payee_cols = ['payee', 'merchant', 'beneficiary', 'beneficiario', 'pagador']
-    external_id_cols = ['external_id', 'transaction_id', 'id', 'id_transacao']
+    external_id_cols = [] # External ID must be mapped explicitly
     notes_cols = ['notes', 'nota', 'observacao']
 
     # Normalize the user-supplied column mapping (Securo field -> CSV header).
@@ -736,7 +736,7 @@ async def import_transactions(
     await session.commit()
     return imported, skipped, excluded_count, import_log.id
 
-def normalize_amount(amount_str: str) -> str:
+def normalize_amount(amount_str: str | None) -> str:
     """
     Normalize monetary string into a standard decimal format compatible with Decimal.
 
@@ -744,8 +744,10 @@ def normalize_amount(amount_str: str) -> str:
         1.442,20 -> 1442.20
         1,442.20 -> 1442.20
     """
+    if not amount_str:
+        return ""
 
-    amount_str = amount_str.replace('R$', '').strip()
+    amount_str = str(amount_str).replace('R$', '').strip()
 
     if ',' in amount_str and '.' in amount_str:
         if amount_str.rfind(',') > amount_str.rfind('.'):
