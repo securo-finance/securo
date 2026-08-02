@@ -79,6 +79,8 @@ export default function PayeesPage() {
   const [mergeTargetId, setMergeTargetId] = useState<string>('')
   const [filterType, setFilterType] = useState(() => searchParams.get('type') ?? '')
   const [filterFavorites, setFilterFavorites] = useState(() => searchParams.get('is_favorite') === 'true')
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [payeesToDelete, setPayeesToDelete] = useState<string[]>([])
   const prevSearchRef = useRef<string | null>(null)
 
   // Sync state from URL when navigating
@@ -180,6 +182,7 @@ export default function PayeesPage() {
       invalidateFinancialQueries(queryClient)
       queryClient.invalidateQueries({ queryKey: ['payees'] })
       setDialogOpen(false)
+      setDeleteDialogOpen(false)
       if (editingPayee?.id === id) {
         setEditingPayee(null)
       }
@@ -224,12 +227,13 @@ export default function PayeesPage() {
 
   const bulkDeleteMutation = useMutation({
     mutationFn: (ids: string[]) => payeesApi.bulkDelete(ids),
-    onSuccess: (result) => {
+    onSuccess: (result, deletedIds) => {
       invalidateFinancialQueries(queryClient)
       queryClient.invalidateQueries({ queryKey: ['payees'] })
+      setDeleteDialogOpen(false)
       setSelectedIds(new Set())
       setLastSelectedId(null)
-      if (summaryPayee && selectedIds.has(summaryPayee)) {
+      if (summaryPayee && deletedIds.includes(summaryPayee)) {
         setSummaryPayee(null)
       }
       toast.success(t('payees.deletedMultiple', { count: result.deleted, defaultValue: `${result.deleted} payees deleted` }))
@@ -297,7 +301,10 @@ export default function PayeesPage() {
                     <Merge size={16} className="mr-1.5" />
                     {t('payees.merge')} ({selectedIds.size})
                   </Button>
-                  <Button variant="destructive" onClick={() => bulkDeleteMutation.mutate(Array.from(selectedIds))} disabled={bulkDeleteMutation.isPending}>
+                  <Button variant="destructive" onClick={() => {
+                    setPayeesToDelete(Array.from(selectedIds))
+                    setDeleteDialogOpen(true)
+                  }} disabled={bulkDeleteMutation.isPending}>
                     <Trash2 size={16} className="mr-1.5" />
                     {t('common.delete')} ({selectedIds.size})
                   </Button>
@@ -577,9 +584,10 @@ export default function PayeesPage() {
                           className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
                           onClick={(e) => { 
                             e.stopPropagation(); 
-                            deleteMutation.mutate(payee.id)
+                            setPayeesToDelete([payee.id])
+                            setDeleteDialogOpen(true)
                           }}
-                          disabled={deleteMutation.isPending}
+                          disabled={deleteMutation.isPending || bulkDeleteMutation.isPending}
                           title={t('common.delete')}
                         >
                           <Trash2 size={13} />
@@ -786,6 +794,41 @@ export default function PayeesPage() {
               }}
             >
               {t('payees.merge')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {payeesToDelete.length > 1 ? t('payees.deleteMultipleTitle') : t('payees.deleteTitle')}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              {payeesToDelete.length > 1 ? t('payees.deleteMultipleConfirm', { count: payeesToDelete.length }) : t('payees.deleteConfirm')}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteMutation.isPending || bulkDeleteMutation.isPending}
+              onClick={() => {
+                if (payeesToDelete.length === 1) {
+                  deleteMutation.mutate(payeesToDelete[0])
+                } else if (payeesToDelete.length > 1) {
+                  bulkDeleteMutation.mutate(payeesToDelete)
+                }
+              }}
+            >
+              <Trash2 size={14} className="mr-1" />
+              {t('common.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>
