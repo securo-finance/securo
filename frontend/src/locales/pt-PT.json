@@ -1221,7 +1221,12 @@
     "typeCompany": "Empresa",
     "allTypes": "Todos os tipos",
     "filterByType": "Filtrar por tipo",
-    "favoritesOnly": "Apenas favoritos"
+    "favoritesOnly": "Apenas favoritos",
+    "deletedMultiple": "{{count}} beneficiários excluídos",
+    "deleteTitle": "Eliminar beneficiário",
+    "deleteConfirm": "Tem a certeza que deseja eliminar este beneficiário? Isto também o irá remover de quaisquer transações associadas.",
+    "deleteMultipleTitle": "Eliminar beneficiários",
+    "deleteMultipleConfirm": "Tem a certeza que deseja eliminar os {{count}} beneficiários selecionados? Isto também os irá remover de quaisquer transações associadas."
   },
   "common": {
     "view": "Ver",

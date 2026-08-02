@@ -1222,7 +1222,11 @@
     "allTypes": "Tous les types",
     "filterByType": "Filtrer par type",
     "favoritesOnly": "Favoris uniquement",
-    "deletedMultiple": "{{count}} bénéficiaires supprimés"
+    "deletedMultiple": "{{count}} bénéficiaires supprimés",
+    "deleteTitle": "Supprimer le bénéficiaire",
+    "deleteConfirm": "Êtes-vous sûr de vouloir supprimer ce bénéficiaire ? Cela le supprimera également de toutes les transactions associées.",
+    "deleteMultipleTitle": "Supprimer les bénéficiaires",
+    "deleteMultipleConfirm": "Êtes-vous sûr de vouloir supprimer les {{count}} bénéficiaires sélectionnés ? Cela les supprimera également de toutes les transactions associées."
   },
   "common": {
     "view": "Voir",

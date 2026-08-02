@@ -1222,7 +1222,11 @@
     "allTypes": "Alle Typen",
     "filterByType": "Nach Typ filtern",
     "favoritesOnly": "Nur Favoriten",
-    "deletedMultiple": "{{count}} Zahlungsempfänger gelöscht"
+    "deletedMultiple": "{{count}} Zahlungsempfänger gelöscht",
+    "deleteTitle": "Zahlungsempfänger löschen",
+    "deleteConfirm": "Möchten Sie diesen Zahlungsempfänger wirklich löschen? Dadurch wird der Zahlungsempfänger auch aus allen zugehörigen Transaktionen entfernt.",
+    "deleteMultipleTitle": "Zahlungsempfänger löschen",
+    "deleteMultipleConfirm": "Möchten Sie die {{count}} ausgewählten Zahlungsempfänger wirklich löschen? Dadurch werden sie auch aus allen zugehörigen Transaktionen entfernt."
   },
   "common": {
     "view": "Ansehen",

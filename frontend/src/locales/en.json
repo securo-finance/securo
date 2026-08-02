@@ -1222,6 +1222,10 @@
     "allTypes": "All Types",
     "filterByType": "Filter by Type",
     "favoritesOnly": "Favorites Only",
+    "deleteTitle": "Delete Payee",
+    "deleteConfirm": "Are you sure you want to delete this payee? This will also remove the payee from any associated transactions.",
+    "deleteMultipleTitle": "Delete Payees",
+    "deleteMultipleConfirm": "Are you sure you want to delete the {{count}} selected payees? This will also remove them from any associated transactions.",
     "deletedMultiple": "{{count}} payees deleted"
   },
   "common": {
