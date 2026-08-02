@@ -145,7 +145,7 @@ export function TransactionCalendarView({
         </div>
 
         <div className="hidden md:grid grid-cols-7">
-          {calendar.days.map((day) => (
+          {calendar.days.map((day, index) => (
             <DayCell
               key={day.date}
               day={day}
@@ -156,6 +156,13 @@ export function TransactionCalendarView({
               mask={mask}
               density={density}
               onSelect={() => onSelectedDateChange(day.date)}
+              // The container clips the grid with rounded-xl + overflow-hidden, so the
+              // two bottom corner cells carry a matching radius (12px outer − 1px
+              // border) — otherwise their selection/focus ring loses its corner.
+              className={cn(
+                index === calendar.days.length - 7 && 'rounded-bl-[11px]',
+                index === calendar.days.length - 1 && 'rounded-br-[11px]',
+              )}
             />
           ))}
         </div>
@@ -390,6 +397,7 @@ function DayCell({
   mask,
   density,
   onSelect,
+  className,
 }: {
   day: TransactionCalendarDay
   selected: boolean
@@ -399,6 +407,7 @@ function DayCell({
   mask: (value: string) => string
   density: CalendarDensity
   onSelect: () => void
+  className?: string
 }) {
   const { t } = useTranslation()
   const isLowBalance = day.ending_balance < 0
@@ -417,14 +426,16 @@ function DayCell({
         }
       }}
       className={cn(
-        'border-r border-b border-border p-3 text-left transition-colors hover:bg-muted/30 focus:outline-none focus:ring-2 focus:ring-primary/40',
+        'border-r border-b border-border p-3 text-left transition-colors hover:bg-muted/30 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary/40',
         detailed ? 'min-h-44' : 'min-h-24',
         !day.in_month && 'bg-muted/20 text-muted-foreground',
         day.in_month && isLowBalance && 'bg-rose-50/60 dark:bg-rose-950/20',
         // Selection is a ring, not a fill, on low-balance days: tinting the cell
         // would hide the negative-balance warning exactly when the user opens it.
-        selected && 'z-10 ring-2 ring-primary/70',
+        // Inset so the container's overflow-hidden never clips it on edge rows.
+        selected && 'z-10 ring-2 ring-inset ring-primary/70',
         selected && !isLowBalance && 'bg-primary/5 dark:bg-primary/10',
+        className,
       )}
     >
       <div className="flex items-center justify-between gap-1">
