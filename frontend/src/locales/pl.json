@@ -537,7 +537,16 @@
     "calendarAddIncome": "Dodaj przychód",
     "calendarAddExpense": "Dodaj wydatek",
     "calendarSelectedDay": "Wybrany dzień",
-    "calendarNoItems": "Brak transakcji w tym dniu"
+    "calendarNoItems": "Brak transakcji w tym dniu",
+    "calendarMetric": "Dane",
+    "calendarBalanceMode": "Saldo",
+    "calendarActivityMode": "Aktywność",
+    "calendarActivityTrend": "Dzienna aktywność",
+    "calendarNoActivity": "Brak aktywności w tym miesiącu",
+    "calendarNoMovements": "Brak operacji",
+    "calendarActualNet": "Rzeczywiste netto",
+    "calendarProjectedNet": "Planowane netto",
+    "calendarTransfersExcluded": "Transfery nie liczą się jako przychody ani wydatki"
   },
   "accounts": {
     "title": "Konta",

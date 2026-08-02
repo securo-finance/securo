@@ -5,6 +5,7 @@ import { ArrowLeftRight, CalendarDays, CircleDot } from 'lucide-react'
 import type { TransactionCalendarDay, TransactionCalendarItem, TransactionCalendarResponse } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CategoryIcon } from '@/components/category-icon'
+import { activityChartData, dayActivity } from '@/lib/calendar-activity'
 import { cn } from '@/lib/utils'
 
 function parseLocalDate(value: string) {
@@ -48,11 +49,18 @@ function topItemsBySize(items: TransactionCalendarItem[], limit: number) {
 
 type CalendarMarkerTone = 'income' | 'expense' | 'transfer' | 'projected'
 type CalendarDensity = 'compact' | 'detailed'
+type CalendarMetric = 'balance' | 'activity'
 const CALENDAR_DENSITY_STORAGE_KEY = 'securo.transactionCalendar.density'
+const CALENDAR_METRIC_STORAGE_KEY = 'securo.transactionCalendar.metric'
 
 function readCalendarDensity(): CalendarDensity {
   if (typeof window === 'undefined') return 'compact'
   return window.localStorage.getItem(CALENDAR_DENSITY_STORAGE_KEY) === 'detailed' ? 'detailed' : 'compact'
+}
+
+function readCalendarMetric(): CalendarMetric {
+  if (typeof window === 'undefined') return 'balance'
+  return window.localStorage.getItem(CALENDAR_METRIC_STORAGE_KEY) === 'activity' ? 'activity' : 'balance'
 }
 
 export function TransactionCalendarView({
@@ -75,10 +83,15 @@ export function TransactionCalendarView({
   onOpenTransaction: (id: string) => void
 }) {
   const [density, setDensity] = useState<CalendarDensity>(readCalendarDensity)
+  const [metric, setMetric] = useState<CalendarMetric>(readCalendarMetric)
 
   useEffect(() => {
     window.localStorage.setItem(CALENDAR_DENSITY_STORAGE_KEY, density)
   }, [density])
+
+  useEffect(() => {
+    window.localStorage.setItem(CALENDAR_METRIC_STORAGE_KEY, metric)
+  }, [metric])
 
   useEffect(() => {
     if (!calendar?.days.length) return
@@ -124,17 +137,31 @@ export function TransactionCalendarView({
       <section className="min-w-0 flex-1 bg-card rounded-xl border border-border shadow-sm overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-border sm:px-5">
           <CalendarLegend />
-          <CalendarDensityToggle value={density} onChange={setDensity} />
+          <div className="flex flex-wrap items-center gap-2">
+            <CalendarMetricToggle value={metric} onChange={setMetric} />
+            <CalendarDensityToggle value={density} onChange={setDensity} />
+          </div>
         </div>
 
-        <BalanceTrend
-          days={calendar.days.filter((day) => day.in_month)}
-          currency={calendar.currency}
-          locale={locale}
-          mask={mask}
-          selectedDate={selectedDate}
-          onSelectDate={onSelectedDateChange}
-        />
+        {metric === 'balance' ? (
+          <BalanceTrend
+            days={calendar.days.filter((day) => day.in_month)}
+            currency={calendar.currency}
+            locale={locale}
+            mask={mask}
+            selectedDate={selectedDate}
+            onSelectDate={onSelectedDateChange}
+          />
+        ) : (
+          <ActivityBars
+            days={calendar.days.filter((day) => day.in_month)}
+            currency={calendar.currency}
+            locale={locale}
+            mask={mask}
+            selectedDate={selectedDate}
+            onSelectDate={onSelectedDateChange}
+          />
+        )}
 
         <div className="hidden md:grid grid-cols-7 border-b border-border bg-muted/30">
           {weekDays.map((day) => (
@@ -155,6 +182,7 @@ export function TransactionCalendarView({
               locale={locale}
               mask={mask}
               density={density}
+              metric={metric}
               onSelect={() => onSelectedDateChange(day.date)}
               // The container clips the grid with rounded-xl + overflow-hidden, so the
               // two bottom corner cells carry a matching radius (12px outer − 1px
@@ -178,6 +206,7 @@ export function TransactionCalendarView({
               dateLocale={dateLocale}
               mask={mask}
               density={density}
+              metric={metric}
               onSelect={() => onSelectedDateChange(day.date)}
             />
           ))}
@@ -190,6 +219,7 @@ export function TransactionCalendarView({
         locale={locale}
         dateLocale={dateLocale}
         mask={mask}
+        metric={metric}
         onOpenTransaction={onOpenTransaction}
       />
     </div>
@@ -336,6 +366,188 @@ function BalanceTrend({
   )
 }
 
+// The activity strip answers the other monthly question: how much came in and went
+// out each day. Actual amounts are solid bars around a zero axis; projected amounts
+// stack on top as dashed violet outlines so a forecasted bill never reads as settled.
+function ActivityBars({
+  days,
+  currency,
+  locale,
+  mask,
+  selectedDate,
+  onSelectDate,
+}: {
+  days: TransactionCalendarDay[]
+  currency: string
+  locale: string
+  mask: (value: string) => string
+  selectedDate: string
+  onSelectDate: (date: string) => void
+}) {
+  const { t } = useTranslation()
+  const W = 1000
+  const H = 120
+  const data = useMemo(() => activityChartData(days), [days])
+
+  if (days.length === 0) return null
+
+  if (!data.hasActivity) {
+    return (
+      <div className="hidden border-b border-border px-4 pb-3 pt-2 sm:px-5 md:block">
+        <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {t('transactions.calendarActivityTrend')}
+        </p>
+        <p className="flex h-16 items-center justify-center text-sm text-muted-foreground">
+          {t('transactions.calendarNoActivity')}
+        </p>
+      </div>
+    )
+  }
+
+  const totalSpan = data.maxUp + data.maxDown || 1
+  // Leave breathing room so the tallest bar never touches the strip edges.
+  const scale = (H * 0.92) / totalSpan
+  const axisY = data.maxUp * scale + H * 0.04
+  const slot = W / data.days.length
+  const barW = slot * 0.55
+
+  const barHeight = (value: number) => (value > 0 ? Math.max(value * scale, 1.5) : 0)
+
+  const tooltipFor = (activity: (typeof data.days)[number]) => {
+    const amount = (value: number) => mask(compactCurrency(value, currency, locale))
+    const actualParts: string[] = []
+    if (activity.actualIncome > 0) actualParts.push(`${t('transactions.summaryIncome')} +${amount(activity.actualIncome)}`)
+    if (activity.actualExpense > 0) actualParts.push(`${t('transactions.summaryExpenses')} −${amount(activity.actualExpense)}`)
+    const projectedParts: string[] = []
+    if (activity.projectedIncome > 0) projectedParts.push(`+${amount(activity.projectedIncome)}`)
+    if (activity.projectedExpense > 0) projectedParts.push(`−${amount(activity.projectedExpense)}`)
+    const segments = [
+      String(displayDayNumber(activity.date)),
+      actualParts.length > 0 ? actualParts.join(' · ') : t('transactions.calendarNoMovements'),
+    ]
+    if (projectedParts.length > 0) {
+      segments.push(`${t('transactions.calendarProjected')} ${projectedParts.join(' · ')}`)
+    }
+    return segments.join(' · ')
+  }
+
+  return (
+    <div className="hidden border-b border-border px-4 pb-3 pt-2 sm:px-5 md:block">
+      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {t('transactions.calendarActivityTrend')}
+      </p>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
+        className="h-16 w-full overflow-visible"
+        role="img"
+        aria-label={t('transactions.calendarActivityTrend')}
+      >
+        <line
+          x1="0"
+          x2={W}
+          y1={axisY}
+          y2={axisY}
+          stroke="currentColor"
+          strokeWidth="1"
+          vectorEffect="non-scaling-stroke"
+          className="text-border"
+        />
+
+        {data.days.map((activity, i) => {
+          const x = slot * i + (slot - barW) / 2
+          const selected = activity.date === selectedDate
+          const actualIncomeH = barHeight(activity.actualIncome)
+          const actualExpenseH = barHeight(activity.actualExpense)
+          const projectedIncomeH = barHeight(activity.projectedIncome)
+          const projectedExpenseH = barHeight(activity.projectedExpense)
+          return (
+            <g key={activity.date}>
+              {selected && (
+                <line
+                  x1={slot * i + slot / 2}
+                  x2={slot * i + slot / 2}
+                  y1="0"
+                  y2={H}
+                  stroke="currentColor"
+                  strokeWidth="1"
+                  vectorEffect="non-scaling-stroke"
+                  className="text-primary/40"
+                />
+              )}
+              {actualIncomeH > 0 && (
+                <rect
+                  x={x}
+                  y={axisY - actualIncomeH}
+                  width={barW}
+                  height={actualIncomeH}
+                  className="fill-emerald-500/80 dark:fill-emerald-400/80"
+                />
+              )}
+              {projectedIncomeH > 0 && (
+                <rect
+                  x={x}
+                  y={axisY - actualIncomeH - projectedIncomeH}
+                  width={barW}
+                  height={projectedIncomeH}
+                  strokeWidth="1"
+                  strokeDasharray="3 2"
+                  vectorEffect="non-scaling-stroke"
+                  className="fill-violet-500/10 stroke-violet-500 dark:stroke-violet-400"
+                />
+              )}
+              {actualExpenseH > 0 && (
+                <rect
+                  x={x}
+                  y={axisY}
+                  width={barW}
+                  height={actualExpenseH}
+                  className="fill-rose-500/80 dark:fill-rose-400/80"
+                />
+              )}
+              {projectedExpenseH > 0 && (
+                <rect
+                  x={x}
+                  y={axisY + actualExpenseH}
+                  width={barW}
+                  height={projectedExpenseH}
+                  strokeWidth="1"
+                  strokeDasharray="3 2"
+                  vectorEffect="non-scaling-stroke"
+                  className="fill-violet-500/10 stroke-violet-500 dark:stroke-violet-400"
+                />
+              )}
+              {/* Full-height hit target: bars can be a couple of pixels tall, so the
+                  clickable/focusable area is the whole day column, keyboard included. */}
+              <rect
+                x={slot * i}
+                y="0"
+                width={slot}
+                height={H}
+                fill="transparent"
+                role="button"
+                tabIndex={0}
+                aria-label={tooltipFor(activity)}
+                aria-pressed={selected}
+                className="cursor-pointer focus:outline-none focus-visible:fill-primary/10"
+                onClick={() => onSelectDate(activity.date)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    onSelectDate(activity.date)
+                  }
+                }}
+              >
+                <title>{tooltipFor(activity)}</title>
+              </rect>
+            </g>
+          )
+        })}
+      </svg>
+    </div>
+  )
+}
+
 function CalendarLegend() {
   const { t } = useTranslation()
   return (
@@ -353,14 +565,19 @@ function CalendarLegend() {
   )
 }
 
-function CalendarDensityToggle({ value, onChange }: { value: CalendarDensity; onChange: (value: CalendarDensity) => void }) {
-  const { t } = useTranslation()
-  const options: Array<{ value: CalendarDensity; label: string }> = [
-    { value: 'compact', label: t('transactions.calendarCompact') },
-    { value: 'detailed', label: t('transactions.calendarDetailed') },
-  ]
+function SegmentedToggle<T extends string>({
+  value,
+  onChange,
+  options,
+  label,
+}: {
+  value: T
+  onChange: (value: T) => void
+  options: Array<{ value: T; label: string }>
+  label: string
+}) {
   return (
-    <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-muted/30 p-0.5 text-xs" aria-label={t('transactions.calendarDensity')}>
+    <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-muted/30 p-0.5 text-xs" role="group" aria-label={label}>
       {options.map((option) => (
         <button
           key={option.value}
@@ -376,6 +593,36 @@ function CalendarDensityToggle({ value, onChange }: { value: CalendarDensity; on
         </button>
       ))}
     </div>
+  )
+}
+
+function CalendarDensityToggle({ value, onChange }: { value: CalendarDensity; onChange: (value: CalendarDensity) => void }) {
+  const { t } = useTranslation()
+  return (
+    <SegmentedToggle
+      value={value}
+      onChange={onChange}
+      label={t('transactions.calendarDensity')}
+      options={[
+        { value: 'compact', label: t('transactions.calendarCompact') },
+        { value: 'detailed', label: t('transactions.calendarDetailed') },
+      ]}
+    />
+  )
+}
+
+function CalendarMetricToggle({ value, onChange }: { value: CalendarMetric; onChange: (value: CalendarMetric) => void }) {
+  const { t } = useTranslation()
+  return (
+    <SegmentedToggle
+      value={value}
+      onChange={onChange}
+      label={t('transactions.calendarMetric')}
+      options={[
+        { value: 'balance', label: t('transactions.calendarBalanceMode') },
+        { value: 'activity', label: t('transactions.calendarActivityMode') },
+      ]}
+    />
   )
 }
 
@@ -396,6 +643,7 @@ function DayCell({
   locale,
   mask,
   density,
+  metric,
   onSelect,
   className,
 }: {
@@ -406,11 +654,14 @@ function DayCell({
   locale: string
   mask: (value: string) => string
   density: CalendarDensity
+  metric: CalendarMetric
   onSelect: () => void
   className?: string
 }) {
   const { t } = useTranslation()
-  const isLowBalance = day.ending_balance < 0
+  // The negative-balance warning belongs to the balance metric; activity mode has
+  // no running balance to warn about.
+  const isLowBalance = metric === 'balance' && day.ending_balance < 0
   const detailed = density === 'detailed'
   const previewItems = detailed ? topItemsBySize(day.items, 3) : []
   const moreCount = detailed ? Math.max(0, day.items.length - previewItems.length) : 0
@@ -453,23 +704,27 @@ function DayCell({
         <CalendarBadges day={day} />
       </div>
 
-      {/* The balance is plain text on an ordinary day. Almost every day repeats
-          yesterday's number, so making all of them loud buries the days that matter.
-          Negative days keep the pill; the day it first turns negative is called out
-          in words above the grid rather than with an icon nobody can decode. */}
-      <div className="mt-3 flex items-center gap-1">
-        <p
-          title={mask(formatCurrency(day.ending_balance, currency, locale))}
-          className={cn(
-            'whitespace-nowrap text-sm tabular-nums',
-            isLowBalance
-              ? 'rounded-full border border-rose-300 bg-rose-100 px-1.5 py-0.5 font-bold text-rose-700 dark:border-rose-500/50 dark:bg-rose-500/15 dark:text-rose-300'
-              : 'font-semibold text-muted-foreground',
-          )}
-        >
-          {mask(compactCurrency(day.ending_balance, currency, locale))}
-        </p>
-      </div>
+      {metric === 'balance' ? (
+        /* The balance is plain text on an ordinary day. Almost every day repeats
+            yesterday's number, so making all of them loud buries the days that matter.
+            Negative days keep the pill; the day it first turns negative is called out
+            in words above the grid rather than with an icon nobody can decode. */
+        <div className="mt-3 flex items-center gap-1">
+          <p
+            title={mask(formatCurrency(day.ending_balance, currency, locale))}
+            className={cn(
+              'whitespace-nowrap text-sm tabular-nums',
+              isLowBalance
+                ? 'rounded-full border border-rose-300 bg-rose-100 px-1.5 py-0.5 font-bold text-rose-700 dark:border-rose-500/50 dark:bg-rose-500/15 dark:text-rose-300'
+                : 'font-semibold text-muted-foreground',
+            )}
+          >
+            {mask(compactCurrency(day.ending_balance, currency, locale))}
+          </p>
+        </div>
+      ) : (
+        <DayCellActivity day={day} currency={currency} locale={locale} mask={mask} />
+      )}
 
       {detailed && previewItems.length > 0 && (
         <div className="mt-3 space-y-1.5 pr-1">
@@ -517,9 +772,62 @@ function DayPreviewRow({ item, locale, mask }: { item: TransactionCalendarItem; 
   )
 }
 
+// Activity cells report what actually moved: green income and red expense, real
+// amounts only. Projected amounts get a secondary violet line so a forecast never
+// blends into settled money. Transfer-only and quiet days say so in words.
+function DayCellActivity({
+  day,
+  currency,
+  locale,
+  mask,
+  align = 'left',
+}: {
+  day: TransactionCalendarDay
+  currency: string
+  locale: string
+  mask: (value: string) => string
+  align?: 'left' | 'right'
+}) {
+  const { t } = useTranslation()
+  const activity = dayActivity(day)
+  const projectedParts = [
+    activity.projectedIncome > 0 ? mask(`+${compactCurrency(activity.projectedIncome, currency, locale)}`) : null,
+    activity.projectedExpense > 0 ? mask(`−${compactCurrency(activity.projectedExpense, currency, locale)}`) : null,
+  ].filter(Boolean)
+  return (
+    <div className={cn('mt-3 space-y-0.5', align === 'right' && 'mt-0 text-right')}>
+      {activity.hasActual ? (
+        <p className={cn('flex flex-wrap items-center gap-x-1.5 text-sm font-semibold tabular-nums', align === 'right' && 'justify-end')}>
+          {activity.actualIncome > 0 && (
+            <span className="text-emerald-600 dark:text-emerald-400">
+              {mask(`+${compactCurrency(activity.actualIncome, currency, locale)}`)}
+            </span>
+          )}
+          {activity.actualExpense > 0 && (
+            <span className="text-rose-600 dark:text-rose-400">
+              {mask(`−${compactCurrency(activity.actualExpense, currency, locale)}`)}
+            </span>
+          )}
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">{t('transactions.calendarNoMovements')}</p>
+      )}
+      {projectedParts.length > 0 && (
+        <p
+          title={t('transactions.calendarProjected')}
+          className="text-[11px] font-semibold tabular-nums text-violet-600 dark:text-violet-300"
+        >
+          {projectedParts.join(' · ')}
+        </p>
+      )}
+    </div>
+  )
+}
+
 // Markers stay on one line beside the day number. A cell header is ~100px wide and the
 // date takes 28px, so the four badges are sized to fit the remainder rather than wrap
-// onto a second row, which used to push the balance chip down.
+// onto a second row, which used to push the balance chip down. They render the same
+// in both metrics so a day always reads the same way regardless of the toggle.
 function CalendarBadges({ day }: { day: TransactionCalendarDay }) {
   const { t } = useTranslation()
   return (
@@ -574,6 +882,7 @@ function MobileDayRow({
   dateLocale,
   mask,
   density,
+  metric,
   onSelect,
 }: {
   day: TransactionCalendarDay
@@ -583,10 +892,11 @@ function MobileDayRow({
   dateLocale: string
   mask: (value: string) => string
   density: CalendarDensity
+  metric: CalendarMetric
   onSelect: () => void
 }) {
   const { t } = useTranslation()
-  const isLowBalance = day.ending_balance < 0
+  const isLowBalance = metric === 'balance' && day.ending_balance < 0
   const previewItems = density === 'detailed' ? day.items.slice(0, 3) : []
   const moreCount = density === 'detailed' ? Math.max(0, day.items.length - previewItems.length) : 0
   return (
@@ -608,10 +918,14 @@ function MobileDayRow({
             {t('transactions.calendarItemCount', { count: day.actual_count + day.projected_count })}
           </p>
         </div>
-        <div className="text-right">
-          <p className={cn('text-sm font-bold tabular-nums', day.ending_balance < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')}>
-            {mask(formatCurrency(day.ending_balance, currency, locale))}
-          </p>
+        <div className="flex flex-col items-end gap-0.5 text-right">
+          {metric === 'balance' ? (
+            <p className={cn('text-sm font-bold tabular-nums', day.ending_balance < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400')}>
+              {mask(formatCurrency(day.ending_balance, currency, locale))}
+            </p>
+          ) : (
+            <DayCellActivity day={day} currency={currency} locale={locale} mask={mask} align="right" />
+          )}
           <CalendarBadges day={day} />
         </div>
       </div>
@@ -642,6 +956,7 @@ function SelectedDayPanel({
   locale,
   dateLocale,
   mask,
+  metric,
   onOpenTransaction,
 }: {
   day?: TransactionCalendarDay
@@ -649,31 +964,91 @@ function SelectedDayPanel({
   locale: string
   dateLocale: string
   mask: (value: string) => string
+  metric: CalendarMetric
   onOpenTransaction: (id: string) => void
 }) {
   const { t } = useTranslation()
   if (!day) return null
+  const activity = dayActivity(day)
+  const headline = metric === 'balance' ? day.ending_balance : activity.actualNet
+  const headlineLabel = metric === 'balance'
+    ? mask(formatCurrency(day.ending_balance, currency, locale))
+    : mask(`${activity.actualNet >= 0 ? '+' : '−'}${formatCurrency(Math.abs(activity.actualNet), currency, locale)}`)
   return (
     <aside className="bg-card rounded-xl border border-border shadow-sm overflow-hidden md:sticky md:top-4 md:max-h-[calc(100vh-7rem)] md:w-[320px] md:shrink-0 md:self-start md:flex md:flex-col lg:w-[340px]">
       <div className="px-4 py-4 border-b border-border">
         <div className="flex items-end justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('transactions.calendarSelectedDay')}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {metric === 'balance' ? t('transactions.calendarSelectedDay') : t('transactions.calendarActualNet')}
+            </p>
             <h3 className="truncate text-lg font-bold text-foreground">
               {parseLocalDate(day.date).toLocaleDateString(dateLocale, { weekday: 'long', day: 'numeric', month: 'long' })}
             </h3>
           </div>
           <p
-            title={mask(formatCurrency(day.ending_balance, currency, locale))}
+            title={headlineLabel}
             className={cn(
               'shrink-0 text-right text-lg font-bold tabular-nums',
-              day.ending_balance < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400',
+              headline < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400',
             )}
           >
-            {mask(formatCurrency(day.ending_balance, currency, locale))}
+            {headlineLabel}
           </p>
         </div>
       </div>
+
+      {metric === 'activity' && (
+        <div className="space-y-2 border-b border-border px-4 py-3">
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="text-muted-foreground">{t('transactions.summaryIncome')}</span>
+            <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+              {mask(`+${formatCurrency(activity.actualIncome, currency, locale)}`)}
+            </span>
+          </div>
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="text-muted-foreground">{t('transactions.summaryExpenses')}</span>
+            <span className="font-semibold tabular-nums text-rose-600 dark:text-rose-400">
+              {mask(`−${formatCurrency(activity.actualExpense, currency, locale)}`)}
+            </span>
+          </div>
+          {activity.hasProjected && (
+            <div className="space-y-1.5 rounded-lg border border-dashed border-violet-400/60 bg-violet-500/5 px-3 py-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+                {t('transactions.calendarProjected')}
+              </p>
+              {activity.projectedIncome > 0 && (
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-muted-foreground">{t('transactions.summaryIncome')}</span>
+                  <span className="font-semibold tabular-nums text-violet-700 dark:text-violet-300">
+                    {mask(`+${formatCurrency(activity.projectedIncome, currency, locale)}`)}
+                  </span>
+                </div>
+              )}
+              {activity.projectedExpense > 0 && (
+                <div className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-muted-foreground">{t('transactions.summaryExpenses')}</span>
+                  <span className="font-semibold tabular-nums text-violet-700 dark:text-violet-300">
+                    {mask(`−${formatCurrency(activity.projectedExpense, currency, locale)}`)}
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-muted-foreground">{t('transactions.calendarProjectedNet')}</span>
+                <span className="font-semibold tabular-nums text-violet-700 dark:text-violet-300">
+                  {mask(`${activity.projectedNet >= 0 ? '+' : '−'}${formatCurrency(Math.abs(activity.projectedNet), currency, locale)}`)}
+                </span>
+              </div>
+            </div>
+          )}
+          {day.has_transfer && (
+            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <ArrowLeftRight size={12} className="shrink-0 text-sky-600 dark:text-sky-400" />
+              {t('transactions.calendarTransfersExcluded')}
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="min-h-0 divide-y divide-border overflow-y-auto md:flex-1">
         {day.items.length === 0 ? (

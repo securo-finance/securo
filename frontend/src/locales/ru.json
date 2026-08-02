@@ -510,7 +510,16 @@
     "calendarAddIncome": "Добавить доход",
     "calendarAddExpense": "Добавить расход",
     "calendarSelectedDay": "Выбранный день",
-    "calendarNoItems": "В этот день транзакций нет"
+    "calendarNoItems": "В этот день транзакций нет",
+    "calendarMetric": "Данные",
+    "calendarBalanceMode": "Баланс",
+    "calendarActivityMode": "Активность",
+    "calendarActivityTrend": "Дневная активность",
+    "calendarNoActivity": "В этом месяце нет активности",
+    "calendarNoMovements": "Нет операций",
+    "calendarActualNet": "Фактический итог",
+    "calendarProjectedNet": "Запланированный итог",
+    "calendarTransfersExcluded": "Переводы не учитываются как приход или расходы"
   },
   "accounts": {
     "title": "Счета",

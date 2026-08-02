@@ -510,7 +510,16 @@
     "calendarAddIncome": "Ajouter un revenu",
     "calendarAddExpense": "Ajouter une dépense",
     "calendarSelectedDay": "Jour sélectionné",
-    "calendarNoItems": "Aucune transaction ce jour-là"
+    "calendarNoItems": "Aucune transaction ce jour-là",
+    "calendarMetric": "Données",
+    "calendarBalanceMode": "Solde",
+    "calendarActivityMode": "Activité",
+    "calendarActivityTrend": "Activité quotidienne",
+    "calendarNoActivity": "Aucune activité ce mois-ci",
+    "calendarNoMovements": "Aucun mouvement",
+    "calendarActualNet": "Net réel",
+    "calendarProjectedNet": "Net prévu",
+    "calendarTransfersExcluded": "Les virements ne comptent pas comme revenus ou dépenses"
   },
   "accounts": {
     "title": "Comptes",

@@ -510,7 +510,16 @@
     "calendarAddIncome": "Einnahme hinzufügen",
     "calendarAddExpense": "Ausgabe hinzufügen",
     "calendarSelectedDay": "Ausgewählter Tag",
-    "calendarNoItems": "Keine Transaktionen an diesem Tag"
+    "calendarNoItems": "Keine Transaktionen an diesem Tag",
+    "calendarMetric": "Daten",
+    "calendarBalanceMode": "Saldo",
+    "calendarActivityMode": "Aktivität",
+    "calendarActivityTrend": "Tägliche Aktivität",
+    "calendarNoActivity": "Keine Aktivität in diesem Monat",
+    "calendarNoMovements": "Keine Bewegungen",
+    "calendarActualNet": "Tatsächliches Netto",
+    "calendarProjectedNet": "Geplantes Netto",
+    "calendarTransfersExcluded": "Umbuchungen zählen nicht als Einnahmen oder Ausgaben"
   },
   "accounts": {
     "title": "Konten",

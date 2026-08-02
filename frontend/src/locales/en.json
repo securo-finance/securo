@@ -510,7 +510,16 @@
     "calendarAddIncome": "Add income",
     "calendarAddExpense": "Add expense",
     "calendarSelectedDay": "Selected day",
-    "calendarNoItems": "No transactions on this day"
+    "calendarNoItems": "No transactions on this day",
+    "calendarMetric": "Data",
+    "calendarBalanceMode": "Balance",
+    "calendarActivityMode": "Activity",
+    "calendarActivityTrend": "Daily activity",
+    "calendarNoActivity": "No activity this month",
+    "calendarNoMovements": "No movements",
+    "calendarActualNet": "Actual net",
+    "calendarProjectedNet": "Projected net",
+    "calendarTransfersExcluded": "Transfers are not counted as income or expenses"
   },
   "accounts": {
     "title": "Accounts",

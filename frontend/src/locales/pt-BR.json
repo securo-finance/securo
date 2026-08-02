@@ -510,7 +510,16 @@
     "calendarAddIncome": "Adicionar receita",
     "calendarAddExpense": "Adicionar despesa",
     "calendarSelectedDay": "Dia selecionado",
-    "calendarNoItems": "Nenhuma transação neste dia"
+    "calendarNoItems": "Nenhuma transação neste dia",
+    "calendarMetric": "Dados",
+    "calendarBalanceMode": "Saldo",
+    "calendarActivityMode": "Atividade",
+    "calendarActivityTrend": "Atividade diária",
+    "calendarNoActivity": "Sem atividade neste mês",
+    "calendarNoMovements": "Sem movimentações",
+    "calendarActualNet": "Líquido real",
+    "calendarProjectedNet": "Líquido previsto",
+    "calendarTransfersExcluded": "Transferências não contam como receitas ou despesas"
   },
   "accounts": {
     "title": "Contas",
