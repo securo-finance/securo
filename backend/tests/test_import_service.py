@@ -255,8 +255,8 @@ class TestParseCsv:
         assert transactions[0].amount == Decimal("5000.00")
         assert transactions[1].amount == Decimal("1200.00")
 
-    def test_parse_csv_autodetects_payee_external_id_notes(self):
-        """CSV with common headers for payee, external_id, and notes should auto-detect them."""
+    def test_parse_csv_autodetects_payee_and_notes(self):
+        """CSV with common headers for payee and notes should auto-detect them. external_id is strictly explicit."""
         csv_content = (
             "date,description,amount,merchant,transaction_id,notes\n"
             "2026-05-01,AMAZON,-25.00,Amazon.com,txn_123,Gift for John\n"
@@ -264,7 +264,7 @@ class TestParseCsv:
         transactions = parse_csv(csv_content.encode("utf-8"))
         assert len(transactions) == 1
         assert transactions[0].payee_raw == "Amazon.com"
-        assert transactions[0].external_id == "txn_123"
+        assert transactions[0].external_id is None
         assert transactions[0].notes == "Gift for John"
 
 class TestParseCsvColumnMapping:
