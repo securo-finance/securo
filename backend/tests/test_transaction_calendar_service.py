@@ -91,17 +91,23 @@ async def test_transaction_calendar_combines_actual_projected_and_balances(
 
     july_2 = next(day for day in calendar.days if day.date == date(2026, 7, 2))
     assert july_2.income == 1000.0
+    assert july_2.actual_income == 1000.0
+    assert july_2.projected_income == 0.0
     assert july_2.ending_balance == 1000.0
     assert july_2.actual_count == 1
     assert july_2.items[0].kind == "actual"
 
     july_5 = next(day for day in calendar.days if day.date == date(2026, 7, 5))
     assert july_5.expense == 200.0
+    assert july_5.actual_expense == 200.0
+    assert july_5.projected_expense == 0.0
     assert july_5.ending_balance == 800.0
 
     july_10 = next(day for day in calendar.days if day.date == date(2026, 7, 10))
     assert july_10.projected_count == 1
     assert july_10.expense == 300.0
+    assert july_10.actual_expense == 0.0
+    assert july_10.projected_expense == 300.0
     assert july_10.ending_balance == 500.0
     assert july_10.items[0].kind == "projected"
     assert july_10.items[0].recurring_id == rent.id
@@ -145,6 +151,7 @@ async def test_transaction_calendar_respects_account_filter(
 
     july_3 = next(day for day in calendar.days if day.date == date(2026, 7, 3))
     assert july_3.income == 100.0
+    assert july_3.actual_income == 100.0
     assert july_3.ending_balance == 100.0
     assert [item.description for item in july_3.items] == ["Kept income"]
 
@@ -200,6 +207,8 @@ async def test_transaction_calendar_single_foreign_account_uses_primary_currency
     assert july_1.ending_balance == 500.0
     july_2 = next(day for day in calendar.days if day.date == date(2026, 7, 2))
     assert july_2.expense == 50.0
+    assert july_2.actual_expense == 50.0
+    assert july_2.projected_expense == 0.0
     assert july_2.ending_balance == 450.0
 
 
@@ -244,3 +253,181 @@ async def test_transaction_calendar_skips_closed_account_recurring_projections(
     assert july_10.projected_count == 0
     assert july_10.items == []
     assert july_10.ending_balance == 0.0
+
+
+@pytest.mark.asyncio
+async def test_transaction_calendar_splits_mixed_day_and_keeps_combined_totals(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Person", type="checking", balance=Decimal("0"), currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+    session.add_all([
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=account.id, description="Freelance", amount=Decimal("400"),
+            currency="BRL", date=date(2026, 7, 15), type="credit", source="manual",
+        ),
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=account.id, description="Market", amount=Decimal("120"),
+            currency="BRL", date=date(2026, 7, 15), type="debit", source="manual",
+        ),
+        RecurringTransaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=account.id, description="Streaming", amount=Decimal("50"),
+            currency="BRL", type="debit", frequency="monthly",
+            start_date=date(2026, 7, 15), next_occurrence=date(2026, 7, 15),
+        ),
+        RecurringTransaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=account.id, description="Dividends", amount=Decimal("80"),
+            currency="BRL", type="credit", frequency="monthly",
+            start_date=date(2026, 7, 15), next_occurrence=date(2026, 7, 15),
+        ),
+    ])
+    await session.commit()
+
+    calendar = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1)
+    )
+
+    july_15 = next(day for day in calendar.days if day.date == date(2026, 7, 15))
+    assert july_15.actual_income == 400.0
+    assert july_15.actual_expense == 120.0
+    assert july_15.projected_income == 80.0
+    assert july_15.projected_expense == 50.0
+    # Combined totals stay the sum of both buckets for backwards compatibility.
+    assert july_15.income == 480.0
+    assert july_15.expense == 170.0
+    assert july_15.ending_balance == 310.0
+
+
+@pytest.mark.asyncio
+async def test_transaction_calendar_transfer_buckets_stay_out_of_activity(
+    session: AsyncSession, test_user, test_workspace
+):
+    checking = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Checking", type="checking", balance=Decimal("0"), currency="BRL",
+    )
+    savings = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Savings", type="savings", balance=Decimal("0"), currency="BRL",
+    )
+    transfer_category = Category(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Transfers", icon="repeat", color="#0ea5e9", treat_as_transfer=True,
+    )
+    session.add_all([checking, savings, transfer_category])
+    await session.flush()
+
+    pair_id = uuid.uuid4()
+    session.add_all([
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=checking.id, description="To savings", amount=Decimal("250"),
+            currency="BRL", date=date(2026, 7, 8), type="debit", source="manual",
+            transfer_pair_id=pair_id,
+        ),
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=savings.id, description="From checking", amount=Decimal("250"),
+            currency="BRL", date=date(2026, 7, 8), type="credit", source="manual",
+            transfer_pair_id=pair_id,
+        ),
+        RecurringTransaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=checking.id, category_id=transfer_category.id,
+            description="Auto savings", amount=Decimal("100"), currency="BRL",
+            type="debit", frequency="monthly",
+            start_date=date(2026, 7, 20), next_occurrence=date(2026, 7, 20),
+        ),
+    ])
+    await session.commit()
+
+    calendar = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1)
+    )
+
+    july_8 = next(day for day in calendar.days if day.date == date(2026, 7, 8))
+    assert july_8.actual_income == 0.0
+    assert july_8.actual_expense == 0.0
+    assert july_8.income == 0.0
+    assert july_8.expense == 0.0
+    assert july_8.actual_transfer_net == 0.0
+    assert july_8.has_transfer is True
+    # Both legs stay listed even though they never count as income/expense.
+    assert len(july_8.items) == 2
+
+    july_20 = next(day for day in calendar.days if day.date == date(2026, 7, 20))
+    assert july_20.projected_expense == 0.0
+    assert july_20.projected_transfer_net == -100.0
+    assert july_20.transfer_net == -100.0
+    assert july_20.has_transfer is True
+    # Projected transfers keep moving the future balance.
+    assert july_20.ending_balance == -100.0
+
+
+@pytest.mark.asyncio
+async def test_transaction_calendar_opening_balance_and_ignored_category(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Person", type="checking", balance=Decimal("0"), currency="BRL",
+    )
+    ignored_category = Category(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Reimbursed", icon="undo", color="#64748b", is_ignored=True,
+    )
+    session.add_all([account, ignored_category])
+    await session.flush()
+    session.add_all([
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=account.id, description="Opening", amount=Decimal("900"),
+            currency="BRL", date=date(2026, 7, 1), type="credit", source="opening_balance",
+        ),
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=account.id, category_id=ignored_category.id,
+            description="Work lunch", amount=Decimal("60"), currency="BRL",
+            date=date(2026, 7, 4), type="debit", source="manual",
+        ),
+        RecurringTransaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=account.id, category_id=ignored_category.id,
+            description="Reimbursed sub", amount=Decimal("30"), currency="BRL",
+            type="debit", frequency="monthly",
+            start_date=date(2026, 7, 12), next_occurrence=date(2026, 7, 12),
+        ),
+    ])
+    await session.commit()
+
+    calendar = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1)
+    )
+
+    july_1 = next(day for day in calendar.days if day.date == date(2026, 7, 1))
+    assert july_1.income == 0.0
+    assert july_1.actual_income == 0.0
+    assert july_1.ending_balance == 900.0
+
+    july_4 = next(day for day in calendar.days if day.date == date(2026, 7, 4))
+    assert july_4.expense == 0.0
+    assert july_4.actual_expense == 0.0
+    assert july_4.actual_count == 1
+    # Ignored actuals are excluded from the balance deltas too (existing behavior).
+    assert july_4.ending_balance == 900.0
+
+    july_12 = next(day for day in calendar.days if day.date == date(2026, 7, 12))
+    assert july_12.expense == 0.0
+    assert july_12.projected_expense == 0.0
+    assert july_12.projected_count == 1
+    assert july_12.items[0].is_ignored is True
+    # Excluded from activity, but the projection still lowers the future balance.
+    assert july_12.ending_balance == 870.0
