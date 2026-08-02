@@ -317,6 +317,41 @@ async def test_bulk_delete_payees_invalid_ids(session: AsyncSession, test_user, 
     assert deleted == 0
 
 
+@pytest.mark.asyncio
+async def test_bulk_delete_payees_workspace_isolation(session: AsyncSession, test_user, test_workspace):
+    from app.models.workspace import Workspace
+    
+    other_workspace = Workspace(id=uuid.uuid4(), name="Other")
+    session.add(other_workspace)
+    await session.commit()
+
+    p = await create_payee(session, other_workspace.id, test_user.id, PayeeCreate(name="OtherWS"))
+    deleted = await bulk_delete_payees(session, test_workspace.id, [p.id])
+    assert deleted == 0
+
+    assert await get_payee(session, p.id, other_workspace.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_delete_payee_cleans_up_mappings(session: AsyncSession, test_user, test_workspace):
+    from sqlalchemy import select
+
+    p = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="Mapped"))
+    mapping = PayeeMapping(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        target_id=p.id,
+    )
+    session.add(mapping)
+    await session.commit()
+
+    await delete_payee(session, p.id, test_workspace.id)
+
+    result = await session.execute(select(PayeeMapping).where(PayeeMapping.target_id == p.id))
+    assert result.scalar_one_or_none() is None
+
+
 # ---------------------------------------------------------------------------
 # merge_payees
 # ---------------------------------------------------------------------------
