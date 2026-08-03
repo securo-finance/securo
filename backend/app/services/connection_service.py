@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
 from app.models.asset import Asset
+from app.models.asset_transaction import AssetTransaction
 from app.models.asset_group import AssetGroup
 from app.models.asset_value import AssetValue
 from app.models.bank_connection import BankConnection
@@ -36,6 +37,7 @@ from app.providers.base import (
 )
 from app.services import oauth_state
 from app.services import admin_service
+from app.services import asset_transaction_service
 from app.services import recurring_match_service
 from app.services.account_service import (
     _simplefin_to_internal_balance,
@@ -201,6 +203,12 @@ async def _resolve_institution(
             inst.logo_url = new_logo
     cache[key] = inst
     return inst
+
+
+def _provider_kind(provider: object) -> str:
+    """Read an optional provider category without persisting mock/foreign values."""
+    kind = getattr(provider, "kind", "banking")
+    return kind if isinstance(kind, str) and kind else "banking"
 
 PLUGGY_CATEGORY_MAP = {
     "Eating out": "Alimentação",
@@ -550,7 +558,8 @@ async def _sync_holdings(
             # Keep descriptive fields fresh in case the provider still
             # updates them post-closure, but don't touch valuation.
             existing.name = holding.name
-            existing.external_metadata = holding.metadata
+            if holding.metadata is not None:
+                existing.external_metadata = holding.metadata
             existing.connection_id = connection.id
             continue
 
@@ -665,8 +674,10 @@ async def _upsert_asset_from_holding(
     # Fields Pluggy consistently returns — safe to overwrite each sync.
     asset.name = holding.name
     asset.currency = holding.currency
-    # external_metadata is a snapshot blob: we want the latest every time.
-    asset.external_metadata = holding.metadata
+    # Metadata is provider-owned but may be omitted on a transient response;
+    # retain the last complete snapshot rather than clobbering it with null.
+    if holding.metadata is not None:
+        asset.external_metadata = holding.metadata
     previous_connection_id = asset.connection_id
     asset.connection_id = connection_id
     # Only auto-unarchive when the holding moved to a different connection
@@ -697,6 +708,159 @@ async def _upsert_asset_from_holding(
     if holding.maturity_date:
         asset.maturity_date = holding.maturity_date
     return asset
+
+
+async def _sync_trading212_orders(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    connection: BankConnection,
+    provider,
+    credentials: dict,
+) -> None:
+    """Upsert completed read-only Trading 212 fills into the asset ledger."""
+    if connection.provider != "trading212" or not hasattr(provider, "get_historical_orders"):
+        return
+    try:
+        orders = await provider.get_historical_orders(credentials)
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to fetch Trading 212 order history for %s", connection.id)
+        return
+    group = await ensure_group_for_connection(
+        session,
+        user_id=user_id,
+        connection_id=connection.id,
+        source=connection.provider,
+        external_id=connection.external_id,
+        default_name=connection.institution_name,
+    )
+    touched: set[uuid.UUID] = set()
+    cash_account = (
+        await session.execute(
+            select(Account).where(
+                Account.connection_id == connection.id,
+                Account.external_id.like("%:cash"),
+            )
+        )
+    ).scalars().first()
+    for item in orders:
+        if not isinstance(item, dict):
+            continue
+        order = item.get("order") if isinstance(item.get("order"), dict) else {}
+        fill = item.get("fill") if isinstance(item.get("fill"), dict) else {}
+        instrument = order.get("instrument") if isinstance(order.get("instrument"), dict) else {}
+        fill_id = fill.get("id")
+        ticker = order.get("ticker") or instrument.get("ticker")
+        side = str(order.get("side") or "").upper()
+        if fill.get("type") != "TRADE" or not fill_id or not ticker or side not in {"BUY", "SELL"}:
+            continue
+        external_id = f"trading212:position:{ticker}"
+        asset = (
+            await session.execute(
+                select(Asset).where(
+                    Asset.user_id == user_id,
+                    Asset.source == "trading212",
+                    Asset.external_id == external_id,
+                    or_(Asset.connection_id == connection.id, Asset.connection_id.is_(None)),
+                )
+            )
+        ).scalars().first()
+        if asset is None:
+            asset = Asset(
+                user_id=user_id,
+                workspace_id=connection.workspace_id,
+                connection_id=connection.id,
+                group_id=group.id,
+                source="trading212",
+                external_id=external_id,
+                name=str(instrument.get("name") or ticker),
+                type="investment",
+                currency=str(order.get("currency") or instrument.get("currency") or "EUR"),
+                ticker=str(ticker),
+                isin=instrument.get("isin"),
+                valuation_method="manual",
+                external_metadata={"trading212": {"instrument": instrument}},
+            )
+            session.add(asset)
+            await session.flush()
+        elif asset.group_id is None:
+            asset.group_id = group.id
+        fill_date = str(fill.get("filledAt") or "")[:10]
+        try:
+            ledger_date = date.fromisoformat(fill_date)
+        except ValueError:
+            ledger_date = date.today()
+        transaction_id = f"t212:fill:{fill_id}"
+        tx = (
+            await session.execute(
+                select(AssetTransaction).where(
+                    AssetTransaction.asset_id == asset.id,
+                    AssetTransaction.external_id == transaction_id,
+                )
+            )
+        ).scalars().first()
+        wallet = fill.get("walletImpact") if isinstance(fill.get("walletImpact"), dict) else {}
+        taxes = wallet.get("taxes") if isinstance(wallet.get("taxes"), list) else []
+        values = {
+            "kind": "buy" if side == "BUY" else "sell",
+            "quantity": abs(Decimal(str(fill.get("quantity") or 0))),
+            "price": abs(Decimal(str(fill.get("price") or 0))),
+            "fee": sum((abs(Decimal(str(t.get("quantity") or 0))) for t in taxes if isinstance(t, dict)), Decimal("0")),
+            "date": ledger_date,
+            "source": "trading212",
+            "raw_data": {"order": order, "fill": fill},
+        }
+        if tx is None:
+            session.add(AssetTransaction(
+                asset_id=asset.id,
+                workspace_id=connection.workspace_id,
+                external_id=transaction_id,
+                **values,
+            ))
+        else:
+            for key, value in values.items():
+                setattr(tx, key, value)
+        if cash_account is not None:
+            net_value = Decimal(str(wallet.get("netValue") or 0))
+            if net_value:
+                settlement_id = f"t212:settlement:{fill_id}"
+                settlement = (
+                    await session.execute(
+                        select(Transaction).where(
+                            Transaction.account_id == cash_account.id,
+                            Transaction.external_id == settlement_id,
+                        )
+                    )
+                ).scalars().first()
+                settlement_values = {
+                    "description": f"Trading 212 trade settlement {side.lower()}",
+                    "amount": abs(net_value),
+                    "currency": str(wallet.get("currency") or cash_account.currency),
+                    "date": ledger_date,
+                    "type": "debit" if side == "BUY" else "credit",
+                    "source": "sync",
+                    "status": "posted",
+                    "raw_data": {"trading212": {"source": "history/orders", "payload": item}},
+                    "is_ignored": True,
+                }
+                if settlement is None:
+                    settlement = Transaction(
+                        user_id=user_id,
+                        workspace_id=connection.workspace_id,
+                        account_id=cash_account.id,
+                        external_id=settlement_id,
+                        **settlement_values,
+                    )
+                    apply_effective_date(settlement, cash_account)
+                    session.add(settlement)
+                else:
+                    for key, value in settlement_values.items():
+                        setattr(settlement, key, value)
+        touched.add(asset.id)
+    await session.flush()
+    for asset_id in touched:
+        asset = await session.get(Asset, asset_id)
+        if asset is not None:
+            await asset_transaction_service.recompute_and_cache(session, asset)
 
 
 async def _ensure_historical_seed(
@@ -985,6 +1149,7 @@ async def handle_oauth_callback(
         workspace_id=workspace_id,
         user_id=user_id,
         provider=provider_name,
+        kind=_provider_kind(provider),
         external_id=connection_data.external_id,
         institution_name=connection_data.institution_name,
         logo_url=_clean_logo_url(connection_data.logo_url),
@@ -1023,6 +1188,7 @@ async def handle_oauth_callback(
             minimum_payment=acc_data.minimum_payment if is_cc else None,
             card_brand=acc_data.card_brand if is_cc else None,
             card_level=acc_data.card_level if is_cc else None,
+            external_metadata=acc_data.metadata,
             institution_id=institution.id if institution else None,
         )
         session.add(account)
@@ -1093,6 +1259,7 @@ async def handle_oauth_callback(
                 payee=txn_data.payee,
                 payee_id=payee_id,
                 raw_data=txn_data.raw_data,
+                is_ignored=txn_data.is_ignored,
                 category_id=category_id,
                 installment_number=txn_data.installment_number,
                 total_installments=txn_data.total_installments,
@@ -1135,6 +1302,9 @@ async def handle_oauth_callback(
     # available on the Assets page immediately after the widget closes.
     if _sync_assets_enabled(connection.settings):
         await _sync_holdings(session, user_id, connection, connection_data.credentials)
+        await _sync_trading212_orders(
+            session, user_id, connection, provider, connection_data.credentials
+        )
 
     connection.last_sync_at = datetime.now(timezone.utc)
     await session.commit()
@@ -1677,6 +1847,10 @@ async def sync_connection(
                     connection.provider, account.type, acc_data.balance
                 )
                 account.name = acc_data.name
+                # Sparse provider snapshots must never erase metadata captured
+                # on an earlier successful sync.
+                if acc_data.metadata is not None:
+                    account.external_metadata = acc_data.metadata
                 # Backfills existing accounts on their next sync. Only written
                 # when the provider actually returns an identifier, so a payload
                 # that intermittently omits it can't blank out a known mask.
@@ -1722,6 +1896,7 @@ async def sync_connection(
                     minimum_payment=acc_data.minimum_payment if is_cc else None,
                     card_brand=acc_data.card_brand if is_cc else None,
                     card_level=acc_data.card_level if is_cc else None,
+                    external_metadata=acc_data.metadata,
                     institution_id=institution.id if institution else None,
                 )
                 session.add(account)
@@ -1884,6 +2059,7 @@ async def sync_connection(
                     payee=txn_data.payee,
                     payee_id=sync_payee_id,
                     raw_data=txn_data.raw_data,
+                    is_ignored=txn_data.is_ignored,
                     category_id=category_id,
                     installment_number=txn_data.installment_number,
                     total_installments=txn_data.total_installments,
@@ -1999,6 +2175,7 @@ async def sync_connection(
         # /investments shouldn't block the transaction sync that just succeeded.
         if _sync_assets_enabled(conn_settings):
             await _sync_holdings(session, user_id, connection, credentials)
+            await _sync_trading212_orders(session, user_id, connection, provider, credentials)
 
         # Reap institution rows referenced by nothing. Id-carrying servers
         # never orphan a row (renames update in place), but a name-only

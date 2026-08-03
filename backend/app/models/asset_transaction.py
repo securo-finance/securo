@@ -1,9 +1,9 @@
 import uuid
 from datetime import date as _date, datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import Date, DateTime, ForeignKey, Numeric, String, func
+from sqlalchemy import JSON, Date, DateTime, ForeignKey, Numeric, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -39,6 +39,9 @@ class AssetTransaction(Base):
     date: Mapped[_date] = mapped_column(Date, index=True)
     source: Mapped[str] = mapped_column(String(20), default="manual")  # manual, import, pluggy
     external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # Original broker payload for idempotent reconciliation and future import
+    # improvements. It is deliberately optional for manual transactions.
+    raw_data: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     #: The import that wrote this row, so deleting that import can take it
     #: back out again.

@@ -23,6 +23,10 @@ class BankConnection(Base):
         UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
     )
     provider: Mapped[str] = mapped_column(String(50))  # "pluggy", "belvo", etc.
+    # UI-facing connection category. The provider remains the integration key;
+    # this lets a brokerage use account/asset sync without being presented as a
+    # regular bank connector.
+    kind: Mapped[str] = mapped_column(String(50), default="banking")
     external_id: Mapped[str] = mapped_column(String(255))  # Provider's item ID
     institution_name: Mapped[str] = mapped_column(String(255))
     display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
