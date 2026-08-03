@@ -60,6 +60,12 @@ async def test_token_callback_authenticates_against_the_selected_read_only_host(
     assert connection.credentials["environment"] == "demo"
     assert "api-key-123" not in str(connection.credentials)
     assert "api-secret-456" not in str(connection.credentials)
+    assert [
+        (account.external_id, account.name, account.type, account.balance, account.currency)
+        for account in connection.accounts
+    ] == [
+        ("trading212:123456789:cash", "Trading 212 Cash", "investment", 0, "EUR")
+    ]
 
 
 @pytest.mark.asyncio
@@ -115,6 +121,36 @@ async def test_account_and_position_reads_normalize_balances_and_preserve_provid
     assert holdings[0].purchase_price == 450
     assert holdings[0].ticker == "AAPL_US_EQ"
     assert holdings[0].metadata["trading212"]["quantityInPies"] == "0.5"
+
+
+@pytest.mark.asyncio
+async def test_empty_positions_response_is_a_valid_empty_portfolio():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/positions")
+        return httpx.Response(200, json=[])
+
+    async def fake_client(self, credentials=None):  # noqa: ANN001
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    with patch.object(Trading212Provider, "_client", fake_client):
+        holdings = await Trading212Provider().get_holdings({"api_key": "key", "api_secret": "secret"})
+
+    assert holdings == []
+
+
+@pytest.mark.asyncio
+async def test_malformed_positions_response_is_a_provider_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path.endswith("/positions")
+        return httpx.Response(200, json={"unexpected": "payload"})
+
+    async def fake_client(self, credentials=None):  # noqa: ANN001
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    with patch.object(Trading212Provider, "_client", fake_client), pytest.raises(
+        ValueError, match="unrecognized shape"
+    ):
+        await Trading212Provider().get_holdings({"api_key": "key", "api_secret": "secret"})
 
 
 @pytest.mark.asyncio

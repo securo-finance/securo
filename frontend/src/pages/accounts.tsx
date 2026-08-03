@@ -598,7 +598,7 @@ export default function AccountsPage() {
         supportsAssetSync={selectedProvider?.supports_asset_sync ?? false}
       />
 
-      {/* Token Connect Dialog — paste-a-token flow (SimpleFIN) */}
+      {/* Token Connect Dialog — provider-specific pasted credentials */}
       <TokenConnectDialog
         open={!!selectedProvider && selectedProvider.flow_type === 'token'}
         onClose={() => setSelectedProvider(null)}
@@ -614,7 +614,7 @@ export default function AccountsPage() {
         updateItemId={reconnectItemId ?? undefined}
       />
 
-      {/* Reconnect Dialog — paste-a-token flow (SimpleFIN) */}
+      {/* Reconnect Dialog — provider-specific pasted credentials */}
       <TokenConnectDialog
         open={!!tokenReconnectConnection}
         onClose={() => setTokenReconnectConnection(null)}

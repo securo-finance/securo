@@ -684,6 +684,15 @@
         "title": "Connect via SimpleFIN",
         "description": "SimpleFIN is a read-only bank data protocol. Go to the SimpleFIN Bridge, pick your bank, and copy the setup token back here."
       },
+      "trading212": {
+        "title": "Connect Trading 212",
+        "description": "Paste a read-only Trading 212 API key and API secret to connect your brokerage account.",
+        "reconnectTitle": "Reconnect Trading 212",
+        "reconnectDescription": "Paste the current read-only API key and API secret to update this connection. Existing accounts, transactions, assets, and settings are preserved.",
+        "tokenLabel": "API key and secret",
+        "tokenPlaceholder": "api-key:api-secret (or demo:api-key:api-secret)",
+        "tokenHelp": "Use a read-only Trading 212 API key. Securo encrypts the key and secret before storing them; never share them."
+      },
       "reconnectTitle": "Reconnect with a fresh token",
       "reconnectDescription": "Paste a new setup token to refresh this connection in place. Existing accounts, transactions, categories, and rules are preserved.",
       "reconnect": "Reconnect"

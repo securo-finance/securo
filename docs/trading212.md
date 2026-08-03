@@ -55,3 +55,14 @@ left untouched, and no row data is renamed, rewritten, or dropped.
 
 Back up first, then run the normal application migration command. Do not use a
 legacy fork migration chain alongside this revision.
+
+### Intentional downgrade behavior
+
+Revision `066` is intentionally non-reversible. Its Alembic `downgrade()` is a
+no-op: it permits revision bookkeeping to move back to `065` while retaining
+`kind`, `external_metadata`, and `raw_data` in the database. Retaining those
+legacy-compatible columns is deliberate because `066` cannot safely tell
+whether a column was added by this revision or already existed in a local
+legacy schema. Do not manually drop those columns as part of a downgrade; that
+would make a rollback destructive for affected installations. Revision `065`
+ignores the retained columns, so this bookkeeping-only downgrade is safe.

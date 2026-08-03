@@ -729,6 +729,15 @@
         "title": "Połącz przez SimpleFIN",
         "description": "SimpleFIN to protokół danych bankowych tylko do odczytu. Przejdź do SimpleFIN Bridge, wybierz swój bank i skopiuj token konfiguracyjny tutaj."
       },
+      "trading212": {
+        "title": "Połącz z Trading 212",
+        "description": "Wklej klucz API Trading 212 i sekret API tylko do odczytu, aby połączyć konto maklerskie.",
+        "reconnectTitle": "Połącz ponownie z Trading 212",
+        "reconnectDescription": "Wklej aktualny klucz API i sekret API tylko do odczytu, aby zaktualizować to połączenie. Istniejące konta, transakcje, aktywa i ustawienia zostaną zachowane.",
+        "tokenLabel": "Klucz i sekret API",
+        "tokenPlaceholder": "api-key:api-secret (lub demo:api-key:api-secret)",
+        "tokenHelp": "Użyj klucza API Trading 212 tylko do odczytu. Securo szyfruje klucz i sekret przed zapisaniem; nigdy ich nie udostępniaj."
+      },
       "reconnectTitle": "Połącz ponownie za pomocą nowego tokenu",
       "reconnectDescription": "Wklej nowy token konfiguracji, aby odświeżyć to połączenie bez jego usuwania. Istniejące konta, transakcje, kategorie i reguły zostaną zachowane.",
       "reconnect": "Połącz ponownie"

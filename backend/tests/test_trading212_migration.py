@@ -4,6 +4,10 @@ import importlib.util
 from pathlib import Path
 from unittest.mock import patch
 
+import sqlalchemy as sa
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+
 from app.models.account import Account
 from app.models.asset_transaction import AssetTransaction
 from app.models.bank_connection import BankConnection
@@ -54,3 +58,42 @@ def test_t212_metadata_migration_skips_columns_already_created_by_a_legacy_insta
         migration.upgrade()
 
     add_column.assert_not_called()
+
+
+def test_t212_metadata_migration_adds_and_retains_columns_in_a_real_legacy_schema():
+    """The bookkeeping-only downgrade must not drop legacy-compatible columns."""
+    migration = _migration_module()
+    engine = sa.create_engine("sqlite://")
+
+    with engine.begin() as connection:
+        for table in ("bank_connections", "accounts", "asset_transactions"):
+            connection.execute(sa.text(f"CREATE TABLE {table} (id INTEGER PRIMARY KEY)"))
+
+        context = MigrationContext.configure(connection)
+        with Operations.context(context):
+            migration.upgrade()
+
+        inspector = sa.inspect(connection)
+        assert {column["name"] for column in inspector.get_columns("bank_connections")} >= {"id", "kind"}
+        assert {column["name"] for column in inspector.get_columns("accounts")} >= {
+            "id",
+            "external_metadata",
+        }
+        assert {column["name"] for column in inspector.get_columns("asset_transactions")} >= {
+            "id",
+            "raw_data",
+        }
+
+        with Operations.context(context):
+            migration.downgrade()
+
+        inspector = sa.inspect(connection)
+        assert {column["name"] for column in inspector.get_columns("bank_connections")} >= {"id", "kind"}
+        assert {column["name"] for column in inspector.get_columns("accounts")} >= {
+            "id",
+            "external_metadata",
+        }
+        assert {column["name"] for column in inspector.get_columns("asset_transactions")} >= {
+            "id",
+            "raw_data",
+        }

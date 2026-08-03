@@ -140,7 +140,8 @@ class Trading212Provider(BankProvider):
                 f"{self._base_url(credentials)}{path}", params=params, headers=headers
             )
         response.raise_for_status()
-        return response.json() or {}
+        data = response.json()
+        return {} if data is None else data
 
     async def _get_paginated(
         self, credentials: dict, path: str, params: Optional[dict] = None
@@ -220,10 +221,22 @@ class Trading212Provider(BankProvider):
     async def get_positions(self, credentials: dict) -> list[dict]:
         data = await self._get_json(credentials, _POSITIONS_PATH)
         if isinstance(data, list):
-            return [item for item in data if isinstance(item, dict)]
-        if isinstance(data, dict) and isinstance(data.get("items"), list):
-            return [item for item in data["items"] if isinstance(item, dict)]
-        return []
+            positions = data
+        elif isinstance(data, dict) and isinstance(data.get("items"), list):
+            positions = data["items"]
+        else:
+            raise ValueError("Trading 212 positions response has an unrecognized shape")
+
+        if not all(isinstance(position, dict) for position in positions):
+            raise ValueError("Trading 212 positions response contains a malformed position")
+        for position in positions:
+            instrument = position.get("instrument")
+            ticker = position.get("ticker") or (
+                instrument.get("ticker") if isinstance(instrument, dict) else None
+            )
+            if not ticker:
+                raise ValueError("Trading 212 positions response contains a position without a ticker")
+        return positions
 
     def get_oauth_url(self, *args, **kwargs):  # type: ignore[override]
         raise NotImplementedError("Trading 212 uses an API key token flow, not OAuth redirect")
@@ -238,11 +251,11 @@ class Trading212Provider(BankProvider):
             external_id=account_id,
             institution_name="Trading 212",
             credentials=credentials,
-            accounts=[],
+            accounts=self._accounts_from_summary(summary),
         )
 
-    async def get_accounts(self, credentials: dict) -> list[AccountData]:
-        summary = await self.get_account_summary(credentials)
+    @staticmethod
+    def _accounts_from_summary(summary: dict) -> list[AccountData]:
         account_id = str(summary.get("id") or "unknown")
         cash = summary.get("cash") if isinstance(summary.get("cash"), dict) else {}
         metadata = {
@@ -266,6 +279,9 @@ class Trading212Provider(BankProvider):
                 metadata=metadata,
             )
         ]
+
+    async def get_accounts(self, credentials: dict) -> list[AccountData]:
+        return self._accounts_from_summary(await self.get_account_summary(credentials))
 
     async def get_transactions(
         self,
