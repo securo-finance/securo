@@ -41,6 +41,14 @@ KNOWN_PROVIDERS = [
         "requires_institution_select": False,
         "supports_asset_sync": True,
     },
+    {
+        "name": "trading212",
+        "display_name": "Trading 212",
+        "description": "Read-only Trading 212 brokerage accounts",
+        "flow_type": "token",
+        "requires_institution_select": False,
+        "supports_asset_sync": True,
+    },
 ]
 
 
@@ -93,6 +101,12 @@ def _auto_register_providers() -> None:
     if settings.simplefin_enabled:
         from app.providers.simplefin import SimpleFinProvider
         register_provider("simplefin", SimpleFinProvider)
+
+    # Trading 212 credentials are entered per connection, so it is always
+    # available without a server-wide secret. Its provider only calls a fixed
+    # allowlist of read-only endpoints.
+    from app.providers.trading212 import Trading212Provider
+    register_provider("trading212", Trading212Provider)
 
 
 _auto_register_providers()
