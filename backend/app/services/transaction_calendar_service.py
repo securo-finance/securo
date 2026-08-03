@@ -126,9 +126,10 @@ async def get_transaction_calendar(
     for item, signed_delta in projected_items:
         day = days[item.date]
         amount_primary = abs(signed_delta)
-        # Ignored-category projections stay out of the activity buckets (like
-        # ignored actuals) but, unlike actuals, keep contributing to the projected
-        # balance deltas below so the future balance stays honest.
+        # Ignored projections stay out of every aggregate, exactly like ignored
+        # actuals: out of the activity buckets here, and out of the balance deltas
+        # built in _project_recurring_items. A recurring the user chose to ignore
+        # must not move a projected balance that will not move once it posts.
         if not item.is_ignored:
             if item.is_transfer:
                 day.transfer_net += signed_delta
@@ -364,5 +365,10 @@ async def _project_recurring_items(
                 is_ignored=is_ignored,
             )
             items.append((item, signed_delta))
-            deltas[occ_date] = deltas.get(occ_date, 0.0) + signed_delta
+            # The row is still listed, but an ignored occurrence never moves the
+            # projected balance: _daily_balance_deltas_by_date already leaves the
+            # posted version out, so counting the projection here would promise a
+            # balance that reverts the day the recurring actually posts.
+            if not is_ignored:
+                deltas[occ_date] = deltas.get(occ_date, 0.0) + signed_delta
     return items, deltas

@@ -429,5 +429,68 @@ async def test_transaction_calendar_opening_balance_and_ignored_category(
     assert july_12.projected_expense == 0.0
     assert july_12.projected_count == 1
     assert july_12.items[0].is_ignored is True
-    # Excluded from activity, but the projection still lowers the future balance.
-    assert july_12.ending_balance == 870.0
+    # Still listed, but ignored means ignored: the projection is kept out of the
+    # balance too, matching how the posted version is treated on July 4.
+    assert july_12.ending_balance == 900.0
+
+
+@pytest.mark.asyncio
+async def test_transaction_calendar_ignored_projection_matches_posted_balance(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A projected ignored occurrence must land on the same balance its posted
+    sibling produces. Otherwise the calendar promises a future balance the app
+    reverts the moment the recurring becomes a real transaction."""
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Checking", type="checking", balance=Decimal("0"), currency="BRL",
+    )
+    ignored_category = Category(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Reimbursed", icon="undo", color="#64748b", is_ignored=True,
+    )
+    session.add_all([account, ignored_category])
+    await session.flush()
+    session.add_all([
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=account.id, description="Seed", amount=Decimal("1000"),
+            currency="BRL", date=date(2026, 7, 1), type="credit", source="manual",
+        ),
+        # The July 6 occurrence already posted as a real transaction.
+        Transaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=account.id, category_id=ignored_category.id,
+            description="Reimbursed sub", amount=Decimal("30"), currency="BRL",
+            date=date(2026, 7, 6), type="debit", source="manual",
+        ),
+        # The later ones have not, so they are still projected in the same grid.
+        RecurringTransaction(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            account_id=account.id, category_id=ignored_category.id,
+            description="Reimbursed sub", amount=Decimal("30"), currency="BRL",
+            type="debit", frequency="weekly",
+            start_date=date(2026, 7, 6), next_occurrence=date(2026, 7, 13),
+        ),
+    ])
+    await session.commit()
+
+    calendar = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1)
+    )
+    by_date = {day.date: day for day in calendar.days}
+
+    posted = by_date[date(2026, 7, 6)]
+    assert posted.items[0].kind == "actual"
+    assert posted.actual_count == 1
+
+    # Every row stays visible on its day, whether posted or projected.
+    for occurrence in (date(2026, 7, 13), date(2026, 7, 20), date(2026, 7, 27)):
+        assert by_date[occurrence].projected_count == 1
+        assert by_date[occurrence].items[0].is_ignored is True
+
+    # None of them moves the balance, so each projection is one the app can
+    # honour. Before this, the balance drifted down 30 per projected occurrence
+    # and snapped back as each one posted.
+    for day in (date(2026, 7, 6), date(2026, 7, 13), date(2026, 7, 20), date(2026, 7, 27)):
+        assert by_date[day].ending_balance == 1000.0
