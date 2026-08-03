@@ -9,6 +9,7 @@ from alembic import context
 
 from app.core.config import get_settings
 from app.core.database import Base
+from app.core.migration_safety import reject_ambiguous_legacy_063
 from app.models import *  # noqa: F401,F403
 # Agents module models (always loaded so migrations stay in sync; the
 # feature itself is gated at runtime by AGENTS_ENABLED).
@@ -39,6 +40,7 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
+    reject_ambiguous_legacy_063(connection)
     context.configure(connection=connection, target_metadata=target_metadata)
 
     with context.begin_transaction():

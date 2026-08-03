@@ -4,6 +4,7 @@ import importlib.util
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 import sqlalchemy as sa
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
@@ -11,6 +12,7 @@ from alembic.operations import Operations
 from app.models.account import Account
 from app.models.asset_transaction import AssetTransaction
 from app.models.bank_connection import BankConnection
+from app.core.migration_safety import reject_ambiguous_legacy_063
 
 
 MIGRATION_PATH = (
@@ -37,6 +39,33 @@ def test_t212_metadata_migration_extends_065_with_only_additive_nullable_columns
     assert BankConnection.kind.property.columns[0].nullable is False
     assert Account.external_metadata.property.columns[0].nullable is True
     assert AssetTransaction.raw_data.property.columns[0].nullable is True
+
+
+def test_t212_metadata_migration_declares_a_unique_broker_fill_identity():
+    """A broker fill has one stable identity within its asset ledger."""
+    indexes = AssetTransaction.__table__.indexes
+    assert any(
+        index.unique and {column.name for column in index.columns} == {"asset_id", "external_id"}
+        for index in indexes
+    )
+
+
+def test_t212_metadata_migration_refuses_a_lossy_downgrade():
+    """Retaining columns while stamping 065 would leave Alembic lying about schema."""
+    migration = _migration_module()
+    with __import__("pytest").raises(RuntimeError, match="cannot safely downgrade"):
+        migration.downgrade()
+
+
+def test_legacy_063_stamp_without_upstream_goal_column_fails_preflight():
+    """The former T212 repair's 063 must never be accepted as upstream 063."""
+    engine = sa.create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.execute(sa.text("CREATE TABLE alembic_version (version_num VARCHAR(32))"))
+        connection.execute(sa.text("INSERT INTO alembic_version VALUES ('063')"))
+        connection.execute(sa.text("CREATE TABLE goals (id INTEGER PRIMARY KEY)"))
+        with pytest.raises(RuntimeError, match="ambiguous legacy Alembic revision 063"):
+            reject_ambiguous_legacy_063(connection)
 
 
 def test_t212_metadata_migration_skips_columns_already_created_by_a_legacy_installation():
@@ -84,7 +113,7 @@ def test_t212_metadata_migration_adds_and_retains_columns_in_a_real_legacy_schem
             "raw_data",
         }
 
-        with Operations.context(context):
+        with Operations.context(context), pytest.raises(RuntimeError, match="cannot safely downgrade"):
             migration.downgrade()
 
         inspector = sa.inspect(connection)

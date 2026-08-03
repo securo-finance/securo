@@ -16,12 +16,65 @@ from app.models.asset_transaction import AssetTransaction
 from app.models.bank_connection import BankConnection
 from app.models.transaction import Transaction
 from app.models.user import User
+from app.providers.base import AccountData, HoldingData
 from app.providers.trading212 import Trading212Provider
 from app.services.connection_service import (
     _sync_holdings,
     _sync_trading212_orders,
     handle_oauth_callback,
+    sync_connection,
 )
+
+
+@pytest.mark.asyncio
+async def test_order_history_with_currency_mismatch_keeps_live_holding_snapshot(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """Order prices cannot replace an EUR live snapshot expressed in USD history."""
+    connection = BankConnection(user_id=test_user.id, workspace_id=test_workspace.id, provider="trading212", kind="brokerage", external_id="123", institution_name="Trading 212", credentials={}, status="active")
+    session.add(connection)
+    await session.flush()
+    asset = Asset(user_id=test_user.id, workspace_id=test_workspace.id, connection_id=connection.id, source="trading212", external_id="trading212:position:123:AAPL_US_EQ", name="Apple", type="investment", currency="EUR", units=Decimal("2"), purchase_price=Decimal("250"), valuation_method="manual")
+    session.add(asset)
+    await session.commit()
+    await _sync_trading212_orders(session, test_user.id, connection, _OrdersProvider(), {})
+    await session.flush()
+    await session.refresh(asset)
+    assert asset.units == Decimal("2")
+    assert asset.purchase_price == Decimal("250")
+    assert (await session.execute(select(AssetTransaction))).scalars().one().external_id == "t212:fill:fill-1"
+
+
+@pytest.mark.asyncio
+async def test_incomplete_order_history_keeps_live_holding_quantity_and_cost(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """A one-fill history must not turn a two-share live position into one share."""
+    connection = BankConnection(user_id=test_user.id, workspace_id=test_workspace.id, provider="trading212", kind="brokerage", external_id="123", institution_name="Trading 212", credentials={}, status="active")
+    session.add(connection)
+    await session.flush()
+    asset = Asset(user_id=test_user.id, workspace_id=test_workspace.id, connection_id=connection.id, source="trading212", external_id="trading212:position:123:AAPL_US_EQ", name="Apple", type="investment", currency="USD", units=Decimal("2"), purchase_price=Decimal("250"), valuation_method="manual")
+    session.add(asset)
+    await session.commit()
+    await _sync_trading212_orders(session, test_user.id, connection, _OrdersProvider(), {})
+    await session.flush()
+    await session.refresh(asset)
+    assert asset.units == Decimal("2")
+    assert asset.purchase_price == Decimal("250")
+
+
+@pytest.mark.asyncio
+async def test_asset_transaction_external_id_is_unique_per_asset(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """The database, not only an importer pre-check, protects duplicate broker fills."""
+    asset = Asset(user_id=test_user.id, workspace_id=test_workspace.id, name="Apple", type="investment")
+    session.add(asset)
+    await session.flush()
+    values = dict(asset_id=asset.id, workspace_id=test_workspace.id, kind="buy", quantity=1, price=1, fee=0, date=datetime.now(timezone.utc).date(), source="trading212", external_id="t212:fill:1")
+    session.add_all([AssetTransaction(**values), AssetTransaction(**values)])
+    with pytest.raises(Exception):
+        await session.flush()
 
 
 class _OrdersProvider:
@@ -236,3 +289,112 @@ async def test_invalid_t212_positions_payload_does_not_archive_existing_holdings
     await session.commit()
     await session.refresh(holding)
     assert holding.is_archived is False
+
+
+@pytest.mark.asyncio
+async def test_t212_reconnect_rejects_credentials_for_a_different_broker_account(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    connection = BankConnection(
+        id=uuid.uuid4(), workspace_id=test_workspace.id, user_id=test_user.id,
+        provider="trading212", kind="brokerage", external_id="live-account",
+        institution_name="Trading 212", credentials={}, status="active",
+    )
+    session.add(connection)
+    await session.commit()
+
+    provider = AsyncMock()
+    provider.kind = "brokerage"
+    provider.handle_oauth_callback.return_value = __import__(
+        "app.providers.base", fromlist=["ConnectionData"]
+    ).ConnectionData("other-account", "Trading 212", {}, [])
+    with patch("app.services.connection_service.get_provider", return_value=provider), pytest.raises(
+        ValueError, match="different Trading 212 account"
+    ):
+        await handle_oauth_callback(
+            session, test_workspace.id, test_user.id, "new:key", provider_name="trading212",
+            reconnect_connection_id=connection.id,
+        )
+
+    await session.refresh(connection)
+    assert connection.external_id == "live-account"
+
+
+@pytest.mark.asyncio
+async def test_legacy_t212_sync_backfills_account_id_before_holdings_and_orders(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """Legacy credentials must scope the snapshot and fills to one broker asset."""
+    connection = BankConnection(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        provider="trading212",
+        kind="brokerage",
+        external_id="account-123",
+        institution_name="Trading 212",
+        credentials={"api_key_enc": "opaque", "api_secret_enc": "opaque"},
+        status="active",
+    )
+    session.add(connection)
+    await session.commit()
+
+    class LegacyProvider:
+        kind = "brokerage"
+
+        async def refresh_credentials(self, credentials):
+            return dict(credentials)
+
+        async def get_institution_logo(self, credentials):
+            return None
+
+        async def get_account_summary(self, credentials):
+            return {"id": "account-123", "currency": "USD", "cash": {}}
+
+        async def get_accounts(self, credentials):
+            return [
+                AccountData(
+                    external_id="trading212:account-123:cash",
+                    name="Trading 212 Cash",
+                    type="investment",
+                    balance=Decimal("0"),
+                    currency="USD",
+                )
+            ]
+
+        async def get_transactions(self, credentials, account_external_id, since, payee_source="auto"):
+            return []
+
+        async def get_holdings(self, credentials):
+            account_id = credentials.get("account_id")
+            return [
+                HoldingData(
+                    external_id=(
+                        f"trading212:position:{account_id}:AAPL_US_EQ"
+                        if account_id
+                        else "trading212:position:AAPL_US_EQ"
+                    ),
+                    name="Apple Inc.",
+                    currency="USD",
+                    current_value=Decimal("200"),
+                    quantity=Decimal("2"),
+                    purchase_price=Decimal("201"),
+                    ticker="AAPL_US_EQ",
+                )
+            ]
+
+        async def get_historical_orders(self, credentials):
+            assert credentials["account_id"] == "account-123"
+            return await _OrdersProvider().get_historical_orders(credentials)
+
+    with patch("app.services.connection_service.get_provider", return_value=LegacyProvider()):
+        await sync_connection(session, connection.id, test_workspace.id, test_user.id)
+
+    await session.refresh(connection)
+    assets = (
+        await session.execute(
+            select(Asset).where(Asset.connection_id == connection.id).order_by(Asset.external_id)
+        )
+    ).scalars().all()
+    assert connection.credentials["account_id"] == "account-123"
+    assert [asset.external_id for asset in assets] == ["trading212:position:account-123:AAPL_US_EQ"]
+    assert (await session.execute(select(AssetTransaction))).scalars().one().asset_id == assets[0].id

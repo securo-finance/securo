@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
@@ -15,6 +16,8 @@ from app.providers.base import (
     ConnectionData,
     HoldingData,
     TransactionData,
+    ProviderRateLimited,
+    ProviderUserActionRequired,
 )
 
 TRADING212_LIVE_BASE_URL = "https://live.trading212.com"
@@ -41,6 +44,16 @@ def _decimal(value: Any) -> Decimal:
         return Decimal("0")
 
 
+def _required_decimal(value: Any, field: str) -> Decimal:
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ValueError(f"Trading 212 payload has invalid {field}") from exc
+    if not parsed.is_finite():
+        raise ValueError(f"Trading 212 payload has invalid {field}")
+    return parsed
+
+
 def _json_safe(value: Any) -> Any:
     if isinstance(value, Decimal):
         return str(value)
@@ -54,15 +67,31 @@ def _json_safe(value: Any) -> Any:
 
 
 def _stable_row_id(row: dict) -> str:
-    return "|".join(f"{key}={row[key]}" for key in sorted(row))
+    # Provider IDs are bounded in our schema. A deterministic digest protects
+    # the fallback path from oversized or nested response values.
+    encoded = repr(sorted((str(key), repr(value)) for key, value in row.items())).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _bounded_reference(item: dict, field: str) -> str:
+    """Return a normalized provider reference safe for a Transaction external ID."""
+    reference = item.get("reference")
+    if reference is None:
+        return _stable_row_id(item)
+    if not isinstance(reference, str):
+        raise ValueError(f"Trading 212 payload has invalid {field}")
+    normalized = reference.strip()
+    if not normalized or len(normalized) > 200 or not normalized.isprintable():
+        raise ValueError(f"Trading 212 payload has invalid {field}")
+    return normalized
 
 
 def _parse_date(value: Any) -> date:
     text = str(value or "").strip().replace("Z", "+00:00")
     try:
         return date.fromisoformat(text[:10])
-    except ValueError:
-        return date.today()
+    except ValueError as exc:
+        raise ValueError("Trading 212 payload has invalid date") from exc
 
 
 class Trading212Provider(BankProvider):
@@ -139,6 +168,12 @@ class Trading212Provider(BankProvider):
             response = await client.get(
                 f"{self._base_url(credentials)}{path}", params=params, headers=headers
             )
+        if response.status_code in {401, 403}:
+            raise ProviderUserActionRequired(
+                "Trading 212 credentials require reconnecting", code="reconnect_required"
+            )
+        if response.status_code == 429:
+            raise ProviderRateLimited("Trading 212 rate limit exceeded")
         response.raise_for_status()
         data = response.json()
         return {} if data is None else data
@@ -216,7 +251,11 @@ class Trading212Provider(BankProvider):
 
     async def get_account_summary(self, credentials: dict) -> dict:
         data = await self._get_json(credentials, _ACCOUNT_SUMMARY_PATH)
-        return data if isinstance(data, dict) else {}
+        if not isinstance(data, dict) or not str(data.get("id") or "").strip():
+            raise ValueError("Trading 212 account summary did not include an account id")
+        if not isinstance(data.get("cash"), dict):
+            raise ValueError("Trading 212 account summary did not include cash data")
+        return data
 
     async def get_positions(self, credentials: dict) -> list[dict]:
         data = await self._get_json(credentials, _POSITIONS_PATH)
@@ -247,6 +286,7 @@ class Trading212Provider(BankProvider):
         account_id = str(summary.get("id") or "")
         if not account_id:
             raise ValueError("Trading 212 account summary did not include an account id")
+        credentials["account_id"] = account_id
         return ConnectionData(
             external_id=account_id,
             institution_name="Trading 212",
@@ -256,8 +296,10 @@ class Trading212Provider(BankProvider):
 
     @staticmethod
     def _accounts_from_summary(summary: dict) -> list[AccountData]:
-        account_id = str(summary.get("id") or "unknown")
-        cash = summary.get("cash") if isinstance(summary.get("cash"), dict) else {}
+        account_id = str(summary.get("id") or "").strip()
+        cash = summary.get("cash")
+        if not account_id or not isinstance(cash, dict):
+            raise ValueError("Trading 212 account summary is malformed")
         metadata = {
             "trading212": {
                 "accountId": account_id,
@@ -298,15 +340,26 @@ class Trading212Provider(BankProvider):
 
     @staticmethod
     def _map_history_transaction(item: dict) -> TransactionData:
-        kind = str(item.get("type") or "transaction").upper()
-        amount_raw = _decimal(item.get("amount"))
-        reference = item.get("reference") or _stable_row_id(item)
+        kind = str(item.get("type") or "").upper()
+        direction = {
+            "DEPOSIT": "credit",
+            "WITHDRAWAL": "debit",
+            "FEE": "debit",
+        }
+        amount_raw = _required_decimal(item.get("amount"), "transaction amount")
+        if kind == "TRANSFER":
+            direction[kind] = "credit" if amount_raw > 0 else "debit"
+        if kind not in direction:
+            raise ValueError(f"Trading 212 transaction type is unsupported: {kind}")
+        reference = str(item.get("reference") or _stable_row_id(item))
+        if len(reference) > 200:
+            raise ValueError("Trading 212 transaction reference is too long")
         return TransactionData(
             external_id=f"t212:cash:{reference}",
             description=f"Trading 212 {kind.lower()}",
             amount=abs(amount_raw),
             date=_parse_date(item.get("dateTime")),
-            type="credit" if kind == "DEPOSIT" or amount_raw > 0 else "debit",
+            type=direction[kind],
             currency=item.get("currency"),
             raw_data={"trading212": {"source": "history/transactions", "payload": _json_safe(item)}},
             is_ignored=kind == "TRANSFER",
@@ -314,12 +367,12 @@ class Trading212Provider(BankProvider):
 
     @staticmethod
     def _map_dividend(item: dict) -> TransactionData:
-        reference = item.get("reference") or _stable_row_id(item)
+        reference = _bounded_reference(item, "dividend reference")
         ticker = item.get("ticker") or ""
         return TransactionData(
             external_id=f"t212:dividend:{reference}",
             description=f"Trading 212 dividend{f' {ticker}' if ticker else ''}",
-            amount=abs(_decimal(item.get("amount"))),
+            amount=abs(_required_decimal(item.get("amount"), "dividend amount")),
             date=_parse_date(item.get("paidOn")),
             type="credit",
             currency=item.get("currency"),
@@ -339,7 +392,11 @@ class Trading212Provider(BankProvider):
                 continue
             holdings.append(
                 HoldingData(
-                    external_id=f"trading212:position:{ticker}",
+                    external_id=(
+                        f"trading212:position:{credentials['account_id']}:{ticker}"
+                        if credentials.get("account_id")
+                        else f"trading212:position:{ticker}"
+                    ),
                     name=str(instrument.get("name") or ticker),
                     currency=str(wallet.get("currency") or position.get("currency") or "EUR"),
                     current_value=_decimal(wallet.get("currentValue")),

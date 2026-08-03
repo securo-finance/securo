@@ -3,7 +3,7 @@ from datetime import date as _date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import JSON, Date, DateTime, ForeignKey, Numeric, String, func
+from sqlalchemy import JSON, Date, DateTime, ForeignKey, Index, Numeric, String, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,6 +24,19 @@ class AssetTransaction(Base):
     """
 
     __tablename__ = "asset_transactions"
+    # A provider's external id is only meaningful inside one asset's ledger.
+    # Partial uniqueness keeps manual rows (which intentionally have no id)
+    # unconstrained while making broker-fill imports concurrency-safe.
+    __table_args__ = (
+        Index(
+            "uq_asset_transactions_asset_external_id",
+            "asset_id",
+            "external_id",
+            unique=True,
+            postgresql_where=text("external_id IS NOT NULL"),
+            sqlite_where=text("external_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     asset_id: Mapped[uuid.UUID] = mapped_column(

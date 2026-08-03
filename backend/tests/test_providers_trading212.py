@@ -215,3 +215,66 @@ async def test_history_transactions_and_dividends_become_idempotent_cash_transac
         ("t212:cash:deposit-1", "credit", "12.5"),
         ("t212:dividend:div-1", "credit", "0.7"),
     ]
+
+
+@pytest.mark.parametrize(
+    ("kind", "amount", "expected_type", "ignored"),
+    [
+        ("DEPOSIT", "10", "credit", False),
+        ("WITHDRAWAL", "10", "debit", False),
+        ("FEE", "10", "debit", False),
+        ("TRANSFER", "10", "credit", True),
+        ("TRANSFER", "-10", "debit", True),
+    ],
+)
+def test_cash_history_uses_documented_type_direction_not_amount_sign(
+    kind, amount, expected_type, ignored
+):
+    row = Trading212Provider._map_history_transaction(
+        {"reference": f"{kind}-{amount}", "type": kind, "amount": amount, "dateTime": "2026-08-01"}
+    )
+
+    assert row.type == expected_type
+    assert row.is_ignored is ignored
+    assert row.amount == 10
+
+
+def test_unknown_or_malformed_cash_history_is_rejected_instead_of_inventing_a_transaction():
+    with pytest.raises(ValueError):
+        Trading212Provider._map_history_transaction(
+            {"reference": "unknown", "type": "MYSTERY", "amount": "10", "dateTime": "2026-08-01"}
+        )
+    with pytest.raises(ValueError):
+        Trading212Provider._map_history_transaction(
+            {"reference": "bad-amount", "type": "DEPOSIT", "amount": "NaN", "dateTime": "2026-08-01"}
+        )
+
+
+def test_malformed_summary_and_unbounded_fallback_ids_fail_safely():
+    with pytest.raises(ValueError):
+        Trading212Provider._accounts_from_summary({"currency": "EUR", "cash": {}})
+    row = Trading212Provider._map_history_transaction(
+        {"type": "DEPOSIT", "amount": "1", "dateTime": "2026-08-01", "payload": "x" * 1000}
+    )
+    assert len(row.external_id) < 255
+    assert row.external_id == Trading212Provider._map_history_transaction(
+        {"type": "DEPOSIT", "amount": "1", "dateTime": "2026-08-01", "payload": "x" * 1000}
+    ).external_id
+
+
+@pytest.mark.parametrize("amount", [None, "not-a-number", "NaN", "Infinity"])
+def test_dividend_rejects_missing_malformed_or_nonfinite_amounts(amount):
+    with pytest.raises(ValueError, match="dividend amount"):
+        Trading212Provider._map_dividend(
+            {"reference": "dividend-1", "amount": amount, "paidOn": "2026-08-02"}
+        )
+
+
+def test_dividend_external_id_is_bounded_and_rejects_malformed_references():
+    oversized = {"reference": "x" * 241, "amount": "0.70", "paidOn": "2026-08-02"}
+    malformed = {"reference": {"nested": "id"}, "amount": "0.70", "paidOn": "2026-08-02"}
+
+    with pytest.raises(ValueError, match="dividend reference"):
+        Trading212Provider._map_dividend(oversized)
+    with pytest.raises(ValueError, match="dividend reference"):
+        Trading212Provider._map_dividend(malformed)
