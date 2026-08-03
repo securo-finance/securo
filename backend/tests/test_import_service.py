@@ -10,6 +10,7 @@ from app.models.account import Account
 from app.models.fx_rate import FxRate
 from app.models.user import User
 from app.services.import_service import (
+    _preprocess_ofx,
     detect_csv_columns,
     parse_csv,
     parse_ofx,
@@ -966,14 +967,21 @@ class TestParseOfx:
         assert transactions[0].description == "UBER TRIP"
         assert transactions[0].amount == Decimal("100.00")
 
-    def _make_ofx_xml(self, memo: str, xml_encoding: str) -> bytes:
+    def _make_ofx_xml(
+        self, memo: str, xml_encoding: str, *, prolog: bool = True, ofx_pi: bool = True
+    ) -> bytes:
         """Helper to build an OFX 2.x document: XML prolog, no SGML header
-        block (e.g. Erste Bank's "MS Money Sunset Deluxe" export)."""
+        block (e.g. Erste Bank's "MS Money Sunset Deluxe" export).
+
+        The XML declaration is optional in XML 1.0 and the <?OFX ?> instruction
+        can be dropped too, so `prolog` and `ofx_pi` cover the headerless
+        variants that reach ofxparse with nothing before the first tag.
+        """
         text = (
-            f'<?xml version="1.0" encoding="{xml_encoding}" ?>'
-            '<?OFX OFXHEADER="200" VERSION="202" SECURITY="NONE" '
-            'OLDFILEUID="NONE" NEWFILEUID="NONE"?>'
-            "<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>EUR</CURDEF>"
+            (f'<?xml version="1.0" encoding="{xml_encoding}" ?>' if prolog else "")
+            + ('<?OFX OFXHEADER="200" VERSION="202" SECURITY="NONE" '
+               'OLDFILEUID="NONE" NEWFILEUID="NONE"?>' if ofx_pi else "")
+            + "<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>EUR</CURDEF>"
             "<BANKACCTFROM><BANKID>1</BANKID><ACCTID>1</ACCTID>"
             "<ACCTTYPE>CHECKING</ACCTTYPE></BANKACCTFROM>"
             "<BANKTRANLIST><DTSTART>20260101</DTSTART><DTEND>20260131</DTEND>"
@@ -1013,6 +1021,37 @@ class TestParseOfx:
         assert len(transactions) == 1
         assert transactions[0].description == "Grocery Store"
         assert transactions[0].amount == Decimal("10.00")
+
+    def test_parse_ofx_xml_format_without_xml_prolog(self):
+        """The XML declaration is optional, so an OFX 2.x file may open with
+        just its <?OFX ?> instruction. It reaches ofxparse with nothing before
+        the first tag, so it hits the same bug and needs the same header."""
+        ofx = self._make_ofx_xml("Aufladung für Konto", "utf-8", prolog=False)
+        transactions = parse_ofx(ofx)
+
+        assert len(transactions) == 1
+        assert transactions[0].description == "Aufladung für Konto"
+
+    def test_parse_ofx_xml_format_bare_ofx_element(self):
+        """Neither declaration is required: a document opening straight on
+        <OFX> is the same headerless case."""
+        ofx = self._make_ofx_xml("Café Paris", "utf-8", prolog=False, ofx_pi=False)
+        transactions = parse_ofx(ofx)
+
+        assert len(transactions) == 1
+        assert transactions[0].description == "Café Paris"
+
+    def test_parse_ofx_sgml_header_is_not_duplicated(self):
+        """A real OFX 1.x file already has a header before its first tag, so it
+        must be left untouched rather than given a second one."""
+        ofx = self._make_ofx_xml("Grocery Store", "utf-8", prolog=False, ofx_pi=False)
+        sgml = (
+            b"OFXHEADER:100\r\nDATA:OFXSGML\r\nVERSION:102\r\nSECURITY:NONE\r\n"
+            b"ENCODING:UTF-8\r\nCHARSET:NONE\r\nCOMPRESSION:NONE\r\n"
+            b"OLDFILEUID:NONE\r\nNEWFILEUID:NONE\r\n\r\n" + ofx
+        )
+        assert _preprocess_ofx(sgml).count(b"OFXHEADER:") == 1
+        assert parse_ofx(sgml)[0].description == "Grocery Store"
 
 
 # ═══════════════════════════════════════════════════════════════════════════

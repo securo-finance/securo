@@ -89,20 +89,27 @@ def _patch_empty_fitids(text: str) -> str:
 def _ensure_ofx_sgml_header(text: str, encoding: str) -> str:
     """Prepend a legacy OFX 1.x SGML header for OFX 2.x files that omit it.
 
-    OFX 2.x is plain XML: an <?xml encoding="..." ?> prolog immediately
-    followed by <OFX>, with no colon-delimited SGML header block (e.g. Erste
-    Bank's "MS Money Sunset Deluxe" export). ofxparse only looks for
-    encoding hints in the bytes preceding the file's first "<"; when that's
-    empty it silently assumes ASCII and crashes on any non-ASCII byte.
-    Prepending a synthetic SGML header routes the file through ofxparse's
-    existing, correctly-working SGML decode path instead of its broken
-    auto-detection (see https://github.com/jseutter/ofxparse/issues/133).
+    OFX 2.x is plain XML that goes straight into its first tag, with no
+    colon-delimited SGML header block (e.g. Erste Bank's "MS Money Sunset
+    Deluxe" export). ofxparse only looks for encoding hints in the bytes
+    preceding the file's first "<"; when that's empty it silently assumes
+    ASCII and crashes on any non-ASCII byte. Prepending a synthetic SGML
+    header routes the file through ofxparse's existing, correctly-working
+    SGML decode path instead of its broken auto-detection (see
+    https://github.com/jseutter/ofxparse/issues/133).
+
+    The trigger is therefore "nothing precedes the first tag", not "starts
+    with <?xml": the XML declaration is optional in XML 1.0, so an OFX 2.x
+    file may open with just its <?OFX ... ?> instruction, or with <OFX>
+    itself, and those hit the same ofxparse bug. Anything else already has a
+    legacy header, and a file with no tag at all is left for ofxparse to
+    reject on its own terms.
 
     `encoding` must match whatever the caller will re-encode `text` with,
     so the declared header and the actual bytes stay consistent.
     """
-    stripped = text.lstrip("\ufeff \t\r\n")
-    if not stripped.startswith("<?xml"):
+    preamble, first_tag, _ = text.lstrip("\ufeff \t\r\n").partition("<")
+    if not first_tag or preamble.strip():
         return text
     if encoding == "latin-1":
         enc_lines = "ENCODING:USASCII\r\nCHARSET:8859-1\r\n"
