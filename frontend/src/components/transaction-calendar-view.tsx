@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeftRight, CalendarDays, CircleDot } from 'lucide-react'
+import { ArrowLeftRight, CalendarDays, CircleDot, Minus } from 'lucide-react'
 import type { TransactionCalendarDay, TransactionCalendarItem, TransactionCalendarResponse } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { CategoryIcon } from '@/components/category-icon'
@@ -677,7 +677,9 @@ function DayCell({
         }
       }}
       className={cn(
-        'border-r border-b border-border p-3 text-left transition-colors hover:bg-muted/30 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary/40',
+        // Column flex so a quiet day's marker can claim the leftover height and
+        // sit in the middle of the cell instead of hanging under the date.
+        'flex flex-col border-r border-b border-border p-3 text-left transition-colors hover:bg-muted/30 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary/40',
         detailed ? 'min-h-44' : 'min-h-24',
         !day.in_month && 'bg-muted/20 text-muted-foreground',
         day.in_month && isLowBalance && 'bg-rose-50/60 dark:bg-rose-950/20',
@@ -774,7 +776,10 @@ function DayPreviewRow({ item, locale, mask }: { item: TransactionCalendarItem; 
 
 // Activity cells report what actually moved: green income and red expense, real
 // amounts only. Projected amounts get a secondary violet line so a forecast never
-// blends into settled money. Transfer-only and quiet days say so in words.
+// blends into settled money. A day with nothing at all gets a centred dash rather
+// than a sentence: in a quiet month the same string repeated 30 times is noise,
+// and the eye should land on the days that moved. A day whose only entry is a
+// projection is not empty, so it shows the violet figure and no dash.
 function DayCellActivity({
   day,
   currency,
@@ -794,9 +799,26 @@ function DayCellActivity({
     activity.projectedIncome > 0 ? mask(`+${compactCurrency(activity.projectedIncome, currency, locale)}`) : null,
     activity.projectedExpense > 0 ? mask(`−${compactCurrency(activity.projectedExpense, currency, locale)}`) : null,
   ].filter(Boolean)
+
+  if (!activity.hasActual && !activity.hasProjected) {
+    return (
+      <div
+        className={cn(
+          'flex items-center text-muted-foreground/40',
+          align === 'right' ? 'mt-0 justify-end' : 'flex-1 justify-center',
+        )}
+      >
+        <Minus size={16} aria-hidden="true" />
+        {/* The dash carries no meaning on its own, so the sentence stays for
+            screen readers and keeps the string translated in every locale. */}
+        <span className="sr-only">{t('transactions.calendarNoMovements')}</span>
+      </div>
+    )
+  }
+
   return (
     <div className={cn('mt-3 space-y-0.5', align === 'right' && 'mt-0 text-right')}>
-      {activity.hasActual ? (
+      {activity.hasActual && (
         <p className={cn('flex flex-wrap items-center gap-x-1.5 text-sm font-semibold tabular-nums', align === 'right' && 'justify-end')}>
           {activity.actualIncome > 0 && (
             <span className="text-emerald-600 dark:text-emerald-400">
@@ -809,8 +831,6 @@ function DayCellActivity({
             </span>
           )}
         </p>
-      ) : (
-        <p className="text-xs text-muted-foreground">{t('transactions.calendarNoMovements')}</p>
       )}
       {projectedParts.length > 0 && (
         <p
@@ -999,55 +1019,59 @@ function SelectedDayPanel({
       </div>
 
       {metric === 'activity' && (
-        <div className="space-y-2 border-b border-border px-4 py-3">
-          <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="text-muted-foreground">{t('transactions.summaryIncome')}</span>
-            <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
-              {mask(`+${formatCurrency(activity.actualIncome, currency, locale)}`)}
-            </span>
+        <>
+          <div className="space-y-2 border-b border-border px-4 py-3">
+            <DayPanelRow
+              label={t('transactions.summaryIncome')}
+              value={mask(`+${formatCurrency(activity.actualIncome, currency, locale)}`)}
+              amount={activity.actualIncome}
+            />
+            <DayPanelRow
+              label={t('transactions.summaryExpenses')}
+              value={mask(`−${formatCurrency(activity.actualExpense, currency, locale)}`)}
+              amount={-activity.actualExpense}
+            />
+            {day.has_transfer && (
+              <p className="flex items-center gap-1.5 pt-0.5 text-xs text-muted-foreground">
+                <ArrowLeftRight size={12} className="shrink-0 text-sky-600 dark:text-sky-400" />
+                {t('transactions.calendarTransfersExcluded')}
+              </p>
+            )}
           </div>
-          <div className="flex items-center justify-between gap-3 text-sm">
-            <span className="text-muted-foreground">{t('transactions.summaryExpenses')}</span>
-            <span className="font-semibold tabular-nums text-rose-600 dark:text-rose-400">
-              {mask(`−${formatCurrency(activity.actualExpense, currency, locale)}`)}
-            </span>
-          </div>
+
+          {/* A second group of the same rows rather than a callout box. The
+              divider and the violet section label already say these figures are
+              forecasts, and the amounts keep the colour of their direction so
+              they read the same way as the projected rows listed below. */}
           {activity.hasProjected && (
-            <div className="space-y-1.5 rounded-lg border border-dashed border-violet-400/60 bg-violet-500/5 px-3 py-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+            <div className="space-y-2 border-b border-border px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-400">
                 {t('transactions.calendarProjected')}
               </p>
               {activity.projectedIncome > 0 && (
-                <div className="flex items-center justify-between gap-3 text-sm">
-                  <span className="text-muted-foreground">{t('transactions.summaryIncome')}</span>
-                  <span className="font-semibold tabular-nums text-violet-700 dark:text-violet-300">
-                    {mask(`+${formatCurrency(activity.projectedIncome, currency, locale)}`)}
-                  </span>
-                </div>
+                <DayPanelRow
+                  label={t('transactions.summaryIncome')}
+                  value={mask(`+${formatCurrency(activity.projectedIncome, currency, locale)}`)}
+                  amount={activity.projectedIncome}
+                />
               )}
               {activity.projectedExpense > 0 && (
-                <div className="flex items-center justify-between gap-3 text-sm">
-                  <span className="text-muted-foreground">{t('transactions.summaryExpenses')}</span>
-                  <span className="font-semibold tabular-nums text-violet-700 dark:text-violet-300">
-                    {mask(`−${formatCurrency(activity.projectedExpense, currency, locale)}`)}
-                  </span>
-                </div>
+                <DayPanelRow
+                  label={t('transactions.summaryExpenses')}
+                  value={mask(`−${formatCurrency(activity.projectedExpense, currency, locale)}`)}
+                  amount={-activity.projectedExpense}
+                />
               )}
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="text-muted-foreground">{t('transactions.calendarProjectedNet')}</span>
-                <span className="font-semibold tabular-nums text-violet-700 dark:text-violet-300">
-                  {mask(`${activity.projectedNet >= 0 ? '+' : '−'}${formatCurrency(Math.abs(activity.projectedNet), currency, locale)}`)}
-                </span>
-              </div>
+              {activity.projectedIncome > 0 && activity.projectedExpense > 0 && (
+                <DayPanelRow
+                  label={t('transactions.summaryNet')}
+                  value={mask(`${activity.projectedNet >= 0 ? '+' : '−'}${formatCurrency(Math.abs(activity.projectedNet), currency, locale)}`)}
+                  amount={activity.projectedNet}
+                />
+              )}
             </div>
           )}
-          {day.has_transfer && (
-            <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <ArrowLeftRight size={12} className="shrink-0 text-sky-600 dark:text-sky-400" />
-              {t('transactions.calendarTransfersExcluded')}
-            </p>
-          )}
-        </div>
+        </>
       )}
 
       <div className="min-h-0 divide-y divide-border overflow-y-auto md:flex-1">
@@ -1066,6 +1090,24 @@ function SelectedDayPanel({
         )}
       </div>
     </aside>
+  )
+}
+
+// One label/value line, the shape the rest of the panel and the page already use.
+// `amount` only picks the colour, so the caller stays free to format the string.
+function DayPanelRow({ label, value, amount }: { label: string; value: string; amount: number }) {
+  return (
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span
+        className={cn(
+          'font-semibold tabular-nums',
+          amount < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400',
+        )}
+      >
+        {value}
+      </span>
+    </div>
   )
 }
 

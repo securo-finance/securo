@@ -518,7 +518,6 @@
     "calendarNoActivity": "No activity this month",
     "calendarNoMovements": "No movements",
     "calendarActualNet": "Actual net",
-    "calendarProjectedNet": "Projected net",
     "calendarTransfersExcluded": "Transfers are not counted as income or expenses"
   },
   "accounts": {

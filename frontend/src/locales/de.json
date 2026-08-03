@@ -518,7 +518,6 @@
     "calendarNoActivity": "Keine Aktivität in diesem Monat",
     "calendarNoMovements": "Keine Bewegungen",
     "calendarActualNet": "Tatsächliches Netto",
-    "calendarProjectedNet": "Geplantes Netto",
     "calendarTransfersExcluded": "Umbuchungen zählen nicht als Einnahmen oder Ausgaben"
   },
   "accounts": {

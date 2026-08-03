@@ -518,7 +518,6 @@
     "calendarNoActivity": "Цього місяця немає активності",
     "calendarNoMovements": "Немає операцій",
     "calendarActualNet": "Фактичний підсумок",
-    "calendarProjectedNet": "Запланований підсумок",
     "calendarTransfersExcluded": "Перекази не враховуються як надходження чи витрати"
   },
   "accounts": {

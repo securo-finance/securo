@@ -518,7 +518,6 @@
     "calendarNoActivity": "Aucune activité ce mois-ci",
     "calendarNoMovements": "Aucun mouvement",
     "calendarActualNet": "Net réel",
-    "calendarProjectedNet": "Net prévu",
     "calendarTransfersExcluded": "Les virements ne comptent pas comme revenus ou dépenses"
   },
   "accounts": {
