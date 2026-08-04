@@ -6,6 +6,7 @@ import type { TransactionCalendarDay, TransactionCalendarItem, TransactionCalend
 import { Skeleton } from '@/components/ui/skeleton'
 import { CategoryIcon } from '@/components/category-icon'
 import { activityChartData, dayActivity } from '@/lib/calendar-activity'
+import { weekdayShortLabels } from '@/lib/date-utils'
 import { cn } from '@/lib/utils'
 
 function parseLocalDate(value: string) {
@@ -103,13 +104,7 @@ export function TransactionCalendarView({
   }, [calendar, onSelectedDateChange, selectedDate])
 
   const selectedDay = calendar?.days.find((day) => day.date === selectedDate)
-  const weekDays = useMemo(
-    () => Array.from({ length: 7 }, (_, index) => {
-      const date = new Date(Date.UTC(2024, 0, 7 + index)) // Sunday-start reference week
-      return date.toLocaleDateString(dateLocale, { weekday: 'short' })
-    }),
-    [dateLocale],
-  )
+  const weekDays = useMemo(() => weekdayShortLabels(dateLocale), [dateLocale])
 
   if (isLoading) {
     return (
