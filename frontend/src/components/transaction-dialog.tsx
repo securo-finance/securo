@@ -378,7 +378,7 @@ function TransactionForm({
     !!transaction && (seed?.amount_primary != null || seed?.fx_rate_used != null)
   )
   const [isRecurring, setIsRecurring] = useState(false)
-  const [frequency, setFrequency] = useState<'monthly' | 'weekly' | 'yearly'>('monthly')
+  const [frequency, setFrequency] = useState<RecurringTransaction['frequency']>('monthly')
   const [endDate, setEndDate] = useState('')
   // Optional split-with-group payload. `null` = leave splits as-is on
   // update, or no splits on create. The dedicated section component
@@ -1053,9 +1053,10 @@ function TransactionForm({
                 <select
                   className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
                   value={frequency}
-                  onChange={(e) => setFrequency(e.target.value as 'monthly' | 'weekly' | 'yearly')}
+                  onChange={(e) => setFrequency(e.target.value as RecurringTransaction['frequency'])}
                 >
                   <option value="monthly">{t('recurring.monthly')}</option>
+                  <option value="quarterly">{t('recurring.quarterly')}</option>
                   <option value="weekly">{t('recurring.weekly')}</option>
                   <option value="yearly">{t('recurring.yearly')}</option>
                 </select>

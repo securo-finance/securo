@@ -778,6 +778,7 @@
     "income": "Revenu",
     "frequency": "Fréquence",
     "monthly": "Mensuelle",
+    "quarterly": "Trimestrielle",
     "weekly": "Hebdomadaire",
     "yearly": "Annuelle",
     "dayOfMonth": "Jour du mois",

@@ -778,6 +778,7 @@
     "income": "Entrata",
     "frequency": "Frequenza",
     "monthly": "Mensile",
+    "quarterly": "Trimestrale",
     "weekly": "Settimanale",
     "yearly": "Annuale",
     "dayOfMonth": "Giorno del mese",

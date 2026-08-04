@@ -198,6 +198,21 @@ async def test_advance_past_moves_pointer(session, test_user, test_workspace, ac
 
 
 @pytest.mark.asyncio
+async def test_advance_past_moves_quarterly_pointer(session, test_user, test_workspace, account):
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        account,
+        frequency="quarterly",
+        day_of_month=31,
+        start_date=date(2025, 1, 31),
+    )
+    rms.advance_past(bill, date(2025, 1, 31))
+    assert bill.next_occurrence == date(2025, 4, 30)
+
+
+@pytest.mark.asyncio
 async def test_advance_past_deactivates_past_end_date(session, test_user, test_workspace, account):
     bill = await _make_bill(
         session, test_workspace, test_user, account, end_date=date(2025, 1, 31),

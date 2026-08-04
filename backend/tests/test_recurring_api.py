@@ -79,6 +79,30 @@ async def test_create_recurring_skip_first_monthly(client, auth_headers, test_ac
 
 
 @pytest.mark.asyncio
+async def test_create_recurring_skip_first_quarterly(client, auth_headers, test_account):
+    """Quarterly is accepted by the API and skip_first advances three calendar months."""
+    response = await client.post(
+        "/api/recurring-transactions",
+        json={
+            "description": "Insurance",
+            "amount": 300.00,
+            "currency": "BRL",
+            "type": "debit",
+            "frequency": "quarterly",
+            "day_of_month": 31,
+            "start_date": "2026-01-31",
+            "skip_first": True,
+            "account_id": str(test_account.id),
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["frequency"] == "quarterly"
+    assert data["next_occurrence"] == "2026-04-30"
+
+
+@pytest.mark.asyncio
 async def test_generate_pending_creates_transactions(client, auth_headers, test_account):
     """Generate pending creates transactions and advances next_occurrence."""
     # Create a recurring that's already past due
