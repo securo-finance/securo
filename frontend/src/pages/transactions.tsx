@@ -441,6 +441,10 @@ export default function TransactionsPage() {
     queryKey: ['recurring'],
     queryFn: recurring.list,
   })
+  const recurringById = useMemo(
+    () => new Map((recurringList ?? []).map(item => [item.id, item])),
+    [recurringList],
+  )
 
   const { data: accountingModeData } = useQuery({
     queryKey: ['admin', 'accounting-mode'],
@@ -1007,11 +1011,10 @@ export default function TransactionsPage() {
               </span>
                             )
             }
-            {(tx.recurring_transaction_id != null ||
-              recurringList?.some(r => r.description === tx.description && r.type === tx.type)) && (
+            {tx.recurring_transaction_id != null && (
               <span
                 className="text-[10px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1.5 py-0.5 rounded-full"
-                title={tx.recurring_transaction_id != null ? t('transactions.recurringLinkedTooltip') : undefined}
+                title={t('transactions.recurringLinkedTooltip')}
               >
                 {t('transactions.recurringBadge')}
               </span>
@@ -1782,7 +1785,11 @@ export default function TransactionsPage() {
         categories={categoriesList ?? []}
         categoryGroups={categoryGroupsList ?? []}
         accounts={accountsList ?? []}
-        recurringMatch={editingTx ? recurringList?.find(r => r.description === editingTx.description && r.type === editingTx.type) : undefined}
+        recurringMatch={
+          editingTx?.recurring_transaction_id
+            ? recurringById.get(editingTx.recurring_transaction_id)
+            : undefined
+        }
         onSave={handleTransactionSave}
         onDelete={editingTx ? () => deleteMutation.mutate(editingTx.id) : undefined}
         onUnlinkTransfer={(pairId) => unlinkTransferMutation.mutate(pairId)}
