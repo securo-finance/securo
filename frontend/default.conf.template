@@ -14,6 +14,9 @@ server {
         resolver ${NGINX_RESOLVER} valid=5s;
         set $upstream ${BACKEND_URL};
         proxy_pass $upstream;
+
+        # Templated host header to support legacy deploys ($host) and PaaS dynamic overrides
+        proxy_set_header Host ${PROXY_HOST};
         
         # Resolves SSL/SNI handshake failures in cloud environments
         proxy_ssl_server_name on; 
