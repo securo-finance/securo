@@ -8,10 +8,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml .
-RUN pip install --no-cache-dir -e .
+# Dependencies come from the lock export (see scripts/lock.sh), installed with
+# hash checking so the image only ever contains the exact audited versions.
+# This layer is cached until requirements.txt itself changes.
+COPY requirements.txt .
+RUN pip install --no-cache-dir --require-hashes -r requirements.txt
 
 COPY . .
+# The project itself: deps are already satisfied above, so --no-deps keeps
+# this layer from re-resolving anything outside the lock.
+RUN pip install --no-cache-dir --no-deps -e .
 
 EXPOSE 8000
 

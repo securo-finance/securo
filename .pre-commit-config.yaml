@@ -1,6 +1,6 @@
 # Runs the same backend checks as CI, before you push. Optional.
 #
-#   cd backend && pip install -e ".[dev]"   # installs ruff + ty
+#   cd backend && pip install -r requirements-dev.txt   # installs ruff + ty
 #   prek install                            # or: pip install pre-commit && pre-commit install
 #
 # Run by hand: prek run --all-files

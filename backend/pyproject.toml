@@ -3,6 +3,10 @@ name = "securo-backend"
 version = "0.1.0"
 description = "Securo API - Personal Finance Manager"
 requires-python = ">=3.11"
+# These ranges express intent; the resolved versions live in uv.lock, which is
+# what CI and the Docker image actually install (via the requirements exports).
+# After changing anything here, run scripts/lock.sh and commit the three
+# generated files — CI fails if they drift.
 dependencies = [
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",

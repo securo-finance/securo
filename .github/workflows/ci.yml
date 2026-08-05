@@ -55,7 +55,17 @@ jobs:
       - name: Install dependencies
         if: steps.backend-changes.outputs.run_backend == 'true'
         run: |
-          pip install -e ".[dev]"
+          pip install --require-hashes -r requirements-dev.txt
+          pip install --no-deps -e .
+
+      - name: Verify lockfile is in sync
+        if: steps.backend-changes.outputs.run_backend == 'true'
+        run: |
+          # Re-run the generator and fail if the committed lock/exports drift
+          # from pyproject.toml (someone changed deps without scripts/lock.sh).
+          pip install -q uv==0.12.1
+          ./scripts/lock.sh
+          git diff --exit-code -- uv.lock requirements.txt requirements-dev.txt
 
       - name: Lint with Ruff
         if: steps.backend-changes.outputs.run_backend == 'true'
