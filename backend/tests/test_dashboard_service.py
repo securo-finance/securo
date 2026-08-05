@@ -750,6 +750,39 @@ async def test_get_projected_transactions_with_recurring(session, test_user, tes
     assert result[0].amount == 2500.0
 
 
+@pytest.mark.asyncio
+async def test_projected_transactions_use_effective_month_without_duplicates(
+    session, test_user, test_workspace
+):
+    rec = RecurringTransaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        description="Month boundary rent",
+        amount=Decimal("1000"),
+        type="debit",
+        frequency="monthly",
+        currency="BRL",
+        start_date=date(2026, 8, 1),
+        next_occurrence=date(2026, 8, 1),
+        weekend_adjustment="previous_friday",
+    )
+    session.add(rec)
+    await session.commit()
+
+    july = await get_projected_transactions(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1)
+    )
+    august = await get_projected_transactions(
+        session, test_workspace.id, test_user.id, month=date(2026, 8, 1)
+    )
+
+    july_dates = [item.date for item in july if item.recurring_id == str(rec.id)]
+    august_dates = [item.date for item in august if item.recurring_id == str(rec.id)]
+    assert july_dates == ["2026-07-31"]
+    assert august_dates == []
+
+
 # ---------------------------------------------------------------------------
 # get_summary with recurring projections
 # ---------------------------------------------------------------------------

@@ -58,7 +58,7 @@ async def _get_recurring_projections(
         .where(
             RecurringTransaction.workspace_id == workspace_id,
             RecurringTransaction.is_active == True,
-            RecurringTransaction.start_date < month_end,
+            RecurringTransaction.start_date < month_end + timedelta(days=2),
             or_(
                 RecurringTransaction.category_id.is_(None),
                 Category.treat_as_transfer.is_not(True),
@@ -84,6 +84,7 @@ async def _get_recurring_projections(
             range_start=month_start,
             range_end=month_end,
             intended_day=rec.day_of_month or rec.start_date.day,
+            weekend_adjustment=rec.weekend_adjustment,
         )
         for occ_date in occurrences:
             projections.append({
@@ -744,7 +745,7 @@ async def get_projected_transactions(
         .where(
             RecurringTransaction.workspace_id == workspace_id,
             RecurringTransaction.is_active == True,
-            RecurringTransaction.start_date < month_end,
+            RecurringTransaction.start_date < month_end + timedelta(days=2),
             or_(
                 RecurringTransaction.category_id.is_(None),
                 Category.treat_as_transfer.is_not(True),
@@ -777,6 +778,7 @@ async def get_projected_transactions(
             range_start=month_start,
             range_end=month_end,
             intended_day=rec.day_of_month or rec.start_date.day,
+            weekend_adjustment=rec.weekend_adjustment,
         )
         cat_name, cat_icon, cat_color = cat_map.get(rec.category_id, (None, None, None)) if rec.category_id else (None, None, None)
 

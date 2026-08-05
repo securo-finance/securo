@@ -494,3 +494,46 @@ async def test_transaction_calendar_ignored_projection_matches_posted_balance(
     # and snapped back as each one posted.
     for day in (date(2026, 7, 6), date(2026, 7, 13), date(2026, 7, 20), date(2026, 7, 27)):
         assert by_date[day].ending_balance == 1000.0
+
+
+@pytest.mark.asyncio
+async def test_transaction_calendar_uses_effective_weekend_date_and_balance(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Boundary account",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    recurring = RecurringTransaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        description="August rent",
+        amount=Decimal("300"),
+        currency="BRL",
+        type="debit",
+        frequency="monthly",
+        start_date=date(2026, 8, 1),
+        next_occurrence=date(2026, 8, 1),
+        weekend_adjustment="previous_friday",
+    )
+    session.add_all([account, recurring])
+    await session.commit()
+
+    calendar = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1)
+    )
+    july_31 = next(day for day in calendar.days if day.date == date(2026, 7, 31))
+    august_1 = next(day for day in calendar.days if day.date == date(2026, 8, 1))
+
+    assert [item.description for item in july_31.items] == ["August rent"]
+    assert july_31.projected_expense == 300.0
+    assert july_31.ending_balance == -300.0
+    assert august_1.projected_count == 0
+    assert august_1.ending_balance == -300.0

@@ -300,6 +300,9 @@ function RecurringForm({
   const [currency, setCurrency] = useState(recurring?.currency ?? userCurrency)
   const [type, setType] = useState<'debit' | 'credit'>(recurring?.type ?? 'debit')
   const [frequency, setFrequency] = useState(recurring?.frequency ?? 'monthly')
+  const [weekendAdjustment, setWeekendAdjustment] = useState<RecurringTransaction['weekend_adjustment']>(
+    recurring?.weekend_adjustment ?? 'none'
+  )
   const [dayOfMonth, setDayOfMonth] = useState(recurring?.day_of_month?.toString() ?? '')
   const [startDate, setStartDate] = useState(recurring?.start_date ?? localDateString())
   const [endDate, setEndDate] = useState(recurring?.end_date ?? '')
@@ -320,6 +323,7 @@ function RecurringForm({
           currency,
           type,
           frequency,
+          weekend_adjustment: weekendAdjustment,
           day_of_month: dayOfMonth ? parseInt(dayOfMonth) : null,
           start_date: startDate,
           end_date: endDate || null,
@@ -372,6 +376,18 @@ function RecurringForm({
             <Input type="number" min="1" max="31" value={dayOfMonth} onChange={(e) => setDayOfMonth(e.target.value)} />
           </div>
         )}
+      </div>
+      <div className="space-y-2">
+        <Label>{t('recurring.weekendAdjustment')}</Label>
+        <select
+          className={selectClass}
+          value={weekendAdjustment}
+          onChange={(e) => setWeekendAdjustment(e.target.value as RecurringTransaction['weekend_adjustment'])}
+        >
+          <option value="none">{t('recurring.weekendAdjustmentNone')}</option>
+          <option value="previous_friday">{t('recurring.weekendAdjustmentPreviousFriday')}</option>
+          <option value="next_monday">{t('recurring.weekendAdjustmentNextMonday')}</option>
+        </select>
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">

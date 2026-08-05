@@ -310,7 +310,7 @@ async def _project_recurring_items(
         .where(
             RecurringTransaction.workspace_id == workspace_id,
             RecurringTransaction.is_active == True,
-            RecurringTransaction.start_date < end,
+            RecurringTransaction.start_date < end + timedelta(days=2),
             Account.is_closed == False,
         )
         .options(
@@ -335,6 +335,7 @@ async def _project_recurring_items(
             range_start=start,
             range_end=end,
             intended_day=rec.day_of_month or rec.start_date.day,
+            weekend_adjustment=rec.weekend_adjustment,
         )
         category = rec.category
         account = rec.account

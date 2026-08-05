@@ -148,6 +148,44 @@ async def test_find_bill_rejects_low_similarity(session, test_user, test_workspa
     assert match is None
 
 
+@pytest.mark.asyncio
+async def test_find_bill_centers_existing_tolerance_on_effective_date(
+    session, test_user, test_workspace, account
+):
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        account,
+        start_date=date(2026, 8, 2),
+        weekend_adjustment="next_monday",
+    )
+
+    match = await rms.find_bill_for_incoming(
+        session,
+        test_user.id,
+        account.id,
+        Decimal("39.90"),
+        "BRL",
+        "debit",
+        date(2026, 8, 8),
+        "NETFLIX SUBSCRIPTION",
+    )
+    outside = await rms.find_bill_for_incoming(
+        session,
+        test_user.id,
+        account.id,
+        Decimal("39.90"),
+        "BRL",
+        "debit",
+        date(2026, 8, 9),
+        "NETFLIX SUBSCRIPTION",
+    )
+
+    assert match is not None and match.id == bill.id
+    assert outside is None
+
+
 # ---------------------------------------------------------------------------
 # find_placeholder_for_incoming (placeholder-first path)
 # ---------------------------------------------------------------------------
@@ -256,6 +294,37 @@ async def test_generate_pending_links_existing_real_tx(session, test_user, test_
         select(Transaction).where(Transaction.account_id == account.id)
     )
     assert len(result.scalars().all()) == 1  # only the synced row, no duplicate
+
+
+@pytest.mark.asyncio
+async def test_generate_pending_matches_real_transaction_on_effective_date(
+    session, test_user, test_workspace, account
+):
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        account,
+        start_date=date(2026, 8, 1),
+        weekend_adjustment="previous_friday",
+    )
+    real = await _add_tx(
+        session,
+        test_user,
+        test_workspace,
+        account,
+        date=date(2026, 7, 31),
+        source="sync",
+        external_id="effective-date",
+    )
+
+    count = await generate_pending(session, test_user.id, up_to=date(2026, 7, 31))
+
+    assert count == 0
+    await session.refresh(real)
+    assert real.recurring_transaction_id == bill.id
+    await session.refresh(bill)
+    assert bill.next_occurrence == date(2026, 9, 1)
 
 
 @pytest.mark.asyncio
