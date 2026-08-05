@@ -132,7 +132,7 @@ function MobileSecondaryMenu(props: TransactionsPageActionsProps) {
 
 /**
  * Keeps month, primary transaction action, and mobile overflow on one compact row.
- * @example `<TransactionsPageActions month={month} columnPicker={picker} exportLabel="Export" exporting={false} onExport={exportCsv} />`
+ * @example `<TransactionsPageActions month={month} view={view} columnPicker={picker} exportLabel="Export" exporting={false} onExport={exportCsv} />`
  */
 export function TransactionsPageActions(props: TransactionsPageActionsProps) {
   // Secondary actions stay labelled on desktop and collapse only where width is scarce.
