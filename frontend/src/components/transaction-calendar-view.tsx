@@ -191,24 +191,44 @@ export function TransactionCalendarView({
         </div>
 
         <div className="md:hidden divide-y divide-border">
-          {calendar.days.filter((day) => day.in_month).map((day) => (
-            <MobileDayRow
-              key={day.date}
-              day={day}
-              selected={day.date === selectedDate}
-              currency={calendar.currency}
-              locale={locale}
-              dateLocale={dateLocale}
-              mask={mask}
-              density={density}
-              metric={metric}
-              onSelect={() => onSelectedDateChange(day.date)}
-            />
-          ))}
+          {calendar.days.filter((day) => day.in_month || day.date === selectedDate).map((day) => {
+            const selected = day.date === selectedDate
+            const panelId = `transaction-calendar-day-details-${day.date}`
+            return (
+              <div key={day.date}>
+                <MobileDayRow
+                  day={day}
+                  selected={selected}
+                  panelId={panelId}
+                  currency={calendar.currency}
+                  locale={locale}
+                  dateLocale={dateLocale}
+                  mask={mask}
+                  density={density}
+                  metric={metric}
+                  onSelect={() => onSelectedDateChange(day.date)}
+                />
+                {selected && (
+                  <SelectedDayPanel
+                    id={panelId}
+                    variant="mobile"
+                    day={day}
+                    currency={calendar.currency}
+                    locale={locale}
+                    dateLocale={dateLocale}
+                    mask={mask}
+                    metric={metric}
+                    onOpenTransaction={onOpenTransaction}
+                  />
+                )}
+              </div>
+            )
+          })}
         </div>
       </section>
 
       <SelectedDayPanel
+        variant="desktop"
         day={selectedDay}
         currency={calendar.currency}
         locale={locale}
@@ -892,6 +912,7 @@ function BadgeDot({
 function MobileDayRow({
   day,
   selected,
+  panelId,
   currency,
   locale,
   dateLocale,
@@ -902,6 +923,7 @@ function MobileDayRow({
 }: {
   day: TransactionCalendarDay
   selected: boolean
+  panelId: string
   currency: string
   locale: string
   dateLocale: string
@@ -918,10 +940,12 @@ function MobileDayRow({
     <button
       type="button"
       onClick={onSelect}
+      aria-expanded={selected}
+      aria-controls={panelId}
       className={cn(
-        'w-full px-4 py-3 text-left transition-colors hover:bg-muted/30',
-        isLowBalance && 'bg-rose-50/75 dark:bg-rose-950/25',
-        selected && 'bg-primary/5 dark:bg-primary/10',
+        'w-full border-l-4 border-transparent px-4 py-3 text-left transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary',
+        isLowBalance && !selected && 'bg-rose-50/75 dark:bg-rose-950/25',
+        selected && 'border-primary bg-primary/10 dark:bg-primary/15',
       )}
     >
       <div className="flex items-center justify-between gap-3">
@@ -966,6 +990,8 @@ function MobileDayRow({
 }
 
 function SelectedDayPanel({
+  id,
+  variant,
   day,
   currency,
   locale,
@@ -974,6 +1000,8 @@ function SelectedDayPanel({
   metric,
   onOpenTransaction,
 }: {
+  id?: string
+  variant: 'mobile' | 'desktop'
   day?: TransactionCalendarDay
   currency: string
   locale: string
@@ -990,7 +1018,14 @@ function SelectedDayPanel({
     ? mask(formatCurrency(day.ending_balance, currency, locale))
     : mask(`${activity.actualNet >= 0 ? '+' : '−'}${formatCurrency(Math.abs(activity.actualNet), currency, locale)}`)
   return (
-    <aside className="bg-card rounded-xl border border-border shadow-sm overflow-hidden md:sticky md:top-4 md:max-h-[calc(100vh-7rem)] md:w-[320px] md:shrink-0 md:self-start md:flex md:flex-col lg:w-[340px]">
+    <aside
+      id={id}
+      className={cn(
+        'bg-card overflow-hidden',
+        variant === 'mobile' && 'border-t border-border md:hidden',
+        variant === 'desktop' && 'hidden rounded-xl border border-border shadow-sm md:sticky md:top-4 md:max-h-[calc(100vh-7rem)] md:w-[320px] md:shrink-0 md:self-start md:flex md:flex-col lg:w-[340px]',
+      )}
+    >
       <div className="px-4 py-4 border-b border-border">
         <div className="flex items-end justify-between gap-3">
           <div className="min-w-0">
