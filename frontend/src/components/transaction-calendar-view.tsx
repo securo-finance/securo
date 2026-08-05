@@ -941,7 +941,7 @@ function MobileDayRow({
       type="button"
       onClick={onSelect}
       aria-expanded={selected}
-      aria-controls={panelId}
+      aria-controls={selected ? panelId : undefined}
       className={cn(
         'w-full border-l-4 border-transparent px-4 py-3 text-left transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary',
         isLowBalance && !selected && 'bg-rose-50/75 dark:bg-rose-950/25',
@@ -1022,7 +1022,7 @@ function SelectedDayPanel({
       id={id}
       className={cn(
         'bg-card overflow-hidden',
-        variant === 'mobile' && 'border-t border-border md:hidden',
+        variant === 'mobile' && 'mx-3 mt-2 mb-3 rounded-xl border border-border shadow-sm md:hidden',
         variant === 'desktop' && 'hidden rounded-xl border border-border shadow-sm md:sticky md:top-4 md:max-h-[calc(100vh-7rem)] md:w-[320px] md:shrink-0 md:self-start md:flex md:flex-col lg:w-[340px]',
       )}
     >
