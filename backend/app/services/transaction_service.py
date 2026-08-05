@@ -115,6 +115,7 @@ async def get_transactions(
     min_amount: Optional[float] = None,
     max_amount: Optional[float] = None,
     account_types: Optional[list[str]] = None,
+    status: Optional[str] = None,
     include_summary: bool = False,
     user_pnl_only: bool = False,
 ) -> tuple[list[Transaction], int, Optional[dict]]:
@@ -253,6 +254,8 @@ async def get_transactions(
         base_query = base_query.where(Account.is_closed == False, counts_as_user_pnl())
     if txn_type:
         base_query = base_query.where(Transaction.type == txn_type)
+    if status:
+        base_query = base_query.where(Transaction.status == status)
     if currency:
         # Native-currency filter — match the column verbatim. Lets agents
         # answer "do I have any EUR transactions?" without text-searching
@@ -701,6 +704,10 @@ async def create_transaction(
         date=data.date,
         type=data.type,
         source="manual",
+        # Manually-entered transactions default to "posted" (settled),
+        # matching the model default. Callers may still create them as
+        # "pending" (not yet settled) via TransactionCreate.status.
+        status=data.status or "posted",
         notes=data.notes,
         effective_bill_date=data.effective_bill_date,
     )

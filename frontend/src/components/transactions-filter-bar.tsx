@@ -9,6 +9,7 @@ import {
   Check,
   ChevronRight,
   Coins,
+  ListChecks,
   ListFilter,
   Search,
   Store,
@@ -65,6 +66,8 @@ interface TransactionsFilterBarProps {
   onGroupIdChange: (value: string) => void
   filterType: string
   onTypeChange: (value: string) => void
+  filterStatus: string
+  onStatusChange: (value: string) => void
   filterFrom: string
   filterTo: string
   onDateRangeChange: (from: string, to: string) => void
@@ -100,6 +103,8 @@ export function TransactionsFilterBar({
   onGroupIdChange,
   filterType,
   onTypeChange,
+  filterStatus,
+  onStatusChange,
   filterFrom,
   filterTo,
   onDateRangeChange,
@@ -190,6 +195,7 @@ export function TransactionsFilterBar({
     !!filterPayee ||
     !!filterGroupId ||
     !!filterType ||
+    !!filterStatus ||
     !!filterFrom ||
     !!filterTo ||
     !!filterMinAmount ||
@@ -201,6 +207,13 @@ export function TransactionsFilterBar({
       ? t('transactions.income')
       : filterType === 'debit'
         ? t('transactions.expense')
+        : ''
+
+  const statusLabel =
+    filterStatus === 'pending'
+      ? t('transactions.statusPending')
+      : filterStatus === 'posted'
+        ? t('transactions.statusPosted')
         : ''
 
   const dateLabel = useMemo(() => {
@@ -411,6 +424,7 @@ export function TransactionsFilterBar({
                   payee: selectedPayee?.name,
                   group: selectedGroup?.name,
                   type: typeLabel,
+                  status: statusLabel,
                   date: dateLabel,
                   amount: amountLabel,
                 }}
@@ -422,6 +436,8 @@ export function TransactionsFilterBar({
                 onPayeeChange={onPayeeChange}
                 onGroupIdChange={onGroupIdChange}
                 onTypeChange={onTypeChange}
+                status={filterStatus}
+                onStatusChange={onStatusChange}
                 onDateRangeChange={onDateRangeChange}
                 onAmountRangeChange={onAmountRangeChange}
                 onApplyAmountRange={applyAmountRange}
@@ -737,6 +753,48 @@ export function TransactionsFilterBar({
                   </DropdownMenuPortal>
                 </DropdownMenuSub>
 
+                {/* Status submenu (single — posted vs pending) */}
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="gap-2 text-[13px]">
+                    <ListChecks size={14} className="text-muted-foreground" />
+                    <span className="flex-1">{t('transactions.status')}</span>
+                    {statusLabel && (
+                      <span className="max-w-[90px] truncate text-[11px] text-muted-foreground">
+                        {statusLabel}
+                      </span>
+                    )}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuPortal>
+                    <DropdownMenuSubContent
+                      sideOffset={8}
+                      className="w-[200px] p-1"
+                    >
+                      {[
+                        { value: '', label: t('transactions.all') },
+                        { value: 'pending', label: t('transactions.statusPending') },
+                        { value: 'posted', label: t('transactions.statusPosted') },
+                      ].map((opt) => (
+                        <DropdownMenuItem
+                          key={opt.value || 'all'}
+                          onSelect={() => onStatusChange(opt.value)}
+                          className={cn(
+                            'gap-2 rounded-sm px-2 py-1.5 text-[13px]',
+                            filterStatus === opt.value && 'bg-primary/5',
+                          )}
+                        >
+                          <span className="size-2.5 shrink-0" />
+                          <span className="min-w-0 flex-1 truncate text-left">
+                            {opt.label}
+                          </span>
+                          {filterStatus === opt.value && (
+                            <Check size={13} className="text-primary" />
+                          )}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuPortal>
+                </DropdownMenuSub>
+
                 {/* Date range submenu with presets */}
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger className="gap-2 text-[13px]">
@@ -931,6 +989,7 @@ export function TransactionsFilterBar({
           filterUncategorized ||
           !!selectedPayee ||
           !!typeLabel ||
+          !!statusLabel ||
           !!dateLabel ||
           !!amountLabel) && (
           <div className="flex flex-wrap items-center gap-1 border-t border-border/60 px-2 py-1.5">
@@ -989,6 +1048,14 @@ export function TransactionsFilterBar({
                 label={t('transactions.type')}
                 value={typeLabel}
                 onRemove={() => onTypeChange('')}
+              />
+            )}
+            {statusLabel && (
+              <FilterChip
+                icon={<ListChecks size={12} />}
+                label={t('transactions.status')}
+                value={statusLabel}
+                onRemove={() => onStatusChange('')}
               />
             )}
             {dateLabel && (
