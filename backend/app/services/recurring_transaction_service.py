@@ -181,14 +181,15 @@ def adjust_weekend_date(
     nominal_date: date, weekend_adjustment: str = "none"
 ) -> date:
     """Return the effective date without changing the nominal schedule date."""
+    if weekend_adjustment not in ("none", "previous_friday", "next_monday"):
+        raise ValueError(f"Unsupported weekend adjustment: {weekend_adjustment}")
+
     weekday = nominal_date.weekday()
     if weekend_adjustment == "none" or weekday < calendar.SATURDAY:
         return nominal_date
     if weekend_adjustment == "previous_friday":
         return nominal_date - timedelta(days=weekday - calendar.FRIDAY)
-    if weekend_adjustment == "next_monday":
-        return nominal_date + timedelta(days=7 - weekday)
-    raise ValueError(f"Unsupported weekend adjustment: {weekend_adjustment}")
+    return nominal_date + timedelta(days=7 - weekday)
 
 
 def get_occurrences_in_range(

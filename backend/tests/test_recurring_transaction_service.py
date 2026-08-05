@@ -282,6 +282,7 @@ def test_advance_date_quarterly_leap_year_clamping_recovers():
     may = _advance_date(february, "quarterly", intended_day=30)
     assert may == date(2024, 5, 30)
 
+
 @pytest.mark.parametrize(
     ("nominal", "policy", "expected"),
     [
@@ -301,6 +302,13 @@ def test_advance_date_quarterly_leap_year_clamping_recovers():
 )
 def test_adjust_weekend_date(nominal, policy, expected):
     assert adjust_weekend_date(nominal, policy) == expected
+
+
+def test_adjust_weekend_date_rejects_unsupported_policy_on_weekday():
+    with pytest.raises(
+        ValueError, match="Unsupported weekend adjustment: nearest_weekday"
+    ):
+        adjust_weekend_date(date(2026, 8, 3), "nearest_weekday")
 
 
 @pytest.mark.parametrize(
