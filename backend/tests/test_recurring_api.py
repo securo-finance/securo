@@ -395,3 +395,48 @@ async def test_invalid_weekend_adjustment_is_rejected(
         headers=auth_headers,
     )
     assert update_response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_weekend_adjustment_update_rejects_null_but_allows_omission(
+    client, auth_headers, test_account
+):
+    create_response = await client.post(
+        "/api/recurring-transactions",
+        json={
+            "description": "Null policy regression",
+            "amount": 10,
+            "type": "debit",
+            "frequency": "monthly",
+            "start_date": "2026-08-01",
+            "weekend_adjustment": "previous_friday",
+            "account_id": str(test_account.id),
+        },
+        headers=auth_headers,
+    )
+    assert create_response.status_code == 201
+    recurring_id = create_response.json()["id"]
+
+    omitted_response = await client.patch(
+        f"/api/recurring-transactions/{recurring_id}",
+        json={},
+        headers=auth_headers,
+    )
+    assert omitted_response.status_code == 200
+    assert omitted_response.json()["weekend_adjustment"] == "previous_friday"
+
+    null_response = await client.patch(
+        f"/api/recurring-transactions/{recurring_id}",
+        json={"weekend_adjustment": None},
+        headers=auth_headers,
+    )
+    assert null_response.status_code == 400
+    assert null_response.json()["detail"] == "weekend_adjustment is required"
+
+    list_response = await client.get(
+        "/api/recurring-transactions", headers=auth_headers
+    )
+    listed = next(
+        row for row in list_response.json() if row["id"] == recurring_id
+    )
+    assert listed["weekend_adjustment"] == "previous_friday"
