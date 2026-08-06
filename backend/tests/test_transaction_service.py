@@ -70,7 +70,42 @@ async def test_create_transaction_manual(
     assert txn.id is not None
     assert txn.description == "Lunch"
     assert txn.source == "manual"
+    assert txn.status == "posted"
     assert txn.category_id == test_categories[0].id
+
+
+@pytest.mark.asyncio
+async def test_create_transaction_manual_status_override(
+    session: AsyncSession, test_user, test_workspace, test_categories, txn_account
+):
+    """Creating a manual transaction can set status explicitly (posted/pending)."""
+    data = TransactionCreate(
+        description="Rent",
+        amount=Decimal("1200.00"),
+        date=date(2025, 3, 1),
+        type="debit",
+        account_id=txn_account.id,
+        category_id=test_categories[0].id,
+        status="posted",
+    )
+    txn = await create_transaction(session, test_workspace.id, test_user.id, data)
+
+    assert txn.source == "manual"
+    assert txn.status == "posted"
+
+    pending = TransactionCreate(
+        description="Groceries",
+        amount=Decimal("80.00"),
+        date=date(2025, 3, 2),
+        type="debit",
+        account_id=txn_account.id,
+        category_id=test_categories[0].id,
+        status="pending",
+    )
+    pending_txn = await create_transaction(session, test_workspace.id, test_user.id, pending)
+
+    assert pending_txn.source == "manual"
+    assert pending_txn.status == "pending"
 
 
 @pytest.mark.asyncio
@@ -483,6 +518,44 @@ async def test_get_transactions_filter_by_type(
     assert all(t.type == "credit" for t in results)
 
 
+@pytest.mark.asyncio
+async def test_get_transactions_filter_by_status(session: AsyncSession, test_user, test_workspace, txn_account):
+    txn_pending = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=txn_account.id,
+        description="Pending",
+        amount=Decimal("50"),
+        date=date(2025, 3, 1),
+        type="debit",
+        source="manual",
+        status="pending",
+        created_at=datetime.now(timezone.utc),
+    )
+    txn_posted = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=txn_account.id,
+        description="Posted",
+        amount=Decimal("1000"),
+        date=date(2025, 3, 1),
+        type="debit",
+        source="manual",
+        status="posted",
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add_all([txn_pending, txn_posted])
+    await session.commit()
+
+    results, _, _ = await get_transactions(session, test_workspace.id, test_user.id, status="pending")
+    assert results
+    assert all(t.status == "pending" for t in results)
+
+    results, _, _ = await get_transactions(session, test_workspace.id, test_user.id, status="posted")
+    assert results
+    assert all(t.status == "posted" for t in results)
+
+
 # ---------------------------------------------------------------------------
 # get_transaction / update_transaction / delete_transaction
 # ---------------------------------------------------------------------------
@@ -553,6 +626,45 @@ async def test_update_transaction_not_found(session: AsyncSession, test_user, te
         TransactionUpdate(description="Ghost"),
     )
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_update_transaction_status(session: AsyncSession, test_user, test_workspace, txn_account):
+    """Manual transactions can be flipped between pending and posted via TransactionUpdate.status."""
+    txn = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=txn_account.id,
+        description="Lunch",
+        amount=Decimal("35.00"),
+        date=date(2025, 3, 10),
+        type="debit",
+        source="manual",
+        status="pending",
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(txn)
+    await session.commit()
+
+    updated = await update_transaction(
+        session,
+        txn.id,
+        test_workspace.id,
+        test_user.id,
+        TransactionUpdate(status="posted"),
+    )
+    assert updated is not None
+    assert updated.status == "posted"
+
+    flipped = await update_transaction(
+        session,
+        txn.id,
+        test_workspace.id,
+        test_user.id,
+        TransactionUpdate(status="pending"),
+    )
+    assert flipped is not None
+    assert flipped.status == "pending"
 
 
 @pytest.mark.asyncio

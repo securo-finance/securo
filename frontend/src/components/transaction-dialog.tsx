@@ -360,6 +360,7 @@ function TransactionForm({
   const [amount, setAmount] = useState(seed?.amount?.toString() ?? '')
   const [date, setDate] = useState(seed?.date ?? localDateString())
   const [type, setType] = useState<'debit' | 'credit'>(seed?.type ?? 'debit')
+  const [status, setStatus] = useState<'posted' | 'pending'>(seed?.status ?? 'posted')
   const [currency, setCurrency] = useState(seed?.currency ?? userCurrency)
   const [categoryId, setCategoryId] = useState(seed?.category_id ?? '')
   const [payeeId, setPayeeId] = useState(seed?.payee_id ?? '')
@@ -673,6 +674,9 @@ function TransactionForm({
               account_id: accountId || undefined,
               notes: notes.trim() || null,
               is_ignored: isIgnored,
+              // Creation defaults to "posted" server-side; the user can
+              // override to "pending" right in the form (date & status row).
+              status,
               ...fxFields,
               ...overridePayload,
               ...splitsPayload,
@@ -689,7 +693,7 @@ function TransactionForm({
         hasPreview && 'mt-4'
       )}
     >
-      <div className="space-y-4 overflow-y-auto flex-1 min-h-0 pb-2 pr-3">
+      <div className="space-y-4 overflow-y-auto flex-1 min-h-0 pb-2 sm:pr-3">
       {error && (
         <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
           {error}
@@ -784,13 +788,14 @@ function TransactionForm({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             required
+            className="bg-card"
           />
         )}
         {isSynced && transaction?.payee && transaction.payee !== transaction.description && (
           <p className="text-xs text-muted-foreground">{transaction.payee}</p>
         )}
       </div>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <div className="space-y-2">
           <div className="flex items-center justify-between min-h-5">
             <Label>{t('transactions.amount')}</Label>
@@ -822,13 +827,14 @@ function TransactionForm({
               onChange={(e) => handleAmountChange(e.target.value)}
               required
               disabled={isSynced}
+              className="bg-card"
             />
           )}
         </div>
         <div className="space-y-2">
           <Label>{t('transactions.currency')}</Label>
           <select
-            className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background h-9 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+            className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card h-9 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
             value={currency}
             onChange={(e) => handleCurrencyChange(e.target.value)}
             disabled={isSynced}
@@ -838,6 +844,8 @@ function TransactionForm({
             ))}
           </select>
         </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <div className="space-y-2">
           <Label>{t('transactions.date')}</Label>
           <DatePickerInput
@@ -846,6 +854,18 @@ function TransactionForm({
             disabled={isSynced}
             className="w-full justify-start"
           />
+        </div>
+        <div className="space-y-2">
+          <Label>{t('transactions.colStatus')}</Label>
+          <select
+            className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card h-9 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+            value={status}
+            onChange={(e) => setStatus(e.target.value as 'posted' | 'pending')}
+            disabled={isSynced}
+          >
+            <option value="posted">{t('transactions.statusPosted')}</option>
+            <option value="pending">{t('transactions.statusPending')}</option>
+          </select>
         </div>
       </div>
       {showConversion && (
@@ -878,6 +898,7 @@ function TransactionForm({
                   value={convertedAmount}
                   onChange={(e) => handleConvertedAmountChange(e.target.value)}
                   placeholder={t('transactions.autoCalculated')}
+                  className="bg-card"
                 />
               )}
             </div>
@@ -889,6 +910,7 @@ function TransactionForm({
                 value={fxRate}
                 onChange={(e) => handleFxRateChange(e.target.value)}
                 placeholder={t('transactions.autoCalculated')}
+                className="bg-card"
               />
             </div>
           </div>
@@ -898,7 +920,7 @@ function TransactionForm({
         <div className="space-y-2">
           <Label>{t('transactions.type')}</Label>
           <select
-            className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+            className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
             value={type}
             onChange={(e) => setType(e.target.value as 'debit' | 'credit')}
             disabled={isSynced}
@@ -915,6 +937,7 @@ function TransactionForm({
             categories={categories}
             groups={categoryGroups}
             allowNone={true}
+            className="bg-card"
           />
         </div>
       </div>
@@ -922,7 +945,7 @@ function TransactionForm({
         <div className="space-y-2">
           <Label>{t('payees.payee')}</Label>
           <select
-            className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+            className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
             value={payeeId}
             onChange={(e) => setPayeeId(e.target.value)}
           >
@@ -939,7 +962,7 @@ function TransactionForm({
           <div className="space-y-2">
             <Label>{t('transactions.account')}</Label>
             <select
-              className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+              className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
               value={accountId}
               onChange={(e) => setAccountId(e.target.value)}
               required
@@ -955,7 +978,7 @@ function TransactionForm({
       <div className="space-y-2">
         <Label>{t('transactions.notes')} <span className="text-muted-foreground font-normal text-xs">({t('transactions.notesHint')})</span></Label>
         <textarea
-          className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-0"
+          className="w-full border border-input rounded-md px-3 py-2 text-sm bg-card resize-none focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-0"
           rows={2}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
@@ -1051,7 +1074,7 @@ function TransactionForm({
               <div className="space-y-2">
                 <Label>{t('recurring.frequency')}</Label>
                 <select
-                  className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+                  className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
                   value={frequency}
                   onChange={(e) => setFrequency(e.target.value as RecurringTransaction['frequency'])}
                 >
@@ -1083,7 +1106,7 @@ function TransactionForm({
       )}>
         <div className="flex min-w-0 flex-wrap gap-2 items-center">
           {onDelete && (
-            <Button type="button" variant="destructive" onClick={onDelete} disabled={loading} className="whitespace-nowrap">
+            <Button type="button" variant="destructive" onClick={onDelete} disabled={loading} className="whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9">
               {t('common.delete')}
             </Button>
           )}
@@ -1094,9 +1117,9 @@ function TransactionForm({
               onClick={handleToggleIgnore}
               disabled={loading || togglingIgnore}
               title={t('transactions.ignoreTransferHint')}
-              className="gap-1.5 whitespace-nowrap"
+              className="gap-1.5 whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
             >
-              {isIgnored ? <Eye size={16} /> : <EyeClosed size={16} />}
+              {isIgnored ? <Eye size={14} /> : <EyeClosed size={14} />}
               {isIgnored ? t('transactions.unignoreAction') : t('transactions.ignoreAction')}
             </Button>
           )}
@@ -1106,10 +1129,10 @@ function TransactionForm({
                 type="button"
                 variant="outline"
                 onClick={() => onCreateRule(transaction)}
-                className="gap-1.5 rounded-r-none whitespace-nowrap"
+                className="gap-1.5 rounded-r-none whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
                 title={t('transactions.createRule')}
               >
-                <SlidersHorizontal size={16} />
+                <SlidersHorizontal size={14} />
                 {t('transactions.createRule')}
               </Button>
               <DropdownMenu>
@@ -1118,10 +1141,10 @@ function TransactionForm({
                     type="button"
                     variant="outline"
                     aria-label={t('transactions.ruleActions')}
-                    className="rounded-l-none border-l-0 px-2 has-[>svg]:px-2"
+                    className="rounded-l-none border-l-0 px-1.5 sm:px-2 has-[>svg]:px-1.5 sm:has-[>svg]:px-2 h-8 sm:h-9"
                     disabled={extendRuleMutation.isPending}
                   >
-                    <ChevronDown />
+                    <ChevronDown size={14} />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-56">
@@ -1135,7 +1158,7 @@ function TransactionForm({
           )}
         </div>
         <div className="flex flex-wrap gap-2 justify-end sm:ml-auto">
-          <Button type="button" variant="outline" onClick={onCancel} className="whitespace-nowrap">
+          <Button type="button" variant="outline" onClick={onCancel} className="whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9">
             {t('common.cancel')}
           </Button>
           {showSaveVariants ? (
@@ -1143,7 +1166,7 @@ function TransactionForm({
               <Button
                 type="submit"
                 disabled={loading || !splitsValid}
-                className="rounded-r-none whitespace-nowrap"
+                className="rounded-r-none whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
               >
                 {loading ? t('common.loading') : t('common.save')}
               </Button>
@@ -1153,9 +1176,9 @@ function TransactionForm({
                     type="button"
                     disabled={loading || !splitsValid}
                     aria-label={t('transactions.moreSaveOptions')}
-                    className="rounded-l-none border-l border-l-primary-foreground/20 px-2 has-[>svg]:px-2"
+                    className="rounded-l-none border-l border-l-primary-foreground/20 px-1.5 sm:px-2 has-[>svg]:px-1.5 sm:has-[>svg]:px-2 h-8 sm:h-9"
                   >
-                    <ChevronDown />
+                    <ChevronDown size={14} />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -1169,7 +1192,7 @@ function TransactionForm({
               </DropdownMenu>
             </div>
           ) : (
-            <Button type="submit" disabled={loading || !splitsValid} className="whitespace-nowrap">
+            <Button type="submit" disabled={loading || !splitsValid} className="whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9">
               {loading ? t('common.loading') : t('common.save')}
             </Button>
           )}

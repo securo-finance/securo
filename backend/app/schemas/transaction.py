@@ -34,6 +34,11 @@ class TransactionCreate(TransactionBase):
     fx_rate_used: Optional[Decimal] = None
     effective_bill_date: Optional[_Date] = None
     splits: Optional[TransactionSplitsInput] = None
+    # Manual status override. When omitted the transaction is created as
+    # "posted" (settled), matching the model default. Pass "pending"
+    # (not yet settled) to record an entry that isn't settled yet. Only
+    # posted/pending are valid.
+    status: Optional[Literal["posted", "pending"]] = None
 
 
 class TransactionUpdate(BaseModel):
@@ -49,6 +54,10 @@ class TransactionUpdate(BaseModel):
     amount_primary: Optional[Decimal] = None
     fx_rate_used: Optional[Decimal] = None
     is_ignored: Optional[bool] = None
+    # Manual status override (posted=settled, pending=not yet settled). Lets the
+    # user mark a manually-entered transaction as settled once it clears,
+    # or flip a synced row back to pending before the next sync.
+    status: Optional[Literal["posted", "pending"]] = None
     apply_to_transfer_pair: bool = False
     # CC bucketing override (issue #92). Empty string / explicit null clears
     # it back to auto. Only meaningful for credit-card accounts.

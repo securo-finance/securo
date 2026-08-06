@@ -46,6 +46,7 @@ import { TransactionDrillDown, type DrillDownFilter } from '@/components/transac
 import { TransactionDialog, extractApiError } from '@/components/transaction-dialog'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
@@ -91,6 +92,7 @@ export default function DashboardPage() {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const { mask, privacyMode, MASK } = usePrivacyMode()
+  const isMobile = useIsMobile()
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const displayName = user?.preferences?.display_name || ''
@@ -1053,6 +1055,96 @@ export default function DashboardPage() {
             </div>
           ) : pagedRows.length > 0 ? (
             <>
+              {isMobile ? (
+                <div>
+                  {pagedRows.map((row) => (
+                    <div
+                      key={row.key}
+                      className={`flex items-center gap-3 pl-3 pr-3 py-3 border-b border-border last:border-0 bg-card ${
+                        row.isProjected ? '' : 'cursor-pointer active:bg-muted/60'
+                      }`}
+                      onClick={() => {
+                        if (row.isProjected) return
+                        if (row.isShared) {
+                          if (row.groupId) navigate(`/groups/${row.groupId}`)
+                          return
+                        }
+                        const tx = currentMonthTxs?.items.find((t) => t.id === row.key)
+                        if (tx) { setEditingTx(tx); setDialogOpen(true) }
+                      }}
+                    >
+                      {/* Category Icon */}
+                      <div className="shrink-0">
+                        <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="md" />
+                      </div>
+
+                      {/* Content */}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-sm font-semibold text-foreground truncate leading-tight">{row.description}</p>
+                          {row.groupId && (
+                            <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
+                              {row.isShared && row.parentOwnerName
+                                ? t('splitGroups.sharedShortBadgeAuthor', { author: row.parentOwnerName })
+                                : row.groupName ?? t('splitGroups.sharedShortBadge')}
+                            </span>
+                          )}
+                          {row.isProjected && (
+                            <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1 py-0.5 rounded-full shrink-0">
+                              {t('transactions.recurringBadge')}
+                            </span>
+                          )}
+                          {row.isIgnored && (
+                            <EyeClosed className="h-3 w-3 text-gray-500 shrink-0" />
+                          )}
+                          {row.attachmentCount > 0 && (
+                            <Paperclip size={11} className="text-muted-foreground shrink-0" />
+                          )}
+                        </div>
+                        {row.accountId && (() => {
+                          const acc = accountsList?.find((a) => a.id === row.accountId)
+                          if (!acc) return null
+                          return (
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <AccountIcon account={acc} size="xs" />
+                              <span className="text-xs text-muted-foreground truncate">{getAccountName(acc)}</span>
+                            </div>
+                          )
+                        })()}
+                        {!row.accountId && (
+                          <p className="text-xs text-muted-foreground mt-0.5">{formatDate(row.date, dateLocale)}</p>
+                        )}
+                      </div>
+
+                      {/* Amount */}
+                      <div className="shrink-0 text-right">
+                        <span className={`text-sm font-bold tabular-nums ${row.isIgnored ? 'text-gray-500' : row.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
+                          {mask(`${row.isIgnored ? ' ' : row.type === 'credit' ? '+' : '\u2212'}${formatCurrency(Math.abs(row.amount), row.currency, locale)}`)}
+                        </span>
+                        {row.isShared && row.parentTotal != null && (
+                          <div className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
+                            {t('splitGroups.sharedRowParent', {
+                              total: formatCurrency(Math.abs(row.parentTotal), row.currency, locale),
+                            })}
+                          </div>
+                        )}
+                        {!row.isShared && row.ownerShare != null && (
+                          <div className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
+                            {t('splitGroups.ownerRowYourShare', {
+                              share: formatCurrency(Math.abs(row.ownerShare), row.currency, locale),
+                            })}
+                          </div>
+                        )}
+                        {!row.isShared && row.currency !== userCurrency && row.amountPrimary != null && (
+                          <div className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
+                            {mask(formatCurrency(Math.abs(row.amountPrimary), userCurrency, locale))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
               <Table>
                 <TableHeader>
                   <TableRow className="border-b border-border hover:bg-transparent">
@@ -1163,6 +1255,7 @@ export default function DashboardPage() {
                   ))}
                 </TableBody>
               </Table>
+              )}
               {allDisplayRows.length > 10 && (
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-5 py-4 border-t border-border">
                   <div className="hidden sm:block w-32" />

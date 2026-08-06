@@ -54,7 +54,7 @@ The same applies to issues. An issue produced by pointing a model at the reposit
 
 1. Create a branch from `main`: `git checkout -b feature/your-feature`
 2. Make your changes
-3. Run backend tests: `cd backend && pip install -e ".[dev]" && pytest` (Python 3.11+)
+3. Run backend tests: `cd backend && uv sync --all-extras && uv run pytest` (Python 3.11+)
 4. Run frontend lint: `cd frontend && npm run lint`
 5. Commit with a clear message (see below)
 6. Push your branch and open a Pull Request
@@ -89,8 +89,13 @@ Use clear, descriptive commit messages:
 ```bash
 # Backend tests (run from backend/, needs Python 3.11+; same as CI)
 cd backend
-pip install -e ".[dev]"   # first time only — installs pytest and dev deps
+uv sync --all-extras   # first time only — builds .venv from uv.lock, same versions as CI
+source .venv/bin/activate
 pytest
+
+# No uv? pip works too, from an export of the lock:
+#   pip install uv && uv export --frozen --all-extras --no-emit-project -o /tmp/req.txt
+#   pip install --require-hashes -r /tmp/req.txt && pip install --no-deps -e .
 
 # Backend tests with coverage
 pytest --cov=app --cov-report=term-missing
@@ -98,6 +103,10 @@ pytest --cov=app --cov-report=term-missing
 # Backend lint + type check (same commands CI runs)
 ruff check .
 ty check .
+
+# After changing dependencies in pyproject.toml: regenerate the lock and
+# commit uv.lock along with it (CI enforces this)
+./scripts/lock.sh
 
 # Frontend lint
 cd frontend && npm run lint
