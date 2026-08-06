@@ -369,6 +369,8 @@
     "summaryExcluded": "Escluso",
     "bulkCategorize": "Applica",
     "bulkSuccess": "{{count}} transazioni categorizzate",
+    "bulkDeleteSuccess_one": "{{count}} transazione eliminata",
+    "bulkDeleteSuccess_other": "{{count}} transazioni eliminate",
     "selectCategory": "Seleziona categoria...",
     "addToGroup": "Aggiungi al gruppo",
     "bulkAddToGroupTitle": "Aggiungi {{count}} transazioni a un gruppo",

@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional, cast
 
-from sqlalchemy import CursorResult, select, func, or_, not_, update
+from sqlalchemy import CursorResult, delete, select, func, or_, not_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -1558,3 +1558,49 @@ async def delete_transaction(
     await session.delete(transaction)
     await session.commit()
     return True
+
+
+async def bulk_delete_transactions(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    transaction_ids: list[uuid.UUID],
+) -> int:
+    from app.services.attachment_service import cleanup_attachment_files
+
+    result = await session.execute(
+        select(Transaction.id, Transaction.transfer_pair_id)
+        .where(
+            Transaction.id.in_(transaction_ids),
+            Transaction.workspace_id == workspace_id,
+        )
+    )
+    transactions = result.all()
+    if not transactions:
+        return 0
+
+    valid_ids = [row[0] for row in transactions]
+    transfer_pair_ids = {row[1] for row in transactions if row[1]}
+
+    paired_ids = []
+    if transfer_pair_ids:
+        paired_result = await session.execute(
+            select(Transaction.id, Transaction.transfer_pair_id)
+            .where(
+                Transaction.transfer_pair_id.in_(transfer_pair_ids),
+                Transaction.id.notin_(valid_ids),
+            )
+        )
+        paired_ids = [row[0] for row in paired_result.all()]
+
+    await cleanup_attachment_files(session, valid_ids + paired_ids)
+
+    for pid in paired_ids:
+        await session.execute(
+            delete(Transaction).where(Transaction.id == pid)
+        )
+
+    await session.execute(
+        delete(Transaction).where(Transaction.id.in_(valid_ids))
+    )
+    await session.commit()
+    return len(valid_ids)

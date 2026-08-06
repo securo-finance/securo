@@ -120,6 +120,10 @@ class BulkCategorizeRequest(BaseModel):
     category_id: Optional[uuid.UUID] = None
 
 
+class TransactionBulkDeleteRequest(BaseModel):
+    transaction_ids: list[uuid.UUID]
+
+
 class BulkAddToGroupRequest(BaseModel):
     transaction_ids: list[uuid.UUID]
     group_id: uuid.UUID
