@@ -52,7 +52,7 @@ async def _add_txn(
     session: AsyncSession, user_id: uuid.UUID, account_id: uuid.UUID,
     amount: float, txn_type: str, txn_date: date,
     source: str = "manual", transfer_pair_id: uuid.UUID | None = None,
-    category_id: uuid.UUID | None = None,
+    category_id: uuid.UUID | None = None, status: str = "posted",
 ) -> Transaction:
     from datetime import datetime, timezone
     txn = Transaction(
@@ -60,6 +60,7 @@ async def _add_txn(
         description=f"Test {txn_type} {amount}", amount=Decimal(str(amount)),
         date=txn_date, type=txn_type, source=source, currency="BRL",
         transfer_pair_id=transfer_pair_id, category_id=category_id,
+        status=status,
         created_at=datetime.now(timezone.utc),
     )
     session.add(txn)
@@ -291,6 +292,24 @@ async def test_get_summary_excludes_transfers(session: AsyncSession, test_user, 
 
     summary = await get_summary(session, test_workspace.id, test_user.id)
     assert summary.monthly_expenses == pytest.approx(100.0)
+
+
+@pytest.mark.asyncio
+async def test_get_summary_excludes_pending_from_period_totals(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Pending (not yet settled) transactions stay out of monthly income/expenses."""
+    account = await _make_account(session, test_user.id, "Pending Excl")
+    today = date.today()
+
+    await _add_txn(session, test_user.id, account.id, 100, "debit", today)
+    await _add_txn(session, test_user.id, account.id, 50, "credit", today)
+    await _add_txn(session, test_user.id, account.id, 10000, "debit", today, status="pending")
+    await _add_txn(session, test_user.id, account.id, 9000, "credit", today, status="pending")
+
+    summary = await get_summary(session, test_workspace.id, test_user.id)
+    assert summary.monthly_expenses == pytest.approx(100.0)
+    assert summary.monthly_income == pytest.approx(50.0)
 
 
 @pytest.mark.asyncio
