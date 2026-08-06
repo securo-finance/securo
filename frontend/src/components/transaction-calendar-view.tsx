@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeftRight, CalendarDays, CircleDot, Minus } from 'lucide-react'
-import type { TransactionCalendarDay, TransactionCalendarItem, TransactionCalendarResponse } from '@/types'
+import { ArrowLeftRight, CalendarDays, CircleDot, Clock, EyeClosed, Minus } from 'lucide-react'
+import type { Account, TransactionCalendarDay, TransactionCalendarItem, TransactionCalendarResponse } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
+import { AccountIcon } from '@/components/account-icon'
 import { CategoryIcon } from '@/components/category-icon'
+import { getAccountName } from '@/lib/account-utils'
 import { activityChartData, dayActivity } from '@/lib/calendar-activity'
 import { weekdayShortLabels } from '@/lib/date-utils'
 import { cn } from '@/lib/utils'
@@ -73,6 +75,8 @@ export function TransactionCalendarView({
   selectedDate,
   onSelectedDateChange,
   onOpenTransaction,
+  accounts,
+  userCurrency,
 }: {
   calendar?: TransactionCalendarResponse
   isLoading: boolean
@@ -82,9 +86,17 @@ export function TransactionCalendarView({
   selectedDate: string
   onSelectedDateChange: (date: string) => void
   onOpenTransaction: (id: string) => void
+  accounts?: Account[]
+  userCurrency: string
 }) {
   const [density, setDensity] = useState<CalendarDensity>(readCalendarDensity)
   const [metric, setMetric] = useState<CalendarMetric>(readCalendarMetric)
+
+  const accountById = useMemo(() => {
+    const map = new Map<string, Account>()
+    for (const account of accounts ?? []) map.set(account.id, account)
+    return map
+  }, [accounts])
 
   useEffect(() => {
     window.localStorage.setItem(CALENDAR_DENSITY_STORAGE_KEY, density)
@@ -218,6 +230,8 @@ export function TransactionCalendarView({
                     dateLocale={dateLocale}
                     mask={mask}
                     metric={metric}
+                    accountById={accountById}
+                    userCurrency={userCurrency}
                     onOpenTransaction={onOpenTransaction}
                   />
                 )}
@@ -235,6 +249,8 @@ export function TransactionCalendarView({
         dateLocale={dateLocale}
         mask={mask}
         metric={metric}
+        accountById={accountById}
+        userCurrency={userCurrency}
         onOpenTransaction={onOpenTransaction}
       />
     </div>
@@ -998,6 +1014,8 @@ function SelectedDayPanel({
   dateLocale,
   mask,
   metric,
+  accountById,
+  userCurrency,
   onOpenTransaction,
 }: {
   id?: string
@@ -1008,6 +1026,8 @@ function SelectedDayPanel({
   dateLocale: string
   mask: (value: string) => string
   metric: CalendarMetric
+  accountById: Map<string, Account>
+  userCurrency: string
   onOpenTransaction: (id: string) => void
 }) {
   const { t } = useTranslation()
@@ -1112,7 +1132,9 @@ function SelectedDayPanel({
             <CalendarItemRow
               key={`${item.kind}-${item.id ?? item.recurring_id}-${item.date}`}
               item={item}
+              account={item.account_id ? accountById.get(item.account_id) : undefined}
               locale={locale}
+              userCurrency={userCurrency}
               mask={mask}
               onOpenTransaction={onOpenTransaction}
             />
@@ -1141,51 +1163,81 @@ function DayPanelRow({ label, value, amount }: { label: string; value: string; a
   )
 }
 
+// Mirrors MobileTransactionRow so a transaction reads the same in the list and
+// in the calendar: category icon, description with inline badges, account row,
+// colour-coded signed amount with the primary-currency conversion underneath.
 function CalendarItemRow({
   item,
+  account,
   locale,
+  userCurrency,
   mask,
   onOpenTransaction,
 }: {
   item: TransactionCalendarItem
+  account: Account | undefined
   locale: string
+  userCurrency: string
   mask: (value: string) => string
   onOpenTransaction: (id: string) => void
 }) {
   const { t } = useTranslation()
-  const amount = signedAmount(item)
   const interactive = item.kind === 'actual' && !!item.id
+  const amountColor = item.is_ignored
+    ? 'text-gray-500'
+    : item.type === 'credit'
+      ? 'text-emerald-600'
+      : 'text-rose-500'
   return (
     <button
       type="button"
       disabled={!interactive}
       onClick={() => { if (item.id) onOpenTransaction(item.id) }}
       className={cn(
-        'w-full px-4 py-3 text-left flex items-center gap-3',
-        interactive ? 'hover:bg-muted/50 transition-colors' : 'cursor-default',
+        'w-full flex items-center gap-3 pl-3 pr-3 py-3 text-left',
+        interactive ? 'hover:bg-muted/50 active:bg-muted/60 transition-colors' : 'cursor-default',
       )}
     >
-      <CategoryIcon icon={item.category_icon ?? undefined} color={item.category_color ?? undefined} size="md" />
+      <div className="shrink-0">
+        <CategoryIcon icon={item.category_icon ?? undefined} color={item.category_color ?? undefined} size="md" />
+      </div>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 min-w-0">
-          <p className="text-sm font-semibold text-foreground truncate">{item.description}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-sm font-semibold text-foreground truncate leading-tight">{item.description}</p>
           {item.kind === 'projected' && (
-            <span className="shrink-0 rounded-full border border-violet-500/20 bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+            <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
               {t('transactions.calendarProjected')}
             </span>
           )}
           {item.is_transfer && (
-            <span className="shrink-0 text-sky-600 dark:text-sky-400"><ArrowLeftRight size={13} /></span>
+            <ArrowLeftRight className="h-3 w-3 text-blue-600 shrink-0" />
+          )}
+          {item.is_ignored && (
+            <EyeClosed className="h-3 w-3 text-gray-500 shrink-0" />
+          )}
+          {item.status === 'pending' && (
+            <Clock size={12} className="text-muted-foreground shrink-0" />
           )}
         </div>
-        <p className="text-xs text-muted-foreground truncate">
-          {item.account_name ?? t('transactions.account')}
-          {item.category_name ? ` · ${item.category_name}` : ''}
-        </p>
+        {(account || item.account_name) && (
+          <div className="flex items-center gap-1.5 mt-0.5">
+            {account && <AccountIcon account={account} size="xs" />}
+            <span className="text-xs text-muted-foreground truncate">
+              {account ? getAccountName(account) : item.account_name}
+            </span>
+          </div>
+        )}
       </div>
-      <p className={cn('text-sm font-bold tabular-nums', amount >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400')}>
-        {mask(`${amount >= 0 ? '+' : '−'}${formatCurrency(Math.abs(item.amount), item.currency, locale)}`)}
-      </p>
+      <div className="shrink-0 text-right">
+        <span className={cn('text-sm font-bold tabular-nums', amountColor)}>
+          {mask(`${item.is_ignored ? ' ' : item.type === 'credit' ? '+' : '−'}${formatCurrency(Math.abs(item.amount), item.currency, locale)}`)}
+        </span>
+        {item.amount_primary != null && item.currency !== userCurrency && (
+          <div className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
+            {mask(formatCurrency(Math.abs(item.amount_primary), userCurrency, locale))}
+          </div>
+        )}
+      </div>
     </button>
   )
 }

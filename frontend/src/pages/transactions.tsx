@@ -1376,6 +1376,8 @@ export default function TransactionsPage() {
           selectedDate={calendarSelectedDate}
           onSelectedDateChange={setCalendarSelectedDate}
           onOpenTransaction={handleOpenCalendarTransaction}
+          accounts={accountsList}
+          userCurrency={userCurrency}
         />
       )}
 
