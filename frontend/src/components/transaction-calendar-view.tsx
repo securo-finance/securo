@@ -784,7 +784,27 @@ function DayCell({
 // That carried no meaning and starved the amount, so the row now shows the category icon
 // and the amount only. The description stays available on hover and in the selected-day
 // panel. Projected items get a dashed border to read as not yet settled.
-function DayPreviewRow({ item, locale, mask }: { item: TransactionCalendarItem; locale: string; mask: (value: string) => string }) {
+// Hard cap for the mobile preview description: sliced, not just CSS-truncated,
+// so the row keeps a single line even on the narrowest screens.
+const PREVIEW_DESCRIPTION_MAX_CHARS = 20
+
+function previewDescription(description: string) {
+  if (description.length <= PREVIEW_DESCRIPTION_MAX_CHARS) return description
+  return `${description.slice(0, PREVIEW_DESCRIPTION_MAX_CHARS).trimEnd()}…`
+}
+
+function DayPreviewRow({
+  item,
+  locale,
+  mask,
+  showDescription = false,
+}: {
+  item: TransactionCalendarItem
+  locale: string
+  mask: (value: string) => string
+  // Mobile day rows have the horizontal room the desktop grid cells lack.
+  showDescription?: boolean
+}) {
   const amount = signedAmount(item)
   const label = [item.description, item.category_name].filter(Boolean).join(' · ')
   return (
@@ -798,7 +818,18 @@ function DayPreviewRow({ item, locale, mask }: { item: TransactionCalendarItem; 
       )}
     >
       <CategoryIcon icon={item.category_icon ?? undefined} color={item.category_color ?? undefined} size="xs" />
-      <span className={cn('min-w-0 flex-1 truncate text-right font-bold tabular-nums', amount >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400')}>
+      {showDescription && (
+        <span className="min-w-0 flex-1 truncate whitespace-nowrap text-muted-foreground">
+          {previewDescription(item.description)}
+        </span>
+      )}
+      <span
+        className={cn(
+          'font-bold tabular-nums whitespace-nowrap',
+          showDescription ? 'shrink-0' : 'min-w-0 flex-1 truncate text-right',
+          amount >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
+        )}
+      >
         {mask(`${amount >= 0 ? '+' : '−'}${compactCurrency(Math.abs(item.amount), item.currency, locale)}`)}
       </span>
     </div>
@@ -992,6 +1023,7 @@ function MobileDayRow({
               item={item}
               locale={locale}
               mask={mask}
+              showDescription
             />
           ))}
           {moreCount > 0 && (
