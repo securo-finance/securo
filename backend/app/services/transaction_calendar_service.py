@@ -119,7 +119,7 @@ async def get_transaction_calendar(
         day.actual_count += 1
         day.items.append(_actual_item(tx, amount_primary, is_transfer, ignored))
 
-    projected_items, projected_deltas = await _project_recurring_items(
+    projected_items, projected_deltas, carried_projected_delta = await _project_recurring_items(
         session,
         workspace_id,
         primary_currency,
@@ -127,6 +127,7 @@ async def get_transaction_calendar(
         grid_end,
         requested_account_ids,
     )
+    start_balance += carried_projected_delta
     for item, signed_delta in projected_items:
         day = days[item.date]
         amount_primary = abs(signed_delta)
@@ -305,6 +306,35 @@ def _actual_item(
     )
 
 
+def _count_occurrences_before(recurring: RecurringTransaction, end: date) -> int:
+    """Count still-virtual occurrences before ``end`` without truncating."""
+    range_end = end
+    if recurring.end_date is not None and recurring.end_date < range_end:
+        range_end = recurring.end_date + timedelta(days=1)
+
+    range_start = recurring.next_occurrence
+    occurrence_start = recurring.next_occurrence
+    count = 0
+    while range_start < range_end:
+        # Weekly is the shortest supported cadence. Two hundred-week chunks
+        # stay within the occurrence helper's collection limit while allowing
+        # an arbitrarily long carry horizon.
+        chunk_end = min(range_start + timedelta(weeks=200), range_end)
+        occurrences = get_occurrences_in_range(
+            start=occurrence_start,
+            frequency=recurring.frequency,
+            end_date=recurring.end_date,
+            range_start=range_start,
+            range_end=chunk_end,
+            intended_day=recurring.day_of_month or recurring.start_date.day,
+        )
+        count += len(occurrences)
+        if occurrences:
+            occurrence_start = occurrences[-1]
+        range_start = chunk_end
+    return count
+
+
 async def _project_recurring_items(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -312,7 +342,7 @@ async def _project_recurring_items(
     start: date,
     end: date,
     account_ids: Optional[list[uuid.UUID]],
-) -> tuple[list[tuple[TransactionCalendarItem, float]], dict[date, float]]:
+) -> tuple[list[tuple[TransactionCalendarItem, float]], dict[date, float], float]:
     stmt = (
         select(RecurringTransaction)
         .join(Account, RecurringTransaction.account_id == Account.id)
@@ -335,6 +365,7 @@ async def _project_recurring_items(
 
     items: list[tuple[TransactionCalendarItem, float]] = []
     deltas: dict[date, float] = {}
+    carried_delta = 0.0
     for rec in recurring_rows:
         if rec.account_id is None:
             continue
@@ -354,6 +385,8 @@ async def _project_recurring_items(
         signed_delta = amount_primary if rec.type == "credit" else -amount_primary
         is_transfer = bool(category and category.treat_as_transfer)
         is_ignored = bool(category and category.is_ignored)
+        if not is_ignored:
+            carried_delta += _count_occurrences_before(rec, start) * signed_delta
         for occ_date in occurrences:
             item = TransactionCalendarItem(
                 kind="projected",
@@ -381,4 +414,4 @@ async def _project_recurring_items(
             # balance that reverts the day the recurring actually posts.
             if not is_ignored:
                 deltas[occ_date] = deltas.get(occ_date, 0.0) + signed_delta
-    return items, deltas
+    return items, deltas, carried_delta
