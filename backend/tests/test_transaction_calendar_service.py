@@ -695,3 +695,73 @@ async def test_transaction_calendar_carries_more_than_occurrence_safety_limit(
     assert grid_start.ending_balance == 653.0
     assert grid_start.projected_count == 0
     assert grid_start.items == []
+
+
+@pytest.mark.asyncio
+async def test_transaction_calendar_ignored_actual_is_consistent_across_months(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Checking",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    ignored_category = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Ignored",
+        icon="eye-off",
+        color="#64748b",
+        is_ignored=True,
+    )
+    session.add_all([account, ignored_category])
+    await session.flush()
+    session.add_all([
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            description="Opening",
+            amount=Decimal("1000"),
+            currency="BRL",
+            date=date(2026, 7, 1),
+            type="credit",
+            source="opening_balance",
+        ),
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            category_id=ignored_category.id,
+            description="Ignored debit",
+            amount=Decimal("100"),
+            currency="BRL",
+            date=date(2026, 8, 3),
+            type="debit",
+            source="manual",
+            is_ignored=False,
+        ),
+    ])
+    await session.commit()
+
+    august = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 8, 1)
+    )
+    september = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 9, 1)
+    )
+    august_by_date = {day.date: day for day in august.days}
+    september_by_date = {day.date: day for day in september.days}
+
+    august_september_1 = august_by_date[date(2026, 9, 1)]
+    september_september_1 = september_by_date[date(2026, 9, 1)]
+    assert august_september_1.ending_balance == 1000.0
+    assert september_september_1.ending_balance == 1000.0
+    assert august_september_1.ending_balance == september_september_1.ending_balance
