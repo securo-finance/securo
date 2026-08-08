@@ -118,10 +118,10 @@ async def test_create_cross_currency_transfer(
 
 
 @pytest.mark.asyncio
-async def test_create_cross_currency_transfer_with_manual_fx_rate(
+async def test_create_cross_currency_transfer_with_explicit_destination_amount(
     client: AsyncClient, auth_headers, test_account: Account, usd_account: Account
 ):
-    """Cross-currency transfer with manual FX rate should use provided rate."""
+    """Cross-currency transfer should preserve an explicitly supplied destination amount."""
     response = await client.post(
         "/api/transactions/transfer",
         json={
@@ -129,8 +129,8 @@ async def test_create_cross_currency_transfer_with_manual_fx_rate(
             "to_account_id": str(usd_account.id),
             "amount": 1000.00,
             "date": date.today().isoformat(),
-            "description": "Transfer BRL to USD with manual rate",
-            "fx_rate": 0.20,
+            "description": "Transfer BRL to USD with explicit destination amount",
+            "destination_amount": 200.00,
         },
         headers=auth_headers,
     )
@@ -140,8 +140,56 @@ async def test_create_cross_currency_transfer_with_manual_fx_rate(
     assert data["debit"]["currency"] == "BRL"
     assert data["credit"]["currency"] == "USD"
     assert float(data["debit"]["amount"]) == 1000.00
-    # 1000 * 0.20 = 200.00
     assert float(data["credit"]["amount"]) == 200.00
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("destination_amount", [0, -1])
+async def test_reject_non_positive_destination_amount(
+    client: AsyncClient,
+    auth_headers,
+    test_account: Account,
+    usd_account: Account,
+    destination_amount: int,
+):
+    response = await client.post(
+        "/api/transactions/transfer",
+        json={
+            "from_account_id": str(test_account.id),
+            "to_account_id": str(usd_account.id),
+            "amount": 1000.00,
+            "destination_amount": destination_amount,
+            "date": date.today().isoformat(),
+            "description": "Invalid destination amount",
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_reject_destination_amount_for_same_currency_transfer(
+    client: AsyncClient,
+    auth_headers,
+    test_account: Account,
+    second_account: Account,
+):
+    response = await client.post(
+        "/api/transactions/transfer",
+        json={
+            "from_account_id": str(test_account.id),
+            "to_account_id": str(second_account.id),
+            "amount": 100.00,
+            "destination_amount": 100.00,
+            "date": date.today().isoformat(),
+            "description": "Invalid same-currency transfer",
+        },
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 400
+    assert "destination amount" in response.json()["detail"].lower()
 
 
 @pytest.mark.asyncio
