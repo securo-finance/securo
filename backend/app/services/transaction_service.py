@@ -782,9 +782,9 @@ async def create_transfer(
         and data.destination_amount is not None
         and data.destination_amount != data.amount
     ):
-    raise ValueError(
-        "Destination amount must be absent or equal to the source amount for same-currency transfers."
-    )
+        raise ValueError(
+            "Destination amount must be absent or equal to the source amount for same-currency transfers."
+        )
 
     transfer_pair_id = uuid.uuid4()
     from decimal import Decimal
