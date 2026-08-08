@@ -136,10 +136,10 @@ class TransferCreate(BaseModel):
     from_account_id: uuid.UUID
     to_account_id: uuid.UUID
     amount: Decimal
+    destination_amount: Optional[Decimal] = Field(default=None, gt=0)
     date: _Date
     description: str
     notes: Optional[str] = None
-    fx_rate: Optional[Decimal] = None
 
 
 class LinkTransferRequest(BaseModel):
