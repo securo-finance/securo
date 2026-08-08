@@ -410,7 +410,7 @@
     "transferFromAccount": "Cuenta origen",
     "transferToAccount": "Cuenta destino",
     "transferAmount": "Importe",
-    "transferCrossCurrency": "Las monedas difieren — el importe se convertirá automáticamente",
+    "transferCrossCurrency": "Las monedas difieren — introduce el importe de destino o déjalo vacío para convertir automáticamente",
     "transferSameAccount": "La cuenta origen y destino deben ser diferentes",
     "transferDescription": "Descripción",
     "transferNotes": "Notas",

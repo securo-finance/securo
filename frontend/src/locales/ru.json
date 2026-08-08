@@ -413,7 +413,7 @@
     "transferFromAccount": "Со счета",
     "transferToAccount": "На счёт",
     "transferAmount": "Сумма",
-    "transferCrossCurrency": "Валюты различаются — сумма будет сконвертирована автоматически",
+    "transferCrossCurrency": "Валюты различаются — укажите сумму назначения или оставьте поле пустым для автоматической конвертации",
     "transferSameAccount": "Источник и назначение должны различаться",
     "transferDescription": "Описание",
     "transferNotes": "Примечания",

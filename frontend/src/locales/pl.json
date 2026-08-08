@@ -431,7 +431,7 @@
     "transferFromAccount": "Z konta",
     "transferToAccount": "Na konto",
     "transferAmount": "Kwota",
-    "transferCrossCurrency": "Waluty się różnią — kwota zostanie przeliczona automatycznie",
+    "transferCrossCurrency": "Waluty się różnią — podaj kwotę docelową lub pozostaw puste pole, aby przeliczyć automatycznie",
     "transferSameAccount": "Źródło i cel muszą być różne",
     "transferDescription": "Opis",
     "transferNotes": "Notatki",

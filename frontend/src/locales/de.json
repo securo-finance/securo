@@ -413,7 +413,7 @@
     "transferFromAccount": "Vom Konto",
     "transferToAccount": "Auf das Konto",
     "transferAmount": "Betrag",
-    "transferCrossCurrency": "Währungen unterscheiden sich — Betrag wird automatisch umgerechnet",
+    "transferCrossCurrency": "Währungen unterscheiden sich — Zielbetrag eingeben oder für automatische Umrechnung leer lassen",
     "transferSameAccount": "Quell- und Zielkonto müssen unterschiedlich sein",
     "transferDescription": "Beschreibung",
     "transferNotes": "Notizen",
