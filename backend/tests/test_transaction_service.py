@@ -956,7 +956,7 @@ async def test_create_transfer_cross_currency(
         description="Cross-currency",
         amount=Decimal("500"),
         date=date.today(),
-        fx_rate=Decimal("0.2"),
+        destination_amount=Decimal("100.00"),
     )
     debit_tx, credit_tx = await create_transfer(session, test_workspace.id, test_user.id, data)
     assert debit_tx.currency == "BRL"

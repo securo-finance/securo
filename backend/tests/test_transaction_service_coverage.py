@@ -712,7 +712,7 @@ async def test_create_transaction_with_splits(session, test_user, test_workspace
 async def test_update_transfer_cascades_amount_cross_currency(session, test_user, test_workspace, acct, acct_usd):
     debit, credit = await create_transfer(session, test_workspace.id, test_user.id, TransferCreate(
         from_account_id=acct.id, to_account_id=acct_usd.id,
-        description="XC", amount=Decimal("500"), date=date.today(), fx_rate=Decimal("0.2"),
+        description="XC", amount=Decimal("500"), date=date.today(), destination_amount=Decimal("100"),
     ))
     # Change amount on debit side; cascade should re-convert for the credit side.
     updated = await update_transaction(
