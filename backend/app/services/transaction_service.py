@@ -775,6 +775,17 @@ async def create_transfer(
     if not to_account:
         raise ValueError("Destination account not found")
 
+
+    is_cross_currency = from_account.currency != to_account.currency
+    if (
+        not is_cross_currency
+        and data.destination_amount is not None
+        and data.destination_amount != data.amount
+    ):
+    raise ValueError(
+        "Destination amount must be absent or equal to the source amount for same-currency transfers."
+    )
+
     transfer_pair_id = uuid.uuid4()
     from decimal import Decimal
 
@@ -796,17 +807,13 @@ async def create_transfer(
     session.add(debit_tx)
 
     # Credit transaction (to account) — convert if cross-currency
-    if from_account.currency != to_account.currency:
-        if data.fx_rate is not None:
-            from decimal import ROUND_HALF_UP
-            credit_amount = (Decimal(str(data.amount)) * Decimal(str(data.fx_rate))).quantize(
-                Decimal("0.01"), rounding=ROUND_HALF_UP
-            )
+    if is_cross_currency:
+        if data.destination_amount is not None:
+            credit_amount = data.destination_amount
         else:
-            converted_amount, _ = await fx_convert(
+            credit_amount, _ = await fx_convert(
                 session, Decimal(str(data.amount)), from_account.currency, to_account.currency, data.date
             )
-            credit_amount = converted_amount
     else:
         credit_amount = data.amount
 
