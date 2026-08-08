@@ -498,7 +498,7 @@ export const transactions = {
     date: string
     description: string
     notes?: string
-    fx_rate?: number
+    destination_amount?: number
   }): Promise<{ debit: Transaction; credit: Transaction; transfer_pair_id: string }> => {
     const { data } = await api.post('/transactions/transfer', transfer)
     return data

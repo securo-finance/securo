@@ -603,7 +603,7 @@ export default function AccountDetailPage() {
       date: string
       description: string
       notes?: string
-      fx_rate?: number
+      destination_amount?: number
     }) => transactions.createTransfer(data),
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)

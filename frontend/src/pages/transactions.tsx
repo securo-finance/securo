@@ -649,7 +649,7 @@ export default function TransactionsPage() {
       date: string
       description: string
       notes?: string
-      fx_rate?: number
+      destination_amount?: number
     }) => transactions.createTransfer(data),
     onSuccess: () => {
       invalidateAfterTxMutation()
