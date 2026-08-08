@@ -780,10 +780,9 @@ async def create_transfer(
     if (
         not is_cross_currency
         and data.destination_amount is not None
-        and data.destination_amount != data.amount
     ):
         raise ValueError(
-            "Destination amount must be absent or equal to the source amount for same-currency transfers."
+            "Destination amount must be absent for same-currency transfers."
         )
 
     transfer_pair_id = uuid.uuid4()
