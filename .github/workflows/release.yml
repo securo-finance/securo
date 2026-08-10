@@ -42,7 +42,7 @@ jobs:
         uses: docker/setup-qemu-action@v3
 
       - name: Build and push backend image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./backend
           file: ./backend/Dockerfile
@@ -82,7 +82,7 @@ jobs:
         uses: docker/setup-qemu-action@v3
 
       - name: Build and push frontend image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
