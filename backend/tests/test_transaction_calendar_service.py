@@ -541,6 +541,90 @@ async def test_transaction_calendar_uses_effective_weekend_date_and_balance(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("nominal_date", "weekend_adjustment", "effective_date", "comparison_date"),
+    [
+        (
+            date(2026, 8, 30),
+            "previous_friday",
+            date(2026, 8, 28),
+            date(2026, 8, 30),
+        ),
+        (
+            date(2026, 8, 29),
+            "next_monday",
+            date(2026, 8, 31),
+            date(2026, 8, 31),
+        ),
+    ],
+)
+async def test_transaction_calendar_weekend_balance_matches_overlapping_views(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+    nominal_date: date,
+    weekend_adjustment: str,
+    effective_date: date,
+    comparison_date: date,
+):
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Checking",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    recurring = RecurringTransaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        description="Weekend-adjusted debit",
+        amount=Decimal("100"),
+        currency="BRL",
+        type="debit",
+        frequency="weekly",
+        start_date=nominal_date,
+        next_occurrence=nominal_date,
+        weekend_adjustment=weekend_adjustment,
+    )
+    session.add_all([
+        account,
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            description="Opening",
+            amount=Decimal("1000"),
+            currency="BRL",
+            date=date(2026, 7, 1),
+            type="credit",
+            source="opening_balance",
+        ),
+        recurring,
+    ])
+    await session.commit()
+
+    august = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 8, 1)
+    )
+    september = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 9, 1)
+    )
+    august_by_date = {day.date: day for day in august.days}
+    september_by_date = {day.date: day for day in september.days}
+
+    assert august_by_date[effective_date].projected_count == 1
+    if effective_date in september_by_date:
+        assert september_by_date[effective_date].projected_count == 1
+    assert august_by_date[comparison_date].ending_balance == 900.0
+    assert september_by_date[comparison_date].ending_balance == 900.0
+
+
+@pytest.mark.asyncio
 async def test_transaction_calendar_overlap_carries_virtual_occurrences(
     session: AsyncSession, test_user, test_workspace
 ):

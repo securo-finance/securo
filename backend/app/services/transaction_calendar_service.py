@@ -20,7 +20,10 @@ from app.schemas.transaction_calendar import (
 )
 from app.services.dashboard_service import _balance_at, _daily_balance_deltas_by_date
 from app.services.fx_rate_service import convert as fx_convert
-from app.services.recurring_transaction_service import get_occurrences_in_range
+from app.services.recurring_transaction_service import (
+    adjust_weekend_date,
+    get_occurrences_in_range,
+)
 
 
 async def get_transaction_calendar(
@@ -307,13 +310,19 @@ def _actual_item(
 
 
 def _count_occurrences_before(recurring: RecurringTransaction, end: date) -> int:
-    """Count still-virtual occurrences before ``end`` without truncating."""
+    """Count still-virtual effective occurrences before ``end`` without truncating."""
+    nominal_start = recurring.next_occurrence
+    first_effective = adjust_weekend_date(
+        nominal_start, recurring.weekend_adjustment
+    )
+    range_start = min(nominal_start, first_effective)
     range_end = end
-    if recurring.end_date is not None and recurring.end_date < range_end:
-        range_end = recurring.end_date + timedelta(days=1)
+    if recurring.end_date is not None:
+        final_effective = adjust_weekend_date(
+            recurring.end_date, recurring.weekend_adjustment
+        )
+        range_end = min(range_end, final_effective + timedelta(days=1))
 
-    range_start = recurring.next_occurrence
-    occurrence_start = recurring.next_occurrence
     count = 0
     while range_start < range_end:
         # Weekly is the shortest supported cadence. Two hundred-week chunks
@@ -321,16 +330,15 @@ def _count_occurrences_before(recurring: RecurringTransaction, end: date) -> int
         # an arbitrarily long carry horizon.
         chunk_end = min(range_start + timedelta(weeks=200), range_end)
         occurrences = get_occurrences_in_range(
-            start=occurrence_start,
+            start=nominal_start,
             frequency=recurring.frequency,
             end_date=recurring.end_date,
             range_start=range_start,
             range_end=chunk_end,
             intended_day=recurring.day_of_month or recurring.start_date.day,
+            weekend_adjustment=recurring.weekend_adjustment,
         )
         count += len(occurrences)
-        if occurrences:
-            occurrence_start = occurrences[-1]
         range_start = chunk_end
     return count
 
