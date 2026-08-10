@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, cast
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
@@ -56,6 +56,9 @@ class Group(Base):
     settlements: Mapped[list["GroupSettlement"]] = relationship(
         back_populates="group", cascade="all, delete-orphan"
     )
+
+    # Per-request transient flag set by group_service._tag_owner.
+    is_owner = cast(bool, False)
 
 
 class GroupMember(Base):

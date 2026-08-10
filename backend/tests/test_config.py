@@ -16,6 +16,15 @@ def secrets(tmp_path: Path):
     return d
 
 
+def test_env_file_is_anchored_to_backend_dir():
+    """The worker/beat must resolve the same .env as the API regardless of the
+    working directory each service is launched from."""
+    env_files = Settings.model_config["env_file"]
+    backend_env = Path(__file__).resolve().parents[1] / ".env"
+    assert isinstance(env_files, tuple)
+    assert backend_env in tuple(Path(p) for p in env_files)
+
+
 def test_oidc_secret_reads_from_secrets_dir(secrets: Path):
     write(secrets, "oidc_client_secret", "file-secret")
 

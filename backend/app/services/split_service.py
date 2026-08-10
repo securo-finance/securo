@@ -63,7 +63,7 @@ def _materialize(
         for s in payload.splits:
             if s.share_pct is None:
                 raise ValueError("share_pct is required for share_type='percent'")
-        pct_sum = sum((s.share_pct for s in payload.splits), Decimal("0"))
+        pct_sum = sum((s.share_pct or Decimal("0") for s in payload.splits), Decimal("0"))
         if pct_sum != Decimal("100"):
             raise ValueError("Split percentages must sum to 100")
 
@@ -73,11 +73,8 @@ def _materialize(
                 # Last share: residual so the sum is exact.
                 amounts.append(total - sum(amounts, Decimal("0")))
             else:
-                amounts.append(_quantize(total * s.share_pct / Decimal("100")))
-        return [
-            (s.group_member_id, amounts[i], s.share_pct)
-            for i, s in enumerate(payload.splits)
-        ]
+                amounts.append(_quantize(total * (s.share_pct or Decimal("0")) / Decimal("100")))
+        return [(s.group_member_id, amounts[i], s.share_pct) for i, s in enumerate(payload.splits)]
 
     raise ValueError(f"Unknown share_type: {payload.share_type}")
 
@@ -92,9 +89,7 @@ async def _validate_members(
     (owner OR linked member). Returns that group's id."""
     # A group is visible if the user owns it or is linked as a member.
     linked_group_ids = (
-        select(GroupMember.group_id)
-        .where(GroupMember.linked_user_id == user_id)
-        .distinct()
+        select(GroupMember.group_id).where(GroupMember.linked_user_id == user_id).distinct()
     )
     result = await session.execute(
         select(GroupMember, Group)
@@ -132,9 +127,7 @@ async def replace_splits(
     # Always start by clearing existing splits — replace semantics keep
     # the create/update paths trivially consistent.
     await session.execute(
-        delete(TransactionSplit).where(
-            TransactionSplit.transaction_id == transaction.id
-        )
+        delete(TransactionSplit).where(TransactionSplit.transaction_id == transaction.id)
     )
 
     if not payload.splits:

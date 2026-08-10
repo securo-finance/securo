@@ -359,7 +359,7 @@ export default function PayeesPage() {
                 <button
                   type="button"
                   className={cn(
-                    'inline-flex h-8 items-center gap-1.5 rounded-md border border-border/80 bg-background px-2.5 text-[12px] font-medium text-muted-foreground transition-colors',
+                    'inline-flex h-8 items-center gap-1.5 rounded-md border border-border/80 bg-card px-2.5 text-[12px] font-medium text-muted-foreground transition-colors',
                     'hover:bg-muted hover:text-foreground',
                     (filterType || filterFavorites) && 'border-primary/30 text-primary hover:text-primary',
                   )}
@@ -706,7 +706,7 @@ export default function PayeesPage() {
             <div className="space-y-2">
               <Label>{t('payees.type')}</Label>
               <select
-                className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+                className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
                 value={formType}
                 onChange={(e) => setFormType(e.target.value)}
               >
@@ -718,7 +718,7 @@ export default function PayeesPage() {
             <div className="space-y-2">
               <Label>{t('payees.notes')}</Label>
               <textarea
-                className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                className="w-full border border-input rounded-md px-3 py-2 text-sm bg-card resize-none focus:outline-none focus:ring-2 focus:ring-ring"
                 rows={2}
                 value={formNotes}
                 onChange={(e) => setFormNotes(e.target.value)}
@@ -770,7 +770,7 @@ export default function PayeesPage() {
             <div className="space-y-2">
               <Label>{t('payees.mergeTarget')}</Label>
               <select
-                className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+                className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
                 value={mergeTargetId}
                 onChange={(e) => setMergeTargetId(e.target.value)}
               >

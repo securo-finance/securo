@@ -1,6 +1,6 @@
 # backend/app/services/rule_service.py
 import uuid
-from typing import Optional
+from typing import Any, Optional, cast
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -118,7 +118,7 @@ UNIVERSAL_RULES = [
 ]
 
 # ─── Country-specific rule packs (optional, not auto-applied) ───
-RULE_PACKS = {
+RULE_PACKS: dict[str, dict[str, Any]] = {
     "BR": {
         "name": "Brazil",
         "flag": "\U0001F1E7\U0001F1F7",
@@ -778,7 +778,9 @@ async def install_rule_pack(
         pack_code = str(user_id_or_pack_code)
     else:
         workspace_id = workspace_id_or_user_id
-        user_id = user_id_or_pack_code
+        # Narrowed by the branch: `pack_code` being set means the caller used
+        # the workspace-scoped signature, so this argument is the user id.
+        user_id = cast(uuid.UUID, user_id_or_pack_code)
 
     pack = RULE_PACKS.get(pack_code)
     if not pack:
@@ -1023,9 +1025,9 @@ async def update_rule(
         if update_data["name"] in existing_names:
             raise DuplicateRuleError(f"A rule named '{update_data['name']}' already exists")
 
-    if "conditions" in update_data and update_data["conditions"] is not None:
+    if data.conditions is not None:
         update_data["conditions"] = [c.model_dump() for c in data.conditions]
-    if "actions" in update_data and update_data["actions"] is not None:
+    if data.actions is not None:
         update_data["actions"] = [a.model_dump() for a in data.actions]
 
     await _validate_rule_definition(

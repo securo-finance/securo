@@ -575,6 +575,8 @@ async def test_close_bank_connected_keeps_link(session: AsyncSession, test_user,
         connection_id=test_connection.id, external_id="ext-close",
     )
     closed = await close_account(session, account.id, test_workspace.id)
+
+    assert closed is not None
     assert closed.connection_id == test_connection.id
     assert closed.is_closed is True
 

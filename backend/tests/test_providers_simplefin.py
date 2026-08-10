@@ -502,6 +502,7 @@ def test_build_transaction_non_iso_currency_is_none():
     assert txn.currency is None
     # A real ISO code still passes through, normalized.
     ok = SimpleFinProvider._build_transaction({**raw, "currency": "eur"}, "description")
+    assert ok is not None
     assert ok.currency == "EUR"
 
 

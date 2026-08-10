@@ -17,16 +17,18 @@ export function formatAccountMask(account: { masked_number?: string | null }): s
 /**
  * Account name with its mask appended, e.g. "Checking •••• 1234", for compact
  * single-line surfaces such as the account <select> options, where there is no
- * room for a secondary line. Unparenthesized so callers that already append
- * their own parenthetical (the transfer dialog appends the currency) don't end
- * up with two of them.
+ * room for a secondary line. When the account has an explicit display_name, the
+ * mask is omitted since the user-chosen label already distinguishes it.
  */
 export function getAccountLabel(account: {
   name: string
   display_name?: string | null
   masked_number?: string | null
 }): string {
-  const mask = formatAccountMask(account)
   const name = getAccountName(account)
+  // When the account has an explicit display_name the user set, it already
+  // distinguishes this account from others so the mask suffix is redundant.
+  if (account.display_name) return name
+  const mask = formatAccountMask(account)
   return mask ? `${name} ${mask}` : name
 }

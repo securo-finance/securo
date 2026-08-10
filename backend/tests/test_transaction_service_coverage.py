@@ -14,6 +14,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models import User, Workspace
 from app.models.account import Account
 from app.models.credit_card_bill import CreditCardBill
 from app.models.group import Group, GroupMember
@@ -80,7 +81,7 @@ async def acct_usd(session: AsyncSession, test_user) -> Account:
 
 
 @pytest_asyncio.fixture
-async def cc_account(session: AsyncSession, test_user) -> Account:
+async def cc_account(session: AsyncSession, test_user: User) -> Account:
     account = Account(
         id=uuid.uuid4(),
         user_id=test_user.id,
@@ -97,7 +98,7 @@ async def cc_account(session: AsyncSession, test_user) -> Account:
     return account
 
 
-async def _mk_txn(session, test_user, account, **kw) -> Transaction:
+async def _mk_txn(session: AsyncSession, test_user: User, account: Account, **kw) -> Transaction:
     defaults = dict(
         id=uuid.uuid4(),
         user_id=test_user.id,
@@ -117,7 +118,7 @@ async def _mk_txn(session, test_user, account, **kw) -> Transaction:
     return txn
 
 
-async def _mk_group(session, test_user, test_workspace, with_self=True, n_members=2):
+async def _mk_group(session: AsyncSession, test_user: User, test_workspace: Workspace, with_self=True, n_members=2):
     group = Group(
         id=uuid.uuid4(),
         user_id=test_user.id,
@@ -247,6 +248,8 @@ async def test_get_transactions_summary_excludes_ignored(session, test_user, tes
     _, _, summary = await get_transactions(
         session, test_workspace.id, test_user.id, include_summary=True
     )
+
+    assert summary is not None
     assert summary["expense"] == Decimal("100")
     # The ignored row leaves income/expense but surfaces in `excluded` (#242).
     assert summary["excluded"] == Decimal("999")
@@ -280,6 +283,8 @@ async def test_get_transactions_summary_excludes_ignored_category(
     _, _, summary = await get_transactions(
         session, test_workspace.id, test_user.id, include_summary=True
     )
+
+    assert summary is not None
     assert summary["expense"] == Decimal("100")
     assert summary["excluded"] == Decimal("999")
 
@@ -315,6 +320,8 @@ async def test_get_transactions_summary_excludes_transfers_and_treat_as_transfer
     _, _, summary = await get_transactions(
         session, test_workspace.id, test_user.id, include_summary=True
     )
+
+    assert summary is not None
     assert summary["income"] == Decimal("2000")
     assert summary["expense"] == Decimal("800")
     assert summary["net"] == Decimal("1200")
@@ -323,7 +330,7 @@ async def test_get_transactions_summary_excludes_transfers_and_treat_as_transfer
 
 
 async def test_get_transactions_user_pnl_only_returns_only_dashboard_reportable_rows(
-    session, test_user, test_workspace, acct
+    session: AsyncSession, test_user: User, test_workspace: Workspace, acct
 ):
     from app.models.category import Category
 
@@ -363,6 +370,8 @@ async def test_get_transactions_user_pnl_only_returns_only_dashboard_reportable_
 
     assert {tx.description for tx in rows} == {"Salary", "Rent"}
     assert total == 2
+
+    assert summary is not None
     assert summary["income"] == Decimal("1000")
     assert summary["expense"] == Decimal("300")
     assert summary["excluded"] == Decimal("0")
@@ -397,7 +406,7 @@ async def test_get_transactions_sorting(session, test_user, test_workspace, acct
 # ---------------------------------------------------------------------------
 
 
-async def test_get_transactions_group_scope(session, test_user, test_workspace, acct):
+async def test_get_transactions_group_scope(session: AsyncSession, test_user: User, test_workspace: Workspace, acct):
     group, members = await _mk_group(session, test_user, test_workspace)
     txn = await _mk_txn(session, test_user, acct, description="Shared dinner", amount=Decimal("100"))
     # Split among the two non-self members
@@ -417,7 +426,7 @@ async def test_get_transactions_group_scope(session, test_user, test_workspace, 
     assert total == 1
 
 
-async def test_get_transactions_group_scope_not_visible(session, test_user, test_workspace, acct):
+async def test_get_transactions_group_scope_not_visible(session: AsyncSession, test_user: User, test_workspace: Workspace, acct):
     # A random group id the user cannot see returns the early-out tuple.
     result = await get_transactions(
         session, test_workspace.id, test_user.id, group_id=uuid.uuid4()
@@ -427,7 +436,7 @@ async def test_get_transactions_group_scope_not_visible(session, test_user, test
     assert result[1] == 0
 
 
-async def test_get_transactions_owner_share_tagging(session, test_user, test_workspace, acct):
+async def test_get_transactions_owner_share_tagging(session: AsyncSession, test_user: User, test_workspace: Workspace, acct):
     """Owner with a self-split should get group_id and viewer_share tagged."""
     group, members = await _mk_group(session, test_user, test_workspace)
     txn = await _mk_txn(session, test_user, acct, description="With self share", amount=Decimal("90"))
@@ -444,6 +453,8 @@ async def test_get_transactions_owner_share_tagging(session, test_user, test_wor
 
     res, _, _ = await get_transactions(session, test_workspace.id, test_user.id)
     tagged = next(t for t in res if t.description == "With self share")
+
+    assert tagged is not None
     assert tagged.group_id == group.id
     assert tagged.is_shared is False
     assert tagged.viewer_share == Decimal("45.00")
@@ -679,6 +690,8 @@ async def test_update_transaction_with_splits(session, test_user, test_workspace
         session, txn.id, test_workspace.id, test_user.id,
         TransactionUpdate(splits=payload),
     )
+
+    assert updated is not None
     assert len(updated.splits) == 2
 
 
@@ -706,8 +719,12 @@ async def test_update_transfer_cascades_amount_cross_currency(session, test_user
         session, debit.id, test_workspace.id, test_user.id,
         TransactionUpdate(amount=Decimal("1000")),
     )
+
+    assert updated is not None
     assert updated.amount == Decimal("1000")
     paired = await get_transaction(session, credit.id, test_workspace.id)
+
+    assert paired is not None
     # The cross-currency cascade branch ran: paired amount was re-converted
     # (rate is 1:1 in tests since no FX rate is seeded, so it tracks 1000).
     assert paired.amount == Decimal("1000")
@@ -729,6 +746,8 @@ async def test_update_transfer_cascade_category(session, test_user, test_workspa
         TransactionUpdate(category_id=test_categories[0].id, apply_to_transfer_pair=True),
     )
     paired = await get_transaction(session, credit.id, test_workspace.id)
+    
+    assert paired is not None
     assert paired.category_id == test_categories[0].id
 
 
@@ -748,6 +767,8 @@ async def test_update_transaction_effective_bill_date_links_bill(session, test_u
         session, txn.id, test_workspace.id, test_user.id,
         TransactionUpdate(effective_bill_date=date(2025, 4, 20)),
     )
+
+    assert updated is not None
     assert updated.bill_id == bill.id
     assert updated.effective_date == date(2025, 4, 20)
 
@@ -761,6 +782,8 @@ async def test_update_transaction_effective_bill_date_no_match(session, test_use
         session, txn.id, test_workspace.id, test_user.id,
         TransactionUpdate(effective_bill_date=date(2099, 1, 1)),
     )
+
+    assert updated is not None
     assert updated.bill_id is None
     assert updated.effective_date == date(2099, 1, 1)
 
@@ -783,6 +806,7 @@ async def test_update_transaction_clear_bill_override_recovers_pluggy(session, t
         session, txn.id, test_workspace.id, test_user.id,
         TransactionUpdate(effective_bill_date=None),
     )
+    assert updated is not None
     assert updated.bill_id == bill.id
 
 
@@ -796,6 +820,7 @@ async def test_update_transaction_clear_bill_override_no_raw(session, test_user,
         session, txn.id, test_workspace.id, test_user.id,
         TransactionUpdate(effective_bill_date=None),
     )
+    assert updated is not None
     assert updated.bill_id is None
 
 

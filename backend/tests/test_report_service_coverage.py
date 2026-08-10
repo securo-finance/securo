@@ -713,6 +713,8 @@ async def test_cash_flow_baseline_amount_primary_used(session, test_user, test_w
         session, test_workspace.id, test_user.id, months=2, interval="daily", baseline=True
     )
     assert report.meta.baseline_active is True
+
+    assert report.meta.baseline_lookback_days is not None
     assert report.meta.baseline_lookback_days > 0
 
 

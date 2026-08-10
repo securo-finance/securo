@@ -52,6 +52,23 @@ i18n.on('languageChanged', syncHtmlLang)
 
 export type SupportedLang = 'pt-BR' | 'pt-PT' | 'en' | 'es' | 'pl' | 'it' | 'ru' | 'uk' | 'de' | 'fr'
 
+// Single source of truth for language pickers. When adding a locale, register
+// the bundle above and add one entry here; every picker stays in sync instead
+// of each hand-rolling its own list (the setup screen's button row broke a
+// little more with every translation PR before this existed).
+export const SUPPORTED_LANGS: { code: SupportedLang; label: string }[] = [
+  { code: 'en', label: 'English' },
+  { code: 'pt-BR', label: 'Português (BR)' },
+  { code: 'pt-PT', label: 'Português (PT)' },
+  { code: 'es', label: 'Español' },
+  { code: 'fr', label: 'Français' },
+  { code: 'de', label: 'Deutsch' },
+  { code: 'it', label: 'Italiano' },
+  { code: 'pl', label: 'Polski' },
+  { code: 'ru', label: 'Русский' },
+  { code: 'uk', label: 'Українська' },
+]
+
 // Normalise any browser/i18n language tag to one of our supported keys. The
 // backend and resource bundles key Portuguese as the region-tagged 'pt-BR'
 // while 'en'/'es' are bare, so naively truncating to the primary subtag

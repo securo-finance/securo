@@ -109,6 +109,8 @@ async def test_create_rule_does_not_overwrite_existing_category(
 
     items = (await client.get("/api/transactions", headers=auth_headers)).json()["items"]
     ifood = {t["description"]: t for t in items}.get("IFOOD RESTAURANTE")
+
+    assert ifood is not None
     assert ifood["category_id"] == original
 
 
@@ -133,6 +135,8 @@ async def test_create_rule_can_overwrite_existing_category_when_requested(
 
     items = (await client.get("/api/transactions", headers=auth_headers)).json()["items"]
     ifood = {t["description"]: t for t in items}.get("IFOOD RESTAURANTE")
+
+    assert ifood is not None
     assert ifood["category_id"] != original
     assert ifood["category_id"] == other
 
@@ -309,6 +313,8 @@ async def test_update_rule_can_overwrite_existing_category_when_requested(
 
     items = (await client.get("/api/transactions", headers=auth_headers)).json()["items"]
     ifood = {t["description"]: t for t in items}.get("IFOOD RESTAURANTE")
+
+    assert ifood is not None
     assert ifood["category_id"] != original
     assert ifood["category_id"] == other
 
@@ -409,6 +415,8 @@ async def test_apply_all_resets_before_reapply(
     by_desc = {t["description"]: t for t in items}
 
     uber = by_desc.get("UBER TRIP")
+
+    assert uber is not None
     assert uber["category_id"] == str(test_categories[1].id)
 
 

@@ -1,3 +1,4 @@
+import uuid
 from typing import TYPE_CHECKING, Optional
 
 from fastapi_users.db import SQLAlchemyBaseUserTableUUID
@@ -18,6 +19,19 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
     __table_args__ = (
         UniqueConstraint("oidc_issuer", "oidc_subject", name="uq_users_oidc_identity"),
     )
+
+    if TYPE_CHECKING:
+        # fastapi-users declares its inherited columns as plain types (e.g.
+        # `email: str`) under its own TYPE_CHECKING branch, so `ty` can't see
+        # them as SQLAlchemy `Mapped` attributes (`.ilike()`, `.in_()`, ...).
+        # Re-annotate them here so type checkers treat them as real mapped
+        # columns everywhere.
+        id: Mapped[uuid.UUID]
+        email: Mapped[str]
+        hashed_password: Mapped[str]
+        is_active: Mapped[bool]
+        is_superuser: Mapped[bool]
+        is_verified: Mapped[bool]
 
     preferences: Mapped[Optional[dict]] = mapped_column(
         JSON,

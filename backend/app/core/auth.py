@@ -24,6 +24,7 @@ async def get_user_db(session: AsyncSession = Depends(get_async_session)):
 
 
 class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
+    user_db: SQLAlchemyUserDatabase
     reset_password_token_secret = settings.secret_key
     verification_token_secret = settings.secret_key
 

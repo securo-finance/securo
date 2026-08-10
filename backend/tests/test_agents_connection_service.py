@@ -61,9 +61,13 @@ async def test_default_is_unique_per_user(session, test_user):
     )
     # Re-fetch a — its default flag should be cleared.
     refreshed_a = await cs.get_connection(session, a.id, test_user.id)
+
+    assert refreshed_a is not None
     await session.refresh(refreshed_a)
     assert refreshed_a.is_default is False
     refreshed_b = await cs.get_connection(session, b.id, test_user.id)
+
+    assert refreshed_b is not None
     await session.refresh(refreshed_b)
     assert refreshed_b.is_default is True
 
@@ -90,6 +94,8 @@ async def test_update_connection_handles_partial_and_default_swap(session, test_
 
     # a should be demoted.
     refreshed_a = await cs.get_connection(session, a.id, test_user.id)
+
+    assert refreshed_a is not None
     await session.refresh(refreshed_a)
     assert refreshed_a.is_default is False
 
@@ -110,9 +116,11 @@ async def test_update_connection_can_clear_api_key(session, test_user):
     conn = await cs.create_connection(
         session, test_user.id, name="x", kind="openai", api_key="sk-old",
     )
+
     assert conn.api_key_encrypted is not None
 
     out = await cs.update_connection(session, conn.id, test_user.id, api_key="")
+    assert out is not None
     assert out.api_key_encrypted is None
 
 

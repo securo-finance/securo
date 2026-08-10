@@ -1,7 +1,7 @@
 import io
 import json
 import zipfile
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -92,7 +92,7 @@ async def backup(
             zf.writestr(f"{name}.json", json.dumps(serialized, indent=2, ensure_ascii=False))
 
         metadata = {
-            "export_date": datetime.utcnow().isoformat(),
+            "export_date": datetime.now(timezone.utc).isoformat(),
             "format_version": "1.0",
             "workspace_id": str(ws_id),
             "workspace_name": ctx.workspace.name,

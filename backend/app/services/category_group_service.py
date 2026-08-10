@@ -44,7 +44,7 @@ CATEGORY_TO_GROUP = {
 
 def _resolve_group_name(key: str, lang: str) -> str:
     entry = DEFAULT_GROUPS_I18N.get(key, {})
-    return entry.get(lang, entry.get("en", key))
+    return str(entry.get(lang, entry.get("en", key)))
 
 
 async def create_default_groups(
@@ -100,7 +100,10 @@ async def create_group(
     group = CategoryGroup(user_id=user_id, workspace_id=workspace_id, **data.model_dump())
     session.add(group)
     await session.commit()
-    return await get_group(session, group.id, workspace_id)
+    created = await get_group(session, group.id, workspace_id)
+    if created is None:
+        raise RuntimeError("Failed to reload created category group")
+    return created
 
 
 async def update_group(

@@ -143,6 +143,7 @@ async def test_settlement_update_keeps_invariants(
             date=date.today(),
         ),
     )
+    assert s is not None
 
     updated = await settlement_service.update_settlement(
         session,
@@ -152,6 +153,8 @@ async def test_settlement_update_keeps_invariants(
         test_user.id,
         GroupSettlementUpdate(amount=Decimal("12.00"), notes="adjusted"),
     )
+
+    assert updated is not None
     assert updated.amount == Decimal("12.00")
     assert updated.notes == "adjusted"
 
@@ -227,6 +230,9 @@ async def test_receiver_credit_created_when_to_member_is_linked_with_account(
         GroupMemberCreate(name="Bob", linked_user_id=receiver.id),
     )
 
+    assert me is not None
+    assert bob is not None
+
     s = await settlement_service.create_settlement(
         session,
         group.id,
@@ -271,8 +277,11 @@ async def test_receiver_credit_skipped_when_to_member_is_shadow(
         GroupMemberCreate(name="Me", is_self=True),
     )
     shadow = await group_service.create_member(
-        session, group.id, test_workspace.id, GroupMemberCreate(name="Shadow")
+        session, group.id, test_workspace.id,         GroupMemberCreate(name="Shadow")
     )
+
+    assert me is not None
+    assert shadow is not None
 
     s = await settlement_service.create_settlement(
         session,
@@ -321,6 +330,9 @@ async def test_receiver_credit_skipped_when_linked_user_has_no_cash_account(
         GroupMemberCreate(name="Bob", linked_user_id=receiver.id),
     )
 
+    assert me is not None
+    assert bob is not None
+
     s = await settlement_service.create_settlement(
         session,
         group.id,
@@ -357,8 +369,11 @@ async def test_receiver_credit_lands_on_owner_when_self_member_unlinked(
         GroupMemberCreate(name="Me", is_self=True),
     )
     friend = await group_service.create_member(
-        session, group.id, test_workspace.id, GroupMemberCreate(name="Friend")
+        session, group.id, test_workspace.id,         GroupMemberCreate(name="Friend")
     )
+
+    assert owner_self is not None
+    assert friend is not None
 
     # Friend pays the owner back. Caller is the owner (allowed to record
     # on any from_member). No account_id — friend is a shadow, no real

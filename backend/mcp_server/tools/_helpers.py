@@ -32,9 +32,12 @@ def parse_uuid(v: Any) -> Optional[uuid.UUID]:
 def parse_uuid_list(v: Any) -> Optional[list[uuid.UUID]]:
     if v is None:
         return None
-    if isinstance(v, (list, tuple)):
-        return [parse_uuid(x) for x in v if x] or None
-    return [parse_uuid(v)]
+    values = v if isinstance(v, (list, tuple)) else [v]
+    return [
+        u
+        for x in values
+        if (u := parse_uuid(x)) is not None
+    ] or None
 
 
 def num(x: Any) -> Optional[float]:

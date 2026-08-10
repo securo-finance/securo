@@ -1,14 +1,14 @@
 # backend/tests/test_rule_engine.py
-import types
 import uuid
 from decimal import Decimal
 from datetime import date
 
 
+from app.models import Transaction
 from app.services.rule_engine import evaluate_conditions, apply_rule_actions
 
 
-def make_tx(**kwargs) -> types.SimpleNamespace:
+def make_tx(**kwargs) -> Transaction:
     defaults = dict(
         id=uuid.uuid4(),
         user_id=uuid.uuid4(),
@@ -24,10 +24,11 @@ def make_tx(**kwargs) -> types.SimpleNamespace:
         notes=None,
     )
     defaults.update(kwargs)
-    return types.SimpleNamespace(**defaults)
+    return Transaction(**defaults)
 
 
 # --- evaluate_conditions tests ---
+
 
 def test_contains_match():
     conditions = [{"field": "description", "op": "contains", "value": "UBER"}]
@@ -160,13 +161,14 @@ def test_and_partial_match():
 def test_or_one_match():
     conditions = [
         {"field": "description", "op": "contains", "value": "IFOOD"},  # fails
-        {"field": "description", "op": "contains", "value": "UBER"},   # passes
+        {"field": "description", "op": "contains", "value": "UBER"},  # passes
     ]
     tx = make_tx(description="UBER TRIP")
     assert evaluate_conditions("or", conditions, tx) is True
 
 
 # --- apply_rule_actions tests ---
+
 
 def test_set_category():
     cat_id = uuid.uuid4()
@@ -203,6 +205,8 @@ def test_append_notes_accumulates():
     tx = make_tx(notes=None)
     apply_rule_actions(actions1, tx, category_already_set=False)
     apply_rule_actions(actions2, tx, category_already_set=False)
+
+    assert tx.notes is not None
     assert "#work" in tx.notes
     assert "#small" in tx.notes
 
@@ -211,6 +215,8 @@ def test_append_notes_no_duplicate():
     actions = [{"op": "append_notes", "value": "#work"}]
     tx = make_tx(notes="#work")
     apply_rule_actions(actions, tx, category_already_set=False)
+
+    assert tx.notes is not None
     assert tx.notes.count("#work") == 1
 
 
@@ -222,6 +228,7 @@ def test_ignore_action_sets_flag():
 
 
 # --- Edge-case: evaluate_conditions ---
+
 
 def test_not_equals():
     conditions = [{"field": "type", "op": "not_equals", "value": "credit"}]
@@ -332,6 +339,7 @@ def test_invalid_regex_returns_false():
 
 
 # --- Edge-case: apply_rule_actions ---
+
 
 def test_invalid_uuid_set_category_skips():
     actions = [{"op": "set_category", "value": "not-a-uuid"}]

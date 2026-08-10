@@ -25,6 +25,7 @@ visibility filtering — the query layer pivots to `workspace_id`.
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "052"
@@ -60,12 +61,12 @@ def upgrade() -> None:
     # 1. workspaces
     op.create_table(
         "workspaces",
-        sa.Column("id", sa.dialects.postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column("name", sa.String(100), nullable=False),
         sa.Column("kind", sa.String(30), nullable=False, server_default="personal"),
         sa.Column(
             "created_by_user_id",
-            sa.dialects.postgresql.UUID(as_uuid=True),
+            postgresql.UUID(as_uuid=True),
             sa.ForeignKey("users.id", ondelete="SET NULL"),
             nullable=True,
         ),
@@ -81,23 +82,23 @@ def upgrade() -> None:
     # 2. workspace_members
     op.create_table(
         "workspace_members",
-        sa.Column("id", sa.dialects.postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column(
             "workspace_id",
-            sa.dialects.postgresql.UUID(as_uuid=True),
+            postgresql.UUID(as_uuid=True),
             sa.ForeignKey("workspaces.id", ondelete="CASCADE"),
             nullable=False,
         ),
         sa.Column(
             "user_id",
-            sa.dialects.postgresql.UUID(as_uuid=True),
+            postgresql.UUID(as_uuid=True),
             sa.ForeignKey("users.id", ondelete="CASCADE"),
             nullable=False,
         ),
         sa.Column("role", sa.String(20), nullable=False, server_default="owner"),
         sa.Column(
             "invited_by_user_id",
-            sa.dialects.postgresql.UUID(as_uuid=True),
+            postgresql.UUID(as_uuid=True),
             sa.ForeignKey("users.id", ondelete="SET NULL"),
             nullable=True,
         ),
@@ -147,7 +148,7 @@ def upgrade() -> None:
             tbl,
             sa.Column(
                 "workspace_id",
-                sa.dialects.postgresql.UUID(as_uuid=True),
+                postgresql.UUID(as_uuid=True),
                 sa.ForeignKey("workspaces.id", ondelete="CASCADE"),
                 nullable=True,
             ),
@@ -179,7 +180,7 @@ def upgrade() -> None:
         "asset_values",
         sa.Column(
             "workspace_id",
-            sa.dialects.postgresql.UUID(as_uuid=True),
+            postgresql.UUID(as_uuid=True),
             sa.ForeignKey("workspaces.id", ondelete="CASCADE"),
             nullable=True,
         ),
@@ -196,7 +197,7 @@ def upgrade() -> None:
         "group_members",
         sa.Column(
             "workspace_id",
-            sa.dialects.postgresql.UUID(as_uuid=True),
+            postgresql.UUID(as_uuid=True),
             sa.ForeignKey("workspaces.id", ondelete="CASCADE"),
             nullable=True,
         ),
@@ -213,7 +214,7 @@ def upgrade() -> None:
         "group_settlements",
         sa.Column(
             "workspace_id",
-            sa.dialects.postgresql.UUID(as_uuid=True),
+            postgresql.UUID(as_uuid=True),
             sa.ForeignKey("workspaces.id", ondelete="CASCADE"),
             nullable=True,
         ),
@@ -230,7 +231,7 @@ def upgrade() -> None:
         "transaction_splits",
         sa.Column(
             "workspace_id",
-            sa.dialects.postgresql.UUID(as_uuid=True),
+            postgresql.UUID(as_uuid=True),
             sa.ForeignKey("workspaces.id", ondelete="CASCADE"),
             nullable=True,
         ),
@@ -257,7 +258,7 @@ def upgrade() -> None:
             "payee_mapping",
             sa.Column(
                 "workspace_id",
-                sa.dialects.postgresql.UUID(as_uuid=True),
+                postgresql.UUID(as_uuid=True),
                 sa.ForeignKey("workspaces.id", ondelete="CASCADE"),
                 nullable=True,
             ),

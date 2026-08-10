@@ -46,7 +46,7 @@ class _FakeAsyncClient:
         pass
 
     queue: list[_FakeResponse] = []
-    calls: list[tuple[str, dict, dict]] = []
+    calls: list[tuple[str, dict | None, dict | None]] = []
 
     async def __aenter__(self):
         return self
@@ -143,6 +143,8 @@ async def test_list_tools_parses_securo_extras_and_defaults_schema():
     assert by_name["create_payee"].parameters == {"type": "object", "properties": {}}
     # Bearer header is propagated.
     _, _, headers = _FakeAsyncClient.calls[0]
+
+    assert headers is not None
     assert headers["Authorization"] == "Bearer fake"
 
 
@@ -237,7 +239,7 @@ def test_to_provider_tools_namespaces_and_filters():
     filtered = MCPRegistry.to_provider_tools(handles, allowed={("securo", "list_accounts")})
     assert [t.name for t in filtered] == ["securo__list_accounts"]
     # Defaults a missing parameters schema to an empty object schema.
-    handle_no_schema = ToolHandle(server="x", name="y", description="d", parameters=None)  # type: ignore[arg-type]
+    handle_no_schema = ToolHandle(server="x", name="y", description="d", parameters={})
     out = MCPRegistry.to_provider_tools([handle_no_schema], allowed=None)
     assert out[0].parameters == {"type": "object", "properties": {}}
 

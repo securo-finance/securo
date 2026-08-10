@@ -151,6 +151,7 @@ async def test_settlement_reduces_balance(
     balances = await balance_service.compute_balances(
         session, group.id, test_workspace.id, test_user.id
     )
+    assert balances is not None
     by_member = {ln["member_id"]: ln["amount"] for ln in balances["lines"]}
     assert by_member[friend.id] == Decimal("15.00")
 
@@ -184,6 +185,7 @@ async def test_self_loan_increases_balance_owed(
     balances = await balance_service.compute_balances(
         session, group.id, test_workspace.id, test_user.id
     )
+    assert balances is not None
     by_member = {ln["member_id"]: ln["amount"] for ln in balances["lines"]}
     assert by_member[friend.id] == Decimal("50.00")
 
@@ -219,6 +221,7 @@ async def test_balances_segregated_by_currency(
     balances = await balance_service.compute_balances(
         session, group.id, test_workspace.id, test_user.id
     )
+    assert balances is not None
     by_currency = {
         ln["currency"]: ln["amount"]
         for ln in balances["lines"]
@@ -272,6 +275,7 @@ async def test_balance_line_dropped_when_settlement_zeroes_out_split(
     balances = await balance_service.compute_balances(
         session, group.id, test_workspace.id, test_user.id
     )
+    assert balances is not None
     friend_lines = [ln for ln in balances["lines"] if ln["member_id"] == friend.id]
     assert friend_lines == []
 
@@ -322,6 +326,7 @@ async def test_cross_member_settlements_are_ignored_in_owner_ledger(
     balances = await balance_service.compute_balances(
         session, group.id, test_workspace.id, test_user.id
     )
+    assert balances is not None
     by_member = {ln["member_id"]: ln["amount"] for ln in balances["lines"]}
     # A still owes their original $15 — not adjusted by the cross-member tx.
     assert by_member[a.id] == Decimal("15.00")
@@ -344,6 +349,8 @@ async def test_no_self_member_means_only_split_totals(
     b = await group_service.create_member(
         session, group.id, test_workspace.id, GroupMemberCreate(name="B")
     )
+    assert a is not None
+    assert b is not None
     account = await _make_account(session, test_user.id)
     tx = await _make_tx(session, test_user.id, account.id, "20.00")
     await split_service.replace_splits(
@@ -363,6 +370,7 @@ async def test_no_self_member_means_only_split_totals(
     balances = await balance_service.compute_balances(
         session, group.id, test_workspace.id, test_user.id
     )
+    assert balances is not None
     by_member = {ln["member_id"]: ln["amount"] for ln in balances["lines"]}
     assert by_member[a.id] == Decimal("10.00")
     assert by_member[b.id] == Decimal("10.00")

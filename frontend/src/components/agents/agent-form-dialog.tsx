@@ -150,7 +150,7 @@ export function AgentFormDialog({ open, onOpenChange, agent }: Props) {
               value={systemPrompt}
               onChange={(e) => setSystemPrompt(e.target.value)}
               rows={6}
-              className="rounded-md border bg-background px-3 py-2 text-sm font-mono"
+              className="rounded-md border bg-card px-3 py-2 text-sm font-mono"
               placeholder={t('agents.form.systemPromptPlaceholder')}
             />
           </div>

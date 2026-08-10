@@ -55,11 +55,29 @@ jobs:
       - name: Install dependencies
         if: steps.backend-changes.outputs.run_backend == 'true'
         run: |
-          pip install -e ".[dev]"
+          # Everything comes from uv.lock: export it (--frozen never touches
+          # the lock) and hand it to pip with hash checking, so CI installs
+          # exactly the audited versions.
+          # renovate: datasource=pypi depName=uv
+          pip install -q uv==0.12.1
+          uv export --frozen --all-extras --no-emit-project -o /tmp/requirements-dev.txt
+          pip install --require-hashes -r /tmp/requirements-dev.txt
+          pip install --no-deps -e .
+
+      - name: Verify lockfile is in sync
+        if: steps.backend-changes.outputs.run_backend == 'true'
+        run: |
+          # Fails if pyproject.toml changed without regenerating uv.lock
+          # (someone edited deps without running scripts/lock.sh).
+          uv lock --check
 
       - name: Lint with Ruff
         if: steps.backend-changes.outputs.run_backend == 'true'
         run: ruff check .
+
+      - name: Type check with ty
+        if: steps.backend-changes.outputs.run_backend == 'true'
+        run: ty check .
 
       - name: Run tests with coverage
         if: steps.backend-changes.outputs.run_backend == 'true'

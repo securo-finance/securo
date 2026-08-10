@@ -2,9 +2,9 @@ import re
 import uuid
 from datetime import date
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, cast
 
-from sqlalchemy import select, func, or_, not_, update
+from sqlalchemy import CursorResult, delete, select, func, or_, not_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -115,6 +115,7 @@ async def get_transactions(
     min_amount: Optional[float] = None,
     max_amount: Optional[float] = None,
     account_types: Optional[list[str]] = None,
+    status: Optional[str] = None,
     include_summary: bool = False,
     user_pnl_only: bool = False,
 ) -> tuple[list[Transaction], int, Optional[dict]]:
@@ -131,7 +132,7 @@ async def get_transactions(
     # point of the override (issue #92, LucasFidelis suggestion). Shared
     # with the dashboard/report/budget aggregations so a transaction lands
     # in the same month everywhere (issue #232).
-    date_col = reporting_date_col(accounting_mode)
+    date_col = reporting_date_col(accounting_mode or "cash")
 
     # Group-scope visibility: when the caller filters by a group they
     # have access to (owner or linked member), bypass the user-owns-it
@@ -143,7 +144,7 @@ async def get_transactions(
 
         accessible = await get_group_visible(session, group_id, workspace_id, user_id)
         if accessible is None:
-            return [], 0
+            return [], 0, None
         use_group_scope = True
 
     # CC bill-view date column: when the caller asks "what's in this bill?"
@@ -253,6 +254,8 @@ async def get_transactions(
         base_query = base_query.where(Account.is_closed == False, counts_as_user_pnl())
     if txn_type:
         base_query = base_query.where(Transaction.type == txn_type)
+    if status:
+        base_query = base_query.where(Transaction.status == status)
     if currency:
         # Native-currency filter — match the column verbatim. Lets agents
         # answer "do I have any EUR transactions?" without text-searching
@@ -446,7 +449,7 @@ async def get_transactions(
     # order by purchase date so the in-cycle list matches the bank's own
     # statement ordering regardless of accounting mode.
     default_order_col = bill_view_date_col if in_bill_view else date_col
-    sort_columns: dict[str, object] = {
+    sort_columns = {
         # `date` is the cycle/accrual-aware column the UI lists use so its
         # ordering matches the cash-flow & dashboard views.
         "date": default_order_col,
@@ -491,7 +494,7 @@ async def get_transactions(
             .where(TransactionAttachment.transaction_id.in_(tx_ids))
             .group_by(TransactionAttachment.transaction_id)
         )
-        counts = dict(count_rows.all())
+        counts = {row[0]: row[1] for row in count_rows.all()}
         for tx in transactions:
             tx.attachment_count = counts.get(tx.id, 0)
             tx.payee_name = tx.payee_entity.name if tx.payee_entity else None
@@ -701,6 +704,10 @@ async def create_transaction(
         date=data.date,
         type=data.type,
         source="manual",
+        # Manually-entered transactions default to "posted" (settled),
+        # matching the model default. Callers may still create them as
+        # "pending" (not yet settled) via TransactionCreate.status.
+        status=data.status or "posted",
         notes=data.notes,
         effective_bill_date=data.effective_bill_date,
     )
@@ -915,7 +922,7 @@ async def get_transfer_candidates(
             .where(TransactionAttachment.transaction_id.in_(tx_ids))
             .group_by(TransactionAttachment.transaction_id)
         )
-        counts = dict(count_rows.all())
+        counts = {row[0]: row[1] for row in count_rows.all()}
         for tx in candidates:
             tx.attachment_count = counts.get(tx.id, 0)
             tx.payee_name = tx.payee_entity.name if tx.payee_entity else None
@@ -1290,7 +1297,7 @@ async def bulk_update_category(
         .values(category_id=category_id)
     )
     await session.commit()
-    return result.rowcount
+    return cast(CursorResult, result).rowcount
 
 
 _TAG_CHAR_CLASS = r"[\wÀ-ž-]"
@@ -1551,3 +1558,47 @@ async def delete_transaction(
     await session.delete(transaction)
     await session.commit()
     return True
+
+
+async def bulk_delete_transactions(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    transaction_ids: list[uuid.UUID],
+) -> int:
+    from app.services.attachment_service import cleanup_attachment_files
+
+    result = await session.execute(
+        select(Transaction.id, Transaction.transfer_pair_id)
+        .where(
+            Transaction.id.in_(transaction_ids),
+            Transaction.workspace_id == workspace_id,
+        )
+    )
+    transactions = result.all()
+    if not transactions:
+        return 0
+
+    valid_ids = [row[0] for row in transactions]
+    transfer_pair_ids = {row[1] for row in transactions if row[1]}
+
+    paired_ids = []
+    if transfer_pair_ids:
+        paired_result = await session.execute(
+            select(Transaction.id)
+            .where(
+                Transaction.transfer_pair_id.in_(transfer_pair_ids),
+                Transaction.id.notin_(valid_ids),
+                Transaction.workspace_id == workspace_id,
+            )
+        )
+        paired_ids = [row[0] for row in paired_result.all()]
+
+    # Storage files must go before the rows: the DB cascade removes the
+    # attachment records, and after that their storage keys are unreachable.
+    await cleanup_attachment_files(session, valid_ids + paired_ids)
+
+    await session.execute(
+        delete(Transaction).where(Transaction.id.in_(valid_ids + paired_ids))
+    )
+    await session.commit()
+    return len(valid_ids)

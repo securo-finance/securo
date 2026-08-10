@@ -10,7 +10,11 @@ from app.core.workspace_context import (
     current_writable_workspace,
 )
 from app.providers import all_known_providers
-from app.providers.base import ProviderUserActionRequired, SessionExpiredError
+from app.providers.base import (
+    ProviderNotConfiguredError,
+    ProviderUserActionRequired,
+    SessionExpiredError,
+)
 from app.schemas.bank_connection import (
     BankConnectionRead,
     ConnectionSettingsUpdate,
@@ -188,6 +192,8 @@ async def sync_connection(
         )
     except SessionExpiredError as e:
         raise HTTPException(status_code=status.HTTP_410_GONE, detail=str(e))
+    except ProviderNotConfiguredError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

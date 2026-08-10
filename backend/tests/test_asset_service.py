@@ -13,6 +13,8 @@ from app.models.user import User
 from app.schemas.asset import AssetCreate, AssetUpdate, AssetValueCreate
 from app.services import asset_service
 from app.services.asset_service import (
+    TxRecord,
+    ValueRecord,
     _compute_current_value,
     _generate_growth_values,
     _next_due_date,
@@ -23,12 +25,12 @@ from app.services.asset_service import (
 
 def test_build_market_value_series_reflects_quantity_over_time():
     """A backdated buy steps the value up from its date, not just today."""
-    rows = [
+    rows: list[ValueRecord] = [
         (date(2026, 5, 12), Decimal("9286"), Decimal("46.43")),
         (date(2026, 5, 17), Decimal("9094"), Decimal("45.47")),
         (date(2026, 6, 11), Decimal("8330"), Decimal("41.65")),
     ]
-    txs = [
+    txs: list[TxRecord] = [
         (date(2025, 12, 1), "buy", Decimal("200"), Decimal("40")),
         (date(2026, 5, 15), "buy", Decimal("50"), Decimal("46")),  # backdated, between value points
     ]
@@ -44,12 +46,12 @@ def test_build_market_value_series_reflects_quantity_over_time():
 
 
 def test_build_market_value_series_handles_sell_and_missing_price():
-    rows = [
+    rows: list[ValueRecord] = [
         (date(2026, 1, 1), Decimal("1000"), Decimal("10")),   # 100 units
         (date(2026, 2, 1), Decimal("0"), Decimal("12")),      # after selling 40 → 60 units
         (date(2026, 3, 1), Decimal("777"), None),             # no price → fall back to amount
     ]
-    txs = [
+    txs: list[TxRecord] = [
         (date(2026, 1, 1), "buy", Decimal("100"), Decimal("10")),
         (date(2026, 1, 20), "sell", Decimal("40"), Decimal("11")),
     ]
@@ -67,8 +69,8 @@ def test_build_market_value_series_backdated_trades_predating_prices():
     dates), so every backdated buy must still produce a dated point — otherwise
     the chart collapses them onto one anchor and draws a single interpolation.
     """
-    rows = [(date(2026, 6, 15), Decimal("5335.56"), Decimal("296.42"))]
-    txs = [
+    rows: list[ValueRecord] = [(date(2026, 6, 15), Decimal("5335.56"), Decimal("296.42"))]
+    txs: list[TxRecord] = [
         (date(2021, 1, 15), "buy", Decimal("10"), Decimal("50")),
         (date(2022, 2, 2), "buy", Decimal("5"), Decimal("80")),
         (date(2022, 4, 11), "buy", Decimal("3"), Decimal("120")),
@@ -83,7 +85,7 @@ def test_build_market_value_series_backdated_trades_predating_prices():
 
 def test_build_market_value_series_no_ledger_keeps_amounts():
     """A holding with no transactions must not be zeroed — keep stored amounts."""
-    rows = [
+    rows: list[ValueRecord] = [
         (date(2026, 1, 1), Decimal("500"), Decimal("5")),
         (date(2026, 2, 1), Decimal("600"), Decimal("6")),
     ]
@@ -815,6 +817,7 @@ async def test_update_asset_purchase_price(session: AsyncSession, test_user: Use
     created = await asset_service.create_asset(session, test_workspace.id, test_user.id, data)
     update_data = AssetUpdate(purchase_price=Decimal("2000"))
     updated = await asset_service.update_asset(session, created.id, test_workspace.id, test_user.id, update_data)
+    assert updated is not None
     assert updated.purchase_price == 2000.0
 
 

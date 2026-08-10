@@ -76,9 +76,13 @@ async def get_account_summary(
     to_date: str | None = None,
 ) -> dict[str, Any]:
     ws_id = await resolve_workspace_id(session, ctx)
+    account_uuid = parse_uuid(account_id)
+    if account_uuid is None:
+        return dict(error="account not found")
+
     summary = await account_service.get_account_summary(
         session,
-        parse_uuid(account_id),
+        account_uuid,
         ws_id,
         date_from=parse_date(from_date),
         date_to=parse_date(to_date),

@@ -357,6 +357,95 @@ async def test_bulk_categorize(client: AsyncClient, auth_headers, test_transacti
 
 
 @pytest.mark.asyncio
+async def test_bulk_delete_transactions(client: AsyncClient, auth_headers, test_transactions):
+    ids = [str(t.id) for t in test_transactions[:2]]
+    resp = await client.post(
+        "/api/transactions/bulk-delete", headers=auth_headers,
+        json={"transaction_ids": ids},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == 2
+    for tx_id in ids:
+        assert (await client.get(f"/api/transactions/{tx_id}", headers=auth_headers)).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_ignores_other_workspace_ids(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user, test_transactions
+):
+    other_ws = await create_workspace(
+        session,
+        name="Other",
+        creator=test_user,
+        self_membership=True,
+        seed_defaults=False,
+    )
+    other_account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=other_ws.id,
+        name="Other account",
+        type="checking",
+        currency="USD",
+    )
+    session.add(other_account)
+    await session.flush()
+    other_tx = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=other_ws.id,
+        account_id=other_account.id,
+        description="Other workspace tx",
+        amount=10,
+        currency="USD",
+        date=date.today(),
+        type="debit",
+        source="manual",
+    )
+    session.add(other_tx)
+    await session.commit()
+
+    resp = await client.post(
+        "/api/transactions/bulk-delete", headers=auth_headers,
+        json={"transaction_ids": [str(other_tx.id), NONEXISTENT]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == 0
+    still_there = await session.get(Transaction, other_tx.id)
+    assert still_there is not None
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_cascades_transfer_pair(
+    client: AsyncClient, auth_headers, test_account: Account
+):
+    other = await _manual_account(client, auth_headers, "Destino bulk delete")
+    resp = await client.post(
+        "/api/transactions/transfer", headers=auth_headers,
+        json={
+            "from_account_id": str(test_account.id),
+            "to_account_id": other,
+            "amount": "50.00",
+            "date": date.today().isoformat(),
+            "description": "Transferência bulk delete",
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    debit_id = resp.json()["debit"]["id"]
+    credit_id = resp.json()["credit"]["id"]
+
+    resp = await client.post(
+        "/api/transactions/bulk-delete", headers=auth_headers,
+        json={"transaction_ids": [debit_id]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] == 1
+    # The paired leg goes too, mirroring single-transaction delete semantics.
+    assert (await client.get(f"/api/transactions/{debit_id}", headers=auth_headers)).status_code == 404
+    assert (await client.get(f"/api/transactions/{credit_id}", headers=auth_headers)).status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_bulk_categorize_rejects_category_from_other_workspace(
     client: AsyncClient, auth_headers, session: AsyncSession, test_user, test_transactions
 ):

@@ -87,7 +87,7 @@ x-backend-base: &backend-base
 
 services:
   redis:
-    image: docker.io/library/redis:7-alpine
+    image: docker.io/library/redis:8-alpine
     restart: unless-stopped
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']

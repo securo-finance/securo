@@ -6,14 +6,24 @@ Both sides share AGENTS_MCP_JWT_SECRET. We test that:
   - Expired tokens are rejected.
   - Missing audience / issuer is rejected.
 """
+
 import time
 import uuid
 
 import pytest
 from jose import jwt
+from starlette.requests import Request
 
 from app.agents.config import get_agent_settings
 from app.agents.mcp.auth import JWT_ALGO, JWT_AUDIENCE, JWT_ISSUER, mint_token
+
+
+def _req(headers: list[tuple[bytes, bytes]]) -> Request:
+    return Request(scope={"type": "http", "headers": headers})
+
+
+def _req_bearer(token: str) -> Request:
+    return _req([(b"authorization", f"Bearer {token}".encode())])
 
 
 def test_mint_then_verify_roundtrip():
@@ -24,11 +34,7 @@ def test_mint_then_verify_roundtrip():
     agent_id = uuid.uuid4()
     token = mint_token(user_id=user_id, conversation_id=conv_id, agent_id=agent_id)
 
-    # Stub Request just enough for verify_request — it only reads the header.
-    class _Req:
-        headers = {"authorization": f"Bearer {token}"}
-
-    ctx = verify_request(_Req())  # type: ignore[arg-type]
+    ctx = verify_request(_req_bearer(token))
     assert ctx.user_id == user_id
     assert ctx.conversation_id == conv_id
     assert ctx.agent_id == agent_id
@@ -38,11 +44,8 @@ def test_missing_authorization_rejected():
     from fastapi import HTTPException
     from mcp_server.auth import verify_request
 
-    class _Req:
-        headers: dict[str, str] = {}
-
     with pytest.raises(HTTPException) as exc:
-        verify_request(_Req())  # type: ignore[arg-type]
+        _ = verify_request(_req([]))
     assert exc.value.status_code == 401
 
 
@@ -63,11 +66,8 @@ def test_wrong_secret_rejected():
         algorithm=JWT_ALGO,
     )
 
-    class _Req:
-        headers = {"authorization": f"Bearer {bogus}"}
-
     with pytest.raises(HTTPException) as exc:
-        verify_request(_Req())  # type: ignore[arg-type]
+        _ = verify_request(_req_bearer(bogus))
     assert exc.value.status_code == 401
 
 
@@ -89,11 +89,8 @@ def test_expired_token_rejected():
         algorithm=JWT_ALGO,
     )
 
-    class _Req:
-        headers = {"authorization": f"Bearer {expired}"}
-
     with pytest.raises(HTTPException) as exc:
-        verify_request(_Req())  # type: ignore[arg-type]
+        _ = verify_request(_req_bearer(expired))
     assert exc.value.status_code == 401
 
 
@@ -105,11 +102,8 @@ def test_short_ttl_respected():
     token = mint_token(user_id=uuid.uuid4(), ttl_seconds=1)
     time.sleep(2.1)
 
-    class _Req:
-        headers = {"authorization": f"Bearer {token}"}
-
     with pytest.raises(HTTPException):
-        verify_request(_Req())  # type: ignore[arg-type]
+        _ = verify_request(_req_bearer(token))
 
 
 def test_optional_conv_id_is_truly_optional():
@@ -117,10 +111,7 @@ def test_optional_conv_id_is_truly_optional():
 
     token = mint_token(user_id=uuid.uuid4())
 
-    class _Req:
-        headers = {"authorization": f"Bearer {token}"}
-
-    ctx = verify_request(_Req())  # type: ignore[arg-type]
+    ctx = verify_request(_req_bearer(token))
     assert ctx.conversation_id is None
     assert ctx.agent_id is None
 
@@ -130,10 +121,7 @@ def test_external_token_round_trip():
 
     token = mint_token(user_id=uuid.uuid4(), external=True)
 
-    class _Req:
-        headers = {"authorization": f"Bearer {token}"}
-
-    ctx = verify_request(_Req())  # type: ignore[arg-type]
+    ctx = verify_request(_req_bearer(token))
     assert ctx.external is True
 
 
@@ -142,8 +130,5 @@ def test_default_token_has_no_external_flag():
 
     token = mint_token(user_id=uuid.uuid4())
 
-    class _Req:
-        headers = {"authorization": f"Bearer {token}"}
-
-    ctx = verify_request(_Req())  # type: ignore[arg-type]
+    ctx = verify_request(_req_bearer(token))
     assert ctx.external is False

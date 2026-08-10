@@ -1,7 +1,7 @@
 import uuid
 from datetime import date as _date, datetime, timezone
 from decimal import Decimal
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, cast
 
 from sqlalchemy import Boolean, Date, DateTime, ForeignKey, JSON, Numeric, SmallInteger, String, event
 from sqlalchemy.dialects.postgresql import UUID
@@ -107,18 +107,26 @@ class Transaction(Base):
         back_populates="transaction", cascade="all, delete-orphan"
     )
 
+    # Populated dynamically by the service (not DB columns).
+    is_shared: bool = False
+    viewer_share = cast(Optional[Decimal], None)
+    group_id = cast(Optional[uuid.UUID], None)
+    parent_owner_name = cast(Optional[str], None)
+    attachment_count: int = 0
+    payee_name = cast(Optional[str], None)
+
 
 # Safety net: `effective_date` is NOT NULL. For non-CC transactions it always
 # equals `date`, so if a call site (or test) forgets to set it, fall back
 # silently. CC-aware service code still calls `apply_effective_date` explicitly
 # so that cycle-based due dates are stored when the account has the metadata.
 @event.listens_for(Transaction, "before_insert")
-def _default_effective_date(mapper, connection, target):  # type: ignore
+def _default_effective_date(mapper, connection, target):
     if target.effective_date is None:
         target.effective_date = target.date
 
 
 @event.listens_for(Transaction, "before_update")
-def _default_effective_date_on_update(mapper, connection, target):  # type: ignore
+def _default_effective_date_on_update(mapper, connection, target):
     if target.effective_date is None:
         target.effective_date = target.date

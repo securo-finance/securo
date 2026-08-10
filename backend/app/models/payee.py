@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, cast
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
@@ -26,6 +26,9 @@ class Payee(Base):
     is_favorite: Mapped[bool] = mapped_column(Boolean, default=False)
     notes: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    # Dynamically set by payee_service; not a DB column
+    transaction_count = cast(int, 0)
 
     user: Mapped["User"] = relationship()
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="payee_entity")

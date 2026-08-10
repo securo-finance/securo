@@ -21,7 +21,7 @@ pytestmark = pytest.mark.asyncio
 
 
 @pytest_asyncio.fixture
-def ctx(test_user) -> CallContext:
+async def ctx(test_user) -> CallContext:
     return CallContext(user_id=test_user.id, conversation_id=uuid.uuid4())
 
 

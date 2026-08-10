@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional, cast
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -56,7 +56,9 @@ async def get_transaction_calendar(
 
     requested_account_ids = account_ids
     if requested_account_ids is not None and len(requested_account_ids) == 0:
-        return _empty_calendar(month_start, grid_start, grid_end, primary_currency, requested_account_ids)
+        return _empty_calendar(
+            month_start, grid_start, grid_end, primary_currency, requested_account_ids
+        )
 
     days = {
         d: TransactionCalendarDay(
@@ -94,7 +96,9 @@ async def get_transaction_calendar(
             session, tx.amount, tx.currency, primary_currency, tx.amount_primary
         )
 
-        is_transfer = bool(tx.transfer_pair_id) or bool(tx.category and tx.category.treat_as_transfer)
+        is_transfer = bool(tx.transfer_pair_id) or bool(
+            tx.category and tx.category.treat_as_transfer
+        )
         ignored = bool(tx.is_ignored or (tx.category and tx.category.is_ignored))
         if not ignored:
             if is_transfer or tx.source == "transfer":
@@ -115,7 +119,7 @@ async def get_transaction_calendar(
         day.actual_count += 1
         day.items.append(_actual_item(tx, amount_primary, is_transfer, ignored))
 
-    projected_items, projected_deltas = await _project_recurring_items(
+    projected_items, projected_deltas, carried_projected_delta = await _project_recurring_items(
         session,
         workspace_id,
         primary_currency,
@@ -123,6 +127,7 @@ async def get_transaction_calendar(
         grid_end,
         requested_account_ids,
     )
+    start_balance += carried_projected_delta
     for item, signed_delta in projected_items:
         day = days[item.date]
         amount_primary = abs(signed_delta)
@@ -261,7 +266,11 @@ async def _signed_balance_delta_primary(
     primary_currency: str,
 ) -> float:
     account_currency = tx.account.currency if tx.account else tx.currency
-    effective = tx.amount if tx.currency == account_currency else Decimal(str(tx.amount_primary or tx.amount))
+    effective = (
+        tx.amount
+        if tx.currency == account_currency
+        else Decimal(str(tx.amount_primary or tx.amount))
+    )
     amount = abs(Decimal(str(effective)))
     if account_currency != primary_currency:
         amount, _ = await fx_convert(session, amount, account_currency, primary_currency)
@@ -269,7 +278,9 @@ async def _signed_balance_delta_primary(
     return float(signed)
 
 
-def _actual_item(tx: Transaction, amount_primary: float, is_transfer: bool, ignored: bool) -> TransactionCalendarItem:
+def _actual_item(
+    tx: Transaction, amount_primary: float, is_transfer: bool, ignored: bool
+) -> TransactionCalendarItem:
     category = tx.category
     account = tx.account
     return TransactionCalendarItem(
@@ -280,7 +291,7 @@ def _actual_item(tx: Transaction, amount_primary: float, is_transfer: bool, igno
         amount=float(tx.amount),
         amount_primary=amount_primary,
         currency=tx.currency,
-        type=tx.type,
+        type=cast(Literal["debit", "credit"], tx.type),
         account_id=tx.account_id,
         account_name=account.display_name or account.name if account else None,
         category_id=tx.category_id,
@@ -295,6 +306,35 @@ def _actual_item(tx: Transaction, amount_primary: float, is_transfer: bool, igno
     )
 
 
+def _count_occurrences_before(recurring: RecurringTransaction, end: date) -> int:
+    """Count still-virtual occurrences before ``end`` without truncating."""
+    range_end = end
+    if recurring.end_date is not None and recurring.end_date < range_end:
+        range_end = recurring.end_date + timedelta(days=1)
+
+    range_start = recurring.next_occurrence
+    occurrence_start = recurring.next_occurrence
+    count = 0
+    while range_start < range_end:
+        # Weekly is the shortest supported cadence. Two hundred-week chunks
+        # stay within the occurrence helper's collection limit while allowing
+        # an arbitrarily long carry horizon.
+        chunk_end = min(range_start + timedelta(weeks=200), range_end)
+        occurrences = get_occurrences_in_range(
+            start=occurrence_start,
+            frequency=recurring.frequency,
+            end_date=recurring.end_date,
+            range_start=range_start,
+            range_end=chunk_end,
+            intended_day=recurring.day_of_month or recurring.start_date.day,
+        )
+        count += len(occurrences)
+        if occurrences:
+            occurrence_start = occurrences[-1]
+        range_start = chunk_end
+    return count
+
+
 async def _project_recurring_items(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -302,7 +342,7 @@ async def _project_recurring_items(
     start: date,
     end: date,
     account_ids: Optional[list[uuid.UUID]],
-) -> tuple[list[tuple[TransactionCalendarItem, float]], dict[date, float]]:
+) -> tuple[list[tuple[TransactionCalendarItem, float]], dict[date, float], float]:
     stmt = (
         select(RecurringTransaction)
         .join(Account, RecurringTransaction.account_id == Account.id)
@@ -325,6 +365,7 @@ async def _project_recurring_items(
 
     items: list[tuple[TransactionCalendarItem, float]] = []
     deltas: dict[date, float] = {}
+    carried_delta = 0.0
     for rec in recurring_rows:
         if rec.account_id is None:
             continue
@@ -345,6 +386,8 @@ async def _project_recurring_items(
         signed_delta = amount_primary if rec.type == "credit" else -amount_primary
         is_transfer = bool(category and category.treat_as_transfer)
         is_ignored = bool(category and category.is_ignored)
+        if not is_ignored:
+            carried_delta += _count_occurrences_before(rec, start) * signed_delta
         for occ_date in occurrences:
             item = TransactionCalendarItem(
                 kind="projected",
@@ -354,7 +397,7 @@ async def _project_recurring_items(
                 amount=float(rec.amount),
                 amount_primary=amount_primary,
                 currency=rec.currency,
-                type=rec.type,
+                type=cast(Literal["debit", "credit"], rec.type),
                 account_id=rec.account_id,
                 account_name=account.display_name or account.name if account else None,
                 category_id=rec.category_id,
@@ -372,4 +415,4 @@ async def _project_recurring_items(
             # balance that reverts the day the recurring actually posts.
             if not is_ignored:
                 deltas[occ_date] = deltas.get(occ_date, 0.0) + signed_delta
-    return items, deltas
+    return items, deltas, carried_delta

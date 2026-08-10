@@ -369,7 +369,7 @@ class SimpleFinProvider(BankProvider):
         accounts: list[AccountData] = []
         for raw in payload.get("accounts") or []:
             balance = _to_decimal(raw.get("balance")) or Decimal("0")
-            currency = _iso_currency(raw.get("currency"), "USD")
+            currency = _iso_currency(raw.get("currency"), "USD") or "USD"
             account_id = str(raw.get("id") or "")
             if not account_id:
                 continue
@@ -487,13 +487,13 @@ class SimpleFinProvider(BankProvider):
                     HoldingData(
                         external_id=holding_id,
                         name=raw.get("description") or raw.get("symbol") or holding_id,
-                        currency=_iso_currency(raw.get("currency"), acc_currency),
+                        currency=_iso_currency(raw.get("currency"), acc_currency) or acc_currency,
                         ticker=_ticker(raw.get("symbol")),
                         current_value=market_value,
                         quantity=_to_decimal(raw.get("shares")),
-                        unit_price=_to_decimal(raw.get("market_value")) / _to_decimal(
-                            raw.get("shares")
-                        ) if _to_decimal(raw.get("shares")) else None,
+                        unit_price=market_value / shares
+                        if (shares := _to_decimal(raw.get("shares")))
+                        else None,
                         purchase_price=_to_decimal(raw.get("purchase_price")),
                         purchase_date=_epoch_to_date(raw.get("created")),
                         isin=raw.get("isin"),

@@ -540,6 +540,8 @@ async def test_balance_line_default_currency_passthrough(
     balances = await balance_service.compute_balances(
         session, members[0].group_id, test_workspace.id, test_user.id
     )
+
+    assert balances is not None
     line = balances["lines"][0]
     assert Decimal(str(line["amount"])) == Decimal(str(line["amount_in_default_currency"]))
 

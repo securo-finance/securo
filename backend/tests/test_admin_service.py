@@ -212,6 +212,8 @@ async def test_update_user_email(session: AsyncSession, clean_db):
     target = await _make_user(session, "target_upd@test.com")
     data = AdminUserUpdate(email="newemail@test.com")
     result = await update_user(session, target.id, data, admin.id)
+
+    assert result is not None
     assert result.email == "newemail@test.com"
 
 
@@ -230,6 +232,7 @@ async def test_update_user_password(session: AsyncSession, clean_db):
     old_hash = target.hashed_password
     data = AdminUserUpdate(password="newpassword123")
     result = await update_user(session, target.id, data, admin.id)
+
     assert result is not None
     # Password should have changed
     assert result.hashed_password != old_hash
@@ -241,6 +244,9 @@ async def test_update_user_preferences(session: AsyncSession, clean_db):
     new_prefs = {"language": "pt-BR", "currency_display": "BRL"}
     data = AdminUserUpdate(preferences=new_prefs)
     result = await update_user(session, target.id, data, admin.id)
+
+    assert result is not None
+    assert result.preferences is not None
     assert result.preferences["language"] == "pt-BR"
 
 
@@ -270,6 +276,8 @@ async def test_update_user_is_active_and_superuser(session: AsyncSession, clean_
     target = await _make_user(session, "target_flags@test.com")
     data = AdminUserUpdate(is_active=False, is_superuser=True)
     result = await update_user(session, target.id, data, admin.id)
+
+    assert result is not None
     assert result.is_active is False
     assert result.is_superuser is True
 

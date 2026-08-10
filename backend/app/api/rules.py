@@ -143,7 +143,7 @@ async def update_rule(
     if not current_rule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
     if data.apply_to_existing is None:
-        should_apply = _rule_match_definition_changed(current_rule, data)
+        should_apply = _rule_match_definition_changed(RuleRead.model_validate(current_rule), data)
     else:
         should_apply = data.apply_to_existing
 

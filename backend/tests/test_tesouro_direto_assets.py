@@ -81,6 +81,8 @@ async def test_create_tesouro_market_price_asset_reuses_market_ledger(
     assert created.transaction_count == 1
 
     db_asset = await session.get(Asset, created.id)
+
+    assert db_asset is not None
     assert db_asset.external_metadata is None
 
 
@@ -109,6 +111,8 @@ async def test_refresh_all_market_prices_updates_tesouro_symbol_through_market_p
     assert summary == {"refreshed": 1, "skipped": 0, "rate_limited": 0}
     assert refresh_provider.bulk_calls == 1
     db_asset = await session.get(Asset, created.id)
+
+    assert db_asset is not None
     assert db_asset.last_price == Decimal("15200.000000")
     values = (
         await session.execute(

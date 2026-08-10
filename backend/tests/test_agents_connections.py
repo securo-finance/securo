@@ -87,6 +87,8 @@ async def test_only_one_default_per_user(session: AsyncSession, test_user: User)
     )
     # Re-fetch a — should no longer be default.
     a_after = await connection_service.get_connection(session, a.id, test_user.id)
+
+    assert a_after is not None
     assert a_after.is_default is False
     assert b.is_default is True
 
@@ -101,6 +103,8 @@ async def test_update_keeps_existing_key_when_api_key_omitted(session: AsyncSess
     updated = await connection_service.update_connection(
         session, conn.id, test_user.id, name="renamed",
     )
+
+    assert updated is not None
     assert updated.api_key_encrypted == enc_before
     assert decrypt(updated.api_key_encrypted) == "sk-original"
 
@@ -112,6 +116,8 @@ async def test_update_clears_key_with_empty_string(session: AsyncSession, test_u
     updated = await connection_service.update_connection(
         session, conn.id, test_user.id, api_key="",
     )
+
+    assert updated is not None
     assert updated.api_key_encrypted is None
 
 

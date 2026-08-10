@@ -651,7 +651,7 @@ export default function AdminSettingsPage() {
                   <select
                     value={formLanguage}
                     onChange={(e) => setFormLanguage(e.target.value)}
-                    className="w-full h-10 rounded-lg border border-input bg-background px-3 text-sm"
+                    className="w-full h-10 rounded-lg border border-input bg-card px-3 text-sm"
                   >
                     <option value="en">English</option>
                     <option value="de">Deutsch</option>

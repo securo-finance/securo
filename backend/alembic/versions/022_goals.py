@@ -9,6 +9,7 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "022"
 down_revision: Union[str, None] = "021"
@@ -19,8 +20,8 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     op.create_table(
         "goals",
-        sa.Column("id", sa.dialects.postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("user_id", sa.dialects.postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
+        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
+        sa.Column("user_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("target_amount", sa.Numeric(precision=15, scale=2), nullable=False),
         sa.Column("current_amount", sa.Numeric(precision=15, scale=2), nullable=False, server_default="0"),
@@ -29,7 +30,7 @@ def upgrade() -> None:
         sa.Column("current_amount_primary", sa.Numeric(precision=15, scale=2), nullable=True),
         sa.Column("target_date", sa.Date(), nullable=True),
         sa.Column("tracking_type", sa.String(20), nullable=False, server_default="manual"),
-        sa.Column("account_id", sa.dialects.postgresql.UUID(as_uuid=True), sa.ForeignKey("accounts.id"), nullable=True),
+        sa.Column("account_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("accounts.id"), nullable=True),
         sa.Column("status", sa.String(20), nullable=False, server_default="active"),
         sa.Column("icon", sa.String(50), nullable=True),
         sa.Column("color", sa.String(7), nullable=True),

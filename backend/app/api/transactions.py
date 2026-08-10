@@ -15,7 +15,7 @@ from app.core.workspace_context import (
     current_workspace,
     current_writable_workspace,
 )
-from app.schemas.transaction import BulkAddToGroupRequest, BulkCategorizeRequest, BulkTagsRequest, CreateCounterpartRequest, LinkTransferRequest, TransactionCreate, TransactionRead, TransactionUpdate, TransferCreate, TransferRead
+from app.schemas.transaction import BulkAddToGroupRequest, BulkCategorizeRequest, BulkTagsRequest, CreateCounterpartRequest, LinkTransferRequest, TransactionBulkDeleteRequest, TransactionCreate, TransactionRead, TransactionUpdate, TransferCreate, TransferRead
 from app.schemas.transaction_calendar import TransactionCalendarResponse
 from app.services import transaction_service
 from app.services.admin_service import get_credit_card_accounting_mode
@@ -92,6 +92,7 @@ async def list_transactions(
     q: Optional[str] = Query(None),
     uncategorized: bool = Query(False),
     type: Optional[str] = Query(None),
+    status: Optional[str] = Query(None, description="Filter by transaction status (posted|pending)"),
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=500),
     include_opening_balance: bool = Query(False),
@@ -114,6 +115,7 @@ async def list_transactions(
         include_opening_balance=include_opening_balance, search=q, uncategorized=uncategorized,
         txn_type=type, exclude_transfers=exclude_transfers,
         user_pnl_only=user_pnl_only,
+        status=status,
         accounting_mode=accounting_mode,
         tags=tags,
         bill_id=bill_id,
@@ -164,6 +166,7 @@ async def export_transactions(
     q: Optional[str] = Query(None),
     uncategorized: bool = Query(False),
     type: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
     tags: Optional[List[str]] = Query(None),
     transaction_ids: Optional[List[uuid.UUID]] = Query(None, description="If set, exports exactly these rows (scoped to the workspace); other filters are ignored."),
     ctx: WorkspaceContext = Depends(current_workspace),
@@ -185,7 +188,7 @@ async def export_transactions(
             account_ids=_merge_id_filters(account_id, account_ids),
             category_ids=_merge_id_filters(category_id, category_ids),
             payee_id=payee_id, from_date=from_date, to_date=to_date,
-            search=q, uncategorized=uncategorized, txn_type=type, skip_pagination=True,
+            search=q, uncategorized=uncategorized, txn_type=type, status=status, skip_pagination=True,
             accounting_mode=accounting_mode,
             tags=tags,
         )
@@ -293,6 +296,10 @@ async def create_transfer(
         debit_full = await transaction_service.get_transaction(session, debit_tx.id, ctx.workspace.id)
         credit_full = await transaction_service.get_transaction(session, credit_tx.id, ctx.workspace.id)
         primary_currency = ctx.user.primary_currency
+
+        if debit_tx.transfer_pair_id is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="transfer_pair cannot be null")
+
         return TransferRead(
             debit=_tag_fx_fallback(TransactionRead.model_validate(debit_full, from_attributes=True), primary_currency),
             credit=_tag_fx_fallback(TransactionRead.model_validate(credit_full, from_attributes=True), primary_currency),
@@ -316,6 +323,10 @@ async def link_transfer(
         debit_full = await transaction_service.get_transaction(session, debit_tx.id, ctx.workspace.id)
         credit_full = await transaction_service.get_transaction(session, credit_tx.id, ctx.workspace.id)
         primary_currency = ctx.user.primary_currency
+
+        if debit_tx.transfer_pair_id is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="transfer_pair cannot be null")
+
         return TransferRead(
             debit=_tag_fx_fallback(TransactionRead.model_validate(debit_full, from_attributes=True), primary_currency),
             credit=_tag_fx_fallback(TransactionRead.model_validate(credit_full, from_attributes=True), primary_currency),
@@ -341,6 +352,10 @@ async def create_counterpart(
         debit_full = await transaction_service.get_transaction(session, debit_tx.id, ctx.workspace.id)
         credit_full = await transaction_service.get_transaction(session, credit_tx.id, ctx.workspace.id)
         primary_currency = ctx.user.primary_currency
+
+        if debit_tx.transfer_pair_id is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="transfer_pair cannot be null")
+
         return TransferRead(
             debit=_tag_fx_fallback(TransactionRead.model_validate(debit_full, from_attributes=True), primary_currency),
             credit=_tag_fx_fallback(TransactionRead.model_validate(credit_full, from_attributes=True), primary_currency),
@@ -486,3 +501,15 @@ async def delete_transaction(
     )
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+
+
+@router.post("/bulk-delete", status_code=status.HTTP_200_OK)
+async def bulk_delete_transactions(
+    data: TransactionBulkDeleteRequest,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    deleted_count = await transaction_service.bulk_delete_transactions(
+        session, ctx.workspace.id, data.transaction_ids
+    )
+    return {"deleted": deleted_count}

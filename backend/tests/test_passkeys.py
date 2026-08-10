@@ -6,6 +6,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from webauthn.helpers import base64url_to_bytes
 
 from app.models.passkey import UserPasskey
 
@@ -154,7 +155,7 @@ async def test_authenticate_passkey_returns_jwt_and_bypasses_2fa(
     )
     assert email_options_response.status_code == 200
     email_options = email_options_response.json()["options"]
-    assert email_options.get("allowCredentials") in (None, [])
+    assert [c["id"] for c in email_options["allowCredentials"]] == [passkey.credential_id]
     challenge_id = email_options_response.json()["challenge_id"]
 
     verification = SimpleNamespace(
@@ -192,11 +193,89 @@ async def test_authenticate_passkey_returns_jwt_and_bypasses_2fa(
     assert isinstance(passkey.last_used_at, datetime)
 
 
-async def test_password_login_with_passkey_requires_second_factor(
+async def _authenticate_with_stored_passkey(client: AsyncClient, passkey: UserPasskey):
+    options_response = await client.post("/api/auth/passkeys/authenticate/options", json={})
+    challenge_id = options_response.json()["challenge_id"]
+    verification = SimpleNamespace(
+        credential_id=base64url_to_bytes(passkey.credential_id),
+        new_sign_count=1,
+    )
+    with patch(
+        "app.api.passkeys.verify_authentication_response", return_value=verification
+    ) as verify_mock:
+        verify_response = await client.post(
+            "/api/auth/passkeys/authenticate/verify",
+            json={
+                "challenge_id": challenge_id,
+                "credential": {
+                    "id": passkey.credential_id,
+                    "rawId": passkey.credential_id,
+                    "response": {
+                        "authenticatorData": "YXV0aC1kYXRh",
+                        "clientDataJSON": "Y2xpZW50LWRhdGE",
+                        "signature": "c2lnbmF0dXJl",
+                        "userHandle": None,
+                    },
+                    "type": "public-key",
+                    "clientExtensionResults": {},
+                },
+            },
+        )
+    assert verify_response.status_code == 200
+    return verify_mock
+
+
+async def test_backed_up_passkey_skips_sign_count_check(
     client: AsyncClient,
     session: AsyncSession,
     test_user,
 ):
+    # Synced passkeys (1Password, iCloud Keychain) report a stale counter when
+    # used from another device; the stored counter must not be enforced.
+    passkey = UserPasskey(
+        user_id=test_user.id,
+        credential_id="YmFja2VkLXVwLWtleQ",
+        public_key="YmFja2VkLXVwLXB1YmxpYw",
+        sign_count=42,
+        name="1Password passkey",
+        backed_up=True,
+    )
+    session.add(passkey)
+    await session.commit()
+    await session.refresh(passkey)
+
+    verify_mock = await _authenticate_with_stored_passkey(client, passkey)
+    assert verify_mock.call_args.kwargs["credential_current_sign_count"] == 0
+
+
+async def test_device_bound_passkey_enforces_sign_count(
+    client: AsyncClient,
+    session: AsyncSession,
+    test_user,
+):
+    passkey = UserPasskey(
+        user_id=test_user.id,
+        credential_id="ZGV2aWNlLWJvdW5kLWtleQ",
+        public_key="ZGV2aWNlLWJvdW5kLXB1YmxpYw",
+        sign_count=42,
+        name="Security key",
+        backed_up=False,
+    )
+    session.add(passkey)
+    await session.commit()
+    await session.refresh(passkey)
+
+    verify_mock = await _authenticate_with_stored_passkey(client, passkey)
+    assert verify_mock.call_args.kwargs["credential_current_sign_count"] == 42
+
+
+async def test_password_login_with_passkey_but_no_2fa_returns_token(
+    client: AsyncClient,
+    session: AsyncSession,
+    test_user,
+):
+    # A registered passkey is a passwordless alternative, not an implicit
+    # second factor: without 2FA enabled, email + password must sign in.
     session.add(
         UserPasskey(
             user_id=test_user.id,
@@ -216,19 +295,48 @@ async def test_password_login_with_passkey_requires_second_factor(
 
     assert response.status_code == 200
     data = response.json()
+    assert "access_token" in data
+    assert data["token_type"] == "bearer"
+    assert "requires_2fa" not in data
+
+
+async def test_password_login_with_2fa_and_passkey_offers_both_methods(
+    client: AsyncClient,
+    session: AsyncSession,
+    test_user_with_2fa,
+):
+    session.add(
+        UserPasskey(
+            user_id=test_user_with_2fa.id,
+            credential_id="MmZhLXBhc3NrZXk",
+            public_key="cHVibGljLWtleQ",
+            sign_count=1,
+            name="Security key",
+        )
+    )
+    await session.commit()
+
+    response = await client.post(
+        "/api/auth/login",
+        data={"username": test_user_with_2fa.email, "password": "testpass123"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
     assert data["requires_2fa"] is True
     assert data["temp_token"]
-    assert data["available_methods"] == ["passkey"]
+    assert data["available_methods"] == ["totp", "passkey"]
     assert "access_token" not in data
 
 
 async def test_passkey_second_factor_returns_jwt_for_same_user_passkey(
     client: AsyncClient,
     session: AsyncSession,
-    test_user,
+    test_user_with_2fa,
 ):
     passkey = UserPasskey(
-        user_id=test_user.id,
+        user_id=test_user_with_2fa.id,
         credential_id="c2FtZS11c2VyLWtleQ",
         public_key="c2FtZS11c2VyLXB1YmxpYw",
         sign_count=2,
@@ -240,7 +348,7 @@ async def test_passkey_second_factor_returns_jwt_for_same_user_passkey(
 
     login_response = await client.post(
         "/api/auth/login",
-        data={"username": test_user.email, "password": "testpass123"},
+        data={"username": test_user_with_2fa.email, "password": "testpass123"},
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
     temp_token = login_response.json()["temp_token"]
@@ -289,14 +397,14 @@ async def test_passkey_second_factor_rejects_other_users_passkey(
     test_user_with_2fa,
 ):
     own_passkey = UserPasskey(
-        user_id=test_user.id,
+        user_id=test_user_with_2fa.id,
         credential_id="b3duZXItbWZhLWtleQ",
         public_key="b3duZXItcHVibGlj",
         sign_count=1,
         name="Own key",
     )
     other_passkey = UserPasskey(
-        user_id=test_user_with_2fa.id,
+        user_id=test_user.id,
         credential_id="b3RoZXItbWZhLWtleQ",
         public_key="b3RoZXItcHVibGlj",
         sign_count=1,
@@ -307,7 +415,7 @@ async def test_passkey_second_factor_rejects_other_users_passkey(
 
     login_response = await client.post(
         "/api/auth/login",
-        data={"username": test_user.email, "password": "testpass123"},
+        data={"username": test_user_with_2fa.email, "password": "testpass123"},
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
     temp_token = login_response.json()["temp_token"]

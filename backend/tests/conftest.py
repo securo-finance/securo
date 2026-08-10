@@ -35,7 +35,7 @@ class _VectorJSON(sqlalchemy.types.JSON):
         return literal(0.5)
 
 
-_pgv.Vector = _VectorJSON  # type: ignore[attr-defined]
+setattr(_pgv, "Vector", _VectorJSON)
 # ---------------------------------------------------------------------------
 
 import pytest  # noqa: E402
@@ -227,7 +227,7 @@ async def auth_token(client: AsyncClient, test_user: User) -> str:
 
 
 @pytest_asyncio.fixture
-def auth_headers(auth_token: str) -> dict:
+async def auth_headers(auth_token: str) -> dict:
     """Auth headers for authenticated requests."""
     return {"Authorization": f"Bearer {auth_token}"}
 
@@ -271,7 +271,7 @@ async def admin_auth_token(client: AsyncClient, test_superuser: User) -> str:
 
 
 @pytest_asyncio.fixture
-def admin_auth_headers(admin_auth_token: str) -> dict:
+async def admin_auth_headers(admin_auth_token: str) -> dict:
     """Auth headers for admin requests."""
     return {"Authorization": f"Bearer {admin_auth_token}"}
 

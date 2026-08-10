@@ -55,7 +55,7 @@ export function GroupForm({
       <div className="space-y-2">
         <Label>{t('splitGroups.kindLabel')}</Label>
         <select
-          className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background h-9 focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+          className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card h-9 focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
           value={kind}
           onChange={(e) => onChangeKind(e.target.value as GroupKind)}
         >
@@ -70,7 +70,7 @@ export function GroupForm({
       <div className="space-y-2">
         <Label>{t('splitGroups.defaultCurrency')}</Label>
         <select
-          className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background h-9 focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+          className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card h-9 focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
           value={defaultCurrency}
           onChange={(e) => onChangeDefaultCurrency(e.target.value)}
         >
@@ -86,7 +86,7 @@ export function GroupForm({
       <div className="space-y-2">
         <Label>{t('splitGroups.notes')}</Label>
         <textarea
-          className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background resize-none h-20"
+          className="w-full border border-input rounded-md px-3 py-2 text-sm bg-card resize-none h-20"
           value={notes}
           onChange={(e) => onChangeNotes(e.target.value)}
         />

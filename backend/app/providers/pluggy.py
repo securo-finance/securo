@@ -530,7 +530,7 @@ class PluggyProvider(BankProvider):
         # Pluggy manages API keys at the provider level, not per-connection
         return credentials
 
-    async def trigger_refresh(self, credentials: dict) -> RefreshOutcome:
+    async def trigger_refresh(self, credentials: dict | None) -> RefreshOutcome:
         """Trigger ``PATCH /items/{id}`` and poll the item until it leaves
         the ``UPDATING`` state.
 

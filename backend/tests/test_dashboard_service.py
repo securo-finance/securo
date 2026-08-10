@@ -52,7 +52,7 @@ async def _add_txn(
     session: AsyncSession, user_id: uuid.UUID, account_id: uuid.UUID,
     amount: float, txn_type: str, txn_date: date,
     source: str = "manual", transfer_pair_id: uuid.UUID | None = None,
-    category_id: uuid.UUID | None = None,
+    category_id: uuid.UUID | None = None, status: str = "posted",
 ) -> Transaction:
     from datetime import datetime, timezone
     txn = Transaction(
@@ -60,6 +60,7 @@ async def _add_txn(
         description=f"Test {txn_type} {amount}", amount=Decimal(str(amount)),
         date=txn_date, type=txn_type, source=source, currency="BRL",
         transfer_pair_id=transfer_pair_id, category_id=category_id,
+        status=status,
         created_at=datetime.now(timezone.utc),
     )
     session.add(txn)
@@ -178,6 +179,98 @@ async def test_account_balance_at_bank_connected(session: AsyncSession, test_use
 
 
 @pytest.mark.asyncio
+async def test_account_balance_at_manual_excludes_ignored_categories(
+    session: AsyncSession, test_user
+):
+    account = await _make_account(session, test_user.id, "Manual ignored")
+    ignored = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Ignored",
+        is_ignored=True,
+    )
+    ordinary = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Ordinary",
+        is_ignored=False,
+    )
+    session.add_all([ignored, ordinary])
+    await session.commit()
+
+    await _add_txn(
+        session, test_user.id, account.id, 1000, "credit",
+        date(2026, 7, 1), source="opening_balance",
+    )
+    await _add_txn(
+        session, test_user.id, account.id, 100, "debit",
+        date(2026, 8, 3), category_id=ignored.id,
+    )
+    await _add_txn(
+        session, test_user.id, account.id, 40, "debit",
+        date(2026, 8, 4), category_id=ordinary.id,
+    )
+    await _add_txn(
+        session, test_user.id, account.id, 10, "debit",
+        date(2026, 8, 5),
+    )
+
+    balance = await _account_balance_at(session, account, date(2026, 9, 1))
+
+    assert balance == pytest.approx(950.0)
+
+
+@pytest.mark.asyncio
+async def test_account_balance_at_connected_excludes_ignored_categories(
+    session: AsyncSession, test_user, test_connection
+):
+    account = await _make_account(
+        session,
+        test_user.id,
+        "Connected ignored",
+        balance="850.00",
+        connection_id=test_connection.id,
+    )
+    ignored = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Ignored",
+        is_ignored=True,
+    )
+    ordinary = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        name="Ordinary",
+        is_ignored=False,
+    )
+    session.add_all([ignored, ordinary])
+    await session.commit()
+
+    await _add_txn(
+        session, test_user.id, account.id, 100, "debit",
+        date(2026, 8, 2), category_id=ignored.id,
+    )
+    individually_ignored = await _add_txn(
+        session, test_user.id, account.id, 50, "debit",
+        date(2026, 8, 3),
+    )
+    individually_ignored.is_ignored = True
+    await _add_txn(
+        session, test_user.id, account.id, 200, "credit",
+        date(2026, 8, 4),
+    )
+    await _add_txn(
+        session, test_user.id, account.id, 50, "debit",
+        date(2026, 8, 5), category_id=ordinary.id,
+    )
+    await session.commit()
+
+    balance = await _account_balance_at(session, account, date(2026, 8, 1))
+
+    assert balance == pytest.approx(700.0)
+
+
+@pytest.mark.asyncio
 async def test_account_balance_at_credit_card_connected(session: AsyncSession, test_user, test_connection):
     """Bank-connected credit_card negates balance."""
     account = await _make_account(
@@ -291,6 +384,24 @@ async def test_get_summary_excludes_transfers(session: AsyncSession, test_user, 
 
     summary = await get_summary(session, test_workspace.id, test_user.id)
     assert summary.monthly_expenses == pytest.approx(100.0)
+
+
+@pytest.mark.asyncio
+async def test_get_summary_excludes_pending_from_period_totals(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Pending (not yet settled) transactions stay out of monthly income/expenses."""
+    account = await _make_account(session, test_user.id, "Pending Excl")
+    today = date.today()
+
+    await _add_txn(session, test_user.id, account.id, 100, "debit", today)
+    await _add_txn(session, test_user.id, account.id, 50, "credit", today)
+    await _add_txn(session, test_user.id, account.id, 10000, "debit", today, status="pending")
+    await _add_txn(session, test_user.id, account.id, 9000, "credit", today, status="pending")
+
+    summary = await get_summary(session, test_workspace.id, test_user.id)
+    assert summary.monthly_expenses == pytest.approx(100.0)
+    assert summary.monthly_income == pytest.approx(50.0)
 
 
 @pytest.mark.asyncio
@@ -703,6 +814,80 @@ async def test_balance_history_basic(session, test_user, test_workspace):
     history = await get_balance_history(session, test_workspace.id, test_user.id)
     assert len(history.current) > 0
     assert len(history.previous) > 0
+
+
+@pytest.mark.asyncio
+async def test_balance_history_ignored_category_is_consistent_across_months(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Ignored boundary",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    ignored = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Ignored",
+        is_ignored=True,
+    )
+    session.add_all([account, ignored])
+    await session.flush()
+    session.add_all([
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            description="Opening",
+            amount=Decimal("1000"),
+            currency="BRL",
+            date=date(2026, 7, 1),
+            type="credit",
+            source="opening_balance",
+        ),
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            category_id=ignored.id,
+            description="Ignored debit",
+            amount=Decimal("100"),
+            currency="BRL",
+            date=date(2026, 8, 3),
+            type="debit",
+            source="manual",
+            is_ignored=False,
+        ),
+    ])
+    await session.commit()
+
+    august = await get_balance_history(
+        session,
+        test_workspace.id,
+        test_user.id,
+        month=date(2026, 8, 1),
+        account_ids=[account.id],
+    )
+    september = await get_balance_history(
+        session,
+        test_workspace.id,
+        test_user.id,
+        month=date(2026, 9, 1),
+        account_ids=[account.id],
+    )
+
+    august_balance = next(
+        point.balance for point in reversed(august.current) if point.balance is not None
+    )
+    assert august_balance == 1000.0
+    assert september.current[0].balance == 1000.0
 
 
 @pytest.mark.asyncio

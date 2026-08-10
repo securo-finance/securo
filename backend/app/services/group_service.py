@@ -23,7 +23,7 @@ def _tag_owner(group: Group, user_id: uuid.UUID) -> Group:
     workspace it lives in — `Group.user_id` retains creator semantics
     even after the workspace migration.
     """
-    group.is_owner = group.user_id == user_id  # type: ignore[attr-defined]
+    group.is_owner = group.user_id == user_id
     if getattr(group, "members", None):
         for m in group.members:
             _tag_member_self(m, user_id, group.user_id)

@@ -55,7 +55,7 @@ async def test_create_payee(session: AsyncSession, test_user, test_workspace):
     assert payee.name == "Starbucks"
     assert payee.type == "merchant"
     assert payee.is_favorite is False
-    assert payee.transaction_count == 0
+    assert payee.transaction_count == 0  # type: ignore[attr-defined]
     assert payee.user_id == test_user.id
 
 
@@ -139,8 +139,8 @@ async def test_get_payees_with_transaction_counts(session: AsyncSession, test_us
     payees = await get_payees(session, test_workspace.id)
     payees_by_name = {p.name: p for p in payees}
 
-    assert payees_by_name["Payee A"].transaction_count == 2
-    assert payees_by_name["Payee B"].transaction_count == 1
+    assert payees_by_name["Payee A"].transaction_count == 2  # type: ignore[attr-defined]
+    assert payees_by_name["Payee B"].transaction_count == 1  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio
@@ -175,8 +175,8 @@ async def test_get_payees_includes_zero_transaction_payees(session: AsyncSession
     assert orphan.id in ids
 
     payees_by_id = {p.id: p for p in payees}
-    assert payees_by_id[active.id].transaction_count == 1
-    assert payees_by_id[orphan.id].transaction_count == 0
+    assert payees_by_id[active.id].transaction_count == 1  # type: ignore[attr-defined]
+    assert payees_by_id[orphan.id].transaction_count == 0  # type: ignore[attr-defined]
 
 
 # ---------------------------------------------------------------------------

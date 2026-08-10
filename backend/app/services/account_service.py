@@ -3,7 +3,7 @@ from datetime import date as _Date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import case, func, select, or_
+from sqlalchemy import case, delete, func, select, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import contains_eager
 
@@ -553,20 +553,20 @@ async def delete_account(session: AsyncSession, account_id: uuid.UUID, workspace
     # The transaction rows themselves cascade-delete via Account.transactions
     # when session.delete(account) flushes below.
     await session.execute(
-        Transaction.__table__.update()
+        update(Transaction)
         .where(Transaction.account_id == account_id)
         .values(import_id=None)
     )
     await session.execute(
-        ImportLog.__table__.delete().where(ImportLog.account_id == account_id)
+        delete(ImportLog).where(ImportLog.account_id == account_id)
     )
     await session.execute(
-        RecurringTransaction.__table__.delete().where(
+        delete(RecurringTransaction).where(
             RecurringTransaction.account_id == account_id
         )
     )
     await session.execute(
-        Goal.__table__.update()
+        update(Goal)
         .where(Goal.account_id == account_id)
         .values(account_id=None)
     )
@@ -666,7 +666,7 @@ async def get_account_summary(
                 ),
             )
         )
-        current_balance = float(balance_result.scalar())
+        current_balance = float(balance_result.scalar() or 0)
 
     # Connected CC: provider balance is positive for debt → negate.
     # Manual CC: transaction math already gives negative for debt.

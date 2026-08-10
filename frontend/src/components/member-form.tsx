@@ -48,7 +48,7 @@ export function MemberForm({
       <div className="space-y-2">
         <Label>{t('splitGroups.linkedUser')}</Label>
         <select
-          className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background h-9 focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+          className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card h-9 focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
           value={linkedUserId ?? ''}
           onChange={(e) => {
             const id = e.target.value || null

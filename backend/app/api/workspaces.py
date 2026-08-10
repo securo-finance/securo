@@ -271,7 +271,11 @@ async def change_member_role(
         session, workspace_id, member_user_id, body.role
     )
     await session.commit()
+
     target = await session.get(User, member_user_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Could not find user")
+
     return MemberRead(
         id=member.id,
         user_id=target.id,

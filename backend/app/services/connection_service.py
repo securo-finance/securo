@@ -22,6 +22,7 @@ from app.models.user import User
 from app.providers import get_provider
 from app.providers.base import (
     HoldingData,
+    ProviderNotConfiguredError,
     ProviderRateLimited,
     ProviderUserActionRequired,
     SessionExpiredError,
@@ -1138,15 +1139,28 @@ async def sync_connection(
     connection = await get_connection(session, connection_id, workspace_id)
     if not connection:
         raise ValueError("Connection not found")
+    if not connection.credentials:
+        raise ValueError("Credentials not found")
 
     conn_settings = connection.settings or {}
     payee_source = conn_settings.get("payee_source", "auto")
     import_pending = conn_settings.get("import_pending", True)
     use_provider_cats = await admin_service.use_provider_categories(session)
 
+    # Resolve the provider before the error-handling block: an unregistered
+    # provider is a server misconfiguration, and the catch-all below would
+    # wrongly stamp the (healthy) connection with status="error".
     try:
         provider = get_provider(connection.provider)
+    except ValueError as exc:
+        raise ProviderNotConfiguredError(
+            f"Provider '{connection.provider}' is not configured in this process. "
+            "If connecting from the web app works but background sync fails, the "
+            "worker service is likely not loading the environment (.env) that "
+            "enables this provider."
+        ) from exc
 
+    try:
         # Refresh credentials if needed
         credentials = await provider.refresh_credentials(connection.credentials)
         connection.credentials = credentials
@@ -1524,8 +1538,11 @@ async def sync_connection(
             conn = await session.get(BankConnection, connection_id)
             if conn and conn.status != "expired":
                 conn.status = "active"
+        # The row can vanish if the connection was deleted mid-sync. Fall back
+        # to the one we already hold rather than raising: re-raising here would
+        # escape as a 500, which is exactly what this handler exists to avoid.
         refreshed = await session.get(BankConnection, connection_id)
-        return refreshed, 0
+        return refreshed or connection, 0
     except Exception:
         # Mark connection as errored so UI shows reconnect banner
         await session.rollback()

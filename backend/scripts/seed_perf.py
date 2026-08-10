@@ -25,6 +25,7 @@ import sys
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import NotRequired, TypedDict
 
 # Allow running from repo root or backend root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -115,7 +116,17 @@ ASSET_GROUP_TEMPLATES = [
     {"name": "Collectibles",     "icon": "gem",         "color": "#a855f7"},
 ]
 
-ASSET_TEMPLATES = [
+class AssetTemplate(TypedDict):
+    name: str
+    type: str
+    currency: str
+    purchase: Decimal
+    base: Decimal
+    daily_pct: Decimal
+    group: NotRequired[str]
+
+
+ASSET_TEMPLATES: list[AssetTemplate] = [
     {"name": "Primary Residence",   "type": "real_estate",  "currency": "USD", "purchase": Decimal("450000"), "base": Decimal("520000"), "daily_pct": Decimal("0.00110"),  "group": "Real Estate"},
     {"name": "Investment Property", "type": "real_estate",  "currency": "USD", "purchase": Decimal("280000"), "base": Decimal("310000"), "daily_pct": Decimal("0.00082"),  "group": "Real Estate"},
     {"name": "Tesla Model 3",       "type": "vehicle",      "currency": "USD", "purchase": Decimal("45000"),  "base": Decimal("28000"),  "daily_pct": Decimal("-0.00219")},
@@ -206,6 +217,8 @@ async def seed(
                 user = await manager.create(UserCreate(email=email, password=password))
             except UserAlreadyExists:
                 user = await session.scalar(select(User).where(User.email == email))
+            if user is None:
+                raise RuntimeError(f"Failed to create or look up user {email}")
             await session.commit()
             print(f"  Created {user.id}")
         else:

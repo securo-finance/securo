@@ -235,6 +235,7 @@ async def test_update_settings_new(session: AsyncSession, test_user, test_worksp
         session, conn.id, test_workspace.id, {"payee_source": "merchant"},
     )
     assert updated is not None
+    assert updated.settings is not None
     assert updated.settings["payee_source"] == "merchant"
 
 
@@ -250,6 +251,7 @@ async def test_update_settings_preserves_existing(session: AsyncSession, test_us
         session, conn.id, test_workspace.id, {"import_pending": False},
     )
     assert updated is not None
+    assert updated.settings is not None
     assert updated.settings["payee_source"] == "auto"
     assert updated.settings["import_pending"] is False
 
@@ -266,6 +268,7 @@ async def test_update_settings_sync_assets(session: AsyncSession, test_user, tes
         session, conn.id, test_workspace.id, {"sync_assets": False},
     )
     assert updated is not None
+    assert updated.settings is not None
     assert updated.settings["payee_source"] == "auto"
     assert updated.settings["import_pending"] is True
     assert updated.settings["sync_assets"] is False
@@ -301,6 +304,8 @@ async def test_oauth_callback_respects_initial_asset_sync_opt_out(
             sync_assets=False,
         )
 
+    assert connection is not None
+    assert connection.settings is not None
     assert connection.settings["sync_assets"] is False
     mock_provider.get_holdings.assert_not_awaited()
     assets = (await session.execute(select(Asset))).scalars().all()
@@ -346,6 +351,8 @@ async def test_oauth_callback_respects_state_asset_sync_opt_out(
             state="stored-state",
         )
 
+    assert connection is not None
+    assert connection.settings is not None
     assert connection.settings["sync_assets"] is False
     assert connection.settings["flow_params"] == {
         "country": "BR",
@@ -440,6 +447,7 @@ async def test_update_settings_ignores_none(session: AsyncSession, test_user, te
         session, conn.id, test_workspace.id, {"payee_source": None},
     )
     assert updated is not None
+    assert updated.settings is not None
     assert updated.settings["payee_source"] == "auto"
 
 
@@ -838,6 +846,7 @@ async def test_sync_connection_user_action_marks_error(
             await sync_connection(session, conn.id, test_workspace.id, test_user.id)
 
     refreshed = await session.get(BankConnection, conn.id)
+    assert refreshed is not None
     assert refreshed.status == "error"
 
 
@@ -1610,6 +1619,7 @@ async def test_sync_creates_synthetic_transactions_for_finance_charges(
         assert r.date == date(2026, 4, 15)
         assert r.effective_date == date(2026, 4, 15)
         assert r.type == "debit"
+        assert r.external_id is not None
         assert r.external_id.startswith("bill_charge:bill-fc-1:")
 
 
@@ -1831,6 +1841,7 @@ async def test_sync_removes_orphaned_finance_charges_on_resync(
         )
     )).scalars().all()
     assert len(rows) == 1
+    assert rows[0].external_id is not None
     assert "fc-keep" in rows[0].external_id
 
 

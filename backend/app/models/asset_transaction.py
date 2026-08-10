@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime
+from datetime import date as _date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Optional
 
@@ -36,7 +36,7 @@ class AssetTransaction(Base):
     quantity: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=6))
     price: Mapped[Decimal] = mapped_column(Numeric(precision=18, scale=6))  # per-share, asset currency
     fee: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2), default=Decimal("0"))
-    date: Mapped[date] = mapped_column(Date, index=True)
+    date: Mapped[_date] = mapped_column(Date, index=True)
     source: Mapped[str] = mapped_column(String(20), default="manual")  # manual, import, pluggy
     external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)

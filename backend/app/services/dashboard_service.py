@@ -157,6 +157,8 @@ async def get_summary(
     # don't inflate the month's income figure. counts_as_user_pnl() skips
     # paired transfers, transfer-like categories AND settlement movements
     # (whose offset is already in the owner's share, see share-only model).
+    # Only posted (settled) transactions count; pending entries stay out of
+    # the period totals until they post.
     monthly_result = await session.execute(
         select(
             func.sum(case((Transaction.type == "credit", Transaction.amount), else_=0)),
@@ -169,6 +171,7 @@ async def get_summary(
             report_date >= month_start,
             report_date < month_end,
             Transaction.source != "opening_balance",
+            Transaction.status == "posted",
             counts_as_user_pnl(),
             *acct_filter,
         )
@@ -277,7 +280,8 @@ async def get_summary(
     monthly_income_primary = real_monthly_income
     monthly_expenses_primary = abs(real_monthly_expenses)
 
-    # Use amount_primary sums for more accurate multi-currency income/expenses
+    # Use amount_primary sums for more accurate multi-currency income/expenses.
+    # Same posted-only rule as the native-currency totals above.
     primary_result = await session.execute(
         select(
             func.sum(case((Transaction.type == "credit", Transaction.amount_primary), else_=0)),
@@ -290,6 +294,7 @@ async def get_summary(
             report_date >= month_start,
             report_date < month_end,
             Transaction.source != "opening_balance",
+            Transaction.status == "posted",
             counts_as_user_pnl(),
             Transaction.amount_primary.isnot(None),
             *acct_filter,
@@ -886,10 +891,15 @@ async def _account_balance_at(
         # Exclude ignored transactions from balance calculation
         delta_after = await session.scalar(
             select(func.coalesce(func.sum(_signed_balance_expr(account.currency)), 0))
+            .outerjoin(Category, Transaction.category_id == Category.id)
             .where(
                 Transaction.account_id == account.id,
                 Transaction.date > cutoff,
                 Transaction.is_ignored == False,
+                or_(
+                    Transaction.category_id.is_(None),
+                    Category.is_ignored == False,
+                ),
             )
         )
         return current_bal - float(delta_after or 0)
@@ -898,10 +908,15 @@ async def _account_balance_at(
         # Exclude ignored transactions from balance calculation
         result = await session.scalar(
             select(func.coalesce(func.sum(_signed_balance_expr(account.currency)), 0))
+            .outerjoin(Category, Transaction.category_id == Category.id)
             .where(
                 Transaction.account_id == account.id,
                 Transaction.date <= cutoff,
                 Transaction.is_ignored == False,
+                or_(
+                    Transaction.category_id.is_(None),
+                    Category.is_ignored == False,
+                ),
             )
         )
         return float(result or 0)
