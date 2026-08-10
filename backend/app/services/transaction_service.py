@@ -1584,23 +1584,21 @@ async def bulk_delete_transactions(
     paired_ids = []
     if transfer_pair_ids:
         paired_result = await session.execute(
-            select(Transaction.id, Transaction.transfer_pair_id)
+            select(Transaction.id)
             .where(
                 Transaction.transfer_pair_id.in_(transfer_pair_ids),
                 Transaction.id.notin_(valid_ids),
+                Transaction.workspace_id == workspace_id,
             )
         )
         paired_ids = [row[0] for row in paired_result.all()]
 
+    # Storage files must go before the rows: the DB cascade removes the
+    # attachment records, and after that their storage keys are unreachable.
     await cleanup_attachment_files(session, valid_ids + paired_ids)
 
-    for pid in paired_ids:
-        await session.execute(
-            delete(Transaction).where(Transaction.id == pid)
-        )
-
     await session.execute(
-        delete(Transaction).where(Transaction.id.in_(valid_ids))
+        delete(Transaction).where(Transaction.id.in_(valid_ids + paired_ids))
     )
     await session.commit()
     return len(valid_ids)

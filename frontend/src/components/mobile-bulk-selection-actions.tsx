@@ -104,7 +104,7 @@ function BulkActionItems(props: MobileBulkSelectionActionsProps) {
       </DropdownMenuItem>
       {props.onCreateRule && <DropdownMenuItem onSelect={props.onCreateRule}><SlidersHorizontal size={15} />{t('transactions.createRule')}</DropdownMenuItem>}
       <DropdownMenuItem onSelect={props.onBulkDelete} className="text-destructive">
-        <Trash2 size={15} />{t('transactions.bulkDelete', 'Delete selected')}
+        <Trash2 size={15} />{t('transactions.bulkDelete')}
       </DropdownMenuItem>
       <BulkTagEditor {...props} />
     </>

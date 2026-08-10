@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -613,11 +614,13 @@ export default function TransactionsPage() {
     },
   })
 
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
   const bulkDeleteMutation = useMutation({
     mutationFn: () => transactions.bulkDelete(Array.from(selectedIds)),
     onSuccess: (result) => {
       invalidateAfterTxMutation()
       setSelectedIds(new Set())
+      setBulkDeleteConfirmOpen(false)
       toast.success(t('transactions.bulkDeleteSuccess', { count: result.deleted }))
     },
     onError: (error) => {
@@ -1701,7 +1704,7 @@ export default function TransactionsPage() {
               onTagInputChange={setBulkTagInput}
               onAddTags={(tags) => bulkAddTagsMutation.mutate({ ids: Array.from(selectedIds), tags })}
               onRemoveTags={(tags) => bulkRemoveTagsMutation.mutate({ ids: Array.from(selectedIds), tags })}
-              onBulkDelete={() => bulkDeleteMutation.mutate()}
+              onBulkDelete={() => setBulkDeleteConfirmOpen(true)}
               onClear={() => { setSelectedIds(new Set()); setBulkCategory(''); setBulkTagInput('') }}
             />
 
@@ -1857,7 +1860,7 @@ export default function TransactionsPage() {
             <Button
               size="sm"
               variant="destructive"
-              onClick={() => bulkDeleteMutation.mutate()}
+              onClick={() => setBulkDeleteConfirmOpen(true)}
               disabled={bulkDeleteMutation.isPending}
               className="h-8 px-3 shrink-0 text-sm"
             >
@@ -1993,6 +1996,30 @@ export default function TransactionsPage() {
               {updateMutation.isPending
                 ? t('common.loading')
                 : t('transactions.confirmTransferCategoryBoth')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Delete confirmation */}
+      <Dialog open={bulkDeleteConfirmOpen} onOpenChange={setBulkDeleteConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('transactions.bulkDeleteTitle', { count: selectedIds.size })}</DialogTitle>
+            <DialogDescription>
+              {t('transactions.bulkDeleteDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setBulkDeleteConfirmOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => bulkDeleteMutation.mutate()}
+              disabled={bulkDeleteMutation.isPending}
+            >
+              {bulkDeleteMutation.isPending ? t('common.loading') : t('common.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>
