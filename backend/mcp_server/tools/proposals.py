@@ -33,6 +33,7 @@ from app.schemas.goal import GoalCreate
 from app.schemas.recurring_transaction import (
     RecurringTransactionCreate,
     RecurringTransactionUpdate,
+    WeekendAdjustment,
 )
 from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
 from app.schemas.transaction import TransactionCreate
@@ -649,7 +650,7 @@ async def propose_create_recurring_transaction(
     type: str,
     frequency: str,
     account_id: str,
-    weekend_adjustment: str = "none",
+    weekend_adjustment: WeekendAdjustment = "none",
     day_of_month: int | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
