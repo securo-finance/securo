@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeftRight, CalendarDays, CircleDot, Minus } from 'lucide-react'
-import type { TransactionCalendarDay, TransactionCalendarItem, TransactionCalendarResponse } from '@/types'
+import { ArrowLeftRight, CalendarDays, CircleDot, Clock, EyeClosed, Minus } from 'lucide-react'
+import type { Account, TransactionCalendarDay, TransactionCalendarItem, TransactionCalendarResponse } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
+import { AccountIcon } from '@/components/account-icon'
 import { CategoryIcon } from '@/components/category-icon'
+import { getAccountName } from '@/lib/account-utils'
 import { activityChartData, dayActivity } from '@/lib/calendar-activity'
 import { weekdayShortLabels } from '@/lib/date-utils'
 import { cn } from '@/lib/utils'
@@ -73,6 +75,8 @@ export function TransactionCalendarView({
   selectedDate,
   onSelectedDateChange,
   onOpenTransaction,
+  accounts,
+  userCurrency,
 }: {
   calendar?: TransactionCalendarResponse
   isLoading: boolean
@@ -82,9 +86,17 @@ export function TransactionCalendarView({
   selectedDate: string
   onSelectedDateChange: (date: string) => void
   onOpenTransaction: (id: string) => void
+  accounts?: Account[]
+  userCurrency: string
 }) {
   const [density, setDensity] = useState<CalendarDensity>(readCalendarDensity)
   const [metric, setMetric] = useState<CalendarMetric>(readCalendarMetric)
+
+  const accountById = useMemo(() => {
+    const map = new Map<string, Account>()
+    for (const account of accounts ?? []) map.set(account.id, account)
+    return map
+  }, [accounts])
 
   useEffect(() => {
     window.localStorage.setItem(CALENDAR_DENSITY_STORAGE_KEY, density)
@@ -191,30 +203,54 @@ export function TransactionCalendarView({
         </div>
 
         <div className="md:hidden divide-y divide-border">
-          {calendar.days.filter((day) => day.in_month).map((day) => (
-            <MobileDayRow
-              key={day.date}
-              day={day}
-              selected={day.date === selectedDate}
-              currency={calendar.currency}
-              locale={locale}
-              dateLocale={dateLocale}
-              mask={mask}
-              density={density}
-              metric={metric}
-              onSelect={() => onSelectedDateChange(day.date)}
-            />
-          ))}
+          {calendar.days.filter((day) => day.in_month || day.date === selectedDate).map((day) => {
+            const selected = day.date === selectedDate
+            const panelId = `transaction-calendar-day-details-${day.date}`
+            return (
+              <div key={day.date}>
+                <MobileDayRow
+                  day={day}
+                  selected={selected}
+                  panelId={panelId}
+                  currency={calendar.currency}
+                  locale={locale}
+                  dateLocale={dateLocale}
+                  mask={mask}
+                  density={density}
+                  metric={metric}
+                  onSelect={() => onSelectedDateChange(day.date)}
+                />
+                {selected && (
+                  <SelectedDayPanel
+                    id={panelId}
+                    variant="mobile"
+                    day={day}
+                    currency={calendar.currency}
+                    locale={locale}
+                    dateLocale={dateLocale}
+                    mask={mask}
+                    metric={metric}
+                    accountById={accountById}
+                    userCurrency={userCurrency}
+                    onOpenTransaction={onOpenTransaction}
+                  />
+                )}
+              </div>
+            )
+          })}
         </div>
       </section>
 
       <SelectedDayPanel
+        variant="desktop"
         day={selectedDay}
         currency={calendar.currency}
         locale={locale}
         dateLocale={dateLocale}
         mask={mask}
         metric={metric}
+        accountById={accountById}
+        userCurrency={userCurrency}
         onOpenTransaction={onOpenTransaction}
       />
     </div>
@@ -748,7 +784,27 @@ function DayCell({
 // That carried no meaning and starved the amount, so the row now shows the category icon
 // and the amount only. The description stays available on hover and in the selected-day
 // panel. Projected items get a dashed border to read as not yet settled.
-function DayPreviewRow({ item, locale, mask }: { item: TransactionCalendarItem; locale: string; mask: (value: string) => string }) {
+// Hard cap for the mobile preview description: sliced, not just CSS-truncated,
+// so the row keeps a single line even on the narrowest screens.
+const PREVIEW_DESCRIPTION_MAX_CHARS = 20
+
+function previewDescription(description: string) {
+  if (description.length <= PREVIEW_DESCRIPTION_MAX_CHARS) return description
+  return `${description.slice(0, PREVIEW_DESCRIPTION_MAX_CHARS).trimEnd()}…`
+}
+
+function DayPreviewRow({
+  item,
+  locale,
+  mask,
+  showDescription = false,
+}: {
+  item: TransactionCalendarItem
+  locale: string
+  mask: (value: string) => string
+  // Mobile day rows have the horizontal room the desktop grid cells lack.
+  showDescription?: boolean
+}) {
   const amount = signedAmount(item)
   const label = [item.description, item.category_name].filter(Boolean).join(' · ')
   return (
@@ -762,7 +818,18 @@ function DayPreviewRow({ item, locale, mask }: { item: TransactionCalendarItem; 
       )}
     >
       <CategoryIcon icon={item.category_icon ?? undefined} color={item.category_color ?? undefined} size="xs" />
-      <span className={cn('min-w-0 flex-1 truncate text-right font-bold tabular-nums', amount >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400')}>
+      {showDescription && (
+        <span className="min-w-0 flex-1 truncate whitespace-nowrap text-muted-foreground">
+          {previewDescription(item.description)}
+        </span>
+      )}
+      <span
+        className={cn(
+          'font-bold tabular-nums whitespace-nowrap',
+          showDescription ? 'shrink-0' : 'min-w-0 flex-1 truncate text-right',
+          amount >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400',
+        )}
+      >
         {mask(`${amount >= 0 ? '+' : '−'}${compactCurrency(Math.abs(item.amount), item.currency, locale)}`)}
       </span>
     </div>
@@ -892,6 +959,7 @@ function BadgeDot({
 function MobileDayRow({
   day,
   selected,
+  panelId,
   currency,
   locale,
   dateLocale,
@@ -902,6 +970,7 @@ function MobileDayRow({
 }: {
   day: TransactionCalendarDay
   selected: boolean
+  panelId: string
   currency: string
   locale: string
   dateLocale: string
@@ -918,10 +987,12 @@ function MobileDayRow({
     <button
       type="button"
       onClick={onSelect}
+      aria-expanded={selected}
+      aria-controls={selected ? panelId : undefined}
       className={cn(
-        'w-full px-4 py-3 text-left transition-colors hover:bg-muted/30',
-        isLowBalance && 'bg-rose-50/75 dark:bg-rose-950/25',
-        selected && 'bg-primary/5 dark:bg-primary/10',
+        'w-full border-l-4 border-transparent px-4 py-3 text-left transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary',
+        isLowBalance && !selected && 'bg-rose-50/75 dark:bg-rose-950/25',
+        selected && 'border-primary bg-primary/10 dark:bg-primary/15',
       )}
     >
       <div className="flex items-center justify-between gap-3">
@@ -952,6 +1023,7 @@ function MobileDayRow({
               item={item}
               locale={locale}
               mask={mask}
+              showDescription
             />
           ))}
           {moreCount > 0 && (
@@ -966,20 +1038,28 @@ function MobileDayRow({
 }
 
 function SelectedDayPanel({
+  id,
+  variant,
   day,
   currency,
   locale,
   dateLocale,
   mask,
   metric,
+  accountById,
+  userCurrency,
   onOpenTransaction,
 }: {
+  id?: string
+  variant: 'mobile' | 'desktop'
   day?: TransactionCalendarDay
   currency: string
   locale: string
   dateLocale: string
   mask: (value: string) => string
   metric: CalendarMetric
+  accountById: Map<string, Account>
+  userCurrency: string
   onOpenTransaction: (id: string) => void
 }) {
   const { t } = useTranslation()
@@ -990,7 +1070,14 @@ function SelectedDayPanel({
     ? mask(formatCurrency(day.ending_balance, currency, locale))
     : mask(`${activity.actualNet >= 0 ? '+' : '−'}${formatCurrency(Math.abs(activity.actualNet), currency, locale)}`)
   return (
-    <aside className="bg-card rounded-xl border border-border shadow-sm overflow-hidden md:sticky md:top-4 md:max-h-[calc(100vh-7rem)] md:w-[320px] md:shrink-0 md:self-start md:flex md:flex-col lg:w-[340px]">
+    <aside
+      id={id}
+      className={cn(
+        'bg-card overflow-hidden',
+        variant === 'mobile' && 'mx-3 mt-2 mb-3 rounded-xl border border-border shadow-sm md:hidden',
+        variant === 'desktop' && 'hidden rounded-xl border border-border shadow-sm md:sticky md:top-4 md:max-h-[calc(100vh-7rem)] md:w-[320px] md:shrink-0 md:self-start md:flex md:flex-col lg:w-[340px]',
+      )}
+    >
       <div className="px-4 py-4 border-b border-border">
         <div className="flex items-end justify-between gap-3">
           <div className="min-w-0">
@@ -1077,7 +1164,9 @@ function SelectedDayPanel({
             <CalendarItemRow
               key={`${item.kind}-${item.id ?? item.recurring_id}-${item.date}`}
               item={item}
+              account={item.account_id ? accountById.get(item.account_id) : undefined}
               locale={locale}
+              userCurrency={userCurrency}
               mask={mask}
               onOpenTransaction={onOpenTransaction}
             />
@@ -1106,51 +1195,81 @@ function DayPanelRow({ label, value, amount }: { label: string; value: string; a
   )
 }
 
+// Mirrors MobileTransactionRow so a transaction reads the same in the list and
+// in the calendar: category icon, description with inline badges, account row,
+// colour-coded signed amount with the primary-currency conversion underneath.
 function CalendarItemRow({
   item,
+  account,
   locale,
+  userCurrency,
   mask,
   onOpenTransaction,
 }: {
   item: TransactionCalendarItem
+  account: Account | undefined
   locale: string
+  userCurrency: string
   mask: (value: string) => string
   onOpenTransaction: (id: string) => void
 }) {
   const { t } = useTranslation()
-  const amount = signedAmount(item)
   const interactive = item.kind === 'actual' && !!item.id
+  const amountColor = item.is_ignored
+    ? 'text-gray-500'
+    : item.type === 'credit'
+      ? 'text-emerald-600'
+      : 'text-rose-500'
   return (
     <button
       type="button"
       disabled={!interactive}
       onClick={() => { if (item.id) onOpenTransaction(item.id) }}
       className={cn(
-        'w-full px-4 py-3 text-left flex items-center gap-3',
-        interactive ? 'hover:bg-muted/50 transition-colors' : 'cursor-default',
+        'w-full flex items-center gap-3 pl-3 pr-3 py-3 text-left',
+        interactive ? 'hover:bg-muted/50 active:bg-muted/60 transition-colors' : 'cursor-default',
       )}
     >
-      <CategoryIcon icon={item.category_icon ?? undefined} color={item.category_color ?? undefined} size="md" />
+      <div className="shrink-0">
+        <CategoryIcon icon={item.category_icon ?? undefined} color={item.category_color ?? undefined} size="md" />
+      </div>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 min-w-0">
-          <p className="text-sm font-semibold text-foreground truncate">{item.description}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-sm font-semibold text-foreground truncate leading-tight">{item.description}</p>
           {item.kind === 'projected' && (
-            <span className="shrink-0 rounded-full border border-violet-500/20 bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+            <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
               {t('transactions.calendarProjected')}
             </span>
           )}
           {item.is_transfer && (
-            <span className="shrink-0 text-sky-600 dark:text-sky-400"><ArrowLeftRight size={13} /></span>
+            <ArrowLeftRight className="h-3 w-3 text-blue-600 shrink-0" />
+          )}
+          {item.is_ignored && (
+            <EyeClosed className="h-3 w-3 text-gray-500 shrink-0" />
+          )}
+          {item.status === 'pending' && (
+            <Clock size={12} className="text-muted-foreground shrink-0" />
           )}
         </div>
-        <p className="text-xs text-muted-foreground truncate">
-          {item.account_name ?? t('transactions.account')}
-          {item.category_name ? ` · ${item.category_name}` : ''}
-        </p>
+        {(account || item.account_name) && (
+          <div className="flex items-center gap-1.5 mt-0.5">
+            {account && <AccountIcon account={account} size="xs" />}
+            <span className="text-xs text-muted-foreground truncate">
+              {account ? getAccountName(account) : item.account_name}
+            </span>
+          </div>
+        )}
       </div>
-      <p className={cn('text-sm font-bold tabular-nums', amount >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400')}>
-        {mask(`${amount >= 0 ? '+' : '−'}${formatCurrency(Math.abs(item.amount), item.currency, locale)}`)}
-      </p>
+      <div className="shrink-0 text-right">
+        <span className={cn('text-sm font-bold tabular-nums', amountColor)}>
+          {mask(`${item.is_ignored ? ' ' : item.type === 'credit' ? '+' : '−'}${formatCurrency(Math.abs(item.amount), item.currency, locale)}`)}
+        </span>
+        {item.amount_primary != null && item.currency !== userCurrency && (
+          <div className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
+            {mask(formatCurrency(Math.abs(item.amount_primary), userCurrency, locale))}
+          </div>
+        )}
+      </div>
     </button>
   )
 }

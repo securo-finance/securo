@@ -130,7 +130,7 @@ export function TokenConnectDialog({
           </label>
           <textarea
             id="securo-token-input"
-            className="w-full min-h-[110px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-0"
+            className="w-full min-h-[110px] rounded-md border border-input bg-card px-3 py-2 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-0"
             placeholder={t('accounts.tokenConnect.tokenPlaceholder')}
             value={token}
             onChange={(e) => setToken(e.target.value)}

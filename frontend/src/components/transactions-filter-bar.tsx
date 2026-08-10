@@ -378,7 +378,7 @@ export function TransactionsFilterBar({
                 type="button"
                 aria-label={t('transactions.filtersBar.filters')}
                 className={cn(
-                  'inline-flex h-8 items-center gap-1.5 rounded-md border border-border/80 bg-background px-2.5 text-[12px] font-medium text-muted-foreground transition-colors',
+                  'inline-flex h-8 items-center gap-1.5 rounded-md border border-border/80 bg-card px-2.5 text-[12px] font-medium text-muted-foreground transition-colors',
                   'hover:bg-muted hover:text-foreground',
                   menuOpen && 'bg-muted text-foreground',
                   hasAnyFilter && 'border-primary/30 text-primary hover:text-primary',
@@ -906,7 +906,7 @@ export function TransactionsFilterBar({
                                 applyAmountRange()
                               }
                             }}
-                            className="h-8 w-full rounded-md border border-border bg-background px-2 text-[13px] outline-none focus:border-primary/60 focus:ring-[2px] focus:ring-primary/15"
+                            className="h-8 w-full rounded-md border border-border bg-card px-2 text-[13px] outline-none focus:border-primary/60 focus:ring-[2px] focus:ring-primary/15"
                           />
                         </div>
                         <div className="flex-1">
@@ -927,7 +927,7 @@ export function TransactionsFilterBar({
                                 applyAmountRange()
                               }
                             }}
-                            className="h-8 w-full rounded-md border border-border bg-background px-2 text-[13px] outline-none focus:border-primary/60 focus:ring-[2px] focus:ring-primary/15"
+                            className="h-8 w-full rounded-md border border-border bg-card px-2 text-[13px] outline-none focus:border-primary/60 focus:ring-[2px] focus:ring-primary/15"
                           />
                         </div>
                       </div>

@@ -22,6 +22,7 @@ from app.models.user import User
 from app.providers import get_provider
 from app.providers.base import (
     HoldingData,
+    ProviderNotConfiguredError,
     ProviderRateLimited,
     ProviderUserActionRequired,
     SessionExpiredError,
@@ -1146,9 +1147,20 @@ async def sync_connection(
     import_pending = conn_settings.get("import_pending", True)
     use_provider_cats = await admin_service.use_provider_categories(session)
 
+    # Resolve the provider before the error-handling block: an unregistered
+    # provider is a server misconfiguration, and the catch-all below would
+    # wrongly stamp the (healthy) connection with status="error".
     try:
         provider = get_provider(connection.provider)
+    except ValueError as exc:
+        raise ProviderNotConfiguredError(
+            f"Provider '{connection.provider}' is not configured in this process. "
+            "If connecting from the web app works but background sync fails, the "
+            "worker service is likely not loading the environment (.env) that "
+            "enables this provider."
+        ) from exc
 
+    try:
         # Refresh credentials if needed
         credentials = await provider.refresh_credentials(connection.credentials)
         connection.credentials = credentials

@@ -165,8 +165,50 @@ def parse_ofx(content: bytes) -> list[TransactionImport]:
     return transactions
 
 
-def parse_qif(content: bytes) -> list[TransactionImport]:
-    """Parse QIF file content and return transactions."""
+# QIF "D" lines carry no format metadata; US-first order is the historical
+# default. The Quicken apostrophe variants are always month-first.
+_QIF_FALLBACK_DATE_FORMATS = [
+    '%m/%d/%Y', '%d/%m/%Y', '%Y-%m-%d',
+    "%m/%d'%Y", "%m/%d'%y",
+    '%m/%d/%y', '%d/%m/%y',
+]
+
+
+def _qif_date_formats(date_format: str | None, raw_dates: list[str]) -> list[str]:
+    """Decide the strptime formats for a QIF file's dates, once per file.
+
+    An explicit user choice is strict (like parse_csv): only that format and
+    its 2-digit-year variant are accepted. Otherwise the order is inferred
+    from the whole file — a first component > 12 can only be a day, so the
+    file is DD/MM; per-line first-match parsing would silently mix MM/DD and
+    DD/MM within a single import for the ambiguous days 1-12.
+    """
+    if date_format and date_format in DATE_FORMAT_MAP:
+        fmt = DATE_FORMAT_MAP[date_format]
+        return [fmt, fmt.replace('%Y', '%y')]
+
+    saw_day_first = saw_month_first = False
+    for value in raw_dates:
+        match = re.match(r"^(\d{1,2})/(\d{1,2})/\d{2,4}$", value)
+        if not match:
+            continue
+        first, second = int(match.group(1)), int(match.group(2))
+        if first > 12 >= second:
+            saw_day_first = True
+        if second > 12 >= first:
+            saw_month_first = True
+
+    if saw_day_first and not saw_month_first:
+        return ['%d/%m/%Y', '%d/%m/%y'] + _QIF_FALLBACK_DATE_FORMATS
+    return list(_QIF_FALLBACK_DATE_FORMATS)
+
+
+def parse_qif(content: bytes, date_format: str | None = None) -> list[TransactionImport]:
+    """Parse QIF file content and return transactions.
+
+    date_format: optional explicit format (see DATE_FORMAT_MAP keys); when
+    omitted, the day/month order is inferred from the whole file.
+    """
     # Try UTF-8 first, fall back to Latin-1 for legacy software (e.g. Microsoft Money)
     try:
         text = content.decode('utf-8-sig')
@@ -176,6 +218,15 @@ def parse_qif(content: bytes) -> list[TransactionImport]:
 
     # Split into transaction blocks by "^"
     blocks = text.split('^')
+
+    raw_dates = [
+        stripped[1:].strip()
+        for block in blocks
+        for stripped in (line.strip() for line in block.strip().splitlines())
+        if stripped.startswith('D')
+    ]
+    date_formats = _qif_date_formats(date_format, raw_dates)
+
     for block in blocks:
         lines = block.strip().splitlines()
         if not lines:
@@ -192,12 +243,7 @@ def parse_qif(content: bytes) -> list[TransactionImport]:
                 continue
             tag, value = line[0], line[1:]
             if tag == 'D':
-                # Try common date formats (including 2-digit year variants)
-                for fmt in [
-                    '%m/%d/%Y', '%d/%m/%Y', '%Y-%m-%d',
-                    "%m/%d'%Y", "%m/%d'%y",
-                    '%m/%d/%y', '%d/%m/%y',
-                ]:
+                for fmt in date_formats:
                     try:
                         txn_date = datetime.strptime(value.strip(), fmt).date()
                         break

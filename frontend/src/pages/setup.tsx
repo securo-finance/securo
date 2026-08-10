@@ -3,13 +3,20 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useTheme } from 'next-themes'
 import { setup } from '@/lib/api'
-import { resolveSupportedLang } from '@/lib/i18n'
+import { resolveSupportedLang, SUPPORTED_LANGS } from '@/lib/i18n'
 import { useAuth } from '@/contexts/auth-context'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardFooter } from '@/components/ui/card'
 import { CurrencySelect } from '@/components/currency-select'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { AuthBrandPanel } from '@/components/auth-brand-panel'
 import { cn } from '@/lib/utils'
 import { Sun, Moon, Globe } from 'lucide-react'
@@ -96,133 +103,21 @@ export default function SetupPage() {
               </div>
             )}
             <div className="flex items-center justify-between gap-4">
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 min-w-0 flex-1">
                 <Label className="text-sm flex items-center gap-1.5">
                   <Globe size={14} />
                   {t('setup.language')}
                 </Label>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => i18n.changeLanguage('ru')}
-                    className={cn(
-                      'px-2.5 py-1 rounded text-[11px] font-semibold transition-colors',
-                      currentLang === 'ru'
-                        ? 'bg-primary/15 text-primary'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    RU
-                  </button>
-                   <button
-                    type="button"
-                    onClick={() => i18n.changeLanguage('de')}
-                    className={cn(
-                      'px-2.5 py-1 rounded text-[11px] font-semibold transition-colors',
-                      currentLang === 'de'
-                        ? 'bg-primary/15 text-primary'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    DE
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => i18n.changeLanguage('uk')}
-                    className={cn(
-                      'px-2.5 py-1 rounded text-[11px] font-semibold transition-colors',
-                      currentLang === 'uk'
-                        ? 'bg-primary/15 text-primary'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    UK
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => i18n.changeLanguage('en')}
-                    className={cn(
-                      'px-2.5 py-1 rounded text-[11px] font-semibold transition-colors',
-                      currentLang === 'en'
-                        ? 'bg-primary/15 text-primary'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    EN
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => i18n.changeLanguage('es')}
-                    className={cn(
-                      'px-2.5 py-1 rounded text-[11px] font-semibold transition-colors',
-                      currentLang === 'es'
-                        ? 'bg-primary/15 text-primary'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    ES
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => i18n.changeLanguage('pl')}
-                    className={cn(
-                      'px-2.5 py-1 rounded text-[11px] font-semibold transition-colors',
-                      currentLang === 'pl'
-                        ? 'bg-primary/15 text-primary'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    PL
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => i18n.changeLanguage('it')}
-                    className={cn(
-                      'px-2.5 py-1 rounded text-[11px] font-semibold transition-colors',
-                      currentLang === 'it'
-                        ? 'bg-primary/15 text-primary'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    IT
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => i18n.changeLanguage('pt-BR')}
-                    className={cn(
-                      'px-2.5 py-1 rounded text-[11px] font-semibold transition-colors',
-                      currentLang === 'pt-BR'
-                        ? 'bg-primary/15 text-primary'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    PT-BR
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => i18n.changeLanguage('pt-PT')}
-                    className={cn(
-                      'px-2.5 py-1 rounded text-[11px] font-semibold transition-colors',
-                      currentLang === 'pt-PT'
-                        ? 'bg-primary/15 text-primary'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    PT-PT
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => i18n.changeLanguage('fr')}
-                    className={cn(
-                      'px-2.5 py-1 rounded text-[11px] font-semibold transition-colors',
-                      currentLang === 'fr'
-                        ? 'bg-primary/15 text-primary'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    FR
-                  </button>
-                </div>
+                <Select value={currentLang} onValueChange={(lng) => i18n.changeLanguage(lng)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SUPPORTED_LANGS.map(({ code, label }) => (
+                      <SelectItem key={code} value={code}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
                 <Label className="text-sm">{t('setup.theme')}</Label>

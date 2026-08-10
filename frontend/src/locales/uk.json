@@ -934,6 +934,7 @@
     "transactionsImported": "імпортовано транзакцій",
     "importedWithSkipped": "{{imported}} імпортовано, {{skipped}} дублікатів пропущено",
     "csvOptions": "Налаштування CSV",
+    "importOptions": "Параметри імпорту",
     "dateFormat": "Формат дати",
     "dateFormatAuto": "Авто (визначити)",
     "flipAmounts": "Інвертувати суми (поміняти дохід/витрату)",

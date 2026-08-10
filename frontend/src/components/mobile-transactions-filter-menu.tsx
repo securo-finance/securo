@@ -367,7 +367,7 @@ function MobileAmountField({
         placeholder="0.00"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 h-9 w-full rounded-md border border-border bg-background px-2 text-[13px] font-normal tracking-normal text-foreground outline-none focus:border-primary/60"
+        className="mt-1 h-9 w-full rounded-md border border-border bg-card px-2 text-[13px] font-normal tracking-normal text-foreground outline-none focus:border-primary/60"
       />
     </label>
   )

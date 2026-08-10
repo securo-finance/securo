@@ -494,3 +494,274 @@ async def test_transaction_calendar_ignored_projection_matches_posted_balance(
     # and snapped back as each one posted.
     for day in (date(2026, 7, 6), date(2026, 7, 13), date(2026, 7, 20), date(2026, 7, 27)):
         assert by_date[day].ending_balance == 1000.0
+
+
+@pytest.mark.asyncio
+async def test_transaction_calendar_overlap_carries_virtual_occurrences(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Checking",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+
+    recurring = RecurringTransaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        description="Weekly debit",
+        amount=Decimal("100"),
+        currency="BRL",
+        type="debit",
+        frequency="weekly",
+        start_date=date(2026, 8, 3),
+        next_occurrence=date(2026, 8, 3),
+    )
+    session.add_all([
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            description="Opening",
+            amount=Decimal("1000"),
+            currency="BRL",
+            date=date(2026, 7, 1),
+            type="credit",
+            source="opening_balance",
+        ),
+        recurring,
+    ])
+    await session.commit()
+
+    august = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 8, 1)
+    )
+    september = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 9, 1)
+    )
+    august_by_date = {day.date: day for day in august.days}
+    september_by_date = {day.date: day for day in september.days}
+
+    august_september_1 = august_by_date[date(2026, 9, 1)]
+    september_september_1 = september_by_date[date(2026, 9, 1)]
+    assert august_september_1.ending_balance == 500.0
+    assert september_september_1.ending_balance == 500.0
+    assert august_september_1.ending_balance == september_september_1.ending_balance
+
+    september_grid_start = september_by_date[date(2026, 8, 30)]
+    assert september_grid_start.ending_balance == 600.0
+    assert september_grid_start.projected_count == 0
+    assert september_grid_start.income == 0.0
+    assert september_grid_start.expense == 0.0
+    assert september_grid_start.transfer_net == 0.0
+    assert september_grid_start.items == []
+
+
+@pytest.mark.asyncio
+async def test_transaction_calendar_does_not_carry_ignored_virtual_occurrences(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Checking",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    ignored_category = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Ignored",
+        icon="eye-off",
+        color="#64748b",
+        is_ignored=True,
+    )
+    session.add_all([account, ignored_category])
+    await session.flush()
+
+    recurring = RecurringTransaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        category_id=ignored_category.id,
+        description="Ignored weekly debit",
+        amount=Decimal("100"),
+        currency="BRL",
+        type="debit",
+        frequency="weekly",
+        start_date=date(2026, 8, 3),
+        next_occurrence=date(2026, 8, 3),
+    )
+    session.add_all([
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            description="Opening",
+            amount=Decimal("1000"),
+            currency="BRL",
+            date=date(2026, 7, 1),
+            type="credit",
+            source="opening_balance",
+        ),
+        recurring,
+    ])
+    await session.commit()
+
+    calendar = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 9, 1)
+    )
+    by_date = {day.date: day for day in calendar.days}
+
+    grid_start = by_date[date(2026, 8, 30)]
+    assert grid_start.ending_balance == 1000.0
+    assert grid_start.projected_count == 0
+    assert grid_start.items == []
+
+    visible_occurrence = by_date[date(2026, 8, 31)]
+    assert visible_occurrence.ending_balance == 1000.0
+    assert visible_occurrence.projected_count == 1
+    assert visible_occurrence.projected_expense == 0.0
+    assert visible_occurrence.items[0].recurring_id == recurring.id
+    assert visible_occurrence.items[0].is_ignored is True
+    assert by_date[date(2026, 9, 1)].ending_balance == 1000.0
+
+
+@pytest.mark.asyncio
+async def test_transaction_calendar_carries_more_than_occurrence_safety_limit(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Checking",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+    session.add_all([
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            description="Opening",
+            amount=Decimal("1000"),
+            currency="BRL",
+            date=date(2019, 12, 1),
+            type="credit",
+            source="opening_balance",
+        ),
+        RecurringTransaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            description="Long-running weekly debit",
+            amount=Decimal("1"),
+            currency="BRL",
+            type="debit",
+            frequency="weekly",
+            start_date=date(2020, 1, 6),
+            next_occurrence=date(2020, 1, 6),
+        ),
+    ])
+    await session.commit()
+
+    calendar = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 9, 1)
+    )
+    grid_start = next(day for day in calendar.days if day.date == date(2026, 8, 30))
+
+    # 347 weekly occurrences precede the grid, exceeding the helper's 200-row
+    # safety limit. Every one contributes to the carried balance, but no item.
+    assert grid_start.ending_balance == 653.0
+    assert grid_start.projected_count == 0
+    assert grid_start.items == []
+
+
+@pytest.mark.asyncio
+async def test_transaction_calendar_ignored_actual_is_consistent_across_months(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Checking",
+        type="checking",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    ignored_category = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Ignored",
+        icon="eye-off",
+        color="#64748b",
+        is_ignored=True,
+    )
+    session.add_all([account, ignored_category])
+    await session.flush()
+    session.add_all([
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            description="Opening",
+            amount=Decimal("1000"),
+            currency="BRL",
+            date=date(2026, 7, 1),
+            type="credit",
+            source="opening_balance",
+        ),
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            category_id=ignored_category.id,
+            description="Ignored debit",
+            amount=Decimal("100"),
+            currency="BRL",
+            date=date(2026, 8, 3),
+            type="debit",
+            source="manual",
+            is_ignored=False,
+        ),
+    ])
+    await session.commit()
+
+    august = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 8, 1)
+    )
+    september = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 9, 1)
+    )
+    august_by_date = {day.date: day for day in august.days}
+    september_by_date = {day.date: day for day in september.days}
+
+    august_september_1 = august_by_date[date(2026, 9, 1)]
+    september_september_1 = september_by_date[date(2026, 9, 1)]
+    assert august_september_1.ending_balance == 1000.0
+    assert september_september_1.ending_balance == 1000.0
+    assert august_september_1.ending_balance == september_september_1.ending_balance

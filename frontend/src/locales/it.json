@@ -928,6 +928,7 @@
     "transactionsImported": "transazioni importate",
     "importedWithSkipped": "{{imported}} importate, {{skipped}} duplicati saltati",
     "csvOptions": "Opzioni CSV",
+    "importOptions": "Opzioni di importazione",
     "dateFormat": "Formato data",
     "dateFormatAuto": "Auto (rileva)",
     "flipAmounts": "Inverti importi (scambia entrate/spese)",

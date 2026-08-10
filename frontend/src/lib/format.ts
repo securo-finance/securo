@@ -60,6 +60,7 @@ const CURRENCY_LOCALE: Record<string, string> = {
   GTQ: 'es-GT',
   PHP: 'en-PH',
   UAH: 'uk-UA',
+  NZD: 'en-NZ',
 }
 
 /**

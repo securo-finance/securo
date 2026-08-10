@@ -312,7 +312,7 @@ export function ChatPanel({ agent, conversationId, onConversationCreated, focusS
           // h-10 matches the default Button height so the input + send
           // button line up when empty. Auto-grow above lifts it as the
           // user types more lines.
-          className="flex-1 h-10 max-h-[200px] rounded-md border bg-background px-3 py-2 text-sm resize-none leading-5 overflow-y-auto"
+          className="flex-1 h-10 max-h-[200px] rounded-md border bg-card px-3 py-2 text-sm resize-none leading-5 overflow-y-auto"
           onKeyDown={(e) => {
             // Enter sends; Shift+Enter inserts a newline. IME composition
             // (e.g. accented chars on Mac, CJK input) must not be hijacked.

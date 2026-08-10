@@ -928,6 +928,7 @@
     "transactionsImported": "transactions importées",
     "importedWithSkipped": "{{imported}} importées, {{skipped}} doublons ignorés",
     "csvOptions": "Options CSV",
+    "importOptions": "Options d'importation",
     "dateFormat": "Format de date",
     "dateFormatAuto": "Auto (détection)",
     "flipAmounts": "Inverser les montants (échanger revenus/dépenses)",
