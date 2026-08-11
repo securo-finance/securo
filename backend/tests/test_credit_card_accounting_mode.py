@@ -1772,3 +1772,92 @@ class TestEffectiveBillDateFiltersList:
 
         assert summary is not None
         assert summary["monthly_expenses"] == 59.90
+
+
+class TestManualBillCycleOverrides:
+    @pytest.mark.asyncio
+    async def test_override_uses_due_date_in_cycle_transaction_filter(
+        self, session, test_user, test_workspace, cc_account
+    ):
+        from app.services.transaction_service import get_transactions
+
+        cc_account.statement_close_day = 24
+        cc_account.payment_due_day = 18
+        tx = await _make_tx(
+            session,
+            test_user.id,
+            cc_account.id,
+            date(2026, 7, 24),
+            Decimal("74.69"),
+            effective_date=date(2026, 9, 18),
+            source="manual",
+        )
+        tx.effective_bill_date = date(2026, 8, 18)
+        await session.commit()
+
+        august, _, _ = await get_transactions(
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
+            from_date=date(2026, 6, 24),
+            to_date=date(2026, 7, 23),
+            cycle_due_date=date(2026, 8, 18),
+            accounting_mode="cash",
+        )
+        september, _, _ = await get_transactions(
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id=cc_account.id,
+            from_date=date(2026, 7, 24),
+            to_date=date(2026, 8, 23),
+            cycle_due_date=date(2026, 9, 18),
+            accounting_mode="cash",
+        )
+
+        assert tx.id in {item.id for item in august}
+        assert tx.id not in {item.id for item in september}
+
+    @pytest.mark.asyncio
+    async def test_override_uses_due_date_in_cycle_summary(
+        self, session, test_user, test_workspace, cc_account
+    ):
+        from app.services.account_service import get_account_summary
+
+        cc_account.statement_close_day = 24
+        cc_account.payment_due_day = 18
+        for amount in (Decimal("74.69"), Decimal("1.97")):
+            tx = await _make_tx(
+                session,
+                test_user.id,
+                cc_account.id,
+                date(2026, 7, 24),
+                amount,
+                effective_date=date(2026, 9, 18),
+                source="manual",
+            )
+            tx.effective_bill_date = date(2026, 8, 18)
+        await session.commit()
+
+        august = await get_account_summary(
+            session,
+            cc_account.id,
+            test_workspace.id,
+            date_from=date(2026, 6, 24),
+            date_to=date(2026, 7, 23),
+            cycle_due_date=date(2026, 8, 18),
+        )
+        september = await get_account_summary(
+            session,
+            cc_account.id,
+            test_workspace.id,
+            date_from=date(2026, 7, 24),
+            date_to=date(2026, 8, 23),
+            cycle_due_date=date(2026, 9, 18),
+        )
+
+        assert august is not None
+        assert september is not None
+        assert august["monthly_expenses"] == 76.66
+        assert september["monthly_expenses"] == 0.0

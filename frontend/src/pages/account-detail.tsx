@@ -357,6 +357,10 @@ export default function AccountDetailPage() {
   // exclude already-billed txs from the cycle window so they don't double-
   // count against the in-progress bar/total.
   const isInProgressCycle = !activeBill && billsAsc.length > 0
+  const activeCycleDueDate = useMemo(() => {
+    if (!account || account.type !== 'credit_card' || !filterTo) return undefined
+    return activeBill?.due_date ?? dueDateForCycle(filterTo, account.payment_due_day) ?? undefined
+  }, [account, activeBill, filterTo])
 
   useEffect(() => {
     if (!account || filterTouched.current) return
@@ -411,14 +415,15 @@ export default function AccountDetailPage() {
     // For the in-progress cycle (no bill match), unbilled_only excludes
     // txs already linked to a closed bill (anti-double-count).
     queryKey: activeBill
-      ? ['accounts', id, 'summary', { bill_id: activeBill.id, from: filterFrom, to: filterTo }]
-      : ['accounts', id, 'summary', filterFrom, filterTo, { unbilled_only: isInProgressCycle }],
+      ? ['accounts', id, 'summary', { bill_id: activeBill.id, from: filterFrom, to: filterTo, cycle_due_date: activeCycleDueDate }]
+      : ['accounts', id, 'summary', filterFrom, filterTo, { unbilled_only: isInProgressCycle, cycle_due_date: activeCycleDueDate }],
     queryFn: () => accounts.summary(
       id!,
       filterFrom || undefined,
       filterTo || undefined,
       activeBill?.id,
       isInProgressCycle || undefined,
+      activeCycleDueDate,
     ),
     enabled: !!id,
   })
@@ -431,9 +436,13 @@ export default function AccountDetailPage() {
     return creditCardCycleBoundaries(account.statement_close_day, dayBeforeStart)
   }, [account, filterFrom])
 
+  const previousCycleDueDate = account?.type === 'credit_card' && previousCycle
+    ? dueDateForCycle(previousCycle.end, account.payment_due_day) ?? undefined
+    : undefined
+
   const { data: previousCycleSummary } = useQuery({
-    queryKey: ['accounts', id, 'summary', previousCycle?.start, previousCycle?.end],
-    queryFn: () => accounts.summary(id!, previousCycle!.start, previousCycle!.end),
+    queryKey: ['accounts', id, 'summary', previousCycle?.start, previousCycle?.end, previousCycleDueDate],
+    queryFn: () => accounts.summary(id!, previousCycle!.start, previousCycle!.end, undefined, undefined, previousCycleDueDate),
     enabled: !!id && !!previousCycle,
   })
 
@@ -480,21 +489,27 @@ export default function AccountDetailPage() {
   }, [account, billsAsc])
 
   const timelineQueries = useQueries({
-    queries: timelineCycles.map(c => ({
+    queries: timelineCycles.map(c => {
+      const cycleDueDate = c.bill?.due_date
+        ?? dueDateForCycle(c.end, account?.payment_due_day)
+        ?? undefined
+      return {
       // Bill-anchored cycles send bill_id AND the cycle window so the
       // backend includes both Pluggy-linked txs and any unlinked txs
       // (manual / recurring) the user placed in this cycle. The trailing
       // in-progress cycle (no bill) sets unbilled_only so prior-bill txs
       // that fall in the window aren't double-counted in the bar.
       queryKey: c.bill
-        ? ['accounts', id, 'summary', { bill_id: c.bill.id, from: c.start, to: c.end }]
-        : ['accounts', id, 'summary', c.start, c.end, { unbilled_only: billsAsc.length > 0 }],
+        ? ['accounts', id, 'summary', { bill_id: c.bill.id, from: c.start, to: c.end, cycle_due_date: cycleDueDate }]
+        : ['accounts', id, 'summary', c.start, c.end, { unbilled_only: billsAsc.length > 0, cycle_due_date: cycleDueDate }],
       queryFn: () => accounts.summary(
         id!, c.start, c.end, c.bill?.id,
         c.bill ? undefined : (billsAsc.length > 0 || undefined),
+        cycleDueDate,
       ),
       enabled: !!id,
-    })),
+      }
+    }),
   })
 
   const { data: balanceHistory, isLoading: balanceHistoryLoading } = useQuery({
@@ -504,7 +519,7 @@ export default function AccountDetailPage() {
   })
 
   const { data: txData, isLoading: txLoading } = useQuery({
-    queryKey: ['transactions', { account_id: id, bill_id: activeBill?.id, from: filterFrom, to: filterTo, limit: 500, include_opening_balance: true, unbilled_only: isInProgressCycle }],
+    queryKey: ['transactions', { account_id: id, bill_id: activeBill?.id, from: filterFrom, to: filterTo, limit: 500, include_opening_balance: true, unbilled_only: isInProgressCycle, cycle_due_date: activeCycleDueDate }],
     queryFn: () => transactions.list({
       account_id: id,
       // When the active cycle is a real bill, prefer bill_id (Pluggy's
@@ -516,6 +531,7 @@ export default function AccountDetailPage() {
       // current view), exclude already-billed txs so the bar/list only
       // shows what's accumulating toward the next bill.
       unbilled_only: isInProgressCycle || undefined,
+      cycle_due_date: activeCycleDueDate,
       from: filterFrom || undefined,
       to: filterTo || undefined,
       limit: 500,
