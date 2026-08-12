@@ -137,9 +137,18 @@ class BulkAddToGroupRequest(BaseModel):
 
 
 class TransferCreate(BaseModel):
+    # `extra="forbid"` so the removed `fx_rate` field fails loudly instead of
+    # being dropped silently: a client still sending a rate would otherwise get
+    # a transfer converted at the market rate without any hint that its input
+    # was ignored.
+    model_config = ConfigDict(extra="forbid")
+
     from_account_id: uuid.UUID
     to_account_id: uuid.UUID
     amount: Decimal
+    # Amount that actually landed on the destination account, for
+    # cross-currency transfers. Left blank, the destination is converted at the
+    # market rate for `date`.
     destination_amount: Optional[Decimal] = Field(default=None, gt=0)
     date: _Date
     description: str
