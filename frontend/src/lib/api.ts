@@ -540,6 +540,12 @@ export const transactions = {
     })
     return data
   },
+  bulkDelete: async (transactionIds: string[]): Promise<{ deleted: number }> => {
+    const { data } = await api.post('/transactions/bulk-delete', {
+      transaction_ids: transactionIds,
+    })
+    return data
+  },
   linkTransfer: async (transactionIds: string[]): Promise<{ debit: Transaction; credit: Transaction; transfer_pair_id: string }> => {
     const { data } = await api.post('/transactions/link-transfer', {
       transaction_ids: transactionIds,

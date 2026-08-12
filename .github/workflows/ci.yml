@@ -15,7 +15,7 @@ jobs:
         working-directory: backend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 2
 
@@ -47,9 +47,11 @@ jobs:
 
       - name: Set up Python
         if: steps.backend-changes.outputs.run_backend == 'true'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          # Single source of truth with the Docker image: CI must test the
+          # same interpreter the backend ships with.
+          python-version-file: backend/.python-version
           cache: pip
 
       - name: Install dependencies
@@ -86,7 +88,7 @@ jobs:
 
       - name: Upload coverage report
         if: ${{ always() && steps.backend-changes.outputs.run_backend == 'true' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: backend/coverage.xml
@@ -119,10 +121,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -144,7 +146,7 @@ jobs:
     name: Helm Checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 2
 

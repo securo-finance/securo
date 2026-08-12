@@ -1,4 +1,5 @@
 import json
+import logging
 import secrets
 import uuid
 from datetime import datetime, timezone
@@ -43,6 +44,8 @@ from app.schemas.passkey import (
     PasskeySecondFactorOptionsRequest,
     PasskeySecondFactorVerifyRequest,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -155,10 +158,17 @@ async def _verify_passkey_credential(
             expected_origin=challenge["origin"],
             expected_rp_id=challenge["rp_id"],
             credential_public_key=base64url_to_bytes(passkey.public_key),
-            credential_current_sign_count=passkey.sign_count,
+            # Synced passkeys (1Password, iCloud Keychain, Google Password
+            # Manager) legitimately report a stale counter when used from
+            # another device, so the anti-clone regression check only applies
+            # to device-bound credentials.
+            credential_current_sign_count=0 if passkey.backed_up else passkey.sign_count,
             require_user_verification=True,
         )
     except Exception as exc:
+        logger.warning(
+            "Passkey verification failed for credential %s: %s", passkey.credential_id, exc
+        )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid passkey") from exc
 
     verified_credential_id = _as_base64url(verification.credential_id)
@@ -304,16 +314,32 @@ async def passkey_authentication_options(
     context = resolve_webauthn_context(request)
     email = body.email.strip().lower() if body.email else None
     expected_user_id: str | None = None
+    allow_credentials: list[PublicKeyCredentialDescriptor] | None = None
 
     if email:
         user_result = await session.execute(select(User).where(func.lower(User.email) == email))
         login_user = user_result.scalar_one_or_none()
         if login_user is not None:
             expected_user_id = str(login_user.id)
+            # Listing the user's credentials lets password managers surface
+            # the matching passkey even when they can't take part in a pure
+            # discoverable-credential ceremony (e.g. 1Password with a locked
+            # vault shows an empty picker otherwise). The endpoint is
+            # rate-limited, which bounds credential enumeration.
+            passkeys_result = await session.execute(
+                select(UserPasskey)
+                .where(UserPasskey.user_id == login_user.id)
+                .order_by(UserPasskey.created_at.asc())
+            )
+            allow_credentials = [
+                PublicKeyCredentialDescriptor(id=base64url_to_bytes(pk.credential_id))
+                for pk in passkeys_result.scalars().all()
+            ] or None
 
     options = generate_authentication_options(
         rp_id=context.rp_id,
         user_verification=UserVerificationRequirement.REQUIRED,
+        allow_credentials=allow_credentials,
     )
     challenge_id = await _store_challenge(
         AUTHENTICATE_CHALLENGE_PREFIX,

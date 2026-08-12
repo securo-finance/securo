@@ -12,6 +12,7 @@ from app.models.transaction import Transaction
 from app.schemas.recurring_transaction import RecurringTransactionCreate, RecurringTransactionUpdate
 from app.services.recurring_transaction_service import (
     _advance_date,
+    adjust_weekend_date,
     create_recurring_transaction,
     delete_recurring_transaction,
     generate_pending,
@@ -282,6 +283,124 @@ def test_advance_date_quarterly_leap_year_clamping_recovers():
     assert may == date(2024, 5, 30)
 
 
+@pytest.mark.parametrize(
+    ("nominal", "policy", "expected"),
+    [
+        (date(2026, 8, 1), "none", date(2026, 8, 1)),
+        (date(2026, 8, 1), "previous_friday", date(2026, 7, 31)),
+        (date(2026, 8, 1), "next_monday", date(2026, 8, 3)),
+        (date(2026, 8, 2), "none", date(2026, 8, 2)),
+        (date(2026, 8, 2), "previous_friday", date(2026, 7, 31)),
+        (date(2026, 8, 2), "next_monday", date(2026, 8, 3)),
+        (date(2026, 8, 3), "none", date(2026, 8, 3)),
+        (date(2026, 8, 3), "previous_friday", date(2026, 8, 3)),
+        (date(2026, 8, 3), "next_monday", date(2026, 8, 3)),
+        (date(2026, 8, 7), "none", date(2026, 8, 7)),
+        (date(2026, 8, 7), "previous_friday", date(2026, 8, 7)),
+        (date(2026, 8, 7), "next_monday", date(2026, 8, 7)),
+    ],
+)
+def test_adjust_weekend_date(nominal, policy, expected):
+    assert adjust_weekend_date(nominal, policy) == expected
+
+
+def test_adjust_weekend_date_rejects_unsupported_policy_on_weekday():
+    with pytest.raises(
+        ValueError, match="Unsupported weekend adjustment: nearest_weekday"
+    ):
+        adjust_weekend_date(date(2026, 8, 3), "nearest_weekday")
+
+
+@pytest.mark.parametrize(
+    ("frequency", "start", "intended_day", "expected"),
+    [
+        (
+            "weekly",
+            date(2026, 8, 1),
+            1,
+            [
+                (date(2026, 8, 1), date(2026, 7, 31)),
+                (date(2026, 8, 8), date(2026, 8, 7)),
+                (date(2026, 8, 15), date(2026, 8, 14)),
+            ],
+        ),
+        (
+            "monthly",
+            date(2026, 1, 31),
+            31,
+            [
+                (date(2026, 1, 31), date(2026, 1, 30)),
+                (date(2026, 2, 28), date(2026, 2, 27)),
+                (date(2026, 3, 31), date(2026, 3, 31)),
+            ],
+        ),
+        (
+            "quarterly",
+            date(2026, 1, 31),
+            31,
+            [
+                (date(2026, 1, 31), date(2026, 1, 30)),
+                (date(2026, 4, 30), date(2026, 4, 30)),
+                (date(2026, 7, 31), date(2026, 7, 31)),
+            ],
+        ),
+        (
+            "yearly",
+            date(2024, 2, 29),
+            29,
+            [
+                (date(2024, 2, 29), date(2024, 2, 29)),
+                (date(2025, 2, 28), date(2025, 2, 28)),
+                (date(2026, 2, 28), date(2026, 2, 27)),
+            ],
+        ),
+    ],
+)
+def test_weekend_adjustment_never_changes_nominal_cadence(
+    frequency, start, intended_day, expected
+):
+    current = start
+    actual = []
+    for _ in expected:
+        actual.append((current, adjust_weekend_date(current, "previous_friday")))
+        current = _advance_date(current, frequency, intended_day=intended_day)
+    assert actual == expected
+
+
+def test_occurrence_range_uses_effective_date_across_month_boundary():
+    july = get_occurrences_in_range(
+        start=date(2026, 8, 1),
+        frequency="monthly",
+        end_date=None,
+        range_start=date(2026, 7, 1),
+        range_end=date(2026, 8, 1),
+        weekend_adjustment="previous_friday",
+    )
+    august = get_occurrences_in_range(
+        start=date(2026, 8, 1),
+        frequency="monthly",
+        end_date=None,
+        range_start=date(2026, 8, 1),
+        range_end=date(2026, 9, 1),
+        weekend_adjustment="previous_friday",
+    )
+
+    assert july == [date(2026, 7, 31)]
+    assert august == []
+    assert july.count(date(2026, 7, 31)) + august.count(date(2026, 7, 31)) == 1
+
+
+def test_occurrence_range_moves_sunday_to_following_monday():
+    assert get_occurrences_in_range(
+        start=date(2026, 8, 2),
+        frequency="monthly",
+        end_date=None,
+        range_start=date(2026, 8, 1),
+        range_end=date(2026, 9, 1),
+        weekend_adjustment="next_monday",
+    ) == [date(2026, 8, 3)]
+
+
 # ---------------------------------------------------------------------------
 # get_occurrences_in_range
 # ---------------------------------------------------------------------------
@@ -549,3 +668,98 @@ async def test_generate_pending_no_duplicates(
     count2 = await generate_pending(session, test_user.id, up_to=date(2025, 3, 1))
     assert count1 == 3
     assert count2 == 0
+
+
+@pytest.mark.asyncio
+async def test_generate_pending_previous_friday_uses_effective_cutoff_and_date(
+    session: AsyncSession, test_user, test_workspace, test_account_for_recurring
+):
+    rec = await create_recurring_transaction(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RecurringTransactionCreate(
+            description="Weekend rent",
+            amount=Decimal("1000"),
+            type="debit",
+            frequency="monthly",
+            start_date=date(2026, 8, 1),
+            weekend_adjustment="previous_friday",
+            account_id=test_account_for_recurring.id,
+        ),
+    )
+
+    assert await generate_pending(session, test_user.id, up_to=date(2026, 7, 31)) == 1
+    transaction = (
+        await session.execute(
+            select(Transaction).where(Transaction.recurring_transaction_id == rec.id)
+        )
+    ).scalar_one()
+    assert transaction.date == date(2026, 7, 31)
+    await session.refresh(rec)
+    assert rec.next_occurrence == date(2026, 9, 1)
+
+
+@pytest.mark.asyncio
+async def test_generate_pending_next_monday_waits_until_effective_date(
+    session: AsyncSession, test_user, test_workspace, test_account_for_recurring
+):
+    rec = await create_recurring_transaction(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RecurringTransactionCreate(
+            description="Weekend salary",
+            amount=Decimal("2000"),
+            type="credit",
+            frequency="monthly",
+            start_date=date(2026, 8, 2),
+            weekend_adjustment="next_monday",
+            account_id=test_account_for_recurring.id,
+        ),
+    )
+
+    assert await generate_pending(session, test_user.id, up_to=date(2026, 8, 2)) == 0
+    await session.refresh(rec)
+    assert rec.next_occurrence == date(2026, 8, 2)
+
+    assert await generate_pending(session, test_user.id, up_to=date(2026, 8, 3)) == 1
+    transaction = (
+        await session.execute(
+            select(Transaction).where(Transaction.recurring_transaction_id == rec.id)
+        )
+    ).scalar_one()
+    assert transaction.date == date(2026, 8, 3)
+    await session.refresh(rec)
+    assert rec.next_occurrence == date(2026, 9, 2)
+
+
+@pytest.mark.asyncio
+async def test_generate_pending_weekend_adjustment_respects_nominal_end_date(
+    session: AsyncSession, test_user, test_workspace, test_account_for_recurring
+):
+    rec = await create_recurring_transaction(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RecurringTransactionCreate(
+            description="Final weekend bill",
+            amount=Decimal("50"),
+            type="debit",
+            frequency="monthly",
+            start_date=date(2026, 8, 1),
+            end_date=date(2026, 8, 1),
+            weekend_adjustment="previous_friday",
+            account_id=test_account_for_recurring.id,
+        ),
+    )
+
+    assert await generate_pending(session, test_user.id, up_to=date(2026, 7, 31)) == 1
+    assert await generate_pending(session, test_user.id, up_to=date(2026, 12, 31)) == 0
+    result = await session.execute(
+        select(Transaction).where(Transaction.recurring_transaction_id == rec.id)
+    )
+    assert [transaction.date for transaction in result.scalars()] == [date(2026, 7, 31)]
+    await session.refresh(rec)
+    assert rec.next_occurrence == date(2026, 9, 1)
+    assert rec.is_active is False

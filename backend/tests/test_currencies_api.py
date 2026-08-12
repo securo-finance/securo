@@ -58,3 +58,15 @@ async def test_currencies_include_uah_with_metadata(client: AsyncClient):
     assert uah["symbol"] == "₴"
     assert uah["name"] == "Ukrainian Hryvnia"
     assert uah["flag"] == "🇺🇦"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_nzd_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    nzd = next((currency for currency in data if currency["code"] == "NZD"), None)
+
+    assert nzd is not None
+    assert nzd["symbol"] == "NZ$"
+    assert nzd["name"] == "New Zealand Dollar"
+    assert nzd["flag"] == "🇳🇿"

@@ -35,6 +35,7 @@ CURRENCY_META = {
     "GTQ": {"symbol": "Q", "name": "Guatemalan Quetzal", "flag": "\U0001F1EC\U0001F1F9"},
     "PHP": {"symbol": "₱", "name": "Philippine Peso", "flag": "\U0001F1F5\U0001F1ED"},
     "UAH": {"symbol": "₴", "name": "Ukrainian Hryvnia", "flag": "\U0001F1FA\U0001F1E6"},
+    "NZD": {"symbol": "NZ$", "name": "New Zealand Dollar", "flag": "\U0001F1F3\U0001F1FF"},
 }
 
 

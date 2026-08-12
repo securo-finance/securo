@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -34,7 +35,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, HelpCircle, Info, Paperclip, Users, X, EyeClosed, SlidersHorizontal } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, HelpCircle, Info, Paperclip, Trash2, Users, X, EyeClosed, SlidersHorizontal } from 'lucide-react'
 import type { Transaction, Rule } from '@/types'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { PageHeader } from '@/components/page-header'
@@ -613,6 +614,20 @@ export default function TransactionsPage() {
     },
   })
 
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
+  const bulkDeleteMutation = useMutation({
+    mutationFn: () => transactions.bulkDelete(Array.from(selectedIds)),
+    onSuccess: (result) => {
+      invalidateAfterTxMutation()
+      setSelectedIds(new Set())
+      setBulkDeleteConfirmOpen(false)
+      toast.success(t('transactions.bulkDeleteSuccess', { count: result.deleted }))
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error))
+    },
+  })
+
   const createCounterpartMutation = useMutation({
     mutationFn: ({ anchorId, toAccountId }: { anchorId: string; toAccountId: string }) =>
       transactions.createTransferCounterpart(anchorId, toAccountId),
@@ -1081,7 +1096,7 @@ export default function TransactionsPage() {
           {(showInlineNotes || showInlineTags) && tx.notes && (
             <div className="mt-1 space-y-0.5">
               {showInlineNotes && noteText && (
-                <p className="text-xs text-muted-foreground italic leading-snug">{noteText}</p>
+                <p className="text-xs text-muted-foreground italic leading-snug truncate">{noteText}</p>
               )}
               {showInlineTags && noteTags.length > 0 && (
                 <div className="flex flex-wrap gap-1">
@@ -1675,6 +1690,7 @@ export default function TransactionsPage() {
               onTagInputChange={setBulkTagInput}
               onAddTags={(tags) => bulkAddTagsMutation.mutate({ ids: Array.from(selectedIds), tags })}
               onRemoveTags={(tags) => bulkRemoveTagsMutation.mutate({ ids: Array.from(selectedIds), tags })}
+              onBulkDelete={() => setBulkDeleteConfirmOpen(true)}
               onClear={() => { setSelectedIds(new Set()); setBulkCategory(''); setBulkTagInput('') }}
             />
 
@@ -1826,6 +1842,18 @@ export default function TransactionsPage() {
               )
             })()}
 
+            {/* Bulk Delete */}
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => setBulkDeleteConfirmOpen(true)}
+              disabled={bulkDeleteMutation.isPending}
+              className="h-8 px-3 shrink-0 text-sm"
+            >
+              <Trash2 size={15} className="lg:mr-1.5" />
+              <span className="hidden lg:inline">{t('common.delete')}</span>
+            </Button>
+
             <div className="ml-auto" />
 
             {/* Close */}
@@ -1954,6 +1982,30 @@ export default function TransactionsPage() {
               {updateMutation.isPending
                 ? t('common.loading')
                 : t('transactions.confirmTransferCategoryBoth')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Delete confirmation */}
+      <Dialog open={bulkDeleteConfirmOpen} onOpenChange={setBulkDeleteConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('transactions.bulkDeleteTitle', { count: selectedIds.size })}</DialogTitle>
+            <DialogDescription>
+              {t('transactions.bulkDeleteDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setBulkDeleteConfirmOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => bulkDeleteMutation.mutate()}
+              disabled={bulkDeleteMutation.isPending}
+            >
+              {bulkDeleteMutation.isPending ? t('common.loading') : t('common.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>

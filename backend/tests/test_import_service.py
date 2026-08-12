@@ -530,6 +530,61 @@ class TestParseQif:
         assert transactions[1].date == date(2026, 1, 20)
         assert transactions[1].type == "credit"
 
+    def test_parse_qif_explicit_day_first_format(self):
+        """An explicit DD/MM/YYYY choice must win over the US-first default."""
+        qif_content = (
+            "D07/03/2026\n"
+            "T-100.00\n"
+            "PLandlord\n"
+            "^\n"
+        )
+        transactions = parse_qif(qif_content.encode("utf-8"), date_format="DD/MM/YYYY")
+        assert len(transactions) == 1
+        assert transactions[0].date == date(2026, 3, 7)
+
+    def test_parse_qif_explicit_month_first_format(self):
+        qif_content = (
+            "D07/03/2026\n"
+            "T-100.00\n"
+            "^\n"
+        )
+        transactions = parse_qif(qif_content.encode("utf-8"), date_format="MM/DD/YYYY")
+        assert transactions[0].date == date(2026, 7, 3)
+
+    def test_parse_qif_infers_day_first_from_whole_file(self):
+        """One unambiguous date (day > 12) pins the whole file to DD/MM, so
+        ambiguous dates in the same file stop being parsed as MM/DD."""
+        qif_content = (
+            "D25/03/2026\n"
+            "T-10.00\n"
+            "^\n"
+            "D07/03/2026\n"
+            "T-20.00\n"
+            "^\n"
+        )
+        transactions = parse_qif(qif_content.encode("utf-8"))
+        assert transactions[0].date == date(2026, 3, 25)
+        assert transactions[1].date == date(2026, 3, 7)
+
+    def test_parse_qif_ambiguous_file_keeps_us_default(self):
+        """A fully ambiguous file keeps the historical MM/DD-first order."""
+        qif_content = (
+            "D07/03/2026\n"
+            "T-20.00\n"
+            "^\n"
+        )
+        transactions = parse_qif(qif_content.encode("utf-8"))
+        assert transactions[0].date == date(2026, 7, 3)
+
+    def test_parse_qif_explicit_format_two_digit_year(self):
+        qif_content = (
+            "D07/03/26\n"
+            "T-100.00\n"
+            "^\n"
+        )
+        transactions = parse_qif(qif_content.encode("utf-8"), date_format="DD/MM/YYYY")
+        assert transactions[0].date == date(2026, 3, 7)
+
     def test_parse_qif_memo_as_description(self):
         """When no payee, memo should be used as description."""
         qif_content = (

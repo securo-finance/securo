@@ -274,6 +274,9 @@ export default function ImportPage() {
   }, [])
 
   const isCsvFile = fileName?.toLowerCase().endsWith('.csv') ?? false
+  // QIF dates are ambiguous for days 1-12 (DD/MM vs MM/DD), so the file
+  // options panel is shown for QIF too, limited to the date-format selector.
+  const isQifFile = fileName?.toLowerCase().endsWith('.qif') ?? false
 
   const incomeCount = previewData?.transactions.filter(t => t.type === 'credit').length ?? 0
   const expenseCount = previewData?.transactions.filter(t => t.type === 'debit').length ?? 0
@@ -403,12 +406,14 @@ export default function ImportPage() {
             </div>
           </div>
 
-          {/* CSV Options */}
-          {isCsvFile && previewData && (
+          {/* CSV/QIF Options */}
+          {(isCsvFile || isQifFile) && previewData && (
             <div className="px-5 py-4 border-b border-border bg-muted/30">
               <div className="flex items-center gap-2 mb-3">
                 <Settings2 size={14} className="text-muted-foreground" />
-                <p className="text-xs font-medium text-muted-foreground">{t('import.csvOptions')}</p>
+                <p className="text-xs font-medium text-muted-foreground">
+                  {isCsvFile ? t('import.csvOptions') : t('import.importOptions')}
+                </p>
               </div>
 
               {previewData.parse_error && (
@@ -431,7 +436,7 @@ export default function ImportPage() {
                     <option value="YYYY-MM-DD">YYYY-MM-DD</option>
                   </select>
                 </div>
-                <div className="flex items-center gap-2 pt-4">
+                {isCsvFile && <div className="flex items-center gap-2 pt-4">
                   <input
                     type="checkbox"
                     id="flip-amount"
@@ -442,8 +447,8 @@ export default function ImportPage() {
                   <Label htmlFor="flip-amount" className="text-sm text-muted-foreground cursor-pointer">
                     {t('import.flipAmounts')}
                   </Label>
-                </div>
-                <div className="flex items-center gap-2 pt-4">
+                </div>}
+                {isCsvFile && <div className="flex items-center gap-2 pt-4">
                   <input
                     type="checkbox"
                     id="split-columns"
@@ -454,8 +459,8 @@ export default function ImportPage() {
                   <Label htmlFor="split-columns" className="text-sm text-muted-foreground cursor-pointer">
                     {t('import.splitColumns')}
                   </Label>
-                </div>
-                <div className="flex items-center gap-2 pt-4">
+                </div>}
+                {isCsvFile && <div className="flex items-center gap-2 pt-4">
                   <input
                     type="checkbox"
                     id="detect-duplicates"
@@ -466,7 +471,7 @@ export default function ImportPage() {
                   <Label htmlFor="detect-duplicates" className="text-sm text-muted-foreground cursor-pointer">
                     {t('import.detectDuplicates')}
                   </Label>
-                </div>
+                </div>}
               </div>
 
               {csvSplitColumns && csvHeaders.length > 0 && (

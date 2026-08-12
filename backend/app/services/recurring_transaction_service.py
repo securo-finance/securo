@@ -3,7 +3,7 @@ import uuid
 from datetime import date, timedelta
 from typing import Optional
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -79,6 +79,7 @@ async def create_recurring_transaction(
         currency=data.currency,
         type=data.type,
         frequency=data.frequency,
+        weekend_adjustment=data.weekend_adjustment,
         day_of_month=data.day_of_month,
         start_date=data.start_date,
         end_date=data.end_date,
@@ -104,6 +105,12 @@ async def update_recurring_transaction(
         return None
 
     update_data = data.model_dump(exclude_unset=True)
+
+    if (
+        "weekend_adjustment" in update_data
+        and update_data["weekend_adjustment"] is None
+    ):
+        raise ValueError("weekend_adjustment is required")
 
     # A recurring transaction must always have an account — reject an explicit
     # null, and verify ownership of any new account_id.
@@ -170,28 +177,50 @@ def _advance_date(
     return _advance_months(current, 1, target_day)
 
 
+def adjust_weekend_date(
+    nominal_date: date, weekend_adjustment: str = "none"
+) -> date:
+    """Return the effective date without changing the nominal schedule date."""
+    if weekend_adjustment not in ("none", "previous_friday", "next_monday"):
+        raise ValueError(f"Unsupported weekend adjustment: {weekend_adjustment}")
+
+    weekday = nominal_date.weekday()
+    if weekend_adjustment == "none" or weekday < calendar.SATURDAY:
+        return nominal_date
+    if weekend_adjustment == "previous_friday":
+        return nominal_date - timedelta(days=weekday - calendar.FRIDAY)
+    return nominal_date + timedelta(days=7 - weekday)
+
+
 def get_occurrences_in_range(
     start: date, frequency: str, end_date: Optional[date],
     range_start: date, range_end: date,
     intended_day: Optional[int] = None,
+    weekend_adjustment: str = "none",
 ) -> list[date]:
-    """Compute all occurrence dates for a recurring pattern within [range_start, range_end).
-    Pure date math — no DB writes. Used by dashboard for virtual projections."""
+    """Compute effective occurrence dates within ``[range_start, range_end)``.
+
+    Schedule advancement and end-date checks use nominal dates. The two-day
+    scan margin captures nominal weekend occurrences that move across a range
+    boundary; filtering happens only after calculating each effective date.
+    """
     day = intended_day if intended_day else start.day
+    nominal_range_start = range_start - timedelta(days=2)
+    nominal_range_end = range_end + timedelta(days=2)
     occurrences: list[date] = []
     current = start
-    # Advance to range_start without collecting
-    while current < range_start:
+    while current < nominal_range_start:
         if end_date and current > end_date:
             return occurrences
         current = _advance_date(current, frequency, intended_day=day)
-    # Collect occurrences within range
-    while current < range_end:
+    while current < nominal_range_end:
         if end_date and current > end_date:
             break
-        occurrences.append(current)
+        effective_date = adjust_weekend_date(current, weekend_adjustment)
+        if range_start <= effective_date < range_end:
+            occurrences.append(effective_date)
         current = _advance_date(current, frequency, intended_day=day)
-        if len(occurrences) > 200:  # safety limit
+        if len(occurrences) > 200:
             break
     return occurrences
 
@@ -211,7 +240,16 @@ async def generate_pending(
             RecurringTransaction.user_id == user_id,
             RecurringTransaction.is_active == True,
             RecurringTransaction.auto_generate == True,
-            RecurringTransaction.next_occurrence <= cutoff,
+            or_(
+                and_(
+                    RecurringTransaction.weekend_adjustment == "previous_friday",
+                    RecurringTransaction.next_occurrence <= cutoff + timedelta(days=2),
+                ),
+                and_(
+                    RecurringTransaction.weekend_adjustment != "previous_friday",
+                    RecurringTransaction.next_occurrence <= cutoff,
+                ),
+            ),
         )
     )
     recurring_list = list(result.scalars().all())
@@ -223,9 +261,15 @@ async def generate_pending(
         # constraint — the user should edit the recurring to fix it.
         if recurring.account_id is None:
             continue
-        # Generate transactions until next_occurrence is past the cutoff
-        while recurring.next_occurrence <= cutoff:
-            # Check if past end_date
+        # Generate while the effective date is due. The nominal pointer remains
+        # authoritative and is the only date used for schedule advancement and
+        # end-date evaluation.
+        while True:
+            effective_occurrence = adjust_weekend_date(
+                recurring.next_occurrence, recurring.weekend_adjustment
+            )
+            if effective_occurrence > cutoff:
+                break
             if recurring.end_date and recurring.next_occurrence > recurring.end_date:
                 recurring.is_active = False
                 break
@@ -236,7 +280,7 @@ async def generate_pending(
             # stamped with the recurring link so a later synced charge merges
             # into it rather than duplicating.
             existing_real = await recurring_match_service.find_real_tx_for_occurrence(
-                session, recurring, recurring.next_occurrence
+                session, recurring, effective_occurrence
             )
             if existing_real is not None:
                 existing_real.recurring_transaction_id = recurring.id
@@ -248,7 +292,7 @@ async def generate_pending(
                     description=recurring.description,
                     amount=recurring.amount,
                     currency=recurring.currency,
-                    date=recurring.next_occurrence,
+                    date=effective_occurrence,
                     type=recurring.type,
                     source="recurring",
                     recurring_transaction_id=recurring.id,

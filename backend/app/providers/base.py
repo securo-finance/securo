@@ -209,6 +209,17 @@ class ProviderRateLimited(Exception):
     """
 
 
+class ProviderNotConfiguredError(Exception):
+    """Raised when a connection references a provider missing from the registry.
+
+    This is a server configuration problem, not a bank problem — typically one
+    process (e.g. the Celery worker) is not loading the environment that
+    enables the provider while the API process is. The credentials are fine,
+    so callers must not flip the connection to "error": the reconnect banner
+    would send the user chasing the wrong fix (and burning setup tokens).
+    """
+
+
 class FxRateProvider(ABC):
     """Abstract interface for FX rate providers."""
 

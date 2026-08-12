@@ -472,11 +472,13 @@ async def test_propose_create_recurring_monthly_full(
         session=session, ctx=ctx,
         description="Netflix", amount=55.0, type="debit",
         frequency="monthly", day_of_month=10,
+        weekend_adjustment="previous_friday",
         account_id=str(test_account.id),
     )
     assert r["kind"] == "create_recurring_transaction"
     assert r["proposed"]["day_of_month"] == 10
     assert r["proposed"]["frequency"] == "monthly"
+    assert r["proposed"]["weekend_adjustment"] == "previous_friday"
 
 
 async def test_propose_update_recurring_no_changes(
@@ -827,6 +829,7 @@ async def test_propose_create_recurring_transaction_external_apply_writes(
         frequency="monthly",
         day_of_month=10,
         account_id=str(test_account.id),
+        weekend_adjustment="next_monday",
         apply=True,
     )
     assert result.get("applied") is True
@@ -839,6 +842,7 @@ async def test_propose_create_recurring_transaction_external_apply_writes(
     assert row.description == "Netflix"
     assert row.frequency == "monthly"
     assert row.day_of_month == 10
+    assert row.weekend_adjustment == "next_monday"
 
 
 async def test_propose_update_recurring_transaction_external_apply_writes(
@@ -873,12 +877,14 @@ async def test_propose_update_recurring_transaction_external_apply_writes(
         session=session, ctx=ctx,
         recurring_id=str(rt.id),
         amount=27.90,
+        weekend_adjustment="previous_friday",
         apply=True,
     )
     assert result.get("applied") is True
 
     await session.refresh(rt)
     assert float(rt.amount) == 27.90
+    assert rt.weekend_adjustment == "previous_friday"
 
 
 async def test_propose_cancel_recurring_transaction_deactivate_apply(
