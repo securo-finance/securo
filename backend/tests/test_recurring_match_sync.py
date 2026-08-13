@@ -26,11 +26,13 @@ from app.models.bank_connection import BankConnection
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.schemas.recurring_transaction import RecurringTransactionCreate
-from app.services.connection_service import sync_connection
+from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
+from app.services.connection_service import _description_similarity, sync_connection
 from app.services.recurring_transaction_service import (
     create_recurring_transaction,
     generate_pending,
 )
+from app.services.rule_service import create_rule
 
 
 @pytest_asyncio.fixture
@@ -75,12 +77,42 @@ def _tx(**kw):
     return TransactionData(**kw)
 
 
-async def _run_sync(session, conn_id, test_workspace, test_user, provider):
-    with patch("app.services.connection_service.get_provider", return_value=provider), \
-         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
-         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
-         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
-        return await sync_connection(session, conn_id, test_workspace.id, test_user.id)
+async def _run_sync(
+    session,
+    conn_id,
+    test_workspace,
+    test_user,
+    provider,
+    *,
+    mock_rules=True,
+):
+    patches = [
+        patch("app.services.connection_service.get_provider", return_value=provider),
+        patch(
+            "app.services.connection_service.detect_transfer_pairs",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "app.services.connection_service.stamp_primary_amount",
+            new_callable=AsyncMock,
+        ),
+    ]
+    if mock_rules:
+        patches.append(
+            patch(
+                "app.services.connection_service.apply_rules_to_transaction",
+                new_callable=AsyncMock,
+            )
+        )
+    with patches[0], patches[1], patches[2]:
+        if mock_rules:
+            with patches[3]:
+                return await sync_connection(
+                    session, conn_id, test_workspace.id, test_user.id
+                )
+        return await sync_connection(
+            session, conn_id, test_workspace.id, test_user.id
+        )
 
 
 async def _make_bill(session, test_workspace, test_user, account, **ov):
@@ -131,6 +163,181 @@ async def test_sync_links_and_advances_bill(session, test_user, test_workspace, 
     assert txs[0].source == "sync"
     refreshed = await session.get(RecurringTransaction, bill_id)
     assert refreshed.next_occurrence == date(2025, 2, 10)  # advanced past fulfilled occ
+
+
+@pytest.mark.asyncio
+async def test_sync_normalizes_before_active_recurring_match(
+    session,
+    test_user,
+    test_workspace,
+    conn_account,
+    test_categories,
+):
+    conn, account = conn_account
+    conn_id, account_id = conn.id, account.id
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        account,
+        description="Amazon Prime",
+        amount=Decimal("19.90"),
+        start_date=date(2025, 1, 10),
+        category_id=test_categories[1].id,
+    )
+    await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Normalize synced Amazon",
+            conditions=[
+                RuleCondition(
+                    field="description", op="contains", value="AMZNPrime DE"
+                )
+            ],
+            actions=[
+                RuleAction(op="set_description", value="Amazon Prime"),
+                RuleAction(op="append_notes", value="#subscription"),
+            ],
+            apply_to_existing=False,
+        ),
+    )
+    raw_description = "D01-1234567 AMZNPrime DE changing-token"
+    assert _description_similarity(raw_description, "Amazon Prime") < 0.6
+    provider = _provider(
+        [
+            _tx(
+                external_id="amazon-sync-1",
+                description=raw_description,
+                amount=Decimal("19.90"),
+                date=date(2025, 1, 11),
+                pluggy_category="Eating out",
+            )
+        ]
+    )
+
+    await _run_sync(
+        session,
+        conn_id,
+        test_workspace,
+        test_user,
+        provider,
+        mock_rules=False,
+    )
+    await _run_sync(
+        session,
+        conn_id,
+        test_workspace,
+        test_user,
+        provider,
+        mock_rules=False,
+    )
+
+    txs = await _all_txs(session, account_id)
+    assert len(txs) == 1
+    assert txs[0].recurring_transaction_id == bill.id
+    assert txs[0].description == "Amazon Prime"
+    assert txs[0].original_description == raw_description
+    assert txs[0].category_id == test_categories[0].id
+    assert txs[0].notes == "#subscription"
+    refreshed = await session.get(RecurringTransaction, bill.id)
+    assert refreshed.next_occurrence == date(2025, 2, 10)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("placeholder_has_category", [False, True])
+async def test_sync_placeholder_provider_category_precedence(
+    session,
+    test_user,
+    test_workspace,
+    conn_account,
+    test_categories,
+    placeholder_has_category,
+):
+    conn, account = conn_account
+    conn_id, account_id = conn.id, account.id
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        account,
+        description="iFood",
+        amount=Decimal("49.90"),
+        start_date=date(2025, 1, 10),
+        category_id=test_categories[1].id,
+    )
+    bill.next_occurrence = date(2025, 2, 10)
+    placeholder = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account_id,
+        description="iFood",
+        amount=Decimal("49.90"),
+        currency="BRL",
+        date=date(2025, 1, 10),
+        type="debit",
+        source="recurring",
+        status="posted",
+        recurring_transaction_id=bill.id,
+        category_id=(
+            test_categories[1].id if placeholder_has_category else None
+        ),
+    )
+    session.add(placeholder)
+    await session.commit()
+    placeholder_id = placeholder.id
+    await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name=f"Normalize sync placeholder {placeholder_has_category}",
+            conditions=[
+                RuleCondition(field="payee", op="contains", value="IFOOD.COM")
+            ],
+            actions=[
+                RuleAction(op="set_description", value="iFood"),
+                RuleAction(op="append_notes", value="#delivery"),
+            ],
+            apply_to_existing=False,
+        ),
+    )
+    raw_description = "|fd*f|ood Club"
+    provider = _provider(
+        [
+            _tx(
+                external_id=f"ifood-sync-{placeholder_has_category}",
+                description=raw_description,
+                payee="IFOOD.COM AGÊNCIA DE RESTAURANTES ONLINE S.A.",
+                amount=Decimal("49.90"),
+                date=date(2025, 1, 11),
+                pluggy_category="Eating out",
+            )
+        ]
+    )
+
+    await _run_sync(
+        session,
+        conn_id,
+        test_workspace,
+        test_user,
+        provider,
+        mock_rules=False,
+    )
+
+    txs = await _all_txs(session, account_id)
+    assert len(txs) == 1
+    assert txs[0].id == placeholder_id
+    assert txs[0].recurring_transaction_id == bill.id
+    assert txs[0].category_id == (
+        test_categories[1].id
+        if placeholder_has_category
+        else test_categories[0].id
+    )
+    assert txs[0].description == "iFood"
+    assert txs[0].original_description == raw_description
+    assert txs[0].notes == "#delivery"
 
 
 # ---------------------------------------------------------------------------

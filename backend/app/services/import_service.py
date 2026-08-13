@@ -711,6 +711,10 @@ async def import_transactions(
         txn_currency = txn_data.currency or account_currency
 
         if should_detect_duplicates:
+            # Prefer an external ID (OFX FITID), with date retained because some
+            # Brazilian cards reuse one purchase FITID across monthly installments.
+            # Formats without unique IDs fall back to transaction fields; compare
+            # both descriptions because rules may have changed the displayed one.
             if txn_data.external_id:
                 existing = await session.execute(
                     select(Transaction).where(
@@ -732,6 +736,9 @@ async def import_transactions(
                         ),
                     )
                 )
+            # `.first()` is intentional: duplicate keys can legitimately match
+            # multiple rows after an import/sync race or reused bank identifier,
+            # and duplicate detection only needs to establish that any row exists.
             if existing.scalars().first() is not None:
                 skipped += 1
                 continue
@@ -782,6 +789,9 @@ async def import_transactions(
             skip_category_rules=txn_data.force_uncategorized,
         )
 
+        # Normalize a detached candidate before either recurring match. If a
+        # generated placeholder already represents this occurrence, upgrade it
+        # in place; otherwise link the new row to an active recurring definition.
         placeholder = await recurring_match_service.find_placeholder_for_incoming(
             session,
             account_id,
@@ -797,6 +807,8 @@ async def import_transactions(
             placeholder.import_id = import_log.id
             placeholder.description = txn_data.description
             placeholder.original_description = None
+            if placeholder.category_id is None and category_id is not None:
+                placeholder.category_id = category_id
             if import_payee_raw:
                 placeholder.payee = import_payee_raw
                 placeholder.payee_id = import_payee_id
@@ -804,7 +816,7 @@ async def import_transactions(
                 session,
                 user_id,
                 placeholder,
-                skip_category_rules=True,
+                skip_category_rules=txn_data.force_uncategorized,
             )
             imported += 1
             continue

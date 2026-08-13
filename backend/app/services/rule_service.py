@@ -1146,7 +1146,16 @@ async def apply_single_rule(
     rule: Rule,
     overwrite_existing_categories: bool = False,
 ) -> int:
-    """Apply one rule to existing transactions and count actual modifications."""
+    """Apply one rule to existing workspace transactions and count modifications.
+
+    Used after rule creation or editing so it can affect history without the
+    destructive reset performed by `apply_all_rules`. Existing categories are
+    protected unless the caller opts into replacement; other actions still
+    apply. Conditions first inspect the current transaction state so rules can
+    depend on earlier normalization. If that does not match, the preserved
+    imported description is tried as a fallback so edited normalization rules
+    can still find transactions they previously changed.
+    """
     if not rule.is_active:
         return 0
 
@@ -1162,10 +1171,14 @@ async def apply_single_rule(
 
     count = 0
     for tx in transactions:
-        match_target = _rule_preview(tx)
-        if match_target.original_description is not None:
-            match_target.description = match_target.original_description
-        if not evaluate_conditions(rule.conditions_op, conditions, match_target):
+        matches = evaluate_conditions(rule.conditions_op, conditions, tx)
+        if not matches and tx.original_description is not None:
+            original_target = _rule_preview(tx)
+            original_target.description = tx.original_description
+            matches = evaluate_conditions(
+                rule.conditions_op, conditions, original_target
+            )
+        if not matches:
             continue
 
         before = (

@@ -1450,6 +1450,10 @@ async def sync_connection(
                     session, user_id, transaction
                 )
 
+                # Normalize before recurring reconciliation. A generated
+                # placeholder is upgraded in place; otherwise the normalized
+                # candidate may fulfill an active definition, which advances so
+                # later generation cannot duplicate the occurrence.
                 placeholder = (
                     await recurring_match_service.find_placeholder_for_incoming(
                         session,
@@ -1470,6 +1474,8 @@ async def sync_connection(
                     placeholder.raw_data = txn_data.raw_data
                     placeholder.description = txn_data.description
                     placeholder.original_description = None
+                    if placeholder.category_id is None and category_id is not None:
+                        placeholder.category_id = category_id
                     if txn_data.payee:
                         placeholder.payee = txn_data.payee
                         placeholder.payee_id = sync_payee_id

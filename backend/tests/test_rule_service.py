@@ -15,6 +15,7 @@ from app.services.rule_service import (
     RULE_PACKS,
     apply_all_rules,
     apply_rules_to_transaction,
+    apply_single_rule,
     create_default_rules,
     create_rule,
     delete_rule,
@@ -585,6 +586,142 @@ async def test_apply_all_rules_replaces_edited_normalization_idempotently(
     assert transaction.description == "Prime"
     assert transaction.original_description == "D01-123 AMZNPrime DE changing-token"
     assert transaction.notes == "#subscription"
+
+
+@pytest.mark.asyncio
+async def test_apply_single_rule_prefers_current_description_then_falls_back_to_original(
+    session: AsyncSession, test_user, test_workspace, test_categories
+):
+    account = Account(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Rule chain",
+        type="checking",
+        balance=Decimal("1000"),
+        currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+    transaction = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        description="D01-123 AMZNPrime DE changing-token",
+        amount=Decimal("19.90"),
+        date=date(2026, 1, 10),
+        type="debit",
+        source="sync",
+    )
+    session.add(transaction)
+    await session.commit()
+
+    normalizer = await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Normalize Amazon",
+            conditions=[
+                RuleCondition(
+                    field="description", op="contains", value="AMZNPrime DE"
+                )
+            ],
+            actions=[
+                RuleAction(op="set_description", value="Amazon Prime")
+            ],
+            apply_to_existing=False,
+            priority=10,
+        ),
+    )
+    assert await apply_single_rule(
+        session, test_workspace.id, normalizer
+    ) == 1
+    assert transaction.description == "Amazon Prime"
+    assert (
+        transaction.original_description
+        == "D01-123 AMZNPrime DE changing-token"
+    )
+
+    dependent = await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Categorize normalized Amazon",
+            conditions=[
+                RuleCondition(
+                    field="description", op="equals", value="Amazon Prime"
+                )
+            ],
+            actions=[
+                RuleAction(
+                    op="set_category", value=str(test_categories[0].id)
+                )
+            ],
+            apply_to_existing=False,
+            priority=20,
+        ),
+    )
+    assert await apply_single_rule(
+        session, test_workspace.id, dependent
+    ) == 1
+    assert transaction.category_id == test_categories[0].id
+    assert await apply_single_rule(
+        session, test_workspace.id, dependent
+    ) == 0
+    negative = await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Current-state negative match",
+            conditions=[
+                RuleCondition(
+                    field="description",
+                    op="not_contains",
+                    value="AMZNPrime DE",
+                )
+            ],
+            actions=[RuleAction(op="append_notes", value="#normalized")],
+            apply_to_existing=False,
+            priority=30,
+        ),
+    )
+    assert await apply_single_rule(
+        session, test_workspace.id, negative
+    ) == 1
+    assert transaction.notes == "#normalized"
+    assert await apply_single_rule(
+        session, test_workspace.id, negative
+    ) == 0
+
+    normalizer = await update_rule(
+        session,
+        normalizer.id,
+        test_workspace.id,
+        RuleUpdate(
+            actions=[
+                RuleAction(op="set_description", value="Prime"),
+                RuleAction(
+                    op="set_category", value=str(test_categories[1].id)
+                ),
+            ]
+        ),
+    )
+    assert normalizer is not None
+    assert await apply_single_rule(
+        session, test_workspace.id, normalizer
+    ) == 1
+    assert transaction.description == "Prime"
+    assert (
+        transaction.original_description
+        == "D01-123 AMZNPrime DE changing-token"
+    )
+    assert transaction.category_id == test_categories[0].id
+    assert await apply_single_rule(
+        session, test_workspace.id, normalizer
+    ) == 0
+    assert transaction.category_id == test_categories[0].id
 
 
 @pytest.mark.asyncio

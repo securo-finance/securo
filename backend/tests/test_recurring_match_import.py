@@ -172,7 +172,7 @@ async def test_import_normalizes_before_recurring_match_and_deduplicates_raw_rei
 
 @pytest.mark.asyncio
 async def test_import_normalizes_before_placeholder_upgrade(
-    session, test_user, test_workspace, test_account
+    session, test_user, test_workspace, test_account, test_categories
 ):
     account_id = test_account.id
     bill = await _make_bill(
@@ -197,6 +197,7 @@ async def test_import_normalizes_before_placeholder_upgrade(
         source="recurring",
         status="posted",
         recurring_transaction_id=bill.id,
+        category_id=test_categories[0].id,
     )
     session.add(placeholder)
     await session.commit()
@@ -221,6 +222,7 @@ async def test_import_normalizes_before_placeholder_upgrade(
         date=date(2026, 1, 11),
         type="debit",
         currency="BRL",
+        category_id=test_categories[1].id,
     )
 
     with patch(
@@ -242,6 +244,116 @@ async def test_import_normalizes_before_placeholder_upgrade(
     assert txs[0].recurring_transaction_id == bill.id
     assert txs[0].description == "iFood"
     assert txs[0].original_description == "|fd*f|ood Club"
+    assert txs[0].category_id == test_categories[0].id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("incoming_category", "force_uncategorized", "expected_category"),
+    [
+        (True, False, "incoming"),
+        (False, False, "rule"),
+        (False, True, None),
+    ],
+)
+async def test_import_placeholder_category_precedence(
+    session,
+    test_user,
+    test_workspace,
+    test_account,
+    test_categories,
+    incoming_category,
+    force_uncategorized,
+    expected_category,
+):
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        test_account,
+        description="iFood",
+        amount=Decimal("59.90"),
+        start_date=date(2026, 2, 10),
+    )
+    bill.next_occurrence = date(2026, 3, 10)
+    placeholder = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=test_account.id,
+        description="iFood",
+        amount=Decimal("59.90"),
+        currency="BRL",
+        date=date(2026, 2, 10),
+        type="debit",
+        source="recurring",
+        status="posted",
+        recurring_transaction_id=bill.id,
+    )
+    session.add(placeholder)
+    await session.commit()
+    placeholder_id = placeholder.id
+    await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name=(
+                "Import placeholder precedence "
+                f"{incoming_category}-{force_uncategorized}"
+            ),
+            conditions=[
+                RuleCondition(
+                    field="description", op="contains", value="noisy iFood"
+                )
+            ],
+            actions=[
+                RuleAction(op="set_description", value="iFood"),
+                RuleAction(
+                    op="set_category", value=str(test_categories[0].id)
+                ),
+                RuleAction(op="append_notes", value="#delivery"),
+            ],
+            apply_to_existing=False,
+        ),
+    )
+    incoming = TransactionImport(
+        description="changing noisy iFood token",
+        amount=Decimal("59.90"),
+        date=date(2026, 2, 11),
+        type="debit",
+        currency="BRL",
+        category_id=(
+            test_categories[1].id if incoming_category else None
+        ),
+        force_uncategorized=force_uncategorized,
+    )
+
+    with patch(
+        "app.services.import_service.stamp_primary_amount",
+        new_callable=AsyncMock,
+    ):
+        await import_transactions(
+            session,
+            test_workspace.id,
+            test_user.id,
+            test_account.id,
+            [incoming],
+            "csv",
+        )
+
+    txs = await _real_txs(session, test_account.id)
+    assert len(txs) == 1
+    assert txs[0].id == placeholder_id
+    assert txs[0].recurring_transaction_id == bill.id
+    if expected_category == "incoming":
+        assert txs[0].category_id == test_categories[1].id
+    elif expected_category == "rule":
+        assert txs[0].category_id == test_categories[0].id
+    else:
+        assert txs[0].category_id is None
+    assert txs[0].description == "iFood"
+    assert txs[0].original_description == incoming.description
+    assert txs[0].notes == "#delivery"
 
 
 @pytest.mark.asyncio
