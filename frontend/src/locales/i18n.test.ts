@@ -150,13 +150,45 @@ describe('i18n locale files', () => {
       it(locale, () => {
         const keys = new Set(flattenKeys(JSON.parse(readRaw(locale))))
         // A key is valid if it exists in en directly, OR if it is a plural form
-        // of a key that exists in en (e.g. "foo_few" is valid when en has "foo").
+        // of a key en defines — either plainly ("foo") or itself pluralized
+        // ("foo_one"/"foo_other"). English only has one/other, so a locale with
+        // richer plural rules must be free to add "foo_few" and "foo_many".
         const extra = [...keys].filter((k) => {
           if (enKeys.has(k)) return false
           const base = pluralBase(k)
-          return !(base && enKeys.has(base))
+          return !(base && hasKeyOrPluralForms(enKeys, base))
         })
         expect(extra, `Extra keys in ${locale} not in en:`).toEqual([])
+      })
+    }
+  })
+
+  describe('pluralized keys cover every form the language needs', () => {
+    // i18next picks the form via Intl.PluralRules, so a language that declares
+    // "few"/"many" needs those keys — otherwise the lookup misses and the raw
+    // key renders. English only needs one/other, so this can't be caught by
+    // comparing against en.json.
+    for (const locale of LOCALES) {
+      it(locale, () => {
+        const keys = flattenKeys(JSON.parse(readRaw(locale)))
+        const required = new Intl.PluralRules(locale).resolvedOptions().pluralCategories
+        const formsByBase = new Map<string, Set<string>>()
+
+        for (const key of keys) {
+          const base = pluralBase(key)
+          if (!base) continue
+          const form = key.slice(base.length + 1)
+          if (!formsByBase.has(base)) formsByBase.set(base, new Set())
+          formsByBase.get(base)!.add(form)
+        }
+
+        const incomplete: string[] = []
+        for (const [base, forms] of formsByBase) {
+          const missing = required.filter((c) => !forms.has(c))
+          if (missing.length > 0) incomplete.push(`${base}: missing _${missing.join(', _')}`)
+        }
+
+        expect(incomplete, `Incomplete plural forms in ${locale}:`).toEqual([])
       })
     }
   })
