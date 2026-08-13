@@ -12,6 +12,7 @@ from app.models.asset import Asset
 from app.models.bank_connection import BankConnection
 from app.models.category import Category
 from app.models.transaction import Transaction
+from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
 from app.providers.base import (
     AccountData,
     BillData,
@@ -32,6 +33,7 @@ from app.services.connection_service import (
     sync_connection,
     update_connection_settings,
 )
+from app.services.rule_service import create_rule
 
 
 # ---------------------------------------------------------------------------
@@ -814,6 +816,82 @@ async def test_sync_connection_with_category_mapping(session: AsyncSession, test
 
     assert result_conn.status == "active"
 
+
+@pytest.mark.asyncio
+async def test_sync_keeps_provider_category_while_normalizing_description(
+    session: AsyncSession, test_user, test_workspace
+):
+    conn = await _make_connection(session, test_user.id, "Normalized Cat Bank")
+    category = await _make_category(session, test_user.id, "Alimentação")
+    await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Normalize iFood sync",
+            conditions=[
+                RuleCondition(field="payee", op="contains", value="IFOOD.COM")
+            ],
+            actions=[
+                RuleAction(op="set_description", value="iFood"),
+                RuleAction(op="append_notes", value="#delivery"),
+            ],
+            apply_to_existing=False,
+        ),
+    )
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(
+        return_value=[
+            AccountData(
+                external_id="norm-acc-1",
+                name="Checking",
+                type="checking",
+                balance=Decimal("100"),
+                currency="BRL",
+            )
+        ]
+    )
+    mock_provider.get_transactions = AsyncMock(
+        return_value=[
+            TransactionData(
+                external_id="norm-tx-1",
+                description="|fd*f|ood Club",
+                payee="IFOOD.COM AGÊNCIA DE RESTAURANTES ONLINE S.A.",
+                amount=Decimal("50"),
+                date=date.today(),
+                type="debit",
+                currency="BRL",
+                pluggy_category="Eating out",
+            )
+        ]
+    )
+
+    with patch(
+        "app.services.connection_service.get_provider",
+        return_value=mock_provider,
+    ), patch(
+        "app.services.connection_service.detect_transfer_pairs",
+        new_callable=AsyncMock,
+    ), patch(
+        "app.services.connection_service.stamp_primary_amount",
+        new_callable=AsyncMock,
+    ):
+        await sync_connection(
+            session, conn.id, test_workspace.id, test_user.id
+        )
+
+    transaction = (
+        await session.execute(
+            select(Transaction).where(
+                Transaction.external_id == "norm-tx-1"
+            )
+        )
+    ).scalar_one()
+    assert transaction.category_id == category.id
+    assert transaction.description == "iFood"
+    assert transaction.original_description == "|fd*f|ood Club"
+    assert transaction.notes == "#delivery"
 
 @pytest.mark.asyncio
 async def test_sync_connection_error_raises(session: AsyncSession, test_user, test_workspace):

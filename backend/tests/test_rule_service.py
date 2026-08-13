@@ -18,6 +18,7 @@ from app.services.rule_service import (
     create_default_rules,
     create_rule,
     delete_rule,
+    export_rules,
     get_installed_packs,
     get_rule,
     get_rules,
@@ -298,6 +299,51 @@ async def test_import_rules_skips_invalid_rules(
     assert result.skipped == 2
 
 
+@pytest.mark.asyncio
+async def test_set_description_validation_and_export_compatibility(
+    session: AsyncSession, test_user, test_workspace
+):
+    condition = RuleCondition(field="payee", op="contains", value="IFOOD.COM")
+
+    with pytest.raises(ValueError, match="blank"):
+        await create_rule(
+            session,
+            test_workspace.id,
+            test_user.id,
+            RuleCreate(
+                name="Blank description",
+                conditions=[condition],
+                actions=[RuleAction(op="set_description", value="   ")],
+            ),
+        )
+
+    with pytest.raises(ValueError, match="500"):
+        await create_rule(
+            session,
+            test_workspace.id,
+            test_user.id,
+            RuleCreate(
+                name="Long description",
+                conditions=[condition],
+                actions=[RuleAction(op="set_description", value="x" * 501)],
+            ),
+        )
+
+    rule = await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Normalize iFood",
+            conditions=[condition],
+            actions=[RuleAction(op="set_description", value="iFood")],
+        ),
+    )
+    payload = await export_rules(session, test_workspace.id)
+    assert payload.version == 1
+    exported = next(item for item in payload.rules if item.name == rule.name)
+    assert exported.conditions[0].field == "payee"
+    assert exported.actions[0].op == "set_description"
 # ---------------------------------------------------------------------------
 # apply_rules_to_transaction
 # ---------------------------------------------------------------------------
@@ -465,6 +511,80 @@ async def test_apply_all_rules(session: AsyncSession, test_user, test_workspace,
     await session.refresh(txn2)
     assert txn1.category_id == test_categories[1].id  # transport
     assert txn2.category_id == test_categories[0].id  # food
+
+
+@pytest.mark.asyncio
+async def test_apply_all_rules_replaces_edited_normalization_idempotently(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Normalization",
+        type="checking",
+        balance=Decimal("1000"),
+        currency="BRL",
+    )
+    session.add(account)
+    await session.commit()
+    transaction = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        description="D01-123 AMZNPrime DE changing-token",
+        amount=Decimal("19.90"),
+        date=date(2026, 1, 10),
+        type="debit",
+        source="sync",
+    )
+    session.add(transaction)
+    await session.commit()
+    rule = await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Editable normalization",
+            conditions=[
+                RuleCondition(
+                    field="description", op="contains", value="AMZNPrime DE"
+                )
+            ],
+            actions=[
+                RuleAction(op="set_description", value="Amazon Prime"),
+                RuleAction(op="append_notes", value="#subscription"),
+            ],
+            apply_to_existing=False,
+        ),
+    )
+
+    assert await apply_all_rules(session, test_workspace.id) == 1
+    await session.refresh(transaction)
+    assert transaction.description == "Amazon Prime"
+    assert transaction.original_description == "D01-123 AMZNPrime DE changing-token"
+    assert transaction.notes == "#subscription"
+
+    await update_rule(
+        session,
+        rule.id,
+        test_workspace.id,
+        RuleUpdate(
+            actions=[
+                RuleAction(op="set_description", value="Prime"),
+                RuleAction(op="append_notes", value="#subscription"),
+            ]
+        ),
+    )
+    assert await apply_all_rules(session, test_workspace.id) == 1
+    await session.refresh(transaction)
+    assert transaction.description == "Prime"
+    assert transaction.original_description == "D01-123 AMZNPrime DE changing-token"
+    assert transaction.notes == "#subscription"
+    await apply_all_rules(session, test_workspace.id)
+    await session.refresh(transaction)
+    assert transaction.description == "Prime"
+    assert transaction.original_description == "D01-123 AMZNPrime DE changing-token"
+    assert transaction.notes == "#subscription"
 
 
 @pytest.mark.asyncio

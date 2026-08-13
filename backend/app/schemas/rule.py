@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class RuleCondition(BaseModel):
-    field: str   # description, notes, amount, type, account_id, payee_id, date
+    field: str   # description, payee, notes, amount, type, account_id, payee_id, date
     op: str      # contains, not_contains, equals, not_equals, starts_with, ends_with, regex, gt, gte, lt, lte
     value: Any   # str or number depending on field
 
@@ -25,8 +25,8 @@ class RuleCondition(BaseModel):
 
 
 class RuleAction(BaseModel):
-    op: str      # set_category, set_payee, append_notes, ignore
-    value: Any   # category UUID str or notes string
+    op: str      # set_category, set_payee, set_description, append_notes, ignore
+    value: Any   # entity UUID or text depending on action
 
 
 class RuleCreate(BaseModel):

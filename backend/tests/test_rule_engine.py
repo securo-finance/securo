@@ -226,6 +226,44 @@ def test_ignore_action_sets_flag():
     apply_rule_actions(actions, tx, category_already_set=False)
     assert tx.is_ignored is True
 
+def test_set_description_preserves_first_original_and_is_idempotent():
+    tx = make_tx(description="|fd*f|ood Club", original_description=None)
+
+    apply_rule_actions(
+        [{"op": "set_description", "value": "iFood"}],
+        tx,
+        category_already_set=False,
+    )
+    assert tx.description == "iFood"
+    assert tx.original_description == "|fd*f|ood Club"
+
+    apply_rule_actions(
+        [{"op": "set_description", "value": "iFood Delivery"}],
+        tx,
+        category_already_set=False,
+    )
+    assert tx.description == "iFood Delivery"
+    assert tx.original_description == "|fd*f|ood Club"
+
+
+def test_raw_payee_condition_is_case_and_accent_insensitive():
+    tx = make_tx(payee="IFOOD.COM AGÊNCIA DE RESTAURANTES ONLINE S.A.")
+    conditions = [
+        {"field": "payee", "op": "contains", "value": "ifood.com agencia"}
+    ]
+
+    assert evaluate_conditions("and", conditions, tx) is True
+
+
+def test_payee_id_condition_remains_compatible():
+    payee_id = uuid.uuid4()
+    tx = make_tx(payee_id=payee_id)
+    conditions = [
+        {"field": "payee_id", "op": "equals", "value": str(payee_id)}
+    ]
+
+    assert evaluate_conditions("and", conditions, tx) is True
+
 
 # --- Edge-case: evaluate_conditions ---
 

@@ -32,6 +32,7 @@ class Transaction(Base):
     category_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("categories.id"), nullable=True)
     external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Provider's transaction ID
     description: Mapped[str] = mapped_column(String(500))
+    original_description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2))
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     date: Mapped[_date] = mapped_column(Date)

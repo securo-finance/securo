@@ -905,9 +905,12 @@ function TransactionForm({
             className="bg-card"
           />
         )}
-        {isSynced && transaction?.payee && transaction.payee !== transaction.description && (
-          <p className="text-xs text-muted-foreground">{transaction.payee}</p>
-        )}
+        {transaction?.original_description &&
+          transaction.original_description !== transaction.description && (
+            <p className="text-xs text-muted-foreground">
+              {t('transactions.originalDescription')}: {transaction.original_description}
+            </p>
+          )}
       </div>
       <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <div className="space-y-2">

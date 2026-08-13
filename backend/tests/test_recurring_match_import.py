@@ -11,9 +11,11 @@ from sqlalchemy import select
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.schemas.recurring_transaction import RecurringTransactionCreate
+from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
 from app.schemas.transaction import TransactionImport
 from app.services.import_service import import_transactions
 from app.services.recurring_transaction_service import create_recurring_transaction
+from app.services.rule_service import create_rule
 
 
 async def _make_bill(session, test_workspace, test_user, account, **ov):
@@ -96,6 +98,150 @@ async def test_import_merges_into_placeholder(session, test_user, test_workspace
     assert txs[0].id == placeholder_id
     assert txs[0].source == "csv"
     assert txs[0].recurring_transaction_id == bill_id
+
+@pytest.mark.asyncio
+async def test_import_normalizes_before_recurring_match_and_deduplicates_raw_reimport(
+    session, test_user, test_workspace, test_account
+):
+    account_id = test_account.id
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        test_account,
+        description="Amazon Prime",
+        amount=Decimal("19.90"),
+        start_date=date(2026, 1, 10),
+    )
+    await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Normalize Amazon",
+            conditions=[
+                RuleCondition(
+                    field="description", op="contains", value="AMZNPrime DE"
+                )
+            ],
+            actions=[
+                RuleAction(op="set_description", value="Amazon Prime"),
+                RuleAction(op="append_notes", value="#subscription"),
+            ],
+            apply_to_existing=False,
+        ),
+    )
+    noisy = TransactionImport(
+        description="D01-123 AMZNPrime DE changing-token",
+        amount=Decimal("19.90"),
+        date=date(2026, 1, 11),
+        type="debit",
+        currency="BRL",
+    )
+
+    with patch(
+        "app.services.import_service.stamp_primary_amount",
+        new_callable=AsyncMock,
+    ):
+        imported, skipped, _, _ = await import_transactions(
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id,
+            [noisy],
+            "csv",
+        )
+        imported_again, skipped_again, _, _ = await import_transactions(
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id,
+            [noisy],
+            "csv",
+        )
+
+    assert (imported, skipped) == (1, 0)
+    assert (imported_again, skipped_again) == (0, 1)
+    txs = await _real_txs(session, account_id)
+    assert len(txs) == 1
+    assert txs[0].recurring_transaction_id == bill.id
+    assert txs[0].description == "Amazon Prime"
+    assert txs[0].original_description == noisy.description
+    assert txs[0].notes == "#subscription"
+
+
+@pytest.mark.asyncio
+async def test_import_normalizes_before_placeholder_upgrade(
+    session, test_user, test_workspace, test_account
+):
+    account_id = test_account.id
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        test_account,
+        description="iFood",
+        amount=Decimal("49.90"),
+        start_date=date(2026, 1, 10),
+    )
+    bill.next_occurrence = date(2026, 2, 10)
+    placeholder = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account_id,
+        description="iFood",
+        amount=Decimal("49.90"),
+        currency="BRL",
+        date=date(2026, 1, 10),
+        type="debit",
+        source="recurring",
+        status="posted",
+        recurring_transaction_id=bill.id,
+    )
+    session.add(placeholder)
+    await session.commit()
+    placeholder_id = placeholder.id
+    await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Normalize raw iFood payee",
+            conditions=[
+                RuleCondition(field="payee", op="contains", value="IFOOD.COM")
+            ],
+            actions=[RuleAction(op="set_description", value="iFood")],
+            apply_to_existing=False,
+        ),
+    )
+    incoming = TransactionImport(
+        description="|fd*f|ood Club",
+        payee_raw="IFOOD.COM AGÊNCIA DE RESTAURANTES ONLINE S.A.",
+        amount=Decimal("49.90"),
+        date=date(2026, 1, 11),
+        type="debit",
+        currency="BRL",
+    )
+
+    with patch(
+        "app.services.import_service.stamp_primary_amount",
+        new_callable=AsyncMock,
+    ):
+        await import_transactions(
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id,
+            [incoming],
+            "ofx",
+        )
+
+    txs = await _real_txs(session, account_id)
+    assert len(txs) == 1
+    assert txs[0].id == placeholder_id
+    assert txs[0].recurring_transaction_id == bill.id
+    assert txs[0].description == "iFood"
+    assert txs[0].original_description == "|fd*f|ood Club"
 
 
 @pytest.mark.asyncio

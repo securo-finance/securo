@@ -148,6 +148,7 @@ class TransactionRead(TransactionBase):
     source: str
     status: str = "posted"
     payee: Optional[str] = None
+    original_description: Optional[str] = None
     payee_id: Optional[uuid.UUID] = None
     payee_name: Optional[str] = None
     notes: Optional[str] = None

@@ -18,6 +18,7 @@ import type { Category, CategoryGroup, Payee, Rule, RuleCondition, RuleAction } 
 
 const CONDITION_FIELDS = [
   { value: 'description', label: 'rules.fieldDescription' },
+  { value: 'payee', label: 'rules.fieldRawPayee' },
   { value: 'notes', label: 'rules.fieldNotes' },
   { value: 'amount', label: 'rules.fieldAmount' },
   { value: 'type', label: 'rules.fieldType' },
@@ -139,10 +140,15 @@ export function RuleDialog({
   // A blank condition value matches every transaction, so the rule would apply
   // its actions to the whole ledger. The API rejects these too.
   const hasBlankCondition = conditions.some(c => String(c.value ?? '').trim() === '')
+  const hasInvalidDescriptionAction = actions.some(
+    a => a.op === 'set_description' && (
+      String(a.value ?? '').trim() === '' || String(a.value).trim().length > 500
+    )
+  )
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (hasBlankCondition) return
+    if (hasBlankCondition || hasInvalidDescriptionAction) return
     onSave({
       name,
       conditions_op: conditionsOp,
@@ -292,6 +298,7 @@ export function RuleDialog({
                     onChange={(e) => updateAction(i, 'op', e.target.value)}
                   >
                     <option value="set_category">{t('rules.setCategory')}</option>
+                    <option value="set_description">{t('rules.setDescription')}</option>
                     <option value="set_payee">{t('rules.setPayee')}</option>
                     <option value="append_notes">{t('rules.appendNotes')}</option>
                     <option value="ignore">{t('rules.ignoreAction')}</option>
@@ -328,8 +335,19 @@ export function RuleDialog({
                       className="h-8 w-full min-w-0 text-sm sm:w-0 sm:flex-1"
                       value={action.value}
                       onChange={(e) => updateAction(i, 'value', e.target.value)}
-                      placeholder="Ex: #work #reimbursable"
+                      placeholder={
+                        action.op === 'set_description'
+                          ? t('rules.descriptionValuePlaceholder')
+                          : t('rules.notesValuePlaceholder')
+                      }
+                      maxLength={action.op === 'set_description' ? 500 : undefined}
+                      required={action.op === 'set_description'}
                     />
+                  )}
+                  {action.op === 'set_description' && hasInvalidDescriptionAction && (
+                    <p className="text-xs text-rose-500 sm:w-full">
+                      {t('rules.invalidDescriptionValue')}
+                    </p>
                   )}
                   <button
                     type="button"

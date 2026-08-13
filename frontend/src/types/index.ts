@@ -207,6 +207,7 @@ export interface Transaction {
   category: Category | null
   external_id: string | null
   description: string
+  original_description: string | null
   amount: number
   currency: string
   date: string

@@ -38,6 +38,7 @@ function SectionHeader({ title, action }: { title: string; action?: React.ReactN
 
 const CONDITION_FIELDS = [
   { value: 'description', label: 'rules.fieldDescription' },
+  { value: 'payee', label: 'rules.fieldRawPayee' },
   { value: 'notes', label: 'rules.fieldNotes' },
   { value: 'amount', label: 'rules.fieldAmount' },
   { value: 'type', label: 'rules.fieldType' },
@@ -103,6 +104,9 @@ function actionSummary(actions: RuleAction[], categories: Category[], payeesList
     if (a.op === 'set_payee') {
       const p = payeesList.find(p => p.id === a.value)
       return p ? `→ ${t('payees.payee')}: ${p.name}` : `→ ${t('payees.payee')}`
+    }
+    if (a.op === 'set_description') {
+      return `→ ${t('rules.fieldDescription')}: ${a.value}`
     }
     if (a.op === 'append_notes') return `→ ${t('rules.fieldNotes')}: ${a.value}`
     if (a.op === 'ignore') return `→ ${t('rules.ignoreAction')}`

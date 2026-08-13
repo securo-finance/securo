@@ -142,6 +142,14 @@ def apply_rule_actions(
             except (ValueError, AttributeError):
                 pass
 
+        elif op == "set_description":
+            description = str(value or "").strip()
+            if not description or description == tx.description:
+                continue
+            if getattr(tx, "original_description", None) is None:
+                tx.original_description = tx.description
+            tx.description = description
+
         elif op == "set_payee":
             try:
                 tx.payee_id = uuid.UUID(str(value))
