@@ -342,7 +342,7 @@ export function RuleDialog({
                         </select>
                       ) : (
                         <Input
-                          className="h-8 w-full min-w-0 text-sm sm:w-0 sm:flex-1"
+                          className="h-8 w-full min-w-0 text-sm aria-invalid:border-input aria-invalid:ring-0 dark:aria-invalid:ring-0 sm:w-0 sm:flex-1"
                           value={action.value}
                           onChange={(e) => updateAction(i, 'value', e.target.value)}
                           placeholder={
