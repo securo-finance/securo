@@ -12,7 +12,7 @@ from app.models.bank_connection import BankConnection
 from app.models.credit_card_bill import CreditCardBill
 from app.models.transaction import Transaction
 from app.schemas.account import AccountCreate, AccountUpdate
-from app.services._query_filters import counts_as_pnl
+from app.services._query_filters import counts_as_pnl, credit_card_cycle_predicate
 from app.services.credit_card_service import apply_effective_date, compute_available_credit, get_cycle_dates
 from app.models.category import Category
 
@@ -622,6 +622,7 @@ async def get_account_summary(
     date_from: Optional[_Date] = None, date_to: Optional[_Date] = None,
     bill_id: Optional[uuid.UUID] = None,
     unbilled_only: bool = False,
+    cycle_due_date: Optional[_Date] = None,
 ) -> Optional[dict]:
     account = await get_account(session, account_id, workspace_id)
     if not account:
@@ -715,13 +716,34 @@ async def get_account_summary(
                     Transaction.effective_bill_date.is_(None),
                     Transaction.effective_date != active_due_subq,
                 )),
-                bucket_date >= date_from,
-                bucket_date <= date_to,
             )
+            if cycle_due_date is not None:
+                unlinked_in_window = _and(
+                    unlinked_in_window,
+                    credit_card_cycle_predicate(
+                        date_from, date_to, cycle_due_date
+                    ),
+                )
+            else:
+                unlinked_in_window = _and(
+                    unlinked_in_window,
+                    bucket_date >= date_from,
+                    bucket_date <= date_to,
+                )
             return query.where(or_(Transaction.bill_id == bill_id, unlinked_in_window))
         # Cycle-math fallback. Opt-in `unbilled_only` excludes already-billed
         # txs so an in-progress cycle's bar/total doesn't double-count past-
         # bill txs whose date falls in the window (see get_transactions).
+        if cycle_due_date is not None:
+            return query.where(
+                *([Transaction.bill_id.is_(None)] if unbilled_only else []),
+                credit_card_cycle_predicate(
+                    date_from,
+                    date_to,
+                    cycle_due_date,
+                    include_future_overrides=unbilled_only,
+                ),
+            )
         if unbilled_only:
             # Forward-pointing override catch (issue #162): mirror
             # get_transactions so the in-progress cycle's totals include

@@ -21,7 +21,12 @@ from app.services import split_service
 from app.services.credit_card_service import apply_effective_date
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.fx_rate_service import stamp_primary_amount, convert as fx_convert
-from app.services._query_filters import counts_as_pnl, counts_as_user_pnl, reporting_date_col
+from app.services._query_filters import (
+    counts_as_pnl,
+    counts_as_user_pnl,
+    credit_card_cycle_predicate,
+    reporting_date_col,
+)
 
 
 async def _ensure_category_in_workspace(
@@ -108,6 +113,7 @@ async def get_transactions(
     bill_id: Optional[uuid.UUID] = None,
     group_id: Optional[uuid.UUID] = None,
     unbilled_only: bool = False,
+    cycle_due_date: Optional[date] = None,
     sort_by: Optional[str] = None,
     sort_dir: str = "desc",
     transaction_ids: Optional[list[uuid.UUID]] = None,
@@ -159,7 +165,7 @@ async def get_transactions(
         Transaction.effective_bill_date,
         Transaction.date,
     )
-    in_bill_view = bill_id is not None or unbilled_only
+    in_bill_view = bill_id is not None or unbilled_only or cycle_due_date is not None
     filter_date_col = bill_view_date_col if in_bill_view else date_col
     # Base query: user's own transactions (manual or via account), or
     # group-scoped when `group_id` resolves to a visible group.
@@ -322,10 +328,15 @@ async def get_transactions(
                     Transaction.effective_date != active_due_subq,
                 )),
             ]
-            if from_date:
-                unlinked_clauses.append(filter_date_col >= from_date)
-            if to_date:
-                unlinked_clauses.append(filter_date_col <= to_date)
+            if cycle_due_date is not None:
+                unlinked_clauses.append(
+                    credit_card_cycle_predicate(from_date, to_date, cycle_due_date)
+                )
+            else:
+                if from_date:
+                    unlinked_clauses.append(filter_date_col >= from_date)
+                if to_date:
+                    unlinked_clauses.append(filter_date_col <= to_date)
             bill_predicates.append(_and(*unlinked_clauses))
         base_query = base_query.where(or_(*bill_predicates))
     else:
@@ -345,7 +356,16 @@ async def get_transactions(
         # the in-progress cycle so the tx stays visible until a real bill
         # eventually anchors it. Limited to `unbilled_only` so the global
         # /transactions list isn't reshaped by the same rule.
-        if unbilled_only and to_date is not None:
+        if cycle_due_date is not None:
+            base_query = base_query.where(
+                credit_card_cycle_predicate(
+                    from_date,
+                    to_date,
+                    cycle_due_date,
+                    include_future_overrides=unbilled_only,
+                )
+            )
+        elif unbilled_only and to_date is not None:
             from sqlalchemy import and_ as _and
             window_clauses = []
             if from_date:

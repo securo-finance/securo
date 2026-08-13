@@ -40,6 +40,27 @@ def reporting_date_col(accounting_mode: str):
     return func.coalesce(Transaction.effective_bill_date, base)
 
 
+def credit_card_cycle_predicate(
+    date_from: Optional[date],
+    date_to: Optional[date],
+    cycle_due_date: date,
+    include_future_overrides: bool = False,
+):
+    natural_date_clauses = [Transaction.effective_bill_date.is_(None)]
+    if date_from is not None:
+        natural_date_clauses.append(Transaction.date >= date_from)
+    if date_to is not None:
+        natural_date_clauses.append(Transaction.date <= date_to)
+
+    override_clauses = [Transaction.effective_bill_date == cycle_due_date]
+    if include_future_overrides:
+        override_clauses.append(
+            Transaction.effective_bill_date > (date_to or cycle_due_date)
+        )
+
+    return or_(and_(*natural_date_clauses), *override_clauses)
+
+
 def counts_as_pnl():
     """SQL filter: True when a transaction should contribute to income/expense totals.
 
