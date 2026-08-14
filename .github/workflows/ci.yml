@@ -102,7 +102,7 @@ jobs:
 
       - name: Update coverage badge
         if: github.ref == 'refs/heads/main' && steps.backend-changes.outputs.run_backend == 'true'
-        uses: schneegans/dynamic-badges-action@v1.7.0
+        uses: schneegans/dynamic-badges-action@v1.9.0
         with:
           auth: ${{ secrets.GIST_TOKEN }}
           gistID: ae627b744aaa2ba89d850ea541c311be
@@ -176,7 +176,7 @@ jobs:
         if: steps.helm-changes.outputs.run_helm == 'true'
         uses: azure/setup-helm@v5
         with:
-          version: v4.2.3
+          version: v4.2.4
 
       - name: Lint Helm Chart
         if: steps.helm-changes.outputs.run_helm == 'true'
