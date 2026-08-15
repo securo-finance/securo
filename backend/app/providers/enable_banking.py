@@ -45,7 +45,8 @@ JWT_AUDIENCE = "api.enablebanking.com"
 JWT_LIFETIME_SECONDS = 3500  # under EB's 1h cap; refresh well before
 JWT_CACHE_REFRESH_BEFORE = 600  # re-mint with 10 min buffer
 
-DEFAULT_VALID_UNTIL_DAYS = 180
+MAX_VALID_UNTIL_DAYS = 179
+DEFAULT_VALID_UNTIL_DAYS = MAX_VALID_UNTIL_DAYS
 DEFAULT_PSU_TYPE = "personal"
 DEFAULT_HISTORY_DAYS = 90
 TRANSACTION_PAGE_LIMIT = 50  # safety cap
@@ -335,6 +336,7 @@ class EnableBankingProvider(BankProvider):
         psu_type: str,
         valid_until_days: int,
     ) -> dict:
+        valid_until_days = min(valid_until_days, MAX_VALID_UNTIL_DAYS)
         valid_until_dt = datetime.now(timezone.utc) + timedelta(days=valid_until_days)
         # EB wants RFC3339 with a trailing 'Z' for UTC.
         valid_until = valid_until_dt.replace(microsecond=0).isoformat().replace(
