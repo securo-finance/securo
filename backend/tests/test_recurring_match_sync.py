@@ -375,6 +375,7 @@ async def test_sync_promotes_pending_placeholder_to_posted(
     assert merged.source == "sync"
     assert merged.status == "posted"
     assert merged.recurring_transaction_id == bill_id
+    assert merged.original_description == "NETFLIX SUBSCRIPTION"
     refreshed = await session.get(RecurringTransaction, bill_id)
     assert refreshed.next_occurrence == date(2025, 2, 10)  # NOT advanced again
 

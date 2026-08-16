@@ -714,6 +714,10 @@ async def test_sync_connection_new_transactions(session: AsyncSession, test_user
 
     assert result_conn.status == "active"
     assert merged == 0
+    transaction = await session.scalar(
+        select(Transaction).where(Transaction.external_id == "sync-tx-1")
+    )
+    assert transaction.original_description == "GROCERY"
 
 
 @pytest.mark.asyncio

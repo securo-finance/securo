@@ -98,6 +98,34 @@ async def test_import_merges_into_placeholder(session, test_user, test_workspace
     assert txs[0].id == placeholder_id
     assert txs[0].source == "csv"
     assert txs[0].recurring_transaction_id == bill_id
+    assert txs[0].original_description == "NETFLIX SUBSCRIPTION"
+
+
+@pytest.mark.asyncio
+async def test_import_preserves_original_description_without_normalization(
+    session, test_user, test_workspace, test_account
+):
+    incoming = TransactionImport(
+        description="BANK RAW DESCRIPTION",
+        amount=Decimal("12.34"),
+        date=date(2026, 1, 11),
+        type="debit",
+        currency="BRL",
+    )
+
+    imported, skipped, _, _ = await _run_import(
+        session,
+        test_workspace,
+        test_user,
+        test_account.id,
+        [incoming],
+    )
+
+    assert (imported, skipped) == (1, 0)
+    txs = await _real_txs(session, test_account.id)
+    assert len(txs) == 1
+    assert txs[0].description == incoming.description
+    assert txs[0].original_description == incoming.description
 
 @pytest.mark.asyncio
 async def test_import_normalizes_before_recurring_match_and_deduplicates_raw_reimport(
