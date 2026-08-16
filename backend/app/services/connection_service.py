@@ -655,6 +655,7 @@ async def handle_oauth_callback(
                 account_id=account.id,
                 external_id=txn_data.external_id,
                 description=txn_data.description,
+                original_description=txn_data.description,
                 amount=txn_data.amount,
                 currency=txn_data.currency or acc_data.currency or user_currency,
                 date=txn_data.date,
@@ -1425,6 +1426,7 @@ async def sync_connection(
                     account_id=account.id,
                     external_id=txn_data.external_id,
                     description=txn_data.description,
+                    original_description=txn_data.description,
                     amount=txn_data.amount,
                     currency=incoming_currency,
                     date=txn_data.date,
@@ -1473,7 +1475,7 @@ async def sync_connection(
                     placeholder.status = txn_data.status
                     placeholder.raw_data = txn_data.raw_data
                     placeholder.description = txn_data.description
-                    placeholder.original_description = None
+                    placeholder.original_description = txn_data.description
                     if placeholder.category_id is None and category_id is not None:
                         placeholder.category_id = category_id
                     if txn_data.payee:

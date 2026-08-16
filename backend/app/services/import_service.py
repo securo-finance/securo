@@ -769,6 +769,7 @@ async def import_transactions(
             workspace_id=workspace_id,
             account_id=account_id,
             description=txn_data.description,
+            original_description=txn_data.description,
             amount=txn_data.amount,
             date=txn_data.date,
             type=txn_data.type,
@@ -806,7 +807,7 @@ async def import_transactions(
             placeholder.external_id = txn_data.external_id
             placeholder.import_id = import_log.id
             placeholder.description = txn_data.description
-            placeholder.original_description = None
+            placeholder.original_description = txn_data.description
             if placeholder.category_id is None and category_id is not None:
                 placeholder.category_id = category_id
             if import_payee_raw:
