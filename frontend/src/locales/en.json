@@ -846,7 +846,7 @@
     "duplicateName": "A rule with this name already exists",
     "sectionTitle": "Categorization Rules",
     "resetAndReapplyAll": "Reset and reapply",
-    "confirmResetAndReapplyAll": "Reset matching transaction categories and notes, then reapply all active rules?",
+    "confirmResetAndReapplyAll": "Reset matching transaction categories, notes, and rule-managed descriptions, then reapply all active rules?",
     "add": "Add",
     "created": "Rule created",
     "createdAndApplied": "Rule created and applied to {{count}} transactions",

@@ -617,6 +617,8 @@ async def handle_oauth_callback(
             # second copy from landing.
             synced_dup = await _find_synced_duplicate(session, account.id, txn_data)
             if synced_dup:
+                if synced_dup.original_description is None:
+                    synced_dup.original_description = txn_data.description
                 if synced_dup.status == "pending" and txn_data.status == "posted":
                     synced_dup.status = "posted"
                     synced_dup.external_id = txn_data.external_id
@@ -1331,6 +1333,8 @@ async def sync_connection(
                     # a re-sync can't revive a transaction the user hid.
                     if existing_tx.is_ignored:
                         continue
+                    if existing_tx.original_description is None:
+                        existing_tx.original_description = txn_data.description
                     if existing_tx.status == "pending" and txn_data.status == "posted":
                         existing_tx.status = "posted"
                     # Self-heal bill linkage: a tx that pre-dates the bills
@@ -1363,6 +1367,8 @@ async def sync_connection(
                     fuzzy_match.external_id = txn_data.external_id
                     fuzzy_match.source = "sync"
                     fuzzy_match.raw_data = txn_data.raw_data
+                    if fuzzy_match.original_description is None:
+                        fuzzy_match.original_description = txn_data.description
                     if not fuzzy_match.payee and txn_data.payee:
                         fuzzy_match.payee = txn_data.payee
                     merged_count += 1
@@ -1377,6 +1383,8 @@ async def sync_connection(
                     session, account.id, txn_data
                 )
                 if synced_dup:
+                    if synced_dup.original_description is None:
+                        synced_dup.original_description = txn_data.description
                     if synced_dup.status == "pending" and txn_data.status == "posted":
                         # Posted truth wins: swap in the new id so subsequent
                         # syncs match by external_id and update raw_data.
@@ -1476,6 +1484,7 @@ async def sync_connection(
                     placeholder.raw_data = txn_data.raw_data
                     placeholder.description = txn_data.description
                     placeholder.original_description = txn_data.description
+                    placeholder.description_is_rule_managed = False
                     if placeholder.category_id is None and category_id is not None:
                         placeholder.category_id = category_id
                     if txn_data.payee:

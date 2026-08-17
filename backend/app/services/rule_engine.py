@@ -129,8 +129,10 @@ def apply_rule_actions(
     actions: list[dict],
     tx: "Transaction",
     category_already_set: bool,
+    *,
+    skip_description: bool = False,
 ) -> bool:
-    """Apply actions to transaction in-place. Returns updated category_already_set flag."""
+    """Apply actions in-place and return the updated category-set flag."""
     for action in actions:
         op = action.get("op")
         value = action.get("value")
@@ -143,12 +145,15 @@ def apply_rule_actions(
                 pass
 
         elif op == "set_description":
+            if skip_description:
+                continue
             description = str(value or "").strip()
             if not description or description == tx.description:
                 continue
             if getattr(tx, "original_description", None) is None:
                 tx.original_description = tx.description
             tx.description = description
+            tx.description_is_rule_managed = True
 
         elif op == "set_payee":
             try:

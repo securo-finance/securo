@@ -658,6 +658,7 @@ export default function AccountDetailPage() {
         : null,
       external_id: null,
       description: p.description,
+      original_description: null,
       amount: p.amount,
       currency: p.currency,
       date: p.date,

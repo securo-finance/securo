@@ -239,6 +239,7 @@ async def test_sync_normalizes_before_active_recurring_match(
     assert txs[0].recurring_transaction_id == bill.id
     assert txs[0].description == "Amazon Prime"
     assert txs[0].original_description == raw_description
+    assert txs[0].description_is_rule_managed is True
     assert txs[0].category_id == test_categories[0].id
     assert txs[0].notes == "#subscription"
     refreshed = await session.get(RecurringTransaction, bill.id)
@@ -278,11 +279,12 @@ async def test_sync_placeholder_provider_category_precedence(
         date=date(2025, 1, 10),
         type="debit",
         source="recurring",
-        status="posted",
+        status="pending",
         recurring_transaction_id=bill.id,
         category_id=(
             test_categories[1].id if placeholder_has_category else None
         ),
+        notes="#planned",
     )
     session.add(placeholder)
     await session.commit()
@@ -313,6 +315,7 @@ async def test_sync_placeholder_provider_category_precedence(
                 amount=Decimal("49.90"),
                 date=date(2025, 1, 11),
                 pluggy_category="Eating out",
+                raw_data={"merchant": {"name": "IFOOD.COM"}},
             )
         ]
     )
@@ -337,7 +340,14 @@ async def test_sync_placeholder_provider_category_precedence(
     )
     assert txs[0].description == "iFood"
     assert txs[0].original_description == raw_description
-    assert txs[0].notes == "#delivery"
+    assert txs[0].description_is_rule_managed is True
+    assert txs[0].source == "sync"
+    assert txs[0].status == "posted"
+    assert txs[0].external_id == f"ifood-sync-{placeholder_has_category}"
+    assert txs[0].payee == "IFOOD.COM AGÊNCIA DE RESTAURANTES ONLINE S.A."
+    assert txs[0].payee_id is not None
+    assert txs[0].raw_data == {"merchant": {"name": "IFOOD.COM"}}
+    assert txs[0].notes == "#planned #delivery"
 
 
 # ---------------------------------------------------------------------------

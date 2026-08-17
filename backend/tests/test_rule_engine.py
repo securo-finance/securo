@@ -236,6 +236,7 @@ def test_set_description_preserves_first_original_and_is_idempotent():
     )
     assert tx.description == "iFood"
     assert tx.original_description == "|fd*f|ood Club"
+    assert tx.description_is_rule_managed is True
 
     apply_rule_actions(
         [{"op": "set_description", "value": "iFood Delivery"}],
@@ -244,6 +245,7 @@ def test_set_description_preserves_first_original_and_is_idempotent():
     )
     assert tx.description == "iFood Delivery"
     assert tx.original_description == "|fd*f|ood Club"
+    assert tx.description_is_rule_managed is True
 
 
 def test_raw_payee_condition_is_case_and_accent_insensitive():

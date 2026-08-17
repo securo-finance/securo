@@ -808,11 +808,15 @@ async def import_transactions(
             placeholder.import_id = import_log.id
             placeholder.description = txn_data.description
             placeholder.original_description = txn_data.description
+            placeholder.description_is_rule_managed = False
+            placeholder.status = "posted"
             if placeholder.category_id is None and category_id is not None:
                 placeholder.category_id = category_id
             if import_payee_raw:
                 placeholder.payee = import_payee_raw
                 placeholder.payee_id = import_payee_id
+            if placeholder.notes is None and txn_data.notes is not None:
+                placeholder.notes = txn_data.notes
             await apply_rules_to_transaction(
                 session,
                 user_id,

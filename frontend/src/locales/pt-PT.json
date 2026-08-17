@@ -846,7 +846,7 @@
     "duplicateName": "Já existe uma regra com este nome",
     "sectionTitle": "Regras de Categorização",
     "resetAndReapplyAll": "Redefinir e reaplicar",
-    "confirmResetAndReapplyAll": "Redefinir categorias e notas das transações correspondentes e reaplicar todas as regras ativas?",
+    "confirmResetAndReapplyAll": "Redefinir categorias, notas e descrições geridas por regras das transações correspondentes e reaplicar todas as regras ativas?",
     "add": "Adicionar",
     "created": "Regra criada",
     "createdAndApplied": "Regra criada e aplicada a {{count}} transações",

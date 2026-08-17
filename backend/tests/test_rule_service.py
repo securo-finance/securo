@@ -10,6 +10,7 @@ from app.models.category import Category
 from app.models.payee import Payee
 from app.models.transaction import Transaction
 from app.schemas.rule import RuleAction, RuleCondition, RuleCreate, RuleExportItem, RuleExportPayload, RuleUpdate
+from app.schemas.transaction import TransactionUpdate
 from app.services.rule_service import (
     DuplicateRuleError,
     RULE_PACKS,
@@ -27,6 +28,7 @@ from app.services.rule_service import (
     install_rule_pack,
     update_rule,
 )
+from app.services.transaction_service import update_transaction
 from app.services.category_service import create_default_categories
 
 
@@ -563,6 +565,7 @@ async def test_apply_all_rules_replaces_edited_normalization_idempotently(
     await session.refresh(transaction)
     assert transaction.description == "Amazon Prime"
     assert transaction.original_description == "D01-123 AMZNPrime DE changing-token"
+    assert transaction.description_is_rule_managed is True
     assert transaction.notes == "#subscription"
 
     await update_rule(
@@ -580,12 +583,87 @@ async def test_apply_all_rules_replaces_edited_normalization_idempotently(
     await session.refresh(transaction)
     assert transaction.description == "Prime"
     assert transaction.original_description == "D01-123 AMZNPrime DE changing-token"
+    assert transaction.description_is_rule_managed is True
     assert transaction.notes == "#subscription"
     await apply_all_rules(session, test_workspace.id)
     await session.refresh(transaction)
     assert transaction.description == "Prime"
     assert transaction.original_description == "D01-123 AMZNPrime DE changing-token"
+    assert transaction.description_is_rule_managed is True
     assert transaction.notes == "#subscription"
+
+    assert await delete_rule(
+        session, rule.id, test_workspace.id
+    ) is True
+    assert await apply_all_rules(session, test_workspace.id) == 1
+    await session.refresh(transaction)
+    assert transaction.description == "D01-123 AMZNPrime DE changing-token"
+    assert transaction.original_description == "D01-123 AMZNPrime DE changing-token"
+    assert transaction.description_is_rule_managed is False
+
+
+@pytest.mark.asyncio
+async def test_apply_all_rules_preserves_manually_edited_import_description(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Imported",
+        type="checking",
+        balance=Decimal("1000"),
+        currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+    transaction = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        description="BANK RAW DESCRIPTION",
+        original_description="BANK RAW DESCRIPTION",
+        amount=Decimal("12.34"),
+        date=date(2026, 1, 11),
+        type="debit",
+        source="csv",
+        payee="IFOOD.COM RESTAURANTES",
+    )
+    session.add(transaction)
+    await session.commit()
+
+    updated = await update_transaction(
+        session,
+        transaction.id,
+        test_workspace.id,
+        test_user.id,
+        TransactionUpdate(description="Manually edited merchant"),
+    )
+    assert updated is not None
+    assert updated.description_is_rule_managed is False
+
+    await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Stable payee normalization",
+            conditions=[
+                RuleCondition(field="payee", op="contains", value="IFOOD.COM")
+            ],
+            actions=[
+                RuleAction(op="set_description", value="iFood"),
+                RuleAction(op="append_notes", value="#delivery"),
+            ],
+            apply_to_existing=False,
+        ),
+    )
+
+    assert await apply_all_rules(session, test_workspace.id) == 1
+    await session.refresh(transaction)
+    assert transaction.description == "Manually edited merchant"
+    assert transaction.original_description == "BANK RAW DESCRIPTION"
+    assert transaction.description_is_rule_managed is False
+    assert transaction.notes == "#delivery"
 
 
 @pytest.mark.asyncio

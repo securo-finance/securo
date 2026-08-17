@@ -596,14 +596,26 @@ async def test_update_transaction(session: AsyncSession, test_user, test_workspa
         user_id=test_user.id,
         account_id=txn_account.id,
         description="Old",
+        original_description="Bank Raw",
+        description_is_rule_managed=True,
         amount=Decimal("10"),
         date=date(2025, 3, 1),
         type="debit",
-        source="manual",
+        source="sync",
         created_at=datetime.now(timezone.utc),
     )
     session.add(txn)
     await session.commit()
+
+    unchanged = await update_transaction(
+        session,
+        txn.id,
+        test_workspace.id,
+        test_user.id,
+        TransactionUpdate(description="Old", notes="#reviewed"),
+    )
+    assert unchanged is not None
+    assert unchanged.description_is_rule_managed is True
 
     updated = await update_transaction(
         session,
@@ -615,6 +627,8 @@ async def test_update_transaction(session: AsyncSession, test_user, test_workspa
     assert updated is not None
     assert updated.description == "New"
     assert updated.amount == Decimal("99")
+    assert updated.original_description == "Bank Raw"
+    assert updated.description_is_rule_managed is False
 
 
 @pytest.mark.asyncio
@@ -1312,6 +1326,24 @@ async def test_update_transfer_cascades(
             date=date.today(),
         ),
     )
+    credit_tx.description = "Custom paired description"
+    credit_tx.original_description = "Paired bank description"
+    credit_tx.description_is_rule_managed = True
+    await session.commit()
+
+    unchanged = await update_transaction(
+        session,
+        debit_tx.id,
+        test_workspace.id,
+        test_user.id,
+        TransactionUpdate(description="Cascade Xfer", notes="#reviewed"),
+    )
+    assert unchanged is not None
+    paired = await get_transaction(session, credit_tx.id, test_workspace.id)
+    assert paired is not None
+    assert paired.description == "Custom paired description"
+    assert paired.description_is_rule_managed is True
+
     data = TransactionUpdate(description="Updated Xfer")
     updated = await update_transaction(session, debit_tx.id, test_workspace.id, test_user.id, data)
 
@@ -1322,6 +1354,7 @@ async def test_update_transfer_cascades(
 
     assert paired is not None
     assert paired.description == "Updated Xfer"
+    assert paired.description_is_rule_managed is False
 
 
 # ---------------------------------------------------------------------------

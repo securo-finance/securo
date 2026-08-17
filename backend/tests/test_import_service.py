@@ -1379,6 +1379,8 @@ class TestImportTransactionsFx:
         assert imported == 1
         tx = (await session.execute(select(Transaction).where(Transaction.external_id == "ext_456"))).scalar_one()
         assert tx.notes == "Tools for repair"
+        assert tx.original_description == "Hardware Store"
+        assert tx.description_is_rule_managed is False
 
     @pytest.mark.asyncio
     @patch("app.services.fx_rate_service._provider")

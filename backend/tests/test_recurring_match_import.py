@@ -126,6 +126,7 @@ async def test_import_preserves_original_description_without_normalization(
     assert len(txs) == 1
     assert txs[0].description == incoming.description
     assert txs[0].original_description == incoming.description
+    assert txs[0].description_is_rule_managed is False
 
 @pytest.mark.asyncio
 async def test_import_normalizes_before_recurring_match_and_deduplicates_raw_reimport(
@@ -195,6 +196,7 @@ async def test_import_normalizes_before_recurring_match_and_deduplicates_raw_rei
     assert txs[0].recurring_transaction_id == bill.id
     assert txs[0].description == "Amazon Prime"
     assert txs[0].original_description == noisy.description
+    assert txs[0].description_is_rule_managed is True
     assert txs[0].notes == "#subscription"
 
 
@@ -223,7 +225,7 @@ async def test_import_normalizes_before_placeholder_upgrade(
         date=date(2026, 1, 10),
         type="debit",
         source="recurring",
-        status="posted",
+        status="pending",
         recurring_transaction_id=bill.id,
         category_id=test_categories[0].id,
     )
@@ -251,6 +253,7 @@ async def test_import_normalizes_before_placeholder_upgrade(
         type="debit",
         currency="BRL",
         category_id=test_categories[1].id,
+        notes="#statement",
     )
 
     with patch(
@@ -272,6 +275,13 @@ async def test_import_normalizes_before_placeholder_upgrade(
     assert txs[0].recurring_transaction_id == bill.id
     assert txs[0].description == "iFood"
     assert txs[0].original_description == "|fd*f|ood Club"
+    assert txs[0].description_is_rule_managed is True
+    assert txs[0].source == "ofx"
+    assert txs[0].status == "posted"
+    assert txs[0].import_id is not None
+    assert txs[0].payee == "IFOOD.COM AGÊNCIA DE RESTAURANTES ONLINE S.A."
+    assert txs[0].payee_id is not None
+    assert txs[0].notes == "#statement"
     assert txs[0].category_id == test_categories[0].id
 
 

@@ -1380,6 +1380,13 @@ async def _apply_update_to_row(
         )
     )
 
+    description_changed = (
+        "description" in update_data
+        and update_data["description"] != tx.description
+    )
+    if description_changed:
+        tx.description_is_rule_managed = False
+
     fx_keys = {"amount_primary", "fx_rate_used"}
     for key, value in update_data.items():
         if key in fx_keys:
@@ -1433,6 +1440,8 @@ async def _apply_update_to_row(
             # away the number the user entered (issue #529).
             keeps_own_amount = tx.transfer_amount_explicit or paired_tx.transfer_amount_explicit
             for key in cascade_fields & update_data.keys():
+                if key == "description" and not description_changed:
+                    continue
                 if key == "amount" and paired_tx.currency != tx.currency:
                     if keeps_own_amount:
                         continue
@@ -1442,6 +1451,11 @@ async def _apply_update_to_row(
                     )
                     paired_tx.amount = converted
                 elif key != "amount":
+                    if (
+                        key == "description"
+                        and update_data[key] != paired_tx.description
+                    ):
+                        paired_tx.description_is_rule_managed = False
                     setattr(paired_tx, key, update_data[key])
                 else:
                     paired_tx.amount = update_data[key]

@@ -1080,6 +1080,7 @@ def _rule_preview(transaction: Transaction) -> Transaction:
         category_id=transaction.category_id,
         description=transaction.description,
         original_description=transaction.original_description,
+        description_is_rule_managed=bool(transaction.description_is_rule_managed),
         amount=transaction.amount,
         currency=transaction.currency,
         date=transaction.date,
@@ -1186,6 +1187,7 @@ async def apply_single_rule(
             tx.payee_id,
             tx.description,
             tx.original_description,
+            tx.description_is_rule_managed,
             tx.notes,
             tx.is_ignored,
         )
@@ -1200,6 +1202,7 @@ async def apply_single_rule(
             tx.payee_id,
             tx.description,
             tx.original_description,
+            tx.description_is_rule_managed,
             tx.notes,
             tx.is_ignored,
         )
@@ -1229,17 +1232,27 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
 
     count = 0
     for tx in transactions:
+        # Imported descriptions that differ from their raw provenance without
+        # having been changed by a rule are user-owned. Reset/reapply may still
+        # run every other matching action, but it must not replace that text.
+        preserve_manual_description = (
+            not tx.description_is_rule_managed
+            and tx.original_description is not None
+            and tx.description != tx.original_description
+        )
         before = (
             tx.category_id,
             tx.payee_id,
             tx.description,
             tx.original_description,
+            tx.description_is_rule_managed,
             tx.notes,
             tx.is_ignored,
         )
-        if tx.original_description is not None:
-            tx.description = tx.original_description
-
+        if tx.description_is_rule_managed:
+            if tx.original_description is not None:
+                tx.description = tx.original_description
+            tx.description_is_rule_managed = False
         matched = False
         category_set = False
         for rule in rules:
@@ -1250,13 +1263,19 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
                     tx.category_id = None
                     tx.notes = None
                     matched = True
-                category_set = apply_rule_actions(actions, tx, category_set)
+                category_set = apply_rule_actions(
+                    actions,
+                    tx,
+                    category_set,
+                    skip_description=preserve_manual_description,
+                )
 
         after = (
             tx.category_id,
             tx.payee_id,
             tx.description,
             tx.original_description,
+            tx.description_is_rule_managed,
             tx.notes,
             tx.is_ignored,
         )

@@ -846,7 +846,7 @@
     "duplicateName": "Eine Regel mit diesem Namen existiert bereits",
     "sectionTitle": "Kategorisierungsregeln",
     "resetAndReapplyAll": "Zurücksetzen und erneut anwenden",
-    "confirmResetAndReapplyAll": "Kategorien und Notizen übereinstimmender Transaktionen zurücksetzen und anschließend alle aktiven Regeln erneut anwenden?",
+    "confirmResetAndReapplyAll": "Kategorien, Notizen und durch Regeln geänderte Beschreibungen übereinstimmender Transaktionen zurücksetzen und anschließend alle aktiven Regeln erneut anwenden?",
     "add": "Hinzufügen",
     "created": "Regel erstellt",
     "createdAndApplied": "Regel erstellt und auf {{count}} Transaktionen angewendet",

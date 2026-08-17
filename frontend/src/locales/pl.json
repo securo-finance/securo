@@ -903,7 +903,7 @@
     "duplicateName": "Reguła o tej nazwie już istnieje",
     "sectionTitle": "Reguły kategoryzacji",
     "resetAndReapplyAll": "Zresetuj i zastosuj ponownie",
-    "confirmResetAndReapplyAll": "Zresetować kategorie i notatki pasujących transakcji, a następnie zastosować ponownie wszystkie aktywne reguły?",
+    "confirmResetAndReapplyAll": "Zresetować kategorie, notatki i opisy zarządzane przez reguły pasujących transakcji, a następnie zastosować ponownie wszystkie aktywne reguły?",
     "add": "Dodaj",
     "created": "Utworzono regułę",
     "createdAndApplied": "Utworzono regułę i zastosowano do {{count}} transakcji",

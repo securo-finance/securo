@@ -135,12 +135,14 @@ class TestTransactionReadInstallmentFields:
                 description="iFood",
                 original_description="|fd*f|ood Club",
                 raw_data={"provider_secret": "not-safe"},
+                description_is_rule_managed=True,
             )
         )
         dumped = data.model_dump(mode="json")
 
         assert dumped["original_description"] == "|fd*f|ood Club"
         assert "raw_data" not in dumped
+        assert "description_is_rule_managed" not in dumped
 
 
 class TestTransactionCreateDateField:

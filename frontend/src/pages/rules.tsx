@@ -352,7 +352,7 @@ export default function RulesPage() {
                   size="sm"
                   className="gap-1.5 h-8"
                   onClick={() => {
-                    if (window.confirm(t('rules.confirmResetAndReapplyAll', 'Reset matching transaction categories and notes, then reapply all active rules?'))) {
+                    if (window.confirm(t('rules.confirmResetAndReapplyAll', 'Reset matching transaction categories, notes, and rule-managed descriptions, then reapply all active rules?'))) {
                       applyAllMutation.mutate()
                     }
                   }}

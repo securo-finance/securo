@@ -650,6 +650,14 @@ async def test_handle_oauth_callback_creates_connection(session: AsyncSession, t
     assert conn.institution_name == "Test Bank"
     assert conn.external_id == "ext-oauth-1"
     assert conn.status == "active"
+    transaction = (
+        await session.execute(
+            select(Transaction).where(Transaction.external_id == "tx-1")
+        )
+    ).scalar_one()
+    assert transaction.description == "UBER"
+    assert transaction.original_description == "UBER"
+    assert transaction.description_is_rule_managed is False
 
 
 @pytest.mark.asyncio
@@ -717,6 +725,7 @@ async def test_sync_connection_new_transactions(session: AsyncSession, test_user
     transaction = await session.scalar(
         select(Transaction).where(Transaction.external_id == "sync-tx-1")
     )
+    assert transaction is not None
     assert transaction.original_description == "GROCERY"
 
 
@@ -867,6 +876,7 @@ async def test_sync_keeps_provider_category_while_normalizing_description(
                 type="debit",
                 currency="BRL",
                 pluggy_category="Eating out",
+                raw_data={"merchant": {"name": "IFOOD.COM"}},
             )
         ]
     )
@@ -895,6 +905,10 @@ async def test_sync_keeps_provider_category_while_normalizing_description(
     assert transaction.category_id == category.id
     assert transaction.description == "iFood"
     assert transaction.original_description == "|fd*f|ood Club"
+    assert transaction.description_is_rule_managed is True
+    assert transaction.payee == "IFOOD.COM AGÊNCIA DE RESTAURANTES ONLINE S.A."
+    assert transaction.payee_id is not None
+    assert transaction.raw_data == {"merchant": {"name": "IFOOD.COM"}}
     assert transaction.notes == "#delivery"
 
 @pytest.mark.asyncio
