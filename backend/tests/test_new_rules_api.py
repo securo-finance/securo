@@ -819,3 +819,152 @@ async def test_create_rule_allows_zero_value(
     }
     response = await client.post("/api/rules", json=payload, headers=auth_headers)
     assert response.status_code == 201
+
+
+# ─── nested condition groups (mixing AND and OR) ───
+
+
+@pytest.mark.asyncio
+async def test_create_rule_with_condition_group(
+    client: AsyncClient, auth_headers, test_categories
+):
+    """`type is debit AND (description contains UBER OR contains 99POP)`."""
+    payload = {
+        "name": "Rides",
+        "conditions_op": "and",
+        "conditions": [
+            {"field": "type", "op": "equals", "value": "debit"},
+            {"op": "or", "conditions": [
+                {"field": "description", "op": "contains", "value": "UBER"},
+                {"field": "description", "op": "contains", "value": "99POP"},
+            ]},
+        ],
+        "actions": [{"op": "set_category", "value": str(test_categories[1].id)}],
+    }
+    response = await client.post("/api/rules", json=payload, headers=auth_headers)
+    assert response.status_code == 201
+    stored = response.json()["conditions"]
+    assert stored[0]["field"] == "type"
+    assert stored[1]["op"] == "or"
+    assert [c["value"] for c in stored[1]["conditions"]] == ["UBER", "99POP"]
+
+
+@pytest.mark.asyncio
+async def test_grouped_rule_applies_to_existing_transactions(
+    client: AsyncClient, auth_headers, test_transactions, test_categories
+):
+    """The group's OR branch decides which transactions the AND rule reaches."""
+    cat_transport = str(test_categories[1].id)
+    payload = {
+        "name": "Rides",
+        "conditions_op": "and",
+        "conditions": [
+            {"field": "type", "op": "equals", "value": "debit"},
+            {"op": "or", "conditions": [
+                {"field": "description", "op": "contains", "value": "UBER"},
+                {"field": "description", "op": "contains", "value": "NETFLIX"},
+            ]},
+        ],
+        "actions": [{"op": "set_category", "value": cat_transport}],
+        "apply_to_existing": True,
+        "overwrite_existing_categories": True,
+    }
+    response = await client.post("/api/rules", json=payload, headers=auth_headers)
+    assert response.status_code == 201
+
+    items = (await client.get("/api/transactions", headers=auth_headers)).json()["items"]
+    by_desc = {t["description"]: t for t in items}
+    assert by_desc["UBER TRIP"]["category_id"] == cat_transport
+    assert by_desc["NETFLIX"]["category_id"] == cat_transport
+    # Credit transactions fail the outer AND, so the group never applies.
+    assert by_desc["PIX RECEBIDO"]["category_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_rule_rejects_nested_group(
+    client: AsyncClient, auth_headers, test_categories
+):
+    """Groups hold leaves only — rule depth is capped at two levels."""
+    payload = {
+        "name": "Too deep",
+        "conditions_op": "and",
+        "conditions": [
+            {"op": "or", "conditions": [
+                {"op": "and", "conditions": [
+                    {"field": "description", "op": "contains", "value": "UBER"},
+                ]},
+            ]},
+        ],
+        "actions": [{"op": "set_category", "value": str(test_categories[0].id)}],
+    }
+    response = await client.post("/api/rules", json=payload, headers=auth_headers)
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_rule_rejects_empty_group(
+    client: AsyncClient, auth_headers, test_categories
+):
+    payload = {
+        "name": "Empty group",
+        "conditions_op": "and",
+        "conditions": [{"op": "or", "conditions": []}],
+        "actions": [{"op": "set_category", "value": str(test_categories[0].id)}],
+    }
+    response = await client.post("/api/rules", json=payload, headers=auth_headers)
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_rule_rejects_blank_value_inside_group(
+    client: AsyncClient, auth_headers, test_categories
+):
+    """A blank value matches everything wherever it sits, group included."""
+    payload = {
+        "name": "Blank inside group",
+        "conditions_op": "and",
+        "conditions": [
+            {"op": "or", "conditions": [
+                {"field": "description", "op": "contains", "value": "UBER"},
+                {"field": "description", "op": "contains", "value": "  "},
+            ]},
+        ],
+        "actions": [{"op": "set_category", "value": str(test_categories[0].id)}],
+    }
+    response = await client.post("/api/rules", json=payload, headers=auth_headers)
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_grouped_rules_survive_export_import(
+    client: AsyncClient, auth_headers, test_categories
+):
+    payload = {
+        "name": "Rides",
+        "conditions_op": "and",
+        "conditions": [
+            {"field": "type", "op": "equals", "value": "debit"},
+            {"op": "or", "conditions": [
+                {"field": "description", "op": "contains", "value": "UBER"},
+                {"field": "description", "op": "contains", "value": "99POP"},
+            ]},
+        ],
+        "actions": [{"op": "set_category", "value": str(test_categories[1].id)}],
+    }
+    assert (await client.post("/api/rules", json=payload, headers=auth_headers)).status_code == 201
+
+    exported = await client.get("/api/rules/export", headers=auth_headers)
+    assert exported.status_code == 200
+
+    imported = await client.post(
+        "/api/rules/import",
+        json={"payload": exported.json(), "overwrite": True},
+        headers=auth_headers,
+    )
+    assert imported.status_code == 200
+    assert imported.json()["imported"] == 1
+
+    listed = (await client.get("/api/rules", headers=auth_headers)).json()
+    conditions = next(r["conditions"] for r in listed if r["name"] == "Rides")
+    assert conditions[1]["op"] == "or"
+    assert [c["value"] for c in conditions[1]["conditions"]] == ["UBER", "99POP"]
