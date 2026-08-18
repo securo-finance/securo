@@ -203,13 +203,16 @@ async def test_connection(conn: LlmConnection) -> dict[str, Any]:
                 models = [m.get("name") for m in (r.json().get("models") or [])]
             return {"ok": True, "detail": f"reachable ({len(models)} models)", "models": models}
 
-        if conn.kind in ("openai", "openai_compatible"):
+        if conn.kind in ("openai", "openai_compatible", "orcarouter"):
             # Use the same normalization the runtime provider applies, so
             # "test" hits the same URL "chat" will use. Detects bare-host
             # URLs (e.g. http://lmstudio:1234) and auto-appends /v1.
             from app.agents.providers.openai import normalize_openai_base_url
 
-            base = normalize_openai_base_url(conn.base_url or "https://api.openai.com/v1")
+            # Named providers fall back to their preset endpoint when the
+            # connection stores no base_url (mirrors the OpenAI default).
+            default_base = "https://api.orcarouter.ai/v1" if conn.kind == "orcarouter" else "https://api.openai.com/v1"
+            base = normalize_openai_base_url(conn.base_url or default_base)
             attempted = base
             headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
             async with httpx.AsyncClient(timeout=timeout) as client:

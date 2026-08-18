@@ -32,6 +32,10 @@ const KIND_LABELS: Record<LlmConnectionKind, { label: string; needsBaseUrl: bool
   openai: { label: 'OpenAI', needsBaseUrl: false, needsKey: true, modelHint: 'gpt-4o-mini', urlHint: '', defaultModel: 'gpt-4o-mini' },
   anthropic: { label: 'Anthropic', needsBaseUrl: false, needsKey: true, modelHint: 'claude-haiku-4-5', urlHint: '', defaultModel: 'claude-haiku-4-5' },
   openai_compatible: { label: 'OpenAI-compatible (LM Studio, vLLM, Groq, Together, …)', needsBaseUrl: true, needsKey: false, modelHint: 'llama3.1-70b', urlHint: 'http://192.168.1.142:1234' },
+  // OrcaRouter is a hosted gateway with a public endpoint, so it needs no
+  // base URL (mirroring OpenAI/Anthropic). The model id uses the router's
+  // own provider/model format.
+  orcarouter: { label: 'OrcaRouter', needsBaseUrl: false, needsKey: true, modelHint: 'openai/gpt-4o-mini', urlHint: 'https://api.orcarouter.ai/v1', defaultModel: 'openai/gpt-4o-mini' },
 }
 
 export function ConnectionFormDialog({ open, onOpenChange, connection }: Props) {

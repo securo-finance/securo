@@ -1342,7 +1342,7 @@ export interface Agent {
   updated_at: string
 }
 
-export type LlmConnectionKind = 'ollama' | 'openai' | 'anthropic' | 'openai_compatible'
+export type LlmConnectionKind = 'ollama' | 'openai' | 'anthropic' | 'openai_compatible' | 'orcarouter'
 
 export interface LlmConnection {
   id: string

@@ -29,6 +29,22 @@ async def test_create_connection_requires_base_url_for_openai_compatible(session
 
 
 @pytest.mark.asyncio
+async def test_create_connection_orcarouter_works_without_base_url(session, test_user):
+    """OrcaRouter is a named provider with a preset public endpoint, so a
+    connection needs no base_url (mirrors openai/anthropic)."""
+    conn = await cs.create_connection(
+        session, test_user.id, name="My OrcaRouter", kind="orcarouter",
+        api_key="sk-orca-test", default_model="openai/gpt-4o-mini",
+    )
+    assert conn.base_url is None
+    assert conn.default_model == "openai/gpt-4o-mini"
+    # The provider resolves the preset endpoint at build time.
+    provider = cs.build_provider_for_connection(conn)
+    assert provider.name == "orcarouter"
+    assert provider.base_url == "https://api.orcarouter.ai/v1"
+
+
+@pytest.mark.asyncio
 async def test_create_and_get_and_list(session, test_user):
     conn = await cs.create_connection(
         session, test_user.id,
@@ -149,6 +165,21 @@ def test_build_provider_for_connection(session):
     assert provider.name == "openai"
 
 
+def test_build_provider_for_orcarouter_connection(session):
+    """A connection with no base_url resolves to the OrcaRouter preset."""
+    from app.agents.models.connection import LlmConnection
+
+    conn = LlmConnection(
+        id=uuid.uuid4(), user_id=uuid.uuid4(),
+        name="x", kind="orcarouter",
+        base_url=None, api_key_encrypted=None,
+        default_model="openai/gpt-4o-mini", extra={},
+    )
+    provider = cs.build_provider_for_connection(conn)
+    assert provider.name == "orcarouter"
+    assert provider.base_url == "https://api.orcarouter.ai/v1"
+
+
 # --------------------------------------------------------------------- test_connection (probe)
 
 class _FakeResp:
@@ -262,6 +293,27 @@ async def test_probe_openai_compatible_warns_when_bad_json(fake_httpx):
     ))
     assert out["ok"] is False
     assert "did not return JSON" in out["detail"]
+
+
+@pytest.mark.asyncio
+async def test_probe_orcarouter_returns_models_on_success(fake_httpx):
+    fake_httpx.queue.append(_FakeResp(json_body={
+        "data": [{"id": "openai/gpt-4o-mini"}, {"id": "anthropic/claude-sonnet-4.6"}],
+    }))
+    out = await cs.test_connection(_conn(kind="orcarouter"))
+    assert out["ok"] is True
+    assert "2 models" in out["detail"]
+    assert out["models"] == ["openai/gpt-4o-mini", "anthropic/claude-sonnet-4.6"]
+    # A connection with no base_url probes the provider's preset endpoint.
+    assert fake_httpx.calls[0][0] == "https://api.orcarouter.ai/v1/models"
+
+
+@pytest.mark.asyncio
+async def test_probe_orcarouter_auth_rejected(fake_httpx):
+    fake_httpx.queue.append(_FakeResp(status_code=401))
+    out = await cs.test_connection(_conn(kind="orcarouter"))
+    assert out["ok"] is False
+    assert "auth rejected" in out["detail"]
 
 
 @pytest.mark.asyncio

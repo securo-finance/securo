@@ -160,7 +160,7 @@ Rates are fetched on-demand when foreign-currency transactions are created. With
 
 ## AI Agents (Optional)
 
-Self-hosted AI assistants over your Securo data — multi-provider (OpenAI, Anthropic, Ollama, OpenAI-compatible), tool-use via MCP, per-agent RAG knowledge base, ⌘J global chat panel.
+Self-hosted AI assistants over your Securo data — multi-provider (OpenAI, Anthropic, Ollama, OpenAI-compatible, OrcaRouter), tool-use via MCP, per-agent RAG knowledge base, ⌘J global chat panel.
 
 Add to `.env`:
 

@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class ConnectionCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
-    kind: str = Field(..., description="ollama|openai|anthropic|openai_compatible")
+    kind: str = Field(..., description="ollama|openai|anthropic|openai_compatible|orcarouter")
     base_url: Optional[str] = None
     api_key: Optional[str] = None
     default_model: Optional[str] = None

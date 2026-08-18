@@ -7,6 +7,7 @@ from app.agents.providers.base import LLMProvider
 from app.agents.providers.ollama import OllamaProvider
 from app.agents.providers.openai import OpenAIProvider
 from app.agents.providers.openai_compatible import OpenAICompatibleProvider
+from app.agents.providers.orcarouter import OrcaRouterProvider
 
 
 _PROVIDERS: dict[str, type[LLMProvider]] = {
@@ -14,6 +15,7 @@ _PROVIDERS: dict[str, type[LLMProvider]] = {
     "openai": OpenAIProvider,
     "anthropic": AnthropicProvider,
     "openai_compatible": OpenAICompatibleProvider,
+    "orcarouter": OrcaRouterProvider,
 }
 
 

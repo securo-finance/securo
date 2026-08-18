@@ -85,6 +85,8 @@ def _provider_for(agent: Agent):
     elif name == "openai_compatible":
         api_key = os.getenv("AGENTS_OPENAI_COMPAT_API_KEY", "")
         base_url = os.getenv("AGENTS_OPENAI_COMPAT_BASE_URL")
+    elif name == "orcarouter":
+        api_key = os.getenv("AGENTS_ORCAROUTER_API_KEY", "")
     return build_provider(name, api_key=api_key, base_url=base_url, model=agent.model)
 
 

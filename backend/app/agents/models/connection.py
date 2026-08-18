@@ -24,7 +24,7 @@ class LlmConnection(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True)
 
     name: Mapped[str] = mapped_column(String(120))
-    # kind ∈ {"ollama","openai","anthropic","openai_compatible"}
+    # kind ∈ {"ollama","openai","anthropic","openai_compatible","orcarouter"}
     kind: Mapped[str] = mapped_column(String(40))
 
     # Endpoint base URL. Optional for openai/anthropic (they have defaults).

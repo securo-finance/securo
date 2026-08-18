@@ -150,6 +150,27 @@ async def test_create_then_list_via_http(client: AsyncClient, auth_headers: dict
     assert len(r.json()) == 1
 
 
+async def test_create_orcarouter_connection_via_http(client: AsyncClient, auth_headers: dict):
+    """A named OrcaRouter connection stores no base_url and no plaintext key."""
+    r = await client.post(
+        "/api/agents/connections",
+        json={
+            "name": "OrcaRouter",
+            "kind": "orcarouter",
+            "api_key": "sk-orca-real-and-private",
+            "default_model": "openai/gpt-4o-mini",
+        },
+        headers=auth_headers,
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["kind"] == "orcarouter"
+    assert body["base_url"] is None
+    assert body["has_api_key"] is True
+    assert "api_key" not in body
+    assert "sk-orca-real-and-private" not in r.text
+
+
 async def test_api_key_never_returned(client: AsyncClient, auth_headers: dict):
     r = await client.post(
         "/api/agents/connections",
