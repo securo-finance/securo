@@ -27,6 +27,14 @@ async def preview_import(
     inflow_column: Optional[str] = Form(None),
     outflow_column: Optional[str] = Form(None),
     column_mapping: Optional[str] = Form(None),
+    # Read-gated on purpose, and the exception is deliberate rather than an
+    # oversight. This is a POST because it takes a file upload, not because
+    # it changes anything: it parses the upload and returns what *would* be
+    # imported. The only workspace data it touches is
+    # `enrich_with_category_suggestions`, which SELECTs rules and categories
+    # to label the preview. Nothing is persisted, so a read-only member
+    # previewing a file is doing exactly what their role allows. The write
+    # gate belongs on `POST /import` below, which is where the rows land.
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
