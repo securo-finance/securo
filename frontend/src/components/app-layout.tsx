@@ -104,7 +104,18 @@ export function AppLayout() {
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false)
   useCommandPaletteHotkey(setPaletteOpen)
   const { agentsEnabled } = useFeatureFlags()
-  const { hasModule, isLoading: workspaceLoading } = useWorkspace()
+  const { hasModule, isLoading: workspaceLoading, canWrite } = useWorkspace()
+  // The chat is offered only to members who can write. Sending a message
+  // reaches a tool set that persists — `propose_create_transaction` and its
+  // siblings — so the backend refuses it for a read-only role. Showing the
+  // panel anyway would put a raw `403: {"detail":"Read-only role"}` in front
+  // of the user, which is what happened before this guard.
+  //
+  // This costs a viewer the ability to *ask* questions, which is a real use
+  // case. Restoring it means making the agent's tools role-aware so a
+  // read-only session only exposes the reading ones; then this becomes
+  // `agentsEnabled` again.
+  const chatAvailable = agentsEnabled && canWrite
 
   // ⌘J / Ctrl+J toggles the global slide-over chat from anywhere.
   // Distinct from ⌘K (command palette) so users can have both open.
@@ -115,7 +126,7 @@ export function AppLayout() {
       setThemeBasedOnSystem(light, dark, resolvedTheme)
     }).catch(() => {})
     
-    if (!agentsEnabled) return
+    if (!chatAvailable) return
     const handler = (e: KeyboardEvent) => {
       const isMod = e.metaKey || e.ctrlKey
       if (isMod && (e.key === 'j' || e.key === 'J')) {
@@ -125,7 +136,7 @@ export function AppLayout() {
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [agentsEnabled, resolvedTheme])
+  }, [chatAvailable, resolvedTheme])
   // The "Agents" management page used to live in the sidebar, but it's
   // a configuration surface (KB upload, providers, default selection),
   // not a daily destination. Moved to the user menu (Change password,
@@ -232,7 +243,7 @@ export function AppLayout() {
           {/* AI chat — opens the global slide-over (also reachable via
               ⌘J). Sits next to the theme toggle so the icon is always
               within thumb reach on mobile too. */}
-          {agentsEnabled && (
+          {chatAvailable && (
             <button
               onClick={() => setChatOpen(true)}
               className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1"
@@ -311,7 +322,7 @@ export function AppLayout() {
               {/* AI chat — same trigger as the mobile bar, ⌘J also
                   works. Lives in the sidebar header so the entry point
                   is visible even on first load (no floating button). */}
-              {agentsEnabled && (
+              {chatAvailable && (
                 <button
                   onClick={() => setChatOpen(true)}
                   className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1 rounded-md hover:bg-sidebar-accent"
@@ -551,7 +562,7 @@ export function AppLayout() {
       {/* Slide-over global chat — opened from the sidebar pill or via
           ⌘J. The previous floating bottom-right button was removed
           since the entry point now lives in the sidebar next to ⌘K. */}
-      {agentsEnabled && <GlobalChatPanel open={chatOpen} onOpenChange={setChatOpen} />}
+      {chatAvailable && <GlobalChatPanel open={chatOpen} onOpenChange={setChatOpen} />}
       <UpdateAvailableDialog
         open={updateDialogOpen}
         onClose={() => setUpdateDialogOpen(false)}

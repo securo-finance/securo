@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import { getAccountName } from '@/lib/account-utils'
+import React, { useMemo, useState } from 'react'
+import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -279,7 +279,7 @@ function RecurringForm({
   recurring: RecurringTransaction | null
   categories: Category[]
   categoryGroups: CategoryGroup[]
-  accounts: { id: string; name: string }[]
+  accounts: { id: string; name: string; display_name?: string | null }[]
   onSave: (data: Partial<RecurringTransaction>) => void
   onCancel: () => void
   loading: boolean
@@ -287,6 +287,7 @@ function RecurringForm({
   const { t } = useTranslation()
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const sortedAccounts = useMemo(() => sortAccountsByDisplayName(accounts), [accounts])
   const { data: supportedCurrencies } = useQuery({
     queryKey: ['currencies'],
     queryFn: currenciesApi.list,
@@ -304,7 +305,7 @@ function RecurringForm({
   const [startDate, setStartDate] = useState(recurring?.start_date ?? localDateString())
   const [endDate, setEndDate] = useState(recurring?.end_date ?? '')
   const [categoryId, setCategoryId] = useState(recurring?.category_id ?? '')
-  const [accountId, setAccountId] = useState(recurring?.account_id ?? accounts[0]?.id ?? '')
+  const [accountId, setAccountId] = useState(recurring?.account_id ?? sortedAccounts[0]?.id ?? '')
   const [isActive, setIsActive] = useState(recurring?.is_active ?? true)
   const [autoGenerate, setAutoGenerate] = useState(recurring?.auto_generate ?? true)
 
@@ -417,7 +418,7 @@ function RecurringForm({
             required
           >
             {!accountId && <option value="" disabled>{t('recurring.noAccount')}</option>}
-            {accounts.map((acc) => (
+            {sortedAccounts.map((acc) => (
               <option key={acc.id} value={acc.id}>{getAccountName(acc)}</option>
             ))}
           </select>

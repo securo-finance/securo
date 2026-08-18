@@ -56,6 +56,9 @@ export interface Workspace {
   is_archived: boolean
   default_currency: string
   locale: string | null
+  /** Where the workspace files. Selects the fiscal document pack; never the
+   *  interface language. */
+  tax_jurisdiction: string | null
   icon: string | null
   color: string | null
   created_at: string
@@ -374,15 +377,40 @@ export interface GroupBalances {
   lines: GroupBalanceLine[]
 }
 
+/** A fiscal document belonging to a payee. `kind` mirrors the backend's
+ *  closed TaxIdKind; the value arrives normalised. */
+export interface PayeeTaxId {
+  kind: string
+  value: string
+}
+
 export interface Payee {
   id: string
   user_id: string
   name: string
-  type: 'merchant' | 'person' | 'company'
+  /** Legal nature, or null when unknown — the normal state for a row sync created. */
+  type: 'person' | 'company' | null
+  /** Where the row came from. Server-set at creation and never editable. */
+  source: 'manual' | 'sync' | 'import'
   is_favorite: boolean
   notes: string | null
+  email: string | null
+  phone: string | null
+  address: string | null
+  website: string | null
+  tax_ids: PayeeTaxId[]
   created_at: string
   transaction_count: number
+}
+
+/** One document kind as the active workspace's jurisdiction describes it.
+ *  `offered` marks the ones its pack asks for; the rest stay selectable,
+ *  because a counterparty's country is not the workspace's. */
+export interface TaxIdKindOption {
+  kind: string
+  label_key: string
+  mask: string | null
+  offered: boolean
 }
 
 export interface PayeeSummary {

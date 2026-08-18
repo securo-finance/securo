@@ -114,6 +114,7 @@ async def create_workspace_endpoint(
         kind=body.kind,
         default_currency=body.default_currency,
         locale=body.locale,
+        tax_jurisdiction=body.tax_jurisdiction,
         icon=body.icon,
         color=body.color,
         self_membership=body.self_membership,

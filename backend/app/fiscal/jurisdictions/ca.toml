@@ -1,0 +1,4 @@
+# Canada. The Business Number is the root; GST/HST adds an RT program
+# suffix to it.
+code = "CA"
+kinds = ["ca_bn"]

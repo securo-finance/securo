@@ -1,0 +1,4 @@
+# Chile. One RUT per taxpayer, company or person. Its check character may
+# be a K, which is why it is stored as text and carries no mask.
+code = "CL"
+kinds = ["cl_rut"]

@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getAccountName } from '@/lib/account-utils'
+import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { isInvalidDescriptionAction, parseRulePriority } from '@/lib/rule-form-utils'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -74,13 +74,14 @@ export function RuleDialog({
   rule: Rule | null
   categories: Category[]
   categoryGroups: CategoryGroup[]
-  accounts: { id: string; name: string }[]
+  accounts: { id: string; name: string; display_name?: string | null }[]
   payees: Payee[]
   onSave: (data: Partial<Rule>) => void
   loading: boolean
   initialData?: RuleDialogInitialData
 }) {
   const { t } = useTranslation()
+  const sortedAccounts = useMemo(() => sortAccountsByDisplayName(accounts), [accounts])
 
   const defaultConditions: RuleCondition[] = initialData?.conditions ?? rule?.conditions as RuleCondition[] ?? [{ field: 'description', op: 'contains', value: '' }]
   const defaultActions: RuleAction[] = initialData?.actions ?? rule?.actions as RuleAction[] ?? [{ op: 'set_category', value: '' }]
@@ -247,7 +248,7 @@ export function RuleDialog({
                       onChange={(e) => updateCondition(i, 'value', e.target.value)}
                     >
                       <option value="">{t('rules.selectAccount')}</option>
-                      {accounts.map(acc => (
+                      {sortedAccounts.map(acc => (
                         <option key={acc.id} value={acc.id}>{getAccountName(acc)}</option>
                       ))}
                     </select>

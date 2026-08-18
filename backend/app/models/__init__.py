@@ -16,7 +16,7 @@ from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
 from app.models.fx_rate import FxRate
 from app.models.transaction_attachment import TransactionAttachment
-from app.models.payee import Payee, PayeeMapping
+from app.models.payee import Payee, PayeeMapping, PayeeTaxId
 from app.models.app_settings import AppSetting
 from app.models.goal import Goal
 from app.models.credit_card_bill import CreditCardBill
@@ -52,6 +52,7 @@ __all__ = [
     "TransactionAttachment",
     "Payee",
     "PayeeMapping",
+    "PayeeTaxId",
     "AppSetting",
     "Goal",
     "CreditCardBill",

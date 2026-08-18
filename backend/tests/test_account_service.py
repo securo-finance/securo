@@ -648,6 +648,33 @@ async def test_get_accounts_returns_list(session: AsyncSession, test_user, test_
 
 
 @pytest.mark.asyncio
+async def test_get_accounts_previous_balance_uses_each_account_currency(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Previous balances convert each transaction with its own account currency."""
+    previous_month = date.today().replace(day=1) - timedelta(days=1)
+    brl_account = await _make_account(session, test_user.id, "BRL Account", currency="BRL")
+    usd_account = await _make_account(session, test_user.id, "USD Account", currency="USD")
+
+    brl_txn = await _add_txn(
+        session, test_user.id, brl_account.id, 100, "credit", previous_month
+    )
+    usd_txn = await _add_txn(
+        session, test_user.id, usd_account.id, 20, "credit", previous_month
+    )
+    usd_txn.currency = "USD"
+    brl_txn.amount_primary = Decimal("500.00")
+    usd_txn.amount_primary = Decimal("100.00")
+    await session.commit()
+
+    accounts = await get_accounts(session, test_workspace.id)
+    by_id = {account["id"]: account for account in accounts}
+
+    assert by_id[brl_account.id]["previous_balance"] == pytest.approx(100.0)
+    assert by_id[usd_account.id]["previous_balance"] == pytest.approx(20.0)
+
+
+@pytest.mark.asyncio
 async def test_get_accounts_excludes_closed(session: AsyncSession, test_user, test_workspace):
     """get_accounts excludes closed accounts by default."""
     account = await _make_account(session, test_user.id, "Closed Account")

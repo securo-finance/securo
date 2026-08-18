@@ -90,6 +90,7 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
             Transaction.account_id,
             func.coalesce(func.sum(signed_amount), 0).label("previous_balance"),
         )
+        .join(Account, Transaction.account_id == Account.id)
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
             Transaction.date <= prev_month_end,

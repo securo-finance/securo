@@ -1,0 +1,4 @@
+# Philippines. The TIN gains a branch code suffix for each place of
+# business.
+code = "PH"
+kinds = ["ph_tin"]

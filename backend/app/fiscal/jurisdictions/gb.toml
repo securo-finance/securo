@@ -1,0 +1,4 @@
+# United Kingdom. Its VAT numbers still fit the shared shape, so they use the
+# same kind; only the country prefix differs.
+code = "GB"
+kinds = ["vat"]

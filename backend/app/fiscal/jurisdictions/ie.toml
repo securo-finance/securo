@@ -1,0 +1,3 @@
+# Ireland. The VAT number doubles as the tax reference for companies.
+code = "IE"
+kinds = ["vat"]

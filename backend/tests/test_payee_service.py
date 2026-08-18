@@ -49,11 +49,13 @@ async def _make_account(session: AsyncSession, user: User) -> Account:
 
 @pytest.mark.asyncio
 async def test_create_payee(session: AsyncSession, test_user, test_workspace):
-    data = PayeeCreate(name="Starbucks", type="merchant")
+    data = PayeeCreate(name="Starbucks", type="company")
     payee = await create_payee(session, test_workspace.id, test_user.id, data)
 
     assert payee.name == "Starbucks"
-    assert payee.type == "merchant"
+    assert payee.type == "company"
+    # Stamped by the code path, not by the caller: this is the manual one.
+    assert payee.source == "manual"
     assert payee.is_favorite is False
     assert payee.transaction_count == 0  # type: ignore[attr-defined]
     assert payee.user_id == test_user.id
@@ -61,7 +63,7 @@ async def test_create_payee(session: AsyncSession, test_user, test_workspace):
 
 @pytest.mark.asyncio
 async def test_create_payee_with_notes(session: AsyncSession, test_user, test_workspace):
-    data = PayeeCreate(name="Coffee Shop", type="merchant", notes="Morning coffee")
+    data = PayeeCreate(name="Coffee Shop", type="company", notes="Morning coffee")
     payee = await create_payee(session, test_workspace.id, test_user.id, data)
 
     assert payee.notes == "Morning coffee"
@@ -226,7 +228,10 @@ async def test_update_payee(session: AsyncSession, test_user, test_workspace):
     assert updated is not None
     assert updated.name == "New Name"
     assert updated.is_favorite is True
-    assert updated.type == "merchant"  # unchanged
+    # Unchanged, and unchanged means null: nothing ever stated a legal
+    # nature for this one, which is the resting state now that there is no
+    # catch-all default.
+    assert updated.type is None
 
 
 @pytest.mark.asyncio

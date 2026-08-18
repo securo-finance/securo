@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDateLocale } from '@/hooks/use-display-locale'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { auth as authApi, currencies as currenciesApi, workspaces as workspacesApi } from '@/lib/api'
+import { auth as authApi, currencies as currenciesApi, fiscal as fiscalApi, workspaces as workspacesApi } from '@/lib/api'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { Button } from '@/components/ui/button'
@@ -37,6 +37,8 @@ import {
 } from '@/components/ui/dialog'
 import { AlertTriangle, Archive, Plus, Save, Trash2, Users } from 'lucide-react'
 import { WORKSPACE_KIND_LABEL_KEY } from '@/lib/workspace-kinds'
+import { countryFlag } from '@/lib/country-flag'
+import { countryName } from '@/lib/country-name'
 import type { WorkspaceKind, WorkspaceMember, WorkspaceRole } from '@/types'
 
 function labelForRole(role: WorkspaceRole, t: (key: string) => string): string {
@@ -73,7 +75,7 @@ const DEFAULT_WORKSPACE_COLOR = '#6366F1'
 const DEFAULT_WORKSPACE_ICON = 'briefcase'
 
 export default function WorkspaceSettingsPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const localeForFormat = useDateLocale()
   const { current, canManage, workspaces: allWorkspaces, refresh, switchWorkspace } = useWorkspace()
@@ -83,6 +85,7 @@ export default function WorkspaceSettingsPage() {
   const [editName, setEditName] = useState('')
   const [editCurrency, setEditCurrency] = useState('')
   const [editLocale, setEditLocale] = useState('')
+  const [editJurisdiction, setEditJurisdiction] = useState('')
   const [editIcon, setEditIcon] = useState(DEFAULT_WORKSPACE_ICON)
   const [editColor, setEditColor] = useState(DEFAULT_WORKSPACE_COLOR)
   const [inviteOpen, setInviteOpen] = useState(false)
@@ -97,9 +100,18 @@ export default function WorkspaceSettingsPage() {
     setEditName(current.name)
     setEditCurrency(current.default_currency)
     setEditLocale(current.locale ?? '')
+    setEditJurisdiction(current.tax_jurisdiction ?? '')
     setEditIcon(current.icon ?? DEFAULT_WORKSPACE_ICON)
     setEditColor(current.color ?? DEFAULT_WORKSPACE_COLOR)
-  }, [current?.id, current?.name, current?.default_currency, current?.locale, current?.icon, current?.color])
+  }, [current?.id, current?.name, current?.default_currency, current?.locale, current?.tax_jurisdiction, current?.icon, current?.color])
+
+  // Which jurisdictions ship a pack. An empty choice is valid, not missing:
+  // with none set, documents are stored as free text with no mask.
+  const { data: jurisdictions } = useQuery({
+    queryKey: ['fiscal-jurisdictions'],
+    queryFn: fiscalApi.jurisdictions,
+    staleTime: Infinity,
+  })
 
   const membersQuery = useQuery({
     queryKey: ['workspace-members', current?.id],
@@ -112,6 +124,16 @@ export default function WorkspaceSettingsPage() {
     queryFn: currenciesApi.list,
     staleTime: Infinity,
   })
+
+  // The server lists codes; the user reads names. Sorted by the name actually
+  // shown, in the reader's own collation.
+  const sortedJurisdictions = useMemo(
+    () =>
+      [...(jurisdictions ?? [])].sort((a, b) =>
+        countryName(a, i18n.language).localeCompare(countryName(b, i18n.language), i18n.language),
+      ),
+    [jurisdictions, i18n.language],
+  )
 
   const statsQuery = useQuery({
     queryKey: ['workspace-stats', current?.id],
@@ -126,6 +148,7 @@ export default function WorkspaceSettingsPage() {
         name: editName,
         default_currency: editCurrency,
         locale: editLocale || (null as unknown as string),
+        tax_jurisdiction: editJurisdiction || null,
         icon: editIcon,
         color: editColor,
       })
@@ -371,8 +394,8 @@ export default function WorkspaceSettingsPage() {
             </div>
           </div>
 
-          {/* Region row — currency + locale */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Region row — currency, language, and where the workspace files */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="ws-currency" className="text-[13px]">
                 {t('workspace.defaultCurrency')}
@@ -421,6 +444,35 @@ export default function WorkspaceSettingsPage() {
                   <SelectItem value="fr">Français</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ws-jurisdiction" className="text-[13px]">
+                {t('workspace.taxJurisdiction', 'Tax jurisdiction')}
+              </Label>
+              <Select
+                value={editJurisdiction || '__none__'}
+                onValueChange={(v) => setEditJurisdiction(v === '__none__' ? '' : v)}
+                disabled={!canManage}
+              >
+                <SelectTrigger id="ws-jurisdiction" className="h-10 rounded-lg w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">—</SelectItem>
+                  {sortedJurisdictions.map((code) => (
+                    <SelectItem key={code} value={code}>
+                      <span className="mr-2">{countryFlag(code)}</span>
+                      {countryName(code, i18n.language)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                {t(
+                  'workspace.taxJurisdictionHint',
+                  'Decides which fiscal documents this workspace is offered. Separate from the interface language.',
+                )}
+              </p>
             </div>
           </div>
         </div>

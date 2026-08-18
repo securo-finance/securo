@@ -747,7 +747,8 @@ async def import_transactions(
         import_payee_raw = getattr(txn_data, "payee_raw", None)
         if import_payee_raw:
             import_payee_entity = await get_or_create_payee(
-                session, user_id, import_payee_raw, workspace_id=workspace_id
+                session, user_id, import_payee_raw, workspace_id=workspace_id,
+                source="import",
             )
             import_payee_id = import_payee_entity.id
 
