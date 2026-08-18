@@ -1494,10 +1494,13 @@ async def sync_connection(
                         placeholder.category_id = preview.category_id
                     if txn_data.payee and not placeholder.payee:
                         placeholder.payee = txn_data.payee
-                        placeholder.payee_id = sync_payee_id
+                    if placeholder.payee_id is None:
+                        placeholder.payee_id = preview.payee_id
                     placeholder.notes = merge_notes(
                         placeholder.notes, preview.notes
                     )
+                    if preview.is_ignored:
+                        placeholder.is_ignored = True
                     merged_count += 1
                     continue
 

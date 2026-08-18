@@ -820,8 +820,11 @@ async def import_transactions(
                 placeholder.category_id = preview.category_id
             if import_payee_raw and not placeholder.payee:
                 placeholder.payee = import_payee_raw
-                placeholder.payee_id = import_payee_id
+            if placeholder.payee_id is None:
+                placeholder.payee_id = preview.payee_id
             placeholder.notes = merge_notes(placeholder.notes, preview.notes)
+            if preview.is_ignored:
+                placeholder.is_ignored = True
             imported += 1
             continue
 

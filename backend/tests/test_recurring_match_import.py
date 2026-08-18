@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from sqlalchemy import select
 
+from app.models.payee import Payee
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.schemas.recurring_transaction import RecurringTransactionCreate
@@ -205,6 +206,15 @@ async def test_import_normalizes_before_placeholder_upgrade(
     session, test_user, test_workspace, test_account, test_categories
 ):
     account_id = test_account.id
+    rule_payee = Payee(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="iFood Rule Target",
+    )
+    session.add(rule_payee)
+    await session.flush()
+    rule_payee_id = rule_payee.id
+
     bill = await _make_bill(
         session,
         test_workspace,
@@ -232,16 +242,23 @@ async def test_import_normalizes_before_placeholder_upgrade(
     session.add(placeholder)
     await session.commit()
     placeholder_id = placeholder.id
+
     await create_rule(
         session,
         test_workspace.id,
         test_user.id,
         RuleCreate(
-            name="Normalize raw iFood payee",
+            name="Normalize raw iFood transaction",
             conditions=[
-                RuleCondition(field="payee", op="contains", value="IFOOD.COM")
+                RuleCondition(
+                    field="description", op="contains", value="f|ood Club"
+                )
             ],
-            actions=[RuleAction(op="set_description", value="iFood")],
+            actions=[
+                RuleAction(op="set_description", value="iFood"),
+                RuleAction(op="set_payee", value=str(rule_payee_id)),
+                RuleAction(op="ignore", value=True),
+            ],
             apply_to_existing=False,
         ),
     )
@@ -282,10 +299,103 @@ async def test_import_normalizes_before_placeholder_upgrade(
     assert txs[0].source == "ofx"
     assert txs[0].status == "posted"
     assert txs[0].import_id is not None
+    # Keep the provider's raw counterparty as provenance, while preserving the
+    # canonical Payee chosen by the rule.
     assert txs[0].payee == "IFOOD.COM AGÊNCIA DE RESTAURANTES ONLINE S.A."
-    assert txs[0].payee_id is not None
+    assert txs[0].payee_id == rule_payee_id
+    assert txs[0].is_ignored is True
     assert txs[0].notes == "#statement"
     assert txs[0].category_id == test_categories[0].id
+
+
+@pytest.mark.asyncio
+async def test_import_placeholder_rule_payee_without_raw_payee(
+    session, test_user, test_workspace, test_account
+):
+    account_id = test_account.id
+    rule_payee = Payee(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="PR586 Rule Target",
+    )
+    session.add(rule_payee)
+    await session.flush()
+    rule_payee_id = rule_payee.id
+
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        test_account,
+        description="PR586 NoPayee",
+        amount=Decimal("29.90"),
+        start_date=date(2026, 1, 10),
+    )
+    bill.next_occurrence = date(2026, 2, 10)
+    placeholder = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account_id,
+        description="PR586 NoPayee",
+        amount=Decimal("29.90"),
+        currency="BRL",
+        date=date(2026, 1, 10),
+        type="debit",
+        source="recurring",
+        status="pending",
+        recurring_transaction_id=bill.id,
+    )
+    session.add(placeholder)
+    await session.commit()
+    placeholder_id = placeholder.id
+
+    await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Set placeholder payee without raw import payee",
+            conditions=[
+                RuleCondition(
+                    field="description",
+                    op="contains",
+                    value="PR586 NoPayee bank",
+                )
+            ],
+            actions=[
+                RuleAction(op="set_description", value="PR586 NoPayee"),
+                RuleAction(op="set_payee", value=str(rule_payee_id)),
+            ],
+            apply_to_existing=False,
+        ),
+    )
+    incoming = TransactionImport(
+        description="PR586 NoPayee bank",
+        amount=Decimal("29.90"),
+        date=date(2026, 1, 11),
+        type="debit",
+        currency="BRL",
+    )
+
+    with patch(
+        "app.services.import_service.stamp_primary_amount",
+        new_callable=AsyncMock,
+    ):
+        await import_transactions(
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id,
+            [incoming],
+            "csv",
+        )
+
+    txs = await _real_txs(session, account_id)
+    assert len(txs) == 1
+    assert txs[0].id == placeholder_id
+    assert txs[0].recurring_transaction_id == bill.id
+    assert txs[0].payee is None
+    assert txs[0].payee_id == rule_payee_id
 
 
 @pytest.mark.asyncio

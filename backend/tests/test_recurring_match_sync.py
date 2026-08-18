@@ -259,6 +259,15 @@ async def test_sync_placeholder_provider_category_precedence(
 ):
     conn, account = conn_account
     conn_id, account_id = conn.id, account.id
+    rule_payee = Payee(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name=f"iFood Rule Target {placeholder_has_category}",
+    )
+    session.add(rule_payee)
+    await session.flush()
+    rule_payee_id = rule_payee.id
+
     bill = await _make_bill(
         session,
         test_workspace,
@@ -290,6 +299,8 @@ async def test_sync_placeholder_provider_category_precedence(
     session.add(placeholder)
     await session.commit()
     placeholder_id = placeholder.id
+
+    raw_description = "|fd*f|ood Club"
     await create_rule(
         session,
         test_workspace.id,
@@ -297,16 +308,19 @@ async def test_sync_placeholder_provider_category_precedence(
         RuleCreate(
             name=f"Normalize sync placeholder {placeholder_has_category}",
             conditions=[
-                RuleCondition(field="payee", op="contains", value="IFOOD.COM")
+                RuleCondition(
+                    field="description", op="contains", value="f|ood Club"
+                )
             ],
             actions=[
                 RuleAction(op="set_description", value="iFood"),
+                RuleAction(op="set_payee", value=str(rule_payee_id)),
                 RuleAction(op="append_notes", value="#delivery"),
+                RuleAction(op="ignore", value=True),
             ],
             apply_to_existing=False,
         ),
     )
-    raw_description = "|fd*f|ood Club"
     provider = _provider(
         [
             _tx(
@@ -348,10 +362,103 @@ async def test_sync_placeholder_provider_category_precedence(
     assert txs[0].source == "sync"
     assert txs[0].status == "posted"
     assert txs[0].external_id == f"ifood-sync-{placeholder_has_category}"
+    # Keep the provider's raw counterparty as provenance, while preserving the
+    # canonical Payee chosen by the rule.
     assert txs[0].payee == "IFOOD.COM AGÊNCIA DE RESTAURANTES ONLINE S.A."
-    assert txs[0].payee_id is not None
+    assert txs[0].payee_id == rule_payee_id
+    assert txs[0].is_ignored is True
     assert txs[0].raw_data == {"merchant": {"name": "IFOOD.COM"}}
     assert txs[0].notes == "#planned #delivery"
+
+
+@pytest.mark.asyncio
+async def test_sync_placeholder_rule_payee_without_raw_payee(
+    session, test_user, test_workspace, conn_account
+):
+    conn, account = conn_account
+    conn_id, account_id = conn.id, account.id
+    rule_payee = Payee(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="PR586 Sync Rule Target",
+    )
+    session.add(rule_payee)
+    await session.flush()
+    rule_payee_id = rule_payee.id
+
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        account,
+        description="PR586 NoPayee",
+        amount=Decimal("29.90"),
+        start_date=date(2025, 1, 10),
+    )
+    bill.next_occurrence = date(2025, 2, 10)
+    placeholder = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account_id,
+        description="PR586 NoPayee",
+        amount=Decimal("29.90"),
+        currency="BRL",
+        date=date(2025, 1, 10),
+        type="debit",
+        source="recurring",
+        status="pending",
+        recurring_transaction_id=bill.id,
+    )
+    session.add(placeholder)
+    await session.commit()
+    placeholder_id = placeholder.id
+
+    await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Set sync placeholder payee without raw provider payee",
+            conditions=[
+                RuleCondition(
+                    field="description",
+                    op="contains",
+                    value="PR586 NoPayee bank",
+                )
+            ],
+            actions=[
+                RuleAction(op="set_description", value="PR586 NoPayee"),
+                RuleAction(op="set_payee", value=str(rule_payee_id)),
+            ],
+            apply_to_existing=False,
+        ),
+    )
+    provider = _provider(
+        [
+            _tx(
+                external_id="pr586-no-payee-sync",
+                description="PR586 NoPayee bank",
+                amount=Decimal("29.90"),
+                date=date(2025, 1, 11),
+            )
+        ]
+    )
+
+    await _run_sync(
+        session,
+        conn_id,
+        test_workspace,
+        test_user,
+        provider,
+        mock_rules=False,
+    )
+
+    txs = await _all_txs(session, account_id)
+    assert len(txs) == 1
+    assert txs[0].id == placeholder_id
+    assert txs[0].recurring_transaction_id == bill.id
+    assert txs[0].payee is None
+    assert txs[0].payee_id == rule_payee_id
 
 
 @pytest.mark.asyncio
