@@ -912,6 +912,12 @@ function TransactionForm({
               {t('transactions.originalDescription')}: {transaction.original_description}
             </p>
           )}
+        {/* Rows that pre-date the original_description column have no
+            provenance to show, so the raw payee stays the only hint at what
+            the bank actually sent. */}
+        {isSynced && transaction?.payee && transaction.payee !== transaction.description && (
+          <p className="text-xs text-muted-foreground">{transaction.payee}</p>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <div className="space-y-2">

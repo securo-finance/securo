@@ -1094,6 +1094,20 @@ def _rule_preview(transaction: Transaction) -> Transaction:
     )
 
 
+def _has_manual_description(transaction: Transaction) -> bool:
+    """True when the displayed description is the user's own text.
+
+    An imported row whose description drifted from its raw provenance without a
+    rule having done it was edited by hand. Rules may still run every other
+    matching action on it, but they must not replace that text.
+    """
+    return (
+        not transaction.description_is_rule_managed
+        and transaction.original_description is not None
+        and transaction.description != transaction.original_description
+    )
+
+
 async def preview_rules_for_transaction(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -1155,7 +1169,8 @@ async def apply_single_rule(
     apply. Conditions first inspect the current transaction state so rules can
     depend on earlier normalization. If that does not match, the preserved
     imported description is tried as a fallback so edited normalization rules
-    can still find transactions they previously changed.
+    can still find transactions they previously changed. A description the user
+    typed themselves is left alone, exactly as `apply_all_rules` leaves it.
     """
     if not rule.is_active:
         return 0
@@ -1196,6 +1211,7 @@ async def apply_single_rule(
             tx,
             category_already_set=tx.category_id is not None
             and not overwrite_existing_categories,
+            skip_description=_has_manual_description(tx),
         )
         after = (
             tx.category_id,
@@ -1232,14 +1248,7 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
 
     count = 0
     for tx in transactions:
-        # Imported descriptions that differ from their raw provenance without
-        # having been changed by a rule are user-owned. Reset/reapply may still
-        # run every other matching action, but it must not replace that text.
-        preserve_manual_description = (
-            not tx.description_is_rule_managed
-            and tx.original_description is not None
-            and tx.description != tx.original_description
-        )
+        preserve_manual_description = _has_manual_description(tx)
         before = (
             tx.category_id,
             tx.payee_id,

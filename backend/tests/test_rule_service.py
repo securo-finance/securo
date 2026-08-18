@@ -667,6 +667,85 @@ async def test_apply_all_rules_preserves_manually_edited_import_description(
 
 
 @pytest.mark.asyncio
+async def test_apply_single_rule_preserves_manually_edited_import_description(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Re-saving a normalization rule must not undo the user's own wording.
+
+    `apply_all_rules` already protects a hand-edited description; the same must
+    hold for the far more common path of editing one rule and re-applying it.
+    """
+    account = Account(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Imported",
+        type="checking",
+        balance=Decimal("1000"),
+        currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+    transaction = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        description="D01-123 AMZNPrime DE changing-token",
+        original_description="D01-123 AMZNPrime DE changing-token",
+        amount=Decimal("19.90"),
+        date=date(2026, 1, 10),
+        type="debit",
+        source="csv",
+    )
+    session.add(transaction)
+    await session.commit()
+
+    rule = await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Amazon Prime normalization",
+            conditions=[
+                RuleCondition(field="description", op="contains", value="AMZNPrime")
+            ],
+            actions=[
+                RuleAction(op="set_description", value="Amazon Prime"),
+                RuleAction(op="append_notes", value="#subscription"),
+            ],
+            apply_to_existing=False,
+        ),
+    )
+
+    assert await apply_single_rule(session, test_workspace.id, rule) == 1
+    await session.refresh(transaction)
+    assert transaction.description == "Amazon Prime"
+    assert transaction.description_is_rule_managed is True
+
+    updated = await update_transaction(
+        session,
+        transaction.id,
+        test_workspace.id,
+        test_user.id,
+        TransactionUpdate(description="Amazon Prime (family)"),
+    )
+    assert updated is not None
+    assert updated.description_is_rule_managed is False
+
+    # Clear the notes so the re-application has something left to do: the rule
+    # must still match and still run its other actions, and only the typed
+    # description is off limits.
+    transaction.notes = None
+    await session.commit()
+
+    assert await apply_single_rule(session, test_workspace.id, rule) == 1
+    await session.refresh(transaction)
+    assert transaction.description == "Amazon Prime (family)"
+    assert transaction.original_description == "D01-123 AMZNPrime DE changing-token"
+    assert transaction.description_is_rule_managed is False
+    assert transaction.notes == "#subscription"
+
+
+@pytest.mark.asyncio
 async def test_apply_single_rule_prefers_current_description_then_falls_back_to_original(
     session: AsyncSession, test_user, test_workspace, test_categories
 ):
