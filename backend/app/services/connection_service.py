@@ -36,6 +36,7 @@ from app.services.account_service import (
 )
 from app.services.asset_group_service import ensure_group_for_connection
 from app.services.credit_card_service import apply_effective_date
+from app.services.rule_engine import merge_notes
 from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
 from app.services.transfer_detection_service import detect_transfer_pairs
 from app.services.fx_rate_service import stamp_primary_amount
@@ -1482,16 +1483,20 @@ async def sync_connection(
                     placeholder.source = "sync"
                     placeholder.status = txn_data.status
                     placeholder.raw_data = txn_data.raw_data
-                    placeholder.description = txn_data.description
+                    # Same shape as the import path: fold in the `preview` the
+                    # rules already produced from the incoming charge instead of
+                    # re-running them against the placeholder, whose description
+                    # is the recurring definition's own wording. Existing values
+                    # win, the charge fills the empty ones, and only its
+                    # provenance is recorded outright.
                     placeholder.original_description = txn_data.description
-                    placeholder.description_is_rule_managed = False
-                    if placeholder.category_id is None and category_id is not None:
-                        placeholder.category_id = category_id
-                    if txn_data.payee:
+                    if placeholder.category_id is None:
+                        placeholder.category_id = preview.category_id
+                    if txn_data.payee and not placeholder.payee:
                         placeholder.payee = txn_data.payee
                         placeholder.payee_id = sync_payee_id
-                    await apply_rules_to_transaction(
-                        session, user_id, placeholder
+                    placeholder.notes = merge_notes(
+                        placeholder.notes, preview.notes
                     )
                     merged_count += 1
                     continue

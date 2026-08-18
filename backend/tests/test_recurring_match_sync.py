@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
+from app.models.payee import Payee
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.schemas.recurring_transaction import RecurringTransactionCreate
@@ -338,9 +339,12 @@ async def test_sync_placeholder_provider_category_precedence(
         if placeholder_has_category
         else test_categories[0].id
     )
+    # The placeholder keeps the recurring definition's own wording, so the
+    # description was never rule-managed even though the rule matched and
+    # applied its other actions.
     assert txs[0].description == "iFood"
     assert txs[0].original_description == raw_description
-    assert txs[0].description_is_rule_managed is True
+    assert txs[0].description_is_rule_managed is False
     assert txs[0].source == "sync"
     assert txs[0].status == "posted"
     assert txs[0].external_id == f"ifood-sync-{placeholder_has_category}"
@@ -348,6 +352,102 @@ async def test_sync_placeholder_provider_category_precedence(
     assert txs[0].payee_id is not None
     assert txs[0].raw_data == {"merchant": {"name": "IFOOD.COM"}}
     assert txs[0].notes == "#planned #delivery"
+
+
+@pytest.mark.asyncio
+async def test_sync_placeholder_keeps_the_payee_the_user_already_chose(
+    session, test_user, test_workspace, conn_account, test_categories
+):
+    """A merge fills the placeholder's gaps, it does not restate it.
+
+    The recurring definition's payee is the user's own choice; the bank's raw
+    counterparty string must not replace it. Only what is still empty is
+    filled, and the raw text is kept as provenance.
+    """
+    conn, account = conn_account
+    conn_id, account_id = conn.id, account.id
+    chosen_payee = Payee(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="iFood Brasil",
+    )
+    session.add(chosen_payee)
+    await session.flush()
+    chosen_payee_id = chosen_payee.id
+
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        account,
+        description="iFood",
+        amount=Decimal("49.90"),
+        start_date=date(2025, 1, 10),
+    )
+    bill.next_occurrence = date(2025, 2, 10)
+    placeholder = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account_id,
+        description="iFood",
+        amount=Decimal("49.90"),
+        currency="BRL",
+        date=date(2025, 1, 10),
+        type="debit",
+        source="recurring",
+        status="pending",
+        recurring_transaction_id=bill.id,
+        payee="iFood Brasil",
+        payee_id=chosen_payee_id,
+        notes="#planned",
+    )
+    session.add(placeholder)
+    await session.commit()
+    placeholder_id = placeholder.id
+
+    await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Normalize iFood from the raw counterparty",
+            conditions=[
+                RuleCondition(field="payee", op="contains", value="IFOOD.COM")
+            ],
+            actions=[
+                RuleAction(op="set_description", value="iFood"),
+                RuleAction(op="append_notes", value="#delivery"),
+            ],
+            apply_to_existing=False,
+        ),
+    )
+    raw_description = "|fd*f|ood Club"
+    provider = _provider(
+        [
+            _tx(
+                external_id="ifood-keeps-payee",
+                description=raw_description,
+                payee="IFOOD.COM AGÊNCIA DE RESTAURANTES ONLINE S.A.",
+                amount=Decimal("49.90"),
+                date=date(2025, 1, 11),
+            )
+        ]
+    )
+
+    await _run_sync(
+        session, conn_id, test_workspace, test_user, provider, mock_rules=False
+    )
+
+    txs = await _all_txs(session, account_id)
+    assert len(txs) == 1
+    assert txs[0].id == placeholder_id
+    assert txs[0].payee == "iFood Brasil"
+    assert txs[0].payee_id == chosen_payee_id
+    assert txs[0].description == "iFood"
+    assert txs[0].original_description == raw_description
+    # The gaps still get filled and the rule's own action still lands.
+    assert txs[0].notes == "#planned #delivery"
+    assert txs[0].external_id == "ifood-keeps-payee"
 
 
 # ---------------------------------------------------------------------------

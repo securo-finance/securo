@@ -125,6 +125,24 @@ def evaluate_conditions(conditions_op: str, conditions: list[dict], tx: "Transac
     return all(results)  # "and" is default
 
 
+def merge_notes(existing: str | None, incoming: str | None) -> str | None:
+    """Combine two note strings the way `append_notes` combines tags.
+
+    Used when an incoming charge is folded into a row that already has notes:
+    the existing text is never dropped, the incoming one is only appended when
+    it is not already in there.
+    """
+    incoming = (incoming or "").strip()
+    if not incoming:
+        return existing
+    existing = (existing or "").strip()
+    if not existing:
+        return incoming
+    if incoming in existing:
+        return existing
+    return f"{existing} {incoming}"
+
+
 def apply_rule_actions(
     actions: list[dict],
     tx: "Transaction",

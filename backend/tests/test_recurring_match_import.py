@@ -273,9 +273,12 @@ async def test_import_normalizes_before_placeholder_upgrade(
     assert len(txs) == 1
     assert txs[0].id == placeholder_id
     assert txs[0].recurring_transaction_id == bill.id
+    # The placeholder keeps the recurring definition's own wording, so the
+    # description was never rule-managed even though the rule matched and
+    # applied its other actions.
     assert txs[0].description == "iFood"
     assert txs[0].original_description == "|fd*f|ood Club"
-    assert txs[0].description_is_rule_managed is True
+    assert txs[0].description_is_rule_managed is False
     assert txs[0].source == "ofx"
     assert txs[0].status == "posted"
     assert txs[0].import_id is not None

@@ -19,7 +19,7 @@ from app.models.transaction import Transaction
 from app.schemas.transaction import TransactionImport
 from app.services import recurring_match_service
 from app.services.credit_card_service import apply_effective_date
-from app.services.rule_engine import apply_rule_actions, evaluate_conditions
+from app.services.rule_engine import apply_rule_actions, evaluate_conditions, merge_notes
 from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
 from app.services.fx_rate_service import stamp_primary_amount
 from app.services.payee_service import get_or_create_payee
@@ -807,23 +807,21 @@ async def import_transactions(
             placeholder.source = source
             placeholder.external_id = txn_data.external_id
             placeholder.import_id = import_log.id
-            placeholder.description = txn_data.description
-            placeholder.original_description = txn_data.description
-            placeholder.description_is_rule_managed = False
             placeholder.status = "posted"
-            if placeholder.category_id is None and category_id is not None:
-                placeholder.category_id = category_id
-            if import_payee_raw:
+            # The rules already ran, against the incoming charge, to build
+            # `preview`. Fold that result in rather than re-running them
+            # against the placeholder: its description is the recurring
+            # definition's own wording, so conditions written for the bank's
+            # text would no longer match. Everything the user can already see
+            # wins, the charge only fills what is still empty, and only its
+            # provenance is recorded outright.
+            placeholder.original_description = txn_data.description
+            if placeholder.category_id is None:
+                placeholder.category_id = preview.category_id
+            if import_payee_raw and not placeholder.payee:
                 placeholder.payee = import_payee_raw
                 placeholder.payee_id = import_payee_id
-            if placeholder.notes is None and txn_data.notes is not None:
-                placeholder.notes = txn_data.notes
-            await apply_rules_to_transaction(
-                session,
-                user_id,
-                placeholder,
-                skip_category_rules=txn_data.force_uncategorized,
-            )
+            placeholder.notes = merge_notes(placeholder.notes, preview.notes)
             imported += 1
             continue
 
