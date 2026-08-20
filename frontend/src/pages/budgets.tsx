@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { categories as categoriesApi, categoryGroups as groupsApi, budgets as budgetsApi } from '@/lib/api'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -65,6 +66,7 @@ export default function BudgetsPage() {
   const monthParam = `${selectedMonth}-01`
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Budget | null>(null)
+  const [deletingBudget, setDeletingBudget] = useState<Budget | null>(null)
 
   const { data: budgetsList } = useQuery({
     queryKey: ['budgets', selectedMonth],
@@ -108,6 +110,7 @@ export default function BudgetsPage() {
     mutationFn: (id: string) => budgetsApi.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['budgets'] })
+      setDeletingBudget(null)
       toast.success(t('budgets.deleted'))
     },
   })
@@ -222,7 +225,7 @@ export default function BudgetsPage() {
                         </button>
                         <button
                           className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
-                          onClick={() => deleteMutation.mutate(budget.id)}
+                          onClick={() => setDeletingBudget(budget)}
                           disabled={deleteMutation.isPending}
                           aria-label={t('common.delete')}
                           title={t('common.delete')}
@@ -317,6 +320,17 @@ export default function BudgetsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <DeleteConfirmationDialog
+        open={!!deletingBudget}
+        title={t('common.confirmDeleteTitle')}
+        description={t('common.confirmDeleteDescription', {
+          name: categoriesList?.find((category) => category.id === deletingBudget?.category_id)?.name ?? deletingBudget?.category_id,
+        })}
+        isPending={deleteMutation.isPending}
+        onClose={() => setDeletingBudget(null)}
+        onConfirm={() => deletingBudget && deleteMutation.mutate(deletingBudget.id)}
+      />
     </div>
   )
 }

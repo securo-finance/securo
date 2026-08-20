@@ -5,6 +5,7 @@ import { categories as categoriesApi, categoryGroups as categoryGroupsApi, rules
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 import { Label } from '@/components/ui/label'
 import {
   Dialog,
@@ -125,6 +126,7 @@ export default function RulesPage() {
   const [pendingImportName, setPendingImportName] = useState('')
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const [editing, setEditing] = useState<Rule | null>(null)
+  const [deletingRule, setDeletingRule] = useState<Rule | null>(null)
   // Bumped on every open so the dialog remounts with fresh state instead of
   // retaining the previously entered rule (issue #306).
   const [dialogInstance, setDialogInstance] = useState(0)
@@ -224,6 +226,7 @@ export default function RulesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rules'] })
       queryClient.invalidateQueries({ queryKey: ['rule-packs'] })
+      setDeletingRule(null)
       toast.success(t('rules.deleted'))
     },
   })
@@ -426,7 +429,7 @@ export default function RulesPage() {
                     <div className="flex items-center gap-1 shrink-0">
                       <button
                         className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
-                        onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(rule.id) }}
+                        onClick={(e) => { e.stopPropagation(); setDeletingRule(rule) }}
                         disabled={deleteMutation.isPending}
                         title={t('common.delete')}
                       >
@@ -442,6 +445,15 @@ export default function RulesPage() {
           <p className="text-sm text-muted-foreground text-center py-10">{t('rules.empty')}</p>
         )}
       </SectionCard>
+
+      <DeleteConfirmationDialog
+        open={!!deletingRule}
+        title={t('common.confirmDeleteTitle')}
+        description={t('common.confirmDeleteDescription', { name: deletingRule?.name })}
+        isPending={deleteMutation.isPending}
+        onClose={() => setDeletingRule(null)}
+        onConfirm={() => deletingRule && deleteMutation.mutate(deletingRule.id)}
+      />
 
       <RulePacksDialog
         open={packsDialogOpen}

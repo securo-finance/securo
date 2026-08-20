@@ -837,7 +837,8 @@
     "generatePending": "Generate Pending",
     "autoGenerate": "Generate transactions automatically",
     "autoGenerateHelp": "Create a transaction each time this bill is due. Turn off to wait for the real charge (e.g. from bank sync) and only show it as upcoming until then.",
-    "fxEstimate": "Estimate based on latest exchange rate ({{rate}}). Final amount may change."
+    "fxEstimate": "Estimate based on latest exchange rate ({{rate}}). Final amount may change.",
+    "confirmDeleteDescription": "The recurring definition \"{{description}}\" will be permanently deleted. Existing transactions will remain but lose their recurring link. This action cannot be undone."
   },
   "rules": {
     "section": "Automation",
@@ -958,7 +959,8 @@
     "updated": "Group updated",
     "deleted": "Group deleted",
     "noGroup": "No group",
-    "systemGroup": "System group"
+    "systemGroup": "System group",
+    "confirmDeleteDescription": "The category group \"{{name}}\" will be deleted. Its categories will remain and become ungrouped. This action cannot be undone."
   },
   "import": {
     "acceptedFormats": "Accepted formats: OFX, CSV, QIF, CAMT",
@@ -1370,7 +1372,9 @@
     "previous": "Previous",
     "next": "Next",
     "rowsPerPage": "Rows per page",
-    "noResults": "No results"
+    "noResults": "No results",
+    "confirmDeleteTitle": "Delete selected item?",
+    "confirmDeleteDescription": "\"{{name}}\" will be permanently deleted. This action cannot be undone."
   },
   "splitGroups": {
     "title": "Groups",

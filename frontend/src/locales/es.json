@@ -837,7 +837,8 @@
     "generatePending": "Generar pendientes",
     "autoGenerate": "Generar transacciones automáticamente",
     "autoGenerateHelp": "Crea una transacción cada vez que vence esta factura. Desactívalo para esperar el cargo real (por ejemplo, de la sincronización bancaria) y mostrarla solo como próxima hasta entonces.",
-    "fxEstimate": "Estimación basada en el último tipo de cambio ({{rate}}). El importe final puede cambiar."
+    "fxEstimate": "Estimación basada en el último tipo de cambio ({{rate}}). El importe final puede cambiar.",
+    "confirmDeleteDescription": "La definición recurrente \"{{description}}\" se eliminará permanentemente. Las transacciones existentes permanecerán, pero perderán su vínculo recurrente. Esta acción no se puede deshacer."
   },
   "rules": {
     "section": "Automatización",
@@ -958,7 +959,8 @@
     "updated": "Grupo actualizado",
     "deleted": "Grupo eliminado",
     "noGroup": "Sin grupo",
-    "systemGroup": "Grupo del sistema"
+    "systemGroup": "Grupo del sistema",
+    "confirmDeleteDescription": "El grupo de categorías \"{{name}}\" se eliminará. Sus categorías permanecerán y quedarán sin grupo. Esta acción no se puede deshacer."
   },
   "import": {
     "acceptedFormats": "Formatos aceptados: OFX, CSV, QIF, CAMT",
@@ -1370,7 +1372,9 @@
     "previous": "Anterior",
     "next": "Siguiente",
     "rowsPerPage": "Filas por página",
-    "noResults": "Sin resultados"
+    "noResults": "Sin resultados",
+    "confirmDeleteTitle": "¿Eliminar elemento seleccionado?",
+    "confirmDeleteDescription": "\"{{name}}\" se eliminará permanentemente. Esta acción no se puede deshacer."
   },
   "splitGroups": {
     "title": "Grupos",

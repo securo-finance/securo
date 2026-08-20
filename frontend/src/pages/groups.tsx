@@ -8,6 +8,7 @@ import { groups as groupsApi, type GroupCreatePayload } from '@/lib/api'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { Button } from '@/components/ui/button'
+import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
@@ -34,6 +35,7 @@ export default function GroupsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Group | null>(null)
+  const [deletingGroup, setDeletingGroup] = useState<Group | null>(null)
   const includeArchived = statusFilter !== 'active'
 
   const [name, setName] = useState('')
@@ -75,6 +77,7 @@ export default function GroupsPage() {
       queryClient.invalidateQueries({ queryKey: ['groups'] })
       setDialogOpen(false)
       setEditing(null)
+      setDeletingGroup(null)
       toast.success(t('splitGroups.deleted'))
     },
     onError: (err: unknown) => {
@@ -260,7 +263,10 @@ export default function GroupsPage() {
             {editing && (
               <Button
                 variant="destructive"
-                onClick={() => deleteMutation.mutate(editing.id)}
+                onClick={() => {
+                  setDialogOpen(false)
+                  setDeletingGroup(editing)
+                }}
                 disabled={deleteMutation.isPending}
               >
                 <Trash2 size={14} className="mr-1" />
@@ -281,6 +287,18 @@ export default function GroupsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <DeleteConfirmationDialog
+        open={!!deletingGroup}
+        title={t('common.confirmDeleteTitle')}
+        description={t('common.confirmDeleteDescription', { name: deletingGroup?.name })}
+        isPending={deleteMutation.isPending}
+        onClose={() => {
+          setDeletingGroup(null)
+          setDialogOpen(true)
+        }}
+        onConfirm={() => deletingGroup && deleteMutation.mutate(deletingGroup.id)}
+      />
     </div>
   )
 }

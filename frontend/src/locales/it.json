@@ -837,7 +837,8 @@
     "generatePending": "Genera in sospeso",
     "autoGenerate": "Genera transazioni automaticamente",
     "autoGenerateHelp": "Crea una transazione ogni volta che questa spesa è in scadenza. Disattiva per attendere l'addebito reale (ad es. dalla sincronizzazione bancaria) e mostrarla solo come in arrivo fino ad allora.",
-    "fxEstimate": "Stima basata sull'ultimo tasso di cambio ({{rate}}). L'importo finale può variare."
+    "fxEstimate": "Stima basata sull'ultimo tasso di cambio ({{rate}}). L'importo finale può variare.",
+    "confirmDeleteDescription": "La definizione ricorrente \"{{description}}\" verrà eliminata definitivamente. Le transazioni esistenti rimarranno, ma perderanno il collegamento ricorrente. Questa azione non può essere annullata."
   },
   "rules": {
     "section": "Automazione",
@@ -958,7 +959,8 @@
     "updated": "Gruppo aggiornato",
     "deleted": "Gruppo eliminato",
     "noGroup": "Nessun gruppo",
-    "systemGroup": "Gruppo di sistema"
+    "systemGroup": "Gruppo di sistema",
+    "confirmDeleteDescription": "Il gruppo di categorie \"{{name}}\" verrà eliminato. Le sue categorie rimarranno e non saranno più raggruppate. Questa azione non può essere annullata."
   },
   "import": {
     "acceptedFormats": "Formati accettati: OFX, CSV, QIF, CAMT",
@@ -1370,7 +1372,9 @@
     "previous": "Precedente",
     "next": "Successivo",
     "rowsPerPage": "Righe per pagina",
-    "noResults": "Nessun risultato"
+    "noResults": "Nessun risultato",
+    "confirmDeleteTitle": "Eliminare l'elemento selezionato?",
+    "confirmDeleteDescription": "\"{{name}}\" verrà eliminato definitivamente. Questa azione non può essere annullata."
   },
   "splitGroups": {
     "title": "Gruppi",

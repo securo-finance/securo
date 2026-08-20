@@ -837,7 +837,8 @@
     "generatePending": "Gerar Pendentes",
     "autoGenerate": "Gerar transações automaticamente",
     "autoGenerateHelp": "Cria uma transação sempre que esta conta vence. Desativa para aguardar o lançamento real (por exemplo, da sincronização bancária) e mostrá-la apenas como prevista até lá.",
-    "fxEstimate": "Estimativa baseada na última taxa de câmbio ({{rate}}). O valor final pode mudar."
+    "fxEstimate": "Estimativa baseada na última taxa de câmbio ({{rate}}). O valor final pode mudar.",
+    "confirmDeleteDescription": "A definição recorrente \"{{description}}\" será eliminada permanentemente. As transações existentes manter-se-ão, mas perderão a ligação recorrente. Esta ação não pode ser desfeita."
   },
   "rules": {
     "section": "Automação",
@@ -958,7 +959,8 @@
     "updated": "Grupo atualizado",
     "deleted": "Grupo eliminado",
     "noGroup": "Sem grupo",
-    "systemGroup": "Grupo do sistema"
+    "systemGroup": "Grupo do sistema",
+    "confirmDeleteDescription": "O grupo de categorias \"{{name}}\" será eliminado. As suas categorias manter-se-ão e ficarão sem grupo. Esta ação não pode ser desfeita."
   },
   "import": {
     "acceptedFormats": "Formatos aceitos: OFX, CSV, QIF, CAMT",
@@ -1370,7 +1372,9 @@
     "previous": "Anterior",
     "next": "Próximo",
     "rowsPerPage": "Linhas por página",
-    "noResults": "Nenhum resultado"
+    "noResults": "Nenhum resultado",
+    "confirmDeleteTitle": "Eliminar item selecionado?",
+    "confirmDeleteDescription": "\"{{name}}\" será eliminado permanentemente. Esta ação não pode ser desfeita."
   },
   "splitGroups": {
     "title": "Grupos",

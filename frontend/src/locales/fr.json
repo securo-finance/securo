@@ -837,7 +837,8 @@
     "generatePending": "Générer les transactions en attente",
     "autoGenerate": "Générer les transactions automatiquement",
     "autoGenerateHelp": "Créer une transaction à chaque échéance de cette facture. Désactivez pour attendre le prélèvement réel (ex. via la synchronisation bancaire) et l'afficher uniquement comme à venir jusque-là.",
-    "fxEstimate": "Estimation basée sur le dernier taux de change ({{rate}}). Le montant final peut varier."
+    "fxEstimate": "Estimation basée sur le dernier taux de change ({{rate}}). Le montant final peut varier.",
+    "confirmDeleteDescription": "La définition récurrente « {{description}} » sera définitivement supprimée. Les transactions existantes resteront, mais perdront leur lien récurrent. Cette action est irréversible."
   },
   "rules": {
     "section": "Automatisation",
@@ -958,7 +959,8 @@
     "updated": "Groupe mis à jour",
     "deleted": "Groupe supprimé",
     "noGroup": "Aucun groupe",
-    "systemGroup": "Groupe système"
+    "systemGroup": "Groupe système",
+    "confirmDeleteDescription": "Le groupe de catégories « {{name}} » sera supprimé. Ses catégories resteront et ne seront plus regroupées. Cette action est irréversible."
   },
   "import": {
     "acceptedFormats": "Formats acceptés : OFX, CSV, QIF, CAMT",
@@ -1370,7 +1372,9 @@
     "previous": "Précédent",
     "next": "Suivant",
     "rowsPerPage": "Lignes par page",
-    "noResults": "Aucun résultat"
+    "noResults": "Aucun résultat",
+    "confirmDeleteTitle": "Supprimer l’élément sélectionné ?",
+    "confirmDeleteDescription": "« {{name}} » sera définitivement supprimé. Cette action est irréversible."
   },
   "splitGroups": {
     "title": "Groupes",

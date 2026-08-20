@@ -888,7 +888,8 @@
     "generatePending": "Generuj oczekujące",
     "autoGenerate": "Automatycznie generuj transakcje",
     "autoGenerateHelp": "Tworzy transakcję za każdym razem, gdy ten rachunek jest wymagalny. Wyłącz, aby poczekać na rzeczywiste obciążenie (np. z synchronizacji bankowej) i do tego czasu pokazywać je tylko jako nadchodzące.",
-    "fxEstimate": "Szacunek na podstawie najnowszego kursu wymiany ({{rate}}). Ostateczna kwota może się zmienić."
+    "fxEstimate": "Szacunek na podstawie najnowszego kursu wymiany ({{rate}}). Ostateczna kwota może się zmienić.",
+    "confirmDeleteDescription": "Definicja transakcji cyklicznej „{{description}}” zostanie trwale usunięta. Istniejące transakcje pozostaną, ale utracą powiązanie z transakcją cykliczną. Tej operacji nie można cofnąć."
   },
   "rules": {
     "section": "Automatyzacja",
@@ -1018,7 +1019,8 @@
     "updated": "Zaktualizowano grupę",
     "deleted": "Usunięto grupę",
     "noGroup": "Brak grupy",
-    "systemGroup": "Grupa systemowa"
+    "systemGroup": "Grupa systemowa",
+    "confirmDeleteDescription": "Grupa kategorii „{{name}}” zostanie usunięta. Jej kategorie pozostaną i staną się niezgrupowane. Tej operacji nie można cofnąć."
   },
   "import": {
     "acceptedFormats": "Akceptowane formaty: OFX, CSV, QIF, CAMT",
@@ -1454,7 +1456,9 @@
     "previous": "Poprzedni",
     "next": "Następny",
     "rowsPerPage": "Wierszy na stronę",
-    "noResults": "Brak wyników"
+    "noResults": "Brak wyników",
+    "confirmDeleteTitle": "Usunąć wybrany element?",
+    "confirmDeleteDescription": "„{{name}}” zostanie trwale usunięty. Tej operacji nie można cofnąć."
   },
   "splitGroups": {
     "title": "Grupy",

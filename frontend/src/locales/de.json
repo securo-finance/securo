@@ -837,7 +837,8 @@
     "generatePending": "Ausstehende erstellen",
     "autoGenerate": "Transaktionen automatisch erstellen",
     "autoGenerateHelp": "Erstellt bei jeder Fälligkeit dieser Rechnung eine Transaktion. Deaktivieren, um auf die tatsächliche Belastung (z. B. aus der Banksynchronisierung) zu warten und sie bis dahin nur als anstehend anzuzeigen.",
-    "fxEstimate": "Schätzung basierend auf dem aktuellsten Wechselkurs ({{rate}}). Der endgültige Betrag kann abweichen."
+    "fxEstimate": "Schätzung basierend auf dem aktuellsten Wechselkurs ({{rate}}). Der endgültige Betrag kann abweichen.",
+    "confirmDeleteDescription": "Die wiederkehrende Transaktion \"{{description}}\" wird dauerhaft gelöscht. Vorhandene Transaktionen bleiben bestehen, verlieren jedoch ihre Verknüpfung zur wiederkehrenden Transaktion. Diese Aktion kann nicht rückgängig gemacht werden."
   },
   "rules": {
     "section": "Automatisierung",
@@ -958,7 +959,8 @@
     "updated": "Gruppe aktualisiert",
     "deleted": "Gruppe gelöscht",
     "noGroup": "Keine Gruppe",
-    "systemGroup": "Systemgruppe"
+    "systemGroup": "Systemgruppe",
+    "confirmDeleteDescription": "Die Kategoriegruppe \"{{name}}\" wird gelöscht. Ihre Kategorien bleiben erhalten und werden keiner Gruppe mehr zugeordnet. Diese Aktion kann nicht rückgängig gemacht werden."
   },
   "import": {
     "acceptedFormats": "Unterstützte Formate: OFX, CSV, QIF, CAMT",
@@ -1370,7 +1372,9 @@
     "previous": "Vorherige",
     "next": "Nächste",
     "rowsPerPage": "Zeilen pro Seite",
-    "noResults": "Keine Ergebnisse"
+    "noResults": "Keine Ergebnisse",
+    "confirmDeleteTitle": "Ausgewähltes Element löschen?",
+    "confirmDeleteDescription": "\"{{name}}\" wird dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
   },
   "splitGroups": {
     "title": "Gruppen",
