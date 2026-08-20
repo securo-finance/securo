@@ -113,6 +113,18 @@ export default function BudgetsPage() {
       setDeletingBudget(null)
       toast.success(t('budgets.deleted'))
     },
+    onError: (err: unknown) => {
+      const response =
+        err && typeof err === 'object' && 'response' in err && err.response && typeof err.response === 'object'
+          ? err.response
+          : undefined
+      const data = response && 'data' in response ? response.data : undefined
+      const detail =
+        data && typeof data === 'object' && 'detail' in data && typeof data.detail === 'string'
+          ? data.detail
+          : undefined
+      toast.error(detail ?? t('common.error'))
+    },
   })
 
   const getCategoryDisplay = (categoryId: string) => {

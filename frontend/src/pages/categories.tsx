@@ -84,6 +84,23 @@ export default function CategoriesPage() {
   const deleteCatMutation = useMutation({
     mutationFn: (id: string) => categoriesApi.delete(id),
     onSuccess: () => { invalidateAll(); setDeletingCategory(null); toast.success(t('categories.deleted')) },
+    onError: (err: unknown) => {
+      const response =
+        err && typeof err === 'object' && 'response' in err && err.response && typeof err.response === 'object'
+          ? err.response
+          : undefined
+      const data = response && 'data' in response ? response.data : undefined
+      const detail =
+        data && typeof data === 'object' && 'detail' in data && typeof data.detail === 'string'
+          ? data.detail
+          : undefined
+      const status = response && 'status' in response && typeof response.status === 'number' ? response.status : undefined
+      const isConstraintFailure =
+        status === 500 ||
+        detail === 'Internal Server Error' ||
+        /foreign key|integrityerror|sqlalchemy|sqlite/i.test(detail ?? '')
+      toast.error(isConstraintFailure ? t('categories.deleteInUse') : detail ?? t('common.error'))
+    },
   })
 
   const createGroupMutation = useMutation({
@@ -98,6 +115,18 @@ export default function CategoriesPage() {
   const deleteGroupMutation = useMutation({
     mutationFn: (id: string) => groupsApi.delete(id),
     onSuccess: () => { invalidateAll(); setDeletingGroup(null); toast.success(t('groups.deleted')) },
+    onError: (err: unknown) => {
+      const response =
+        err && typeof err === 'object' && 'response' in err && err.response && typeof err.response === 'object'
+          ? err.response
+          : undefined
+      const data = response && 'data' in response ? response.data : undefined
+      const detail =
+        data && typeof data === 'object' && 'detail' in data && typeof data.detail === 'string'
+          ? data.detail
+          : undefined
+      toast.error(detail ?? t('common.error'))
+    },
   })
 
   const toggleCollapse = (groupId: string) => {

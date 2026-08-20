@@ -124,6 +124,18 @@ function RecurringTab() {
       setDeletingRecurring(null)
       toast.success(t('recurring.deleted'))
     },
+    onError: (err: unknown) => {
+      const response =
+        err && typeof err === 'object' && 'response' in err && err.response && typeof err.response === 'object'
+          ? err.response
+          : undefined
+      const data = response && 'data' in response ? response.data : undefined
+      const detail =
+        data && typeof data === 'object' && 'detail' in data && typeof data.detail === 'string'
+          ? data.detail
+          : undefined
+      toast.error(detail ?? t('common.error'))
+    },
   })
 
   const generateMutation = useMutation({
