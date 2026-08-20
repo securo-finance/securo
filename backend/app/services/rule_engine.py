@@ -178,6 +178,7 @@ def apply_rule_actions(
     category_already_set: bool,
     *,
     skip_description: bool = False,
+    skip_ignore: bool = False,
 ) -> bool:
     """Apply actions in-place and return the updated category-set flag."""
     for action in actions:
@@ -216,7 +217,7 @@ def apply_rule_actions(
             if new_tags not in existing:
                 tx.notes = (existing + " " + new_tags).strip() if existing else new_tags
 
-        elif op == "ignore":
+        elif op == "ignore" and not skip_ignore:
             tx.is_ignored = True
 
     return category_already_set

@@ -322,7 +322,17 @@ async def generate_pending(
                 apply_effective_date(transaction, account)
                 session.add(transaction)
                 await session.flush()
-                await apply_rules_to_transaction(session, user_id, transaction)
+                await apply_rules_to_transaction(
+                    session,
+                    user_id,
+                    transaction,
+                    # An ignored pending placeholder is deliberately excluded
+                    # from recurring matching. Defer only the automatic ignore
+                    # until the incoming charge is reconciled; every other rule
+                    # action lands now, and an explicit later user ignore still
+                    # protects the placeholder from promotion.
+                    skip_ignore_action=is_synced_account,
+                )
                 await stamp_primary_amount(session, user_id, transaction)
                 count += 1
 

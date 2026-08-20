@@ -671,6 +671,7 @@ async def test_generate_pending_applies_workspace_rules_to_new_occurrence(
         actions=[
             RuleAction(op="set_payee", value=str(payee.id)),
             RuleAction(op="append_notes", value="#subscription"),
+            RuleAction(op="ignore", value=True),
         ],
     )
     await _create_description_rule(
@@ -698,6 +699,7 @@ async def test_generate_pending_applies_workspace_rules_to_new_occurrence(
     assert transaction.workspace_id == test_workspace.id
     assert transaction.payee_id == payee.id
     assert transaction.notes == "#subscription"
+    assert transaction.is_ignored is True
     assert transaction.status == "posted"
     assert transaction.recurring_transaction_id == recurring.id
 

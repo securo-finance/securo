@@ -16,6 +16,7 @@ from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
 from app.schemas.transaction import TransactionImport
 from app.services.import_service import import_transactions
 from app.services.recurring_transaction_service import create_recurring_transaction
+from app.services.recurring_transaction_service import generate_pending
 from app.services.rule_service import create_rule
 
 
@@ -100,6 +101,89 @@ async def test_import_merges_into_placeholder(session, test_user, test_workspace
     assert txs[0].source == "csv"
     assert txs[0].recurring_transaction_id == bill_id
     assert txs[0].original_description == "NETFLIX SUBSCRIPTION"
+
+
+@pytest.mark.asyncio
+async def test_import_reconciles_rule_ignored_generated_placeholder(
+    session, test_user, test_workspace, test_account
+):
+    account_id = test_account.id
+    await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Ignore imported Netflix charge",
+            conditions=[
+                RuleCondition(
+                    field="description",
+                    op="contains",
+                    value="Netflix Subscription",
+                )
+            ],
+            actions=[
+                RuleAction(op="append_notes", value="#auto-ignored"),
+                RuleAction(op="ignore", value=True),
+            ],
+            apply_to_existing=False,
+        ),
+    )
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        test_account,
+        start_date=date(2026, 1, 10),
+    )
+    bill_id = bill.id
+
+    assert await generate_pending(
+        session, test_user.id, up_to=date(2026, 1, 10)
+    ) == 1
+    placeholder = (
+        await session.execute(
+            select(Transaction).where(
+                Transaction.recurring_transaction_id == bill_id
+            )
+        )
+    ).scalar_one()
+    placeholder_id = placeholder.id
+    assert placeholder.status == "pending"
+    assert placeholder.notes == "#auto-ignored"
+    assert placeholder.is_ignored is False
+
+    incoming = TransactionImport(
+        description="NETFLIX SUBSCRIPTION",
+        amount=Decimal("39.90"),
+        date=date(2026, 1, 11),
+        type="debit",
+        currency="BRL",
+    )
+    with patch(
+        "app.services.import_service.stamp_primary_amount",
+        new_callable=AsyncMock,
+    ):
+        imported, skipped, _, _ = await import_transactions(
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id,
+            [incoming],
+            "csv",
+        )
+
+    assert (imported, skipped) == (1, 0)
+    txs = await _real_txs(session, account_id)
+    assert len(txs) == 1
+    merged = txs[0]
+    assert merged.id == placeholder_id
+    assert merged.source == "csv"
+    assert merged.status == "posted"
+    assert merged.recurring_transaction_id == bill_id
+    assert merged.notes == "#auto-ignored"
+    assert merged.is_ignored is True
+    refreshed = await session.get(RecurringTransaction, bill_id)
+    assert refreshed.next_occurrence == date(2026, 2, 10)
 
 
 @pytest.mark.asyncio

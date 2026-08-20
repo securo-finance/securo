@@ -34,6 +34,7 @@ from app.services.recurring_transaction_service import (
     generate_pending,
 )
 from app.services.rule_service import create_rule
+from app.services.transaction_service import toggle_ignore_transaction
 
 
 @pytest_asyncio.fixture
@@ -595,6 +596,143 @@ async def test_sync_promotes_pending_placeholder_to_posted(
     assert merged.original_description == "NETFLIX SUBSCRIPTION"
     refreshed = await session.get(RecurringTransaction, bill_id)
     assert refreshed.next_occurrence == date(2025, 2, 10)  # NOT advanced again
+
+
+@pytest.mark.asyncio
+async def test_sync_reconciles_rule_ignored_generated_placeholder(
+    session, test_user, test_workspace, conn_account
+):
+    conn, account = conn_account
+    conn_id, account_id = conn.id, account.id
+    await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Ignore generated Netflix charge",
+            conditions=[
+                RuleCondition(
+                    field="description",
+                    op="contains",
+                    value="Netflix Subscription",
+                )
+            ],
+            actions=[
+                RuleAction(op="append_notes", value="#auto-ignored"),
+                RuleAction(op="ignore", value=True),
+            ],
+            apply_to_existing=False,
+        ),
+    )
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        account,
+        start_date=date(2025, 1, 10),
+    )
+    bill_id = bill.id
+
+    assert await generate_pending(
+        session, test_user.id, up_to=date(2025, 1, 10)
+    ) == 1
+    placeholder = (
+        await session.execute(
+            select(Transaction).where(
+                Transaction.recurring_transaction_id == bill_id
+            )
+        )
+    ).scalar_one()
+    placeholder_id = placeholder.id
+    assert placeholder.status == "pending"
+    assert placeholder.notes == "#auto-ignored"
+    assert placeholder.is_ignored is False
+
+    provider = _provider(
+        [
+            _tx(
+                external_id="rule-ignored-sync",
+                description="NETFLIX SUBSCRIPTION",
+                amount=Decimal("39.90"),
+                date=date(2025, 1, 11),
+            )
+        ]
+    )
+    await _run_sync(
+        session,
+        conn_id,
+        test_workspace,
+        test_user,
+        provider,
+        mock_rules=False,
+    )
+
+    txs = await _all_txs(session, account_id)
+    assert len(txs) == 1
+    merged = txs[0]
+    assert merged.id == placeholder_id
+    assert merged.external_id == "rule-ignored-sync"
+    assert merged.source == "sync"
+    assert merged.status == "posted"
+    assert merged.recurring_transaction_id == bill_id
+    assert merged.notes == "#auto-ignored"
+    assert merged.is_ignored is True
+    refreshed = await session.get(RecurringTransaction, bill_id)
+    assert refreshed.next_occurrence == date(2025, 2, 10)
+
+
+@pytest.mark.asyncio
+async def test_sync_does_not_reconcile_explicitly_ignored_generated_placeholder(
+    session, test_user, test_workspace, conn_account
+):
+    conn, account = conn_account
+    conn_id, account_id = conn.id, account.id
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        account,
+        start_date=date(2025, 1, 10),
+    )
+    bill_id = bill.id
+    assert await generate_pending(
+        session, test_user.id, up_to=date(2025, 1, 10)
+    ) == 1
+    placeholder = (
+        await session.execute(
+            select(Transaction).where(
+                Transaction.recurring_transaction_id == bill_id
+            )
+        )
+    ).scalar_one()
+    placeholder_id = placeholder.id
+    ignored = await toggle_ignore_transaction(
+        session, placeholder_id, test_workspace.id
+    )
+    assert ignored is not None
+    assert ignored.is_ignored is True
+
+    provider = _provider(
+        [
+            _tx(
+                external_id="explicitly-ignored-sync",
+                description="NETFLIX SUBSCRIPTION",
+                amount=Decimal("39.90"),
+                date=date(2025, 1, 11),
+            )
+        ]
+    )
+    await _run_sync(session, conn_id, test_workspace, test_user, provider)
+
+    txs = await _all_txs(session, account_id)
+    assert len(txs) == 2
+    preserved = next(tx for tx in txs if tx.id == placeholder_id)
+    assert preserved.source == "recurring"
+    assert preserved.external_id is None
+    assert preserved.is_ignored is True
+    assert preserved.recurring_transaction_id == bill_id
+    incoming = next(tx for tx in txs if tx.external_id == "explicitly-ignored-sync")
+    assert incoming.recurring_transaction_id is None
 
 
 # ---------------------------------------------------------------------------

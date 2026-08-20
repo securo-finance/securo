@@ -1145,6 +1145,7 @@ async def preview_rules_for_transaction(
 async def apply_rules_to_transaction(
     session: AsyncSession, user_id: uuid.UUID, transaction: Transaction,
     skip_category_rules: bool = False,
+    skip_ignore_action: bool = False,
 ) -> None:
     """Apply all active rules to a transaction, modifying it in-place. Commits nothing.
 
@@ -1152,6 +1153,10 @@ async def apply_rules_to_transaction(
     haven't been migrated to pass workspace_id directly; rules are scoped by
     workspace via the transaction's own workspace_id when available, falling
     back to the legacy user filter so historical rows still match.
+
+    `skip_ignore_action` lets lifecycle callers defer an automatic ignore while
+    a pending row must remain eligible for reconciliation. Other matching
+    actions still apply normally.
     """
     rule_filter = Rule.user_id == user_id
     if getattr(transaction, "workspace_id", None) is not None:
@@ -1169,7 +1174,12 @@ async def apply_rules_to_transaction(
         conditions = rule.conditions or []
         actions = rule.actions or []
         if evaluate_conditions(rule.conditions_op, conditions, transaction):
-            category_set = apply_rule_actions(actions, transaction, category_set)
+            category_set = apply_rule_actions(
+                actions,
+                transaction,
+                category_set,
+                skip_ignore=skip_ignore_action,
+            )
 
 
 async def apply_single_rule(
