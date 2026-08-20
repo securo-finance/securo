@@ -323,10 +323,15 @@ export default function BudgetsPage() {
 
       <DeleteConfirmationDialog
         open={!!deletingBudget}
-        title={t('common.confirmDeleteTitle')}
-        description={t('common.confirmDeleteDescription', {
-          name: categoriesList?.find((category) => category.id === deletingBudget?.category_id)?.name ?? deletingBudget?.category_id,
-        })}
+        title={t('budgets.confirmDeleteTitle')}
+        description={t(
+          deletingBudget?.is_recurring
+            ? 'budgets.confirmDeleteRecurringDescription'
+            : 'budgets.confirmDeleteDescription',
+          {
+            name: categoriesList?.find((category) => category.id === deletingBudget?.category_id)?.name ?? t('budgets.category'),
+          },
+        )}
         isPending={deleteMutation.isPending}
         onClose={() => setDeletingBudget(null)}
         onConfirm={() => deletingBudget && deleteMutation.mutate(deletingBudget.id)}

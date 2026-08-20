@@ -448,8 +448,8 @@ export default function RulesPage() {
 
       <DeleteConfirmationDialog
         open={!!deletingRule}
-        title={t('common.confirmDeleteTitle')}
-        description={t('common.confirmDeleteDescription', { name: deletingRule?.name })}
+        title={t('rules.confirmDeleteTitle')}
+        description={t('rules.confirmDeleteDescription', { name: deletingRule?.name })}
         isPending={deleteMutation.isPending}
         onClose={() => setDeletingRule(null)}
         onConfirm={() => deletingRule && deleteMutation.mutate(deletingRule.id)}

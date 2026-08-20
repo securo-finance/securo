@@ -290,8 +290,8 @@ export default function GroupsPage() {
 
       <DeleteConfirmationDialog
         open={!!deletingGroup}
-        title={t('common.confirmDeleteTitle')}
-        description={t('common.confirmDeleteDescription', { name: deletingGroup?.name })}
+        title={t('splitGroups.confirmDeleteTitle')}
+        description={t('splitGroups.confirmDeleteDescription', { name: deletingGroup?.name })}
         isPending={deleteMutation.isPending}
         onClose={() => {
           setDeletingGroup(null)

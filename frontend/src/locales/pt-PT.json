@@ -738,6 +738,9 @@
     "created": "Orçamento criado",
     "updated": "Orçamento atualizado",
     "deleted": "Orçamento eliminado",
+    "confirmDeleteTitle": "Eliminar orçamento?",
+    "confirmDeleteDescription": "O orçamento para \"{{name}}\" será eliminado permanentemente. As transações existentes não são afetadas. Esta ação não pode ser desfeita.",
+    "confirmDeleteRecurringDescription": "O orçamento recorrente para \"{{name}}\" será eliminado permanentemente. Esta definição deixará de se aplicar aos meses seguintes. As transações existentes não são afetadas. Esta ação não pode ser desfeita.",
     "repeatEveryMonth": "Repetir todo mês",
     "recurringLabel": "Recorrente"
   },
@@ -833,6 +836,7 @@
     "created": "Transação recorrente criada",
     "updated": "Transação recorrente atualizada",
     "deleted": "Transação recorrente eliminada",
+    "confirmDeleteTitle": "Eliminar transação recorrente?",
     "generated": "{{count}} transações geradas",
     "generatePending": "Gerar Pendentes",
     "autoGenerate": "Gerar transações automaticamente",
@@ -861,6 +865,8 @@
     "updatedAndApplied": "Regra atualizada e aplicada a {{count}} transações",
     "updated": "Regra atualizada",
     "deleted": "Regra eliminada",
+    "confirmDeleteTitle": "Eliminar regra?",
+    "confirmDeleteDescription": "A regra \"{{name}}\" será eliminada permanentemente e deixará de ser executada. As alterações já aplicadas às transações existentes manter-se-ão. Esta ação não pode ser desfeita.",
     "applied": "Regras aplicadas a {{count}} transações",
     "inactive": "inativa",
     "empty": "Nenhuma regra criada",
@@ -937,6 +943,8 @@
     "created": "Categoria criada",
     "updated": "Categoria atualizada",
     "deleted": "Categoria eliminada",
+    "confirmDeleteTitle": "Eliminar categoria?",
+    "confirmDeleteDescription": "A categoria \"{{name}}\" será eliminada permanentemente. As transações existentes não são eliminadas. Esta ação não pode ser desfeita.",
     "expandAll": "Expandir tudo",
     "collapseAll": "Recolher tudo",
     "treatAsTransfer": "Tratar como transferência",
@@ -958,6 +966,7 @@
     "created": "Grupo criado",
     "updated": "Grupo atualizado",
     "deleted": "Grupo eliminado",
+    "confirmDeleteTitle": "Eliminar grupo de categorias?",
     "noGroup": "Sem grupo",
     "systemGroup": "Grupo do sistema",
     "confirmDeleteDescription": "O grupo de categorias \"{{name}}\" será eliminado. As suas categorias manter-se-ão e ficarão sem grupo. Esta ação não pode ser desfeita."
@@ -1372,9 +1381,7 @@
     "previous": "Anterior",
     "next": "Próximo",
     "rowsPerPage": "Linhas por página",
-    "noResults": "Nenhum resultado",
-    "confirmDeleteTitle": "Eliminar item selecionado?",
-    "confirmDeleteDescription": "\"{{name}}\" será eliminado permanentemente. Esta ação não pode ser desfeita."
+    "noResults": "Nenhum resultado"
   },
   "splitGroups": {
     "title": "Grupos",
@@ -1384,6 +1391,8 @@
     "created": "Grupo criado",
     "updated": "Grupo atualizado",
     "deleted": "Grupo eliminado",
+    "confirmDeleteTitle": "Eliminar grupo?",
+    "confirmDeleteDescription": "O grupo \"{{name}}\" e os seus membros serão eliminados permanentemente. Os grupos referenciados por divisões de transações ou liquidações não podem ser eliminados até essas referências serem removidas. Esta ação não pode ser desfeita.",
     "empty": "Nenhum grupo ainda",
     "emptyHint": "Cria um grupo para dividir despesas com pessoas, departamentos ou projetos.",
     "name": "Nome",

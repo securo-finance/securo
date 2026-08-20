@@ -269,7 +269,7 @@ function RecurringTab() {
 
       <DeleteConfirmationDialog
         open={!!deletingRecurring}
-        title={t('common.confirmDeleteTitle')}
+        title={t('recurring.confirmDeleteTitle')}
         description={t('recurring.confirmDeleteDescription', { description: deletingRecurring?.description })}
         isPending={deleteMutation.isPending}
         onClose={() => setDeletingRecurring(null)}

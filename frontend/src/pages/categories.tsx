@@ -410,8 +410,8 @@ export default function CategoriesPage() {
 
       <DeleteConfirmationDialog
         open={!!deletingCategory}
-        title={t('common.confirmDeleteTitle')}
-        description={t('common.confirmDeleteDescription', { name: deletingCategory?.name })}
+        title={t('categories.confirmDeleteTitle')}
+        description={t('categories.confirmDeleteDescription', { name: deletingCategory?.name })}
         isPending={deleteCatMutation.isPending}
         onClose={() => setDeletingCategory(null)}
         onConfirm={() => deletingCategory && deleteCatMutation.mutate(deletingCategory.id)}
@@ -419,7 +419,7 @@ export default function CategoriesPage() {
 
       <DeleteConfirmationDialog
         open={!!deletingGroup}
-        title={t('common.confirmDeleteTitle')}
+        title={t('groups.confirmDeleteTitle')}
         description={t('groups.confirmDeleteDescription', { name: deletingGroup?.name })}
         isPending={deleteGroupMutation.isPending}
         onClose={() => setDeletingGroup(null)}

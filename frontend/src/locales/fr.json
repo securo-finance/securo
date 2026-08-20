@@ -738,6 +738,9 @@
     "created": "Budget créé",
     "updated": "Budget mis à jour",
     "deleted": "Budget supprimé",
+    "confirmDeleteTitle": "Supprimer le budget ?",
+    "confirmDeleteDescription": "Le budget pour « {{name}} » sera définitivement supprimé. Les transactions existantes ne sont pas affectées. Cette action est irréversible.",
+    "confirmDeleteRecurringDescription": "Le budget récurrent pour « {{name}} » sera définitivement supprimé. Cette définition ne s'appliquera plus aux mois suivants. Les transactions existantes ne sont pas affectées. Cette action est irréversible.",
     "repeatEveryMonth": "Répéter chaque mois",
     "recurringLabel": "Récurrent"
   },
@@ -833,6 +836,7 @@
     "created": "Transaction récurrente créée",
     "updated": "Transaction récurrente mise à jour",
     "deleted": "Transaction récurrente supprimée",
+    "confirmDeleteTitle": "Supprimer la transaction récurrente ?",
     "generated": "{{count}} transactions générées",
     "generatePending": "Générer les transactions en attente",
     "autoGenerate": "Générer les transactions automatiquement",
@@ -861,6 +865,8 @@
     "updatedAndApplied": "Règle mise à jour et appliquée à {{count}} transactions",
     "updated": "Règle mise à jour",
     "deleted": "Règle supprimée",
+    "confirmDeleteTitle": "Supprimer la règle ?",
+    "confirmDeleteDescription": "La règle « {{name}} » sera définitivement supprimée et ne s'exécutera plus. Les modifications déjà appliquées aux transactions existantes resteront. Cette action est irréversible.",
     "applied": "Règles appliquées à {{count}} transactions",
     "inactive": "inactive",
     "empty": "Aucune règle créée",
@@ -937,6 +943,8 @@
     "created": "Catégorie créée",
     "updated": "Catégorie mise à jour",
     "deleted": "Catégorie supprimée",
+    "confirmDeleteTitle": "Supprimer la catégorie ?",
+    "confirmDeleteDescription": "La catégorie « {{name}} » sera définitivement supprimée. Les transactions existantes ne sont pas supprimées. Cette action est irréversible.",
     "expandAll": "Tout développer",
     "collapseAll": "Tout réduire",
     "treatAsTransfer": "Traiter comme un virement",
@@ -958,6 +966,7 @@
     "created": "Groupe créé",
     "updated": "Groupe mis à jour",
     "deleted": "Groupe supprimé",
+    "confirmDeleteTitle": "Supprimer le groupe de catégories ?",
     "noGroup": "Aucun groupe",
     "systemGroup": "Groupe système",
     "confirmDeleteDescription": "Le groupe de catégories « {{name}} » sera supprimé. Ses catégories resteront et ne seront plus regroupées. Cette action est irréversible."
@@ -1372,9 +1381,7 @@
     "previous": "Précédent",
     "next": "Suivant",
     "rowsPerPage": "Lignes par page",
-    "noResults": "Aucun résultat",
-    "confirmDeleteTitle": "Supprimer l’élément sélectionné ?",
-    "confirmDeleteDescription": "« {{name}} » sera définitivement supprimé. Cette action est irréversible."
+    "noResults": "Aucun résultat"
   },
   "splitGroups": {
     "title": "Groupes",
@@ -1384,6 +1391,8 @@
     "created": "Groupe créé",
     "updated": "Groupe mis à jour",
     "deleted": "Groupe supprimé",
+    "confirmDeleteTitle": "Supprimer le groupe ?",
+    "confirmDeleteDescription": "Le groupe « {{name}} » et ses membres seront définitivement supprimés. Les groupes référencés par des répartitions de transactions ou des règlements ne peuvent pas être supprimés avant que ces références soient retirées. Cette action est irréversible.",
     "empty": "Aucun groupe pour l'instant",
     "emptyHint": "Créez un groupe pour partager des dépenses avec des personnes, des services ou des projets.",
     "name": "Nom",
