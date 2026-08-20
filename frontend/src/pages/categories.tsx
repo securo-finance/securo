@@ -95,11 +95,11 @@ export default function CategoriesPage() {
           ? data.detail
           : undefined
       const status = response && 'status' in response && typeof response.status === 'number' ? response.status : undefined
-      const isConstraintFailure =
-        status === 500 ||
-        detail === 'Internal Server Error' ||
-        /foreign key|integrityerror|sqlalchemy|sqlite/i.test(detail ?? '')
-      toast.error(isConstraintFailure ? t('categories.deleteInUse') : detail ?? t('common.error'))
+      if (status === 500) {
+        toast.error(t('categories.deleteInUse'))
+      } else {
+        toast.error(detail?.trim() ? detail : t('common.error'))
+      }
     },
   })
 
@@ -125,7 +125,7 @@ export default function CategoriesPage() {
         data && typeof data === 'object' && 'detail' in data && typeof data.detail === 'string'
           ? data.detail
           : undefined
-      toast.error(detail ?? t('common.error'))
+      toast.error(detail?.trim() ? detail : t('common.error'))
     },
   })
 

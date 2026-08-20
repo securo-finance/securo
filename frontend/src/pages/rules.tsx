@@ -239,7 +239,7 @@ export default function RulesPage() {
         data && typeof data === 'object' && 'detail' in data && typeof data.detail === 'string'
           ? data.detail
           : undefined
-      toast.error(detail ?? t('common.error'))
+      toast.error(detail?.trim() ? detail : t('common.error'))
     },
   })
 
