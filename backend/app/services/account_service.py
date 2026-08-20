@@ -15,6 +15,7 @@ from app.schemas.account import AccountCreate, AccountUpdate
 from app.services._query_filters import (
     counts_as_pnl,
     counts_in_current_balance,
+    counts_toward_bill,
     is_confirmed,
     is_inside_provider_snapshot,
     is_not_future,
@@ -795,8 +796,11 @@ async def get_account_summary(
     # Expenses = SUM of debit transactions in window (same exclusions).
     # For credit-card accounts, NET refund credits against debits so the
     # cycle's "Total da fatura" matches the bank's bill (refunds reduce the
-    # invoice amount). counts_as_pnl already excludes paired transfers and
-    # transfer-like categories, so bill payments are not double-counted.
+    # invoice amount). Uses counts_toward_bill (not counts_as_pnl): paired
+    # transfers/bill payments still shouldn't count, but a charge doesn't
+    # stop being owed to the bank just because its *category* is tagged
+    # treat_as_transfer/is_ignored for personal-budget purposes — only an
+    # explicit transaction-level is_ignored should shrink the bill total.
     if account.type == "credit_card":
         signed_for_bill = case(
             (Transaction.type == "credit", -func.abs(effective_amount)),
@@ -808,7 +812,7 @@ async def get_account_summary(
                 Transaction.source != "opening_balance",
                 bucket_date <= today,
                 Transaction.status == "posted",
-                counts_as_pnl(),
+                counts_toward_bill(),
             ))
         )
     else:

@@ -133,6 +133,30 @@ def counts_as_pnl():
     )
 
 
+def counts_toward_bill():
+    """SQL filter: True when a transaction should contribute to a credit
+    card's "Total da fatura" (bill total) — i.e. counts toward what's owed
+    to the bank for that cycle.
+
+    This is a different question from `counts_as_pnl`: personal-budget
+    categorization (e.g. tagging a purchase `treat_as_transfer` because it's
+    really a consortium/investment payment) legitimately excludes a charge
+    from *discretionary spending* totals, but the bank still expects payment
+    for it — the invoice amount can't shrink because of how the user tagged
+    the row afterwards. So this keeps the same paired-transfer and
+    settlement-debit exclusions as `counts_as_pnl` (those really are the
+    same money moving, not new debt), but does NOT drop rows just because
+    their *category* is flagged `treat_as_transfer`/`is_ignored` — only an
+    explicit transaction-level `is_ignored` (the user saying "don't count
+    this specific row") should shrink the bill.
+    """
+    return and_(
+        Transaction.transfer_pair_id.is_(None),
+        Transaction.is_ignored.is_(False),
+        ~and_(Transaction.source == "settlement", Transaction.type == "debit"),
+    )
+
+
 def counts_as_user_pnl():
     """SQL filter for *user-level* P/L (dashboard, reports, budgets).
 
