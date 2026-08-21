@@ -1,0 +1,27 @@
+name: sync-main
+
+# Keeps our fork's `main` a clean, fast-forward-only mirror of upstream. We
+# never commit directly to `main`, so this can never conflict.
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # 06:00 UTC daily
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Fast-forward main from upstream
+        run: |
+          git remote add upstream https://github.com/securo-finance/securo.git
+          git fetch upstream main
+          git merge --ff-only upstream/main
+          git push origin main

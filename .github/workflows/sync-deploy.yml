@@ -1,0 +1,81 @@
+name: sync-deploy
+
+# Tries to fast-forward our patches (branch `deploy`) on top of the freshly
+# synced `main`. Only pushes if the merge is clean AND the backend test
+# suite still passes — otherwise it opens an issue for manual resolution
+# instead of publishing a broken `deploy`.
+
+on:
+  workflow_run:
+    workflows: ["sync-main"]
+    types: [completed]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  sync:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: deploy
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Attempt merge of main into deploy
+        id: merge
+        run: |
+          git fetch origin main
+          if git merge origin/main -m "sync: merge upstream main into deploy"; then
+            echo "clean=true" >> "$GITHUB_OUTPUT"
+          else
+            git merge --abort
+            echo "clean=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up uv
+        if: steps.merge.outputs.clean == 'true'
+        uses: astral-sh/setup-uv@v3
+
+      - name: Run backend tests
+        if: steps.merge.outputs.clean == 'true'
+        id: test
+        working-directory: backend
+        continue-on-error: true
+        run: |
+          uv sync --all-extras
+          uv run pytest -q
+
+      - name: Push deploy
+        if: steps.merge.outputs.clean == 'true' && steps.test.outcome == 'success'
+        run: git push origin deploy
+
+      - name: Open issue on conflict or test failure
+        if: steps.merge.outputs.clean == 'false' || (steps.merge.outputs.clean == 'true' && steps.test.outcome != 'success')
+        uses: actions/github-script@v7
+        env:
+          MERGE_CLEAN: ${{ steps.merge.outputs.clean }}
+        with:
+          script: |
+            const mergeClean = process.env.MERGE_CLEAN === 'true';
+            const title = mergeClean
+              ? '[sync] deploy: backend tests failed after merging upstream main'
+              : '[sync] deploy: merge conflict with upstream main';
+            const body = mergeClean
+              ? 'The automated sync merged `main` into `deploy` cleanly, but the backend test suite failed afterwards. `deploy` was left unpushed (still at its previous state). Check the workflow run, fix, and merge manually.'
+              : 'The automated sync could not fast-forward-merge `main` into `deploy` (conflict). `deploy` was left unpushed. Resolve the conflict manually and push.';
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['sync-failure'],
+            });
