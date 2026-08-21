@@ -46,6 +46,10 @@ x-backend-env: &backend-env
   # agents up` after enabling.
   AGENTS_ENABLED: ${AGENTS_ENABLED:-false}
   AGENTS_BUILTIN_MCP_URL: ${AGENTS_BUILTIN_MCP_URL:-http://mcp-server:8765/mcp}
+  # URL that external MCP clients receive from the UI. In production this
+  # should be the HTTPS URL served by the reverse proxy (for example,
+  # https://financas.example.com/mcp), never the container's private port.
+  AGENTS_EXTERNAL_MCP_URL: ${AGENTS_EXTERNAL_MCP_URL:-}
   AGENTS_EXTRA_MCP_SERVERS: ${AGENTS_EXTRA_MCP_SERVERS:-}
   AGENTS_MCP_JWT_SECRET: ${AGENTS_MCP_JWT_SECRET:-dev-mcp-secret-change-in-production}
   # TTL for tokens minted from /agents/connections → "External MCP access".
@@ -115,12 +119,14 @@ services:
     <<: *backend-base
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      # Caddy (or another reverse proxy) is the only public entry point.
+      # Override BACKEND_HOST_BIND only for a deliberate private-network use.
+      - "${BACKEND_HOST_BIND:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
 
   frontend:
     image: ghcr.io/securo-finance/securo-frontend:latest
     ports:
-      - "${FRONTEND_PORT:-3000}:8080"
+      - "${FRONTEND_HOST_BIND:-127.0.0.1}:${FRONTEND_PORT:-3000}:8080"
     environment:
       BACKEND_URL: http://backend:8000
       FRONTEND_URL: http://localhost:3000

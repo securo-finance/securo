@@ -2,9 +2,11 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # deploy is the production branch in our fork. It receives tested
+    # updates from sync-deploy and local patches through reviewed PRs.
+    branches: [main, deploy]
   pull_request:
-    branches: [main]
+    branches: [main, deploy]
 
 jobs:
   backend-tests:
