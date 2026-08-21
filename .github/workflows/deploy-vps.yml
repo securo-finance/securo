@@ -1,0 +1,89 @@
+name: deploy-vps
+
+# Production is updated only after CI succeeds for the deploy branch. The
+# separate workflow_run trigger keeps the VPS out of the path of unmerged PRs
+# and failed test runs.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [deploy]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit SHA to deploy (leave blank for origin/deploy)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+# Never let an older CI run finish by replacing a newer successful deployment.
+concurrency:
+  group: securo-vps-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch' ||
+        github.event.workflow_run.conclusion == 'success'
+      }}
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SECURO_PATH: /opt/securo
+      DEPLOY_SHA: ${{ inputs.ref || github.event.workflow_run.head_sha }}
+
+    steps:
+      - name: Configure the dedicated deployment SSH identity
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$VPS_SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          test -n "$VPS_HOST"
+
+      - name: Deploy the tested commit
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          set -euo pipefail
+          test -n "$VPS_HOST"
+          test -n "$VPS_USER"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$VPS_USER@$VPS_HOST" \
+            bash -s -- "$DEPLOY_SHA" "$SECURO_PATH" <<'REMOTE'
+          set -euo pipefail
+          deploy_sha="$1"
+          securo_path="$2"
+
+          test -f "$securo_path/.env" || {
+            echo "Missing $securo_path/.env; production configuration has not been installed." >&2
+            exit 1
+          }
+
+          git -C "$securo_path" fetch --quiet origin deploy
+          if [ -z "$deploy_sha" ]; then
+            deploy_sha="$(git -C "$securo_path" rev-parse origin/deploy)"
+          fi
+          git -C "$securo_path" cat-file -e "$deploy_sha^{commit}"
+
+          # Do not erase manual tracked edits on the server: configuration
+          # belongs in .env and source changes belong in Git.
+          git -C "$securo_path" diff --quiet
+          git -C "$securo_path" diff --cached --quiet
+          git -C "$securo_path" checkout --detach "$deploy_sha"
+
+          cd "$securo_path"
+          docker compose -f docker-compose.prod.yml pull
+          docker compose -f docker-compose.prod.yml up -d --remove-orphans
+          curl --fail --silent --show-error --retry 12 --retry-connrefused \
+            --retry-delay 2 http://127.0.0.1:8000/api/health
+          REMOTE

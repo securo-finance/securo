@@ -85,7 +85,13 @@ registrado no dashboard da Pluggy deve ser exatamente
 
 ## Atualizações e backup
 
-Para atualizar a instância após uma publicação na branch `deploy`:
+O workflow deploy-vps publica automaticamente o commit na VPS depois que o
+CI da branch deploy passa. Ele usa uma chave SSH exclusiva e só executa
+commits que existam em origin/deploy. A primeira instalação da chave e dos
+segredos está documentada no workflow; nunca coloque a chave privada no
+repositório ou no .env.
+
+Para uma atualização manual ou uma recuperação pontual:
 
 ```bash
 cd /opt/securo
