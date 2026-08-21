@@ -372,3 +372,20 @@ def test_build_account_data_without_number_leaves_mask_none():
     acc = {"id": "acc-2", "name": "Conta", "type": "BANK", "balance": 0}
     out = _build_account_data(acc, PluggyProvider._map_account_type)
     assert out.masked_number is None
+
+
+def test_build_account_data_maps_bank_savings_subtype_to_savings():
+    from app.providers.pluggy import _build_account_data
+
+    acc = {
+        "id": "acc-savings",
+        "name": "Poupança",
+        "type": "BANK",
+        "subtype": "SAVINGS_ACCOUNT",
+        "balance": 0,
+        "currencyCode": "BRL",
+    }
+
+    out = _build_account_data(acc, PluggyProvider._map_account_type)
+
+    assert out.type == "savings"
