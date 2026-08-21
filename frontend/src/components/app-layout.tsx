@@ -122,10 +122,13 @@ export function AppLayout() {
   // Gated on agentsEnabled so the hotkey is a no-op when the feature is
   // off — keeps ⌘J free for browsers/other tools.
   useEffect(() => {
-    adminApi.defaultColors().then(({ light, dark }) => {
-      setThemeBasedOnSystem(light, dark, resolvedTheme)
-    }).catch(() => {})
-    
+    adminApi
+      .defaultColors()
+      .then(({ light, dark }) => {
+        setThemeBasedOnSystem(light, dark, resolvedTheme)
+      })
+      .catch(() => {})
+
     if (!chatAvailable) return
     const handler = (e: KeyboardEvent) => {
       const isMod = e.metaKey || e.ctrlKey
@@ -141,18 +144,11 @@ export function AppLayout() {
   // a configuration surface (KB upload, providers, default selection),
   // not a daily destination. Moved to the user menu (Change password,
   // 2FA, Backups, AI agents).
-  const finalNavItems: NavItem[] = useMemo(
-    () => visibleNavItems(navItems, hasModule),
-    [hasModule],
-  )
-  const isMac =
-    typeof navigator !== 'undefined' &&
-    /Mac|iPhone|iPad|iPod/.test(navigator.platform)
+  const finalNavItems: NavItem[] = useMemo(() => visibleNavItems(navItems, hasModule), [hasModule])
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.platform)
 
   const showTour =
-    user &&
-    !user.preferences?.onboarding_completed &&
-    !localStorage.getItem('onboarding_completed')
+    user && !user.preferences?.onboarding_completed && !localStorage.getItem('onboarding_completed')
 
   const handleTourComplete = useCallback(async () => {
     localStorage.setItem('onboarding_completed', 'true')
@@ -172,8 +168,7 @@ export function AppLayout() {
   const resolvedThemeLocal = theme === 'system' ? undefined : theme
   const isDark = resolvedThemeLocal
     ? resolvedThemeLocal === 'dark'
-    : typeof window !== 'undefined' &&
-      window.matchMedia?.('(prefers-color-scheme: dark)').matches
+    : typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches
   const toggleTheme = () => setTheme(isDark ? 'light' : 'dark')
 
   const { data: accountsList } = useQuery({
@@ -210,9 +205,7 @@ export function AppLayout() {
           title={t('nav.dashboard')}
         >
           <ShellLogo size={22} className="text-primary shrink-0" />
-          <span className="font-bold text-sidebar-foreground">
-            {t('app.name')}
-          </span>
+          <span className="font-bold text-sidebar-foreground">{t('app.name')}</span>
         </Link>
         <div className="ml-auto flex items-center gap-2">
           <button
@@ -234,9 +227,7 @@ export function AppLayout() {
             onClick={toggleTheme}
             className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1"
             title={isDark ? t('settings.themeLight') : t('settings.themeDark')}
-            aria-label={
-              isDark ? t('settings.themeLight') : t('settings.themeDark')
-            }
+            aria-label={isDark ? t('settings.themeLight') : t('settings.themeDark')}
           >
             {isDark ? <Sun size={18} /> : <Moon size={18} />}
           </button>
@@ -324,12 +315,8 @@ export function AppLayout() {
               <button
                 onClick={toggleTheme}
                 className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1 rounded-md hover:bg-sidebar-accent"
-                title={
-                  isDark ? t('settings.themeLight') : t('settings.themeDark')
-                }
-                aria-label={
-                  isDark ? t('settings.themeLight') : t('settings.themeDark')
-                }
+                title={isDark ? t('settings.themeLight') : t('settings.themeDark')}
+                aria-label={isDark ? t('settings.themeLight') : t('settings.themeDark')}
               >
                 {isDark ? <Sun size={16} /> : <Moon size={16} />}
               </button>
@@ -357,128 +344,141 @@ export function AppLayout() {
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto">
-          {/* Nav */}
-          <nav className="flex flex-col gap-0.5 px-3 pt-1 pb-3" data-tour="sidebar">
-            {/* Which modules this workspace shows is resolved server-side,
+            {/* Nav */}
+            <nav className="flex flex-col gap-0.5 px-3 pt-1 pb-3" data-tour="sidebar">
+              {/* Which modules this workspace shows is resolved server-side,
                 so until the workspace list lands there is no honest answer
                 — a placeholder beats both an empty sidebar and a guess. */}
-            {workspaceLoading && <NavSkeleton />}
-            {!workspaceLoading && finalNavItems.map((item, idx) => {
-              if (item.type === 'separator') {
-                // The first separator sits right below the search bar
-                // — without trimming the top padding it leaves a wide
-                // gap that makes the section header feel disconnected
-                // from the search trigger.
-                const isFirstSep = idx === 0
-                return (
-                  <div key={`sep-${idx}`} className={cn(isFirstSep ? 'pt-1 pb-1 px-3' : 'pt-3 pb-1 px-3')}>
-                    <span className="text-[10px] uppercase tracking-[0.12em] font-semibold text-sidebar-muted/50">
-                      {t(item.labelKey)}
-                    </span>
-                  </div>
-                )
-              }
-
-              const isActive =
-                item.path === '/'
-                  ? location.pathname === '/'
-                  : location.pathname.startsWith(item.path)
-              const Icon = item.icon
-              return (
-                <Link
-                  key={item.key}
-                  to={item.path}
-                  data-tour={`nav-${item.key}`}
-                  onClick={() => setSidebarOpen(false)}
-                  className={cn(
-                    'flex items-center gap-3 text-[13px] font-medium transition-all rounded-lg px-3 py-2',
-                    isActive
-                      ? 'bg-primary/[0.08] text-primary border-l-[3px] border-primary pl-[9px]'
-                      : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground',
-                  )}
-                >
-                  <Icon
-                    size={17}
-                    className={cn(
-                      'shrink-0',
-                      isActive ? 'text-primary' : 'text-sidebar-muted',
-                    )}
-                  />
-                  <span>{t(`nav.${item.key}`)}</span>
-                </Link>
-              )
-            })}
-          </nav>
-
-          {/* Account list in sidebar */}
-          {allAccounts.length > 0 && (
-            <div className="px-3 pb-2 mt-2">
-              <button
-                onClick={() => setAccountsExpanded(!accountsExpanded)}
-                className="flex items-center justify-between w-full px-3 py-2 hover:text-sidebar-foreground transition-colors"
-              >
-                <span className="text-[11px] uppercase tracking-[0.12em] font-semibold text-sidebar-muted">
-                  {t('accounts.title')}
-                </span>
-                <div className="flex items-center gap-2">
-                  <span
-                    className={`tabular-nums font-medium text-xs ${totalBalance < 0 ? 'text-rose-400' : 'text-sidebar-muted'}`}
-                  >
-                    {mask(formatCurrency(totalBalance, userCurrency, locale))}
-                  </span>
-                  <ChevronRight
-                    size={12}
-                    className={cn(
-                      'text-sidebar-muted transition-transform',
-                      accountsExpanded && 'rotate-90',
-                    )}
-                  />
-                </div>
-              </button>
-              {accountsExpanded && (
-                <div className="mt-1 space-y-0.5">
-                  {[...visibleAccounts].sort((a, b) => Math.abs(Number(b.current_balance)) - Math.abs(Number(a.current_balance))).slice(0, accountsShowAll ? visibleAccounts.length : 3).map((acc) => {
-                    const balance = Number(acc.current_balance) || 0
-                    const typeKey = acc.type.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()).replace(/^./, c => c.toUpperCase())
-
+              {workspaceLoading && <NavSkeleton />}
+              {!workspaceLoading &&
+                finalNavItems.map((item, idx) => {
+                  if (item.type === 'separator') {
+                    // The first separator sits right below the search bar
+                    // — without trimming the top padding it leaves a wide
+                    // gap that makes the section header feel disconnected
+                    // from the search trigger.
+                    const isFirstSep = idx === 0
                     return (
-                      <Link
-                        key={acc.id}
-                        to={`/accounts/${acc.id}`}
-                        onClick={() => setSidebarOpen(false)}
-                        className="flex items-center justify-between px-3 py-1.5 rounded-lg text-xs text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all"
+                      <div
+                        key={`sep-${idx}`}
+                        className={cn(isFirstSep ? 'pt-1 pb-1 px-3' : 'pt-3 pb-1 px-3')}
                       >
-                        <div className="truncate min-w-0">
-                          <span className="block truncate font-medium">{getAccountName(acc)}</span>
-                          <span className="block text-[10px] text-sidebar-muted/60">
-                            {t(`accounts.type${typeKey}`)}
-                          </span>
-                        </div>
-                        <div className="text-right shrink-0 ml-2">
-                          <span className={`block tabular-nums font-medium text-xs ${balance < 0 ? 'text-rose-400' : 'text-sidebar-foreground'}`}>
-                            {mask(formatCurrency(balance, acc.currency, locale))}
-                          </span>
-                        </div>
-                      </Link>
+                        <span className="text-[10px] uppercase tracking-[0.12em] font-semibold text-sidebar-muted/50">
+                          {t(item.labelKey)}
+                        </span>
+                      </div>
                     )
-                  })}
-                  {visibleAccounts.length > 3 && (
-                    <button
-                      onClick={() => setAccountsShowAll(!accountsShowAll)}
-                      className="w-full px-3 py-1.5 text-[11px] font-medium text-sidebar-muted/70 hover:text-sidebar-foreground transition-colors text-center"
+                  }
+
+                  const isActive =
+                    item.path === '/'
+                      ? location.pathname === '/'
+                      : location.pathname.startsWith(item.path)
+                  const Icon = item.icon
+                  return (
+                    <Link
+                      key={item.key}
+                      to={item.path}
+                      data-tour={`nav-${item.key}`}
+                      onClick={() => setSidebarOpen(false)}
+                      className={cn(
+                        'flex items-center gap-3 text-[13px] font-medium transition-all rounded-lg px-3 py-2',
+                        isActive
+                          ? 'bg-primary/[0.08] text-primary border-l-[3px] border-primary pl-[9px]'
+                          : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground',
+                      )}
                     >
-                      {accountsShowAll
-                        ? t('common.showLess', { defaultValue: 'Show less' })
-                        : t('common.showMore', {
-                            count: visibleAccounts.length - 3,
-                            defaultValue: `+${visibleAccounts.length - 3} more`,
-                          })}
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+                      <Icon
+                        size={17}
+                        className={cn('shrink-0', isActive ? 'text-primary' : 'text-sidebar-muted')}
+                      />
+                      <span>{t(`nav.${item.key}`)}</span>
+                    </Link>
+                  )
+                })}
+            </nav>
+
+            {/* Account list in sidebar */}
+            {allAccounts.length > 0 && (
+              <div className="px-3 pb-2 mt-2">
+                <button
+                  onClick={() => setAccountsExpanded(!accountsExpanded)}
+                  className="flex items-center justify-between w-full px-3 py-2 hover:text-sidebar-foreground transition-colors"
+                >
+                  <span className="text-[11px] uppercase tracking-[0.12em] font-semibold text-sidebar-muted">
+                    {t('accounts.title')}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`tabular-nums font-medium text-xs ${totalBalance < 0 ? 'text-rose-400' : 'text-sidebar-muted'}`}
+                    >
+                      {mask(formatCurrency(totalBalance, userCurrency, locale))}
+                    </span>
+                    <ChevronRight
+                      size={12}
+                      className={cn(
+                        'text-sidebar-muted transition-transform',
+                        accountsExpanded && 'rotate-90',
+                      )}
+                    />
+                  </div>
+                </button>
+                {accountsExpanded && (
+                  <div className="mt-1 space-y-0.5">
+                    {[...visibleAccounts]
+                      .sort(
+                        (a, b) =>
+                          Math.abs(Number(b.current_balance)) - Math.abs(Number(a.current_balance)),
+                      )
+                      .slice(0, accountsShowAll ? visibleAccounts.length : 3)
+                      .map((acc) => {
+                        const balance = Number(acc.current_balance) || 0
+                        const typeKey = acc.type
+                          .replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())
+                          .replace(/^./, (c) => c.toUpperCase())
+
+                        return (
+                          <Link
+                            key={acc.id}
+                            to={`/accounts/${acc.id}`}
+                            onClick={() => setSidebarOpen(false)}
+                            className="flex items-center justify-between px-3 py-1.5 rounded-lg text-xs text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground transition-all"
+                          >
+                            <div className="truncate min-w-0">
+                              <span className="block truncate font-medium">
+                                {getAccountName(acc)}
+                              </span>
+                              <span className="block text-[10px] text-sidebar-muted/60">
+                                {t(`accounts.type${typeKey}`)}
+                              </span>
+                            </div>
+                            <div className="text-right shrink-0 ml-2">
+                              <span
+                                className={`block tabular-nums font-medium text-xs ${balance < 0 ? 'text-rose-400' : 'text-sidebar-foreground'}`}
+                              >
+                                {mask(formatCurrency(balance, acc.currency, locale))}
+                              </span>
+                            </div>
+                          </Link>
+                        )
+                      })}
+                    {visibleAccounts.length > 3 && (
+                      <button
+                        onClick={() => setAccountsShowAll(!accountsShowAll)}
+                        className="w-full px-3 py-1.5 text-[11px] font-medium text-sidebar-muted/70 hover:text-sidebar-foreground transition-colors text-center"
+                      >
+                        {accountsShowAll
+                          ? t('common.showLess', { defaultValue: 'Show less' })
+                          : t('common.showMore', {
+                              count: visibleAccounts.length - 3,
+                              defaultValue: `+${visibleAccounts.length - 3} more`,
+                            })}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <UpdateAvailableBanner onOpen={() => setUpdateDialogOpen(true)} />
@@ -500,10 +500,7 @@ export function AppLayout() {
           </div>
 
           <div className="px-3 pb-3 pt-1">
-            <div
-              className="text-[11px] leading-4 text-sidebar-muted/70 text-center"
-              role="note"
-            >
+            <div className="text-[11px] leading-4 text-sidebar-muted/70 text-center" role="note">
               <span className="sr-only">{versionA11yLabel}</span>
               <span aria-hidden="true" className="block break-all line-clamp-2">
                 {t('app.versionLabel', { version: APP_VERSION })}
@@ -529,23 +526,14 @@ export function AppLayout() {
         onClose={() => setChangePasswordOpen(false)}
       />
       <BackupDialog open={backupOpen} onClose={() => setBackupOpen(false)} />
-      <TwoFactorSetup
-        open={twoFactorOpen}
-        onClose={() => setTwoFactorOpen(false)}
-      />
-      <PasskeyManagementDialog
-        open={passkeysOpen}
-        onClose={() => setPasskeysOpen(false)}
-      />
+      <TwoFactorSetup open={twoFactorOpen} onClose={() => setTwoFactorOpen(false)} />
+      <PasskeyManagementDialog open={passkeysOpen} onClose={() => setPasskeysOpen(false)} />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       {/* Slide-over global chat — opened from the sidebar pill or via
           ⌘J. The previous floating bottom-right button was removed
           since the entry point now lives in the sidebar next to ⌘K. */}
       {chatAvailable && <GlobalChatPanel open={chatOpen} onOpenChange={setChatOpen} />}
-      <UpdateAvailableDialog
-        open={updateDialogOpen}
-        onClose={() => setUpdateDialogOpen(false)}
-      />
+      <UpdateAvailableDialog open={updateDialogOpen} onClose={() => setUpdateDialogOpen(false)} />
     </div>
   )
 }
@@ -577,7 +565,11 @@ function UserMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="relative h-8 w-8 rounded-full p-0" aria-label={t('common.userMenu')}>
+        <Button
+          variant="ghost"
+          className="relative h-8 w-8 rounded-full p-0"
+          aria-label={t('common.userMenu')}
+        >
           <Avatar className="h-8 w-8">
             <AvatarFallback
               className={
@@ -594,49 +586,31 @@ function UserMenu({
       <DropdownMenuContent align="end">
         {isAdmin && (
           <>
-            <DropdownMenuItem
-              onClick={() => nav('/admin')}
-              className="flex items-center gap-2"
-            >
+            <DropdownMenuItem onClick={() => nav('/admin')} className="flex items-center gap-2">
               <Shield size={14} />
               {t('nav.groupAdmin')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
           </>
         )}
-        <DropdownMenuItem
-          onClick={onChangePassword}
-          className="flex items-center gap-2"
-        >
+        <DropdownMenuItem onClick={onChangePassword} className="flex items-center gap-2">
           <KeyRound size={14} />
           {t('auth.changePassword')}
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={onTwoFactor}
-          className="flex items-center gap-2"
-        >
+        <DropdownMenuItem onClick={onTwoFactor} className="flex items-center gap-2">
           <ShieldCheck size={14} />
           {t('auth.twoFactorTitle')}
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={onPasskeys}
-          className="flex items-center gap-2"
-        >
+        <DropdownMenuItem onClick={onPasskeys} className="flex items-center gap-2">
           <Fingerprint size={14} />
           {t('auth.passkeysTitle')}
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={onBackup}
-          className="flex items-center gap-2"
-        >
+        <DropdownMenuItem onClick={onBackup} className="flex items-center gap-2">
           <HardDriveDownload size={14} />
           {t('backup.button')}
         </DropdownMenuItem>
         {agentsEnabled && (
-          <DropdownMenuItem
-            onClick={() => nav('/agents')}
-            className="flex items-center gap-2"
-          >
+          <DropdownMenuItem onClick={() => nav('/agents')} className="flex items-center gap-2">
             <Sparkles size={14} />
             {t('nav.aiAgents')}
           </DropdownMenuItem>
@@ -659,99 +633,83 @@ function UserMenu({
                 className="flex items-center gap-2"
               >
                 <span className="flex-1">Русский</span>
-                {currentLang === 'ru' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'ru' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => i18n.changeLanguage('de')}
                 className="flex items-center gap-2"
               >
                 <span className="flex-1">Deutsch</span>
-                {currentLang === 'de' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'de' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => i18n.changeLanguage('uk')}
                 className="flex items-center gap-2"
               >
                 <span className="flex-1">Українська</span>
-                {currentLang === 'uk' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'uk' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => i18n.changeLanguage('pt-BR')}
                 className="flex items-center gap-2"
               >
                 <span className="flex-1">Português (BR)</span>
-                {currentLang === 'pt-BR' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'pt-BR' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => i18n.changeLanguage('pt-PT')}
                 className="flex items-center gap-2"
               >
                 <span className="flex-1">Português (PT)</span>
-                {currentLang === 'pt-PT' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'pt-PT' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => i18n.changeLanguage('en')}
                 className="flex items-center gap-2"
               >
                 <span className="flex-1">English</span>
-                {currentLang === 'en' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'en' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => i18n.changeLanguage('es')}
                 className="flex items-center gap-2"
               >
                 <span className="flex-1">Español</span>
-                {currentLang === 'es' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'es' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => i18n.changeLanguage('pl')}
                 className="flex items-center gap-2"
               >
                 <span className="flex-1">Polski</span>
-                {currentLang === 'pl' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'pl' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => i18n.changeLanguage('it')}
                 className="flex items-center gap-2"
               >
                 <span className="flex-1">Italiano</span>
-                {currentLang === 'it' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'it' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => i18n.changeLanguage('fr')}
                 className="flex items-center gap-2"
               >
                 <span className="flex-1">Français</span>
-                {currentLang === 'fr' && (
-                  <Check size={13} className="text-primary" />
-                )}
+                {currentLang === 'fr' && <Check size={13} className="text-primary" />}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => i18n.changeLanguage('nl')}
+                className="flex items-center gap-2"
+              >
+                <span className="flex-1">Nederlands</span>
+                {currentLang === 'nl' && <Check size={13} className="text-primary" />}
               </DropdownMenuItem>
             </DropdownMenuSubContent>
           </DropdownMenuPortal>
         </DropdownMenuSub>
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onClick={logout}
-          className="text-rose-600 focus:text-rose-600"
-        >
+        <DropdownMenuItem onClick={logout} className="text-rose-600 focus:text-rose-600">
           {t('auth.logout')}
         </DropdownMenuItem>
       </DropdownMenuContent>
