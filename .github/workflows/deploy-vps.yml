@@ -37,7 +37,9 @@ jobs:
     environment: production
     env:
       SECURO_PATH: /opt/securo
-      DEPLOY_SHA: ${{ inputs.ref || github.event.workflow_run.head_sha }}
+      # On a manual run, github.sha is the commit selected by --ref. This
+      # avoids passing an empty shell argument through SSH when ref is blank.
+      DEPLOY_SHA: ${{ inputs.ref || github.event.workflow_run.head_sha || github.sha }}
 
     steps:
       - name: Configure the dedicated deployment SSH identity
@@ -87,6 +89,17 @@ jobs:
           cd "$securo_path"
           docker compose -f docker-compose.prod.yml pull
           docker compose -f docker-compose.prod.yml up -d --remove-orphans
-          curl --fail --silent --show-error --retry 12 --retry-connrefused \
-            --retry-delay 2 http://127.0.0.1:8000/api/health
+          # The first boot applies all database migrations before Uvicorn is
+          # ready. Retry every transient curl error, not only connection
+          # refusal, while still failing the deployment after a bounded wait.
+          for attempt in {1..18}; do
+            if curl --fail --silent --show-error \
+              http://127.0.0.1:8000/api/health; then
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "Securo health check did not succeed after 36 seconds." >&2
+          exit 1
           REMOTE
