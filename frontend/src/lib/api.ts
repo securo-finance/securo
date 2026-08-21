@@ -36,6 +36,9 @@ import type {
   WorkspaceRole,
   Asset,
   AssetGroup,
+  AssetImportPreview,
+  AssetImportResult,
+  AssetOrderImport,
   AssetTransaction,
   AssetValue,
   MarketSymbolMatch,
@@ -455,6 +458,7 @@ export const transactions = {
     include_opening_balance?: boolean
     exclude_transfers?: boolean
     user_pnl_only?: boolean
+    exclude_ignored?: boolean
     tags?: string[]
     min_amount?: number
     max_amount?: number
@@ -646,6 +650,7 @@ export const transactions = {
     to?: string
     q?: string
     tags?: string[]
+    exclude_ignored?: boolean
     transaction_ids?: string[]
   }): Promise<void> => {
     const { data } = await api.get('/transactions/export', {
@@ -1138,6 +1143,38 @@ export const assets = {
     const { data } = await api.post('/assets/buy', tx)
     return data
   },
+  previewImport: async (
+    file: File,
+    options?: { column_mapping?: Record<string, string>; date_format?: string; group_id?: string | null },
+  ): Promise<AssetImportPreview> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    if (options?.date_format) formData.append('date_format', options.date_format)
+    if (options?.group_id) formData.append('group_id', options.group_id)
+    if (options?.column_mapping && Object.keys(options.column_mapping).length > 0) {
+      formData.append('column_mapping', JSON.stringify(options.column_mapping))
+    }
+    const { data } = await api.post('/assets/import/preview', formData)
+    return data
+  },
+  importOrders: async (
+    orders: AssetOrderImport[],
+    group_id?: string | null,
+  ): Promise<AssetImportResult> => {
+    const { data } = await api.post('/assets/import', { orders, group_id: group_id || null })
+    return data
+  },
+  importTemplate: async (): Promise<void> => {
+    const { data } = await api.get('/assets/import/template', { responseType: 'blob' })
+    const url = URL.createObjectURL(new Blob([data], { type: 'text/csv;charset=utf-8;' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'securo-asset-orders.csv'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  },
 }
 
 // Asset Groups ("wallets")
@@ -1247,8 +1284,17 @@ export const settings = {
 
 // Backup
 export const backup = {
-  download: async (): Promise<void> => {
-    const { data } = await api.get('/export/backup', { responseType: 'blob' })
+  /**
+   * Download the workspace archive, encrypted with AES-256 when a password is
+   * given. POST rather than GET so the password stays out of browser history
+   * and proxy logs.
+   */
+  download: async (password?: string): Promise<void> => {
+    const { data } = await api.post(
+      '/export/backup',
+      password ? { password } : {},
+      { responseType: 'blob' },
+    )
     const blob = new Blob([data], { type: 'application/zip' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')

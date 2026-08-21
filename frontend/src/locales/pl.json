@@ -384,6 +384,11 @@
     "typeIncome": "Przychód",
     "statusPending": "Oczekująca",
     "statusPosted": "Zaksięgowana",
+    "hideIgnored": "Ukryj ignorowane",
+    "ignoredRows": "Ignorowane transakcje",
+    "ignoredShow": "Pokaż",
+    "ignoredHide": "Ukryj",
+    "ignoredHiddenValue": "Ukryte",
     "statusCleared": "Rozliczona",
     "sortAsc": "Sortuj rosnąco",
     "sortDesc": "Sortuj malejąco",
@@ -929,6 +934,10 @@
     "andOp": "ORAZ",
     "orOp": "LUB",
     "addCondition": "Dodaj warunek",
+    "addGroup": "Dodaj grupę",
+    "addGroupHint": "Grupa łączy własne warunki operatorem I lub LUB",
+    "group": "Grupa",
+    "removeGroup": "Usuń grupę",
     "blankConditionValue": "Każdy warunek wymaga wartości. Pusty warunek pasowałby do wszystkich transakcji.",
     "addAction": "Dodaj akcję",
     "setCategory": "Ustaw kategorię",
@@ -1103,6 +1112,58 @@
     "mapPayee": "Kolumna odbiorcy",
     "mapExternalId": "Kolumna ID transakcji",
     "mapNotes": "Kolumna notatek"
+  },
+  "assetImport": {
+    "title": "Importuj zlecenia inwestycyjne",
+    "action": "Importuj zlecenia",
+    "choose": "Wybierz plik CSV",
+    "chooseHint": "Ticker, data, ilość i cena są wymagane. Ujemna ilość oznacza sprzedaż.",
+    "downloadTemplate": "Pobierz szablon",
+    "wallet": "Portfel",
+    "noWallet": "Bez portfela",
+    "reading": "Wczytywanie pliku…",
+    "mapPrompt": "Nie rozpoznaliśmy kolumn. Przypisz każde pole do kolumny z pliku.",
+    "ignoreColumn": "Pomiń",
+    "previewError": "Nie udało się odczytać pliku",
+    "importError": "Nie udało się zaimportować zleceń",
+    "imported": "Zaimportowano {{count}} zleceń",
+    "importing": "Importowanie…",
+    "confirm": "Importuj {{count}} zleceń",
+    "summaryOrders": "{{count}} zleceń gotowych",
+    "summaryHoldings": "utworzono {{created}} pozycji, dopasowano {{matched}}",
+    "summarySkipped": "{{count}} już zaimportowanych",
+    "rowsSkipped": "{{count}} wierszy zostanie pominiętych",
+    "rowError": "Wiersz {{row}} ({{ticker}}): {{reason}}",
+    "moreErrors": "i {{count}} więcej",
+    "moreRows": "i {{count}} zleceń więcej",
+    "field": {
+      "ticker": "Ticker",
+      "date": "Data",
+      "quantity": "Ilość",
+      "price": "Cena",
+      "fee": "Prowizja",
+      "kind": "Kupno/Sprzedaż",
+      "currency": "Waluta",
+      "notes": "Notatki"
+    },
+    "walletWarningTitle": "Już w Twoim portfelu",
+    "warning": {
+      "exists_in_other_wallet": "{{ticker}} znajduje się już w {{wallet}}. Import tutaj utworzy drugą pozycję.",
+      "orders_already_in_other_wallet": "{{ticker}}: te same zlecenia są już w {{wallet}}. Import tutaj policzyłby walory dwa razy."
+    },
+    "kind": {
+      "buy": "Kupno",
+      "sell": "Sprzedaż"
+    },
+    "reason": {
+      "missing_ticker": "brak tickera",
+      "invalid_date": "nieczytelna data",
+      "invalid_quantity": "nieczytelna ilość",
+      "invalid_price": "nieczytelna cena",
+      "invalid_kind": "nierozpoznane kupno/sprzedaż",
+      "unknown_ticker": "ticker nieznany dostawcy notowań",
+      "oversell": "sprzedaż większa niż pozycja"
+    }
   },
   "assets": {
     "title": "Aktywa",
@@ -1414,6 +1475,8 @@
       "pan": "PAN",
       "npwp": "NPWP",
       "ph_tin": "TIN",
+      "vn_mst": "MST",
+      "sg_uen": "UEN",
       "uscc": "USCC"
     },
     "otherCountries": "Inne kraje",
@@ -1598,7 +1661,14 @@
     "button": "Kopia zapasowa",
     "downloading": "Pobieranie...",
     "success": "Pomyślnie pobrano kopię zapasową",
-    "error": "Nie udało się pobrać kopii zapasowej"
+    "error": "Nie udało się pobrać kopii zapasowej",
+    "dialogTitle": "Pobierz kopię zapasową",
+    "dialogDescription": "Zip ze wszystkimi kontami, transakcjami i regułami tego workspace, w czystym JSON.",
+    "passwordLabel": "Hasło (opcjonalne)",
+    "passwordPlaceholder": "Zostaw puste, aby pobrać kopię bez szyfrowania",
+    "passwordTooShort": "Użyj co najmniej {{min}} znaków",
+    "encryptionNote": "Archiwum jest szyfrowane AES-256 i otwiera się w dowolnym programie do archiwów. Securo nie przechowuje tego hasła i bez niego nie odzyska pliku.",
+    "successEncrypted": "Pomyślnie pobrano zaszyfrowaną kopię zapasową"
   },
   "update": {
     "title": "Aktualizacja serwera",

@@ -375,6 +375,11 @@
     "typeIncome": "Revenu",
     "statusPending": "En attente",
     "statusPosted": "Comptabilisée",
+    "hideIgnored": "Masquer les ignorées",
+    "ignoredRows": "Transactions ignorées",
+    "ignoredShow": "Afficher",
+    "ignoredHide": "Masquer",
+    "ignoredHiddenValue": "Masquées",
     "statusCleared": "Rapprochée",
     "sortAsc": "Trier par ordre croissant",
     "sortDesc": "Trier par ordre décroissant",
@@ -869,6 +874,10 @@
     "andOp": "ET",
     "orOp": "OU",
     "addCondition": "Ajouter une condition",
+    "addGroup": "Ajouter un groupe",
+    "addGroupHint": "Un groupe combine ses propres conditions avec ET ou OU",
+    "group": "Groupe",
+    "removeGroup": "Supprimer le groupe",
     "blankConditionValue": "Chaque condition nécessite une valeur. Une condition vide correspondrait à toutes les transactions.",
     "addAction": "Ajouter une action",
     "setCategory": "Définir la catégorie",
@@ -1028,6 +1037,58 @@
     "mapPayee": "Colonne du bénéficiaire",
     "mapExternalId": "Colonne d'ID de transaction",
     "mapNotes": "Colonne des notes"
+  },
+  "assetImport": {
+    "title": "Importer des ordres d'investissement",
+    "action": "Importer des ordres",
+    "choose": "Choisir un fichier CSV",
+    "chooseHint": "Ticker, date, quantité et prix sont obligatoires. Une quantité négative est lue comme une vente.",
+    "downloadTemplate": "Télécharger le modèle",
+    "wallet": "Portefeuille",
+    "noWallet": "Aucun portefeuille",
+    "reading": "Lecture du fichier…",
+    "mapPrompt": "Impossible d'identifier les colonnes. Associez chaque champ à une colonne de votre fichier.",
+    "ignoreColumn": "Ignorer",
+    "previewError": "Impossible de lire ce fichier",
+    "importError": "Impossible d'importer les ordres",
+    "imported": "{{count}} ordres importés",
+    "importing": "Importation…",
+    "confirm": "Importer {{count}} ordres",
+    "summaryOrders": "{{count}} ordres prêts",
+    "summaryHoldings": "{{created}} actifs créés, {{matched}} trouvés",
+    "summarySkipped": "{{count}} déjà importés",
+    "rowsSkipped": "{{count}} lignes seront ignorées",
+    "rowError": "Ligne {{row}} ({{ticker}}) : {{reason}}",
+    "moreErrors": "et {{count}} de plus",
+    "moreRows": "et {{count}} ordres de plus",
+    "field": {
+      "ticker": "Ticker",
+      "date": "Date",
+      "quantity": "Quantité",
+      "price": "Prix",
+      "fee": "Frais",
+      "kind": "Achat/Vente",
+      "currency": "Devise",
+      "notes": "Notes"
+    },
+    "walletWarningTitle": "Déjà dans votre portefeuille",
+    "warning": {
+      "exists_in_other_wallet": "{{ticker}} est déjà détenu dans {{wallet}}. Importer ici crée une seconde position.",
+      "orders_already_in_other_wallet": "{{ticker}} : ces mêmes ordres sont déjà dans {{wallet}}. Importer ici compterait les titres deux fois."
+    },
+    "kind": {
+      "buy": "Achat",
+      "sell": "Vente"
+    },
+    "reason": {
+      "missing_ticker": "aucun ticker",
+      "invalid_date": "date illisible",
+      "invalid_quantity": "quantité illisible",
+      "invalid_price": "prix illisible",
+      "invalid_kind": "achat/vente non reconnu",
+      "unknown_ticker": "ticker introuvable chez le fournisseur de cours",
+      "oversell": "vente supérieure à la position"
+    }
   },
   "assets": {
     "title": "Actifs",
@@ -1333,6 +1394,8 @@
       "pan": "PAN",
       "npwp": "NPWP",
       "ph_tin": "TIN",
+      "vn_mst": "MST",
+      "sg_uen": "UEN",
       "uscc": "USCC"
     },
     "otherCountries": "Autres pays",
@@ -1508,7 +1571,14 @@
     "button": "Sauvegarde",
     "downloading": "Téléchargement...",
     "success": "Sauvegarde téléchargée avec succès",
-    "error": "Échec du téléchargement de la sauvegarde"
+    "error": "Échec du téléchargement de la sauvegarde",
+    "dialogTitle": "Télécharger la sauvegarde",
+    "dialogDescription": "Un zip contenant tous les comptes, transactions et règles de cet espace, en JSON brut.",
+    "passwordLabel": "Mot de passe (facultatif)",
+    "passwordPlaceholder": "Laissez vide pour une sauvegarde non chiffrée",
+    "passwordTooShort": "Utilisez au moins {{min}} caractères",
+    "encryptionNote": "L'archive est chiffrée en AES-256 et s'ouvre avec n'importe quel logiciel d'archivage. Securo ne conserve pas ce mot de passe et ne peut pas récupérer le fichier sans lui.",
+    "successEncrypted": "Sauvegarde chiffrée téléchargée avec succès"
   },
   "update": {
     "title": "Mise à jour du serveur",

@@ -61,6 +61,8 @@ const CURRENCY_LOCALE: Record<string, string> = {
   PHP: 'en-PH',
   UAH: 'uk-UA',
   NZD: 'en-NZ',
+  VND: 'vi-VN',
+  SGD: 'en-SG',
 }
 
 /**

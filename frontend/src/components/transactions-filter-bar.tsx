@@ -9,6 +9,7 @@ import {
   Check,
   ChevronRight,
   Coins,
+  EyeClosed,
   ListChecks,
   ListFilter,
   Search,
@@ -68,6 +69,8 @@ interface TransactionsFilterBarProps {
   onTypeChange: (value: string) => void
   filterStatus: string
   onStatusChange: (value: string) => void
+  hideIgnored: boolean
+  onHideIgnoredChange: (value: boolean) => void
   filterFrom: string
   filterTo: string
   onDateRangeChange: (from: string, to: string) => void
@@ -105,6 +108,8 @@ export function TransactionsFilterBar({
   onTypeChange,
   filterStatus,
   onStatusChange,
+  hideIgnored,
+  onHideIgnoredChange,
   filterFrom,
   filterTo,
   onDateRangeChange,
@@ -197,6 +202,7 @@ export function TransactionsFilterBar({
     !!filterGroupId ||
     !!filterType ||
     !!filterStatus ||
+    hideIgnored ||
     !!filterFrom ||
     !!filterTo ||
     !!filterMinAmount ||
@@ -426,6 +432,7 @@ export function TransactionsFilterBar({
                   group: selectedGroup?.name,
                   type: typeLabel,
                   status: statusLabel,
+                  ignored: hideIgnored ? t('transactions.ignoredHide') : undefined,
                   date: dateLabel,
                   amount: amountLabel,
                 }}
@@ -439,6 +446,8 @@ export function TransactionsFilterBar({
                 onTypeChange={onTypeChange}
                 status={filterStatus}
                 onStatusChange={onStatusChange}
+                hideIgnored={hideIgnored}
+                onHideIgnoredChange={onHideIgnoredChange}
                 onDateRangeChange={onDateRangeChange}
                 onAmountRangeChange={onAmountRangeChange}
                 onApplyAmountRange={applyAmountRange}
@@ -796,6 +805,20 @@ export function TransactionsFilterBar({
                   </DropdownMenuPortal>
                 </DropdownMenuSub>
 
+                {/* Ignored rows: a visibility switch rather than a filter
+                    value, so it reads as one line instead of a submenu. */}
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault()
+                    onHideIgnoredChange(!hideIgnored)
+                  }}
+                  className="gap-2 text-[13px]"
+                >
+                  <EyeClosed size={14} className="text-muted-foreground" />
+                  <span className="flex-1">{t('transactions.hideIgnored')}</span>
+                  {hideIgnored && <Check size={13} className="text-primary" />}
+                </DropdownMenuItem>
+
                 {/* Date range submenu with presets */}
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger className="gap-2 text-[13px]">
@@ -1057,6 +1080,14 @@ export function TransactionsFilterBar({
                 label={t('transactions.status')}
                 value={statusLabel}
                 onRemove={() => onStatusChange('')}
+              />
+            )}
+            {hideIgnored && (
+              <FilterChip
+                icon={<EyeClosed size={12} />}
+                label={t('transactions.hideIgnored')}
+                value={t('transactions.ignoredHiddenValue')}
+                onRemove={() => onHideIgnoredChange(false)}
               />
             )}
             {dateLabel && (

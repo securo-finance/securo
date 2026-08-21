@@ -118,6 +118,22 @@ OIDC_REDIRECT_URI=https://your-securo-host/api/auth/oidc/callback
 
 New OIDC users are auto-provisioned by default (`OIDC_AUTO_REGISTER=true`) using verified email addresses. Set `OIDC_AUTO_REGISTER=false` to allow only existing Securo users whose email matches the provider claim.
 
+### Linking existing accounts
+
+An account that already exists in Securo (created with a password) is never linked to an OIDC identity automatically, so the first SSO login of an existing user is rejected by default. `OIDC_EXISTING_USER_LINK_MODE` controls that:
+
+```
+OIDC_EXISTING_USER_LINK_MODE=disabled
+```
+
+| Value | Behavior |
+|-------|----------|
+| `disabled` (default) | Never link. Existing accounts must keep using password login. |
+| `verified_email` | Link the existing account when the provider sends `email_verified=true` for the same email. |
+| `email` | Link on a matching email alone, even without `email_verified`. |
+
+Use `verified_email` to move existing users to SSO without recreating their accounts and data. Only pick `email` if you trust your provider to own every address it asserts, since anyone able to set an email there could claim the matching Securo account. An OIDC identity already linked to another account is always rejected, in every mode.
+
 ### Optional OIDC role sync
 
 Securo can also synchronize provider roles/groups into its built-in permissions when `OIDC_SYNC_ROLES=true`. The default claim is `groups`, which works well with Authentik group mappings and Pocket ID role/group assignments.

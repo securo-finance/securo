@@ -375,6 +375,11 @@
     "typeIncome": "Income",
     "statusPending": "Pending",
     "statusPosted": "Posted",
+    "hideIgnored": "Hide ignored",
+    "ignoredRows": "Ignored transactions",
+    "ignoredShow": "Show",
+    "ignoredHide": "Hide",
+    "ignoredHiddenValue": "Hidden",
     "statusCleared": "Cleared",
     "sortAsc": "Sort ascending",
     "sortDesc": "Sort descending",
@@ -869,6 +874,10 @@
     "andOp": "AND",
     "orOp": "OR",
     "addCondition": "Add condition",
+    "addGroup": "Add group",
+    "addGroupHint": "A group joins its own conditions with AND or OR",
+    "group": "Group",
+    "removeGroup": "Remove group",
     "blankConditionValue": "Every condition needs a value. A blank one would match every transaction.",
     "addAction": "Add action",
     "setCategory": "Set category",
@@ -1028,6 +1037,58 @@
     "mapPayee": "Payee column",
     "mapExternalId": "Transaction ID column",
     "mapNotes": "Notes column"
+  },
+  "assetImport": {
+    "title": "Import investment orders",
+    "action": "Import orders",
+    "choose": "Choose a CSV file",
+    "chooseHint": "Ticker, date, quantity and price are required. A negative quantity is read as a sale.",
+    "downloadTemplate": "Download template",
+    "wallet": "Wallet",
+    "noWallet": "No wallet",
+    "reading": "Reading the file…",
+    "mapPrompt": "We could not tell which column is which. Point each field at a column from your file.",
+    "ignoreColumn": "Ignore",
+    "previewError": "Could not read that file",
+    "importError": "Could not import the orders",
+    "imported": "{{count}} orders imported",
+    "importing": "Importing…",
+    "confirm": "Import {{count}} orders",
+    "summaryOrders": "{{count}} orders ready",
+    "summaryHoldings": "{{created}} holdings created, {{matched}} matched",
+    "summarySkipped": "{{count}} already imported",
+    "rowsSkipped": "{{count}} rows will be skipped",
+    "rowError": "Row {{row}} ({{ticker}}): {{reason}}",
+    "moreErrors": "and {{count}} more",
+    "moreRows": "and {{count}} more orders",
+    "field": {
+      "ticker": "Ticker",
+      "date": "Date",
+      "quantity": "Quantity",
+      "price": "Price",
+      "fee": "Fee",
+      "kind": "Buy/Sell",
+      "currency": "Currency",
+      "notes": "Notes"
+    },
+    "walletWarningTitle": "Already in your portfolio",
+    "warning": {
+      "exists_in_other_wallet": "{{ticker}} is already held in {{wallet}}. Importing here creates a second position.",
+      "orders_already_in_other_wallet": "{{ticker}}: these same orders are already in {{wallet}}. Importing here would count the shares twice."
+    },
+    "kind": {
+      "buy": "Buy",
+      "sell": "Sell"
+    },
+    "reason": {
+      "missing_ticker": "no ticker",
+      "invalid_date": "unreadable date",
+      "invalid_quantity": "unreadable quantity",
+      "invalid_price": "unreadable price",
+      "invalid_kind": "unrecognised buy/sell value",
+      "unknown_ticker": "ticker not found by the price provider",
+      "oversell": "selling more units than the position holds"
+    }
   },
   "assets": {
     "title": "Assets",
@@ -1333,6 +1394,8 @@
       "pan": "PAN",
       "npwp": "NPWP",
       "ph_tin": "TIN",
+      "vn_mst": "MST",
+      "sg_uen": "UEN",
       "uscc": "USCC"
     },
     "otherCountries": "Other countries",
@@ -1508,7 +1571,14 @@
     "button": "Backup",
     "downloading": "Downloading...",
     "success": "Backup downloaded successfully",
-    "error": "Failed to download backup"
+    "error": "Failed to download backup",
+    "dialogTitle": "Download backup",
+    "dialogDescription": "A zip with every account, transaction and rule in this workspace, as plain JSON.",
+    "passwordLabel": "Password (optional)",
+    "passwordPlaceholder": "Leave empty for an unencrypted backup",
+    "passwordTooShort": "Use at least {{min}} characters",
+    "encryptionNote": "The archive is encrypted with AES-256 and opens in any standard archiver. Securo does not store this password and cannot recover the file without it.",
+    "successEncrypted": "Encrypted backup downloaded successfully"
   },
   "update": {
     "title": "Server update",

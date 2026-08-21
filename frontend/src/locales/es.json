@@ -375,6 +375,11 @@
     "typeIncome": "Ingreso",
     "statusPending": "Pendiente",
     "statusPosted": "Registrada",
+    "hideIgnored": "Ocultar ignoradas",
+    "ignoredRows": "Transacciones ignoradas",
+    "ignoredShow": "Mostrar",
+    "ignoredHide": "Ocultar",
+    "ignoredHiddenValue": "Ocultas",
     "statusCleared": "Conciliada",
     "sortAsc": "Orden ascendente",
     "sortDesc": "Orden descendente",
@@ -869,6 +874,10 @@
     "andOp": "Y",
     "orOp": "O",
     "addCondition": "Agregar condición",
+    "addGroup": "Agregar grupo",
+    "addGroupHint": "Un grupo une sus propias condiciones con Y u O",
+    "group": "Grupo",
+    "removeGroup": "Eliminar grupo",
     "blankConditionValue": "Cada condición necesita un valor. Una condición en blanco coincidiría con todas las transacciones.",
     "addAction": "Agregar acción",
     "setCategory": "Establecer categoría",
@@ -1028,6 +1037,58 @@
     "mapPayee": "Columna de beneficiario",
     "mapExternalId": "Columna de ID de transacción",
     "mapNotes": "Columna de notas"
+  },
+  "assetImport": {
+    "title": "Importar órdenes de inversión",
+    "action": "Importar órdenes",
+    "choose": "Elegir un archivo CSV",
+    "chooseHint": "Ticker, fecha, cantidad y precio son obligatorios. Una cantidad negativa se lee como venta.",
+    "downloadTemplate": "Descargar plantilla",
+    "wallet": "Cartera",
+    "noWallet": "Sin cartera",
+    "reading": "Leyendo el archivo…",
+    "mapPrompt": "No pudimos identificar las columnas. Asigna cada campo a una columna de tu archivo.",
+    "ignoreColumn": "Ignorar",
+    "previewError": "No se pudo leer ese archivo",
+    "importError": "No se pudieron importar las órdenes",
+    "imported": "{{count}} órdenes importadas",
+    "importing": "Importando…",
+    "confirm": "Importar {{count}} órdenes",
+    "summaryOrders": "{{count}} órdenes listas",
+    "summaryHoldings": "{{created}} activos creados, {{matched}} encontrados",
+    "summarySkipped": "{{count}} ya importadas",
+    "rowsSkipped": "{{count}} filas se omitirán",
+    "rowError": "Fila {{row}} ({{ticker}}): {{reason}}",
+    "moreErrors": "y {{count}} más",
+    "moreRows": "y {{count}} órdenes más",
+    "field": {
+      "ticker": "Ticker",
+      "date": "Fecha",
+      "quantity": "Cantidad",
+      "price": "Precio",
+      "fee": "Comisión",
+      "kind": "Compra/Venta",
+      "currency": "Moneda",
+      "notes": "Notas"
+    },
+    "walletWarningTitle": "Ya está en tu cartera",
+    "warning": {
+      "exists_in_other_wallet": "{{ticker}} ya existe en {{wallet}}. Importar aquí crea una segunda posición.",
+      "orders_already_in_other_wallet": "{{ticker}}: estas mismas órdenes ya están en {{wallet}}. Importar aquí contaría las acciones dos veces."
+    },
+    "kind": {
+      "buy": "Compra",
+      "sell": "Venta"
+    },
+    "reason": {
+      "missing_ticker": "sin ticker",
+      "invalid_date": "fecha ilegible",
+      "invalid_quantity": "cantidad ilegible",
+      "invalid_price": "precio ilegible",
+      "invalid_kind": "compra/venta no reconocida",
+      "unknown_ticker": "ticker no encontrado por el proveedor de precios",
+      "oversell": "venta mayor que la posición"
+    }
   },
   "assets": {
     "title": "Activos",
@@ -1333,6 +1394,8 @@
       "pan": "PAN",
       "npwp": "NPWP",
       "ph_tin": "TIN",
+      "vn_mst": "MST",
+      "sg_uen": "UEN",
       "uscc": "USCC"
     },
     "otherCountries": "Otros países",
@@ -1508,7 +1571,14 @@
     "button": "Copia de seguridad",
     "downloading": "Descargando...",
     "success": "Copia de seguridad descargada correctamente",
-    "error": "No se pudo descargar la copia de seguridad"
+    "error": "No se pudo descargar la copia de seguridad",
+    "dialogTitle": "Descargar copia de seguridad",
+    "dialogDescription": "Un zip con todas las cuentas, transacciones y reglas de este workspace, en JSON plano.",
+    "passwordLabel": "Contraseña (opcional)",
+    "passwordPlaceholder": "Déjalo vacío para una copia sin cifrar",
+    "passwordTooShort": "Usa al menos {{min}} caracteres",
+    "encryptionNote": "El archivo se cifra con AES-256 y se abre con cualquier compresor. Securo no guarda esta contraseña y no puede recuperar el archivo sin ella.",
+    "successEncrypted": "Copia de seguridad cifrada descargada correctamente"
   },
   "update": {
     "title": "Actualización del servidor",

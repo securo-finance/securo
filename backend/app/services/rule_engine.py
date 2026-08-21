@@ -115,11 +115,40 @@ def _match_condition(condition: dict, tx: "Transaction") -> bool:
     return False
 
 
-def evaluate_conditions(conditions_op: str, conditions: list[dict], tx: "Transaction") -> bool:
-    """Return True if the transaction matches the rule's conditions."""
+def _is_group(node: dict) -> bool:
+    """A condition list entry is a group when it carries its own condition list."""
+    return isinstance(node, dict) and isinstance(node.get("conditions"), list)
+
+
+def _match_group(group: dict, tx: "Transaction") -> bool:
+    """Evaluate one nested group: its leaves joined by the group's own operator.
+
+    Groups hold leaves only, which caps a rule at two levels. A nested group
+    would reach `_match_condition` with no `field`/`op` and evaluate to False;
+    creation rejects them, so this only guards hand-edited data.
+    """
+    conditions = group.get("conditions") or []
     if not conditions:
         return False
     results = [_match_condition(c, tx) for c in conditions]
+    if group.get("op") == "or":
+        return any(results)
+    return all(results)  # "and" is default
+
+
+def evaluate_conditions(conditions_op: str, conditions: list[dict], tx: "Transaction") -> bool:
+    """Return True if the transaction matches the rule's conditions.
+
+    Each entry is either a leaf condition (`field`/`op`/`value`) or a group that
+    joins its own leaves with its own operator, letting a rule mix AND and OR —
+    e.g. `type is debit AND (description contains UBER OR contains 99POP)`.
+    """
+    if not conditions:
+        return False
+    results = [
+        _match_group(node, tx) if _is_group(node) else _match_condition(node, tx)
+        for node in conditions
+    ]
     if conditions_op == "or":
         return any(results)
     return all(results)  # "and" is default

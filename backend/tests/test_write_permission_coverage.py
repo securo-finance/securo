@@ -71,6 +71,12 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     ("DELETE", "/api/workspaces/{workspace_id}/members/{member_user_id}"): "owner floor inside the handler",
     # Deliberate: a POST that persists nothing. See the comment on the route.
     ("POST", "/api/transactions/import/preview"): "parses an upload and returns a preview; writes nothing",
+    # Same shape for investment orders: the upload has to be a body, and the
+    # dry run only reports what an import would do.
+    ("POST", "/api/assets/import/preview"): "parses an upload and returns a preview; writes nothing",
+    # A read that has to be a POST: the backup password belongs in a body,
+    # not in a query string. Same read permission as GET /api/export/backup.
+    ("POST", "/api/export/backup"): "exports the workspace it can already read; writes nothing",
     # The agents surface, mounted only when AGENTS_ENABLED is on (the test
     # suite turns it on so these are always covered). An LLM connection is
     # the requester's own credential — scoped by `user.id`, never by

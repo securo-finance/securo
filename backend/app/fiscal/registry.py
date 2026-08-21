@@ -110,6 +110,8 @@ class TaxIdKind(str, Enum):
     PAN = "pan"
     NPWP = "npwp"
     PH_TIN = "ph_tin"
+    VN_MST = "vn_mst"
+    SG_UEN = "sg_uen"
     USCC = "uscc"
     # The escape hatch. Always offered, never validated.
     OTHER = "other"
@@ -205,6 +207,8 @@ KIND_SPECS: dict[TaxIdKind, KindSpec] = {
     TaxIdKind.PAN: _spec(TaxIdKind.PAN, "upper_alnum", "in_pan"),
     TaxIdKind.NPWP: _spec(TaxIdKind.NPWP, "digits", "id_npwp"),
     TaxIdKind.PH_TIN: _spec(TaxIdKind.PH_TIN, "digits", "ph_tin"),
+    TaxIdKind.VN_MST: _spec(TaxIdKind.VN_MST, "digits", "vn_mst"),
+    TaxIdKind.SG_UEN: _spec(TaxIdKind.SG_UEN, "upper_alnum", "sg_uen"),
     TaxIdKind.USCC: _spec(TaxIdKind.USCC, "upper_alnum", "cn_uscc"),
     TaxIdKind.OTHER: _spec(TaxIdKind.OTHER, "trim"),
 }

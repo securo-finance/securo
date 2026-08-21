@@ -375,6 +375,11 @@
     "typeIncome": "Receita",
     "statusPending": "Pendente",
     "statusPosted": "Lançada",
+    "hideIgnored": "Ocultar ignoradas",
+    "ignoredRows": "Transações ignoradas",
+    "ignoredShow": "Mostrar",
+    "ignoredHide": "Ocultar",
+    "ignoredHiddenValue": "Ocultas",
     "statusCleared": "Compensada",
     "sortAsc": "Ordem crescente",
     "sortDesc": "Ordem decrescente",
@@ -869,6 +874,10 @@
     "andOp": "E (AND)",
     "orOp": "OU (OR)",
     "addCondition": "Adicionar condição",
+    "addGroup": "Adicionar grupo",
+    "addGroupHint": "Um grupo junta suas próprias condições com E ou OU",
+    "group": "Grupo",
+    "removeGroup": "Remover grupo",
     "blankConditionValue": "Toda condição precisa de um valor. Uma condição em branco corresponderia a todas as transações.",
     "addAction": "Adicionar ação",
     "setCategory": "Definir categoria",
@@ -1028,6 +1037,58 @@
     "mapPayee": "Coluna da pessoa",
     "mapExternalId": "Coluna de ID da transação",
     "mapNotes": "Coluna de notas"
+  },
+  "assetImport": {
+    "title": "Importar ordens de investimento",
+    "action": "Importar ordens",
+    "choose": "Escolher um arquivo CSV",
+    "chooseHint": "Ativo, data, quantidade e preço são obrigatórios. Quantidade negativa é lida como venda.",
+    "downloadTemplate": "Baixar modelo",
+    "wallet": "Carteira",
+    "noWallet": "Sem carteira",
+    "reading": "Lendo o arquivo…",
+    "mapPrompt": "Não deu para identificar as colunas. Aponte cada campo para uma coluna do seu arquivo.",
+    "ignoreColumn": "Ignorar",
+    "previewError": "Não foi possível ler esse arquivo",
+    "importError": "Não foi possível importar as ordens",
+    "imported": "{{count}} ordens importadas",
+    "importing": "Importando…",
+    "confirm": "Importar {{count}} ordens",
+    "summaryOrders": "{{count}} ordens prontas",
+    "summaryHoldings": "{{created}} ativos criados, {{matched}} encontrados",
+    "summarySkipped": "{{count}} já importadas",
+    "rowsSkipped": "{{count}} linhas serão ignoradas",
+    "rowError": "Linha {{row}} ({{ticker}}): {{reason}}",
+    "moreErrors": "e mais {{count}}",
+    "moreRows": "e mais {{count}} ordens",
+    "field": {
+      "ticker": "Ativo",
+      "date": "Data",
+      "quantity": "Quantidade",
+      "price": "Preço",
+      "fee": "Taxas",
+      "kind": "Compra/Venda",
+      "currency": "Moeda",
+      "notes": "Observações"
+    },
+    "walletWarningTitle": "Já está no seu patrimônio",
+    "warning": {
+      "exists_in_other_wallet": "{{ticker}} já existe em {{wallet}}. Importar aqui cria uma segunda posição.",
+      "orders_already_in_other_wallet": "{{ticker}}: essas mesmas ordens já estão em {{wallet}}. Importar aqui contaria as cotas duas vezes."
+    },
+    "kind": {
+      "buy": "Compra",
+      "sell": "Venda"
+    },
+    "reason": {
+      "missing_ticker": "sem ativo",
+      "invalid_date": "data ilegível",
+      "invalid_quantity": "quantidade ilegível",
+      "invalid_price": "preço ilegível",
+      "invalid_kind": "compra/venda não reconhecida",
+      "unknown_ticker": "ativo não encontrado no provedor de cotações",
+      "oversell": "venda maior do que a posição"
+    }
   },
   "assets": {
     "title": "Patrimônio",
@@ -1333,6 +1394,8 @@
       "pan": "PAN",
       "npwp": "NPWP",
       "ph_tin": "TIN",
+      "vn_mst": "MST",
+      "sg_uen": "UEN",
       "uscc": "USCC"
     },
     "otherCountries": "Outros países",
@@ -1508,7 +1571,14 @@
     "button": "Backup",
     "downloading": "Baixando...",
     "success": "Backup baixado com sucesso",
-    "error": "Erro ao baixar backup"
+    "error": "Erro ao baixar backup",
+    "dialogTitle": "Baixar backup",
+    "dialogDescription": "Um zip com todas as contas, transações e regras deste workspace, em JSON puro.",
+    "passwordLabel": "Senha (opcional)",
+    "passwordPlaceholder": "Deixe em branco para um backup sem criptografia",
+    "passwordTooShort": "Use pelo menos {{min}} caracteres",
+    "encryptionNote": "O arquivo é criptografado com AES-256 e abre em qualquer compactador. O Securo não guarda essa senha e não consegue recuperar o arquivo sem ela.",
+    "successEncrypted": "Backup criptografado baixado com sucesso"
   },
   "update": {
     "title": "Atualização do servidor",

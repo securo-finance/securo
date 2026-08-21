@@ -428,6 +428,20 @@ export interface RuleCondition {
   value: string | number
 }
 
+/** A nested group of conditions joined by its own operator.
+ *
+ * Groups let a rule mix AND and OR — `type is debit AND (contains UBER OR
+ * contains 99POP)`. They hold leaf conditions only, capping rule depth at the
+ * two levels the engine evaluates and the editor exposes.
+ */
+export interface RuleConditionGroup {
+  op: 'and' | 'or'
+  conditions: RuleCondition[]
+}
+
+/** An entry of a rule's condition list: a leaf condition or one group. */
+export type RuleConditionNode = RuleCondition | RuleConditionGroup
+
 export interface RuleAction {
   op: string
   value: string
@@ -438,7 +452,7 @@ export interface Rule {
   user_id: string
   name: string
   conditions_op: 'and' | 'or'
-  conditions: RuleCondition[]
+  conditions: RuleConditionNode[]
   actions: RuleAction[]
   priority: number
   is_active: boolean
@@ -449,7 +463,7 @@ export interface Rule {
 export interface RuleExportItem {
   name: string
   conditions_op: 'and' | 'or'
-  conditions: RuleCondition[]
+  conditions: RuleConditionNode[]
   actions: RuleAction[]
   priority: number
   is_active: boolean
@@ -708,6 +722,54 @@ export interface Asset {
   total_invested: number | null
   realized_gain: number | null
   transaction_count: number
+}
+
+/** One order read from a broker CSV, before it reaches a holding. */
+export interface AssetOrderImport {
+  row: number
+  ticker: string
+  date: string
+  kind: 'buy' | 'sell'
+  quantity: number
+  price: number
+  fee: number
+  currency: string | null
+  name: string | null
+  notes: string | null
+  external_id: string | null
+}
+
+export interface AssetImportRowError {
+  row: number
+  reason: string
+  ticker: string | null
+  detail: string | null
+}
+
+export interface AssetImportWarning {
+  ticker: string
+  reason: string
+  wallet: string | null
+}
+
+export interface AssetImportPreview {
+  orders: AssetOrderImport[]
+  errors: AssetImportRowError[]
+  warnings: AssetImportWarning[]
+  csv_columns: string[]
+  parse_error: string | null
+  holdings_created: number
+  holdings_matched: number
+  skipped: number
+}
+
+export interface AssetImportResult {
+  imported: number
+  skipped: number
+  holdings_created: number
+  holdings_matched: number
+  errors: AssetImportRowError[]
+  warnings: AssetImportWarning[]
 }
 
 export interface AssetTransaction {

@@ -78,6 +78,8 @@ function parseHashtags(notes: string | null): string[] {
   return matches ?? []
 }
 
+const HIDE_IGNORED_STORAGE_KEY = 'securo.transactions.hideIgnored'
+
 export default function TransactionsPage() {
   const { t, i18n } = useTranslation()
   const [searchParams] = useSearchParams()
@@ -150,6 +152,18 @@ export default function TransactionsPage() {
   const [filterGroupId, setFilterGroupId] = useState<string>(searchParams.get('group_id') ?? '')
   const [filterType, setFilterType] = useState<string>(searchParams.get('type') ?? '')
   const [filterStatus, setFilterStatus] = useState<string>(searchParams.get('status') ?? '')
+  // Hiding ignored rows is a reading preference, not a query someone re-picks
+  // every visit, so it outlives the page the way page size and columns do. The
+  // URL still wins when present, so a shared link shows what its sender saw.
+  const [hideIgnored, setHideIgnored] = useState<boolean>(() => {
+    const fromUrl = searchParams.get('hide_ignored')
+    if (fromUrl !== null) return fromUrl === 'true'
+    try {
+      return localStorage.getItem(HIDE_IGNORED_STORAGE_KEY) === 'true'
+    } catch {
+      return false
+    }
+  })
   const [filterMinAmount, setFilterMinAmount] = useState<string>(searchParams.get('min_amount') ?? '')
   const [filterMaxAmount, setFilterMaxAmount] = useState<string>(searchParams.get('max_amount') ?? '')
   const [tagFilters, setTagFilters] = useState<string[]>([])
@@ -228,6 +242,8 @@ export default function TransactionsPage() {
     setFilterGroupId(searchParams.get('group_id') ?? '')
     setFilterType(searchParams.get('type') ?? '')
     setFilterStatus(searchParams.get('status') ?? '')
+    const urlHideIgnored = searchParams.get('hide_ignored')
+    if (urlHideIgnored !== null) setHideIgnored(urlHideIgnored === 'true')
     const categories = searchParams.get('category_id');
     setFilterCategoryIds(categories ? categories.split(',') : []);
     setFilterUncategorized(searchParams.get('uncategorized') === '1');
@@ -270,6 +286,7 @@ export default function TransactionsPage() {
         ['to', filterTo],
         ['min_amount', filterMinAmount],
         ['max_amount', filterMaxAmount],
+        ['hide_ignored', hideIgnored ? 'true' : ''],
       ].filter(([, v]) => v.length),
     );
 
@@ -294,6 +311,7 @@ export default function TransactionsPage() {
     filterTo,
     filterMinAmount,
     filterMaxAmount,
+    hideIgnored,
   ]);
 
   useEffect(() => {
@@ -360,7 +378,7 @@ export default function TransactionsPage() {
     && activeAccountIds !== null && activeAccountIds.length === 0
 
   const { data, isLoading } = useQuery({
-    queryKey: ['transactions', page, limit, effectiveAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
+    queryKey: ['transactions', page, limit, effectiveAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
     enabled: !noAccounts,
     queryFn: () =>
       transactions.list({
@@ -379,6 +397,7 @@ export default function TransactionsPage() {
         max_amount: filterMaxAmount ? Number(filterMaxAmount) : undefined,
         q: searchQuery || undefined,
         tags: tagFilters.length > 0 ? tagFilters : undefined,
+        exclude_ignored: hideIgnored ? true : undefined,
         // Mobile has no column headers to change sort; force date-desc so
         // the date grouping always works correctly.
         ...(isMobile ? { sort_by: 'date', sort_dir: 'desc' as const } : grid.apiSort),
@@ -913,6 +932,16 @@ export default function TransactionsPage() {
     }
   }
 
+  const handleHideIgnoredChange = (next: boolean) => {
+    setHideIgnored(next)
+    setPage(1)
+    try {
+      localStorage.setItem(HIDE_IGNORED_STORAGE_KEY, String(next))
+    } catch {
+      // Private mode or a full quota: the filter still applies for this visit.
+    }
+  }
+
   const handleExport = async () => {
     setExporting(true)
     try {
@@ -932,6 +961,7 @@ export default function TransactionsPage() {
           to: filterTo || undefined,
           q: searchQuery || undefined,
           tags: tagFilters.length > 0 ? tagFilters : undefined,
+          exclude_ignored: hideIgnored ? true : undefined,
         })
       }
       toast.success(t('transactions.exportSuccess'))
@@ -1339,6 +1369,8 @@ export default function TransactionsPage() {
         onTypeChange={(v) => { setFilterType(v); setPage(1) }}
         filterStatus={filterStatus}
         onStatusChange={(v) => { setFilterStatus(v); setPage(1) }}
+        hideIgnored={hideIgnored}
+        onHideIgnoredChange={handleHideIgnoredChange}
         filterFrom={filterFrom}
         filterTo={filterTo}
         onDateRangeChange={(from, to) => { setFilterFrom(from); setFilterTo(to); setPage(1) }}
@@ -1357,6 +1389,7 @@ export default function TransactionsPage() {
           setFilterStatus('')
           setFilterMinAmount('')
           setFilterMaxAmount('')
+          handleHideIgnoredChange(false)
           setSearchInput('')
           setSearchQuery('')
           clearTagFilters()

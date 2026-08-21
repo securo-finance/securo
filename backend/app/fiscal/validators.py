@@ -423,6 +423,16 @@ def validate_id_npwp(value: str) -> str | None:
     return _digits_len(value, 15, 16)
 
 
+def validate_vn_mst(value: str) -> str | None:
+    """Ten digits, or thirteen with the three-digit branch suffix.
+
+    The tenth digit is a check digit, but reissued and legacy codes are in
+    circulation that do not satisfy the published weighting, so refusing on
+    it would reject real tax codes.
+    """
+    return _digits_len(value, 10, 13)
+
+
 def validate_mx_rfc(value: str) -> str | None:
     """Twelve characters for a company, thirteen for a person.
 
@@ -454,6 +464,31 @@ def validate_in_pan(value: str) -> str | None:
     if not (value[:5].isalpha() and value[5:9].isdigit() and value[9].isalpha()):
         return "invalid"
     return None
+
+
+def validate_sg_uen(value: str) -> str | None:
+    """A UEN in one of the three shapes ACRA issues, each ending in a check
+    letter:
+
+      - business:      eight digits plus the letter (53012345A)
+      - local company: year, five digits, the letter (201012345A)
+      - other entity:  T/S/R, two year digits, two letters, four digits, letter
+
+    The check letter's algorithm is not published, so only the shape is
+    enforced: refusing on a reverse-engineered rule would reject real numbers.
+    """
+    if len(value) not in (9, 10):
+        return "length"
+    if not value[-1].isalpha():
+        return "invalid"
+    body = value[:-1]
+    if len(value) == 9:
+        return None if body.isdigit() else "invalid"
+    if body.isdigit():
+        return None
+    if value[0] in "TSR" and body[1:3].isdigit() and body[3:5].isalpha() and body[5:].isdigit():
+        return None
+    return "invalid"
 
 
 def validate_cn_uscc(value: str) -> str | None:
@@ -501,7 +536,9 @@ VALIDATORS: dict[str, Callable[[str], str | None]] = {
     "jp_corporate": validate_jp_corporate,
     "ph_tin": validate_ph_tin,
     "id_npwp": validate_id_npwp,
+    "vn_mst": validate_vn_mst,
     "in_gstin": validate_in_gstin,
     "in_pan": validate_in_pan,
     "cn_uscc": validate_cn_uscc,
+    "sg_uen": validate_sg_uen,
 }

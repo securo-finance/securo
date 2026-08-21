@@ -375,6 +375,11 @@
     "typeIncome": "Entrata",
     "statusPending": "In sospeso",
     "statusPosted": "Registrata",
+    "hideIgnored": "Nascondi ignorate",
+    "ignoredRows": "Transazioni ignorate",
+    "ignoredShow": "Mostra",
+    "ignoredHide": "Nascondi",
+    "ignoredHiddenValue": "Nascoste",
     "statusCleared": "Contabilizzata",
     "sortAsc": "Ordine crescente",
     "sortDesc": "Ordine decrescente",
@@ -869,6 +874,10 @@
     "andOp": "E",
     "orOp": "O",
     "addCondition": "Aggiungi condizione",
+    "addGroup": "Aggiungi gruppo",
+    "addGroupHint": "Un gruppo unisce le proprie condizioni con E oppure O",
+    "group": "Gruppo",
+    "removeGroup": "Rimuovi gruppo",
     "blankConditionValue": "Ogni condizione richiede un valore. Una condizione vuota corrisponderebbe a tutte le transazioni.",
     "addAction": "Aggiungi azione",
     "setCategory": "Imposta categoria",
@@ -1028,6 +1037,58 @@
     "mapPayee": "Colonna del beneficiario",
     "mapExternalId": "Colonna dell'ID transazione",
     "mapNotes": "Colonna delle note"
+  },
+  "assetImport": {
+    "title": "Importa ordini di investimento",
+    "action": "Importa ordini",
+    "choose": "Scegli un file CSV",
+    "chooseHint": "Ticker, data, quantità e prezzo sono obbligatori. Una quantità negativa vale come vendita.",
+    "downloadTemplate": "Scarica il modello",
+    "wallet": "Portafoglio",
+    "noWallet": "Nessun portafoglio",
+    "reading": "Lettura del file…",
+    "mapPrompt": "Non siamo riusciti a riconoscere le colonne. Associa ogni campo a una colonna del file.",
+    "ignoreColumn": "Ignora",
+    "previewError": "Impossibile leggere il file",
+    "importError": "Impossibile importare gli ordini",
+    "imported": "{{count}} ordini importati",
+    "importing": "Importazione…",
+    "confirm": "Importa {{count}} ordini",
+    "summaryOrders": "{{count}} ordini pronti",
+    "summaryHoldings": "{{created}} titoli creati, {{matched}} trovati",
+    "summarySkipped": "{{count}} già importati",
+    "rowsSkipped": "{{count}} righe saranno saltate",
+    "rowError": "Riga {{row}} ({{ticker}}): {{reason}}",
+    "moreErrors": "e altri {{count}}",
+    "moreRows": "e altri {{count}} ordini",
+    "field": {
+      "ticker": "Ticker",
+      "date": "Data",
+      "quantity": "Quantità",
+      "price": "Prezzo",
+      "fee": "Commissioni",
+      "kind": "Acquisto/Vendita",
+      "currency": "Valuta",
+      "notes": "Note"
+    },
+    "walletWarningTitle": "Già nel tuo portafoglio",
+    "warning": {
+      "exists_in_other_wallet": "{{ticker}} è già presente in {{wallet}}. Importare qui crea una seconda posizione.",
+      "orders_already_in_other_wallet": "{{ticker}}: questi stessi ordini sono già in {{wallet}}. Importare qui conterebbe i titoli due volte."
+    },
+    "kind": {
+      "buy": "Acquisto",
+      "sell": "Vendita"
+    },
+    "reason": {
+      "missing_ticker": "nessun ticker",
+      "invalid_date": "data illeggibile",
+      "invalid_quantity": "quantità illeggibile",
+      "invalid_price": "prezzo illeggibile",
+      "invalid_kind": "acquisto/vendita non riconosciuto",
+      "unknown_ticker": "ticker non trovato dal fornitore di prezzi",
+      "oversell": "vendita superiore alla posizione"
+    }
   },
   "assets": {
     "title": "Beni",
@@ -1333,6 +1394,8 @@
       "pan": "PAN",
       "npwp": "NPWP",
       "ph_tin": "TIN",
+      "vn_mst": "MST",
+      "sg_uen": "UEN",
       "uscc": "USCC"
     },
     "otherCountries": "Altri paesi",
@@ -1508,7 +1571,14 @@
     "button": "Backup",
     "downloading": "Download...",
     "success": "Backup scaricato con successo",
-    "error": "Impossibile scaricare il backup"
+    "error": "Impossibile scaricare il backup",
+    "dialogTitle": "Scarica il backup",
+    "dialogDescription": "Uno zip con tutti i conti, le transazioni e le regole di questo workspace, in JSON semplice.",
+    "passwordLabel": "Password (facoltativa)",
+    "passwordPlaceholder": "Lascia vuoto per un backup non cifrato",
+    "passwordTooShort": "Usa almeno {{min}} caratteri",
+    "encryptionNote": "L'archivio è cifrato con AES-256 e si apre con qualsiasi programma di compressione. Securo non conserva questa password e non può recuperare il file senza di essa.",
+    "successEncrypted": "Backup cifrato scaricato con successo"
   },
   "update": {
     "title": "Aggiornamento del server",

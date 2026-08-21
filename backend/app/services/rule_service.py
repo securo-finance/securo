@@ -35,13 +35,30 @@ def _rule_item_value(item, key: str):
     return item.get(key) if isinstance(item, dict) else getattr(item, key, None)
 
 
+def _flatten_conditions(conditions: list) -> list:
+    """Return every leaf condition, unwrapping one level of AND/OR groups.
+
+    A rule's condition list mixes leaves with groups that hold their own leaves
+    (see `rule_engine.evaluate_conditions`). Field/operator checks apply to the
+    leaves either way, and the schema caps nesting at one level.
+    """
+    leaves = []
+    for node in conditions or []:
+        nested = _rule_item_value(node, "conditions")
+        if isinstance(nested, list):
+            leaves.extend(nested)
+        else:
+            leaves.append(node)
+    return leaves
+
+
 async def _validate_rule_definition(
     session: AsyncSession,
     workspace_id: uuid.UUID,
     conditions: list,
     actions: list,
 ) -> None:
-    for condition in conditions or []:
+    for condition in _flatten_conditions(conditions):
         field = _rule_item_value(condition, "field")
         op = _rule_item_value(condition, "op")
         if field not in _ALLOWED_CONDITION_FIELDS or op not in _ALLOWED_CONDITION_OPS:

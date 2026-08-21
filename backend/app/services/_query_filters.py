@@ -94,6 +94,30 @@ def reporting_date_col(accounting_mode: str):
     return func.coalesce(Transaction.effective_bill_date, base)
 
 
+def is_not_ignored():
+    """SQL filter: the row is not one the user told us to disregard.
+
+    Only the ignore signal, without the transfer/settlement family that
+    `counts_as_pnl` folds in, because hiding rows from a *list* is a
+    different question from leaving them out of a *total*: a transfer still
+    belongs in the ledger the user is reading.
+
+    Matches what the UI badges as ignored, which is the transaction flag or
+    its category's — see `TransactionRead.reflect_ignored_category`. A list
+    that hid one but not the other would leave visibly-ignored rows behind
+    and look broken.
+    """
+    return and_(
+        Transaction.is_ignored.is_(False),
+        or_(
+            Transaction.category_id.is_(None),
+            Transaction.category_id.not_in(
+                select(Category.id).where(Category.is_ignored.is_(True))
+            ),
+        ),
+    )
+
+
 def counts_as_pnl():
     """SQL filter: True when a transaction should contribute to income/expense totals.
 

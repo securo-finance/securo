@@ -375,6 +375,11 @@
     "typeIncome": "Einnahme",
     "statusPending": "Ausstehend",
     "statusPosted": "Gebucht",
+    "hideIgnored": "Ignorierte ausblenden",
+    "ignoredRows": "Ignorierte Transaktionen",
+    "ignoredShow": "Anzeigen",
+    "ignoredHide": "Ausblenden",
+    "ignoredHiddenValue": "Ausgeblendet",
     "statusCleared": "Abgewickelt",
     "sortAsc": "Aufsteigend sortieren",
     "sortDesc": "Absteigend sortieren",
@@ -869,6 +874,10 @@
     "andOp": "UND",
     "orOp": "ODER",
     "addCondition": "Bedingung hinzufügen",
+    "addGroup": "Gruppe hinzufügen",
+    "addGroupHint": "Eine Gruppe verknüpft ihre eigenen Bedingungen mit UND oder ODER",
+    "group": "Gruppe",
+    "removeGroup": "Gruppe entfernen",
     "blankConditionValue": "Jede Bedingung benötigt einen Wert. Eine leere Bedingung würde auf alle Transaktionen zutreffen.",
     "addAction": "Aktion hinzufügen",
     "setCategory": "Kategorie festlegen",
@@ -1028,6 +1037,58 @@
     "mapPayee": "Spalte Zahlungsempfänger",
     "mapExternalId": "Spalte Transaktions-ID",
     "mapNotes": "Spalte Notizen"
+  },
+  "assetImport": {
+    "title": "Wertpapierorders importieren",
+    "action": "Orders importieren",
+    "choose": "CSV-Datei auswählen",
+    "chooseHint": "Ticker, Datum, Stückzahl und Preis sind Pflicht. Eine negative Stückzahl gilt als Verkauf.",
+    "downloadTemplate": "Vorlage herunterladen",
+    "wallet": "Depot",
+    "noWallet": "Kein Depot",
+    "reading": "Datei wird gelesen…",
+    "mapPrompt": "Die Spalten konnten nicht erkannt werden. Ordnen Sie jedem Feld eine Spalte zu.",
+    "ignoreColumn": "Ignorieren",
+    "previewError": "Datei konnte nicht gelesen werden",
+    "importError": "Orders konnten nicht importiert werden",
+    "imported": "{{count}} Orders importiert",
+    "importing": "Wird importiert…",
+    "confirm": "{{count}} Orders importieren",
+    "summaryOrders": "{{count}} Orders bereit",
+    "summaryHoldings": "{{created}} Positionen angelegt, {{matched}} zugeordnet",
+    "summarySkipped": "{{count}} bereits importiert",
+    "rowsSkipped": "{{count}} Zeilen werden übersprungen",
+    "rowError": "Zeile {{row}} ({{ticker}}): {{reason}}",
+    "moreErrors": "und {{count}} weitere",
+    "moreRows": "und {{count}} weitere Orders",
+    "field": {
+      "ticker": "Ticker",
+      "date": "Datum",
+      "quantity": "Stückzahl",
+      "price": "Preis",
+      "fee": "Gebühr",
+      "kind": "Kauf/Verkauf",
+      "currency": "Währung",
+      "notes": "Notizen"
+    },
+    "walletWarningTitle": "Bereits im Portfolio",
+    "warning": {
+      "exists_in_other_wallet": "{{ticker}} liegt bereits in {{wallet}}. Ein Import hier legt eine zweite Position an.",
+      "orders_already_in_other_wallet": "{{ticker}}: dieselben Orders liegen bereits in {{wallet}}. Ein Import hier würde die Stücke doppelt zählen."
+    },
+    "kind": {
+      "buy": "Kauf",
+      "sell": "Verkauf"
+    },
+    "reason": {
+      "missing_ticker": "kein Ticker",
+      "invalid_date": "unlesbares Datum",
+      "invalid_quantity": "unlesbare Stückzahl",
+      "invalid_price": "unlesbarer Preis",
+      "invalid_kind": "Kauf/Verkauf nicht erkannt",
+      "unknown_ticker": "Ticker beim Kursanbieter nicht gefunden",
+      "oversell": "Verkauf größer als die Position"
+    }
   },
   "assets": {
     "title": "Vermögenswerte",
@@ -1333,6 +1394,8 @@
       "pan": "PAN",
       "npwp": "NPWP",
       "ph_tin": "TIN",
+      "vn_mst": "MST",
+      "sg_uen": "UEN",
       "uscc": "USCC"
     },
     "otherCountries": "Andere Länder",
@@ -1508,7 +1571,14 @@
     "button": "Backup",
     "downloading": "Wird heruntergeladen...",
     "success": "Backup erfolgreich heruntergeladen",
-    "error": "Fehler beim Herunterladen des Backups"
+    "error": "Fehler beim Herunterladen des Backups",
+    "dialogTitle": "Backup herunterladen",
+    "dialogDescription": "Ein Zip mit allen Konten, Transaktionen und Regeln dieses Workspace, als reines JSON.",
+    "passwordLabel": "Passwort (optional)",
+    "passwordPlaceholder": "Leer lassen für ein unverschlüsseltes Backup",
+    "passwordTooShort": "Mindestens {{min}} Zeichen verwenden",
+    "encryptionNote": "Das Archiv wird mit AES-256 verschlüsselt und lässt sich mit jedem Packprogramm öffnen. Securo speichert dieses Passwort nicht und kann die Datei ohne es nicht wiederherstellen.",
+    "successEncrypted": "Verschlüsseltes Backup erfolgreich heruntergeladen"
   },
   "update": {
     "title": "Server-Update",

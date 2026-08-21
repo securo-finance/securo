@@ -345,7 +345,10 @@ async def test_set_description_validation_and_export_compatibility(
     payload = await export_rules(session, test_workspace.id)
     assert payload.version == 1
     exported = next(item for item in payload.rules if item.name == rule.name)
-    assert exported.conditions[0].field == "payee"
+    # The list can hold groups now, so narrow before reading a leaf's field.
+    exported_condition = exported.conditions[0]
+    assert isinstance(exported_condition, RuleCondition)
+    assert exported_condition.field == "payee"
     assert exported.actions[0].op == "set_description"
 # ---------------------------------------------------------------------------
 # apply_rules_to_transaction

@@ -8,9 +8,8 @@ import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { CollectionSelector } from '@/components/collection-selector'
-import { auth as authApi, backup as backupApi, admin as adminApi } from '@/lib/api'
+import { auth as authApi, admin as adminApi } from '@/lib/api'
 import { resolveSupportedLang } from '@/lib/i18n'
-import { toast } from 'sonner'
 import { OnboardingTour } from '@/components/onboarding-tour'
 import { useTheme } from 'next-themes'
 import { accounts as accountsApi } from '@/lib/api'
@@ -52,6 +51,7 @@ import {
 } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { ChangePasswordDialog } from '@/components/change-password-dialog'
+import { BackupDialog } from '@/components/backup-dialog'
 import { TwoFactorSetup } from '@/components/two-factor-setup'
 import { PasskeyManagementDialog } from '@/components/passkey-management-dialog'
 import { CommandPalette } from '@/components/command-palette'
@@ -98,7 +98,7 @@ export function AppLayout() {
   const [changePasswordOpen, setChangePasswordOpen] = useState(false)
   const [twoFactorOpen, setTwoFactorOpen] = useState(false)
   const [passkeysOpen, setPasskeysOpen] = useState(false)
-  const [backingUp, setBackingUp] = useState(false)
+  const [backupOpen, setBackupOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false)
@@ -260,18 +260,7 @@ export function AppLayout() {
             onTwoFactor={() => setTwoFactorOpen(true)}
             onPasskeys={() => setPasskeysOpen(true)}
             agentsEnabled={agentsEnabled}
-            backingUp={backingUp}
-            onBackup={async () => {
-              setBackingUp(true)
-              try {
-                await backupApi.download()
-                toast.success(t('backup.success'))
-              } catch {
-                toast.error(t('backup.error'))
-              } finally {
-                setBackingUp(false)
-              }
-            }}
+            onBackup={() => setBackupOpen(true)}
             dark
             isAdmin={user?.is_superuser}
           />
@@ -501,21 +490,10 @@ export function AppLayout() {
               account actions that used to live in a separate dropdown. */}
           <div className="px-3 pt-1">
             <WorkspaceSwitcher
-              backingUp={backingUp}
               onChangePassword={() => setChangePasswordOpen(true)}
               onTwoFactor={() => setTwoFactorOpen(true)}
               onPasskeys={() => setPasskeysOpen(true)}
-              onBackup={async () => {
-                setBackingUp(true)
-                try {
-                  await backupApi.download()
-                  toast.success(t('backup.success'))
-                } catch {
-                  toast.error(t('backup.error'))
-                } finally {
-                  setBackingUp(false)
-                }
-              }}
+              onBackup={() => setBackupOpen(true)}
               onUpdateAvailable={() => setUpdateDialogOpen(true)}
               agentsEnabled={agentsEnabled}
             />
@@ -550,6 +528,7 @@ export function AppLayout() {
         open={changePasswordOpen}
         onClose={() => setChangePasswordOpen(false)}
       />
+      <BackupDialog open={backupOpen} onClose={() => setBackupOpen(false)} />
       <TwoFactorSetup
         open={twoFactorOpen}
         onClose={() => setTwoFactorOpen(false)}
@@ -578,7 +557,6 @@ function UserMenu({
   onTwoFactor,
   onPasskeys,
   onBackup,
-  backingUp,
   dark,
   isAdmin,
   agentsEnabled,
@@ -589,7 +567,6 @@ function UserMenu({
   onTwoFactor: () => void
   onPasskeys: () => void
   onBackup: () => void
-  backingUp: boolean
   dark?: boolean
   isAdmin?: boolean
   agentsEnabled?: boolean
@@ -649,12 +626,11 @@ function UserMenu({
           {t('auth.passkeysTitle')}
         </DropdownMenuItem>
         <DropdownMenuItem
-          disabled={backingUp}
           onClick={onBackup}
           className="flex items-center gap-2"
         >
           <HardDriveDownload size={14} />
-          {backingUp ? t('backup.downloading') : t('backup.button')}
+          {t('backup.button')}
         </DropdownMenuItem>
         {agentsEnabled && (
           <DropdownMenuItem

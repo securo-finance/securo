@@ -104,7 +104,7 @@ def test_the_currencies_the_product_supports_have_a_pack():
         "COP": "CO", "PEN": "PE", "UYU": "UY", "INR": "IN", "SEK": "SE",
         "DKK": "DK", "NOK": "NO", "PLN": "PL", "CZK": "CZ", "HUF": "HU",
         "RON": "RO", "CRC": "CR", "IDR": "ID", "DOP": "DO", "RUB": "RU",
-        "GTQ": "GT", "PHP": "PH", "UAH": "UA", "NZD": "NZ", "USD": "US",
+        "GTQ": "GT", "PHP": "PH", "UAH": "UA", "NZD": "NZ", "VND": "VN", "SGD": "SG", "USD": "US",
     }
     uncovered = [
         code

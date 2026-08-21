@@ -12,7 +12,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import type { Category, Payee, Rule, RuleAction, RuleCondition, RuleExportPayload } from '@/types'
+import type { Category, Payee, Rule, RuleAction, RuleCondition, RuleConditionNode, RuleExportPayload } from '@/types'
+import { isConditionGroup } from '@/lib/rule-conditions'
 import { Trash2, Plus, RefreshCw, Package, Check, ArrowUpDown, ArrowUp, ArrowDown, Download, Upload } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
@@ -75,7 +76,7 @@ function getOpsForField(field: string) {
   return STRING_OPS
 }
 
-function conditionSummary(conditions: RuleCondition[], conditionsOp: string, t: (key: string) => string, payeesList: Payee[]): string {
+function conditionSummary(conditions: RuleConditionNode[], conditionsOp: string, t: (key: string) => string, payeesList: Payee[]): string {
   const fieldLabel = (f: string) => {
     const key = CONDITION_FIELDS.find(x => x.value === f)?.label
     return key ? t(key) : f
@@ -91,8 +92,15 @@ function conditionSummary(conditions: RuleCondition[], conditionsOp: string, t: 
     }
     return String(c.value)
   }
-  const parts = conditions.map(c => `${fieldLabel(c.field)} ${opLabel(c.field, c.op)} "${valueLabel(c)}"`)
-  return parts.join(` ${conditionsOp === 'or' ? t('rules.orOp') : t('rules.andOp')} `) || t('rules.noConditions')
+  const leafSummary = (c: RuleCondition) => `${fieldLabel(c.field)} ${opLabel(c.field, c.op)} "${valueLabel(c)}"`
+  const joiner = (op: string) => ` ${op === 'or' ? t('rules.orOp') : t('rules.andOp')} `
+  // Groups get parentheses so a mixed AND/OR rule reads unambiguously.
+  const parts = conditions.map(node => (
+    isConditionGroup(node)
+      ? `(${node.conditions.map(leafSummary).join(joiner(node.op))})`
+      : leafSummary(node)
+  ))
+  return parts.join(joiner(conditionsOp)) || t('rules.noConditions')
 }
 
 function actionSummary(actions: RuleAction[], categories: Category[], payeesList: Payee[], t: (key: string) => string): string {
