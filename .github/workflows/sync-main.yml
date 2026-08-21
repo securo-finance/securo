@@ -19,6 +19,16 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+      - name: Authorize the branch-sync deploy key
+        env:
+          SYNC_DEPLOY_KEY: ${{ secrets.SYNC_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$SYNC_DEPLOY_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/id_ed25519"
+          ssh-keyscan -t ed25519 github.com >> "$HOME/.ssh/known_hosts"
+          git remote set-url origin git@github.com:vhsantos26/securo.git
       - name: Fast-forward main from upstream
         run: |
           git remote add upstream https://github.com/securo-finance/securo.git

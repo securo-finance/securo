@@ -91,6 +91,35 @@ commits que existam em origin/deploy. A primeira instalação da chave e dos
 segredos está documentada no workflow; nunca coloque a chave privada no
 repositório ou no .env.
 
+## Fluxo de mudanças
+
+O fork mantém duas branches especiais:
+
+1. `main` é um espelho do repositório original. Não crie funcionalidades ou
+   correções diretamente nela.
+2. `deploy` contém o que efetivamente está autorizado a ir para a VPS: o
+   upstream sincronizado mais nossos patches locais.
+
+Para alterar o visual, uma regra de negócio ou qualquer outra parte do
+Securo:
+
+```bash
+git switch deploy
+git pull --ff-only origin deploy
+git switch -c feat/novo-design
+# faça e teste a mudança
+git push -u origin feat/novo-design
+```
+
+Abra uma PR de `feat/novo-design` para `deploy`. Depois que os checks
+passarem e a PR for mesclada, o workflow `deploy-vps` publica esse mesmo
+commit na VPS. Não há deploy quando uma PR é apenas aberta.
+
+Os workflows de sincronização atualizam `main` a partir do upstream e depois
+mesclam o resultado em `deploy`. Por isso, mudanças próprias nunca devem ser
+feitas em `main`: elas seriam sobrescritas ou transformariam o próximo sync
+em conflito.
+
 Para uma atualização manual ou uma recuperação pontual:
 
 ```bash
