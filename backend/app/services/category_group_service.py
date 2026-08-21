@@ -8,43 +8,12 @@ from sqlalchemy.orm import selectinload
 from app.models.category import Category
 from app.models.category_group import CategoryGroup
 from app.schemas.category_group import CategoryGroupCreate, CategoryGroupUpdate
-
-
-# Language-keyed translations for default groups
-# Keys are internal identifiers, values are {lang: display_name}
-DEFAULT_GROUPS_I18N = {
-    "housing":   {"ru": "Жильё", "uk": "Житло", "de": "Wohnen", "fr": "Logement", "it": "Casa", "pl": "Mieszkanie", "es": "Alojamiento", "en": "Housing",       "pt-BR": "Moradia",         "pt-PT": "Habitação",       "icon": "house",            "color": "#8B5CF6", "position": 0},
-    "food":      {"ru": "Еда и рестораны", "uk": "Їжа та ресторани", "de": "Essen & Trinken", "fr": "Alimentation & Restaurants", "it": "Cibo e Ristoranti", "pl": "Jedzenie", "es": "Comida y Cena", "en": "Food & Dining", "pt-BR": "Alimentação",     "pt-PT": "Alimentação",     "icon": "utensils-crossed", "color": "#F59E0B", "position": 1},
-    "transport":  {"ru": "Транспорт", "uk": "Транспорт", "de": "Transport", "fr": "Transport", "it": "Trasporti", "pl": "Transport", "es": "Transporte",     "en": "Transport",     "pt-BR": "Transporte",      "pt-PT": "Transportes",     "icon": "car",              "color": "#3B82F6", "position": 2},
-    "lifestyle": {"ru": "Образ жизни", "uk": "Спосіб життя", "de": "Lifestyle", "fr": "Style de vie", "it": "Stile di Vita", "pl": "Styl życia", "es": "Estilo de Vida", "en": "Lifestyle",     "pt-BR": "Estilo de Vida",  "pt-PT": "Estilo de Vida",  "icon": "sparkles",         "color": "#EC4899", "position": 3},
-    "income":    {"ru": "Доходы", "uk": "Доходи", "de": "Einkommen", "fr": "Revenus", "it": "Entrate", "pl": "Przychody", "es": "Ingresos",        "en": "Income",        "pt-BR": "Renda",           "pt-PT": "Rendimentos",     "icon": "trending-up",      "color": "#16A34A", "position": 5},
-    "other":     {"ru": "Другое", "uk": "Інше", "de": "Sonstiges", "fr": "Autres", "it": "Altro", "pl": "Inne", "es": "Otros",            "en": "Other",         "pt-BR": "Outros",          "pt-PT": "Outros",          "icon": "circle-help",      "color": "#64748B", "position": 4},
-}
-
-# Maps category internal key -> group internal key
-CATEGORY_TO_GROUP = {
-    "housing": "housing",
-    "food": "food",
-    "groceries": "food",
-    "transport": "transport",
-    "health": "lifestyle",
-    "leisure": "lifestyle",
-    "education": "lifestyle",
-    "subscriptions": "other",
-    "salary": "income",
-    "shopping": "other",
-    "donations": "other",
-    "personal_care": "lifestyle",
-    "taxes": "other",
-    "transfers": "other",
-    "investments": "other",
-    "other": "other",
-}
+from app.services.category_defaults import DEFAULT_GROUPS, localized_name
 
 
 def _resolve_group_name(key: str, lang: str) -> str:
-    entry = DEFAULT_GROUPS_I18N.get(key, {})
-    return str(entry.get(lang, entry.get("en", key)))
+    entry = DEFAULT_GROUPS.get(key)
+    return localized_name(entry, lang) if entry else key
 
 
 async def create_default_groups(
@@ -55,8 +24,8 @@ async def create_default_groups(
 ) -> dict[str, CategoryGroup]:
     """Create default category groups for a user. Returns dict of internal_key -> group. Uses flush (not commit)."""
     groups = {}
-    for key, data in DEFAULT_GROUPS_I18N.items():
-        name = data.get(lang, data.get("en", key))
+    for key, data in DEFAULT_GROUPS.items():
+        name = localized_name(data, lang)
         group = CategoryGroup(
             user_id=user_id,
             workspace_id=workspace_id,

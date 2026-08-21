@@ -1,0 +1,382 @@
+{
+  "groups": {
+    "housing": {
+      "names": {
+        "en": "Housing",
+        "pt-BR": "Moradia",
+        "pt-PT": "Habitação",
+        "de": "Wohnen",
+        "fr": "Logement",
+        "es": "Alojamiento",
+        "it": "Casa",
+        "pl": "Mieszkanie",
+        "ru": "Жильё",
+        "uk": "Житло"
+      },
+      "icon": "house",
+      "color": "#8B5CF6",
+      "position": 0
+    },
+    "food": {
+      "names": {
+        "en": "Food & Dining",
+        "pt-BR": "Alimentação",
+        "pt-PT": "Alimentação",
+        "de": "Essen & Trinken",
+        "fr": "Alimentation & Restaurants",
+        "es": "Comida y Cena",
+        "it": "Cibo e Ristoranti",
+        "pl": "Jedzenie",
+        "ru": "Еда и рестораны",
+        "uk": "Їжа та ресторани"
+      },
+      "icon": "utensils-crossed",
+      "color": "#F59E0B",
+      "position": 1
+    },
+    "transport": {
+      "names": {
+        "en": "Transport",
+        "pt-BR": "Transporte",
+        "pt-PT": "Transportes",
+        "de": "Transport",
+        "fr": "Transport",
+        "es": "Transporte",
+        "it": "Trasporti",
+        "pl": "Transport",
+        "ru": "Транспорт",
+        "uk": "Транспорт"
+      },
+      "icon": "car",
+      "color": "#3B82F6",
+      "position": 2
+    },
+    "lifestyle": {
+      "names": {
+        "en": "Lifestyle",
+        "pt-BR": "Estilo de Vida",
+        "pt-PT": "Estilo de Vida",
+        "de": "Lifestyle",
+        "fr": "Style de vie",
+        "es": "Estilo de Vida",
+        "it": "Stile di Vita",
+        "pl": "Styl życia",
+        "ru": "Образ жизни",
+        "uk": "Спосіб життя"
+      },
+      "icon": "sparkles",
+      "color": "#EC4899",
+      "position": 3
+    },
+    "income": {
+      "names": {
+        "en": "Income",
+        "pt-BR": "Renda",
+        "pt-PT": "Rendimentos",
+        "de": "Einkommen",
+        "fr": "Revenus",
+        "es": "Ingresos",
+        "it": "Entrate",
+        "pl": "Przychody",
+        "ru": "Доходы",
+        "uk": "Доходи"
+      },
+      "icon": "trending-up",
+      "color": "#16A34A",
+      "position": 5
+    },
+    "other": {
+      "names": {
+        "en": "Other",
+        "pt-BR": "Outros",
+        "pt-PT": "Outros",
+        "de": "Sonstiges",
+        "fr": "Autres",
+        "es": "Otros",
+        "it": "Altro",
+        "pl": "Inne",
+        "ru": "Другое",
+        "uk": "Інше"
+      },
+      "icon": "circle-help",
+      "color": "#64748B",
+      "position": 4
+    }
+  },
+  "categories": {
+    "housing": {
+      "names": {
+        "en": "Housing",
+        "pt-BR": "Moradia",
+        "pt-PT": "Habitação",
+        "de": "Wohnen",
+        "fr": "Logement",
+        "es": "Alojamiento",
+        "it": "Casa",
+        "pl": "Mieszkanie",
+        "ru": "Жильё",
+        "uk": "Житло"
+      },
+      "group": "housing",
+      "icon": "house",
+      "color": "#8B5CF6"
+    },
+    "food": {
+      "names": {
+        "en": "Food & Dining",
+        "pt-BR": "Alimentação",
+        "pt-PT": "Alimentação",
+        "de": "Essen & Trinken",
+        "fr": "Alimentation & Restaurants",
+        "es": "Comida y Cena",
+        "it": "Cibo e Ristoranti",
+        "pl": "Jedzenie",
+        "ru": "Еда и рестораны",
+        "uk": "Їжа та ресторани"
+      },
+      "group": "food",
+      "icon": "utensils-crossed",
+      "color": "#F59E0B"
+    },
+    "transport": {
+      "names": {
+        "en": "Transport",
+        "pt-BR": "Transporte",
+        "pt-PT": "Transportes",
+        "de": "Transport",
+        "fr": "Transport",
+        "es": "Transporte",
+        "it": "Trasporti",
+        "pl": "Transport",
+        "ru": "Транспорт",
+        "uk": "Транспорт"
+      },
+      "group": "transport",
+      "icon": "car",
+      "color": "#3B82F6"
+    },
+    "groceries": {
+      "names": {
+        "en": "Groceries",
+        "pt-BR": "Mercado",
+        "pt-PT": "Supermercado",
+        "de": "Lebensmittel",
+        "fr": "Courses",
+        "es": "Supermercado",
+        "it": "Spesa",
+        "pl": "Zakupy spożywcze",
+        "ru": "Продукты",
+        "uk": "Продукти"
+      },
+      "group": "food",
+      "icon": "shopping-cart",
+      "color": "#10B981"
+    },
+    "health": {
+      "names": {
+        "en": "Health",
+        "pt-BR": "Saúde",
+        "pt-PT": "Saúde",
+        "de": "Gesundheit",
+        "fr": "Santé",
+        "es": "Salud",
+        "it": "Salute",
+        "pl": "Zdrowie",
+        "ru": "Здоровье",
+        "uk": "Здоров'я"
+      },
+      "group": "lifestyle",
+      "icon": "pill",
+      "color": "#EF4444"
+    },
+    "leisure": {
+      "names": {
+        "en": "Leisure",
+        "pt-BR": "Lazer",
+        "pt-PT": "Lazer",
+        "de": "Freizeit",
+        "fr": "Loisirs",
+        "es": "Ocio",
+        "it": "Tempo Libero",
+        "pl": "Rozrywka",
+        "ru": "Досуг",
+        "uk": "Дозвілля"
+      },
+      "group": "lifestyle",
+      "icon": "gamepad-2",
+      "color": "#EC4899"
+    },
+    "subscriptions": {
+      "names": {
+        "en": "Subscriptions",
+        "pt-BR": "Assinaturas",
+        "pt-PT": "Subscrições",
+        "de": "Abonnements",
+        "fr": "Abonnements",
+        "es": "Suscripciones",
+        "it": "Abbonamenti",
+        "pl": "Subskrypcje",
+        "ru": "Подписки",
+        "uk": "Підписки"
+      },
+      "group": "other",
+      "icon": "smartphone",
+      "color": "#6366F1"
+    },
+    "education": {
+      "names": {
+        "en": "Education",
+        "pt-BR": "Educação",
+        "pt-PT": "Educação",
+        "de": "Bildung",
+        "fr": "Éducation",
+        "es": "Educación",
+        "it": "Istruzione",
+        "pl": "Edukacja",
+        "ru": "Образование",
+        "uk": "Освіта"
+      },
+      "group": "lifestyle",
+      "icon": "book-open",
+      "color": "#22C55E"
+    },
+    "transfers": {
+      "names": {
+        "en": "Transfers",
+        "pt-BR": "Transferências",
+        "pt-PT": "Transferências",
+        "de": "Umbuchungen",
+        "fr": "Virements",
+        "es": "Transferencias",
+        "it": "Trasferimenti",
+        "pl": "Przelewy",
+        "ru": "Переводы",
+        "uk": "Перекази"
+      },
+      "group": "other",
+      "icon": "arrow-left-right",
+      "color": "#64748B",
+      "treat_as_transfer": true
+    },
+    "investments": {
+      "names": {
+        "en": "Investments",
+        "pt-BR": "Investimentos",
+        "pt-PT": "Investimentos",
+        "de": "Investitionen",
+        "fr": "Investissements",
+        "es": "Inversiones",
+        "it": "Investimenti",
+        "pl": "Inwestycje",
+        "ru": "Инвестиции",
+        "uk": "Інвестиції"
+      },
+      "group": "other",
+      "icon": "trending-up",
+      "color": "#0EA5E9",
+      "treat_as_transfer": true
+    },
+    "salary": {
+      "names": {
+        "en": "Salary & Income",
+        "pt-BR": "Salário & Renda",
+        "pt-PT": "Salário & Rendimentos",
+        "de": "Gehalt & Einnahmen",
+        "fr": "Salaire & Revenus",
+        "es": "Salario e Ingresos",
+        "it": "Stipendio e Entrate",
+        "pl": "Wynagrodzenie i Przychody",
+        "ru": "Зарплата и доходы",
+        "uk": "Зарплата та доходи"
+      },
+      "group": "income",
+      "icon": "banknote",
+      "color": "#16A34A"
+    },
+    "shopping": {
+      "names": {
+        "en": "Shopping",
+        "pt-BR": "Compras",
+        "pt-PT": "Compras",
+        "de": "Shopping",
+        "fr": "Achats",
+        "es": "Compras",
+        "it": "Shopping",
+        "pl": "Zakupy",
+        "ru": "Покупки",
+        "uk": "Покупки"
+      },
+      "group": "other",
+      "icon": "shopping-bag",
+      "color": "#F97316"
+    },
+    "donations": {
+      "names": {
+        "en": "Donations",
+        "pt-BR": "Doações",
+        "pt-PT": "Donativos",
+        "de": "Spenden",
+        "fr": "Dons",
+        "es": "Donaciones",
+        "it": "Donazioni",
+        "pl": "Darowizny",
+        "ru": "Пожертвования",
+        "uk": "Пожертви"
+      },
+      "group": "other",
+      "icon": "heart-handshake",
+      "color": "#D946EF"
+    },
+    "personal_care": {
+      "names": {
+        "en": "Personal Care",
+        "pt-BR": "Cuidados Pessoais",
+        "pt-PT": "Cuidados Pessoais",
+        "de": "Körperpflege",
+        "fr": "Soins personnels",
+        "es": "Cuidado Personal",
+        "it": "Cura Personale",
+        "pl": "Higiena osobista",
+        "ru": "Уход за собой",
+        "uk": "Догляд за собою"
+      },
+      "group": "lifestyle",
+      "icon": "scissors",
+      "color": "#F472B6"
+    },
+    "taxes": {
+      "names": {
+        "en": "Taxes & Fees",
+        "pt-BR": "Impostos & Taxas",
+        "pt-PT": "Impostos & Taxas",
+        "de": "Steuern & Gebühren",
+        "fr": "Impôts & Taxes",
+        "es": "Impuestos y Tasas",
+        "it": "Tasse e Imposte",
+        "pl": "Podatki i Opłaty",
+        "ru": "Налоги и сборы",
+        "uk": "Податки та збори"
+      },
+      "group": "other",
+      "icon": "landmark",
+      "color": "#78716C"
+    },
+    "other": {
+      "names": {
+        "en": "Other",
+        "pt-BR": "Outros",
+        "pt-PT": "Outros",
+        "de": "Sonstiges",
+        "fr": "Autres",
+        "es": "Otros",
+        "it": "Altro",
+        "pl": "Inne",
+        "ru": "Другое",
+        "uk": "Інше"
+      },
+      "group": "other",
+      "icon": "circle-help",
+      "color": "#6B7280"
+    }
+  }
+}

@@ -8,8 +8,8 @@ from app.models.category import Category
 from app.models.category_group import CategoryGroup
 from app.schemas.category import CategoryCreate, CategoryUpdate
 from app.services.category_group_service import get_groups
+from app.services.category_defaults import DEFAULT_CATEGORIES
 from app.services.category_service import (
-    DEFAULT_CATEGORIES_I18N,
     create_category,
     create_default_categories,
     delete_category,
@@ -28,7 +28,7 @@ from app.services.category_service import (
 async def test_create_default_categories(session: AsyncSession, test_user, test_workspace):
     categories = await create_default_categories(session, test_user.id, lang="pt-BR")
 
-    assert len(categories) == len(DEFAULT_CATEGORIES_I18N)
+    assert len(categories) == len(DEFAULT_CATEGORIES)
 
     names = {c.name for c in categories}
     assert "Moradia" in names
@@ -44,7 +44,7 @@ async def test_create_default_categories(session: AsyncSession, test_user, test_
 async def test_create_default_categories_german(session: AsyncSession, test_user, test_workspace):
     categories = await create_default_categories(session, test_user.id, lang="de")
 
-    assert len(categories) == len(DEFAULT_CATEGORIES_I18N)
+    assert len(categories) == len(DEFAULT_CATEGORIES)
 
     names = {c.name for c in categories}
     assert "Wohnen" in names
@@ -60,7 +60,7 @@ async def test_create_default_categories_german(session: AsyncSession, test_user
 async def test_create_default_categories_french(session: AsyncSession, test_user, test_workspace):
     categories = await create_default_categories(session, test_user.id, lang="fr")
 
-    assert len(categories) == len(DEFAULT_CATEGORIES_I18N)
+    assert len(categories) == len(DEFAULT_CATEGORIES)
 
     names = {c.name for c in categories}
     assert "Logement" in names
@@ -76,7 +76,7 @@ async def test_create_default_categories_french(session: AsyncSession, test_user
 async def test_create_default_categories_european_portuguese(session: AsyncSession, test_user, test_workspace):
     categories = await create_default_categories(session, test_user.id, lang="pt-PT")
 
-    assert len(categories) == len(DEFAULT_CATEGORIES_I18N)
+    assert len(categories) == len(DEFAULT_CATEGORIES)
 
     names = {c.name for c in categories}
     assert "Habitação" in names
@@ -104,7 +104,7 @@ async def test_create_default_categories_links_to_groups(session: AsyncSession, 
     categories = await create_default_categories(session, test_user.id, lang="pt-BR")
 
     with_group = [c for c in categories if c.group_id is not None]
-    assert len(with_group) == len(DEFAULT_CATEGORIES_I18N)
+    assert len(with_group) == len(DEFAULT_CATEGORIES)
 
 
 @pytest.mark.asyncio
@@ -115,6 +115,27 @@ async def test_create_default_categories_english(session: AsyncSession, test_use
     assert "Housing" in names
     assert "Food & Dining" in names
     assert "Transport" in names
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("lang", ["es", "it", "pl", "ru", "uk"])
+async def test_create_default_categories_localized(session: AsyncSession, test_user, test_workspace, lang):
+    categories = await create_default_categories(session, test_user.id, lang=lang)
+
+    assert len(categories) == len(DEFAULT_CATEGORIES)
+
+    names = {c.name for c in categories}
+    assert names == {data["names"][lang] for data in DEFAULT_CATEGORIES.values()}
+
+    for cat in categories:
+        assert cat.is_system is True
+
+
+def test_default_categories_cover_all_supported_languages():
+    langs = ["en", "pt-BR", "pt-PT", "de", "fr", "es", "it", "pl", "ru", "uk"]
+    for key, data in DEFAULT_CATEGORIES.items():
+        for lang in langs:
+            assert lang in data["names"], f"category '{key}' is missing a '{lang}' translation"
 
 
 @pytest.mark.asyncio
