@@ -565,6 +565,7 @@
     "balanceCreditCardHint": "Gib den Betrag, den du dieser Karte aktuell schuldest, als positiven Wert ein. Lasse das Feld auf 0, wenn du keine Schulden hast.",
     "balanceDate": "Saldodatum",
     "lastSync": "Letzte Synchr.",
+    "multiInstitutionLink_other": "{{provider}} · {{count}} Institute",
     "sync": "Synchronisieren",
     "disconnect": "Trennen",
     "addManual": "Konto hinzufügen",

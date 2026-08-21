@@ -9,6 +9,7 @@ from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.asset import Asset
+    from app.models.institution import Institution
     from app.models.user import User
 
 
@@ -43,6 +44,13 @@ class AssetGroup(Base):
         UUID(as_uuid=True), ForeignKey("bank_connections.id", ondelete="SET NULL"), nullable=True
     )
     external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # The institution backing a synced wallet (issue #345); null for manual
+    # wallets. Renders the "Synced from …" subtitle without falling back to
+    # the connection's first institution.
+    institution_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("institutions.id", ondelete="SET NULL"), nullable=True
+    )
 
     user: Mapped["User"] = relationship()
     assets: Mapped[list["Asset"]] = relationship(back_populates="group")
+    institution: Mapped[Optional["Institution"]] = relationship(lazy="selectin")

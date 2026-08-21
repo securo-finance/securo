@@ -565,6 +565,7 @@
     "balanceCreditCardHint": "Enter how much you currently owe on this card as a positive number. Leave at 0 if you have no debt.",
     "balanceDate": "Balance date",
     "lastSync": "Last sync",
+    "multiInstitutionLink": "{{provider}} · {{count}} institutions",
     "sync": "Sync",
     "disconnect": "Disconnect",
     "addManual": "Add Account",

@@ -2542,3 +2542,100 @@ async def test_sync_leaves_simplefin_checking_balance_unchanged(
 
     await session.refresh(account)
     assert account.balance == Decimal("1234.56")
+
+
+# ---------------------------------------------------------------------------
+# _sync_holdings — per-account wallets (issue #345)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sync_holdings_splits_wallets_per_account(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Holdings split into one wallet per owning account, backed by the
+    account's institution; assets in the legacy connection-named wallet are
+    re-attributed and the emptied wallet is deleted; a wallet the user made
+    themselves is never touched."""
+    from app.models.asset_group import AssetGroup
+    from app.models.institution import Institution
+    from app.services.connection_service import _sync_holdings
+
+    conn = await _make_connection(session, test_user.id, "First Bank")
+
+    inst = Institution(connection_id=conn.id, name="Second Brokerage")
+    session.add(inst)
+    await session.flush()
+    account = Account(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn.id, external_id="acc-1", name="Employer 401(k)",
+        type="investment", balance=Decimal("0"), currency="USD",
+        institution_id=inst.id,
+    )
+    session.add(account)
+
+    # Legacy wallet from the one-wallet-per-connection era, holding h-1.
+    legacy = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="First Bank", source="test",
+        connection_id=conn.id, external_id=conn.external_id,
+    )
+    # A wallet the user made themselves — sync must never touch it.
+    custom = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="US Stocks", source="manual",
+    )
+    session.add_all([legacy, custom])
+    await session.flush()
+
+    asset_legacy = Asset(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn.id, source="test", external_id="h-1",
+        name="Apple", type="investment", currency="USD",
+        valuation_method="manual", group_id=legacy.id,
+    )
+    asset_custom = Asset(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn.id, source="test", external_id="h-2",
+        name="Bonds", type="investment", currency="USD",
+        valuation_method="manual", group_id=custom.id,
+    )
+    session.add_all([asset_legacy, asset_custom])
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.get_holdings.return_value = [
+        HoldingData(
+            external_id="h-1", name="Apple", currency="USD",
+            current_value=Decimal("10"),
+            account_external_id="acc-1", account_name="Employer 401(k)",
+        ),
+        HoldingData(
+            external_id="h-2", name="Bonds", currency="USD",
+            current_value=Decimal("5"),
+            account_external_id="acc-1", account_name="Employer 401(k)",
+        ),
+    ]
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+    await session.commit()
+
+    groups = (
+        await session.execute(select(AssetGroup).where(AssetGroup.user_id == test_user.id))
+    ).scalars().all()
+    by_name = {g.name: g for g in groups}
+
+    # Per-account wallet created, named after the account, backed by its institution.
+    wallet = by_name["Employer 401(k)"]
+    assert wallet.external_id == f"{conn.external_id}::acc-1"
+    assert wallet.institution_id == inst.id
+
+    # h-1 re-attributed out of the legacy wallet, which emptied → deleted.
+    await session.refresh(asset_legacy)
+    assert asset_legacy.group_id == wallet.id
+    assert "First Bank" not in by_name
+
+    # The user's own wallet keeps its asset, even though h-2 was synced.
+    await session.refresh(asset_custom)
+    assert asset_custom.group_id == custom.id
+    assert "US Stocks" in by_name

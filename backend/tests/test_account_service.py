@@ -1180,3 +1180,108 @@ async def test_update_simplefin_type_change_not_crossing_card_keeps_balance(
     assert updated is not None
     assert updated.type == "savings"
     assert updated.balance == Decimal("1500.00")
+
+
+# ----- per-account institution resolution (issue #345) ------------------------
+
+
+def _mem_connection(**overrides):
+    from app.models.bank_connection import BankConnection
+
+    defaults = dict(
+        provider="simplefin",
+        external_id="CON-1",
+        institution_name="First Bank",
+        logo_url="https://logos.example/first.png",
+    )
+    defaults.update(overrides)
+    return BankConnection(**defaults)
+
+
+def _mem_institution(name="Second Brokerage", logo_url="https://logos.example/second.png"):
+    from app.models.institution import Institution
+
+    return Institution(name=name, logo_url=logo_url)
+
+
+def test_institution_falls_back_to_connection_when_account_has_none():
+    """Pluggy/Enable accounts have no institution row — connection wins."""
+    from app.services.account_service import _institution
+
+    acc = Account(name="Checking", type="checking")
+    name, logo = _institution(acc, _mem_connection())
+    assert name == "First Bank"
+    assert logo == "https://logos.example/first.png"
+
+
+def test_institution_prefers_the_accounts_own():
+    """A SimpleFIN account at another institution shows its own name and logo."""
+    from app.services.account_service import _institution
+
+    acc = Account(name="Brokerage", type="investment")
+    acc.institution = _mem_institution()
+    name, logo = _institution(acc, _mem_connection())
+    assert name == "Second Brokerage"
+    assert logo == "https://logos.example/second.png"
+
+
+def test_institution_never_mixes_name_and_logo():
+    """An account whose institution has no logo must not borrow the
+    connection's — that would pair one bank's name with another's icon."""
+    from app.services.account_service import _institution
+
+    acc = Account(name="Brokerage", type="investment")
+    acc.institution = _mem_institution(logo_url=None)
+    name, logo = _institution(acc, _mem_connection())
+    assert name == "Second Brokerage"
+    assert logo is None
+
+
+def test_institution_rename_labels_the_link_not_the_banks():
+    """Renaming a multi-institution connection must not erase per-account
+    bank identity; it only renames accounts without an institution row."""
+    from app.services.account_service import _institution
+
+    conn = _mem_connection(display_name="My Bank Link")
+
+    with_own = Account(name="Brokerage", type="investment")
+    with_own.institution = _mem_institution()
+    assert _institution(with_own, conn)[0] == "Second Brokerage"
+
+    without_own = Account(name="Checking", type="checking")
+    assert _institution(without_own, conn)[0] == "My Bank Link"
+
+
+def test_institution_manual_account_has_none():
+    from app.services.account_service import _institution
+
+    assert _institution(Account(name="Wallet", type="checking"), None) == (None, None)
+
+
+@pytest.mark.asyncio
+async def test_resolve_institution_upserts_and_reuses(session: AsyncSession, test_user):
+    """One Institution row per (connection, name); first sighting wins the
+    logo, later sightings backfill a missing one; no hint → no row."""
+    from app.providers.base import AccountData
+    from app.services.connection_service import _resolve_institution
+
+    conn_id = await _make_provider_connection(session, test_user.id, "simplefin")
+
+    def hint(name, logo=None):
+        return AccountData(
+            external_id="x", name="A", type="checking",
+            balance=Decimal("0"), currency="USD",
+            institution_name=name, institution_logo_url=logo,
+        )
+
+    cache = {}
+    first = await _resolve_institution(session, conn_id, cache, hint("Chase Bank"))
+    assert first is not None and first.logo_url is None
+    again = await _resolve_institution(
+        session, conn_id, {}, hint("Chase Bank", "https://logos.example/chase.png")
+    )
+    assert again is not None
+    assert again.id == first.id  # reused across cache misses
+    assert again.logo_url == "https://logos.example/chase.png"  # backfilled
+    assert await _resolve_institution(session, conn_id, cache, hint(None)) is None
+    assert await _resolve_institution(session, conn_id, cache, hint("   ")) is None

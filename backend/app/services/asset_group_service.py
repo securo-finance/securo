@@ -100,17 +100,21 @@ async def _rollup(
 
 
 async def _institution_name_for(
-    session: AsyncSession, connection_id: Optional[uuid.UUID]
+    session: AsyncSession, group: AssetGroup
 ) -> Optional[str]:
     """Fetch the bank/broker institution name for a synced wallet.
 
-    Returns None for manual wallets (no connection) or if the connection
-    was deleted — callers render the subtitle conditionally on this.
+    Prefers the wallet's own institution (issue #345), falling back to the
+    connection's label. Returns None for manual wallets (no connection) or
+    if the connection was deleted — callers render the subtitle
+    conditionally on this.
     """
-    if connection_id is None:
+    if group.institution is not None:
+        return group.institution.name
+    if group.connection_id is None:
         return None
     row = await session.execute(
-        select(BankConnection.institution_name).where(BankConnection.id == connection_id)
+        select(BankConnection.institution_name).where(BankConnection.id == group.connection_id)
     )
     return row.scalar_one_or_none()
 
@@ -143,7 +147,7 @@ async def get_groups(
         # "MeuPluggy 4 · 0 items" after reconnects/migrations.
         if g.source != "manual" and count == 0:
             continue
-        institution = await _institution_name_for(session, g.connection_id)
+        institution = await _institution_name_for(session, g)
         reads.append(_group_to_read(g, count, cv, cvp, institution))
     return reads
 
@@ -162,7 +166,7 @@ async def get_group(
         return None
     primary = await _primary_currency_for(session, user_id)
     count, cv, cvp = await _rollup(session, group, primary)
-    institution = await _institution_name_for(session, group.connection_id)
+    institution = await _institution_name_for(session, group)
     return _group_to_read(group, count, cv, cvp, institution)
 
 
@@ -222,7 +226,7 @@ async def update_group(
     await session.refresh(group)
     primary = await _primary_currency_for(session, user_id)
     count, cv, cvp = await _rollup(session, group, primary)
-    institution = await _institution_name_for(session, group.connection_id)
+    institution = await _institution_name_for(session, group)
     return _group_to_read(group, count, cv, cvp, institution)
 
 
@@ -245,6 +249,7 @@ async def ensure_group_for_connection(
     source: str,
     external_id: Optional[str],
     default_name: str,
+    institution_id: Optional[uuid.UUID] = None,
 ) -> AssetGroup:
     """Return (creating if absent) the group that owns a connection's assets.
 
@@ -271,6 +276,9 @@ async def ensure_group_for_connection(
         # Re-link if the connection was recreated. Name is preserved.
         if group.connection_id != connection_id:
             group.connection_id = connection_id
+        # Backfills groups that predate institution tracking (issue #345).
+        if institution_id is not None and group.institution_id != institution_id:
+            group.institution_id = institution_id
         return group
 
     position = await _next_position(session, user_id)
@@ -278,8 +286,9 @@ async def ensure_group_for_connection(
     # institution (common with Pluggy sandbox, where every item comes back
     # as "MeuPluggy"). Appends " 2", " 3", etc. until we find a free name.
     # User can rename freely afterwards without affecting sync matching,
-    # which keys on external_id, not on name.
-    unique_name = await _unique_default_name(session, user_id, default_name)
+    # which keys on external_id, not on name. Clamped so the disambiguating
+    # suffix still fits the 100-char name column.
+    unique_name = await _unique_default_name(session, user_id, default_name[:95])
     group = AssetGroup(
         user_id=user_id,
         name=unique_name,
@@ -289,6 +298,7 @@ async def ensure_group_for_connection(
         source=source,
         connection_id=connection_id,
         external_id=external_id,
+        institution_id=institution_id,
     )
     session.add(group)
     await session.flush()

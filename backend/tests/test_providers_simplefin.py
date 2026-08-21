@@ -518,3 +518,98 @@ def test_flow_type_is_token():
 def test_get_oauth_url_raises_for_token_flow():
     with pytest.raises(NotImplementedError):
         SimpleFinProvider().get_oauth_url("https://x", "state")
+
+
+# ----- multi-institution payloads (issue #345) --------------------------------
+
+
+def test_parse_accounts_maps_each_account_to_its_own_institution():
+    """connections[] entries are matched to accounts by conn_id, so a Setup
+    Token spanning several institutions labels each account with its own."""
+    payload = {
+        "connections": [
+            {"conn_id": "CON-1", "name": "First Bank", "org_url": "https://first.example"},
+            {"conn_id": "CON-2", "name": "Second Brokerage", "org_url": "https://second.example"},
+        ],
+        "accounts": [
+            {"id": "a1", "name": "Checking", "currency": "USD", "balance": "10", "conn_id": "CON-1"},
+            {"id": "a2", "name": "IRA", "currency": "USD", "balance": "20", "conn_id": "CON-2"},
+            {"id": "a3", "name": "Orphan", "currency": "USD", "balance": "30"},
+        ],
+    }
+
+    institution_name, accounts = SimpleFinProvider._parse_accounts(payload)
+
+    # Connection-level name keeps the previous first-entry behavior.
+    assert institution_name == "First Bank"
+    by_id = {a.external_id: a for a in accounts}
+    assert by_id["a1"].institution_name == "First Bank"
+    assert "first.example" in (by_id["a1"].institution_logo_url or "")
+    assert by_id["a2"].institution_name == "Second Brokerage"
+    assert "second.example" in (by_id["a2"].institution_logo_url or "")
+    # No conn_id → no per-account institution; serialize falls back to the connection.
+    assert by_id["a3"].institution_name is None
+    assert by_id["a3"].institution_logo_url is None
+
+
+def test_parse_accounts_connection_without_name_or_url_is_harmless():
+    """A nameless connections[] entry is skipped; a named one without a URL
+    yields a name but no logo."""
+    payload = {
+        "connections": [
+            {"conn_id": "CON-1"},
+            {"conn_id": "CON-2", "name": "Bare Bank"},
+        ],
+        "accounts": [
+            {"id": "a1", "name": "A", "currency": "USD", "balance": "1", "conn_id": "CON-1"},
+            {"id": "a2", "name": "B", "currency": "USD", "balance": "2", "conn_id": "CON-2"},
+        ],
+    }
+
+    _, accounts = SimpleFinProvider._parse_accounts(payload)
+    by_id = {a.external_id: a for a in accounts}
+    assert by_id["a1"].institution_name is None
+    assert by_id["a2"].institution_name == "Bare Bank"
+    assert by_id["a2"].institution_logo_url is None
+
+
+@pytest.mark.asyncio
+async def test_get_holdings_carries_the_owning_account():
+    """Each holding is stamped with its owning account so the sync can build
+    one wallet per investment account (issue #345)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "accounts": [
+                    {
+                        "id": "acc-1",
+                        "name": "Employer 401(k)",
+                        "currency": "USD",
+                        "holdings": [
+                            {"id": "h-1", "description": "Apple", "symbol": "AAPL",
+                             "market_value": "10.00", "shares": "1"},
+                        ],
+                    },
+                    {
+                        "id": "acc-2",
+                        "name": "Rollover IRA",
+                        "currency": "USD",
+                        "holdings": [
+                            {"id": "h-2", "description": "Bonds", "symbol": "BND",
+                             "market_value": "5.00", "shares": "1"},
+                        ],
+                    },
+                ],
+            },
+        )
+
+    creds = {"access_url": "https://u:p@bridge.example/simplefin"}
+    with _patched_client(handler):
+        holdings = await SimpleFinProvider().get_holdings(creds)
+    by_id = {h.external_id: h for h in holdings}
+    assert by_id["h-1"].account_external_id == "acc-1"
+    assert by_id["h-1"].account_name == "Employer 401(k)"
+    assert by_id["h-2"].account_external_id == "acc-2"
+    assert by_id["h-2"].account_name == "Rollover IRA"

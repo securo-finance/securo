@@ -133,10 +133,18 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
         ]
 
 
-def _institution_name(connection: Optional[BankConnection]) -> Optional[str]:
+def _institution(
+    acc: Account, connection: Optional[BankConnection]
+) -> tuple[Optional[str], Optional[str]]:
+    # (name, logo) resolved as a pair so both always describe the same
+    # institution. An account's own institution (SimpleFIN — issue #345)
+    # wins: renaming a multi-institution connection labels the link, not the
+    # banks inside it. Accounts without one fall back to the connection.
+    if acc.institution is not None:
+        return acc.institution.name, acc.institution.logo_url
     if not connection:
-        return None
-    return connection.display_name or connection.institution_name
+        return None, None
+    return connection.display_name or connection.institution_name, connection.logo_url
 
 
 def serialize_account(
@@ -152,6 +160,7 @@ def serialize_account(
     else:
         resolved_balance = float(current_balance or 0)
 
+    institution_name, institution_logo_url = _institution(acc, connection)
     payload = {
         "id": acc.id,
         "user_id": acc.user_id,
@@ -173,8 +182,8 @@ def serialize_account(
         "minimum_payment": float(acc.minimum_payment) if acc.minimum_payment is not None else None,
         "card_brand": acc.card_brand,
         "card_level": acc.card_level,
-        "institution_name": _institution_name(connection),
-        "institution_logo_url": connection.logo_url if connection else None,
+        "institution_name": institution_name,
+        "institution_logo_url": institution_logo_url,
         "available_credit": None,
         "next_close_date": None,
         "next_due_date": None,
