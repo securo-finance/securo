@@ -1021,7 +1021,7 @@ export default function AssetsPage() {
         action={
           canWrite ? (
             <div className="flex items-center gap-2">
-              <Button onClick={() => navigate('/assets/import')} variant="outline" className="gap-1.5">
+              <Button onClick={() => navigate('/import?tab=investments')} variant="outline" className="gap-1.5">
                 <Upload size={16} />
                 {t('assetImport.action')}
               </Button>

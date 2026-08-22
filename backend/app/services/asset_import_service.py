@@ -21,6 +21,7 @@ Two things shape the design:
 """
 import csv
 import io
+import logging
 import uuid
 from datetime import date as date_type
 from datetime import datetime, timezone
@@ -33,7 +34,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
 from app.models.asset_transaction import AssetTransaction
-from app.providers.market_price import MarketPriceProvider, get_market_price_provider
+from app.models.import_log import ImportLog
+from app.providers.market_price import (
+    MarketPriceProvider,
+    MarketPriceRateLimitedError,
+    get_market_price_provider,
+)
 from app.schemas.asset_import import (
     AssetImportRowError,
     AssetImportWarning,
@@ -46,6 +52,12 @@ from app.services.import_service import (
     normalize_amount,
 )
 from app.services.rule_engine import _strip_accents
+
+logger = logging.getLogger(__name__)
+
+#: How many tickers the bulk lookup may miss before we stop double-checking
+#: them one by one. Past this the provider is having a bad day, not the file.
+_QUOTE_FALLBACK_LIMIT = 25
 
 #: Securo fields a CSV column can be mapped to, and which of them a file cannot
 #: do without. Mirrors the transaction importer's `CSV_MAPPABLE_FIELDS`, and
@@ -331,19 +343,44 @@ async def resolve_tickers(
 ) -> dict[str, bool]:
     """Which of these tickers the price provider recognises.
 
-    One batch call for the whole file. A ticker the provider does not know can
-    still be imported onto a holding that already exists in the workspace; it
-    is only a problem when the holding would have to be created.
+    One batch call answers for the whole file, which is what keeps a 200-row
+    import from making 200 requests. The bulk endpoint is not authoritative
+    though: it answers with an empty result often enough — the same ticker can
+    come back priced and then empty seconds later — that treating a miss as
+    proof would reject real holdings. So the few it did not answer for are
+    confirmed one by one against the quote endpoint, which is.
+
+    A ticker nobody recognises can still be imported onto a holding that
+    already exists in the workspace; it only blocks a holding that would have
+    to be created.
     """
     provider = market_provider or get_market_price_provider()
     unique = sorted({t.upper() for t in tickers if t})
     if not unique:
         return {}
+
+    resolved: dict[str, bool] = {}
     try:
         prices = await provider.get_latest_prices(unique)
-    except Exception:  # provider down or rate-limited: nothing is resolvable
-        return {t: False for t in unique}
-    return {t: prices.get(t) is not None for t in unique}
+        resolved = {t: prices.get(t) is not None for t in unique}
+    except MarketPriceRateLimitedError:
+        raise  # the endpoint turns this into a 429 the user can act on
+    except Exception:
+        # Swallowing this silently would report every ticker as unknown and
+        # blame the file for the provider's outage.
+        logger.warning("Bulk price lookup failed; falling back to quotes", exc_info=True)
+        resolved = {t: False for t in unique}
+
+    unconfirmed = [t for t in unique if not resolved.get(t)]
+    for ticker in unconfirmed[:_QUOTE_FALLBACK_LIMIT]:
+        try:
+            resolved[ticker] = await provider.get_quote(ticker) is not None
+        except MarketPriceRateLimitedError:
+            raise
+        except Exception:
+            logger.warning("Quote lookup failed for %s", ticker, exc_info=True)
+            resolved[ticker] = False
+    return resolved
 
 
 async def _existing_holdings(
@@ -424,6 +461,7 @@ async def import_orders(
     *,
     group_id: Optional[uuid.UUID] = None,
     dry_run: bool = False,
+    filename: Optional[str] = None,
     market_provider: Optional[MarketPriceProvider] = None,
 ) -> dict:
     """Apply a file of orders to the workspace's holdings.
@@ -505,6 +543,20 @@ async def import_orders(
     if dry_run or not accepted:
         return summary
 
+    # The log exists before the rows so they can point at it, and is removed
+    # again if the run ends up writing nothing.
+    log = ImportLog(
+        user_id=user_id,
+        workspace_id=workspace_id,
+        account_id=None,
+        entity='asset_orders',
+        filename=filename or 'orders.csv',
+        format='csv',
+        transaction_count=0,
+    )
+    session.add(log)
+    await session.flush()
+
     quotes = {}
     if to_create:
         provider = market_provider or get_market_price_provider()
@@ -554,6 +606,7 @@ async def import_orders(
             date=order.date,
             source='import',
             external_id=order.external_id,
+            import_id=log.id,
             notes=order.notes,
         ))
         touched[order.ticker] = asset
@@ -563,10 +616,17 @@ async def import_orders(
     # Once per holding, not once per row: the recompute walks the whole ledger.
     for asset in touched.values():
         await asset_transaction_service.recompute_and_cache(session, asset)
+
+    if written:
+        log.transaction_count = written
+        session.add(log)
+    else:
+        await session.delete(log)
     await session.commit()
 
     summary['errors'] = errors
     summary['imported'] = written
+    summary['import_log_id'] = str(log.id) if written else None
     summary['holdings_created'] = len([t for t in to_create if t in touched])
     return summary
 
@@ -579,3 +639,44 @@ def csv_template() -> str:
         'AAPL,2026-03-02,-4,178.30,1.20,sell,USD,partial exit\n'
         'PETR4.SA,2026-02-10,100,38.50,2.90,buy,BRL,\n'
     )
+
+
+async def undo_import(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    log: ImportLog,
+) -> int:
+    """Take back every order an import wrote, and leave the portfolio as it was.
+
+    Deleting the rows is only half of it. A position is derived from its
+    ledger, so each touched holding has to be recomputed, and a holding this
+    import created from nothing has to go with it — otherwise undoing leaves
+    an empty ticker sitting in the wallet. A holding that still has orders
+    after the delete is one the user also fed by hand or by an earlier import,
+    so it stays.
+    """
+    result = await session.execute(
+        select(AssetTransaction).where(AssetTransaction.import_id == log.id)
+    )
+    rows = list(result.scalars().all())
+    asset_ids = {row.asset_id for row in rows}
+
+    for row in rows:
+        await session.delete(row)
+    await session.flush()
+
+    for asset_id in asset_ids:
+        asset = await session.get(Asset, asset_id)
+        if asset is None or asset.workspace_id != workspace_id:
+            continue
+        remaining = await session.execute(
+            select(AssetTransaction.id).where(AssetTransaction.asset_id == asset_id).limit(1)
+        )
+        if remaining.scalar_one_or_none() is None:
+            await session.delete(asset)
+        else:
+            await asset_transaction_service.recompute_and_cache(session, asset)
+
+    await session.delete(log)
+    await session.commit()
+    return len(rows)

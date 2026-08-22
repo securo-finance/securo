@@ -484,8 +484,10 @@ export interface RuleImportResponse {
 export interface ImportLog {
   id: string
   user_id: string
-  account_id: string
+  /** Null for an order import, which lands on holdings rather than an account. */
+  account_id: string | null
   account_name: string | null
+  entity: 'transactions' | 'asset_orders'
   filename: string
   format: string
   transaction_count: number

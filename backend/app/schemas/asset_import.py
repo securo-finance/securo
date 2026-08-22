@@ -56,9 +56,12 @@ class AssetImportPreview(BaseModel):
 class AssetImportRequest(BaseModel):
     orders: list[AssetOrderImport]
     group_id: Optional[UUID] = None
+    #: Only for the history entry, so a past import is recognisable.
+    filename: Optional[str] = None
 
 
 class AssetImportResult(BaseModel):
+    import_log_id: Optional[UUID] = None
     imported: int
     skipped: int
     holdings_created: int

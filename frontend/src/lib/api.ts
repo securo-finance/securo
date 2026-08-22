@@ -1160,8 +1160,9 @@ export const assets = {
   importOrders: async (
     orders: AssetOrderImport[],
     group_id?: string | null,
+    filename?: string,
   ): Promise<AssetImportResult> => {
-    const { data } = await api.post('/assets/import', { orders, group_id: group_id || null })
+    const { data } = await api.post('/assets/import', { orders, group_id: group_id || null, filename })
     return data
   },
   importTemplate: async (): Promise<void> => {

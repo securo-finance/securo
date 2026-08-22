@@ -1,5 +1,6 @@
 """Importing broker orders: reading the file, and applying it to holdings."""
 import uuid
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -373,3 +374,161 @@ async def test_warns_harder_when_the_same_orders_are_already_in_another_wallet(
     assert [(w.ticker, w.reason, w.wallet) for w in summary["warnings"]] == [
         ("AAPL", "orders_already_in_other_wallet", "Corretora B"),
     ]
+
+
+# ---------------------------------------------------------------------------
+# History and undo
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_import_records_a_history_entry(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    from app.models.import_log import ImportLog
+
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price",
+        "AAPL,2026-01-15,10,100.00",
+        "AAPL,2026-02-15,5,120.00",
+    ), provider, filename="corretora.csv")
+
+    log = (await session.execute(select(ImportLog))).scalars().one()
+    assert (log.entity, log.filename, log.transaction_count) == ("asset_orders", "corretora.csv", 2)
+    assert log.account_id is None  # an order import has no account
+    assert summary["import_log_id"] == str(log.id)
+
+
+@pytest.mark.asyncio
+async def test_an_import_that_writes_nothing_leaves_no_history(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    from app.models.import_log import ImportLog
+
+    content = _csv("ticker,date,quantity,price", "AAPL,2026-01-15,10,100.00")
+    await _import(session, test_workspace, test_user, content, provider)
+    summary = await _import(session, test_workspace, test_user, content, provider)  # all duplicates
+
+    assert summary["imported"] == 0
+    assert len((await session.execute(select(ImportLog))).scalars().all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_undo_removes_the_orders_and_the_holding_it_created(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    from app.models.import_log import ImportLog
+
+    await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price",
+        "AAPL,2026-01-15,10,100.00",
+    ), provider)
+    log = (await session.execute(select(ImportLog))).scalars().one()
+
+    removed = await asset_import_service.undo_import(session, test_workspace.id, log)
+
+    assert removed == 1
+    assert (await session.execute(select(Asset))).scalars().first() is None
+    assert (await session.execute(select(AssetTransaction))).scalars().first() is None
+    assert (await session.execute(select(ImportLog))).scalars().first() is None
+
+
+@pytest.mark.asyncio
+async def test_undo_keeps_a_holding_that_has_other_orders_and_recomputes_it(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    """A holding the user also fed by hand survives the undo, with the position
+    it would have had if the import had never run."""
+    from app.models.import_log import ImportLog
+
+    await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price",
+        "AAPL,2026-01-15,10,100.00",
+    ), provider)
+    asset = await _only_asset(session, test_workspace)
+    session.add(AssetTransaction(
+        asset_id=asset.id, workspace_id=test_workspace.id, kind="buy",
+        quantity=Decimal("4"), price=Decimal("200.00"), fee=Decimal("0"),
+        date=date(2026, 3, 1), source="manual",
+    ))
+    await session.commit()
+
+    log = (await session.execute(select(ImportLog))).scalars().one()
+    await asset_import_service.undo_import(session, test_workspace.id, log)
+
+    survivor = await _only_asset(session, test_workspace)
+    assert survivor.units == Decimal("4")          # only the manual buy is left
+    assert survivor.average_price == Decimal("200")
+
+
+@pytest.mark.asyncio
+async def test_undo_leaves_a_pre_existing_holding_alone(
+    session: AsyncSession, test_user: User, test_workspace: Workspace, provider
+):
+    from app.models.import_log import ImportLog
+
+    existing = Asset(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Apple", type="stock", currency="USD", valuation_method="market_price",
+        ticker="AAPL", units=Decimal("0"),
+    )
+    session.add(existing)
+    session.add(AssetTransaction(
+        asset_id=existing.id, workspace_id=test_workspace.id, kind="buy",
+        quantity=Decimal("2"), price=Decimal("50.00"), fee=Decimal("0"),
+        date=date(2025, 1, 1), source="manual",
+    ))
+    await session.commit()
+
+    await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price",
+        "AAPL,2026-01-15,10,100.00",
+    ), provider)
+    log = (await session.execute(select(ImportLog))).scalars().one()
+    await asset_import_service.undo_import(session, test_workspace.id, log)
+
+    survivor = await session.get(Asset, existing.id)
+    assert survivor is not None
+    assert survivor.units == Decimal("2")
+
+
+class FlakyBatchProvider(FakeProvider):
+    """The bulk endpoint answers empty even for tickers it knows.
+
+    Not hypothetical: yfinance's bulk download returned a price for AAPL and
+    then nothing for the same ticker seconds later, which used to reject the
+    whole file as unknown tickers.
+    """
+
+    async def get_latest_prices(self, symbols):
+        self.latest_price_calls += 1
+        return {s.upper(): None for s in symbols}
+
+
+@pytest.mark.asyncio
+async def test_a_bulk_miss_is_confirmed_against_the_quote_endpoint(
+    session: AsyncSession, test_user: User, test_workspace: Workspace
+):
+    provider = FlakyBatchProvider()
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price",
+        "AAPL,2026-01-15,10,100.00",
+    ), provider)
+
+    assert summary["errors"] == []
+    assert summary["imported"] == 1
+    assert provider.quote_calls >= 1  # the bulk miss was double-checked
+
+
+@pytest.mark.asyncio
+async def test_a_ticker_neither_call_knows_is_still_refused(
+    session: AsyncSession, test_user: User, test_workspace: Workspace
+):
+    provider = FlakyBatchProvider()
+    summary = await _import(session, test_workspace, test_user, _csv(
+        "ticker,date,quantity,price",
+        "NOSUCH,2026-01-15,10,100.00",
+    ), provider)
+
+    assert [(e.row, e.reason) for e in summary["errors"]] == [(2, "unknown_ticker")]
+    assert summary["imported"] == 0

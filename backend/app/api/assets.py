@@ -305,7 +305,8 @@ async def import_asset_orders(
     """Apply the previewed orders to the workspace's holdings."""
     try:
         summary = await asset_import_service.import_orders(
-            session, ctx.workspace.id, ctx.user_id, data.orders, group_id=data.group_id
+            session, ctx.workspace.id, ctx.user_id, data.orders,
+            group_id=data.group_id, filename=data.filename,
         )
     except MarketPriceRateLimitedError:
         raise HTTPException(
