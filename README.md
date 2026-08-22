@@ -87,6 +87,19 @@ Everything beyond the core is off by default, needs a single env flag, and costs
 - **Plugins**: install community plugins into a workspace from the plugin catalog, with a preview before anything changes. Data plugins add categories and rules and need only `PLUGINS_ENABLED=true`. Plugins with code, such as sync from a service you use, also need the `plugins` Compose profile: they run in their own containers, without the core secrets or the database, and can reach only the hosts they declare.
 - **AI Agents**: self-hosted assistants over your data, multi-provider, with tool use and a per-agent knowledge base. [Guide](https://docs.usesecuro.com/features/agents/)
 
+### Akahu: New Zealand banks
+
+[Akahu](https://www.akahu.nz/) is New Zealand's open finance platform. Each user creates a free [Personal App](https://developers.akahu.nz/docs/personal-apps) at [my.akahu.nz](https://my.akahu.nz/developers), links their banks, and receives an App ID Token and User Token.
+
+Enable the provider:
+
+```
+AKAHU_ENABLED=true
+```
+
+In Securo, go to **Accounts → Connect Bank → Akahu** and paste both tokens in either order. Personal apps provide 365 days of transaction history, and retain history from the app's creation date.
+
+
 ## AI-Assisted Development
 
 Parts of this codebase were built with help of AI. All code is human-reviewed and no data leaves your environment.

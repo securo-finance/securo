@@ -45,6 +45,14 @@ KNOWN_PROVIDERS = [
         "requires_institution_select": False,
         "supports_asset_sync": True,
     },
+    {
+        "name": "akahu",
+        "display_name": "Akahu",
+        "description": "New Zealand banks via Akahu open finance",
+        "flow_type": "token",
+        "requires_institution_select": False,
+        "supports_asset_sync": False,
+    },
 ]
 
 
@@ -86,6 +94,10 @@ def _available_providers(settings: Settings | None = None) -> dict[str, type[Ban
     for name, (module, class_name) in _CREDENTIALED_PROVIDERS.items():
         if is_configured(name, settings):
             providers[name] = getattr(import_module(module), class_name)
+    if settings.akahu_enabled:
+        from app.providers.akahu import AkahuProvider
+
+        providers["akahu"] = AkahuProvider
     return providers
 
 
