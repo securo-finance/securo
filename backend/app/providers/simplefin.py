@@ -378,6 +378,33 @@ class SimpleFinProvider(BankProvider):
         return by_conn_id
 
     @staticmethod
+    def _account_institution_hint(
+        raw_acc: dict, by_conn_id: dict[str, tuple[str, Optional[str]]]
+    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
+        """(external_id, name, logo) of the institution owning one account.
+
+        The Bridge puts institutions in a top-level connections[] matched by
+        conn_id; spec-style servers attach an ``org`` object to each account
+        instead — same fallback _org_website already does. All-None when the
+        payload carries neither.
+        """
+        conn_id = raw_acc.get("conn_id")
+        if conn_id and str(conn_id) in by_conn_id:
+            name, logo = by_conn_id[str(conn_id)]
+            return str(conn_id), name, logo
+        org = raw_acc.get("org") or {}
+        name = org.get("name") or org.get("domain")
+        if not name:
+            return None, None, None
+        url = org.get("url") or org.get("domain") or org.get("sfin-url")
+        ext = org.get("id") or org.get("domain")
+        return (
+            str(ext) if ext else None,
+            name,
+            favicon_url_for(url) if url else None,
+        )
+
+    @staticmethod
     def _parse_accounts(payload: dict) -> tuple[str, list[AccountData]]:
         connections = payload.get("connections") or []
         institution_name = (
@@ -392,8 +419,8 @@ class SimpleFinProvider(BankProvider):
             if not account_id:
                 continue
             name = raw.get("name") or "Account"
-            acc_institution_name, acc_institution_logo = by_conn_id.get(
-                str(raw.get("conn_id")), (None, None)
+            inst_ext, inst_name, inst_logo = SimpleFinProvider._account_institution_hint(
+                raw, by_conn_id
             )
 
             accounts.append(
@@ -403,8 +430,9 @@ class SimpleFinProvider(BankProvider):
                     type="checking",  # SimpleFIN doesn't expose an account type
                     balance=balance,
                     currency=currency,
-                    institution_name=acc_institution_name,
-                    institution_logo_url=acc_institution_logo,
+                    institution_external_id=inst_ext,
+                    institution_name=inst_name,
+                    institution_logo_url=inst_logo,
                 )
             )
         return institution_name or "SimpleFIN Connection", accounts

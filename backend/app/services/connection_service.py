@@ -73,34 +73,76 @@ async def _resolve_institution(
 ) -> Optional[Institution]:
     """Get-or-create the Institution row an account's provider hint names.
 
-    Keyed by cleaned name within the connection; the first sighting wins the
-    logo. Providers without per-account hints (Pluggy/Enable — one institution
-    per connection) return None, and serialization falls back to the
-    connection's own fields.
+    Matched by the provider's stable org id when it sends one, so a bank
+    renamed on the provider side updates its row in place instead of minting
+    a new one (review on #654); name identity is the fallback for servers
+    that only send a name. Providers without per-account hints
+    (Pluggy/Enable — one institution per connection) return None, and
+    serialization falls back to the connection's own fields.
     """
     name = _clean_institution_name(acc_data.institution_name)
     if not name:
         return None
-    if name in cache:
-        return cache[name]
-    inst = (
-        await session.execute(
-            select(Institution).where(
-                Institution.connection_id == connection_id, Institution.name == name
+    ext = _clean_institution_name(acc_data.institution_external_id)
+    key = f"id:{ext}" if ext else f"name:{name}"
+    if key in cache:
+        return cache[key]
+
+    inst: Optional[Institution] = None
+    if ext:
+        inst = (
+            await session.execute(
+                select(Institution).where(
+                    Institution.connection_id == connection_id,
+                    Institution.external_id == ext,
+                )
             )
-        )
-    ).scalar_one_or_none()
+        ).scalar_one_or_none()
+        if inst is None:
+            # Adopt a row created before the server sent org ids, so the
+            # accounts pointing at it don't get orphaned onto a new row.
+            inst = (
+                await session.execute(
+                    select(Institution).where(
+                        Institution.connection_id == connection_id,
+                        Institution.external_id.is_(None),
+                        Institution.name == name,
+                    )
+                )
+            ).scalar_one_or_none()
+            if inst is not None:
+                inst.external_id = ext
+    else:
+        # Name-only hint. Match any row with this name — id-keyed rows
+        # included, so a payload that intermittently drops org ids doesn't
+        # spawn duplicates. NULLS FIRST keeps the pick deterministic.
+        inst = (
+            await session.execute(
+                select(Institution)
+                .where(
+                    Institution.connection_id == connection_id,
+                    Institution.name == name,
+                )
+                .order_by(Institution.external_id.asc().nulls_first())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+
     if inst is None:
         inst = Institution(
             connection_id=connection_id,
+            external_id=ext,
             name=name,
             logo_url=_clean_logo_url(acc_data.institution_logo_url),
         )
         session.add(inst)
         await session.flush()
-    elif inst.logo_url is None:
-        inst.logo_url = _clean_logo_url(acc_data.institution_logo_url)
-    cache[name] = inst
+    else:
+        if inst.name != name:
+            inst.name = name  # provider-side rename
+        if inst.logo_url is None:
+            inst.logo_url = _clean_logo_url(acc_data.institution_logo_url)
+    cache[key] = inst
     return inst
 
 PLUGGY_CATEGORY_MAP = {
@@ -1667,17 +1709,22 @@ async def sync_connection(
         # the real one, the orphan twin gets removed here.
         await _cleanup_phantom_duplicates(session, connection.id)
 
-        # Institutions no account references anymore (e.g. the provider
-        # renamed a bank, repointing its accounts at a fresh row) would
-        # otherwise linger and inflate the connections API list (issue #345).
-        stale_institutions = await session.execute(
+        # Reap institution rows referenced by nothing. Id-carrying servers
+        # never orphan a row (renames update in place), but a name-only
+        # server that renames its bank mints a fresh row and repoints the
+        # accounts — the abandoned row would otherwise keep a single-bank
+        # link presenting as multi-institution forever. Requiring zero
+        # account AND zero wallet references means a wallet's "Synced from"
+        # label can never be taken away.
+        orphaned_institutions = await session.execute(
             select(Institution).where(
                 Institution.connection_id == connection.id,
                 ~exists().where(Account.institution_id == Institution.id),
+                ~exists().where(AssetGroup.institution_id == Institution.id),
             )
         )
-        for inst in stale_institutions.scalars().all():
-            await session.delete(inst)
+        for orphan in orphaned_institutions.scalars().all():
+            await session.delete(orphan)
 
         # Refresh investment holdings (brokerage, fixed income, funds,
         # etc.) when enabled for this connection. Errors here are logged but

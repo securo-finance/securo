@@ -137,14 +137,22 @@ def _institution(
     acc: Account, connection: Optional[BankConnection]
 ) -> tuple[Optional[str], Optional[str]]:
     # (name, logo) resolved as a pair so both always describe the same
-    # institution. An account's own institution (SimpleFIN — issue #345)
-    # wins: renaming a multi-institution connection labels the link, not the
-    # banks inside it. Accounts without one fall back to the connection.
-    if acc.institution is not None:
+    # institution. The account's own institution (SimpleFIN — issue #345)
+    # only outranks a connection rename when the link actually spans several
+    # institutions — on a single-bank link the rename keeps working. The logo
+    # falls back to the connection's only on single-institution links, where
+    # it belongs to the same bank; on multi links a missing favicon beats
+    # another bank's.
+    if acc.institution is None:
+        if not connection:
+            return None, None
+        return connection.display_name or connection.institution_name, connection.logo_url
+    if connection is None:
         return acc.institution.name, acc.institution.logo_url
-    if not connection:
-        return None, None
-    return connection.display_name or connection.institution_name, connection.logo_url
+    if len(connection.institutions) > 1:
+        return acc.institution.name, acc.institution.logo_url
+    name = connection.display_name or acc.institution.name
+    return name, acc.institution.logo_url or connection.logo_url
 
 
 def serialize_account(

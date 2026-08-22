@@ -571,6 +571,7 @@
     "balanceCreditCardHint": "Введите положительное число — сколько вы должны по этой карте. Оставьте 0, если долга нет.",
     "balanceDate": "Дата баланса",
     "lastSync": "Последняя синхронизация",
+    "multiInstitutionLink_one": "{{provider}} · {{count}} учреждение",
     "multiInstitutionLink_few": "{{provider}} · {{count}} учреждения",
     "multiInstitutionLink_many": "{{provider}} · {{count}} учреждений",
     "multiInstitutionLink_other": "{{provider}} · {{count}} учреждения",

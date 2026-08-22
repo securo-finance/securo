@@ -70,7 +70,11 @@ class AccountData:
     # provider exposes one. Disambiguates accounts a bank reports under an
     # identical name (issue #408). Never the full identifier — see mask_last4.
     masked_number: Optional[str] = None
-    # Per-account institution override (SimpleFIN — issue #345). None = same as connection.
+    # Per-account institution override (SimpleFIN — issue #345). None = same
+    # as connection. The external id is the provider's stable org id
+    # (SimpleFIN conn_id) so a renamed bank updates its row instead of
+    # minting a new one; name-only hints fall back to name identity.
+    institution_external_id: Optional[str] = None
     institution_name: Optional[str] = None
     institution_logo_url: Optional[str] = None
 

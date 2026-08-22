@@ -544,11 +544,14 @@ def test_parse_accounts_maps_each_account_to_its_own_institution():
     assert institution_name == "First Bank"
     by_id = {a.external_id: a for a in accounts}
     assert by_id["a1"].institution_name == "First Bank"
+    assert by_id["a1"].institution_external_id == "CON-1"
     assert "first.example" in (by_id["a1"].institution_logo_url or "")
     assert by_id["a2"].institution_name == "Second Brokerage"
+    assert by_id["a2"].institution_external_id == "CON-2"
     assert "second.example" in (by_id["a2"].institution_logo_url or "")
     # No conn_id → no per-account institution; serialize falls back to the connection.
     assert by_id["a3"].institution_name is None
+    assert by_id["a3"].institution_external_id is None
     assert by_id["a3"].institution_logo_url is None
 
 
@@ -571,6 +574,33 @@ def test_parse_accounts_connection_without_name_or_url_is_harmless():
     assert by_id["a1"].institution_name is None
     assert by_id["a2"].institution_name == "Bare Bank"
     assert by_id["a2"].institution_logo_url is None
+
+
+def test_parse_accounts_falls_back_to_account_org_object():
+    """Spec-style servers attach an ``org`` object per account instead of a
+    top-level connections[]; the feature still works there (review on #654)."""
+    payload = {
+        "accounts": [
+            {
+                "id": "a1", "name": "Checking", "currency": "USD", "balance": "10",
+                "org": {"name": "Org Bank", "domain": "orgbank.example", "id": "ORG-1"},
+            },
+            {
+                "id": "a2", "name": "Savings", "currency": "USD", "balance": "20",
+                "org": {"domain": "nameless.example"},
+            },
+        ],
+    }
+
+    _, accounts = SimpleFinProvider._parse_accounts(payload)
+    by_id = {a.external_id: a for a in accounts}
+    assert by_id["a1"].institution_name == "Org Bank"
+    assert by_id["a1"].institution_external_id == "ORG-1"
+    assert "orgbank.example" in (by_id["a1"].institution_logo_url or "")
+    # A nameless org still identifies the bank by domain.
+    assert by_id["a2"].institution_name == "nameless.example"
+    assert by_id["a2"].institution_external_id == "nameless.example"
+    assert "nameless.example" in (by_id["a2"].institution_logo_url or "")
 
 
 @pytest.mark.asyncio

@@ -2639,3 +2639,97 @@ async def test_sync_holdings_splits_wallets_per_account(
     await session.refresh(asset_custom)
     assert asset_custom.group_id == custom.id
     assert "US Stocks" in by_name
+
+
+# ---------------------------------------------------------------------------
+# sync_connection — institution wiring (issue #345)
+# ---------------------------------------------------------------------------
+
+
+def _institution_provider(institution_name: str) -> AsyncMock:
+    mock = AsyncMock()
+    mock.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="acc-1", name="Checking", type="checking",
+            balance=Decimal("0"), currency="USD",
+            institution_external_id="CON-1", institution_name=institution_name,
+        ),
+    ])
+    mock.get_transactions = AsyncMock(return_value=[])
+    mock.get_holdings = AsyncMock(return_value=[])
+    mock.get_bills = AsyncMock(return_value=[])
+    return mock
+
+
+@pytest.mark.asyncio
+async def test_sync_wires_account_institutions_and_reaps_orphans(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The account loop backfills institution_id on pre-existing accounts, a
+    provider-side rename updates the row in place, rows nothing references
+    are reaped, wallet-referenced rows survive, and the connections API
+    exposes the link's institutions (review on #654)."""
+    from app.models.asset_group import AssetGroup
+    from app.models.institution import Institution
+    from app.schemas.bank_connection import BankConnectionRead
+
+    conn = await _make_connection(session, test_user.id, "Sync Bank")
+    conn_id = conn.id
+
+    # Pre-existing account with no institution yet — must get backfilled.
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn_id, external_id="acc-1", name="Checking",
+        type="checking", balance=Decimal("0"), currency="USD",
+    )
+    session.add(account)
+    account_id = account.id
+    # An abandoned identity-drift row: no account or wallet points at it.
+    stray = Institution(connection_id=conn_id, name="Old Name Bank")
+    # A row only a wallet references — the reap must never touch it.
+    kept = Institution(connection_id=conn_id, name="Departed Brokerage")
+    session.add_all([stray, kept])
+    await session.flush()
+    stray_id, kept_id = stray.id, kept.id
+    session.add(AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Old 401(k)", source="test", connection_id=conn_id,
+        external_id="ext::gone", institution_id=kept_id,
+    ))
+    await session.commit()
+
+    def _patched(mock):
+        return (
+            patch("app.services.connection_service.get_provider", return_value=mock),
+            patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock),
+            patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock),
+            patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock),
+        )
+
+    p1, p2, p3, p4 = _patched(_institution_provider("Chase"))
+    with p1, p2, p3, p4:
+        await sync_connection(session, conn_id, test_workspace.id, test_user.id)
+
+    from app.models.institution import Institution as Inst
+    inst = (
+        await session.execute(select(Inst).where(Inst.external_id == "CON-1"))
+    ).scalar_one()
+    assert inst.name == "Chase"
+    refreshed = await session.get(Account, account_id)
+    assert refreshed is not None and refreshed.institution_id == inst.id
+    assert await session.get(Inst, stray_id) is None  # reaped: nothing references it
+    assert await session.get(Inst, kept_id) is not None  # wallet keeps its label
+
+    # Provider-side rename: same row, new name, no new rows.
+    p1, p2, p3, p4 = _patched(_institution_provider("Chase Bank"))
+    with p1, p2, p3, p4:
+        await sync_connection(session, conn_id, test_workspace.id, test_user.id)
+    renamed = await session.get(Inst, inst.id)
+    assert renamed is not None and renamed.name == "Chase Bank"
+
+    conn_row = (
+        await session.execute(select(BankConnection).where(BankConnection.id == conn_id))
+    ).scalar_one()
+    read = BankConnectionRead.model_validate(conn_row)
+    assert {i.name for i in read.institutions} == {"Chase Bank", "Departed Brokerage"}
