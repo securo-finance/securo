@@ -9,7 +9,15 @@ from app.models.account import Account
 from app.models.category import Category
 from app.models.payee import Payee
 from app.models.transaction import Transaction
-from app.schemas.rule import RuleAction, RuleCondition, RuleCreate, RuleExportItem, RuleExportPayload, RuleUpdate
+from app.schemas.rule import (
+    RuleAction,
+    RuleCondition,
+    RuleConditionGroup,
+    RuleCreate,
+    RuleExportItem,
+    RuleExportPayload,
+    RuleUpdate,
+)
 from app.schemas.transaction import TransactionUpdate
 from app.services.rule_service import (
     DuplicateRuleError,
@@ -233,6 +241,124 @@ async def test_create_rule_rejects_category_outside_workspace(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("pattern", ["foo|", "a*", "^$"])
+async def test_create_rule_rejects_empty_matching_regex(
+    session: AsyncSession, test_user, test_workspace, pattern
+):
+    name = f"Unsafe regex {pattern}"
+    error = None
+    try:
+        await create_rule(
+            session,
+            test_workspace.id,
+            test_user.id,
+            RuleCreate(
+                name=name,
+                conditions=[
+                    RuleCondition(field="description", op="regex", value=pattern)
+                ],
+                actions=[RuleAction(op="append_notes", value="#unsafe")],
+            ),
+        )
+    except ValueError as exc:
+        error = str(exc)
+
+    persisted = {rule.name for rule in await get_rules(session, test_workspace.id)}
+    assert (error, name in persisted) == (
+        "Regular expression must not match an empty string",
+        False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_rule_rejects_malformed_regex(
+    session: AsyncSession, test_user, test_workspace
+):
+    name = "Malformed regex"
+    error = None
+    try:
+        await create_rule(
+            session,
+            test_workspace.id,
+            test_user.id,
+            RuleCreate(
+                name=name,
+                conditions=[RuleCondition(field="description", op="regex", value="[")],
+                actions=[RuleAction(op="append_notes", value="#malformed")],
+            ),
+        )
+    except ValueError as exc:
+        error = str(exc)
+
+    persisted = {rule.name for rule in await get_rules(session, test_workspace.id)}
+    assert (error, name in persisted) == ("Invalid regular expression", False)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "pattern",
+    ["foo|bar", "^NETFLIX", "PIX.*RECEBIDO", r"\bFOO\b", "foo.*", ".+", "^.+$"],
+)
+async def test_create_rule_accepts_safe_regex(
+    session: AsyncSession, test_user, test_workspace, pattern
+):
+    await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name=f"Safe regex {pattern}",
+            conditions=[RuleCondition(field="description", op="regex", value=pattern)],
+            actions=[RuleAction(op="append_notes", value="#safe")],
+        ),
+    )
+
+
+
+@pytest.mark.asyncio
+async def test_create_rule_rejects_empty_matching_regex_in_condition_group(
+    session: AsyncSession, test_user, test_workspace
+):
+    name = "Unsafe grouped regex"
+    error = None
+    try:
+        await create_rule(
+            session,
+            test_workspace.id,
+            test_user.id,
+            RuleCreate(
+                name=name,
+                conditions_op="or",
+                conditions=[
+                    RuleCondition(
+                        field="description", op="contains", value="SAFE"
+                    ),
+                    RuleConditionGroup(
+                        op="or",
+                        conditions=[
+                            RuleCondition(
+                                field="description", op="regex", value="foo|"
+                            ),
+                            RuleCondition(
+                                field="description", op="contains", value="OTHER"
+                            ),
+                        ],
+                    ),
+                ],
+                actions=[RuleAction(op="append_notes", value="#grouped")],
+            ),
+        )
+    except ValueError as exc:
+        error = str(exc)
+
+    persisted = {rule.name for rule in await get_rules(session, test_workspace.id)}
+    assert (error, name in persisted) == (
+        "Regular expression must not match an empty string",
+        False,
+    )
+
+
+@pytest.mark.asyncio
 async def test_update_rule_rejects_payee_outside_workspace(
     session: AsyncSession, test_user, test_workspace
 ):
@@ -301,6 +427,53 @@ async def test_import_rules_skips_invalid_rules(
     assert result.imported == 1
     assert result.skipped == 2
 
+
+
+@pytest.mark.asyncio
+async def test_import_rules_skips_unsafe_and_malformed_regexes(
+    session: AsyncSession, test_user, test_workspace
+):
+    payload = RuleExportPayload(
+        rules=[
+            RuleExportItem(
+                name="Unsafe regex import",
+                conditions=[
+                    RuleCondition(field="description", op="regex", value="foo|")
+                ],
+                actions=[RuleAction(op="append_notes", value="#unsafe")],
+            ),
+            RuleExportItem(
+                name="Malformed regex import",
+                conditions=[RuleCondition(field="description", op="regex", value="[")],
+                actions=[RuleAction(op="append_notes", value="#malformed")],
+            ),
+            RuleExportItem(
+                name="Safe regex import",
+                conditions=[
+                    RuleCondition(field="description", op="regex", value="foo|bar")
+                ],
+                actions=[RuleAction(op="append_notes", value="#safe")],
+            ),
+        ]
+    )
+
+    result = await import_rules(
+        session, test_workspace.id, test_user.id, payload, overwrite=True
+    )
+    persisted = {
+        rule.name: rule.conditions[0]["value"]
+        for rule in await get_rules(session, test_workspace.id)
+    }
+
+    assert (
+        result.imported,
+        result.skipped,
+        persisted,
+    ) == (
+        1,
+        2,
+        {"Safe regex import": "foo|bar"},
+    )
 
 @pytest.mark.asyncio
 async def test_set_description_validation_and_export_compatibility(

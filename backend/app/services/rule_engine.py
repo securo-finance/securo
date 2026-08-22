@@ -16,6 +16,18 @@ def _strip_accents(text: str) -> str:
     return "".join(c for c in nfkd if not unicodedata.combining(c))
 
 
+def compile_rule_regex(pattern: str) -> re.Pattern[str]:
+    """Compile a regex using Securo's runtime normalization and safety policy."""
+    effective_pattern = _strip_accents(pattern)
+    try:
+        compiled = re.compile(effective_pattern, re.IGNORECASE)
+    except re.error as exc:
+        raise ValueError("Invalid regular expression") from exc
+    if compiled.search("") is not None:
+        raise ValueError("Regular expression must not match an empty string")
+    return compiled
+
+
 def _normalize(text: str) -> str:
     """Normalize text: uppercase and remove diacritics (accents)."""
     return _strip_accents(text.upper())
@@ -80,9 +92,9 @@ def _match_condition(condition: dict, tx: "Transaction") -> bool:
                 # normalized text, but keep its case: uppercasing a regex
                 # inverts escape classes (\s -> \S, \b -> \B, \d -> \D) and
                 # breaks inline flags. Case is already handled by IGNORECASE.
-                pattern = _strip_accents(str(value or ""))
-                return bool(re.search(pattern, tx_str, re.IGNORECASE))
-            except re.error:
+                compiled = compile_rule_regex(str(value or ""))
+                return compiled.search(tx_str) is not None
+            except ValueError:
                 return False
 
     # Numeric operators
