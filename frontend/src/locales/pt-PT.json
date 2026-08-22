@@ -945,6 +945,7 @@
     "deleted": "Categoria eliminada",
     "confirmDeleteTitle": "Eliminar categoria?",
     "confirmDeleteDescription": "A categoria \"{{name}}\" será eliminada permanentemente. Não pode ser eliminada enquanto transações ou outros registos ainda fizerem referência a ela; remove primeiro essas referências. Esta ação não pode ser desfeita.",
+    "deleteInUse": "Esta categoria ainda está em uso. Remova primeiro os registos que fazem referência a ela.",
     "expandAll": "Expandir tudo",
     "collapseAll": "Recolher tudo",
     "treatAsTransfer": "Tratar como transferência",

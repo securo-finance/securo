@@ -945,6 +945,7 @@
     "deleted": "Category deleted",
     "confirmDeleteTitle": "Delete category?",
     "confirmDeleteDescription": "The category \"{{name}}\" will be permanently deleted. It cannot be deleted while transactions or other records still reference it; remove those references first. This action cannot be undone.",
+    "deleteInUse": "This category is still in use. Remove the records that reference it first.",
     "expandAll": "Expand all",
     "collapseAll": "Collapse all",
     "treatAsTransfer": "Treat as transfer",

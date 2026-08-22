@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import axios from 'axios'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { categories as categoriesApi, categoryGroups as groupsApi } from '@/lib/api'
 import { extractApiError } from '@/lib/api-errors'
@@ -86,6 +87,11 @@ export default function CategoriesPage() {
     mutationFn: (id: string) => categoriesApi.delete(id),
     onSuccess: () => { invalidateAll(); setDeletingCategory(null); toast.success(t('categories.deleted')) },
     onError: (err: unknown) => {
+      // The API answers 409 with an English sentence; show the translated one instead.
+      if (axios.isAxiosError(err) && err.response?.status === 409) {
+        toast.error(t('categories.deleteInUse'))
+        return
+      }
       toast.error(extractApiError(err, t('common.error')))
     },
   })

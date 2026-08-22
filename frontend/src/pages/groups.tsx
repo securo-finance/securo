@@ -107,6 +107,13 @@ export default function GroupsPage() {
     setDialogOpen(true)
   }
 
+  // Dismissing the confirmation (cancel, Esc, X, overlay) puts the user back in
+  // the edit dialog they opened it from, instead of dropping them on the list.
+  const returnToEditDialog = () => {
+    setDeletingGroup(null)
+    setDialogOpen(true)
+  }
+
   const handleSave = () => {
     const payload: GroupCreatePayload = {
       name: name.trim(),
@@ -293,11 +300,7 @@ export default function GroupsPage() {
         title={t('splitGroups.confirmDeleteTitle')}
         description={t('splitGroups.confirmDeleteDescription', { name: deletingGroup?.name })}
         isPending={deleteMutation.isPending}
-        onClose={() => setDeletingGroup(null)}
-        onCancel={() => {
-          setDeletingGroup(null)
-          setDialogOpen(true)
-        }}
+        onClose={returnToEditDialog}
         onConfirm={() => deletingGroup && deleteMutation.mutate(deletingGroup.id)}
       />
     </div>

@@ -61,7 +61,6 @@ type PendingInstallmentEdit = {
   action?: SaveAction
 }
 
-
 function isImageType(contentType: string): boolean {
   return contentType.startsWith('image/')
 }

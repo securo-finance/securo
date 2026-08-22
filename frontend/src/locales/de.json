@@ -945,6 +945,7 @@
     "deleted": "Kategorie gelöscht",
     "confirmDeleteTitle": "Kategorie löschen?",
     "confirmDeleteDescription": "Die Kategorie \"{{name}}\" wird dauerhaft gelöscht. Sie kann nicht gelöscht werden, solange Transaktionen oder andere Einträge noch darauf verweisen; entferne diese Verweise zuerst. Diese Aktion kann nicht rückgängig gemacht werden.",
+    "deleteInUse": "Diese Kategorie wird noch verwendet. Entferne zuerst die Einträge, die auf sie verweisen.",
     "expandAll": "Alle ausklappen",
     "collapseAll": "Alle einklappen",
     "treatAsTransfer": "Als Umbuchung behandeln",

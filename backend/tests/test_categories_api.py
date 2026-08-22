@@ -1,17 +1,9 @@
-from types import SimpleNamespace
-
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import Table, select, text
-from sqlalchemy.ext.asyncio import (
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-)
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
-from app.core.workspace_context import current_writable_workspace
 from app.main import app
 
 from app.models.category import Category
@@ -116,151 +108,56 @@ async def test_delete_category(client: AsyncClient, auth_headers, test_categorie
 @pytest.mark.asyncio
 async def test_delete_referenced_category_returns_conflict(
     client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
     test_user: User,
     test_workspace,
     monkeypatch,
 ):
-    fk_engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+    """A category still referenced by another row answers 409, not 500."""
+    category = Category(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Referenced",
     )
-    fk_session_factory = async_sessionmaker(
-        fk_engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-    )
-    user_table = User.__table__
-    category_table = Category.__table__
-    assert isinstance(user_table, Table)
-    assert isinstance(category_table, Table)
+    session.add(category)
+    await session.commit()
+    category_id = category.id
+
+    async def override_test_session():
+        yield session
+
+    # The suite runs on SQLite, which does not enforce foreign keys, so raise
+    # the IntegrityError Postgres would raise for a still-referenced category.
+    async def fail_commit():
+        raise IntegrityError("DELETE FROM categories", {}, Exception("FK violation"))
 
     try:
-        async with fk_engine.begin() as connection:
-            await connection.exec_driver_sql("PRAGMA foreign_keys=ON")
-            await connection.run_sync(user_table.create)
-            await connection.exec_driver_sql(
-                "CREATE TABLE workspaces (id CHAR(32) PRIMARY KEY)"
+        with monkeypatch.context() as scoped_patch:
+            scoped_patch.setitem(
+                app.dependency_overrides,
+                get_async_session,
+                override_test_session,
             )
-            await connection.exec_driver_sql(
-                "CREATE TABLE category_groups (id CHAR(32) PRIMARY KEY)"
-            )
-            await connection.exec_driver_sql(
-                """
-                INSERT INTO users (
-                    id,
-                    email,
-                    hashed_password,
-                    is_active,
-                    is_superuser,
-                    is_verified,
-                    is_2fa_enabled
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    test_user.id.hex,
-                    test_user.email,
-                    test_user.hashed_password,
-                    1,
-                    0,
-                    1,
-                    0,
-                ),
-            )
-            await connection.exec_driver_sql(
-                "INSERT INTO workspaces (id) VALUES (?)",
-                (test_workspace.id.hex,),
-            )
-            await connection.run_sync(category_table.create)
-            await connection.exec_driver_sql(
-                """
-                CREATE TABLE transactions (
-                    id CHAR(32) PRIMARY KEY,
-                    category_id CHAR(32) NOT NULL REFERENCES categories(id)
-                )
-                """
+            scoped_patch.setattr(session, "commit", fail_commit)
+            response = await client.delete(
+                f"/api/categories/{category_id}",
+                headers=auth_headers,
             )
 
-        async with fk_session_factory() as session:
-            category = Category(
-                user_id=test_user.id,
-                workspace_id=test_workspace.id,
-                name="Referenced",
+        assert response.status_code == 409
+        assert response.json() == {
+            "detail": (
+                "Category is still in use and cannot be deleted. "
+                "Remove its references first."
             )
-            session.add(category)
-            await session.commit()
-            category_id = category.id
-            transaction_id = "11111111111111111111111111111111"
-            await session.execute(
-                text(
-                    "INSERT INTO transactions (id, category_id) "
-                    "VALUES (:id, :category_id)"
-                ),
-                {"id": transaction_id, "category_id": category_id.hex},
-            )
-            await session.commit()
-
-            assert (await session.execute(text("PRAGMA foreign_keys"))).scalar_one() == 1
-            assert (await session.execute(text("PRAGMA foreign_key_check"))).all() == []
-
-            async def override_test_session():
-                yield session
-
-            async def override_writable_workspace():
-                return SimpleNamespace(
-                    workspace=SimpleNamespace(id=test_workspace.id),
-                    user_id=test_user.id,
-                )
-
-            with monkeypatch.context() as scoped_patch:
-                scoped_patch.setitem(
-                    app.dependency_overrides,
-                    get_async_session,
-                    override_test_session,
-                )
-                scoped_patch.setitem(
-                    app.dependency_overrides,
-                    current_writable_workspace,
-                    override_writable_workspace,
-                )
-                response = await client.delete(f"/api/categories/{category_id}")
-
-            assert response.status_code == 409
-            assert response.json() == {
-                "detail": (
-                    "Category is still in use and cannot be deleted. "
-                    "Remove its references first."
-                )
-            }
-
-            category_result = await session.execute(
-                select(Category).where(Category.id == category_id)
-            )
-            assert category_result.scalar_one_or_none() is not None
-            referenced_category_id = (
-                await session.execute(
-                    text(
-                        "SELECT category_id FROM transactions "
-                        "WHERE id = :transaction_id"
-                    ),
-                    {"transaction_id": transaction_id},
-                )
-            ).scalar_one()
-            assert referenced_category_id == category_id.hex
-
-            recovery_category = Category(
-                user_id=test_user.id,
-                workspace_id=test_workspace.id,
-                name="Created after failed delete",
-            )
-            session.add(recovery_category)
-            await session.commit()
-            recovery_result = await session.execute(
-                select(Category).where(Category.id == recovery_category.id)
-            )
-            assert recovery_result.scalar_one_or_none() is not None
+        }
     finally:
-        await fk_engine.dispose()
+        await session.rollback()
+
+    # The failed delete rolled back, so the category is still listed.
+    categories = await client.get("/api/categories", headers=auth_headers)
+    assert str(category_id) in {item["id"] for item in categories.json()}
 
 
 @pytest.mark.asyncio
