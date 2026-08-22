@@ -96,6 +96,18 @@ SIMPLEFIN_API_URL=https://beta-bridge.simplefin.org   # sandbox; use bridge.simp
 
 Then in Securo: **Accounts → Connect Bank → SimpleFIN**, and paste the token. The [developer page](https://beta-bridge.simplefin.org/info/developers) gives out free demo tokens if you want to try it without a real bank.
 
+### Akahu: New Zealand banks
+
+[Akahu](https://www.akahu.nz/) is New Zealand's open finance platform. Each user creates a free [Personal App](https://developers.akahu.nz/docs/personal-apps) at [my.akahu.nz](https://my.akahu.nz/developers), links their banks, and receives an App ID Token and User Token.
+
+Enable the provider:
+
+```
+AKAHU_ENABLED=true
+```
+
+In Securo, go to **Accounts → Connect Bank → Akahu** and paste both tokens in either order. Personal apps provide 365 days of transaction history, and retain history from the app's creation date.
+
 ## OIDC Login (Optional)
 
 Securo can delegate login to any standard OIDC provider, including Authentik and Pocket ID. Create a confidential/web application in your provider and register this redirect URI:

@@ -677,11 +677,20 @@
         "title": "Connect via SimpleFIN",
         "description": "SimpleFIN is a read-only bank data protocol. Go to the SimpleFIN Bridge, pick your bank, and copy the setup token back here."
       },
+      "akahu": {
+        "title": "Connect via Akahu",
+        "description": "Akahu is New Zealand's open finance platform. Create a free Personal App at my.akahu.nz, link your bank, then paste BOTH tokens below — the App ID Token (app_token_…) and the User Token (user_token_…), in any order.",
+        "reconnectTitle": "Reconnect via Akahu",
+        "reconnectDescription": "Paste both tokens (App ID Token and User Token) from your Akahu developer page to refresh this connection in place. Existing accounts, transactions, categories, and rules are preserved."
+      },
       "reconnectTitle": "Reconnect with a fresh token",
       "reconnectDescription": "Paste a new setup token to refresh this connection in place. Existing accounts, transactions, categories, and rules are preserved.",
       "reconnect": "Reconnect"
     },
     "providers": {
+      "akahu": {
+        "description": "New Zealand banks via Akahu open finance"
+      },
       "pluggy": {
         "description": "Open finance provider for Brazilian banks"
       },
