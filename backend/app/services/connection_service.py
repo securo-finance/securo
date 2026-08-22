@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Optional
 
 from sqlalchemy import delete, exists, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -16,6 +17,8 @@ from app.models.bank_connection import BankConnection
 from app.models.account import Account
 from app.models.category import Category
 from app.models.institution import Institution
+from app.models.goal import Goal
+from app.models.collection import collection_asset_groups
 from app.models.credit_card_bill import CreditCardBill
 from app.models.payee import Payee, PayeeMapping
 from app.models.transaction import Transaction
@@ -135,8 +138,27 @@ async def _resolve_institution(
             name=name,
             logo_url=_clean_logo_url(acc_data.institution_logo_url),
         )
-        session.add(inst)
-        await session.flush()
+        try:
+            # Savepoint: a concurrent sync (scheduled + manual) can insert
+            # the same identity between our SELECT and this flush. The
+            # partial unique index rejects the loser — reuse the winner's
+            # row instead of failing the whole sync.
+            async with session.begin_nested():
+                session.add(inst)
+                await session.flush()
+        except IntegrityError:
+            inst = (
+                await session.execute(
+                    select(Institution)
+                    .where(
+                        Institution.connection_id == connection_id,
+                        Institution.external_id == ext
+                        if ext
+                        else Institution.name == name,
+                    )
+                    .limit(1)
+                )
+            ).scalar_one()
     else:
         if inst.name != name:
             inst.name = name  # provider-side rename
@@ -253,14 +275,19 @@ async def _sync_holdings(
             )
         return groups_by_key[key]
 
-    # Wallets this sync already owns for the connection. An asset sitting in
-    # one may be re-attributed below when its institution resolves elsewhere;
-    # a user's custom wallet is never touched.
+    # Wallets this sync owns: this connection's, plus orphans a prior
+    # disconnect left behind (connection_id went NULL via SET NULL) — their
+    # re-adopted assets must still split into per-account wallets instead of
+    # staying stranded. An asset sitting in one may be re-attributed below;
+    # a user's custom wallet (source "manual") is never touched.
     sync_owned_rows = await session.execute(
         select(AssetGroup.id).where(
             AssetGroup.user_id == user_id,
             AssetGroup.source == source,
-            AssetGroup.connection_id == connection.id,
+            or_(
+                AssetGroup.connection_id == connection.id,
+                AssetGroup.connection_id.is_(None),
+            ),
         )
     )
     sync_owned_group_ids = {row[0] for row in sync_owned_rows.all()}
@@ -337,7 +364,10 @@ async def _sync_holdings(
 
     # Sync owns its wallets: drop any it emptied by re-attribution above
     # (e.g. the single connection-named wallet that predates per-institution
-    # ones). Wallets still holding assets — or used this run — are kept.
+    # ones). Wallets still holding assets — or used this run — are kept, and
+    # so is anything a goal tracks or a collection contains: deleting those
+    # would SET NULL the goal's target and CASCADE the membership away,
+    # silently breaking things the user built on the wallet.
     if holdings:
         await session.flush()
         used_ids = {g.id for g in groups_by_key.values()}
@@ -345,10 +375,21 @@ async def _sync_holdings(
             has_assets = await session.scalar(
                 select(func.count()).select_from(Asset).where(Asset.group_id == gid)
             )
-            if not has_assets:
-                emptied = await session.get(AssetGroup, gid)
-                if emptied is not None:
-                    await session.delete(emptied)
+            if has_assets:
+                continue
+            referenced = await session.scalar(
+                select(
+                    exists().where(Goal.asset_group_id == gid)
+                    | exists()
+                    .select_from(collection_asset_groups)
+                    .where(collection_asset_groups.c.asset_group_id == gid)
+                )
+            )
+            if referenced:
+                continue
+            emptied = await session.get(AssetGroup, gid)
+            if emptied is not None:
+                await session.delete(emptied)
 
 
 async def _upsert_asset_from_holding(
@@ -722,11 +763,11 @@ async def handle_oauth_callback(
 
     use_provider_cats = await admin_service.use_provider_categories(session)
 
-    institutions_by_name: dict[str, Institution] = {}
+    institution_cache: dict[str, Institution] = {}
     for acc_data in connection_data.accounts:
         is_cc = acc_data.type == "credit_card"
         institution = await _resolve_institution(
-            session, connection.id, institutions_by_name, acc_data
+            session, connection.id, institution_cache, acc_data
         )
         account = Account(
             user_id=user_id,
@@ -1360,7 +1401,7 @@ async def sync_connection(
         new_tx_ids: list[uuid.UUID] = []
         merged_count = 0
         accounts_data = await provider.get_accounts(credentials)
-        institutions_by_name: dict[str, Institution] = {}
+        institution_cache: dict[str, Institution] = {}
         for acc_data in accounts_data:
             result = await session.execute(
                 select(Account).where(
@@ -1370,17 +1411,22 @@ async def sync_connection(
             )
             account = result.scalar_one_or_none()
 
+            institution = await _resolve_institution(
+                session, connection.id, institution_cache, acc_data
+            )
+
             # Honor user intent: a closed connected account stays closed and is
             # not touched by sync. The row is left alone (no balance/name
             # rewrite, no new transactions) but the connection link is kept so
             # the next sync still finds it here instead of creating a duplicate
-            # active account (issue #90).
+            # active account (issue #90). Its institution pointer still follows
+            # the provider, though — otherwise a renamed org's abandoned row
+            # would stay pinned forever and keep a single-bank link presenting
+            # as multi-institution.
             if account and account.is_closed:
+                if institution is not None and account.institution_id != institution.id:
+                    account.institution_id = institution.id
                 continue
-
-            institution = await _resolve_institution(
-                session, connection.id, institutions_by_name, acc_data
-            )
 
             if account:
                 # Normalize the provider sign using the account's CURRENT type,
@@ -1709,13 +1755,21 @@ async def sync_connection(
         # the real one, the orphan twin gets removed here.
         await _cleanup_phantom_duplicates(session, connection.id)
 
+        # Refresh investment holdings (brokerage, fixed income, funds,
+        # etc.) when enabled for this connection. Errors here are logged but
+        # don't fail the sync; a bank connector that doesn't expose
+        # /investments shouldn't block the transaction sync that just succeeded.
+        if _sync_assets_enabled(conn_settings):
+            await _sync_holdings(session, user_id, connection, credentials)
+
         # Reap institution rows referenced by nothing. Id-carrying servers
         # never orphan a row (renames update in place), but a name-only
         # server that renames its bank mints a fresh row and repoints the
         # accounts — the abandoned row would otherwise keep a single-bank
         # link presenting as multi-institution forever. Requiring zero
         # account AND zero wallet references means a wallet's "Synced from"
-        # label can never be taken away.
+        # label can never be taken away. Runs after the holdings sync so a
+        # wallet repointed away from the old row frees it this sync, not next.
         orphaned_institutions = await session.execute(
             select(Institution).where(
                 Institution.connection_id == connection.id,
@@ -1725,13 +1779,6 @@ async def sync_connection(
         )
         for orphan in orphaned_institutions.scalars().all():
             await session.delete(orphan)
-
-        # Refresh investment holdings (brokerage, fixed income, funds,
-        # etc.) when enabled for this connection. Errors here are logged but
-        # don't fail the sync; a bank connector that doesn't expose
-        # /investments shouldn't block the transaction sync that just succeeded.
-        if _sync_assets_enabled(conn_settings):
-            await _sync_holdings(session, user_id, connection, credentials)
 
         connection.last_sync_at = datetime.now(timezone.utc)
         connection.status = "active"

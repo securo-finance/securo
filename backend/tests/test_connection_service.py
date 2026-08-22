@@ -2733,3 +2733,122 @@ async def test_sync_wires_account_institutions_and_reaps_orphans(
     ).scalar_one()
     read = BankConnectionRead.model_validate(conn_row)
     assert {i.name for i in read.institutions} == {"Chase Bank", "Departed Brokerage"}
+
+
+@pytest.mark.asyncio
+async def test_sync_holdings_readopts_orphaned_wallet_after_reconnect(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Disconnect leaves the legacy wallet with connection_id NULL (SET NULL);
+    after reconnecting, its re-adopted assets must still split into
+    per-account wallets instead of staying stranded (self-review on #654)."""
+    from app.models.asset_group import AssetGroup
+    from app.services.connection_service import _sync_holdings
+
+    conn = await _make_connection(session, test_user.id, "Recon Bank")
+    conn_id = conn.id
+
+    session.add(Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn_id, external_id="acc-1", name="IRA",
+        type="investment", balance=Decimal("0"), currency="USD",
+    ))
+    # The pre-disconnect wallet: connection link severed, external_id intact.
+    orphan_wallet = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Recon Bank", source="test",
+        connection_id=None, external_id="old-ext",
+    )
+    session.add(orphan_wallet)
+    await session.flush()
+    orphan_wallet_id = orphan_wallet.id
+    stranded = Asset(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=None, source="test", external_id="h-1",
+        name="Apple", type="investment", currency="USD",
+        valuation_method="manual", group_id=orphan_wallet_id,
+    )
+    session.add(stranded)
+    await session.commit()
+    stranded_id = stranded.id
+
+    mock_provider = AsyncMock()
+    mock_provider.get_holdings.return_value = [
+        HoldingData(
+            external_id="h-1", name="Apple", currency="USD",
+            current_value=Decimal("10"),
+            account_external_id="acc-1", account_name="IRA",
+        ),
+    ]
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        await _sync_holdings(session, test_user.id, conn, {"token": "t"})
+    await session.commit()
+
+    moved = await session.get(Asset, stranded_id)
+    assert moved is not None
+    wallet = await session.get(AssetGroup, moved.group_id)
+    assert wallet is not None and wallet.name == "IRA"
+    assert wallet.external_id == f"{conn.external_id}::acc-1"
+    # The emptied orphan is gone — nothing referenced it anymore.
+    assert await session.get(AssetGroup, orphan_wallet_id) is None
+
+
+@pytest.mark.asyncio
+async def test_sync_holdings_keeps_emptied_wallet_a_goal_tracks(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Deleting an emptied sync-owned wallet would SET NULL a goal's target
+    and CASCADE away collection membership — so referenced wallets survive
+    (self-review on #654)."""
+    from app.models.asset_group import AssetGroup
+    from app.models.goal import Goal
+    from app.services.connection_service import _sync_holdings
+
+    conn = await _make_connection(session, test_user.id, "Goal Bank")
+
+    session.add(Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn.id, external_id="acc-1", name="401(k)",
+        type="investment", balance=Decimal("0"), currency="USD",
+    ))
+    legacy = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Goal Bank", source="test",
+        connection_id=conn.id, external_id=conn.external_id,
+    )
+    session.add(legacy)
+    await session.flush()
+    legacy_id = legacy.id
+    asset = Asset(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn.id, source="test", external_id="h-1",
+        name="Fund", type="investment", currency="USD",
+        valuation_method="manual", group_id=legacy_id,
+    )
+    goal = Goal(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Retire", target_amount=Decimal("1000000"),
+        asset_group_id=legacy_id,
+    )
+    session.add_all([asset, goal])
+    await session.commit()
+    goal_id = goal.id
+
+    mock_provider = AsyncMock()
+    mock_provider.get_holdings.return_value = [
+        HoldingData(
+            external_id="h-1", name="Fund", currency="USD",
+            current_value=Decimal("10"),
+            account_external_id="acc-1", account_name="401(k)",
+        ),
+    ]
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        await _sync_holdings(session, test_user.id, conn, {"token": "t"})
+    await session.commit()
+
+    # Asset moved to the per-account wallet, but the goal's wallet survives
+    # empty rather than vanishing out from under the goal.
+    assert (await session.get(AssetGroup, legacy_id)) is not None
+    refreshed_goal = await session.get(Goal, goal_id)
+    assert refreshed_goal is not None
+    assert refreshed_goal.asset_group_id == legacy_id

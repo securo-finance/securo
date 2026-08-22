@@ -12,7 +12,7 @@ export function getConnectionName(
     display_name?: string | null
     institutions?: { name: string }[]
   },
-  t?: (key: string, opts?: Record<string, unknown>) => string,
+  t: (key: string, opts?: Record<string, unknown>) => string,
 ): string {
   if (connection.display_name) return connection.display_name
   const insts = connection.institutions ?? []
@@ -20,9 +20,7 @@ export function getConnectionName(
   // by the provider it runs through, not by one arbitrary bank out of many.
   if (insts.length > 1) {
     const provider = PROVIDER_LABELS[connection.provider ?? ''] ?? connection.provider ?? ''
-    return t
-      ? t('accounts.multiInstitutionLink', { provider, count: insts.length })
-      : `${provider} · ${insts.length}`
+    return t('accounts.multiInstitutionLink', { provider, count: insts.length })
   }
   return insts[0]?.name ?? connection.institution_name
 }

@@ -565,6 +565,7 @@
     "balanceCreditCardHint": "Informe quanto você deve atualmente neste cartão como um valor positivo. Deixe em 0 se não houver dívida.",
     "balanceDate": "Data do saldo",
     "lastSync": "Última sincronização",
+    "multiInstitutionLink_one": "{{provider}} · {{count}} instituição",
     "multiInstitutionLink_other": "{{provider}} · {{count}} instituições",
     "sync": "Sincronizar",
     "disconnect": "Desconectar",

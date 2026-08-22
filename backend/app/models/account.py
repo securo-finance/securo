@@ -46,7 +46,8 @@ class Account(Base):
     # own institution_name/logo_url. Eager (selectin) because serialization
     # always reads it and lazy loads raise in async sessions.
     institution_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("institutions.id", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True), ForeignKey("institutions.id", ondelete="SET NULL"),
+        nullable=True, index=True,
     )
     is_closed: Mapped[bool] = mapped_column(Boolean, default=False)
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -565,6 +565,7 @@
     "balanceCreditCardHint": "Inserisci quanto devi attualmente su questa carta come numero positivo. Lascia 0 se non hai debiti.",
     "balanceDate": "Data del saldo",
     "lastSync": "Ultima sincronizzazione",
+    "multiInstitutionLink_one": "{{provider}} · {{count}} istituto",
     "multiInstitutionLink_other": "{{provider}} · {{count}} istituti",
     "sync": "Sincronizza",
     "disconnect": "Disconnetti",

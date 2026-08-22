@@ -48,7 +48,8 @@ class AssetGroup(Base):
     # wallets. Renders the "Synced from …" subtitle without falling back to
     # the connection's first institution.
     institution_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("institutions.id", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True), ForeignKey("institutions.id", ondelete="SET NULL"),
+        nullable=True, index=True,
     )
 
     user: Mapped["User"] = relationship()

@@ -24,7 +24,8 @@ class Institution(Base):
     # Identity is the org id when the provider sends one, the name otherwise.
     # Two partial unique indexes so two same-named orgs (two logins at one
     # bank) stay distinct rows, while both paths keep two racing syncs from
-    # double-inserting. Either index also serves connection_id lookups.
+    # double-inserting. Partial indexes can't serve a bare connection_id
+    # lookup, so the eager-loaded relationship indexes the FK itself.
     __table_args__ = (
         Index(
             "uq_institutions_connection_external_id",
@@ -46,7 +47,7 @@ class Institution(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     connection_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("bank_connections.id", ondelete="CASCADE")
+        UUID(as_uuid=True), ForeignKey("bank_connections.id", ondelete="CASCADE"), index=True
     )
     # The provider's stable id for the org (SimpleFIN conn_id). Renames update
     # the matched row in place instead of minting a new one (review on #654).

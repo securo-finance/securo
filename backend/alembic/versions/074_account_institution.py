@@ -43,7 +43,9 @@ def upgrade() -> None:
     # Identity is the org id when the provider sends one, the name otherwise.
     # Split into two partial unique indexes so two same-named orgs (two logins
     # at one bank) stay distinct rows, while both paths keep two racing syncs
-    # from double-inserting. Either index also serves connection_id lookups.
+    # from double-inserting. Partial indexes can't serve a bare connection_id
+    # lookup (the planner needs the predicate), so the eager-loaded
+    # BankConnection.institutions gets a plain index of its own.
     op.create_index(
         "uq_institutions_connection_external_id",
         "institutions",
@@ -58,6 +60,7 @@ def upgrade() -> None:
         unique=True,
         postgresql_where=sa.text("external_id IS NULL"),
     )
+    op.create_index("ix_institutions_connection_id", "institutions", ["connection_id"])
     op.add_column(
         "accounts",
         sa.Column(
@@ -67,6 +70,9 @@ def upgrade() -> None:
             nullable=True,
         ),
     )
+    # Indexed: the per-sync orphan reap anti-joins on it, and each reaped
+    # row's ON DELETE SET NULL scans it too.
+    op.create_index("ix_accounts_institution_id", "accounts", ["institution_id"])
     # Synced wallets are per investment account, so they carry the backing
     # institution for their "Synced from …" subtitle.
     op.add_column(
@@ -78,9 +84,12 @@ def upgrade() -> None:
             nullable=True,
         ),
     )
+    op.create_index("ix_asset_groups_institution_id", "asset_groups", ["institution_id"])
 
 
 def downgrade() -> None:
+    op.drop_index("ix_asset_groups_institution_id", table_name="asset_groups")
     op.drop_column("asset_groups", "institution_id")
+    op.drop_index("ix_accounts_institution_id", table_name="accounts")
     op.drop_column("accounts", "institution_id")
     op.drop_table("institutions")
