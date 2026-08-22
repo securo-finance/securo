@@ -1,0 +1,32 @@
+# Deployment-only override for this fork.
+#
+# The upstream production file intentionally uses published Securo images. The
+# VPS that runs this fork must instead build the exact Git commit checked out by
+# the deployment workflow; otherwise a successful deployment can still run the
+# upstream `latest` code and omit fixes merged into this repository.
+#
+# Keep this file paired with docker-compose.prod.yml. It deliberately contains
+# no secrets: production values remain in /opt/securo/.env on the VPS.
+services:
+  backend:
+    image: securo-vps-backend:local
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+
+  frontend:
+    image: securo-vps-frontend:local
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+
+  # These services run the same application package as the API. Pin them to
+  # the locally-built backend image too, so a sync cannot execute older code.
+  celery-worker:
+    image: securo-vps-backend:local
+
+  celery-beat:
+    image: securo-vps-backend:local
+
+  mcp-server:
+    image: securo-vps-backend:local

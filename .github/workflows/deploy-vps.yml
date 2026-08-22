@@ -87,8 +87,15 @@ jobs:
           git -C "$securo_path" checkout --detach "$deploy_sha"
 
           cd "$securo_path"
-          docker compose -f docker-compose.prod.yml pull
-          docker compose -f docker-compose.prod.yml up -d --remove-orphans
+          # The database and Redis stay on pinned published images. Application
+          # services are built from this checked-out fork commit, so a green
+          # deployment really contains the code that CI just tested.
+          docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml \
+            pull db redis
+          docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml \
+            build --pull backend frontend
+          docker compose -f docker-compose.prod.yml -f docker-compose.vps.yml \
+            up -d --remove-orphans
           # The first boot applies all database migrations before Uvicorn is
           # ready. Retry every transient curl error, not only connection
           # refusal, while still failing the deployment after a bounded wait.
