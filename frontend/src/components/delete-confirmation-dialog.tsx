@@ -17,6 +17,7 @@ type DeleteConfirmationDialogProps = {
   description: string
   isPending: boolean
   onClose: () => void
+  onCancel?: () => void
   onConfirm: () => void
 }
 
@@ -26,6 +27,7 @@ export function DeleteConfirmationDialog({
   description,
   isPending,
   onClose,
+  onCancel = onClose,
   onConfirm,
 }: DeleteConfirmationDialogProps) {
   const { t } = useTranslation()
@@ -43,7 +45,7 @@ export function DeleteConfirmationDialog({
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={isPending}>
+          <Button variant="outline" onClick={onCancel} disabled={isPending}>
             {t('common.cancel')}
           </Button>
           <Button variant="destructive" onClick={onConfirm} disabled={isPending}>

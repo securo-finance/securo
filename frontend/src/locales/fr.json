@@ -945,7 +945,6 @@
     "deleted": "Catégorie supprimée",
     "confirmDeleteTitle": "Supprimer la catégorie ?",
     "confirmDeleteDescription": "La catégorie « {{name}} » sera définitivement supprimée. Elle ne peut pas être supprimée tant que des transactions ou d'autres enregistrements y font encore référence ; supprimez d'abord ces références. Cette action est irréversible.",
-    "deleteInUse": "Cette catégorie ne peut pas être supprimée tant que des transactions ou d'autres enregistrements y font encore référence. Supprimez d'abord ces références.",
     "expandAll": "Tout développer",
     "collapseAll": "Tout réduire",
     "treatAsTransfer": "Traiter comme un virement",

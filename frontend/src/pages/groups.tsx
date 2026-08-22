@@ -293,7 +293,8 @@ export default function GroupsPage() {
         title={t('splitGroups.confirmDeleteTitle')}
         description={t('splitGroups.confirmDeleteDescription', { name: deletingGroup?.name })}
         isPending={deleteMutation.isPending}
-        onClose={() => {
+        onClose={() => setDeletingGroup(null)}
+        onCancel={() => {
           setDeletingGroup(null)
           setDialogOpen(true)
         }}

@@ -2,6 +2,7 @@ import uuid
 from typing import Optional
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.category import Category
@@ -149,6 +150,12 @@ async def delete_category(
     if not category or category.is_system:
         return False
 
-    await session.delete(category)
-    await session.commit()
+    try:
+        await session.delete(category)
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise ValueError(
+            "Category is still in use and cannot be deleted. Remove its references first."
+        ) from exc
     return True

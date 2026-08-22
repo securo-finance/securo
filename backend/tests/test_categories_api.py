@@ -1,10 +1,22 @@
+from types import SimpleNamespace
+
 import pytest
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import Table, select, text
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import StaticPool
+
+from app.core.database import get_async_session
+from app.core.workspace_context import current_writable_workspace
+from app.main import app
 
 from app.models.category import Category
 from app.models.user import User
-from app.services.category_service import create_default_categories
+from app.services import category_service
 
 
 @pytest.mark.asyncio
@@ -20,7 +32,7 @@ async def test_list_categories_with_defaults(
     client: AsyncClient, auth_headers, session: AsyncSession, test_user: User
 ):
     """After creating default categories (as registration does), listing returns them."""
-    await create_default_categories(session, test_user.id, "pt-BR")
+    await category_service.create_default_categories(session, test_user.id, "pt-BR")
 
     response = await client.get("/api/categories", headers=auth_headers)
     assert response.status_code == 200
@@ -96,6 +108,199 @@ async def test_delete_category(client: AsyncClient, auth_headers, test_categorie
 
     response = await client.delete(f"/api/categories/{cat_id}", headers=auth_headers)
     assert response.status_code == 204
+
+    categories = await client.get("/api/categories", headers=auth_headers)
+    assert cat_id not in {category["id"] for category in categories.json()}
+
+
+@pytest.mark.asyncio
+async def test_delete_referenced_category_returns_conflict(
+    client: AsyncClient,
+    test_user: User,
+    test_workspace,
+    monkeypatch,
+):
+    fk_engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    fk_session_factory = async_sessionmaker(
+        fk_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    user_table = User.__table__
+    category_table = Category.__table__
+    assert isinstance(user_table, Table)
+    assert isinstance(category_table, Table)
+
+    try:
+        async with fk_engine.begin() as connection:
+            await connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+            await connection.run_sync(user_table.create)
+            await connection.exec_driver_sql(
+                "CREATE TABLE workspaces (id CHAR(32) PRIMARY KEY)"
+            )
+            await connection.exec_driver_sql(
+                "CREATE TABLE category_groups (id CHAR(32) PRIMARY KEY)"
+            )
+            await connection.exec_driver_sql(
+                """
+                INSERT INTO users (
+                    id,
+                    email,
+                    hashed_password,
+                    is_active,
+                    is_superuser,
+                    is_verified,
+                    is_2fa_enabled
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    test_user.id.hex,
+                    test_user.email,
+                    test_user.hashed_password,
+                    1,
+                    0,
+                    1,
+                    0,
+                ),
+            )
+            await connection.exec_driver_sql(
+                "INSERT INTO workspaces (id) VALUES (?)",
+                (test_workspace.id.hex,),
+            )
+            await connection.run_sync(category_table.create)
+            await connection.exec_driver_sql(
+                """
+                CREATE TABLE transactions (
+                    id CHAR(32) PRIMARY KEY,
+                    category_id CHAR(32) NOT NULL REFERENCES categories(id)
+                )
+                """
+            )
+
+        async with fk_session_factory() as session:
+            category = Category(
+                user_id=test_user.id,
+                workspace_id=test_workspace.id,
+                name="Referenced",
+            )
+            session.add(category)
+            await session.commit()
+            category_id = category.id
+            transaction_id = "11111111111111111111111111111111"
+            await session.execute(
+                text(
+                    "INSERT INTO transactions (id, category_id) "
+                    "VALUES (:id, :category_id)"
+                ),
+                {"id": transaction_id, "category_id": category_id.hex},
+            )
+            await session.commit()
+
+            assert (await session.execute(text("PRAGMA foreign_keys"))).scalar_one() == 1
+            assert (await session.execute(text("PRAGMA foreign_key_check"))).all() == []
+
+            async def override_test_session():
+                yield session
+
+            async def override_writable_workspace():
+                return SimpleNamespace(
+                    workspace=SimpleNamespace(id=test_workspace.id),
+                    user_id=test_user.id,
+                )
+
+            with monkeypatch.context() as scoped_patch:
+                scoped_patch.setitem(
+                    app.dependency_overrides,
+                    get_async_session,
+                    override_test_session,
+                )
+                scoped_patch.setitem(
+                    app.dependency_overrides,
+                    current_writable_workspace,
+                    override_writable_workspace,
+                )
+                response = await client.delete(f"/api/categories/{category_id}")
+
+            assert response.status_code == 409
+            assert response.json() == {
+                "detail": (
+                    "Category is still in use and cannot be deleted. "
+                    "Remove its references first."
+                )
+            }
+
+            category_result = await session.execute(
+                select(Category).where(Category.id == category_id)
+            )
+            assert category_result.scalar_one_or_none() is not None
+            referenced_category_id = (
+                await session.execute(
+                    text(
+                        "SELECT category_id FROM transactions "
+                        "WHERE id = :transaction_id"
+                    ),
+                    {"transaction_id": transaction_id},
+                )
+            ).scalar_one()
+            assert referenced_category_id == category_id.hex
+
+            recovery_category = Category(
+                user_id=test_user.id,
+                workspace_id=test_workspace.id,
+                name="Created after failed delete",
+            )
+            session.add(recovery_category)
+            await session.commit()
+            recovery_result = await session.execute(
+                select(Category).where(Category.id == recovery_category.id)
+            )
+            assert recovery_result.scalar_one_or_none() is not None
+    finally:
+        await fk_engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_delete_category_does_not_translate_unrelated_errors(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace,
+    monkeypatch,
+):
+    category = Category(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Unrelated failure",
+    )
+    session.add(category)
+    await session.commit()
+
+    async def override_test_session():
+        yield session
+
+    async def fail_commit():
+        raise RuntimeError("unrelated deletion failure")
+
+    try:
+        with monkeypatch.context() as scoped_patch:
+            scoped_patch.setitem(
+                app.dependency_overrides,
+                get_async_session,
+                override_test_session,
+            )
+            scoped_patch.setattr(session, "commit", fail_commit)
+            with pytest.raises(RuntimeError, match="unrelated deletion failure"):
+                await client.delete(
+                    f"/api/categories/{category.id}",
+                    headers=auth_headers,
+                )
+    finally:
+        await session.rollback()
 
 
 @pytest.mark.asyncio

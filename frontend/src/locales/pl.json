@@ -1005,7 +1005,6 @@
     "deleted": "Usunięto kategorię",
     "confirmDeleteTitle": "Usunąć kategorię?",
     "confirmDeleteDescription": "Kategoria „{{name}}” zostanie trwale usunięta. Nie można jej usunąć, dopóki transakcje lub inne rekordy nadal się do niej odwołują; najpierw usuń te powiązania. Tej operacji nie można cofnąć.",
-    "deleteInUse": "Tej kategorii nie można usunąć, dopóki jest używana przez transakcje lub inne rekordy. Najpierw usuń te powiązania.",
     "expandAll": "Rozwiń wszystkie",
     "collapseAll": "Zwiń wszystkie",
     "treatAsTransfer": "Traktuj jako transfer",

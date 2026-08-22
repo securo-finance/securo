@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { categories as categoriesApi, categoryGroups as categoryGroupsApi, recurring as recurringApi, accounts as accountsApi, currencies as currenciesApi } from '@/lib/api'
+import { extractApiError } from '@/lib/api-errors'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
@@ -125,16 +126,7 @@ function RecurringTab() {
       toast.success(t('recurring.deleted'))
     },
     onError: (err: unknown) => {
-      const response =
-        err && typeof err === 'object' && 'response' in err && err.response && typeof err.response === 'object'
-          ? err.response
-          : undefined
-      const data = response && 'data' in response ? response.data : undefined
-      const detail =
-        data && typeof data === 'object' && 'detail' in data && typeof data.detail === 'string'
-          ? data.detail
-          : undefined
-      toast.error(detail?.trim() ? detail : t('common.error'))
+      toast.error(extractApiError(err, t('common.error')))
     },
   })
 

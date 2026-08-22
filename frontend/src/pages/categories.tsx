@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { categories as categoriesApi, categoryGroups as groupsApi } from '@/lib/api'
+import { extractApiError } from '@/lib/api-errors'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
@@ -85,21 +86,7 @@ export default function CategoriesPage() {
     mutationFn: (id: string) => categoriesApi.delete(id),
     onSuccess: () => { invalidateAll(); setDeletingCategory(null); toast.success(t('categories.deleted')) },
     onError: (err: unknown) => {
-      const response =
-        err && typeof err === 'object' && 'response' in err && err.response && typeof err.response === 'object'
-          ? err.response
-          : undefined
-      const data = response && 'data' in response ? response.data : undefined
-      const detail =
-        data && typeof data === 'object' && 'detail' in data && typeof data.detail === 'string'
-          ? data.detail
-          : undefined
-      const status = response && 'status' in response && typeof response.status === 'number' ? response.status : undefined
-      if (status === 500) {
-        toast.error(t('categories.deleteInUse'))
-      } else {
-        toast.error(detail?.trim() ? detail : t('common.error'))
-      }
+      toast.error(extractApiError(err, t('common.error')))
     },
   })
 
@@ -116,16 +103,7 @@ export default function CategoriesPage() {
     mutationFn: (id: string) => groupsApi.delete(id),
     onSuccess: () => { invalidateAll(); setDeletingGroup(null); toast.success(t('groups.deleted')) },
     onError: (err: unknown) => {
-      const response =
-        err && typeof err === 'object' && 'response' in err && err.response && typeof err.response === 'object'
-          ? err.response
-          : undefined
-      const data = response && 'data' in response ? response.data : undefined
-      const detail =
-        data && typeof data === 'object' && 'detail' in data && typeof data.detail === 'string'
-          ? data.detail
-          : undefined
-      toast.error(detail?.trim() ? detail : t('common.error'))
+      toast.error(extractApiError(err, t('common.error')))
     },
   })
 
