@@ -14,7 +14,7 @@ correspondente.
 | Backup gerenciado da VPS | Configurado | Cronograma semanal gratuito selecionado na Hostinger; o primeiro ponto de restauração será gerado automaticamente. |
 | Pluggy | Piloto conectado | Credenciais carregadas; primeira conexão importada e em reconciliação antes de novas contas. |
 | MCP e agentes internos | Desligado | Permanecerá desligado até os dados importados e as regras estarem validados. |
-| Deploy contínuo | Preparado, desligado | O workflow só deve ser habilitado após a validação ponta a ponta deste checklist. |
+| Deploy contínuo | Em correção | O workflow está habilitado, mas será ajustado para construir o commit do fork na VPS em vez de usar a imagem upstream. |
 
 ## Regras de segurança
 
@@ -119,8 +119,8 @@ Securo.
 
 ## Fase 6 — operação contínua
 
-- [ ] Validar o fluxo de deploy em uma alteração inofensiva.
-- [ ] Habilitar o deploy automático da VPS somente após a validação.
+- [ ] Validar o fluxo de deploy que constrói o commit do fork na VPS.
+- [ ] Registrar o tempo e o resultado do primeiro deploy com build local.
 - [ ] Conferir logs e health check após cada deploy.
 - [ ] Revisar acessos SSH, chaves, tokens e 2FA a cada trimestre.
 - [ ] Revisar retenção e testar restauração de backup a cada trimestre.
@@ -133,5 +133,6 @@ Securo.
 | 2026-08-21 | Isolamento de rede | Portas 3000 e 8000 vinculadas a `127.0.0.1`; Caddy atende 80/443. | Codex |
 | 2026-08-21 | Backup Hostinger | Cronograma semanal confirmado no hPanel; ainda sem backup gerado. | Administrador |
 | 2026-08-21 | Workflow de deploy | PR #2 mergeado em `deploy`: corrige SHA de disparo manual e torna o health check tolerante às migrações iniciais. | Codex |
+| 2026-08-22 | Diagnóstico de deploy | O workflow verde usava imagens `latest` do upstream; a correção para construir o commit do fork na VPS está em preparação. | Codex |
 | 2026-08-21 | Pluggy | Credenciais configuradas e carregadas em backend, worker e scheduler; `GET /api/health` saudável. | Codex |
 | 2026-08-21 | Reconciliação piloto | Faturas do cartão conferidas contra o Organizze; valores compatíveis. Identificado ajuste de subtipo de poupança no provider Pluggy. | Codex |
