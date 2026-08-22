@@ -20,7 +20,11 @@ from app.schemas.transaction import TransactionImport
 from app.services import recurring_match_service
 from app.services.credit_card_service import apply_effective_date
 from app.services.rule_engine import apply_rule_actions, evaluate_conditions, merge_notes
-from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
+from app.services.rule_service import (
+    apply_rules_to_transaction,
+    preview_rules_for_transaction,
+    recurring_placeholder_rule_ignore,
+)
 from app.services.fx_rate_service import stamp_primary_amount
 from app.services.payee_service import get_or_create_payee
 
@@ -804,6 +808,9 @@ async def import_transactions(
             preview.description,
         )
         if placeholder and not placeholder.is_ignored:
+            deferred_rule_ignore = await recurring_placeholder_rule_ignore(
+                session, user_id, placeholder
+            )
             placeholder.source = source
             placeholder.external_id = txn_data.external_id
             placeholder.import_id = import_log.id
@@ -823,7 +830,7 @@ async def import_transactions(
             if placeholder.payee_id is None:
                 placeholder.payee_id = preview.payee_id
             placeholder.notes = merge_notes(placeholder.notes, preview.notes)
-            if preview.is_ignored:
+            if preview.is_ignored or deferred_rule_ignore:
                 placeholder.is_ignored = True
             imported += 1
             continue

@@ -28,11 +28,13 @@ from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.schemas.recurring_transaction import RecurringTransactionCreate
 from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
+from app.services import recurring_match_service
 from app.services.connection_service import _description_similarity, sync_connection
 from app.services.recurring_transaction_service import (
     create_recurring_transaction,
     generate_pending,
 )
+from app.services.rule_engine import evaluate_conditions
 from app.services.rule_service import create_rule
 from app.services.transaction_service import toggle_ignore_transaction
 
@@ -599,28 +601,34 @@ async def test_sync_promotes_pending_placeholder_to_posted(
 
 
 @pytest.mark.asyncio
-async def test_sync_reconciles_rule_ignored_generated_placeholder(
+async def test_sync_rule_managed_description_preserves_recurring_match_signal(
     session, test_user, test_workspace, conn_account
 ):
     conn, account = conn_account
     conn_id, account_id = conn.id, account.id
+    recurring_description = "ACME Internet Monthly"
+    incoming_description = "ACME Internet"
+    assert (
+        recurring_match_service._description_similarity(
+            recurring_description, incoming_description
+        )
+        >= recurring_match_service._SIMILARITY_THRESHOLD
+    )
+
     await create_rule(
         session,
         test_workspace.id,
         test_user.id,
         RuleCreate(
-            name="Ignore generated Netflix charge",
+            name="Normalize generated ACME charge",
             conditions=[
                 RuleCondition(
                     field="description",
                     op="contains",
-                    value="Netflix Subscription",
+                    value=recurring_description,
                 )
             ],
-            actions=[
-                RuleAction(op="append_notes", value="#auto-ignored"),
-                RuleAction(op="ignore", value=True),
-            ],
+            actions=[RuleAction(op="set_description", value="ISP")],
             apply_to_existing=False,
         ),
     )
@@ -629,6 +637,8 @@ async def test_sync_reconciles_rule_ignored_generated_placeholder(
         test_workspace,
         test_user,
         account,
+        description=recurring_description,
+        amount=Decimal("89.90"),
         start_date=date(2025, 1, 10),
     )
     bill_id = bill.id
@@ -645,15 +655,139 @@ async def test_sync_reconciles_rule_ignored_generated_placeholder(
     ).scalar_one()
     placeholder_id = placeholder.id
     assert placeholder.status == "pending"
-    assert placeholder.notes == "#auto-ignored"
-    assert placeholder.is_ignored is False
+    assert placeholder.description == "ISP"
+    assert placeholder.original_description == recurring_description
+    assert placeholder.description_is_rule_managed is True
 
     provider = _provider(
         [
             _tx(
-                external_id="rule-ignored-sync",
-                description="NETFLIX SUBSCRIPTION",
-                amount=Decimal("39.90"),
+                external_id="acme-description-sync",
+                description=incoming_description,
+                amount=Decimal("89.90"),
+                date=date(2025, 1, 11),
+            )
+        ]
+    )
+    await _run_sync(
+        session,
+        conn_id,
+        test_workspace,
+        test_user,
+        provider,
+        mock_rules=False,
+    )
+
+    txs = await _all_txs(session, account_id)
+    assert len(txs) == 1, [
+        (
+            tx.id,
+            tx.source,
+            tx.status,
+            tx.description,
+            tx.original_description,
+            tx.recurring_transaction_id,
+        )
+        for tx in txs
+    ]
+    merged = txs[0]
+    assert merged.id == placeholder_id
+    assert merged.external_id == "acme-description-sync"
+    assert merged.source == "sync"
+    assert merged.status == "posted"
+    assert merged.recurring_transaction_id == bill_id
+    assert merged.description == "ISP"
+    assert merged.original_description == incoming_description
+    assert merged.description_is_rule_managed is True
+    assert not any(tx.source == "recurring" for tx in txs)
+
+
+
+
+@pytest.mark.asyncio
+async def test_sync_preserves_deferred_rule_ignore_after_fuzzy_placeholder_match(
+    session, test_user, test_workspace, conn_account
+):
+    conn, account = conn_account
+    conn_id, account_id = conn.id, account.id
+    recurring_description = "ACME Internet Monthly"
+    incoming_description = "ACME Internet"
+    assert (
+        recurring_match_service._description_similarity(
+            recurring_description, incoming_description
+        )
+        >= recurring_match_service._SIMILARITY_THRESHOLD
+    )
+
+    rule = await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Ignore generated ACME charge",
+            conditions=[
+                RuleCondition(
+                    field="description",
+                    op="contains",
+                    value=recurring_description,
+                )
+            ],
+            actions=[
+                RuleAction(op="append_notes", value="#auto-ignored"),
+                RuleAction(op="ignore", value=True),
+            ],
+            apply_to_existing=False,
+        ),
+    )
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        account,
+        description=recurring_description,
+        amount=Decimal("89.90"),
+        start_date=date(2025, 1, 10),
+    )
+    bill_id = bill.id
+
+    assert await generate_pending(
+        session, test_user.id, up_to=date(2025, 1, 10)
+    ) == 1
+    placeholder = (
+        await session.execute(
+            select(Transaction).where(
+                Transaction.recurring_transaction_id == bill_id
+            )
+        )
+    ).scalar_one()
+    placeholder_id = placeholder.id
+    assert evaluate_conditions(rule.conditions_op, rule.conditions, placeholder)
+    assert placeholder.status == "pending"
+    assert placeholder.notes == "#auto-ignored"
+    assert placeholder.is_ignored is False
+
+    incoming_rule_target = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account_id,
+        description=incoming_description,
+        original_description=incoming_description,
+        amount=Decimal("89.90"),
+        currency="BRL",
+        date=date(2025, 1, 11),
+        type="debit",
+        source="sync",
+        status="posted",
+    )
+    assert not evaluate_conditions(
+        rule.conditions_op, rule.conditions, incoming_rule_target
+    )
+    provider = _provider(
+        [
+            _tx(
+                external_id="deferred-ignore-sync",
+                description=incoming_description,
+                amount=Decimal("89.90"),
                 date=date(2025, 1, 11),
             )
         ]
@@ -671,10 +805,13 @@ async def test_sync_reconciles_rule_ignored_generated_placeholder(
     assert len(txs) == 1
     merged = txs[0]
     assert merged.id == placeholder_id
-    assert merged.external_id == "rule-ignored-sync"
+    assert merged.external_id == "deferred-ignore-sync"
     assert merged.source == "sync"
     assert merged.status == "posted"
     assert merged.recurring_transaction_id == bill_id
+    assert merged.description == recurring_description
+    assert merged.original_description == incoming_description
+    assert merged.description_is_rule_managed is False
     assert merged.notes == "#auto-ignored"
     assert merged.is_ignored is True
     refreshed = await session.get(RecurringTransaction, bill_id)

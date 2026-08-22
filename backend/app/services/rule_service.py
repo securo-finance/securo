@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.rule import Rule
 from app.models.category import Category
 from app.models.payee import Payee
+from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.schemas.rule import RuleCreate, RuleExportPayload, RuleImportResponse, RuleUpdate
 from app.services.rule_engine import evaluate_conditions, apply_rule_actions
@@ -1180,6 +1181,54 @@ async def apply_rules_to_transaction(
                 category_set,
                 skip_ignore=skip_ignore_action,
             )
+
+
+async def recurring_placeholder_rule_ignore(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    placeholder: Transaction,
+) -> bool:
+    """Re-evaluate only the deferred ignore on a generated occurrence."""
+    recurring_id = placeholder.recurring_transaction_id
+    if recurring_id is None:
+        return False
+    if placeholder.status != "pending":
+        return False
+
+    result = await session.execute(
+        select(RecurringTransaction).where(
+            RecurringTransaction.id == recurring_id,
+            RecurringTransaction.user_id == user_id,
+            RecurringTransaction.workspace_id == placeholder.workspace_id,
+        )
+    )
+    recurring = result.scalar_one_or_none()
+    if recurring is None or recurring.account_id is None:
+        return False
+
+    occurrence = Transaction(
+        user_id=recurring.user_id,
+        workspace_id=recurring.workspace_id,
+        account_id=recurring.account_id,
+        category_id=recurring.category_id,
+        description=recurring.description,
+        original_description=None,
+        description_is_rule_managed=False,
+        amount=recurring.amount,
+        currency=recurring.currency,
+        date=placeholder.date,
+        effective_date=placeholder.effective_date,
+        type=recurring.type,
+        source="recurring",
+        status=placeholder.status,
+        payee=None,
+        payee_id=None,
+        notes=None,
+        is_ignored=False,
+        recurring_transaction_id=recurring.id,
+    )
+    await apply_rules_to_transaction(session, user_id, occurrence)
+    return bool(occurrence.is_ignored)
 
 
 async def apply_single_rule(

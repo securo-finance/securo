@@ -65,6 +65,11 @@ def _best_by_similarity(
         if cand.is_ignored:
             continue
         score = _description_similarity(cand.description, description)
+        if cand.description_is_rule_managed:
+            score = max(
+                score,
+                _description_similarity(cand.original_description, description),
+            )
         if score > best_score:
             best_score = score
             best = cand
