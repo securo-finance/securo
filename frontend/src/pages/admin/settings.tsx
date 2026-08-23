@@ -30,8 +30,37 @@ import {
 } from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
 import { setThemeBasedOnSystem } from '@/lib/theme-utils'
-import { Search, Plus, Trash2, Shield, ShieldOff, UserCog, Users, Scale, Tag, Palette, Save, Hash, CalendarDays } from 'lucide-react'
+import { Search, Plus, Trash2, Shield, ShieldOff, UserCog, Users, Scale, Tag, Palette, Save, Hash, CalendarDays, Clock3 } from 'lucide-react'
 import type { AdminUser } from '@/types'
+
+const COMMON_TIMEZONES = [
+  'UTC',
+  'America/Sao_Paulo',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'America/Mexico_City',
+  'America/Bogota',
+  'America/Argentina/Buenos_Aires',
+  'Europe/London',
+  'Europe/Paris',
+  'Europe/Berlin',
+  'Europe/Madrid',
+  'Europe/Rome',
+  'Europe/Warsaw',
+  'Asia/Tokyo',
+  'Asia/Shanghai',
+  'Asia/Singapore',
+  'Asia/Kolkata',
+  'Australia/Sydney',
+]
+
+function supportedTimezones() {
+  const intl = Intl as typeof Intl & { supportedValuesOf?: (key: string) => string[] }
+  const zones = intl.supportedValuesOf?.('timeZone') ?? []
+  return Array.from(new Set([...COMMON_TIMEZONES, ...zones])).sort((a, b) => a.localeCompare(b))
+}
 
 export default function AdminSettingsPage() {
   const { t, i18n } = useTranslation()
@@ -212,6 +241,27 @@ export default function AdminSettingsPage() {
   })
 
   const dateFormat = dateFormatSetting?.value ?? 'auto'
+
+  const { data: appTimezoneSetting } = useQuery({
+    queryKey: ['admin', 'settings', 'app_timezone'],
+    queryFn: () => adminApi.getSetting('app_timezone').catch(() => null),
+    retry: false,
+  })
+
+  const appTimezone = appTimezoneSetting?.value ?? 'UTC'
+  const timezoneOptions = supportedTimezones()
+
+  const updateAppTimezoneMutation = useMutation({
+    mutationFn: (value: string) => adminApi.updateSetting('app_timezone', value),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'settings', 'app_timezone'] })
+      queryClient.invalidateQueries({ queryKey: ['admin', 'timezone'] })
+      toast.success(t('admin.settings.updated'))
+    },
+    onError: () => {
+      toast.error(t('common.error'))
+    },
+  })
 
   const updateDateFormatMutation = useMutation({
     mutationFn: (value: string) => adminApi.updateSetting('date_format', value),
@@ -584,6 +634,37 @@ export default function AdminSettingsPage() {
               </button>
             )
           })}
+        </div>
+      </div>
+
+      {/* Application timezone */}
+      <div className="rounded-xl border border-border/60 bg-card overflow-hidden mb-8">
+        <div className="px-5 py-4 border-b border-border/40">
+          <div className="flex items-center gap-2 mb-0.5">
+            <Clock3 size={15} className="text-muted-foreground" />
+            <h3 className="text-sm font-semibold text-foreground">{t('admin.settings.timezoneTitle')}</h3>
+          </div>
+          <p className="text-xs text-muted-foreground">{t('admin.settings.timezoneDesc')}</p>
+        </div>
+        <div className="px-5 py-4 grid gap-2 max-w-xl">
+          <Label className="text-xs">{t('admin.settings.timezoneLabel')}</Label>
+          <Select
+            value={appTimezone}
+            onValueChange={(value) => updateAppTimezoneMutation.mutate(value)}
+            disabled={updateAppTimezoneMutation.isPending}
+          >
+            <SelectTrigger className="h-10">
+              <SelectValue placeholder="UTC" />
+            </SelectTrigger>
+            <SelectContent className="max-h-80">
+              {timezoneOptions.map((zone) => (
+                <SelectItem key={zone} value={zone}>{zone}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {t('admin.settings.timezoneCurrent', { timezone: appTimezone })}
+          </p>
         </div>
       </div>
 

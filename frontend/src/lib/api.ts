@@ -1353,6 +1353,10 @@ export const admin = {
     const { data } = await api.get('/admin/date-format')
     return data
   },
+  appTimezone: async (): Promise<{ timezone: string }> => {
+    const { data } = await api.get('/admin/timezone')
+    return data
+  },
   defaultColors: async (): Promise<{ light: string | null; dark: string | null }> => {
     const { data } = await api.get('/admin/default-colors')
     return data

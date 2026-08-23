@@ -10,13 +10,15 @@ Goals:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.timezone import app_today
 from app.models.user import User
+from app.services import admin_service
 
 
 def _fmt_amount(value: Optional[float | Decimal], currency: str) -> str:
@@ -47,6 +49,7 @@ async def build_context_primer(
     *,
     workspace_id: uuid.UUID | None = None,
     max_accounts: int = 10,
+    now: datetime | None = None,
 ) -> str:
     """Returns a short Markdown block describing who the user is and
     what their accounts look like in the active workspace. Empty string
@@ -56,9 +59,9 @@ async def build_context_primer(
     prefs = getattr(user, "preferences", None) or {}
     primary_currency = prefs.get("currency_display") or "USD"
     language = prefs.get("language") or "en"
-    timezone_label = prefs.get("timezone") or "UTC"
+    timezone_label = await admin_service.get_app_timezone(session)
 
-    today_utc = datetime.now(timezone.utc).date().isoformat()
+    today_app = app_today(timezone_label, now=now).isoformat()
 
     lines: list[str] = []
     lines.append("# Context for this conversation")
@@ -68,7 +71,7 @@ async def build_context_primer(
     lines.append(f"- Primary currency: {primary_currency}")
     lines.append(f"- Preferred language: {language}")
     lines.append(f"- Timezone: {timezone_label}")
-    lines.append(f"- Today is {today_utc} (UTC)")
+    lines.append(f"- Today is {today_app} ({timezone_label})")
     lines.append("")
 
     rows: list[dict] = []

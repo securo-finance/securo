@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import UserManager
 from app.core.config import get_settings
+from app.core.timezone import DEFAULT_APP_TIMEZONE, is_valid_timezone
 from app.models.app_settings import AppSetting
 from app.models.user import User
 from app.schemas.admin import AdminUserCreate, AdminUserUpdate
@@ -279,6 +280,18 @@ async def get_date_format(session: AsyncSession) -> str:
     if setting and setting.value in ("auto", "dmy", "mdy", "ymd"):
         return setting.value
     return "auto"
+
+
+async def get_app_timezone(session: AsyncSession) -> str:
+    """Return the configured backend application timezone.
+
+    Used for automations, AI context, reminders, scheduled tasks, and other
+    date-sensitive calculations. Defaults to UTC when unset or invalid.
+    """
+    setting = await get_app_setting(session, "app_timezone")
+    if setting and is_valid_timezone(setting.value):
+        return setting.value
+    return DEFAULT_APP_TIMEZONE
 
 
 async def use_provider_categories(session: AsyncSession) -> bool:

@@ -1681,7 +1681,11 @@
       "dateFormatMdyDesc": "Mese prima, es. 06/04/2026.",
       "dateFormatYmd": "Anno / Mese / Giorno",
       "dateFormatYmdDesc": "Ordine ISO, es. 2026-06-04.",
-      "updated": "Impostazione aggiornata"
+      "updated": "Impostazione aggiornata",
+      "timezoneTitle": "Backend timezone",
+      "timezoneDesc": "Timezone used by automations, AI agents, reminders, scheduled tasks, and date-sensitive backend calculations.",
+      "timezoneLabel": "Application timezone",
+      "timezoneCurrent": "Current backend timezone: {{timezone}}"
     }
   },
   "onboarding": {

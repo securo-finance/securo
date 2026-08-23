@@ -16,6 +16,7 @@ from app.schemas.admin import (
     AppSettingUpdate,
 )
 from app.services import admin_service
+from app.core.timezone import is_valid_timezone
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -27,6 +28,7 @@ ALLOWED_SETTINGS = {
     "theme_color_dark",
     "number_format",
     "date_format",
+    "app_timezone",
 }
 
 
@@ -139,6 +141,12 @@ async def update_setting(
             detail=f"Invalid value for '{key}'. Allowed: {SETTING_VALIDATORS[key]}",
         )
 
+    if key == "app_timezone" and not is_valid_timezone(data.value):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid timezone. Use a valid IANA timezone such as America/Sao_Paulo.",
+        )
+
     if key in ("theme_color_light", "theme_color_dark"):
         if not re.match(r"^#[0-9A-Fa-f]{6}$", data.value):
             raise HTTPException(
@@ -174,6 +182,15 @@ async def accounting_mode(
 ):
     mode = await admin_service.get_credit_card_accounting_mode(session)
     return {"mode": mode}
+
+
+@router.get("/timezone")
+async def app_timezone(
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_active_user),
+):
+    timezone_name = await admin_service.get_app_timezone(session)
+    return {"timezone": timezone_name}
 
 
 @router.get("/number-format")
