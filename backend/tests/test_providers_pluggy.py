@@ -374,6 +374,52 @@ def test_build_account_data_without_number_leaves_mask_none():
     assert out.masked_number is None
 
 
+def test_build_account_data_groups_consolidated_credit_line():
+    """Two physical cards sharing Pluggy's consolidated line get one group."""
+    from app.providers.pluggy import _build_account_data
+
+    credit_data = {
+        "disaggregatedCreditLimits": [{
+            "lineName": "CREDITO_A_VISTA",
+            "creditLineLimitType": "LIMITE_CREDITO_TOTAL",
+            "consolidationType": "CONSOLIDADO",
+            "usedAmount": 250.50,
+            "customizedLimitAmount": 1000,
+        }]
+    }
+    visa = _build_account_data(
+        {"id": "visa", "name": "Visa", "type": "CREDIT", "balance": 250.50,
+         "currencyCode": "BRL", "creditData": credit_data},
+        PluggyProvider._map_account_type,
+    )
+    mastercard = _build_account_data(
+        {"id": "mc", "name": "Mastercard", "type": "CREDIT", "balance": 250.50,
+         "currencyCode": "BRL", "creditData": credit_data},
+        PluggyProvider._map_account_type,
+    )
+
+    assert visa.shared_balance_group is not None
+    assert visa.shared_balance_group == mastercard.shared_balance_group
+
+
+def test_build_account_data_does_not_group_individual_credit_line():
+    from app.providers.pluggy import _build_account_data
+
+    acc = _build_account_data(
+        {"id": "visa", "name": "Visa", "type": "CREDIT", "balance": 250,
+         "currencyCode": "BRL", "creditData": {"disaggregatedCreditLimits": [{
+             "lineName": "CREDITO_A_VISTA",
+             "creditLineLimitType": "LIMITE_CREDITO_TOTAL",
+             "consolidationType": "INDIVIDUAL",
+             "usedAmount": 250,
+             "limitAmount": 1000,
+         }]}},
+        PluggyProvider._map_account_type,
+    )
+
+    assert acc.shared_balance_group is None
+
+
 def test_build_account_data_maps_bank_savings_subtype_to_savings():
     from app.providers.pluggy import _build_account_data
 
