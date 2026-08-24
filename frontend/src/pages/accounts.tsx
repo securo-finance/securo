@@ -7,6 +7,7 @@ import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { accounts, connections, currencies } from '@/lib/api'
+import { creditCardCycleBoundaries } from '@/lib/credit-card-cycle'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
@@ -56,20 +57,6 @@ function daysUntil(dateStr: string | null): number | null {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-}
-
-function creditCardCycleBoundaries(closeDay: number, reference: Date): { start: string; end: string } {
-  const ref = new Date(reference)
-  ref.setHours(0, 0, 0, 0)
-  const clampDay = (year: number, month: number) => Math.min(closeDay, new Date(year, month + 1, 0).getDate())
-  const thisMonthClose = new Date(ref.getFullYear(), ref.getMonth(), clampDay(ref.getFullYear(), ref.getMonth()))
-  const nextClose = thisMonthClose > ref
-    ? thisMonthClose
-    : new Date(ref.getFullYear(), ref.getMonth() + 1, clampDay(ref.getFullYear(), ref.getMonth() + 1))
-  const end = new Date(nextClose)
-  end.setDate(end.getDate() - 1)
-  const start = new Date(nextClose.getFullYear(), nextClose.getMonth() - 1, clampDay(nextClose.getFullYear(), nextClose.getMonth() - 1))
-  return { start: localDateString(start), end: localDateString(end) }
 }
 
 export default function AccountsPage() {
