@@ -60,7 +60,7 @@
     "archiveConfirmDescription": "De workspace \"{{name}}\" wordt uit uw lijst verwijderd. Gegevens blijven behouden en een beheerder kan deze later herstellen."
   },
   "app": {
-    "name": "Veilig",
+    "name": "Securo",
     "versionAriaLabel": "Lopende versie {{version}}",
     "versionLabel": "Versie {{version}}",
     "updateAvailable": "Update beschikbaar",
@@ -659,7 +659,7 @@
       "dontClose": "Sluit dit tabblad niet. We sturen u door zodra het gereed is.",
       "linkAccountsFirstTitle": "Accounts zijn nog niet gekoppeld",
       "linkAccountsFirstDesc": "Uw Enable Banking-rekening bevindt zich in de beperkte modus, dus rekeningen moeten vooraf worden gekoppeld in de Enable Banking-portal voordat ze hier kunnen worden geïmporteerd.",
-      "openPortal": "Open Bankierenportaal inschakelen",
+      "openPortal": "Enable Banking portaal openen",
       "retry": "Ik heb mijn accounts gekoppeld, probeer het opnieuw",
       "missingState": "OAuth-status ontbreekt of is ongeldig. Start de verbinding opnieuw.",
       "providerError": "De bank heeft een fout gemeld: {{message}}"
