@@ -159,6 +159,7 @@ export interface Account {
   minimum_payment: number | null
   card_brand: string | null
   card_level: string | null
+  shared_balance_group: string | null
   is_closed: boolean
   closed_at: string | null
 }

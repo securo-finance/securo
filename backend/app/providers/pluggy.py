@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import json
 import logging
 import time
 from datetime import date
@@ -104,6 +106,52 @@ def _decimal_or_none(value) -> Optional[Decimal]:
         return None
 
 
+def _consolidated_credit_balance_group(
+    credit_data: dict, account_balance, currency: str,
+) -> Optional[str]:
+    """Return a stable, opaque group for a Pluggy consolidated credit balance.
+
+    Pluggy may report several physical cards against a single credit line. In
+    that case each account carries the same used balance and the line is marked
+    ``CONSOLIDADO``. Group only the total sight-credit line and only when its
+    used amount equals the account balance, so unrelated per-card limits are
+    never collapsed.
+    """
+    balance = _decimal_or_none(account_balance)
+    if balance is None:
+        return None
+
+    for line in credit_data.get("disaggregatedCreditLimits") or []:
+        if not isinstance(line, dict):
+            continue
+        if str(line.get("consolidationType") or "").upper() != "CONSOLIDADO":
+            continue
+        if str(line.get("creditLineLimitType") or "").upper() != "LIMITE_CREDITO_TOTAL":
+            continue
+        used = _decimal_or_none(line.get("usedAmount"))
+        if used is None or used != balance:
+            continue
+
+        # Flexible consolidated lines may omit `limitAmount`, but Pluggy
+        # includes the customized amount. Keep the used amount in the key too:
+        # if the provider momentarily reports different snapshots for sibling
+        # cards, they must not be deduplicated incorrectly.
+        limit = _decimal_or_none(line.get("customizedLimitAmount"))
+        if limit is None:
+            limit = _decimal_or_none(line.get("limitAmount"))
+        if limit is None:
+            continue
+        identity = {
+            "currency": currency,
+            "line_name": str(line.get("lineName") or "").upper(),
+            "limit": str(limit.normalize()),
+            "used": str(used.normalize()),
+        }
+        encoded = json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
+        return hashlib.sha256(encoded).hexdigest()
+    return None
+
+
 def _date_or_none(value) -> Optional[date]:
     if not value:
         return None
@@ -203,6 +251,7 @@ def _build_account_data(acc: dict, type_mapper) -> AccountData:
     minimum_payment: Optional[Decimal] = None
     card_brand: Optional[str] = None
     card_level: Optional[str] = None
+    shared_balance_group: Optional[str] = None
 
     if account_type == "credit_card" and credit_data:
         raw_limit = credit_data.get("creditLimit")
@@ -215,6 +264,9 @@ def _build_account_data(acc: dict, type_mapper) -> AccountData:
             minimum_payment = Decimal(str(raw_min))
         card_brand = credit_data.get("brand") or None
         card_level = credit_data.get("level") or None
+        shared_balance_group = _consolidated_credit_balance_group(
+            credit_data, acc.get("balance"), acc.get("currencyCode") or "USD"
+        )
 
     return AccountData(
         external_id=acc["id"],
@@ -231,6 +283,7 @@ def _build_account_data(acc: dict, type_mapper) -> AccountData:
         # Brazil has no IBAN; Pluggy's `number` is the branch/account number
         # (or the card number for credit cards), which serves the same purpose.
         masked_number=mask_last4(acc.get("number")),
+        shared_balance_group=shared_balance_group,
     )
 
 
