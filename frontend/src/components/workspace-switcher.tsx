@@ -140,8 +140,9 @@ export function WorkspaceSwitcher({
   if (!current || !user) return null
 
   const hasMultipleWorkspaces = workspaces.length > 1
-  const roleLabel =
-    current.role && ROLE_LABEL_KEY[current.role] ? t(ROLE_LABEL_KEY[current.role]) : null
+  const roleLabel = current.role && ROLE_LABEL_KEY[current.role]
+    ? t(ROLE_LABEL_KEY[current.role])
+    : null
 
   return (
     <>
@@ -158,7 +159,9 @@ export function WorkspaceSwitcher({
               <p className="text-xs font-semibold truncate">{current.name}</p>
               <p className="text-[10px] text-sidebar-muted/70 truncate">
                 {user.email}
-                {roleLabel && <span className="ml-1 uppercase tracking-wide">· {roleLabel}</span>}
+                {roleLabel && (
+                  <span className="ml-1 uppercase tracking-wide">· {roleLabel}</span>
+                )}
               </p>
             </div>
             <ChevronsUpDown size={13} className="text-sidebar-muted/60 shrink-0" />
@@ -205,7 +208,10 @@ export function WorkspaceSwitcher({
             <Settings size={14} />
             <span className="flex-1">{t('workspace.settingsMenu', 'Workspace settings')}</span>
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setCreateOpen(true)} className="flex items-center gap-2">
+          <DropdownMenuItem
+            onClick={() => setCreateOpen(true)}
+            className="flex items-center gap-2"
+          >
             <Plus size={14} />
             <span className="flex-1">{t('workspace.create', 'New workspace')}</span>
           </DropdownMenuItem>
@@ -224,19 +230,31 @@ export function WorkspaceSwitcher({
           )}
 
           {/* Account actions */}
-          <DropdownMenuItem onClick={onChangePassword} className="flex items-center gap-2">
+          <DropdownMenuItem
+            onClick={onChangePassword}
+            className="flex items-center gap-2"
+          >
             <KeyRound size={14} />
             {t('auth.changePassword')}
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={onTwoFactor} className="flex items-center gap-2">
+          <DropdownMenuItem
+            onClick={onTwoFactor}
+            className="flex items-center gap-2"
+          >
             <ShieldCheck size={14} />
             {t('auth.twoFactorTitle')}
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={onPasskeys} className="flex items-center gap-2">
+          <DropdownMenuItem
+            onClick={onPasskeys}
+            className="flex items-center gap-2"
+          >
             <Fingerprint size={14} />
             {t('auth.passkeysTitle')}
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={onBackup} className="flex items-center gap-2">
+          <DropdownMenuItem
+            onClick={onBackup}
+            className="flex items-center gap-2"
+          >
             <HardDriveDownload size={14} />
             {t('backup.button')}
           </DropdownMenuItem>
@@ -251,7 +269,10 @@ export function WorkspaceSwitcher({
             </DropdownMenuItem>
           )}
 
-          <DropdownMenuItem onClick={onUpdateAvailable} className="flex items-center gap-2">
+          <DropdownMenuItem
+            onClick={onUpdateAvailable}
+            className="flex items-center gap-2"
+          >
             <Download size={14} />
             {t('update.menuItem')}
           </DropdownMenuItem>
@@ -341,7 +362,7 @@ export function WorkspaceSwitcher({
                   {currentLang === 'fr' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => i18n.changeLanguage('nl')}
+                  onClick={() => i18n.changeLanguage('fr')}
                   className="flex items-center gap-2"
                 >
                   <span className="flex-1">Nederlands</span>
@@ -429,7 +450,11 @@ export function WorkspaceSwitcher({
             </div>
           </div>
           <DialogFooter className="mt-2">
-            <Button variant="outline" onClick={() => setCreateOpen(false)} className="rounded-lg">
+            <Button
+              variant="outline"
+              onClick={() => setCreateOpen(false)}
+              className="rounded-lg"
+            >
               {t('common.cancel')}
             </Button>
             <Button
