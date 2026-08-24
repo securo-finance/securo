@@ -2,6 +2,7 @@
 import re
 import unicodedata
 import uuid
+from collections.abc import Collection
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING
@@ -190,18 +191,29 @@ def apply_rule_actions(
     category_already_set: bool,
     *,
     skip_description: bool = False,
+    hidden_category_ids: Collection[uuid.UUID] | None = None,
 ) -> bool:
-    """Apply actions in-place and return the updated category-set flag."""
+    """Apply actions in-place and return the updated category-set flag.
+
+    A category the workspace has hidden is never assigned: hiding it means the
+    user stopped using it, so a rule that still points at one keeps its other
+    actions and drops only the categorization. The transaction is left
+    uncategorized rather than filed under a category the pickers no longer
+    offer.
+    """
     for action in actions:
         op = action.get("op")
         value = action.get("value")
 
         if op == "set_category" and not category_already_set:
             try:
-                tx.category_id = uuid.UUID(str(value))
-                category_already_set = True
+                category_id = uuid.UUID(str(value))
             except (ValueError, AttributeError):
-                pass
+                continue
+            if hidden_category_ids and category_id in hidden_category_ids:
+                continue
+            tx.category_id = category_id
+            category_already_set = True
 
         elif op == "set_description":
             if skip_description:

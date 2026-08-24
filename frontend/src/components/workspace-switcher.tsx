@@ -83,6 +83,8 @@ interface AccountMenuProps {
   onUpdateAvailable: () => void
   /** True when the AGENTS_ENABLED env flag is on. */
   agentsEnabled: boolean
+  /** True when local password/passkey auth is enabled. */
+  localAuthEnabled: boolean
 }
 
 /**
@@ -101,6 +103,7 @@ export function WorkspaceSwitcher({
   onBackup,
   onUpdateAvailable,
   agentsEnabled,
+  localAuthEnabled,
 }: AccountMenuProps) {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
@@ -230,27 +233,31 @@ export function WorkspaceSwitcher({
           )}
 
           {/* Account actions */}
-          <DropdownMenuItem
-            onClick={onChangePassword}
-            className="flex items-center gap-2"
-          >
-            <KeyRound size={14} />
-            {t('auth.changePassword')}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={onTwoFactor}
-            className="flex items-center gap-2"
-          >
-            <ShieldCheck size={14} />
-            {t('auth.twoFactorTitle')}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={onPasskeys}
-            className="flex items-center gap-2"
-          >
-            <Fingerprint size={14} />
-            {t('auth.passkeysTitle')}
-          </DropdownMenuItem>
+          {localAuthEnabled && (
+            <>
+              <DropdownMenuItem
+                onClick={onChangePassword}
+                className="flex items-center gap-2"
+              >
+                <KeyRound size={14} />
+                {t('auth.changePassword')}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={onTwoFactor}
+                className="flex items-center gap-2"
+              >
+                <ShieldCheck size={14} />
+                {t('auth.twoFactorTitle')}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={onPasskeys}
+                className="flex items-center gap-2"
+              >
+                <Fingerprint size={14} />
+                {t('auth.passkeysTitle')}
+              </DropdownMenuItem>
+            </>
+          )}
           <DropdownMenuItem
             onClick={onBackup}
             className="flex items-center gap-2"

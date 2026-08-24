@@ -60,6 +60,7 @@ import { GlobalChatPanel } from '@/components/global-chat-panel'
 import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { Bot, Search, Sparkles } from 'lucide-react'
 import { setThemeBasedOnSystem } from '@/lib/theme-utils'
+import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
 import { formatCurrency } from '@/lib/format'
 
 /** Placeholder rows shown while the workspace's module list is in flight. */
@@ -116,6 +117,7 @@ export function AppLayout() {
   // read-only session only exposes the reading ones; then this becomes
   // `agentsEnabled` again.
   const chatAvailable = agentsEnabled && canWrite
+  const localAuthEnabled = useLocalAuthEnabled()
 
   // ⌘J / Ctrl+J toggles the global slide-over chat from anywhere.
   // Distinct from ⌘K (command palette) so users can have both open.
@@ -259,6 +261,7 @@ export function AppLayout() {
             onChangePassword={() => setChangePasswordOpen(true)}
             onTwoFactor={() => setTwoFactorOpen(true)}
             onPasskeys={() => setPasskeysOpen(true)}
+            localAuthEnabled={localAuthEnabled}
             agentsEnabled={agentsEnabled}
             onBackup={() => setBackupOpen(true)}
             dark
@@ -493,6 +496,7 @@ export function AppLayout() {
               onChangePassword={() => setChangePasswordOpen(true)}
               onTwoFactor={() => setTwoFactorOpen(true)}
               onPasskeys={() => setPasskeysOpen(true)}
+              localAuthEnabled={localAuthEnabled}
               onBackup={() => setBackupOpen(true)}
               onUpdateAvailable={() => setUpdateDialogOpen(true)}
               agentsEnabled={agentsEnabled}
@@ -524,19 +528,23 @@ export function AppLayout() {
       </div>
 
       {showTour && <OnboardingTour onComplete={handleTourComplete} />}
-      <ChangePasswordDialog
-        open={changePasswordOpen}
-        onClose={() => setChangePasswordOpen(false)}
-      />
+      {localAuthEnabled && (
+        <>
+          <ChangePasswordDialog
+            open={changePasswordOpen}
+            onClose={() => setChangePasswordOpen(false)}
+          />
+          <TwoFactorSetup
+            open={twoFactorOpen}
+            onClose={() => setTwoFactorOpen(false)}
+          />
+          <PasskeyManagementDialog
+            open={passkeysOpen}
+            onClose={() => setPasskeysOpen(false)}
+          />
+        </>
+      )}
       <BackupDialog open={backupOpen} onClose={() => setBackupOpen(false)} />
-      <TwoFactorSetup
-        open={twoFactorOpen}
-        onClose={() => setTwoFactorOpen(false)}
-      />
-      <PasskeyManagementDialog
-        open={passkeysOpen}
-        onClose={() => setPasskeysOpen(false)}
-      />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       {/* Slide-over global chat — opened from the sidebar pill or via
           ⌘J. The previous floating bottom-right button was removed
@@ -556,6 +564,7 @@ function UserMenu({
   onChangePassword,
   onTwoFactor,
   onPasskeys,
+  localAuthEnabled,
   onBackup,
   dark,
   isAdmin,
@@ -566,6 +575,7 @@ function UserMenu({
   onChangePassword: () => void
   onTwoFactor: () => void
   onPasskeys: () => void
+  localAuthEnabled: boolean
   onBackup: () => void
   dark?: boolean
   isAdmin?: boolean
@@ -604,27 +614,31 @@ function UserMenu({
             <DropdownMenuSeparator />
           </>
         )}
-        <DropdownMenuItem
-          onClick={onChangePassword}
-          className="flex items-center gap-2"
-        >
-          <KeyRound size={14} />
-          {t('auth.changePassword')}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={onTwoFactor}
-          className="flex items-center gap-2"
-        >
-          <ShieldCheck size={14} />
-          {t('auth.twoFactorTitle')}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={onPasskeys}
-          className="flex items-center gap-2"
-        >
-          <Fingerprint size={14} />
-          {t('auth.passkeysTitle')}
-        </DropdownMenuItem>
+        {localAuthEnabled && (
+          <>
+            <DropdownMenuItem
+              onClick={onChangePassword}
+              className="flex items-center gap-2"
+            >
+              <KeyRound size={14} />
+              {t('auth.changePassword')}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={onTwoFactor}
+              className="flex items-center gap-2"
+            >
+              <ShieldCheck size={14} />
+              {t('auth.twoFactorTitle')}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={onPasskeys}
+              className="flex items-center gap-2"
+            >
+              <Fingerprint size={14} />
+              {t('auth.passkeysTitle')}
+            </DropdownMenuItem>
+          </>
+        )}
         <DropdownMenuItem
           onClick={onBackup}
           className="flex items-center gap-2"

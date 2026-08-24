@@ -41,6 +41,7 @@ from app.api.user_lookup import router as user_lookup_router
 from app.api.workspaces import router as workspaces_router
 from app.api.admin import router as admin_router, check_registration_enabled
 from app.core.auth import fastapi_users
+from app.core.auth_policy import require_local_auth_enabled
 from app.core.config import get_settings
 from app.core.rate_limit import login_rate_limit, register_rate_limit, password_reset_rate_limit
 from app.core.redis import close_redis
@@ -136,13 +137,17 @@ app.include_router(
     fastapi_users.get_register_router(UserRead, UserCreate),
     prefix="/api/auth",
     tags=["auth"],
-    dependencies=[Depends(check_registration_enabled), Depends(register_rate_limit)],
+    dependencies=[
+        Depends(require_local_auth_enabled),
+        Depends(check_registration_enabled),
+        Depends(register_rate_limit),
+    ],
 )
 app.include_router(
     fastapi_users.get_reset_password_router(),
     prefix="/api/auth",
     tags=["auth"],
-    dependencies=[Depends(password_reset_rate_limit)],
+    dependencies=[Depends(require_local_auth_enabled), Depends(password_reset_rate_limit)],
 )
 # user_lookup must precede the fastapi-users router below so the
 # `/api/users/lookup` path isn't captured by the catch-all `/{id}`

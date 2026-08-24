@@ -17,6 +17,7 @@
     "addMember": "Adicionar membro",
     "addMemberTitle": "Adicionar membro",
     "addMemberDescription": "Convide um usuário existente por email, ou crie uma nova conta fornecendo uma senha.",
+    "addMemberDescriptionExistingOnly": "Convide um usuário existente pelo e-mail.",
     "role": "Papel",
     "roleOwner": "Dono",
     "roleEditor": "Editor",
@@ -167,6 +168,8 @@
     "loginDescription": "Entre para acessar sua conta",
     "invalidCredentials": "E-mail ou senha incorretos",
     "serverError": "Não foi possível conectar ao servidor. Verifique sua conexão ou se o backend está em execução e tente novamente.",
+    "authConfigUnavailable": "Não foi possível carregar as opções de autenticação. O login local continua disponível; o servidor aplicará a política configurada.",
+    "noAuthMethodConfigured": "Nenhum método de autenticação está configurado. Entre em contato com o administrador e verifique as configurações do OIDC.",
     "noAccount": "Não tem uma conta?",
     "hasAccount": "Já tem uma conta?",
     "changePassword": "Alterar senha",
@@ -957,7 +960,15 @@
     "treatAsTransferBadge": "Transferência",
     "ignoreTransfer": "Ignorar Transações",
     "ignoreTransferDesc": "Transações ignoradas não contarão como receita ou despesa nos relatórios.",
-    "ignoreTransferBadge": "Ignorado"
+    "ignoreTransferBadge": "Ignorado",
+    "hiddenScopeDescription": "Categorias padrão ocultas deixam de aparecer nos seletores e não são mais atribuídas por regras. Transações existentes, orçamentos, painéis e relatórios continuam usando essas categorias.",
+    "hiddenBadge": "Oculta",
+    "showDefault": "Mostrar categoria padrão",
+    "hideDefault": "Ocultar categoria padrão",
+    "hideWithRulesTitle": "Ocultar {{name}}?",
+    "hideWithRulesDescription": "{{count}} regras ativas atribuem esta categoria. Ocultá-la já impede que elas categorizem novas transações. Desligá-las para a regra inteira, incluindo a pessoa ou as notas que ela também define.",
+    "hideKeepRules": "Apenas ocultar",
+    "hideAndTurnOffRules": "Ocultar e desligar as regras"
   },
   "groups": {
     "title": "Grupos de Categorias",
@@ -974,7 +985,10 @@
     "confirmDeleteTitle": "Excluir grupo de categorias?",
     "noGroup": "Sem grupo",
     "systemGroup": "Grupo do sistema",
-    "confirmDeleteDescription": "O grupo de categorias \"{{name}}\" será excluído. Suas categorias permanecerão e ficarão sem grupo. Esta ação não pode ser desfeita."
+    "confirmDeleteDescription": "O grupo de categorias \"{{name}}\" será excluído. Suas categorias permanecerão e ficarão sem grupo. Esta ação não pode ser desfeita.",
+    "hiddenBadge": "Oculto",
+    "showDefault": "Mostrar grupo padrão",
+    "hideDefault": "Ocultar grupo padrão"
   },
   "import": {
     "acceptedFormats": "Formatos aceitos: OFX, CSV, QIF, CAMT",

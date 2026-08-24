@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import current_active_user, get_user_manager, UserManager
+from app.core.auth_policy import local_auth_enabled, require_local_auth_enabled
 from app.core.database import get_async_session
 from app.core.workspace_context import WorkspaceContext, current_workspace
 from app.models.user import User
@@ -206,8 +207,21 @@ async def invite_member(
     target = existing.scalar_one_or_none()
 
     if target is None:
-        # Brand-new user — only allowed if a password was provided.
-        if not body.password:
+        # Brand-new user — creating the account here mints a local password,
+        # so it is only allowed while local credentials are accepted.
+        if body.password:
+            require_local_auth_enabled()
+        elif not local_auth_enabled():
+            # There is no password to ask for in OIDC-only mode, so point at
+            # what actually unblocks the invite.
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "User not found. They must sign in through the identity "
+                    "provider once before they can be added."
+                ),
+            )
+        else:
             raise HTTPException(
                 status_code=400,
                 detail="User not found. Provide a password to create them.",

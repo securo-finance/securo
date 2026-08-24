@@ -8,6 +8,8 @@ import uuid
 import pytest
 from httpx import AsyncClient
 
+from app.core.auth import get_jwt_strategy
+
 
 # ---------------------------------------------------------------------------
 # list / create / current
@@ -138,6 +140,44 @@ async def test_invite_new_user_member(client: AsyncClient, auth_headers, test_wo
     body = resp.json()
     assert body["email"] == "newcoll@example.com"
     assert body["role"] == "editor"
+
+
+@pytest.mark.asyncio
+async def test_invite_cannot_create_password_user_when_local_auth_disabled(
+    client: AsyncClient,
+    test_user,
+    test_workspace,
+    oidc_only_settings,
+):
+    token = await get_jwt_strategy().write_token(test_user)
+    resp = await client.post(
+        f"/api/workspaces/{test_workspace.id}/members",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"email": "oidc-only@example.com", "role": "editor", "password": "supersecret123"},
+    )
+
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "LOCAL_AUTH_DISABLED"
+
+
+@pytest.mark.asyncio
+async def test_invite_unknown_user_without_password_points_at_oidc_when_local_auth_disabled(
+    client: AsyncClient,
+    test_user,
+    test_workspace,
+    oidc_only_settings,
+):
+    token = await get_jwt_strategy().write_token(test_user)
+    resp = await client.post(
+        f"/api/workspaces/{test_workspace.id}/members",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"email": "oidc-only@example.com", "role": "editor"},
+    )
+
+    assert resp.status_code == 400
+    # Asking for a password would be dead-end advice in OIDC-only mode.
+    assert "password" not in resp.json()["detail"].lower()
+    assert "identity provider" in resp.json()["detail"]
 
 
 @pytest.mark.asyncio

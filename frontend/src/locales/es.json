@@ -17,6 +17,7 @@
     "addMember": "Añadir miembro",
     "addMemberTitle": "Añadir miembro",
     "addMemberDescription": "Invita a un usuario existente por correo, o crea una cuenta nueva proporcionando una contraseña.",
+    "addMemberDescriptionExistingOnly": "Invita por correo a un usuario existente.",
     "role": "Rol",
     "roleOwner": "Propietario",
     "roleEditor": "Editor",
@@ -167,6 +168,8 @@
     "loginDescription": "Inicia sesión para acceder a tu cuenta",
     "invalidCredentials": "Correo o contraseña inválidos",
     "serverError": "No se pudo conectar con el servidor. Comprueba tu conexión o que el backend esté en ejecución e inténtalo de nuevo.",
+    "authConfigUnavailable": "No se pudieron cargar las opciones de autenticación. El inicio de sesión local sigue disponible; el servidor aplicará la política configurada.",
+    "noAuthMethodConfigured": "No hay ningún método de autenticación configurado. Contacta con el administrador y revisa la configuración de OIDC.",
     "noAccount": "¿No tienes una cuenta?",
     "hasAccount": "¿Ya tienes una cuenta?",
     "changePassword": "Cambiar contraseña",
@@ -957,7 +960,15 @@
     "treatAsTransferBadge": "Transferencia",
     "ignoreTransfer": "Ignorar esta transferencia",
     "ignoreTransferDesc": "Las transacciones ignoradas no aparecerán en los informes de ingresos o gastos.",
-    "ignoreTransferBadge": "Ignorar"
+    "ignoreTransferBadge": "Ignorar",
+    "hiddenScopeDescription": "Las categorías predeterminadas ocultas se eliminan de los selectores y las reglas dejan de asignarlas. Las transacciones, los presupuestos, los paneles y los informes existentes siguen utilizándolas.",
+    "hiddenBadge": "Oculta",
+    "showDefault": "Mostrar categoría predeterminada",
+    "hideDefault": "Ocultar categoría predeterminada",
+    "hideWithRulesTitle": "¿Ocultar {{name}}?",
+    "hideWithRulesDescription": "{{count}} reglas activas asignan esta categoría. Ocultarla ya impide que categoricen nuevas transacciones. Desactivarlas detiene la regla completa, incluidos el beneficiario o las notas que también establece.",
+    "hideKeepRules": "Solo ocultar",
+    "hideAndTurnOffRules": "Ocultar y desactivar las reglas"
   },
   "groups": {
     "title": "Grupos de categorías",
@@ -974,7 +985,10 @@
     "confirmDeleteTitle": "¿Eliminar grupo de categorías?",
     "noGroup": "Sin grupo",
     "systemGroup": "Grupo del sistema",
-    "confirmDeleteDescription": "El grupo de categorías \"{{name}}\" se eliminará. Sus categorías permanecerán y quedarán sin grupo. Esta acción no se puede deshacer."
+    "confirmDeleteDescription": "El grupo de categorías \"{{name}}\" se eliminará. Sus categorías permanecerán y quedarán sin grupo. Esta acción no se puede deshacer.",
+    "hiddenBadge": "Oculto",
+    "showDefault": "Mostrar grupo predeterminado",
+    "hideDefault": "Ocultar grupo predeterminado"
   },
   "import": {
     "acceptedFormats": "Formatos aceptados: OFX, CSV, QIF, CAMT",

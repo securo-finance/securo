@@ -17,6 +17,7 @@
     "addMember": "Mitglied hinzufügen",
     "addMemberTitle": "Mitglied hinzufügen",
     "addMemberDescription": "Lade einen bestehenden Benutzer per E-Mail ein oder erstelle ein neues Konto durch Angabe eines Passworts.",
+    "addMemberDescriptionExistingOnly": "Lade eine vorhandene Person per E-Mail ein.",
     "role": "Rolle",
     "roleOwner": "Besitzer",
     "roleEditor": "Editor",
@@ -167,6 +168,8 @@
     "loginDescription": "Melde dich an, um auf dein Konto zuzugreifen",
     "invalidCredentials": "Ungültige E-Mail-Adresse oder Passwort",
     "serverError": "Verbindung zum Server fehlgeschlagen. Überprüfe deine Verbindung oder ob das Backend läuft und versuche es erneut.",
+    "authConfigUnavailable": "Die Authentifizierungsoptionen konnten nicht geladen werden. Die lokale Anmeldung bleibt verfügbar; der Server erzwingt die konfigurierte Richtlinie.",
+    "noAuthMethodConfigured": "Es ist keine Authentifizierungsmethode konfiguriert. Wende dich an den Administrator und prüfe die OIDC-Einstellungen.",
     "noAccount": "Noch kein Konto?",
     "hasAccount": "Bereits ein Konto?",
     "changePassword": "Passwort ändern",
@@ -957,7 +960,15 @@
     "treatAsTransferBadge": "Umbuchung",
     "ignoreTransfer": "Diese Umbuchung ignorieren",
     "ignoreTransferDesc": "Ignorierte Transaktionen werden nicht in Einnahmen- oder Ausgabenberichten aufgeführt.",
-    "ignoreTransferBadge": "Ignorieren"
+    "ignoreTransferBadge": "Ignorieren",
+    "hiddenScopeDescription": "Ausgeblendete Standardkategorien werden aus den Kategorieauswahlen entfernt und nicht mehr von Regeln zugewiesen. Bestehende Transaktionen, Budgets, Dashboards und Berichte verwenden sie weiterhin.",
+    "hiddenBadge": "Ausgeblendet",
+    "showDefault": "Standardkategorie anzeigen",
+    "hideDefault": "Standardkategorie ausblenden",
+    "hideWithRulesTitle": "{{name}} ausblenden?",
+    "hideWithRulesDescription": "{{count}} aktive Regeln weisen diese Kategorie zu. Das Ausblenden verhindert bereits, dass sie neue Transaktionen kategorisieren. Sie zu deaktivieren stoppt die ganze Regel, einschließlich Zahlungsempfänger oder Notizen, die sie ebenfalls setzt.",
+    "hideKeepRules": "Nur ausblenden",
+    "hideAndTurnOffRules": "Ausblenden und Regeln deaktivieren"
   },
   "groups": {
     "title": "Kategoriegruppen",
@@ -974,7 +985,10 @@
     "confirmDeleteTitle": "Kategoriegruppe löschen?",
     "noGroup": "Keine Gruppe",
     "systemGroup": "Systemgruppe",
-    "confirmDeleteDescription": "Die Kategoriegruppe \"{{name}}\" wird gelöscht. Ihre Kategorien bleiben erhalten und werden keiner Gruppe mehr zugeordnet. Diese Aktion kann nicht rückgängig gemacht werden."
+    "confirmDeleteDescription": "Die Kategoriegruppe \"{{name}}\" wird gelöscht. Ihre Kategorien bleiben erhalten und werden keiner Gruppe mehr zugeordnet. Diese Aktion kann nicht rückgängig gemacht werden.",
+    "hiddenBadge": "Ausgeblendet",
+    "showDefault": "Standardgruppe anzeigen",
+    "hideDefault": "Standardgruppe ausblenden"
   },
   "import": {
     "acceptedFormats": "Unterstützte Formate: OFX, CSV, QIF, CAMT",
