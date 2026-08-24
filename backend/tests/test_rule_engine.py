@@ -4,6 +4,8 @@ from decimal import Decimal
 from datetime import date
 
 
+import pytest
+
 from app.models import Transaction
 from app.services.rule_engine import evaluate_conditions, apply_rule_actions
 
@@ -126,6 +128,39 @@ def test_regex_accented_pattern_still_matches():
     conditions = [{"field": "description", "op": "regex", "value": "APLICAÇÃO"}]
     tx = make_tx(description="APLICACAO EM CDB")
     assert evaluate_conditions("and", conditions, tx) is True
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    ["foo|", "|foo", "(foo|)", "(?:foo|)", "a*", ".*", "^", "$"],
+)
+def test_unsafe_persisted_regex_does_not_match_unrelated_transaction(pattern):
+    conditions = [{"field": "description", "op": "regex", "value": pattern}]
+    tx = make_tx(description="UNRELATED TRANSACTION")
+
+    assert evaluate_conditions("and", conditions, tx) is False
+
+
+def test_empty_only_regex_is_inert_for_empty_transaction_field():
+    conditions = [{"field": "description", "op": "regex", "value": "^$"}]
+    tx = make_tx(description="")
+
+    # Empty-matching regexes are disallowed for rule safety. Keeping legacy
+    # definitions inert aligns runtime behavior with future save-time validation.
+    assert evaluate_conditions("and", conditions, tx) is False
+
+
+def test_safe_alternation_regex_remains_selective():
+    conditions = [{"field": "description", "op": "regex", "value": "foo|bar"}]
+
+    assert evaluate_conditions("and", conditions, make_tx(description="foo")) is True
+    assert evaluate_conditions("and", conditions, make_tx(description="bar")) is True
+    assert (
+        evaluate_conditions(
+            "and", conditions, make_tx(description="UNRELATED TRANSACTION")
+        )
+        is False
+    )
 
 
 def test_amount_lt():

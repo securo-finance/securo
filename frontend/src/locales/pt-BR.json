@@ -738,6 +738,9 @@
     "created": "Orçamento criado",
     "updated": "Orçamento atualizado",
     "deleted": "Orçamento excluído",
+    "confirmDeleteTitle": "Excluir orçamento?",
+    "confirmDeleteDescription": "O orçamento para \"{{name}}\" será excluído permanentemente. As transações existentes não são afetadas. Esta ação não pode ser desfeita.",
+    "confirmDeleteRecurringDescription": "O orçamento recorrente para \"{{name}}\" será excluído permanentemente. Esta definição não será mais aplicada nos meses seguintes. As transações existentes não são afetadas. Esta ação não pode ser desfeita.",
     "repeatEveryMonth": "Repetir todo mês",
     "recurringLabel": "Recorrente"
   },
@@ -833,11 +836,13 @@
     "created": "Transação recorrente criada",
     "updated": "Transação recorrente atualizada",
     "deleted": "Transação recorrente excluída",
+    "confirmDeleteTitle": "Excluir transação recorrente?",
     "generated": "{{count}} transações geradas",
     "generatePending": "Gerar Pendentes",
     "autoGenerate": "Gerar transações automaticamente",
     "autoGenerateHelp": "Cria uma transação sempre que esta conta vence. Desative para aguardar o lançamento real (por exemplo, da sincronização bancária) e mostrá-la apenas como prevista até lá.",
-    "fxEstimate": "Estimativa baseada na última taxa de câmbio ({{rate}}). O valor final pode mudar."
+    "fxEstimate": "Estimativa baseada na última taxa de câmbio ({{rate}}). O valor final pode mudar.",
+    "confirmDeleteDescription": "A definição recorrente \"{{description}}\" será excluída permanentemente. As transações existentes permanecerão, mas perderão o vínculo recorrente. Esta ação não pode ser desfeita."
   },
   "rules": {
     "section": "Automação",
@@ -860,6 +865,8 @@
     "updatedAndApplied": "Regra atualizada e aplicada a {{count}} transações",
     "updated": "Regra atualizada",
     "deleted": "Regra excluída",
+    "confirmDeleteTitle": "Excluir regra?",
+    "confirmDeleteDescription": "A regra \"{{name}}\" será excluída permanentemente e não será mais executada. As alterações já aplicadas às transações existentes permanecerão. Esta ação não pode ser desfeita.",
     "applied": "Regras aplicadas a {{count}} transações",
     "inactive": "inativa",
     "empty": "Nenhuma regra criada",
@@ -940,6 +947,9 @@
     "created": "Categoria criada",
     "updated": "Categoria atualizada",
     "deleted": "Categoria excluída",
+    "confirmDeleteTitle": "Excluir categoria?",
+    "confirmDeleteDescription": "A categoria \"{{name}}\" será excluída permanentemente. Ela não pode ser excluída enquanto transações ou outros registros ainda fizerem referência a ela; remova essas referências primeiro. Esta ação não pode ser desfeita.",
+    "deleteInUse": "Esta categoria ainda está em uso. Remova antes os registros que fazem referência a ela.",
     "expandAll": "Expandir tudo",
     "collapseAll": "Recolher tudo",
     "treatAsTransfer": "Tratar como transferência",
@@ -961,8 +971,10 @@
     "created": "Grupo criado",
     "updated": "Grupo atualizado",
     "deleted": "Grupo excluído",
+    "confirmDeleteTitle": "Excluir grupo de categorias?",
     "noGroup": "Sem grupo",
-    "systemGroup": "Grupo do sistema"
+    "systemGroup": "Grupo do sistema",
+    "confirmDeleteDescription": "O grupo de categorias \"{{name}}\" será excluído. Suas categorias permanecerão e ficarão sem grupo. Esta ação não pode ser desfeita."
   },
   "import": {
     "acceptedFormats": "Formatos aceitos: OFX, CSV, QIF, CAMT",
@@ -1443,6 +1455,8 @@
     "created": "Grupo criado",
     "updated": "Grupo atualizado",
     "deleted": "Grupo excluído",
+    "confirmDeleteTitle": "Excluir grupo?",
+    "confirmDeleteDescription": "O grupo \"{{name}}\" e seus membros serão excluídos permanentemente. Grupos referenciados por divisões de transações ou liquidações não podem ser excluídos até que essas referências sejam removidas. Esta ação não pode ser desfeita.",
     "empty": "Nenhum grupo ainda",
     "emptyHint": "Crie um grupo para dividir despesas com pessoas, departamentos ou projetos.",
     "name": "Nome",

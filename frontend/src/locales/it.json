@@ -738,6 +738,9 @@
     "created": "Budget creato",
     "updated": "Budget aggiornato",
     "deleted": "Budget eliminato",
+    "confirmDeleteTitle": "Eliminare il budget?",
+    "confirmDeleteDescription": "Il budget per \"{{name}}\" verrà eliminato definitivamente. Le transazioni esistenti non sono interessate. Questa azione non può essere annullata.",
+    "confirmDeleteRecurringDescription": "Il budget ricorrente per \"{{name}}\" verrà eliminato definitivamente. Questa definizione non si applicherà più ai mesi successivi. Le transazioni esistenti non sono interessate. Questa azione non può essere annullata.",
     "repeatEveryMonth": "Ripeti ogni mese",
     "recurringLabel": "Ricorrente"
   },
@@ -833,11 +836,13 @@
     "created": "Transazione ricorrente creata",
     "updated": "Transazione ricorrente aggiornata",
     "deleted": "Transazione ricorrente eliminata",
+    "confirmDeleteTitle": "Eliminare la transazione ricorrente?",
     "generated": "{{count}} transazioni generate",
     "generatePending": "Genera in sospeso",
     "autoGenerate": "Genera transazioni automaticamente",
     "autoGenerateHelp": "Crea una transazione ogni volta che questa spesa è in scadenza. Disattiva per attendere l'addebito reale (ad es. dalla sincronizzazione bancaria) e mostrarla solo come in arrivo fino ad allora.",
-    "fxEstimate": "Stima basata sull'ultimo tasso di cambio ({{rate}}). L'importo finale può variare."
+    "fxEstimate": "Stima basata sull'ultimo tasso di cambio ({{rate}}). L'importo finale può variare.",
+    "confirmDeleteDescription": "La definizione ricorrente \"{{description}}\" verrà eliminata definitivamente. Le transazioni esistenti rimarranno, ma perderanno il collegamento ricorrente. Questa azione non può essere annullata."
   },
   "rules": {
     "section": "Automazione",
@@ -860,6 +865,8 @@
     "updatedAndApplied": "Regola aggiornata e applicata a {{count}} transazioni",
     "updated": "Regola aggiornata",
     "deleted": "Regola eliminata",
+    "confirmDeleteTitle": "Eliminare la regola?",
+    "confirmDeleteDescription": "La regola \"{{name}}\" verrà eliminata definitivamente e non verrà più eseguita. Le modifiche già applicate alle transazioni esistenti rimarranno. Questa azione non può essere annullata.",
     "applied": "Regole applicate a {{count}} transazioni",
     "inactive": "inattiva",
     "empty": "Nessuna regola creata",
@@ -940,6 +947,9 @@
     "created": "Categoria creata",
     "updated": "Categoria aggiornata",
     "deleted": "Categoria eliminata",
+    "confirmDeleteTitle": "Eliminare la categoria?",
+    "confirmDeleteDescription": "La categoria \"{{name}}\" verrà eliminata definitivamente. Non può essere eliminata finché transazioni o altri record vi fanno ancora riferimento; rimuovi prima tali riferimenti. Questa azione non può essere annullata.",
+    "deleteInUse": "Questa categoria è ancora in uso. Rimuovi prima i record che vi fanno riferimento.",
     "expandAll": "Espandi tutto",
     "collapseAll": "Comprimi tutto",
     "treatAsTransfer": "Tratta come trasferimento",
@@ -961,8 +971,10 @@
     "created": "Gruppo creato",
     "updated": "Gruppo aggiornato",
     "deleted": "Gruppo eliminato",
+    "confirmDeleteTitle": "Eliminare il gruppo di categorie?",
     "noGroup": "Nessun gruppo",
-    "systemGroup": "Gruppo di sistema"
+    "systemGroup": "Gruppo di sistema",
+    "confirmDeleteDescription": "Il gruppo di categorie \"{{name}}\" verrà eliminato. Le sue categorie rimarranno e non saranno più raggruppate. Questa azione non può essere annullata."
   },
   "import": {
     "acceptedFormats": "Formati accettati: OFX, CSV, QIF, CAMT",
@@ -1443,6 +1455,8 @@
     "created": "Gruppo creato",
     "updated": "Gruppo aggiornato",
     "deleted": "Gruppo eliminato",
+    "confirmDeleteTitle": "Eliminare il gruppo?",
+    "confirmDeleteDescription": "Il gruppo \"{{name}}\" e i suoi membri verranno eliminati definitivamente. I gruppi a cui fanno riferimento suddivisioni di transazioni o regolamenti non possono essere eliminati finché tali riferimenti non vengono rimossi. Questa azione non può essere annullata.",
     "empty": "Ancora nessun gruppo",
     "emptyHint": "Crea un gruppo per dividere le spese con persone, reparti o progetti.",
     "name": "Nome",

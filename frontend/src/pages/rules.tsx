@@ -2,9 +2,11 @@ import { useRef, useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { categories as categoriesApi, categoryGroups as categoryGroupsApi, rules as rulesApi, accounts as accountsApi, payees as payeesApi } from '@/lib/api'
+import { extractApiError } from '@/lib/api-errors'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 import { Label } from '@/components/ui/label'
 import {
   Dialog,
@@ -133,6 +135,7 @@ export default function RulesPage() {
   const [pendingImportName, setPendingImportName] = useState('')
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const [editing, setEditing] = useState<Rule | null>(null)
+  const [deletingRule, setDeletingRule] = useState<Rule | null>(null)
   // Bumped on every open so the dialog remounts with fresh state instead of
   // retaining the previously entered rule (issue #306).
   const [dialogInstance, setDialogInstance] = useState(0)
@@ -232,7 +235,11 @@ export default function RulesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rules'] })
       queryClient.invalidateQueries({ queryKey: ['rule-packs'] })
+      setDeletingRule(null)
       toast.success(t('rules.deleted'))
+    },
+    onError: (err: unknown) => {
+      toast.error(extractApiError(err, t('common.error')))
     },
   })
 
@@ -434,7 +441,7 @@ export default function RulesPage() {
                     <div className="flex items-center gap-1 shrink-0">
                       <button
                         className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
-                        onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(rule.id) }}
+                        onClick={(e) => { e.stopPropagation(); setDeletingRule(rule) }}
                         disabled={deleteMutation.isPending}
                         title={t('common.delete')}
                       >
@@ -450,6 +457,15 @@ export default function RulesPage() {
           <p className="text-sm text-muted-foreground text-center py-10">{t('rules.empty')}</p>
         )}
       </SectionCard>
+
+      <DeleteConfirmationDialog
+        open={!!deletingRule}
+        title={t('rules.confirmDeleteTitle')}
+        description={t('rules.confirmDeleteDescription', { name: deletingRule?.name })}
+        isPending={deleteMutation.isPending}
+        onClose={() => setDeletingRule(null)}
+        onConfirm={() => deletingRule && deleteMutation.mutate(deletingRule.id)}
+      />
 
       <RulePacksDialog
         open={packsDialogOpen}
