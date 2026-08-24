@@ -780,6 +780,9 @@
     "created": "Utworzono budżet",
     "updated": "Zaktualizowano budżet",
     "deleted": "Usunięto budżet",
+    "confirmDeleteTitle": "Usunąć budżet?",
+    "confirmDeleteDescription": "Budżet dla „{{name}}” zostanie trwale usunięty. Istniejące transakcje nie zostaną zmienione. Tej operacji nie można cofnąć.",
+    "confirmDeleteRecurringDescription": "Cykliczny budżet dla „{{name}}” zostanie trwale usunięty. Ta definicja nie będzie już stosowana w kolejnych miesiącach. Istniejące transakcje nie zostaną zmienione. Tej operacji nie można cofnąć.",
     "repeatEveryMonth": "Powtarzaj co miesiąc",
     "recurringLabel": "Cykliczny"
   },
@@ -881,6 +884,7 @@
     "created": "Utworzono transakcję cykliczną",
     "updated": "Zaktualizowano transakcję cykliczną",
     "deleted": "Usunięto transakcję cykliczną",
+    "confirmDeleteTitle": "Usunąć transakcję cykliczną?",
     "generated_one": "Wygenerowano {{count}} transakcję",
     "generated_few": "Wygenerowano {{count}} transakcje",
     "generated_many": "Wygenerowano {{count}} transakcji",
@@ -888,7 +892,8 @@
     "generatePending": "Generuj oczekujące",
     "autoGenerate": "Automatycznie generuj transakcje",
     "autoGenerateHelp": "Tworzy transakcję za każdym razem, gdy ten rachunek jest wymagalny. Wyłącz, aby poczekać na rzeczywiste obciążenie (np. z synchronizacji bankowej) i do tego czasu pokazywać je tylko jako nadchodzące.",
-    "fxEstimate": "Szacunek na podstawie najnowszego kursu wymiany ({{rate}}). Ostateczna kwota może się zmienić."
+    "fxEstimate": "Szacunek na podstawie najnowszego kursu wymiany ({{rate}}). Ostateczna kwota może się zmienić.",
+    "confirmDeleteDescription": "Definicja transakcji cyklicznej „{{description}}” zostanie trwale usunięta. Istniejące transakcje pozostaną, ale utracą powiązanie z transakcją cykliczną. Tej operacji nie można cofnąć."
   },
   "rules": {
     "section": "Automatyzacja",
@@ -917,6 +922,8 @@
     "updatedAndApplied": "Zaktualizowano regułę i zastosowano do {{count}} transakcji",
     "updated": "Zaktualizowano regułę",
     "deleted": "Usunięto regułę",
+    "confirmDeleteTitle": "Usunąć regułę?",
+    "confirmDeleteDescription": "Reguła „{{name}}” zostanie trwale usunięta i nie będzie już wykonywana. Zmiany już zastosowane do istniejących transakcji pozostaną. Tej operacji nie można cofnąć.",
     "applied_one": "Zastosowano reguły do {{count}} transakcji",
     "applied_few": "Zastosowano reguły do {{count}} transakcji",
     "applied_many": "Zastosowano reguły do {{count}} transakcji",
@@ -1000,6 +1007,9 @@
     "created": "Utworzono kategorię",
     "updated": "Zaktualizowano kategorię",
     "deleted": "Usunięto kategorię",
+    "confirmDeleteTitle": "Usunąć kategorię?",
+    "confirmDeleteDescription": "Kategoria „{{name}}” zostanie trwale usunięta. Nie można jej usunąć, dopóki transakcje lub inne rekordy nadal się do niej odwołują; najpierw usuń te powiązania. Tej operacji nie można cofnąć.",
+    "deleteInUse": "Ta kategoria jest nadal używana. Najpierw usuń rekordy, które się do niej odwołują.",
     "expandAll": "Rozwiń wszystkie",
     "collapseAll": "Zwiń wszystkie",
     "treatAsTransfer": "Traktuj jako transfer",
@@ -1021,8 +1031,10 @@
     "created": "Utworzono grupę",
     "updated": "Zaktualizowano grupę",
     "deleted": "Usunięto grupę",
+    "confirmDeleteTitle": "Usunąć grupę kategorii?",
     "noGroup": "Brak grupy",
-    "systemGroup": "Grupa systemowa"
+    "systemGroup": "Grupa systemowa",
+    "confirmDeleteDescription": "Grupa kategorii „{{name}}” zostanie usunięta. Jej kategorie pozostaną i staną się niezgrupowane. Tej operacji nie można cofnąć."
   },
   "import": {
     "acceptedFormats": "Akceptowane formaty: OFX, CSV, QIF, CAMT",
@@ -1530,6 +1542,8 @@
     "created": "Utworzono grupę",
     "updated": "Zaktualizowano grupę",
     "deleted": "Usunięto grupę",
+    "confirmDeleteTitle": "Usunąć grupę?",
+    "confirmDeleteDescription": "Grupa „{{name}}” i jej członkowie zostaną trwale usunięci. Grup, do których odwołują się podziały transakcji lub rozliczenia, nie można usunąć, dopóki te odwołania nie zostaną usunięte. Tej operacji nie można cofnąć.",
     "empty": "Brak grup",
     "emptyHint": "Utwórz grupę, aby dzielić wydatki z osobami, działami lub projektami.",
     "name": "Nazwa",

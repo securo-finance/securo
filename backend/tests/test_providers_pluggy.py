@@ -372,3 +372,60 @@ def test_build_account_data_without_number_leaves_mask_none():
     acc = {"id": "acc-2", "name": "Conta", "type": "BANK", "balance": 0}
     out = _build_account_data(acc, PluggyProvider._map_account_type)
     assert out.masked_number is None
+
+
+def test_build_account_data_maps_bank_savings_subtype_to_savings():
+    from app.providers.pluggy import _build_account_data
+
+    acc = {
+        "id": "acc-savings",
+        "name": "Poupança",
+        "type": "BANK",
+        "subtype": "SAVINGS_ACCOUNT",
+        "balance": 0,
+        "currencyCode": "BRL",
+    }
+
+    out = _build_account_data(acc, PluggyProvider._map_account_type)
+
+    assert out.type == "savings"
+
+
+@pytest.mark.parametrize(
+    "pluggy_type,pluggy_subtype,expected",
+    [
+        ("BANK", "CHECKING_ACCOUNT", "checking"),
+        ("BANK", "SAVINGS_ACCOUNT", "savings"),
+        ("CREDIT", "CREDIT_CARD", "credit_card"),
+        # `subtype` is documented as always present, but a payload that omits
+        # it must still fall back to the `type` mapping.
+        ("BANK", None, "checking"),
+        ("CREDIT", None, "credit_card"),
+        # Unknown values keep the historical "checking" default.
+        ("SOMETHING_NEW", None, "checking"),
+    ],
+)
+def test_map_account_type_covers_pluggy_type_subtype_pairs(
+    pluggy_type, pluggy_subtype, expected
+):
+    """Pluggy's enums are `type` ∈ (BANK, CREDIT) and `subtype` ∈
+    (CHECKING_ACCOUNT, SAVINGS_ACCOUNT, CREDIT_CARD). Pin every real pair so
+    the savings branch can't swallow the others.
+    """
+    assert PluggyProvider._map_account_type(pluggy_type, pluggy_subtype) == expected
+
+
+def test_build_account_data_without_subtype_still_maps_bank_to_checking():
+    from app.providers.pluggy import _build_account_data
+
+    acc = {
+        "id": "acc-checking",
+        "name": "Conta Corrente",
+        "type": "BANK",
+        "balance": 0,
+        "currencyCode": "BRL",
+    }
+
+    out = _build_account_data(acc, PluggyProvider._map_account_type)
+
+    assert out.type == "checking"
