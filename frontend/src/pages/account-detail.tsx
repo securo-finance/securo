@@ -1069,11 +1069,9 @@ export default function AccountDetailPage() {
         const dfLocale = resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language)
         const totals = timelineQueries.map((q, i) => {
           const c = timelineCycles[i]
-          // Single source of truth: live debit sum from the summary endpoint,
-          // filtered by bill_id when the cycle has a bill (handles dynamic
-          // close days) or by [start, end] otherwise. Same number whether
-          // the bar is active or not — clicking doesn't shift the value.
-          const total = Number(q.data?.projected_expenses ?? q.data?.monthly_expenses ?? 0)
+          const total = c.bill
+            ? Number(c.bill.total_amount)
+            : Number(q.data?.projected_expenses ?? q.data?.monthly_expenses ?? 0)
           return {
             ...c,
             total,
@@ -1130,12 +1128,9 @@ export default function AccountDetailPage() {
 
       {/* Compact stat bar */}
       {isCreditCard ? (() => {
-        // Total da fatura. When a real bill is active, sum debits from the
-        // bill_id-filtered tx list (matches the bank app — bills' total_amount
-        // can lag any charges added since the last sync). Otherwise use the
-        // summary endpoint's monthly_expenses now nets refund credits against
-        // debits for CC accounts (matches the bank's bill total).
-        const billTotal = (showPrimary ? summary?.projected_expenses_primary : undefined) ?? summary?.projected_expenses ?? summary?.monthly_expenses ?? 0
+        const billTotal = activeBill
+          ? Number(activeBill.total_amount)
+          : (showPrimary ? summary?.projected_expenses_primary : undefined) ?? summary?.projected_expenses ?? summary?.monthly_expenses ?? 0
         // "Default cycle" = the bill the user is here to pay (next due). The
         // AGORA tag on Limite disponível only shows when viewing a different cycle.
         const isDefaultCycle =
@@ -1296,7 +1291,9 @@ export default function AccountDetailPage() {
         // currently being viewed. For the current cycle this matches the "current
         // open balance" since nothing has been paid yet; for past cycles it shows
         // that month's burn rate against the (current) limit.
-        const cycleBillTotal = (showPrimary ? summary?.projected_expenses_primary : undefined) ?? summary?.projected_expenses ?? summary?.monthly_expenses ?? 0
+        const cycleBillTotal = activeBill
+          ? Number(activeBill.total_amount)
+          : (showPrimary ? summary?.projected_expenses_primary : undefined) ?? summary?.projected_expenses ?? summary?.monthly_expenses ?? 0
         const utilized = limit != null ? cycleBillTotal : null
         const rawPct = limit != null && limit > 0 && utilized != null ? (utilized / limit) * 100 : null
         const pct = rawPct != null ? Math.min(100, rawPct) : null
