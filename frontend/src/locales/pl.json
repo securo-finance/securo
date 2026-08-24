@@ -292,7 +292,7 @@
     "categorizeNow": "Skategoryzuj teraz",
     "allCategorized": "Wszystko ogarnięte!",
     "allCategorizedDesc": "Wszystkie transakcje są skategoryzowane",
-    "assetsValue": "Aktywa",
+    "assetsValue": "Zainwestowane aktywa",
     "currencyBreakdown": "Podział wg waluty",
     "convertedFrom": "Przeliczono z {{currency}}",
     "fxRateUsed": "Kurs FX: {{rate}}",

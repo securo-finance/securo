@@ -286,7 +286,7 @@
     "categorizeNow": "Категоризувати зараз",
     "allCategorized": "Усе гаразд!",
     "allCategorizedDesc": "Усі транзакції категоризовано",
-    "assetsValue": "Активи",
+    "assetsValue": "Інвестовані активи",
     "currencyBreakdown": "Розбивка за валютами",
     "convertedFrom": "Конвертовано з {{currency}}",
     "fxRateUsed": "Курс: {{rate}}",

@@ -286,7 +286,7 @@
     "categorizeNow": "Categorizar ahora",
     "allCategorized": "¡Todo al día!",
     "allCategorizedDesc": "Todas las transacciones están categorizadas",
-    "assetsValue": "Activos",
+    "assetsValue": "Activos invertidos",
     "currencyBreakdown": "Desglose por moneda",
     "convertedFrom": "Convertido desde {{currency}}",
     "fxRateUsed": "Tipo de cambio: {{rate}}",

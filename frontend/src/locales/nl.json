@@ -286,7 +286,7 @@
     "categorizeNow": "Categoriseer nu",
     "allCategorized": "Alles in orde!",
     "allCategorizedDesc": "Alle transacties zijn gecategoriseerd",
-    "assetsValue": "Activa",
+    "assetsValue": "Geïnvesteerde activa",
     "currencyBreakdown": "Uitsplitsing per valuta",
     "convertedFrom": "Geconverteerd van {{currency}}",
     "fxRateUsed": "Wisselkoers: {{rate}}",

@@ -286,7 +286,7 @@
     "categorizeNow": "Jetzt kategorisieren",
     "allCategorized": "Alles erledigt!",
     "allCategorizedDesc": "Alle Transaktionen sind kategorisiert",
-    "assetsValue": "Vermögenswerte",
+    "assetsValue": "Investiertes Vermögen",
     "currencyBreakdown": "Aufteilung nach Währung",
     "convertedFrom": "Umgerechnet von {{currency}}",
     "fxRateUsed": "Wechselkurs: {{rate}}",

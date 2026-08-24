@@ -286,7 +286,7 @@
     "categorizeNow": "Catégoriser maintenant",
     "allCategorized": "Tout est à jour !",
     "allCategorizedDesc": "Toutes les transactions sont catégorisées",
-    "assetsValue": "Actifs",
+    "assetsValue": "Actifs investis",
     "currencyBreakdown": "Répartition par devise",
     "convertedFrom": "Converti depuis {{currency}}",
     "fxRateUsed": "Taux de change : {{rate}}",

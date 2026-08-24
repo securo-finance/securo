@@ -286,7 +286,7 @@
     "categorizeNow": "Categorize now",
     "allCategorized": "All caught up!",
     "allCategorizedDesc": "All transactions are categorized",
-    "assetsValue": "Assets",
+    "assetsValue": "Invested assets",
     "currencyBreakdown": "Per-currency breakdown",
     "convertedFrom": "Converted from {{currency}}",
     "fxRateUsed": "FX rate: {{rate}}",
