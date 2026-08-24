@@ -861,10 +861,23 @@ export default function DashboardPage() {
                 </p>
               </div>
               {!balanceHistoryLoading && lastCurrentPoint && (
-                <span className={`text-lg font-bold tabular-nums ${monthVariation >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                  {mask(`${monthVariation > 0 ? '+' : ''}${formatCurrency(monthVariation, userCurrency, locale)}`)}
-                </span>
+                <div className="text-right">
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{t('dashboard.balancePeriodVariation')}</p>
+                  <span className={`text-lg font-bold tabular-nums ${monthVariation >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                    {mask(`${monthVariation > 0 ? '+' : ''}${formatCurrency(monthVariation, userCurrency, locale)}`)}
+                  </span>
+                </div>
               )}
+            </div>
+            <div className="flex items-center gap-3 mt-2">
+              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span className="inline-block w-3 h-0.5 rounded-full bg-emerald-500" />
+                {t('dashboard.balanceCurrentMonthLegend')}
+              </span>
+              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span className="inline-block w-3 border-t-2 border-dashed border-slate-400" />
+                {t('dashboard.balancePreviousMonthLegend')}
+              </span>
             </div>
           </div>
           <div className="px-1 pb-4 flex-1 min-h-0">
