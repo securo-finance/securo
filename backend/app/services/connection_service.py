@@ -37,7 +37,11 @@ from app.services.account_service import (
 from app.services.asset_group_service import ensure_group_for_connection
 from app.services.credit_card_service import apply_effective_date
 from app.services.rule_engine import merge_notes
-from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
+from app.services.rule_service import (
+    apply_rules_to_transaction,
+    preview_rules_for_transaction,
+    recurring_placeholder_rule_ignore,
+)
 from app.services.transfer_detection_service import detect_transfer_pairs
 from app.services.fx_rate_service import stamp_primary_amount
 from app.services.payee_service import get_or_create_payee
@@ -1479,6 +1483,11 @@ async def sync_connection(
                 if placeholder:
                     if placeholder.is_ignored:
                         continue
+                    deferred_rule_ignore = (
+                        await recurring_placeholder_rule_ignore(
+                            session, user_id, placeholder
+                        )
+                    )
                     placeholder.external_id = txn_data.external_id
                     placeholder.source = "sync"
                     placeholder.status = txn_data.status
@@ -1499,7 +1508,7 @@ async def sync_connection(
                     placeholder.notes = merge_notes(
                         placeholder.notes, preview.notes
                     )
-                    if preview.is_ignored:
+                    if preview.is_ignored or deferred_rule_ignore:
                         placeholder.is_ignored = True
                     merged_count += 1
                     continue

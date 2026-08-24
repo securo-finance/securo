@@ -14,8 +14,11 @@ from app.models.transaction import Transaction
 from app.schemas.recurring_transaction import RecurringTransactionCreate
 from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
 from app.schemas.transaction import TransactionImport
+from app.services import recurring_match_service
 from app.services.import_service import import_transactions
 from app.services.recurring_transaction_service import create_recurring_transaction
+from app.services.recurring_transaction_service import generate_pending
+from app.services.rule_engine import evaluate_conditions
 from app.services.rule_service import create_rule
 
 
@@ -100,6 +103,122 @@ async def test_import_merges_into_placeholder(session, test_user, test_workspace
     assert txs[0].source == "csv"
     assert txs[0].recurring_transaction_id == bill_id
     assert txs[0].original_description == "NETFLIX SUBSCRIPTION"
+
+
+@pytest.mark.asyncio
+async def test_import_preserves_deferred_rule_ignore_after_fuzzy_placeholder_match(
+    session, test_user, test_workspace, test_account
+):
+    account_id = test_account.id
+    recurring_description = "ACME Internet Monthly"
+    incoming_description = "ACME Internet"
+    assert (
+        recurring_match_service._description_similarity(
+            recurring_description, incoming_description
+        )
+        >= recurring_match_service._SIMILARITY_THRESHOLD
+    )
+
+    rule = await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Ignore generated ACME import",
+            conditions=[
+                RuleCondition(
+                    field="description",
+                    op="contains",
+                    value=recurring_description,
+                )
+            ],
+            actions=[
+                RuleAction(op="append_notes", value="#auto-ignored"),
+                RuleAction(op="ignore", value=True),
+            ],
+            apply_to_existing=False,
+        ),
+    )
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        test_account,
+        description=recurring_description,
+        amount=Decimal("89.90"),
+        start_date=date(2026, 1, 10),
+    )
+    bill_id = bill.id
+
+    assert await generate_pending(
+        session, test_user.id, up_to=date(2026, 1, 10)
+    ) == 1
+    placeholder = (
+        await session.execute(
+            select(Transaction).where(
+                Transaction.recurring_transaction_id == bill_id
+            )
+        )
+    ).scalar_one()
+    placeholder_id = placeholder.id
+    assert evaluate_conditions(rule.conditions_op, rule.conditions, placeholder)
+    assert placeholder.status == "pending"
+    assert placeholder.notes == "#auto-ignored"
+    assert placeholder.is_ignored is False
+
+    incoming = TransactionImport(
+        external_id="deferred-ignore-import",
+        description=incoming_description,
+        amount=Decimal("89.90"),
+        date=date(2026, 1, 11),
+        type="debit",
+        currency="BRL",
+    )
+    incoming_rule_target = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=account_id,
+        description=incoming.description,
+        original_description=incoming.description,
+        amount=incoming.amount,
+        currency=incoming.currency or "BRL",
+        date=incoming.date,
+        type=incoming.type,
+        source="csv",
+        status="posted",
+    )
+    assert not evaluate_conditions(
+        rule.conditions_op, rule.conditions, incoming_rule_target
+    )
+    with patch(
+        "app.services.import_service.stamp_primary_amount",
+        new_callable=AsyncMock,
+    ):
+        imported, skipped, _, _ = await import_transactions(
+            session,
+            test_workspace.id,
+            test_user.id,
+            account_id,
+            [incoming],
+            "csv",
+        )
+
+    assert (imported, skipped) == (1, 0)
+    txs = await _real_txs(session, account_id)
+    assert len(txs) == 1
+    merged = txs[0]
+    assert merged.id == placeholder_id
+    assert merged.external_id == incoming.external_id
+    assert merged.source == "csv"
+    assert merged.status == "posted"
+    assert merged.recurring_transaction_id == bill_id
+    assert merged.description == recurring_description
+    assert merged.original_description == incoming_description
+    assert merged.description_is_rule_managed is False
+    assert merged.notes == "#auto-ignored"
+    assert merged.is_ignored is True
+    refreshed = await session.get(RecurringTransaction, bill_id)
+    assert refreshed.next_occurrence == date(2026, 2, 10)
 
 
 @pytest.mark.asyncio

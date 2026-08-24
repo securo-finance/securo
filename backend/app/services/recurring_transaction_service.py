@@ -14,6 +14,7 @@ from app.schemas.recurring_transaction import RecurringTransactionCreate, Recurr
 from app.services import recurring_match_service
 from app.services.credit_card_service import apply_effective_date
 from app.services.fx_rate_service import stamp_primary_amount
+from app.services.rule_service import apply_rules_to_transaction
 
 
 async def _verify_account_in_workspace(
@@ -306,6 +307,7 @@ async def generate_pending(
                 is_synced_account = account is not None and account.connection_id is not None
                 transaction = Transaction(
                     user_id=user_id,
+                    workspace_id=recurring.workspace_id,
                     account_id=recurring.account_id,
                     category_id=recurring.category_id,
                     description=recurring.description,
@@ -320,6 +322,17 @@ async def generate_pending(
                 apply_effective_date(transaction, account)
                 session.add(transaction)
                 await session.flush()
+                await apply_rules_to_transaction(
+                    session,
+                    user_id,
+                    transaction,
+                    # An ignored pending placeholder is deliberately excluded
+                    # from recurring matching. Defer only the automatic ignore
+                    # until the incoming charge is reconciled; every other rule
+                    # action lands now, and an explicit later user ignore still
+                    # protects the placeholder from promotion.
+                    skip_ignore_action=is_synced_account,
+                )
                 await stamp_primary_amount(session, user_id, transaction)
                 count += 1
 

@@ -8,7 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.payee import Payee
 from app.models.transaction import Transaction
+from app.models.workspace import Workspace, WorkspaceMember
+from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
 from app.schemas.recurring_transaction import RecurringTransactionCreate, RecurringTransactionUpdate
 from app.services.recurring_transaction_service import (
     _advance_date,
@@ -21,6 +24,7 @@ from app.services.recurring_transaction_service import (
     get_recurring_transactions,
     update_recurring_transaction,
 )
+from app.services.rule_service import create_rule
 
 
 @pytest_asyncio.fixture
@@ -37,6 +41,69 @@ async def test_account_for_recurring(session: AsyncSession, test_user) -> Accoun
     await session.commit()
     await session.refresh(account)
     return account
+
+
+async def _create_description_rule(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    name: str,
+    match: str,
+    actions: list[RuleAction],
+    is_active: bool = True,
+) -> None:
+    await create_rule(
+        session,
+        workspace_id,
+        user_id,
+        RuleCreate(
+            name=name,
+            conditions=[
+                RuleCondition(field="description", op="contains", value=match)
+            ],
+            actions=actions,
+            is_active=is_active,
+            apply_to_existing=False,
+        ),
+    )
+
+
+async def _create_due_recurring(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    account: Account,
+    *,
+    description: str,
+    amount: Decimal,
+):
+    return await create_recurring_transaction(
+        session,
+        workspace_id,
+        user_id,
+        RecurringTransactionCreate(
+            description=description,
+            amount=amount,
+            currency=account.currency,
+            type="debit",
+            frequency="monthly",
+            start_date=date(2025, 1, 1),
+            account_id=account.id,
+        ),
+    )
+
+
+async def _generated_transaction(
+    session: AsyncSession, recurring_id: uuid.UUID
+) -> Transaction:
+    return (
+        await session.execute(
+            select(Transaction).where(
+                Transaction.recurring_transaction_id == recurring_id
+            )
+        )
+    ).scalar_one()
 
 
 # ---------------------------------------------------------------------------
@@ -579,6 +646,183 @@ async def test_generate_pending(session: AsyncSession, test_user, test_workspace
     # next_occurrence should be advanced past cutoff
     await session.refresh(rec)
     assert rec.next_occurrence == date(2025, 4, 1)
+
+@pytest.mark.asyncio
+async def test_generate_pending_applies_workspace_rules_to_new_occurrence(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+    test_account_for_recurring,
+):
+    payee = Payee(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Internet Provider",
+    )
+    session.add(payee)
+    await session.flush()
+
+    await _create_description_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        name="Classify generated internet charge",
+        match="Internet Provider",
+        actions=[
+            RuleAction(op="set_payee", value=str(payee.id)),
+            RuleAction(op="append_notes", value="#subscription"),
+            RuleAction(op="ignore", value=True),
+        ],
+    )
+    await _create_description_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        name="Inactive generated charge rule",
+        match="Internet Provider",
+        actions=[RuleAction(op="append_notes", value="#inactive")],
+        is_active=False,
+    )
+    recurring = await _create_due_recurring(
+        session,
+        test_workspace.id,
+        test_user.id,
+        test_account_for_recurring,
+        description="Internet Provider Monthly",
+        amount=Decimal("99.90"),
+    )
+
+    assert await generate_pending(
+        session, test_user.id, up_to=date(2025, 1, 1)
+    ) == 1
+    transaction = await _generated_transaction(session, recurring.id)
+    assert transaction.workspace_id == test_workspace.id
+    assert transaction.payee_id == payee.id
+    assert transaction.notes == "#subscription"
+    assert transaction.is_ignored is True
+    assert transaction.status == "posted"
+    assert transaction.recurring_transaction_id == recurring.id
+
+    assert await generate_pending(
+        session, test_user.id, up_to=date(2025, 1, 1)
+    ) == 0
+    assert await _generated_transaction(session, recurring.id) == transaction
+
+
+@pytest.mark.asyncio
+async def test_generate_pending_scopes_rules_to_recurring_workspace(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+):
+    second_workspace = Workspace(
+        id=uuid.uuid4(),
+        name="Shared",
+        kind="personal",
+        created_by_user_id=test_user.id,
+        default_currency="BRL",
+    )
+    session.add(second_workspace)
+    await session.flush()
+    session.add(
+        WorkspaceMember(
+            id=uuid.uuid4(),
+            workspace_id=second_workspace.id,
+            user_id=test_user.id,
+            role="owner",
+        )
+    )
+    second_account = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=second_workspace.id,
+        name="Shared Account",
+        type="checking",
+        balance=Decimal("1000"),
+        currency="BRL",
+    )
+    session.add(second_account)
+    await session.commit()
+
+    await _create_description_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        name="First workspace rule",
+        match="Shared Internet",
+        actions=[RuleAction(op="append_notes", value="#wrong-workspace")],
+    )
+    await _create_description_rule(
+        session,
+        second_workspace.id,
+        test_user.id,
+        name="Second workspace rule",
+        match="Shared Internet",
+        actions=[RuleAction(op="append_notes", value="#right-workspace")],
+    )
+    recurring = await _create_due_recurring(
+        session,
+        second_workspace.id,
+        test_user.id,
+        second_account,
+        description="Shared Internet",
+        amount=Decimal("79.90"),
+    )
+
+    assert await generate_pending(
+        session, test_user.id, up_to=date(2025, 1, 1)
+    ) == 1
+    transaction = await _generated_transaction(session, recurring.id)
+    assert transaction.workspace_id == second_workspace.id
+    assert transaction.notes == "#right-workspace"
+
+
+@pytest.mark.asyncio
+async def test_generate_pending_does_not_reapply_rules_to_existing_real_transaction(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+    test_account_for_recurring,
+):
+    await _create_description_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        name="Do not reapply to linked transactions",
+        match="Already Classified",
+        actions=[RuleAction(op="append_notes", value="#reapplied")],
+    )
+    recurring = await _create_due_recurring(
+        session,
+        test_workspace.id,
+        test_user.id,
+        test_account_for_recurring,
+        description="Already Classified",
+        amount=Decimal("25"),
+    )
+    real_transaction = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=test_account_for_recurring.id,
+        description="Already Classified",
+        amount=Decimal("25"),
+        currency="BRL",
+        date=date(2025, 1, 1),
+        type="debit",
+        source="manual",
+        status="posted",
+        notes="#classified",
+    )
+    session.add(real_transaction)
+    await session.commit()
+
+    assert await generate_pending(
+        session, test_user.id, up_to=date(2025, 1, 1)
+    ) == 0
+    await session.refresh(real_transaction)
+    assert real_transaction.recurring_transaction_id == recurring.id
+    assert real_transaction.notes == "#classified"
+
 
 
 @pytest.mark.asyncio
