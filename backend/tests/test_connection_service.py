@@ -2742,9 +2742,10 @@ async def test_sync_wires_account_institutions_and_reaps_orphans(
 async def test_sync_holdings_readopts_orphaned_wallet_after_reconnect(
     session: AsyncSession, test_user, test_workspace,
 ):
-    """Disconnect leaves the legacy wallet with connection_id NULL (SET NULL);
-    after reconnecting, its re-adopted assets must still split into
-    per-account wallets instead of staying stranded (self-review on #654)."""
+    """Disconnect leaves the legacy wallet with connection_id NULL (SET NULL)
+    and reconnects can mint a NEW connection external_id. The lone stale
+    plain-keyed wallet is adopted anyway — customization kept, assets in
+    place — instead of being emptied and deleted (review round 4 on #654)."""
     from app.models.asset_group import AssetGroup
     from app.services.connection_service import _sync_holdings
 
@@ -2789,11 +2790,15 @@ async def test_sync_holdings_readopts_orphaned_wallet_after_reconnect(
 
     moved = await session.get(Asset, stranded_id)
     assert moved is not None
-    wallet = await session.get(AssetGroup, moved.group_id)
-    assert wallet is not None and wallet.name == "IRA"
+    # The stale wallet was adopted as the per-account wallet: same row,
+    # re-keyed and re-linked; "Recon Bank" was the untouched auto-name, so
+    # it's refreshed to the account's.
+    assert moved.group_id == orphan_wallet_id
+    wallet = await session.get(AssetGroup, orphan_wallet_id)
+    assert wallet is not None
     assert wallet.external_id == f"{conn.external_id}::acc-1"
-    # The emptied orphan is gone — nothing referenced it anymore.
-    assert await session.get(AssetGroup, orphan_wallet_id) is None
+    assert wallet.connection_id == conn_id
+    assert wallet.name == "IRA"
 
 
 @pytest.mark.asyncio
@@ -2814,13 +2819,14 @@ async def test_sync_holdings_keeps_emptied_wallet_a_goal_tracks(
         connection_id=conn.id, external_id="acc-1", name="401(k)",
         type="investment", balance=Decimal("0"), currency="USD",
     ))
-    # Keyed unlike the connection's external_id, so the legacy-adoption path
-    # doesn't claim it — this test exercises the goal guard on the
-    # emptied-wallet delete, not adoption.
+    # Keyed like a per-account wallet of a since-removed account, so the
+    # legacy-adoption path (which only considers plain-keyed wallets) doesn't
+    # claim it — this test exercises the goal guard on the emptied-wallet
+    # delete, not adoption.
     legacy = AssetGroup(
         user_id=test_user.id, workspace_id=test_workspace.id,
         name="Goal Bank", source="test",
-        connection_id=conn.id, external_id="stale-ext",
+        connection_id=conn.id, external_id="gone::acc-9",
     )
     session.add(legacy)
     await session.flush()
@@ -2919,3 +2925,129 @@ async def test_sync_holdings_adoption_preserves_wallet_customization(
             AssetGroup.user_id == test_user.id, AssetGroup.source == "test"))
     ).scalars().all()
     assert [g.id for g in all_synced] == [wallet_id]
+
+
+def test_wallet_external_id_fits_the_column_deterministically():
+    """Over-long composites keep a deterministic digest suffix instead of a
+    collision-prone truncation (review round 4 on #654)."""
+    from app.services.connection_service import _wallet_external_id
+
+    assert _wallet_external_id("EXT", "acc-1") == "EXT::acc-1"
+    assert _wallet_external_id("EXT", None) == "EXT"
+    long_a = _wallet_external_id("E" * 250, "a" * 250)
+    long_b = _wallet_external_id("E" * 250, "b" * 250)
+    assert len(long_a) <= 255 and len(long_b) <= 255
+    assert long_a != long_b  # truncation alone would collide these
+    assert long_a == _wallet_external_id("E" * 250, "a" * 250)  # deterministic
+
+
+@pytest.mark.asyncio
+async def test_sync_holdings_mixed_hints_stay_stable_across_syncs(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A payload mixing account-attributed and unattributed holdings must
+    reach a steady state: the per-account wallet and the connection-default
+    wallet coexist, and a second sync neither re-keys, duplicates, nor
+    crashes on the unique (user, source, external_id) index
+    (review round 4 on #654)."""
+    from app.models.asset_group import AssetGroup
+    from app.services.connection_service import _sync_holdings
+
+    conn = await _make_connection(session, test_user.id, "Mixed Bank")
+    conn_id = conn.id
+
+    session.add(Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn_id, external_id="acc-1", name="IRA",
+        type="investment", balance=Decimal("0"), currency="USD",
+    ))
+    legacy = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Mixed Bank", source="test",
+        connection_id=conn_id, external_id=conn.external_id,
+    )
+    session.add(legacy)
+    await session.commit()
+    legacy_id = legacy.id
+
+    mock_provider = AsyncMock()
+    mock_provider.get_holdings.return_value = [
+        HoldingData(
+            external_id="h-1", name="Apple", currency="USD",
+            current_value=Decimal("10"),
+            account_external_id="acc-1", account_name="IRA",
+        ),
+        # Spec-nonconforming account without an id → no account hint.
+        HoldingData(
+            external_id="h-2", name="Mystery Fund", currency="USD",
+            current_value=Decimal("5"),
+        ),
+    ]
+
+    for _ in range(2):  # the second pass is the regression
+        with patch(
+            "app.services.connection_service.get_provider", return_value=mock_provider
+        ):
+            await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+        await session.commit()
+
+    wallets = (
+        await session.execute(select(AssetGroup).where(
+            AssetGroup.user_id == test_user.id, AssetGroup.source == "test"))
+    ).scalars().all()
+    by_key = {w.external_id: w for w in wallets}
+    # Steady state: the adopted per-account wallet plus one connection-default
+    # wallet for the unattributed holding — no churn, no duplicates.
+    assert set(by_key) == {f"{conn.external_id}::acc-1", conn.external_id}
+    assert by_key[f"{conn.external_id}::acc-1"].id == legacy_id  # adopted once
+
+
+@pytest.mark.asyncio
+async def test_sync_holdings_adoption_refreshes_suffixed_auto_names(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A wallet auto-named "Mixed Bank 2" by _unique_default_name is still an
+    untouched auto-name — adoption refreshes it to the account's name, and
+    the refresh itself dedupes against existing wallet names
+    (review round 4 on #654)."""
+    from app.models.asset_group import AssetGroup
+    from app.services.connection_service import _sync_holdings
+
+    conn = await _make_connection(session, test_user.id, "Suffix Bank")
+    conn_id = conn.id
+
+    session.add(Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn_id, external_id="acc-1", name="Employer 401(k)",
+        type="investment", balance=Decimal("0"), currency="USD",
+    ))
+    # The name a second same-institution connection's wallet gets at creation.
+    legacy = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Suffix Bank 2", source="test",
+        connection_id=conn_id, external_id=conn.external_id,
+    )
+    # A manual wallet already using the account's name — the refresh must
+    # dedupe, not duplicate.
+    session.add_all([legacy, AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Employer 401(k)", source="manual",
+    )])
+    await session.commit()
+    legacy_id = legacy.id
+
+    mock_provider = AsyncMock()
+    mock_provider.get_holdings.return_value = [
+        HoldingData(
+            external_id="h-1", name="Apple", currency="USD",
+            current_value=Decimal("10"),
+            account_external_id="acc-1", account_name="Employer 401(k)",
+        ),
+    ]
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+    await session.commit()
+
+    wallet = await session.get(AssetGroup, legacy_id)
+    assert wallet is not None
+    assert wallet.name == "Employer 401(k) 2"  # refreshed AND deduped

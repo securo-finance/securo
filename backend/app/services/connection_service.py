@@ -1,4 +1,6 @@
+import hashlib
 import logging
+import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
@@ -39,7 +41,10 @@ from app.services.account_service import (
     _simplefin_to_internal_balance,
     sync_opening_balance_for_connected_account,
 )
-from app.services.asset_group_service import ensure_group_for_connection
+from app.services.asset_group_service import (
+    _unique_default_name,
+    ensure_group_for_connection,
+)
 from app.services.credit_card_service import apply_effective_date
 from app.services.rule_engine import merge_notes
 from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
@@ -69,6 +74,29 @@ def _clean_logo_url(value: object) -> Optional[str]:
 def _clean_institution_name(value: object) -> Optional[str]:
     """Same guard as _clean_logo_url, for the 255-char institution columns."""
     return value[:255] if isinstance(value, str) and value.strip() else None
+
+
+def _wallet_external_id(connection_external_id: str, account_key: Optional[str]) -> str:
+    """The per-account wallet key, squeezed into the 255-char column.
+
+    Truncation alone could collide two accounts; over-long composites keep a
+    deterministic digest suffix instead.
+    """
+    if not account_key:
+        return connection_external_id
+    key = f"{connection_external_id}::{account_key}"
+    if len(key) <= 255:
+        return key
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
+    return f"{key[:214]}::{digest[:39]}"
+
+
+def _is_auto_wallet_name(name: str, institution_name: str) -> bool:
+    """True while a wallet still carries its creation-time auto-name — the
+    institution label, possibly with _unique_default_name's " N" suffix."""
+    if name == institution_name:
+        return True
+    return bool(re.fullmatch(re.escape(institution_name) + r" \d+", name))
 
 
 async def _resolve_institution(
@@ -268,9 +296,7 @@ async def _sync_holdings(
                 if key
                 else None
             )
-            wallet_key = (
-                f"{connection.external_id}::{key}" if key else connection.external_id
-            )
+            wallet_key = _wallet_external_id(connection.external_id, key)
             default_name = (
                 _clean_institution_name(holding.account_name)
                 or connection.institution_name
@@ -279,19 +305,57 @@ async def _sync_holdings(
                 # First per-account claim adopts the legacy connection-keyed
                 # wallet instead of minting a new one, so an existing user's
                 # rename/icon/color/position survive the upgrade. Only its
-                # untouched auto-name is refreshed to the account's.
-                legacy = await session.scalar(
-                    select(AssetGroup).where(
+                # untouched auto-name is refreshed to the account's. Guards,
+                # in order: never adopt when the per-account wallet already
+                # exists (re-keying a twin next to it would trip the unique
+                # (user, source, external_id) index and fail every sync);
+                # never adopt a wallet another bucket of this run claimed;
+                # prefer the current connection key but accept a lone
+                # stale-keyed candidate (external ids can drift across
+                # reconnects); more than one candidate means minting, not
+                # guessing.
+                existing = await session.scalar(
+                    select(AssetGroup.id).where(
                         AssetGroup.user_id == user_id,
                         AssetGroup.source == source,
-                        AssetGroup.external_id == connection.external_id,
+                        AssetGroup.external_id == wallet_key,
                     )
                 )
+                legacy: Optional[AssetGroup] = None
+                if existing is None:
+                    claimed = {g.id for g in groups_by_key.values()}
+                    candidates = [
+                        g
+                        for g in (
+                            await session.execute(
+                                select(AssetGroup).where(
+                                    AssetGroup.user_id == user_id,
+                                    AssetGroup.source == source,
+                                    or_(
+                                        AssetGroup.connection_id == connection.id,
+                                        AssetGroup.connection_id.is_(None),
+                                    ),
+                                    AssetGroup.external_id.isnot(None),
+                                    ~AssetGroup.external_id.contains("::"),
+                                )
+                            )
+                        ).scalars().all()
+                        if g.id not in claimed
+                    ]
+                    exact = [
+                        g for g in candidates if g.external_id == connection.external_id
+                    ]
+                    if exact:
+                        legacy = exact[0]
+                    elif len(candidates) == 1:
+                        legacy = candidates[0]
                 if legacy is not None:
                     legacy.external_id = wallet_key
                     legacy.connection_id = connection.id
-                    if legacy.name == connection.institution_name:
-                        legacy.name = default_name[:95]
+                    if _is_auto_wallet_name(legacy.name, connection.institution_name):
+                        legacy.name = await _unique_default_name(
+                            session, user_id, default_name[:95]
+                        )
                     if institution_id is not None:
                         legacy.institution_id = institution_id
                     await session.flush()
