@@ -8,7 +8,11 @@ from app.models.category import Category
 from app.models.category_group import CategoryGroup
 from app.schemas.category import CategoryCreate, CategoryUpdate
 from app.services.category_group_service import get_groups
-from app.services.category_defaults import DEFAULT_CATEGORIES
+from app.services.category_defaults import (
+    DEFAULT_CATEGORIES,
+    DEFAULT_GROUPS,
+    localized_name,
+)
 from app.services.category_service import (
     create_category,
     create_default_categories,
@@ -131,11 +135,22 @@ async def test_create_default_categories_localized(session: AsyncSession, test_u
         assert cat.is_system is True
 
 
-def test_default_categories_cover_all_supported_languages():
+def test_default_taxonomy_covers_all_supported_languages():
     langs = ["en", "pt-BR", "pt-PT", "de", "fr", "es", "it", "pl", "ru", "uk"]
-    for key, data in DEFAULT_CATEGORIES.items():
+    entries = {f"category '{k}'": d for k, d in DEFAULT_CATEGORIES.items()} | {
+        f"group '{k}'": d for k, d in DEFAULT_GROUPS.items()
+    }
+    for label, data in entries.items():
         for lang in langs:
-            assert lang in data["names"], f"category '{key}' is missing a '{lang}' translation"
+            assert lang in data["names"], f"{label} is missing a '{lang}' translation"
+
+
+def test_localized_name_falls_back_safely():
+    entry = {"names": {"en": "Housing", "es": "Vivienda"}}
+    assert localized_name(entry, "es") == "Vivienda"
+    assert localized_name(entry, "xx") == "Housing"
+    # No English either: any available translation beats an exception.
+    assert localized_name({"names": {"de": "Wohnen"}}, "xx") == "Wohnen"
 
 
 @pytest.mark.asyncio

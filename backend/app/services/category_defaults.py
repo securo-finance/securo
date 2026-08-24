@@ -12,12 +12,14 @@ internal key) and optionally ``treat_as_transfer``.
 """
 
 import json
-from pathlib import Path
+from importlib.resources import files
 
-_DATA_FILE = Path(__file__).resolve().parent.parent / "data" / "default_categories.json"
-
-with _DATA_FILE.open(encoding="utf-8") as _f:
-    _taxonomy = json.load(_f)
+# importlib.resources (rather than Path(__file__)) so the file is found in
+# every install mode — editable, wheel, or zipped — as long as it's declared
+# as package data (see [tool.setuptools.package-data] in pyproject.toml).
+_taxonomy = json.loads(
+    files("app").joinpath("data", "default_categories.json").read_text(encoding="utf-8")
+)
 
 DEFAULT_GROUPS: dict[str, dict] = _taxonomy["groups"]
 DEFAULT_CATEGORIES: dict[str, dict] = _taxonomy["categories"]
@@ -29,9 +31,12 @@ CATEGORY_TO_GROUP: dict[str, str] = {
 
 
 def localized_name(data: dict, lang: str) -> str:
-    """Display name for `lang`, falling back to English."""
+    """Display name for `lang`: requested language, then English, then any
+    available translation. Never raises on a partially-translated entry —
+    a missing language must degrade to a readable name, not break seeding."""
     names = data["names"]
-    return str(names.get(lang, names["en"]))
+    fallback = names.get("en") or next(iter(names.values()))
+    return str(names.get(lang, fallback))
 
 
 def name_variants(data: dict) -> set[str]:
