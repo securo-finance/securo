@@ -194,7 +194,7 @@ def _build_bill_data(raw: dict) -> Optional[BillData]:
 
 def _build_account_data(acc: dict, type_mapper) -> AccountData:
     """Map a Pluggy account payload to AccountData, including creditData when present."""
-    account_type = type_mapper(acc.get("type", ""))
+    account_type = type_mapper(acc.get("type", ""), acc.get("subtype"))
     credit_data = acc.get("creditData") or {}
 
     credit_limit: Optional[Decimal] = None
@@ -759,7 +759,12 @@ class PluggyProvider(BankProvider):
         return None
 
     @staticmethod
-    def _map_account_type(pluggy_type: str) -> str:
+    def _map_account_type(pluggy_type: str, pluggy_subtype: Optional[str] = None) -> str:
+        # Pluggy reports both checking and savings accounts as BANK, with the
+        # distinction carried in subtype (e.g. SAVINGS_ACCOUNT). Prefer the
+        # subtype so a savings account is not displayed as checking.
+        if (pluggy_subtype or "").upper() in {"SAVINGS", "SAVINGS_ACCOUNT"}:
+            return "savings"
         mapping = {
             "BANK": "checking",
             "CREDIT": "credit_card",

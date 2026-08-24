@@ -1,9 +1,12 @@
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import axios from 'axios'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { categories as categoriesApi, categoryGroups as groupsApi } from '@/lib/api'
+import { extractApiError } from '@/lib/api-errors'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -54,6 +57,8 @@ export default function CategoriesPage() {
   const [groupFormIcon, setGroupFormIcon] = useState('folder')
   const [groupFormColor, setGroupFormColor] = useState('#6B7280')
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  const [deletingCategory, setDeletingCategory] = useState<Category | null>(null)
+  const [deletingGroup, setDeletingGroup] = useState<CategoryGroup | null>(null)
 
   const { data: groups } = useQuery({
     queryKey: ['category-groups'],
@@ -80,7 +85,15 @@ export default function CategoriesPage() {
   })
   const deleteCatMutation = useMutation({
     mutationFn: (id: string) => categoriesApi.delete(id),
-    onSuccess: () => { invalidateAll(); toast.success(t('categories.deleted')) },
+    onSuccess: () => { invalidateAll(); setDeletingCategory(null); toast.success(t('categories.deleted')) },
+    onError: (err: unknown) => {
+      // The API answers 409 with an English sentence; show the translated one instead.
+      if (axios.isAxiosError(err) && err.response?.status === 409) {
+        toast.error(t('categories.deleteInUse'))
+        return
+      }
+      toast.error(extractApiError(err, t('common.error')))
+    },
   })
 
   const createGroupMutation = useMutation({
@@ -94,7 +107,10 @@ export default function CategoriesPage() {
   })
   const deleteGroupMutation = useMutation({
     mutationFn: (id: string) => groupsApi.delete(id),
-    onSuccess: () => { invalidateAll(); toast.success(t('groups.deleted')) },
+    onSuccess: () => { invalidateAll(); setDeletingGroup(null); toast.success(t('groups.deleted')) },
+    onError: (err: unknown) => {
+      toast.error(extractApiError(err, t('common.error')))
+    },
   })
 
   const toggleCollapse = (groupId: string) => {
@@ -161,7 +177,7 @@ export default function CategoriesPage() {
           {!cat.is_system && (
             <button
               className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
-              onClick={() => deleteCatMutation.mutate(cat.id)}
+              onClick={() => setDeletingCategory(cat)}
               disabled={deleteCatMutation.isPending}
               title={t('common.delete')}
             >
@@ -237,7 +253,7 @@ export default function CategoriesPage() {
                       {!group.is_system && (
                         <button
                           className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
-                          onClick={() => deleteGroupMutation.mutate(group.id)}
+                          onClick={() => setDeletingGroup(group)}
                           disabled={deleteGroupMutation.isPending}
                           title={t('common.delete')}
                         >
@@ -404,6 +420,24 @@ export default function CategoriesPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <DeleteConfirmationDialog
+        open={!!deletingCategory}
+        title={t('categories.confirmDeleteTitle')}
+        description={t('categories.confirmDeleteDescription', { name: deletingCategory?.name })}
+        isPending={deleteCatMutation.isPending}
+        onClose={() => setDeletingCategory(null)}
+        onConfirm={() => deletingCategory && deleteCatMutation.mutate(deletingCategory.id)}
+      />
+
+      <DeleteConfirmationDialog
+        open={!!deletingGroup}
+        title={t('groups.confirmDeleteTitle')}
+        description={t('groups.confirmDeleteDescription', { name: deletingGroup?.name })}
+        isPending={deleteGroupMutation.isPending}
+        onClose={() => setDeletingGroup(null)}
+        onConfirm={() => deletingGroup && deleteGroupMutation.mutate(deletingGroup.id)}
+      />
     </div>
   )
 }

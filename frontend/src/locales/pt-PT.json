@@ -738,6 +738,9 @@
     "created": "Orçamento criado",
     "updated": "Orçamento atualizado",
     "deleted": "Orçamento eliminado",
+    "confirmDeleteTitle": "Eliminar orçamento?",
+    "confirmDeleteDescription": "O orçamento para \"{{name}}\" será eliminado permanentemente. As transações existentes não são afetadas. Esta ação não pode ser desfeita.",
+    "confirmDeleteRecurringDescription": "O orçamento recorrente para \"{{name}}\" será eliminado permanentemente. Esta definição deixará de se aplicar aos meses seguintes. As transações existentes não são afetadas. Esta ação não pode ser desfeita.",
     "repeatEveryMonth": "Repetir todo mês",
     "recurringLabel": "Recorrente"
   },
@@ -833,11 +836,13 @@
     "created": "Transação recorrente criada",
     "updated": "Transação recorrente atualizada",
     "deleted": "Transação recorrente eliminada",
+    "confirmDeleteTitle": "Eliminar transação recorrente?",
     "generated": "{{count}} transações geradas",
     "generatePending": "Gerar Pendentes",
     "autoGenerate": "Gerar transações automaticamente",
     "autoGenerateHelp": "Cria uma transação sempre que esta conta vence. Desativa para aguardar o lançamento real (por exemplo, da sincronização bancária) e mostrá-la apenas como prevista até lá.",
-    "fxEstimate": "Estimativa baseada na última taxa de câmbio ({{rate}}). O valor final pode mudar."
+    "fxEstimate": "Estimativa baseada na última taxa de câmbio ({{rate}}). O valor final pode mudar.",
+    "confirmDeleteDescription": "A definição recorrente \"{{description}}\" será eliminada permanentemente. As transações existentes manter-se-ão, mas perderão a ligação recorrente. Esta ação não pode ser desfeita."
   },
   "rules": {
     "section": "Automação",
@@ -860,6 +865,8 @@
     "updatedAndApplied": "Regra atualizada e aplicada a {{count}} transações",
     "updated": "Regra atualizada",
     "deleted": "Regra eliminada",
+    "confirmDeleteTitle": "Eliminar regra?",
+    "confirmDeleteDescription": "A regra \"{{name}}\" será eliminada permanentemente e deixará de ser executada. As alterações já aplicadas às transações existentes manter-se-ão. Esta ação não pode ser desfeita.",
     "applied": "Regras aplicadas a {{count}} transações",
     "inactive": "inativa",
     "empty": "Nenhuma regra criada",
@@ -940,6 +947,9 @@
     "created": "Categoria criada",
     "updated": "Categoria atualizada",
     "deleted": "Categoria eliminada",
+    "confirmDeleteTitle": "Eliminar categoria?",
+    "confirmDeleteDescription": "A categoria \"{{name}}\" será eliminada permanentemente. Não pode ser eliminada enquanto transações ou outros registos ainda fizerem referência a ela; remove primeiro essas referências. Esta ação não pode ser desfeita.",
+    "deleteInUse": "Esta categoria ainda está em uso. Remova primeiro os registos que fazem referência a ela.",
     "expandAll": "Expandir tudo",
     "collapseAll": "Recolher tudo",
     "treatAsTransfer": "Tratar como transferência",
@@ -961,8 +971,10 @@
     "created": "Grupo criado",
     "updated": "Grupo atualizado",
     "deleted": "Grupo eliminado",
+    "confirmDeleteTitle": "Eliminar grupo de categorias?",
     "noGroup": "Sem grupo",
-    "systemGroup": "Grupo do sistema"
+    "systemGroup": "Grupo do sistema",
+    "confirmDeleteDescription": "O grupo de categorias \"{{name}}\" será eliminado. As suas categorias manter-se-ão e ficarão sem grupo. Esta ação não pode ser desfeita."
   },
   "import": {
     "acceptedFormats": "Formatos aceitos: OFX, CSV, QIF, CAMT",
@@ -1443,6 +1455,8 @@
     "created": "Grupo criado",
     "updated": "Grupo atualizado",
     "deleted": "Grupo eliminado",
+    "confirmDeleteTitle": "Eliminar grupo?",
+    "confirmDeleteDescription": "O grupo \"{{name}}\" e os seus membros serão eliminados permanentemente. Os grupos referenciados por divisões de transações ou liquidações não podem ser eliminados até essas referências serem removidas. Esta ação não pode ser desfeita.",
     "empty": "Nenhum grupo ainda",
     "emptyHint": "Cria um grupo para dividir despesas com pessoas, departamentos ou projetos.",
     "name": "Nome",

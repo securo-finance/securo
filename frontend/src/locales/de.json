@@ -738,6 +738,9 @@
     "created": "Budget erstellt",
     "updated": "Budget aktualisiert",
     "deleted": "Budget gelöscht",
+    "confirmDeleteTitle": "Budget löschen?",
+    "confirmDeleteDescription": "Das Budget für \"{{name}}\" wird dauerhaft gelöscht. Bestehende Transaktionen bleiben unverändert. Diese Aktion kann nicht rückgängig gemacht werden.",
+    "confirmDeleteRecurringDescription": "Das wiederkehrende Budget für \"{{name}}\" wird dauerhaft gelöscht. Diese Definition gilt nicht mehr für zukünftige Monate. Bestehende Transaktionen bleiben unverändert. Diese Aktion kann nicht rückgängig gemacht werden.",
     "repeatEveryMonth": "Jeden Monat wiederholen",
     "recurringLabel": "Wiederkehrend"
   },
@@ -833,11 +836,13 @@
     "created": "Wiederkehrende Transaktion erstellt",
     "updated": "Wiederkehrende Transaktion aktualisiert",
     "deleted": "Wiederkehrende Transaktion gelöscht",
+    "confirmDeleteTitle": "Wiederkehrende Transaktion löschen?",
     "generated": "{{count}} Transaktionen erstellt",
     "generatePending": "Ausstehende erstellen",
     "autoGenerate": "Transaktionen automatisch erstellen",
     "autoGenerateHelp": "Erstellt bei jeder Fälligkeit dieser Rechnung eine Transaktion. Deaktivieren, um auf die tatsächliche Belastung (z. B. aus der Banksynchronisierung) zu warten und sie bis dahin nur als anstehend anzuzeigen.",
-    "fxEstimate": "Schätzung basierend auf dem aktuellsten Wechselkurs ({{rate}}). Der endgültige Betrag kann abweichen."
+    "fxEstimate": "Schätzung basierend auf dem aktuellsten Wechselkurs ({{rate}}). Der endgültige Betrag kann abweichen.",
+    "confirmDeleteDescription": "Die wiederkehrende Transaktion \"{{description}}\" wird dauerhaft gelöscht. Vorhandene Transaktionen bleiben bestehen, verlieren jedoch ihre Verknüpfung zur wiederkehrenden Transaktion. Diese Aktion kann nicht rückgängig gemacht werden."
   },
   "rules": {
     "section": "Automatisierung",
@@ -860,6 +865,8 @@
     "updatedAndApplied": "Regel aktualisiert und auf {{count}} Transaktionen angewendet",
     "updated": "Regel aktualisiert",
     "deleted": "Regel gelöscht",
+    "confirmDeleteTitle": "Regel löschen?",
+    "confirmDeleteDescription": "Die Regel \"{{name}}\" wird dauerhaft gelöscht und nicht mehr ausgeführt. Änderungen, die bereits auf bestehende Transaktionen angewendet wurden, bleiben erhalten. Diese Aktion kann nicht rückgängig gemacht werden.",
     "applied": "Regeln auf {{count}} Transaktionen angewendet",
     "inactive": "inaktiv",
     "empty": "Keine Regeln erstellt",
@@ -940,6 +947,9 @@
     "created": "Kategorie erstellt",
     "updated": "Kategorie aktualisiert",
     "deleted": "Kategorie gelöscht",
+    "confirmDeleteTitle": "Kategorie löschen?",
+    "confirmDeleteDescription": "Die Kategorie \"{{name}}\" wird dauerhaft gelöscht. Sie kann nicht gelöscht werden, solange Transaktionen oder andere Einträge noch darauf verweisen; entferne diese Verweise zuerst. Diese Aktion kann nicht rückgängig gemacht werden.",
+    "deleteInUse": "Diese Kategorie wird noch verwendet. Entferne zuerst die Einträge, die auf sie verweisen.",
     "expandAll": "Alle ausklappen",
     "collapseAll": "Alle einklappen",
     "treatAsTransfer": "Als Umbuchung behandeln",
@@ -961,8 +971,10 @@
     "created": "Gruppe erstellt",
     "updated": "Gruppe aktualisiert",
     "deleted": "Gruppe gelöscht",
+    "confirmDeleteTitle": "Kategoriegruppe löschen?",
     "noGroup": "Keine Gruppe",
-    "systemGroup": "Systemgruppe"
+    "systemGroup": "Systemgruppe",
+    "confirmDeleteDescription": "Die Kategoriegruppe \"{{name}}\" wird gelöscht. Ihre Kategorien bleiben erhalten und werden keiner Gruppe mehr zugeordnet. Diese Aktion kann nicht rückgängig gemacht werden."
   },
   "import": {
     "acceptedFormats": "Unterstützte Formate: OFX, CSV, QIF, CAMT",
@@ -1443,6 +1455,8 @@
     "created": "Gruppe erstellt",
     "updated": "Gruppe aktualisiert",
     "deleted": "Gruppe gelöscht",
+    "confirmDeleteTitle": "Gruppe löschen?",
+    "confirmDeleteDescription": "Die Gruppe \"{{name}}\" und ihre Mitglieder werden dauerhaft gelöscht. Gruppen, auf die sich Transaktionsaufteilungen oder Abrechnungen beziehen, können erst gelöscht werden, nachdem diese Verweise entfernt wurden. Diese Aktion kann nicht rückgängig gemacht werden.",
     "empty": "Noch keine Gruppen",
     "emptyHint": "Erstelle eine Gruppe, um Ausgaben mit anderen Personen, Abteilungen oder Projekten aufzuteilen.",
     "name": "Name",

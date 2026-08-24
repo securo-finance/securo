@@ -738,6 +738,9 @@
     "created": "Budget created",
     "updated": "Budget updated",
     "deleted": "Budget deleted",
+    "confirmDeleteTitle": "Delete budget?",
+    "confirmDeleteDescription": "The budget for \"{{name}}\" will be permanently deleted. Existing transactions are not affected. This action cannot be undone.",
+    "confirmDeleteRecurringDescription": "The recurring budget for \"{{name}}\" will be permanently deleted. This definition will no longer apply to later months. Existing transactions are not affected. This action cannot be undone.",
     "repeatEveryMonth": "Repeat every month",
     "recurringLabel": "Recurring"
   },
@@ -833,11 +836,13 @@
     "created": "Recurring transaction created",
     "updated": "Recurring transaction updated",
     "deleted": "Recurring transaction deleted",
+    "confirmDeleteTitle": "Delete recurring transaction?",
     "generated": "{{count}} transactions generated",
     "generatePending": "Generate Pending",
     "autoGenerate": "Generate transactions automatically",
     "autoGenerateHelp": "Create a transaction each time this bill is due. Turn off to wait for the real charge (e.g. from bank sync) and only show it as upcoming until then.",
-    "fxEstimate": "Estimate based on latest exchange rate ({{rate}}). Final amount may change."
+    "fxEstimate": "Estimate based on latest exchange rate ({{rate}}). Final amount may change.",
+    "confirmDeleteDescription": "The recurring definition \"{{description}}\" will be permanently deleted. Existing transactions will remain but lose their recurring link. This action cannot be undone."
   },
   "rules": {
     "section": "Automation",
@@ -860,6 +865,8 @@
     "updatedAndApplied": "Rule updated and applied to {{count}} transactions",
     "updated": "Rule updated",
     "deleted": "Rule deleted",
+    "confirmDeleteTitle": "Delete rule?",
+    "confirmDeleteDescription": "The rule \"{{name}}\" will be permanently deleted and will no longer run. Changes already applied to existing transactions will remain. This action cannot be undone.",
     "applied": "Rules applied to {{count}} transactions",
     "inactive": "inactive",
     "empty": "No rules created",
@@ -940,6 +947,9 @@
     "created": "Category created",
     "updated": "Category updated",
     "deleted": "Category deleted",
+    "confirmDeleteTitle": "Delete category?",
+    "confirmDeleteDescription": "The category \"{{name}}\" will be permanently deleted. It cannot be deleted while transactions or other records still reference it; remove those references first. This action cannot be undone.",
+    "deleteInUse": "This category is still in use. Remove the records that reference it first.",
     "expandAll": "Expand all",
     "collapseAll": "Collapse all",
     "treatAsTransfer": "Treat as transfer",
@@ -961,8 +971,10 @@
     "created": "Group created",
     "updated": "Group updated",
     "deleted": "Group deleted",
+    "confirmDeleteTitle": "Delete category group?",
     "noGroup": "No group",
-    "systemGroup": "System group"
+    "systemGroup": "System group",
+    "confirmDeleteDescription": "The category group \"{{name}}\" will be deleted. Its categories will remain and become ungrouped. This action cannot be undone."
   },
   "import": {
     "acceptedFormats": "Accepted formats: OFX, CSV, QIF, CAMT",
@@ -1443,6 +1455,8 @@
     "created": "Group created",
     "updated": "Group updated",
     "deleted": "Group deleted",
+    "confirmDeleteTitle": "Delete group?",
+    "confirmDeleteDescription": "The group \"{{name}}\" and its members will be permanently deleted. Groups referenced by transaction splits or settlements cannot be deleted until those references are removed. This action cannot be undone.",
     "empty": "No groups yet",
     "emptyHint": "Create a group to split expenses with people, departments, or projects.",
     "name": "Name",
