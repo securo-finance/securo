@@ -3,7 +3,7 @@ import { getAccountName } from '@/lib/account-utils'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueries } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { useWorkspace } from '@/contexts/workspace-context'
@@ -61,6 +61,7 @@ import { useFeatureFlags } from '@/hooks/use-feature-flags'
 import { Bot, Search, Sparkles } from 'lucide-react'
 import { setThemeBasedOnSystem } from '@/lib/theme-utils'
 import { formatCurrency } from '@/lib/format'
+import { creditCardCycleBoundaries } from '@/lib/credit-card-cycle'
 
 /** Placeholder rows shown while the workspace's module list is in flight. */
 function NavSkeleton() {
@@ -181,12 +182,43 @@ export function AppLayout() {
     queryFn: () => accountsApi.list(),
   })
 
-  const allAccounts = accountsList ?? []
+  const allAccounts = useMemo(() => accountsList ?? [], [accountsList])
   // When a collection is active, the sidebar list + total reflect only its
   // accounts (issue #105). null = all accounts.
   const visibleAccounts = activeAccountIds
     ? allAccounts.filter((a) => activeAccountIds.includes(a.id))
     : allAccounts
+  const sharedCreditCards = useMemo(
+    () => allAccounts.filter((account) => account.type === 'credit_card' && account.shared_balance_group && account.statement_close_day),
+    [allAccounts],
+  )
+  const sharedCreditCycleQueries = useQueries({
+    queries: sharedCreditCards.map((account) => {
+      const cycle = creditCardCycleBoundaries(account.statement_close_day!)
+      return {
+        queryKey: ['accounts', account.id, 'summary', cycle.start, cycle.end, { unbilled_only: true }],
+        queryFn: () => accountsApi.summary(account.id, cycle.start, cycle.end, undefined, true),
+      }
+    }),
+  })
+  const sharedCreditCycleBalances = useMemo(
+    () => new Map<string, number | null>(sharedCreditCards.map((account, index) => {
+      const summary = sharedCreditCycleQueries[index]?.data
+      return [account.id, summary ? -Number(summary.projected_expenses ?? summary.monthly_expenses) : null]
+    })),
+    [sharedCreditCards, sharedCreditCycleQueries],
+  )
+  const sidebarAccounts = useMemo(
+    () => visibleAccounts
+      .map((account) => ({
+        account,
+        balance: account.shared_balance_group
+          ? sharedCreditCycleBalances.get(account.id) ?? Number(account.current_balance)
+          : Number(account.current_balance),
+      }))
+      .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance)),
+    [sharedCreditCycleBalances, visibleAccounts],
+  )
   const sharedBalanceGroups = new Set<string>()
   const totalBalance = visibleAccounts.reduce((sum, a) => {
     if (a.shared_balance_group) {
@@ -442,8 +474,7 @@ export function AppLayout() {
               </button>
               {accountsExpanded && (
                 <div className="mt-1 space-y-0.5">
-                  {[...visibleAccounts].sort((a, b) => Math.abs(Number(b.current_balance)) - Math.abs(Number(a.current_balance))).slice(0, accountsShowAll ? visibleAccounts.length : 3).map((acc) => {
-                    const balance = Number(acc.current_balance) || 0
+                  {sidebarAccounts.slice(0, accountsShowAll ? visibleAccounts.length : 3).map(({ account: acc, balance }) => {
                     const typeKey = acc.type.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()).replace(/^./, c => c.toUpperCase())
 
                     return (
@@ -457,6 +488,7 @@ export function AppLayout() {
                           <span className="block truncate font-medium">{getAccountName(acc)}</span>
                           <span className="block text-[10px] text-sidebar-muted/60">
                             {t(`accounts.type${typeKey}`)}
+                            {acc.type === 'credit_card' && ` · ${t('accounts.cycleBillTotal')}`}
                             {acc.shared_balance_group && ` · ${t('accounts.sharedCreditBalance')}`}
                           </span>
                         </div>
