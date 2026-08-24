@@ -565,6 +565,8 @@
     "balanceCreditCardHint": "Voer in een positief getal in hoeveel u momenteel op deze kaart verschuldigd bent. Laat op 0 staan ​​als u geen schulden heeft.",
     "balanceDate": "Saldodatum",
     "lastSync": "Laatste synchronisatie",
+    "multiInstitutionLink_one": "{{provider}} · {{count}} instelling",
+    "multiInstitutionLink_other": "{{provider}} · {{count}} instellingen",
     "sync": "Synchroniseren",
     "disconnect": "Verbreek de verbinding",
     "addManual": "Account toevoegen",
