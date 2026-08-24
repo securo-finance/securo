@@ -2554,8 +2554,9 @@ async def test_sync_holdings_splits_wallets_per_account(
     session: AsyncSession, test_user, test_workspace,
 ):
     """Holdings split into one wallet per owning account, backed by the
-    account's institution; assets in the legacy connection-named wallet are
-    re-attributed and the emptied wallet is deleted; a wallet the user made
+    account's institution. The legacy connection-keyed wallet is ADOPTED by
+    the first account — re-keyed, its untouched auto-name refreshed — so an
+    existing user's wallet row survives the upgrade; a wallet the user made
     themselves is never touched."""
     from app.models.asset_group import AssetGroup
     from app.models.institution import Institution
@@ -2625,15 +2626,17 @@ async def test_sync_holdings_splits_wallets_per_account(
     ).scalars().all()
     by_name = {g.name: g for g in groups}
 
-    # Per-account wallet created, named after the account, backed by its institution.
+    # The legacy wallet was adopted as the per-account wallet: same row,
+    # re-keyed, auto-name ("First Bank" == institution label, so untouched
+    # by the user) refreshed to the account's, institution backfilled.
     wallet = by_name["Employer 401(k)"]
+    assert wallet.id == legacy.id
     assert wallet.external_id == f"{conn.external_id}::acc-1"
     assert wallet.institution_id == inst.id
+    assert "First Bank" not in by_name
 
-    # h-1 re-attributed out of the legacy wallet, which emptied → deleted.
     await session.refresh(asset_legacy)
     assert asset_legacy.group_id == wallet.id
-    assert "First Bank" not in by_name
 
     # The user's own wallet keeps its asset, even though h-2 was synced.
     await session.refresh(asset_custom)
@@ -2811,10 +2814,13 @@ async def test_sync_holdings_keeps_emptied_wallet_a_goal_tracks(
         connection_id=conn.id, external_id="acc-1", name="401(k)",
         type="investment", balance=Decimal("0"), currency="USD",
     ))
+    # Keyed unlike the connection's external_id, so the legacy-adoption path
+    # doesn't claim it — this test exercises the goal guard on the
+    # emptied-wallet delete, not adoption.
     legacy = AssetGroup(
         user_id=test_user.id, workspace_id=test_workspace.id,
         name="Goal Bank", source="test",
-        connection_id=conn.id, external_id=conn.external_id,
+        connection_id=conn.id, external_id="stale-ext",
     )
     session.add(legacy)
     await session.flush()
@@ -2852,3 +2858,64 @@ async def test_sync_holdings_keeps_emptied_wallet_a_goal_tracks(
     refreshed_goal = await session.get(Goal, goal_id)
     assert refreshed_goal is not None
     assert refreshed_goal.asset_group_id == legacy_id
+
+
+@pytest.mark.asyncio
+async def test_sync_holdings_adoption_preserves_wallet_customization(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The maintainer's repro on #654: an existing user's wallet — renamed,
+    custom icon/color/position — must survive the first per-account sync as
+    the same row with all customization intact, not come back as a default
+    wallet. A custom name is never overwritten by adoption."""
+    from app.models.asset_group import AssetGroup
+    from app.services.connection_service import _sync_holdings
+
+    conn = await _make_connection(session, test_user.id, "Fidelity")
+
+    session.add(Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn.id, external_id="acc-1", name="Rollover IRA",
+        type="investment", balance=Decimal("0"), currency="USD",
+    ))
+    customized = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="My Retirement", icon="piggy-bank", color="#FF00AA", position=7,
+        source="test", connection_id=conn.id, external_id=conn.external_id,
+    )
+    session.add(customized)
+    await session.flush()
+    wallet_id = customized.id
+    session.add(Asset(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn.id, source="test", external_id="h-1",
+        name="Index Fund", type="investment", currency="USD",
+        valuation_method="manual", group_id=wallet_id,
+    ))
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.get_holdings.return_value = [
+        HoldingData(
+            external_id="h-1", name="Index Fund", currency="USD",
+            current_value=Decimal("10"),
+            account_external_id="acc-1", account_name="Rollover IRA",
+        ),
+    ]
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+    await session.commit()
+
+    wallet = await session.get(AssetGroup, wallet_id)
+    assert wallet is not None  # same row, not a replacement
+    assert wallet.external_id == f"{conn.external_id}::acc-1"  # re-keyed
+    assert wallet.name == "My Retirement"  # custom name untouched
+    assert wallet.icon == "piggy-bank"
+    assert wallet.color == "#FF00AA"
+    assert wallet.position == 7
+    # No second wallet minted for the account.
+    all_synced = (
+        await session.execute(select(AssetGroup).where(
+            AssetGroup.user_id == test_user.id, AssetGroup.source == "test"))
+    ).scalars().all()
+    assert [g.id for g in all_synced] == [wallet_id]

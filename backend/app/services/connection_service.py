@@ -57,10 +57,13 @@ def _clean_logo_url(value: object) -> Optional[str]:
 
     Guards the DB column against anything a provider hands back that isn't a
     usable URL (None, empty string, a non-string, or one longer than the
-    column), so a misbehaving integration can never write junk into a
-    ``logo_url`` column or abort a sync with a DataError.
+    column — truncating would store a broken URL, so it's dropped), so a
+    misbehaving integration can never write junk into a ``logo_url`` column
+    or abort a sync with a DataError.
     """
-    return value[:500] if isinstance(value, str) and value.strip() else None
+    if isinstance(value, str) and value.strip() and len(value) <= 500:
+        return value
+    return None
 
 
 def _clean_institution_name(value: object) -> Optional[str]:
@@ -162,8 +165,12 @@ async def _resolve_institution(
     else:
         if inst.name != name:
             inst.name = name  # provider-side rename
-        if inst.logo_url is None:
-            inst.logo_url = _clean_logo_url(acc_data.institution_logo_url)
+        # The logo is favicon-derived from the org's website, never user-set,
+        # so it follows the provider too — a rename that moves domains would
+        # otherwise keep the old bank's icon forever.
+        new_logo = _clean_logo_url(acc_data.institution_logo_url)
+        if new_logo is not None and inst.logo_url != new_logo:
+            inst.logo_url = new_logo
     cache[key] = inst
     return inst
 
@@ -261,16 +268,42 @@ async def _sync_holdings(
                 if key
                 else None
             )
+            wallet_key = (
+                f"{connection.external_id}::{key}" if key else connection.external_id
+            )
+            default_name = (
+                _clean_institution_name(holding.account_name)
+                or connection.institution_name
+            )
+            if key:
+                # First per-account claim adopts the legacy connection-keyed
+                # wallet instead of minting a new one, so an existing user's
+                # rename/icon/color/position survive the upgrade. Only its
+                # untouched auto-name is refreshed to the account's.
+                legacy = await session.scalar(
+                    select(AssetGroup).where(
+                        AssetGroup.user_id == user_id,
+                        AssetGroup.source == source,
+                        AssetGroup.external_id == connection.external_id,
+                    )
+                )
+                if legacy is not None:
+                    legacy.external_id = wallet_key
+                    legacy.connection_id = connection.id
+                    if legacy.name == connection.institution_name:
+                        legacy.name = default_name[:95]
+                    if institution_id is not None:
+                        legacy.institution_id = institution_id
+                    await session.flush()
+                    groups_by_key[key] = legacy
+                    return legacy
             groups_by_key[key] = await ensure_group_for_connection(
                 session,
                 user_id=user_id,
                 connection_id=connection.id,
                 source=source,
-                external_id=(
-                    f"{connection.external_id}::{key}" if key else connection.external_id
-                ),
-                default_name=_clean_institution_name(holding.account_name)
-                or connection.institution_name,
+                external_id=wallet_key,
+                default_name=default_name,
                 institution_id=institution_id,
             )
         return groups_by_key[key]
@@ -335,10 +368,12 @@ async def _sync_holdings(
         asset = await _upsert_asset_from_holding(
             session, existing, holding, user_id, connection.id, source,
         )
-        # Attach to its institution's wallet. Only a null group or another
-        # sync-owned wallet of this connection is (re)assigned — correcting
-        # our own earlier attribution — so a user who moved this holding to
-        # a custom wallet ("US Stocks") is never overridden.
+        # Attach to its institution's wallet. NOTE this deliberately moves
+        # holdings between sync-owned wallets, not just out of a null group
+        # like it used to: re-attribution corrects the sync's own earlier
+        # bucketing (one-wallet-per-connection → per-account). A wallet the
+        # user made themselves ("US Stocks", source "manual") is never
+        # touched.
         group = await _wallet_for(holding)
         if (
             asset.group_id is None or asset.group_id in sync_owned_group_ids

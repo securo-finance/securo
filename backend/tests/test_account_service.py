@@ -1305,12 +1305,19 @@ async def test_resolve_institution_matches_by_org_id_across_renames(
 
     conn_id = await _make_provider_connection(session, test_user.id, "simplefin")
 
-    first = await _resolve_institution(session, conn_id, {}, _hint("Chase Bank", ext="CON-1"))
+    first = await _resolve_institution(
+        session, conn_id, {}, _hint("Chase Bank", "https://logos.example/old.png", ext="CON-1")
+    )
     assert first is not None
-    renamed = await _resolve_institution(session, conn_id, {}, _hint("Chase", ext="CON-1"))
+    renamed = await _resolve_institution(
+        session, conn_id, {}, _hint("Chase", "https://logos.example/new.png", ext="CON-1")
+    )
     assert renamed is not None
     assert renamed.id == first.id
     assert renamed.name == "Chase"
+    # The favicon-derived logo follows the provider too — a rename that
+    # moves domains must not keep the old bank's icon.
+    assert renamed.logo_url == "https://logos.example/new.png"
 
 
 @pytest.mark.asyncio
@@ -1366,3 +1373,14 @@ async def test_resolve_institution_upserts_and_reuses(session: AsyncSession, tes
     assert again.logo_url == "https://logos.example/chase.png"  # backfilled
     assert await _resolve_institution(session, conn_id, cache, _hint(None)) is None
     assert await _resolve_institution(session, conn_id, cache, _hint("   ")) is None
+
+
+def test_clean_logo_url_drops_overlong_urls():
+    """A URL longer than the column is dropped, not truncated — a truncated
+    URL is a broken URL (review on #654)."""
+    from app.services.connection_service import _clean_logo_url
+
+    assert _clean_logo_url("https://ok.example/logo.png") == "https://ok.example/logo.png"
+    assert _clean_logo_url("https://long.example/" + "a" * 500) is None
+    assert _clean_logo_url("   ") is None
+    assert _clean_logo_url(None) is None
