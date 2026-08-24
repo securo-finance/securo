@@ -375,7 +375,6 @@ def test_build_account_data_without_number_leaves_mask_none():
 
 
 def test_build_account_data_groups_consolidated_credit_line():
-    """Two physical cards sharing Pluggy's consolidated line get one group."""
     from app.providers.pluggy import _build_account_data
 
     credit_data = {

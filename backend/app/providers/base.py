@@ -70,9 +70,6 @@ class AccountData:
     # provider exposes one. Disambiguates accounts a bank reports under an
     # identical name (issue #408). Never the full identifier — see mask_last4.
     masked_number: Optional[str] = None
-    # Opaque provider-local key shared by accounts that report one consolidated
-    # balance (for example multiple physical cards on the same credit line).
-    # The sync service scopes it to a connection before persisting it.
     shared_balance_group: Optional[str] = None
 
 

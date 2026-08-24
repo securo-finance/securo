@@ -1320,15 +1320,7 @@ async def _total_balance_by_currency(
     *,
     include_pending: bool = False,
 ) -> dict[str, float]:
-    """Get total balance across all open accounts at a date, grouped by currency.
-
-    A provider can expose several physical accounts with one shared balance
-    (such as two cards using a consolidated credit line). They stay separate
-    everywhere else, but their provider snapshot must contribute only once to
-    a total. For historical cutoffs, subtract the shared current snapshot from
-    every sibling after the first; each account's historical reconstruction
-    already includes that same snapshot plus its own transaction delta.
-    """
+    """Get total balance across all open accounts at a date, grouped by currency."""
     accounts = await _get_open_accounts(session, workspace_id, account_ids)
     totals: dict[str, float] = {}
     grouped: dict[str, list[Account]] = {}
