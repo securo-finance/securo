@@ -109,14 +109,6 @@ def _decimal_or_none(value) -> Optional[Decimal]:
 def _consolidated_credit_balance_group(
     credit_data: dict, account_balance, currency: str,
 ) -> Optional[str]:
-    """Return a stable, opaque group for a Pluggy consolidated credit balance.
-
-    Pluggy may report several physical cards against a single credit line. In
-    that case each account carries the same used balance and the line is marked
-    ``CONSOLIDADO``. Group only the total sight-credit line and only when its
-    used amount equals the account balance, so unrelated per-card limits are
-    never collapsed.
-    """
     balance = _decimal_or_none(account_balance)
     if balance is None:
         return None
@@ -132,10 +124,6 @@ def _consolidated_credit_balance_group(
         if used is None or used != balance:
             continue
 
-        # Flexible consolidated lines may omit `limitAmount`, but Pluggy
-        # includes the customized amount. Keep the used amount in the key too:
-        # if the provider momentarily reports different snapshots for sibling
-        # cards, they must not be deduplicated incorrectly.
         limit = _decimal_or_none(line.get("customizedLimitAmount"))
         if limit is None:
             limit = _decimal_or_none(line.get("limitAmount"))

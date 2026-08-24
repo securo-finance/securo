@@ -1,14 +1,3 @@
-"""track provider-reported shared account balances
-
-Revision ID: 075
-Revises: 074
-Create Date: 2026-08-24
-
-Some Open Finance providers expose multiple physical credit cards against one
-consolidated credit line. Keep an opaque provider-scoped grouping key so their
-shared balance is counted once in aggregate views while the accounts remain
-separate for bills and transactions.
-"""
 from typing import Sequence, Union
 
 import sqlalchemy as sa
