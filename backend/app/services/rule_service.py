@@ -10,7 +10,11 @@ from app.models.category import Category
 from app.models.payee import Payee
 from app.models.transaction import Transaction
 from app.schemas.rule import RuleCreate, RuleExportPayload, RuleImportResponse, RuleUpdate
-from app.services.rule_engine import evaluate_conditions, apply_rule_actions
+from app.services.rule_engine import (
+    apply_rule_actions,
+    compile_rule_regex,
+    evaluate_conditions,
+)
 from app.services.category_service import DEFAULT_CATEGORIES_I18N
 
 
@@ -63,6 +67,8 @@ async def _validate_rule_definition(
         op = _rule_item_value(condition, "op")
         if field not in _ALLOWED_CONDITION_FIELDS or op not in _ALLOWED_CONDITION_OPS:
             raise ValueError("Invalid rule condition")
+        if op == "regex":
+            compile_rule_regex(str(_rule_item_value(condition, "value") or ""))
 
     for action in actions or []:
         op = _rule_item_value(action, "op")

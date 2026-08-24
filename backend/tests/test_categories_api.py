@@ -1,10 +1,14 @@
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_async_session
+from app.main import app
 
 from app.models.category import Category
 from app.models.user import User
-from app.services.category_service import create_default_categories
+from app.services import category_service
 
 
 @pytest.mark.asyncio
@@ -20,7 +24,7 @@ async def test_list_categories_with_defaults(
     client: AsyncClient, auth_headers, session: AsyncSession, test_user: User
 ):
     """After creating default categories (as registration does), listing returns them."""
-    await create_default_categories(session, test_user.id, "pt-BR")
+    await category_service.create_default_categories(session, test_user.id, "pt-BR")
 
     response = await client.get("/api/categories", headers=auth_headers)
     assert response.status_code == 200
@@ -96,6 +100,104 @@ async def test_delete_category(client: AsyncClient, auth_headers, test_categorie
 
     response = await client.delete(f"/api/categories/{cat_id}", headers=auth_headers)
     assert response.status_code == 204
+
+    categories = await client.get("/api/categories", headers=auth_headers)
+    assert cat_id not in {category["id"] for category in categories.json()}
+
+
+@pytest.mark.asyncio
+async def test_delete_referenced_category_returns_conflict(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace,
+    monkeypatch,
+):
+    """A category still referenced by another row answers 409, not 500."""
+    category = Category(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Referenced",
+    )
+    session.add(category)
+    await session.commit()
+    category_id = category.id
+
+    async def override_test_session():
+        yield session
+
+    # The suite runs on SQLite, which does not enforce foreign keys, so raise
+    # the IntegrityError Postgres would raise for a still-referenced category.
+    async def fail_commit():
+        raise IntegrityError("DELETE FROM categories", {}, Exception("FK violation"))
+
+    try:
+        with monkeypatch.context() as scoped_patch:
+            scoped_patch.setitem(
+                app.dependency_overrides,
+                get_async_session,
+                override_test_session,
+            )
+            scoped_patch.setattr(session, "commit", fail_commit)
+            response = await client.delete(
+                f"/api/categories/{category_id}",
+                headers=auth_headers,
+            )
+
+        assert response.status_code == 409
+        assert response.json() == {
+            "detail": (
+                "Category is still in use and cannot be deleted. "
+                "Remove its references first."
+            )
+        }
+    finally:
+        await session.rollback()
+
+    # The failed delete rolled back, so the category is still listed.
+    categories = await client.get("/api/categories", headers=auth_headers)
+    assert str(category_id) in {item["id"] for item in categories.json()}
+
+
+@pytest.mark.asyncio
+async def test_delete_category_does_not_translate_unrelated_errors(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace,
+    monkeypatch,
+):
+    category = Category(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Unrelated failure",
+    )
+    session.add(category)
+    await session.commit()
+
+    async def override_test_session():
+        yield session
+
+    async def fail_commit():
+        raise RuntimeError("unrelated deletion failure")
+
+    try:
+        with monkeypatch.context() as scoped_patch:
+            scoped_patch.setitem(
+                app.dependency_overrides,
+                get_async_session,
+                override_test_session,
+            )
+            scoped_patch.setattr(session, "commit", fail_commit)
+            with pytest.raises(RuntimeError, match="unrelated deletion failure"):
+                await client.delete(
+                    f"/api/categories/{category.id}",
+                    headers=auth_headers,
+                )
+    finally:
+        await session.rollback()
 
 
 @pytest.mark.asyncio

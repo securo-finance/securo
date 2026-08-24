@@ -2,8 +2,8 @@ apiVersion: v2
 name: securo
 description: A Helm chart for Securo Finance, an open-source personal finance application.
 type: application
-version: 0.14.3
-appVersion: "0.14.3"
+version: 0.14.4
+appVersion: "0.14.4"
 icon: https://raw.githubusercontent.com/securo-finance/securo/main/favicons/android-icon-192x192.png
 home: https://github.com/securo-finance/securo
 sources:

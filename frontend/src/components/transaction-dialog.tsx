@@ -62,30 +62,6 @@ type PendingInstallmentEdit = {
   action?: SaveAction
 }
 
-export function extractApiError(error: unknown): string {
-  if (
-    error &&
-    typeof error === 'object' &&
-    'response' in error &&
-    error.response &&
-    typeof error.response === 'object' &&
-    'data' in error.response
-  ) {
-    const data = (error.response as { data: unknown }).data
-    if (data && typeof data === 'object' && 'detail' in data) {
-      const detail = (data as { detail: unknown }).detail
-      if (typeof detail === 'string') return detail
-      if (Array.isArray(detail)) {
-        return detail.map((d: { msg?: string; loc?: string[] }) => {
-          const field = d.loc?.slice(-1)[0] ?? ''
-          return `${field}: ${d.msg ?? 'invalid'}`
-        }).join(', ')
-      }
-    }
-  }
-  return 'An unexpected error occurred'
-}
-
 function isImageType(contentType: string): boolean {
   return contentType.startsWith('image/')
 }
