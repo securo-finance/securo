@@ -4,7 +4,7 @@ import { getConnectionName } from '@/lib/connection-utils'
 import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
 import { accounts, connections, currencies } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
@@ -58,6 +58,20 @@ function daysUntil(dateStr: string | null): number | null {
   return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }
 
+function creditCardCycleBoundaries(closeDay: number, reference: Date): { start: string; end: string } {
+  const ref = new Date(reference)
+  ref.setHours(0, 0, 0, 0)
+  const clampDay = (year: number, month: number) => Math.min(closeDay, new Date(year, month + 1, 0).getDate())
+  const thisMonthClose = new Date(ref.getFullYear(), ref.getMonth(), clampDay(ref.getFullYear(), ref.getMonth()))
+  const nextClose = thisMonthClose > ref
+    ? thisMonthClose
+    : new Date(ref.getFullYear(), ref.getMonth() + 1, clampDay(ref.getFullYear(), ref.getMonth() + 1))
+  const end = new Date(nextClose)
+  end.setDate(end.getDate() - 1)
+  const start = new Date(nextClose.getFullYear(), nextClose.getMonth() - 1, clampDay(nextClose.getFullYear(), nextClose.getMonth() - 1))
+  return { start: localDateString(start), end: localDateString(end) }
+}
+
 export default function AccountsPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -84,6 +98,29 @@ export default function AccountsPage() {
     queryKey: ['accounts'],
     queryFn: () => accounts.list(),
   })
+
+  const sharedCreditCards = useMemo(
+    () => (accountsList ?? []).filter((account) => account.type === 'credit_card' && account.shared_balance_group && account.statement_close_day),
+    [accountsList],
+  )
+
+  const sharedCreditCycleQueries = useQueries({
+    queries: sharedCreditCards.map((account) => {
+      const cycle = creditCardCycleBoundaries(account.statement_close_day!, new Date())
+      return {
+        queryKey: ['accounts', account.id, 'summary', cycle.start, cycle.end, { unbilled_only: true }],
+        queryFn: () => accounts.summary(account.id, cycle.start, cycle.end, undefined, true),
+      }
+    }),
+  })
+
+  const sharedCreditCycleTotals = useMemo(
+    () => new Map(sharedCreditCards.map((account, index) => {
+      const summary = sharedCreditCycleQueries[index]?.data
+      return [account.id, summary ? Number(summary.projected_expenses ?? summary.monthly_expenses) : null]
+    })),
+    [sharedCreditCards, sharedCreditCycleQueries],
+  )
 
   const { data: connectionsList, isLoading: connectionsLoading } = useQuery({
     queryKey: ['connections'],
@@ -252,6 +289,9 @@ export default function AccountsPage() {
                   const cfg = getAccountTypeConfig(acc.type)
                   const bal = Number(acc.current_balance)
                   const isCC = acc.type === 'credit_card'
+                  const cycleTotal = sharedCreditCycleTotals.get(acc.id)
+                  const displayedBalance = isCC && acc.shared_balance_group && cycleTotal != null ? cycleTotal : bal
+                  const showsCycleTotal = isCC && acc.shared_balance_group && cycleTotal != null
                   const dueIn = isCC ? daysUntil(acc.next_due_date) : null
                   const dueText =
                     dueIn == null ? null
@@ -275,10 +315,12 @@ export default function AccountsPage() {
                         </div>
                       </Link>
                       <div className="shrink-0 text-right">
-                        <p className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
-                          {mask(formatCurrency(bal, acc.currency, locale))}
+                        <p className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? displayedBalance > 0 : displayedBalance < 0) ? 'text-rose-500' : 'text-foreground'}`}>
+                          {mask(formatCurrency(displayedBalance, acc.currency, locale))}
                         </p>
-                        {isCC && acc.available_credit != null ? (
+                        {showsCycleTotal ? (
+                          <p className="text-[10px] text-muted-foreground">{t('accounts.cycleBillTotal')}</p>
+                        ) : isCC && acc.available_credit != null ? (
                           <p className="text-[10px] text-muted-foreground tabular-nums">
                             {t('accounts.availableCredit')}: {mask(formatCurrency(Number(acc.available_credit), acc.currency, locale))}
                           </p>
@@ -396,6 +438,9 @@ export default function AccountsPage() {
                           const cfg = getAccountTypeConfig(acc.type)
                           const bal = Number(acc.current_balance)
                           const isCC = acc.type === 'credit_card'
+                          const cycleTotal = sharedCreditCycleTotals.get(acc.id)
+                          const displayedBalance = isCC && acc.shared_balance_group && cycleTotal != null ? cycleTotal : bal
+                          const showsCycleTotal = isCC && acc.shared_balance_group && cycleTotal != null
                           const dueIn = isCC ? daysUntil(acc.next_due_date) : null
                           const dueText =
                             dueIn == null ? null
@@ -419,10 +464,12 @@ export default function AccountsPage() {
                                 </div>
                               </Link>
                               <div className="shrink-0 text-right">
-                                <p className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? bal > 0 : bal < 0) ? 'text-rose-500' : 'text-foreground'}`}>
-                                  {mask(formatCurrency(bal, acc.currency, locale))}
+                                <p className={`text-xs sm:text-sm font-semibold tabular-nums ${(acc.type === 'credit_card' ? displayedBalance > 0 : displayedBalance < 0) ? 'text-rose-500' : 'text-foreground'}`}>
+                                  {mask(formatCurrency(displayedBalance, acc.currency, locale))}
                                 </p>
-                                {isCC && acc.available_credit != null ? (
+                                {showsCycleTotal ? (
+                                  <p className="text-[10px] text-muted-foreground">{t('accounts.cycleBillTotal')}</p>
+                                ) : isCC && acc.available_credit != null ? (
                                   <p className="text-[10px] text-muted-foreground tabular-nums">
                                     {t('accounts.availableCredit')}: {mask(formatCurrency(Number(acc.available_credit), acc.currency, locale))}
                                   </p>
