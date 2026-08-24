@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -300,18 +301,34 @@ async def ensure_group_for_connection(
         external_id=external_id,
         institution_id=institution_id,
     )
-    session.add(group)
-    await session.flush()
+    # A concurrent sync (scheduled + manual) can mint the same key; the
+    # savepoint keeps the loser's IntegrityError from poisoning the
+    # session — re-select and use the winner's row.
+    try:
+        async with session.begin_nested():
+            session.add(group)
+            await session.flush()
+    except IntegrityError:
+        result = await session.execute(query)
+        group = result.scalar_one()
     return group
 
 
 async def _unique_default_name(
-    session: AsyncSession, user_id: uuid.UUID, base: str
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    base: str,
+    exclude_group_id: Optional[uuid.UUID] = None,
 ) -> str:
-    """Return `base` or the first free `base N` for this user."""
-    existing_rows = await session.execute(
-        select(AssetGroup.name).where(AssetGroup.user_id == user_id)
-    )
+    """Return `base` or the first free `base N` for this user.
+
+    A group being renamed in place passes its own id so its current name
+    doesn't count as taken.
+    """
+    query = select(AssetGroup.name).where(AssetGroup.user_id == user_id)
+    if exclude_group_id is not None:
+        query = query.where(AssetGroup.id != exclude_group_id)
+    existing_rows = await session.execute(query)
     taken = {row[0] for row in existing_rows.all()}
     if base not in taken:
         return base

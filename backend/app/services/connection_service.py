@@ -280,6 +280,22 @@ async def _sync_holdings(
     # connection-named wallet. Users can rename wallets freely without
     # breaking future syncs (matching is by external_id).
     groups_by_key: dict[Optional[str], AssetGroup] = {}
+    holding_ids = {h.external_id for h in holdings if h.external_id}
+
+    async def _holds_synced_asset(group_id: uuid.UUID) -> bool:
+        """Does this wallet already hold an asset this payload re-syncs?"""
+        if not holding_ids:
+            return False
+        return bool(
+            await session.scalar(
+                select(
+                    exists().where(
+                        Asset.group_id == group_id,
+                        Asset.external_id.in_(holding_ids),
+                    )
+                )
+            )
+        )
 
     async def _wallet_for(holding: HoldingData) -> AssetGroup:
         key = holding.account_external_id
@@ -301,64 +317,85 @@ async def _sync_holdings(
                 _clean_institution_name(holding.account_name)
                 or connection.institution_name
             )
-            if key:
-                # First per-account claim adopts the legacy connection-keyed
-                # wallet instead of minting a new one, so an existing user's
-                # rename/icon/color/position survive the upgrade. Only its
-                # untouched auto-name is refreshed to the account's. Guards,
-                # in order: never adopt when the per-account wallet already
-                # exists (re-keying a twin next to it would trip the unique
-                # (user, source, external_id) index and fail every sync);
-                # never adopt a wallet another bucket of this run claimed;
-                # prefer the current connection key but accept a lone
-                # stale-keyed candidate (external ids can drift across
-                # reconnects); more than one candidate means minting, not
-                # guessing.
-                existing = await session.scalar(
-                    select(AssetGroup.id).where(
-                        AssetGroup.user_id == user_id,
-                        AssetGroup.source == source,
-                        AssetGroup.external_id == wallet_key,
-                    )
+            # The first claim on a wallet key adopts the wallet these
+            # holdings lived in before — the legacy connection-keyed one, or
+            # one left on a stale key by a reconnect — instead of minting a
+            # new row, so an existing user's rename/icon/color/position
+            # survive. Only an untouched auto-name is refreshed. Guards, in
+            # order: never adopt when a wallet already owns the key
+            # (re-keying a twin next to it would trip the unique
+            # (user, source, external_id) index and fail every sync); never
+            # adopt a wallet another bucket of this run claimed; a
+            # stale-keyed candidate must be provably this bank's — still
+            # linked to this connection, or an orphan holding assets this
+            # payload re-syncs (a deleted sibling connection's orphan is
+            # neither); ambiguity means minting, not guessing.
+            existing = await session.scalar(
+                select(AssetGroup.id).where(
+                    AssetGroup.user_id == user_id,
+                    AssetGroup.source == source,
+                    AssetGroup.external_id == wallet_key,
                 )
-                legacy: Optional[AssetGroup] = None
-                if existing is None:
-                    claimed = {g.id for g in groups_by_key.values()}
-                    candidates = [
-                        g
-                        for g in (
-                            await session.execute(
-                                select(AssetGroup).where(
-                                    AssetGroup.user_id == user_id,
-                                    AssetGroup.source == source,
-                                    or_(
-                                        AssetGroup.connection_id == connection.id,
-                                        AssetGroup.connection_id.is_(None),
-                                    ),
-                                    AssetGroup.external_id.isnot(None),
-                                    ~AssetGroup.external_id.contains("::"),
-                                )
+            )
+            legacy: Optional[AssetGroup] = None
+            if existing is None:
+                claimed = {g.id for g in groups_by_key.values()}
+                candidates = [
+                    g
+                    for g in (
+                        await session.execute(
+                            select(AssetGroup).where(
+                                AssetGroup.user_id == user_id,
+                                AssetGroup.source == source,
+                                or_(
+                                    AssetGroup.connection_id == connection.id,
+                                    AssetGroup.connection_id.is_(None),
+                                ),
+                                AssetGroup.external_id.isnot(None),
+                                ~AssetGroup.external_id.contains("::"),
                             )
-                        ).scalars().all()
-                        if g.id not in claimed
-                    ]
-                    exact = [
-                        g for g in candidates if g.external_id == connection.external_id
-                    ]
-                    if exact:
-                        legacy = exact[0]
-                    elif len(candidates) == 1:
-                        legacy = candidates[0]
-                if legacy is not None:
-                    legacy.external_id = wallet_key
-                    legacy.connection_id = connection.id
-                    if _is_auto_wallet_name(legacy.name, connection.institution_name):
-                        legacy.name = await _unique_default_name(
-                            session, user_id, default_name[:95]
                         )
-                    if institution_id is not None:
-                        legacy.institution_id = institution_id
-                    await session.flush()
+                    ).scalars().all()
+                    if g.id not in claimed
+                ]
+                exact = [
+                    g for g in candidates if g.external_id == connection.external_id
+                ]
+                if exact:
+                    legacy = exact[0]
+                else:
+                    ours = [
+                        g for g in candidates if g.connection_id == connection.id
+                    ]
+                    if not ours:
+                        ours = [
+                            g for g in candidates if await _holds_synced_asset(g.id)
+                        ]
+                    if len(ours) == 1:
+                        legacy = ours[0]
+            if legacy is not None:
+                # A concurrent sync can win the key between the guard above
+                # and this flush; fall through to the mint path, which
+                # re-selects the winner's row.
+                try:
+                    async with session.begin_nested():
+                        legacy.external_id = wallet_key
+                        legacy.connection_id = connection.id
+                        if _is_auto_wallet_name(
+                            legacy.name, connection.institution_name
+                        ):
+                            legacy.name = await _unique_default_name(
+                                session,
+                                user_id,
+                                default_name[:95],
+                                exclude_group_id=legacy.id,
+                            )
+                        if institution_id is not None:
+                            legacy.institution_id = institution_id
+                        await session.flush()
+                except IntegrityError:
+                    await session.refresh(legacy)
+                else:
                     groups_by_key[key] = legacy
                     return legacy
             groups_by_key[key] = await ensure_group_for_connection(
