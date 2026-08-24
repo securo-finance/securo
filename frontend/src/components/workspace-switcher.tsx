@@ -362,7 +362,7 @@ export function WorkspaceSwitcher({
                   {currentLang === 'fr' && <Check size={13} className="text-primary" />}
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => i18n.changeLanguage('fr')}
+                  onClick={() => i18n.changeLanguage('nl')}
                   className="flex items-center gap-2"
                 >
                   <span className="flex-1">Nederlands</span>
