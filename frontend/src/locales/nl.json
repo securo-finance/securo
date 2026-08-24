@@ -1005,7 +1005,7 @@
     "importButton": "Importeer {{count}}-transacties",
     "tabTransactions": "Transacties",
     "tabInvestments": "Investeringen",
-    "history": "Geschiedenis importeren",
+    "history": "Importgeschiedenis",
     "noHistory": "Nog geen import",
     "historyDate": "Datum",
     "historyFile": "Bestand",
