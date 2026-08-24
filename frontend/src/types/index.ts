@@ -290,7 +290,7 @@ export interface InstallmentSeriesInput {
   }
   installments: number
   first_installment_status?: 'posted' | 'pending'
-  frequency?: 'monthly' | 'quarterly' | 'weekly' | 'yearly'
+  frequency?: 'monthly' | 'quarterly' | 'semiannual' | 'weekly' | 'biweekly' | 'yearly'
 }
 
 export type ShareType = 'equal' | 'exact' | 'percent'
@@ -536,7 +536,7 @@ export interface RecurringTransaction {
   amount: number
   currency: string
   type: 'debit' | 'credit'
-  frequency: 'monthly' | 'quarterly' | 'weekly' | 'yearly'
+  frequency: 'monthly' | 'quarterly' | 'semiannual' | 'weekly' | 'biweekly' | 'yearly'
   weekend_adjustment: 'none' | 'previous_friday' | 'next_monday'
   day_of_month: number | null
   start_date: string

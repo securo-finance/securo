@@ -129,7 +129,7 @@ class InstallmentSeriesCreate(BaseModel):
     # Period between installments. Defaults to monthly. Matches the
     # recurring-transaction frequencies so "repeat as installments" offers
     # the same cadence choices as a recurring bill.
-    frequency: Literal["monthly", "quarterly", "weekly", "yearly"] = "monthly"
+    frequency: Literal["monthly", "quarterly", "semiannual", "weekly", "biweekly", "yearly"] = "monthly"
 
     @model_validator(mode="after")
     def validate_amounts(self):
