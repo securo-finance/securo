@@ -174,6 +174,7 @@ def serialize_account(
         "minimum_payment": float(acc.minimum_payment) if acc.minimum_payment is not None else None,
         "card_brand": acc.card_brand,
         "card_level": acc.card_level,
+        "shared_balance_group": acc.shared_balance_group,
         "institution_name": _institution_name(connection),
         "institution_logo_url": connection.logo_url if connection else None,
         "available_credit": None,

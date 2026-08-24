@@ -70,6 +70,7 @@ class AccountData:
     # provider exposes one. Disambiguates accounts a bank reports under an
     # identical name (issue #408). Never the full identifier — see mask_last4.
     masked_number: Optional[str] = None
+    shared_balance_group: Optional[str] = None
 
 
 @dataclass
