@@ -64,6 +64,11 @@ dev = [
 [tool.setuptools.packages.find]
 include = ["app*"]
 
+[tool.setuptools.package-data]
+# Ship the category taxonomy in wheels/non-editable installs; without this it
+# only exists in editable (-e) installs and the backend crashes at import.
+app = ["data/*.json"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
