@@ -3789,6 +3789,13 @@ async def test_sync_holdings_never_touches_another_workspaces_wallets(
     )
     assert minted is not None
     assert minted.workspace_id == test_workspace.id
+    # The asset follows its connection into this workspace (leaving the
+    # other workspace's wallet behind); it never straddles the two.
+    moved = await session.scalar(select(Asset).where(Asset.external_id == "h-1"))
+    assert moved is not None
+    assert moved.workspace_id == test_workspace.id
+    assert moved.group_id == minted.id
+    assert moved.is_archived is False
 
 
 @pytest.mark.asyncio
@@ -3965,3 +3972,330 @@ async def test_sync_holdings_survives_losing_the_adoption_rekey_race(
     moved = await session.scalar(select(Asset).where(Asset.external_id == "h-1"))
     assert moved is not None
     assert moved.group_id == twin_id
+
+
+@pytest.mark.asyncio
+async def test_sync_holdings_keyless_bucket_adopts_default_after_rotation(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """After a reconnect rotates the connection key, the keyless bucket must
+    still adopt the customized stale default wallet — pinned against
+    recomputing the split snapshot per bucket, which would see the split
+    wallet re-keyed earlier in the same run and mint instead
+    (review round 7 on #654)."""
+    from app.models.asset_group import AssetGroup
+    from app.services.connection_service import _sync_holdings
+
+    conn = await _make_connection(session, test_user.id, "Rotated Bank")
+    conn_id = conn.id
+
+    session.add(Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn_id, external_id="acc-1", name="IRA",
+        type="investment", balance=Decimal("0"), currency="USD",
+    ))
+    split = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="My IRA", source="test",
+        connection_id=conn_id, external_id="old-ext::acc-1",
+    )
+    default = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="My Misc", source="test",
+        connection_id=conn_id, external_id="old-ext",
+    )
+    session.add_all([split, default])
+    await session.flush()
+    split_id, default_id = split.id, default.id
+    session.add(Asset(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn_id, source="test", external_id="h-2",
+        name="Mystery Fund", type="investment", currency="USD",
+        valuation_method="manual", group_id=default_id,
+    ))
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.get_holdings.return_value = [
+        # The keyed bucket runs first and re-keys the split wallet under
+        # the new prefix — the pre-run snapshot must not see that.
+        HoldingData(
+            external_id="h-1", name="Apple", currency="USD",
+            current_value=Decimal("10"),
+            account_external_id="acc-1", account_name="IRA",
+        ),
+        HoldingData(
+            external_id="h-2", name="Mystery Fund", currency="USD",
+            current_value=Decimal("5"),
+        ),
+    ]
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+    await session.commit()
+
+    rekeyed = await session.get(AssetGroup, split_id)
+    assert rekeyed is not None
+    assert rekeyed.external_id == f"{conn.external_id}::acc-1"
+    adopted = await session.get(AssetGroup, default_id)
+    assert adopted is not None
+    assert adopted.external_id == conn.external_id
+    assert adopted.name == "My Misc"
+    held = await session.scalar(select(Asset).where(Asset.external_id == "h-2"))
+    assert held is not None
+    assert held.group_id == default_id
+
+
+@pytest.mark.asyncio
+async def test_sync_holdings_new_account_after_rotation_mints_its_own_wallet(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A genuinely new account appearing in the first post-rotation sync
+    must mint — old-prefix split wallets prove the legacy era is over, so
+    the stale default belongs to the keyless bucket, not the new account
+    (review round 7 on #654)."""
+    from app.models.asset_group import AssetGroup
+    from app.services.connection_service import _sync_holdings
+
+    conn = await _make_connection(session, test_user.id, "Grown Bank")
+    conn_id = conn.id
+
+    for ext, name in (("acc-1", "IRA"), ("acc-2", "Brokerage")):
+        session.add(Account(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            connection_id=conn_id, external_id=ext, name=name,
+            type="investment", balance=Decimal("0"), currency="USD",
+        ))
+    split = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="My IRA", source="test",
+        connection_id=conn_id, external_id="old-ext::acc-1",
+    )
+    default = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Misc investments", source="test",
+        connection_id=conn_id, external_id="old-ext",
+    )
+    session.add_all([split, default])
+    await session.flush()
+    split_id, default_id = split.id, default.id
+    session.add(Asset(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn_id, source="test", external_id="h-2",
+        name="Mystery Fund", type="investment", currency="USD",
+        valuation_method="manual", group_id=default_id,
+    ))
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.get_holdings.return_value = [
+        # The brand-new account's holding arrives first.
+        HoldingData(
+            external_id="h-3", name="Tesla", currency="USD",
+            current_value=Decimal("20"),
+            account_external_id="acc-2", account_name="Brokerage",
+        ),
+        HoldingData(
+            external_id="h-1", name="Apple", currency="USD",
+            current_value=Decimal("10"),
+            account_external_id="acc-1", account_name="IRA",
+        ),
+        HoldingData(
+            external_id="h-2", name="Mystery Fund", currency="USD",
+            current_value=Decimal("5"),
+        ),
+    ]
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+    await session.commit()
+
+    kept = await session.get(AssetGroup, default_id)
+    assert kept is not None
+    assert kept.external_id == conn.external_id  # adopted by the keyless bucket
+    assert kept.name == "Misc investments"
+    minted = await session.scalar(
+        select(AssetGroup).where(
+            AssetGroup.external_id == f"{conn.external_id}::acc-2")
+    )
+    assert minted is not None
+    assert minted.id not in {split_id, default_id}
+
+
+@pytest.mark.asyncio
+async def test_sync_holdings_two_stale_generations_mean_minting(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Two stale per-account wallets for the same account (two rotations)
+    are ambiguous — mint rather than guess; neither is re-keyed
+    (review round 7 on #654)."""
+    from app.models.asset_group import AssetGroup
+    from app.services.connection_service import _sync_holdings
+
+    conn = await _make_connection(session, test_user.id, "Twice Bank")
+    conn_id = conn.id
+
+    session.add(Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn_id, external_id="acc-1", name="IRA",
+        type="investment", balance=Decimal("0"), currency="USD",
+    ))
+    gen1 = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Gen One", source="test",
+        connection_id=conn_id, external_id="gen1-ext::acc-1",
+    )
+    gen2 = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Gen Two", source="test",
+        connection_id=conn_id, external_id="gen2-ext::acc-1",
+    )
+    session.add_all([gen1, gen2])
+    await session.flush()
+    gen1_id, gen2_id = gen1.id, gen2.id
+    for i, gid in enumerate((gen1_id, gen2_id)):
+        session.add(Asset(
+            user_id=test_user.id, workspace_id=test_workspace.id,
+            connection_id=conn_id, source="test", external_id=f"keep-{i}",
+            name="Keeper", type="investment", currency="USD",
+            valuation_method="manual", group_id=gid,
+        ))
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.get_holdings.return_value = [
+        HoldingData(
+            external_id="h-1", name="Apple", currency="USD",
+            current_value=Decimal("10"),
+            account_external_id="acc-1", account_name="IRA",
+        ),
+    ]
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+    await session.commit()
+
+    for gid, ext in ((gen1_id, "gen1-ext::acc-1"), (gen2_id, "gen2-ext::acc-1")):
+        wallet = await session.get(AssetGroup, gid)
+        assert wallet is not None
+        assert wallet.external_id == ext
+    minted = await session.scalar(
+        select(AssetGroup).where(
+            AssetGroup.external_id == f"{conn.external_id}::acc-1")
+    )
+    assert minted is not None
+    assert minted.id not in {gen1_id, gen2_id}
+
+
+@pytest.mark.asyncio
+async def test_sync_holdings_separator_in_account_id_cannot_steal_sibling_wallet(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """An account id ending in another account's id (ids may contain "::")
+    must not suffix-match the sibling's live wallet — live-prefix wallets
+    are never candidates, and a stale key must parse as exactly one
+    "{prefix}::{key}" (review round 7 on #654)."""
+    from app.models.asset_group import AssetGroup
+    from app.services.connection_service import _sync_holdings
+
+    conn = await _make_connection(session, test_user.id, "Colon Bank")
+    conn_id = conn.id
+
+    for ext, name in (("a::b", "Joint"), ("b", "Solo")):
+        session.add(Account(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            connection_id=conn_id, external_id=ext, name=name,
+            type="investment", balance=Decimal("0"), currency="USD",
+        ))
+    joint = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Our Joint Account", source="test",
+        connection_id=conn_id, external_id=f"{conn.external_id}::a::b",
+    )
+    session.add(joint)
+    await session.flush()
+    joint_id = joint.id
+    session.add(Asset(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn_id, source="test", external_id="h-joint",
+        name="Joint Fund", type="investment", currency="USD",
+        valuation_method="manual", group_id=joint_id,
+    ))
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.get_holdings.return_value = [
+        # The new account whose id is the "::"-tail of its sibling's runs
+        # first — the hostile ordering.
+        HoldingData(
+            external_id="h-solo", name="Solo Fund", currency="USD",
+            current_value=Decimal("10"),
+            account_external_id="b", account_name="Solo",
+        ),
+        HoldingData(
+            external_id="h-joint", name="Joint Fund", currency="USD",
+            current_value=Decimal("20"),
+            account_external_id="a::b", account_name="Joint",
+        ),
+    ]
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+    await session.commit()
+
+    untouched = await session.get(AssetGroup, joint_id)
+    assert untouched is not None
+    assert untouched.external_id == f"{conn.external_id}::a::b"
+    assert untouched.name == "Our Joint Account"
+    solo = await session.scalar(
+        select(AssetGroup).where(AssetGroup.external_id == f"{conn.external_id}::b")
+    )
+    assert solo is not None
+    assert solo.id != joint_id
+    held = await session.scalar(select(Asset).where(Asset.external_id == "h-joint"))
+    assert held is not None
+    assert held.group_id == joint_id
+
+
+@pytest.mark.asyncio
+async def test_ensure_group_relocates_wallet_when_connection_moves_workspaces(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The wallet key is unique per (user, source) across workspaces, so a
+    key match from another workspace means the bank moved — the wallet
+    follows its connection instead of feeding data into a workspace the
+    connection doesn't live in (review round 7 on #654)."""
+    from app.models.asset_group import AssetGroup
+    from app.models.workspace import Workspace, WorkspaceMember
+    from app.services.asset_group_service import ensure_group_for_connection
+
+    conn = await _make_connection(session, test_user.id, "Mover Bank")
+    other_ws = Workspace(
+        id=uuid.uuid4(), name="Old Home", kind="personal",
+        created_by_user_id=test_user.id, default_currency="USD", locale="en-US",
+    )
+    session.add(other_ws)
+    await session.flush()
+    session.add(WorkspaceMember(
+        id=uuid.uuid4(), workspace_id=other_ws.id,
+        user_id=test_user.id, role="owner",
+    ))
+    stranded = AssetGroup(
+        user_id=test_user.id, workspace_id=other_ws.id,
+        name="Moved Wallet", source="test",
+        connection_id=None, external_id="shared-key",
+    )
+    session.add(stranded)
+    await session.commit()
+    stranded_id = stranded.id
+
+    group = await ensure_group_for_connection(
+        session,
+        user_id=test_user.id,
+        connection_id=conn.id,
+        source="test",
+        external_id="shared-key",
+        default_name="Mover Bank",
+        workspace_id=test_workspace.id,
+    )
+
+    assert group.id == stranded_id
+    assert group.connection_id == conn.id
+    assert group.workspace_id == test_workspace.id
+    assert group.name == "Moved Wallet"

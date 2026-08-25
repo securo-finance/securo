@@ -281,19 +281,40 @@ async def _sync_holdings(
     # breaking future syncs (matching is by external_id).
     groups_by_key: dict[Optional[str], AssetGroup] = {}
     holding_ids = {h.external_id for h in holdings if h.external_id}
-    # Snapshot before any bucket runs, so payload order can't change it:
-    # once per-account wallets exist under the current connection key, the
+    # Snapshots before any bucket runs, so payload order can't change them.
+    # Once per-account wallets exist under the current connection key, the
     # plain-keyed wallet is the live connection-default, not a legacy row
-    # awaiting its first split — adopting it would hijack it.
+    # awaiting its first split — adopting it would hijack it. A keyed
+    # bucket applies the stricter test: any split wallet in scope (old
+    # prefixes included) means past the legacy era, so a genuinely new
+    # account must mint even right after a reconnect rotated the prefix —
+    # only the keyless bucket may still adopt the stale default then.
     has_split_wallets = bool(
         await session.scalar(
             select(
                 exists().where(
                     AssetGroup.user_id == user_id,
+                    AssetGroup.workspace_id == connection.workspace_id,
                     AssetGroup.source == source,
                     AssetGroup.external_id.startswith(
                         f"{connection.external_id}::", autoescape=True
                     ),
+                )
+            )
+        )
+    )
+    has_any_split_wallets = has_split_wallets or bool(
+        await session.scalar(
+            select(
+                exists().where(
+                    AssetGroup.user_id == user_id,
+                    AssetGroup.workspace_id == connection.workspace_id,
+                    AssetGroup.source == source,
+                    or_(
+                        AssetGroup.connection_id == connection.id,
+                        AssetGroup.connection_id.is_(None),
+                    ),
+                    AssetGroup.external_id.contains("::"),
                 )
             )
         )
@@ -383,23 +404,41 @@ async def _sync_holdings(
                                     AssetGroup.connection_id.is_(None),
                                 ),
                                 AssetGroup.external_id.isnot(None),
+                                # Wallets keyed under the live prefix belong
+                                # to their own accounts, never to this one.
+                                ~AssetGroup.external_id.startswith(
+                                    f"{connection.external_id}::",
+                                    autoescape=True,
+                                ),
                                 key_shape,
                             )
                         )
                     ).scalars().all()
                     if g.id not in claimed
                 ]
-                suffixed = (
-                    [
-                        g
-                        for g in candidates
-                        if g.external_id and g.external_id.endswith(f"::{key}")
-                    ]
-                    if key
-                    else []
+                # A stale key parses as exactly "{old prefix}::{key}"; a
+                # leftover "::" in the remainder means the tail straddles
+                # another account's key (ids may themselves contain "::").
+                tail = f"::{key}" if key else None
+                suffixed = [
+                    g
+                    for g in candidates
+                    if tail
+                    and g.external_id
+                    and g.external_id.endswith(tail)
+                    and g.external_id[: -len(tail)]
+                    and "::" not in g.external_id[: -len(tail)]
+                ]
+                plain = [
+                    g
+                    for g in candidates
+                    if g.external_id and "::" not in g.external_id
+                ]
+                pool = suffixed or (
+                    []
+                    if (has_any_split_wallets if key else has_split_wallets)
+                    else plain
                 )
-                plain = [g for g in candidates if g not in suffixed]
-                pool = suffixed or ([] if has_split_wallets else plain)
                 exact = [
                     g for g in pool if g.external_id == connection.external_id
                 ]
@@ -446,6 +485,7 @@ async def _sync_holdings(
                 external_id=wallet_key,
                 default_name=default_name,
                 institution_id=institution_id,
+                workspace_id=connection.workspace_id,
             )
         return groups_by_key[key]
 
@@ -516,6 +556,7 @@ async def _sync_holdings(
 
         asset = await _upsert_asset_from_holding(
             session, existing, holding, user_id, connection.id, source,
+            workspace_id=connection.workspace_id,
         )
         # Attach to its institution's wallet. NOTE this deliberately moves
         # holdings between sync-owned wallets, not just out of a null group
@@ -589,6 +630,7 @@ async def _upsert_asset_from_holding(
     user_id: uuid.UUID,
     connection_id: uuid.UUID,
     source: str,
+    workspace_id: Optional[uuid.UUID] = None,
 ) -> Asset:
     """Create or update an Asset from a HoldingData payload.
 
@@ -631,6 +673,12 @@ async def _upsert_asset_from_holding(
     # (e.g. unlink + reconnect). This avoids overriding user-archived assets.
     if asset.is_archived and previous_connection_id != connection_id:
         asset.is_archived = False
+    # Re-adopted across workspaces (bank deleted in one, re-added in the
+    # other): the asset follows its connection; its old wallet stays behind
+    # in the old workspace, so placement is redone by the caller.
+    if workspace_id is not None and asset.workspace_id != workspace_id:
+        asset.workspace_id = workspace_id
+        asset.group_id = None
 
     # Sparse fields — merge, don't clobber. Pluggy sometimes returns
     # these on first sync and null on later ones (e.g. amountOriginal

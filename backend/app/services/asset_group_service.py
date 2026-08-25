@@ -251,6 +251,7 @@ async def ensure_group_for_connection(
     external_id: Optional[str],
     default_name: str,
     institution_id: Optional[uuid.UUID] = None,
+    workspace_id: Optional[uuid.UUID] = None,
 ) -> AssetGroup:
     """Return (creating if absent) the group that owns a connection's assets.
 
@@ -260,6 +261,21 @@ async def ensure_group_for_connection(
     otherwise (user_id, source, connection_id). The name is only applied
     on creation — users are free to rename synced groups later.
     """
+
+    def _align(g: AssetGroup) -> AssetGroup:
+        # Re-link if the connection was recreated. Name is preserved. The
+        # wallet key is unique per (user, source) across workspaces, so a
+        # match from another workspace means the bank moved there — the
+        # wallet follows its connection.
+        if g.connection_id != connection_id:
+            g.connection_id = connection_id
+        if workspace_id is not None and g.workspace_id != workspace_id:
+            g.workspace_id = workspace_id
+        # Backfills groups that predate institution tracking (issue #345).
+        if institution_id is not None and g.institution_id != institution_id:
+            g.institution_id = institution_id
+        return g
+
     # Prefer matching by external_id (Pluggy item id). Falls back to
     # connection_id which is less stable (connection can be deleted/recreated).
     query = select(AssetGroup).where(
@@ -274,13 +290,7 @@ async def ensure_group_for_connection(
     result = await session.execute(query)
     group = result.scalar_one_or_none()
     if group:
-        # Re-link if the connection was recreated. Name is preserved.
-        if group.connection_id != connection_id:
-            group.connection_id = connection_id
-        # Backfills groups that predate institution tracking (issue #345).
-        if institution_id is not None and group.institution_id != institution_id:
-            group.institution_id = institution_id
-        return group
+        return _align(group)
 
     position = await _next_position(session, user_id)
     # Disambiguate when the user has multiple connections from the same
@@ -301,6 +311,8 @@ async def ensure_group_for_connection(
         external_id=external_id,
         institution_id=institution_id,
     )
+    if workspace_id is not None:
+        group.workspace_id = workspace_id
     # A concurrent sync (scheduled + manual) can mint the same key; the
     # savepoint keeps the loser's IntegrityError from poisoning the
     # session — re-select and use the winner's row.
@@ -310,7 +322,7 @@ async def ensure_group_for_connection(
             await session.flush()
     except IntegrityError:
         result = await session.execute(query)
-        group = result.scalar_one()
+        group = _align(result.scalar_one())
     return group
 
 
