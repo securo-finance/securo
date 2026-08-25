@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { MonthPicker } from '@/components/ui/monthpicker'
 import {
   Table,
@@ -34,7 +35,7 @@ import {
   Line,
   XAxis,
   YAxis,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   ResponsiveContainer,
 } from 'recharts'
 import { CheckCircle2, CalendarIcon, Clock, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed } from 'lucide-react'
@@ -390,13 +391,27 @@ export default function DashboardPage() {
   const totalBalance = summary?.total_balance_primary ?? Object.values(summary?.total_balance ?? {}).reduce((a, b) => a + Number(b), 0)
   const projectedBalance = summary?.projected_balance_primary ?? Object.values(summary?.projected_balance ?? {}).reduce((a, b) => a + Number(b), 0)
   const hasProjectedBalance = Math.abs(projectedBalance - totalBalance) >= 0.01
+  const assetsValue = summary?.assets_value_primary ?? Object.values(summary?.assets_value ?? {}).reduce((a, b) => a + b, 0)
 
+  // Available balance: checking/savings accounts only — what's actually
+  // spendable today, as opposed to `totalBalance` (net worth: accounts +
+  // investments - open card bills). Scoped to the active Collection filter,
+  // same as the rest of the dashboard.
+  const availableBalanceAccounts = useMemo(() => {
+    const all = accountsList ?? []
+    const scoped = activeAccountIds ? all.filter((a) => activeAccountIds.includes(a.id)) : all
+    return scoped.filter((a) => a.type === 'checking' || a.type === 'savings')
+  }, [accountsList, activeAccountIds])
+  const availableBalance = availableBalanceAccounts.reduce(
+    (sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0,
+  )
+  const creditCardBalance = (accountsList ?? [])
+    .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type === 'credit_card')
+    .reduce((sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0)
 
   // Savings rate & projection
   const income = Number(summary?.monthly_income_primary ?? summary?.monthly_income ?? 0)
   const expenses = Number(summary?.monthly_expenses_primary ?? summary?.monthly_expenses ?? 0)
-  const projectedIncome = Number(summary?.projected_income_primary ?? summary?.projected_income ?? income)
-  const projectedExpenses = Number(summary?.projected_expenses_primary ?? summary?.projected_expenses ?? expenses)
   const savingsRate = income > 0 ? ((income - expenses) / income) * 100 : 0
   const isCurrentMonth = selectedMonth === currentMonth()
   const daysElapsed = isCurrentMonth ? new Date().getDate() : monthLastDay(selectedMonth)
@@ -625,193 +640,210 @@ export default function DashboardPage() {
         }
       />
 
-      {/* Hero Card: Savings Rate + Uncategorized CTA */}
-      <div className="bg-card rounded-xl border border-border shadow-sm mb-5">
-        <div className="grid grid-cols-1 lg:grid-cols-3">
-          {/* Left: Savings Rate & Metrics */}
-          <div className="lg:col-span-2 px-5 py-4">
-            <div className="flex items-baseline gap-3 mb-3">
-              <div>
-                <p className="text-xs font-medium text-muted-foreground mb-0.5">{t('dashboard.savingsRate')}</p>
-                {summaryLoading ? (
-                  <Skeleton className="h-10 w-28" />
-                ) : (
-                  <p className={`text-4xl font-bold tabular-nums leading-tight ${savingsRateColor}`}>
-                    {savingsRateDisplay}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-6">
-              {/* Balance */}
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-muted-foreground mb-0.5 flex items-center gap-1">
-                  {t('dashboard.totalBalance')}
-                  <span title={t('dashboard.totalBalanceTooltip')} className="inline-flex cursor-help">
-                    <HelpCircle className="h-3 w-3 text-muted-foreground/60" />
-                  </span>
-                </p>
-                {summaryLoading ? (
-                  <Skeleton className="h-7 w-24" />
-                ) : (
-                  <div>
-                    <p className={`text-lg font-bold tabular-nums ${totalBalance < 0 ? 'text-rose-500' : 'text-foreground'}`}>
-                      {mask(formatCurrency(totalBalance, primaryCurrency, locale))}
-                    </p>
-                    {/* Per-currency breakdown when multiple currencies */}
-                    {summary?.total_balance && Object.keys(summary.total_balance).length > 1 && (
-                      <div className="flex flex-wrap items-baseline gap-x-1.5 mt-0.5">
-                        <span className="text-[10px] text-muted-foreground/70">{t('dashboard.byCurrency')}</span>
-                        {Object.entries(summary.total_balance).map(([cur, val]) => (
-                          <span key={cur} className="text-[10px] text-muted-foreground tabular-nums">
-                            {mask(formatCurrency(val, cur, locale))}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {hasProjectedBalance && (
-                      <p className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
-                        {t('dashboard.projectedBalance')} {mask(formatCurrency(projectedBalance, primaryCurrency, locale))}
-                      </p>
-                    )}
-                    {/* Net of pending group shares — show only when
-                        meaningfully nonzero so users without groups
-                        see the same UI as before. */}
-                    {summary && Math.abs(summary.pending_shares_net) >= 0.01 && (
-                      <p
-                        className={`text-[10px] tabular-nums mt-0.5 ${
-                          summary.pending_shares_net < 0 ? 'text-rose-500' : 'text-emerald-600'
-                        }`}
-                        title={t('dashboard.pendingSharesTooltip')}
-                      >
-                        {summary.pending_shares_net < 0
-                          ? t('dashboard.pendingSharesOwe', {
-                              net: mask(formatCurrency(totalBalance + summary.pending_shares_net, primaryCurrency, locale)),
-                              owed: mask(formatCurrency(Math.abs(summary.pending_shares_net), primaryCurrency, locale)),
-                            })
-                          : t('dashboard.pendingSharesOwed', {
-                              net: mask(formatCurrency(totalBalance + summary.pending_shares_net, primaryCurrency, locale)),
-                              owed: mask(formatCurrency(summary.pending_shares_net, primaryCurrency, locale)),
-                            })}
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Income */}
-              <div
-                className="min-w-0 cursor-pointer hover:opacity-70 transition-opacity"
-                onClick={() => setDrillDown({
-                  title: t('dashboard.drillDownIncome', { month: monthLabelStr }),
-                  type: 'credit',
-                  from: monthStart,
-                  to: monthEnd,
-                })}
-              >
-                <p className="text-xs font-medium text-muted-foreground mb-0.5">{t('dashboard.monthlyIncome')}</p>
-                {summaryLoading ? (
-                  <Skeleton className="h-7 w-24" />
-                ) : (
-                  <>
-                    <p className="text-lg font-bold tabular-nums text-emerald-600">
-                      +{mask(formatCurrency(income, primaryCurrency, locale))}
-                    </p>
-                    {Math.abs(projectedIncome - income) >= 0.01 && (
-                      <p className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
-                        {t('dashboard.projectedIncome')} {mask(formatCurrency(projectedIncome, primaryCurrency, locale))}
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
-
-              {/* Expenses */}
-              <div
-                className="min-w-0 cursor-pointer hover:opacity-70 transition-opacity"
-                onClick={() => setDrillDown({
-                  title: t('dashboard.drillDownExpenses', { month: monthLabelStr }),
-                  type: 'debit',
-                  from: monthStart,
-                  to: monthEnd,
-                })}
-              >
-                <p className="text-xs font-medium text-muted-foreground mb-0.5">{t('dashboard.monthlyExpenses')}</p>
-                {summaryLoading ? (
-                  <Skeleton className="h-7 w-24" />
-                ) : (
-                  <>
-                    <p className="text-lg font-bold tabular-nums text-rose-500">
-                      -{mask(formatCurrency(expenses, primaryCurrency, locale))}
-                    </p>
-                    {Math.abs(projectedExpenses - expenses) >= 0.01 && (
-                      <p className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
-                        {t('dashboard.projectedExpenses')} {mask(formatCurrency(projectedExpenses, primaryCurrency, locale))}
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
-
-              {/* Assets Value */}
-              {!summaryLoading && summary?.assets_value && Object.values(summary.assets_value).reduce((a, b) => a + b, 0) > 0 && (
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-muted-foreground mb-0.5">{t('dashboard.assetsValue')}</p>
-                  <p className="text-lg font-bold tabular-nums text-blue-600">
-                    {mask(formatCurrency(summary.assets_value_primary ?? Object.values(summary.assets_value).reduce((a, b) => a + b, 0), primaryCurrency, locale))}
-                  </p>
+      {/* Hero Card: Available Balance + secondary indicators */}
+      <div className="bg-card rounded-xl border border-border shadow-sm mb-5 px-5 pt-5 pb-4">
+        {/* Available balance in checking/savings accounts */}
+        <div className="pb-4 mb-4 border-b border-border">
+          <p className="text-xs font-semibold text-muted-foreground mb-1">{t('dashboard.availableBalance')}</p>
+          {summaryLoading ? (
+            <Skeleton className="h-11 w-40" />
+          ) : (
+            <>
+              <p className={`text-4xl font-bold tabular-nums leading-tight ${availableBalance < 0 ? 'text-rose-500' : 'text-emerald-600'}`}>
+                {mask(formatCurrency(availableBalance, primaryCurrency, locale))}
+              </p>
+              {availableBalanceAccounts.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2.5">
+                  {availableBalanceAccounts.map((acc) => {
+                    const bal = Number(acc.balance_primary ?? acc.current_balance)
+                    return (
+                      <span key={acc.id} className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-muted text-foreground">
+                        {getAccountName(acc)}
+                        <span className={`font-bold tabular-nums ${bal < 0 ? 'text-rose-500' : 'text-emerald-600'}`}>
+                          {mask(`${bal >= 0 ? '+' : ''}${formatCurrency(bal, acc.currency, locale)}`)}
+                        </span>
+                      </span>
+                    )
+                  })}
                 </div>
               )}
-            </div>
+              {/* Net of pending group shares — show only when meaningfully
+                  nonzero so users without groups see the same UI as before. */}
+              {summary && Math.abs(summary.pending_shares_net) >= 0.01 && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <p className={`text-xs tabular-nums mt-2 inline-block cursor-help underline decoration-dotted underline-offset-2 ${
+                      summary.pending_shares_net < 0 ? 'text-rose-500' : 'text-emerald-600'
+                    }`}>
+                      {summary.pending_shares_net < 0
+                        ? t('dashboard.pendingSharesOwe', {
+                            net: mask(formatCurrency(availableBalance + summary.pending_shares_net, primaryCurrency, locale)),
+                            owed: mask(formatCurrency(Math.abs(summary.pending_shares_net), primaryCurrency, locale)),
+                          })
+                        : t('dashboard.pendingSharesOwed', {
+                            net: mask(formatCurrency(availableBalance + summary.pending_shares_net, primaryCurrency, locale)),
+                            owed: mask(formatCurrency(summary.pending_shares_net, primaryCurrency, locale)),
+                          })}
+                    </p>
+                  </TooltipTrigger>
+                  <TooltipContent>{t('dashboard.pendingSharesTooltip')}</TooltipContent>
+                </Tooltip>
+              )}
+            </>
+          )}
+        </div>
 
-            {/* Spending projection */}
-            {projectedSpend !== null && !summaryLoading && (
-              <p className="text-xs text-muted-foreground mt-2">
-                {t('dashboard.spendingProjection', { amount: mask(formatCurrency(projectedSpend, primaryCurrency, locale)) })}
+        {/* Secondary indicators */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-4">
+          {/* Income */}
+          <div
+            className="min-w-0 cursor-pointer hover:opacity-70 transition-opacity"
+            onClick={() => setDrillDown({
+              title: t('dashboard.drillDownIncome', { month: monthLabelStr }),
+              type: 'credit',
+              from: monthStart,
+              to: monthEnd,
+            })}
+          >
+            <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center">{t('dashboard.monthlyIncome')}</p>
+            {summaryLoading ? (
+              <Skeleton className="h-7 w-20" />
+            ) : (
+              <p className="text-2xl font-bold tabular-nums text-emerald-600">
+                +{mask(formatCurrency(income, primaryCurrency, locale))}
               </p>
             )}
           </div>
 
-          {/* Right: Uncategorized CTA */}
-          <div className="lg:col-span-1 px-5 py-4 border-t lg:border-t-0 lg:border-l border-border flex flex-col items-center justify-center text-center">
+          {/* Expenses */}
+          <div
+            className="relative min-w-0 cursor-pointer hover:opacity-70 transition-opacity before:content-[''] before:hidden sm:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border"
+            onClick={() => setDrillDown({
+              title: t('dashboard.drillDownExpenses', { month: monthLabelStr }),
+              type: 'debit',
+              from: monthStart,
+              to: monthEnd,
+            })}
+          >
+            <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center">{t('dashboard.monthlyExpenses')}</p>
             {summaryLoading ? (
-              <Skeleton className="h-16 w-16 rounded-full" />
-            ) : uncategorizedCount > 0 ? (
-              <div
-                className="cursor-pointer hover:opacity-80 transition-opacity"
-                onClick={() => setDrillDown({
-                  title: t('dashboard.drillDownUncategorized'),
-                  uncategorized: true,
-                })}
-              >
-                <div className={`w-14 h-14 rounded-full flex items-center justify-center text-xl font-bold text-white mx-auto mb-2 ${
-                  uncategorizedCount >= 20 ? 'bg-amber-500' : 'bg-amber-400'
-                }`}>
-                  {uncategorizedCount}
-                </div>
-                <p className="text-sm font-medium text-foreground">
-                  {t('dashboard.uncategorizedCta', { count: uncategorizedCount })}
-                </p>
-                {uncategorizedAmount > 0 && (
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {mask(t('dashboard.uncategorizedTotal', { amount: formatCurrency(uncategorizedAmount, userCurrency, locale) }))}
-                  </p>
-                )}
-                <p className="text-sm font-semibold text-amber-600 mt-2 hover:underline">
-                  {t('dashboard.categorizeNow')} &rarr;
-                </p>
-              </div>
+              <Skeleton className="h-7 w-20" />
             ) : (
-              <div>
-                <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto mb-1.5" />
-                <p className="text-sm font-semibold text-foreground">{t('dashboard.allCategorized')}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{t('dashboard.allCategorizedDesc')}</p>
-              </div>
+              <p className="text-2xl font-bold tabular-nums text-rose-500">
+                -{mask(formatCurrency(expenses, primaryCurrency, locale))}
+              </p>
+            )}
+          </div>
+
+          {/* Net worth */}
+          <div className="relative min-w-0 before:content-[''] before:hidden sm:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border">
+            <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center gap-1">
+              {t('dashboard.netWorth')}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-muted text-muted-foreground hover:bg-primary hover:text-primary-foreground transition-colors text-[9px] font-bold leading-none"
+                  >
+                    i
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent className="w-56">
+                  <p>{t('dashboard.netWorthTooltip')}</p>
+                  <div className="mt-1.5 pt-1.5 border-t border-background/20 space-y-0.5">
+                    <div className="flex justify-between gap-3">
+                      <span>{t('dashboard.availableBalance')}</span>
+                      <span>{mask(formatCurrency(availableBalance, primaryCurrency, locale))}</span>
+                    </div>
+                    {assetsValue > 0 && (
+                      <div className="flex justify-between gap-3">
+                        <span>{t('dashboard.assetsValue')}</span>
+                        <span>{mask(formatCurrency(assetsValue, primaryCurrency, locale))}</span>
+                      </div>
+                    )}
+                    {creditCardBalance !== 0 && (
+                      <div className="flex justify-between gap-3">
+                        <span>{t('dashboard.creditCardBalance')}</span>
+                        <span>{mask(formatCurrency(creditCardBalance, primaryCurrency, locale))}</span>
+                      </div>
+                    )}
+                    {hasProjectedBalance && (
+                      <div className="flex justify-between gap-3">
+                        <span>{t('dashboard.projectedBalance')}</span>
+                        <span>{mask(formatCurrency(projectedBalance, primaryCurrency, locale))}</span>
+                      </div>
+                    )}
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </p>
+            {summaryLoading ? (
+              <Skeleton className="h-7 w-24" />
+            ) : (
+              <p className={`text-2xl font-bold tabular-nums ${totalBalance < 0 ? 'text-rose-500' : 'text-blue-600'}`}>
+                {mask(formatCurrency(totalBalance, primaryCurrency, locale))}
+              </p>
+            )}
+          </div>
+
+          {/* Savings rate */}
+          <div className="relative min-w-0 before:content-[''] before:hidden sm:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border">
+            <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center">{t('dashboard.savingsRate')}</p>
+            {summaryLoading ? (
+              <Skeleton className="h-7 w-16" />
+            ) : (
+              <>
+                <p className={`text-2xl font-bold tabular-nums ${savingsRateColor}`}>
+                  {savingsRateDisplay}
+                </p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">{t('dashboard.savingsRateCaption')}</p>
+              </>
             )}
           </div>
         </div>
+
+        {/* Spending projection */}
+        {projectedSpend !== null && !summaryLoading && (
+          <p className="text-xs text-muted-foreground mt-3">
+            {t('dashboard.spendingProjection', { amount: mask(formatCurrency(projectedSpend, primaryCurrency, locale)) })}
+          </p>
+        )}
       </div>
+
+      {/* Uncategorized banner */}
+      {!summaryLoading && (
+        uncategorizedCount > 0 ? (
+          <div
+            className="flex items-center justify-between gap-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg px-4 py-2.5 mb-5 cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors"
+            onClick={() => setDrillDown({
+              title: t('dashboard.drillDownUncategorized'),
+              uncategorized: true,
+            })}
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className={`shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold text-white ${
+                uncategorizedCount >= 20 ? 'bg-amber-500' : 'bg-amber-400'
+              }`}>
+                {uncategorizedCount}
+              </span>
+              <span className="text-sm text-amber-900 dark:text-amber-200 truncate">
+                {t('dashboard.uncategorizedCta', { count: uncategorizedCount })}
+                {uncategorizedAmount > 0 && (
+                  <span className="text-amber-700/70 dark:text-amber-300/70"> · {mask(formatCurrency(uncategorizedAmount, userCurrency, locale))}</span>
+                )}
+              </span>
+            </div>
+            <span className="shrink-0 text-sm font-semibold text-amber-600 dark:text-amber-400 hover:underline">
+              {t('dashboard.categorizeNow')} &rarr;
+            </span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg px-4 py-2.5 mb-5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+            <span className="text-sm text-emerald-900 dark:text-emerald-200">{t('dashboard.allCategorized')}</span>
+          </div>
+        )
+      )}
 
       {/* Charts: Category Spending Bars + Balance Flow */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5" style={{ gridAutoRows: 'minmax(380px, auto)' }}>
@@ -989,7 +1021,7 @@ export default function DashboardPage() {
                       (dataMax: number) => Math.ceil(dataMax / 100) * 100,
                     ]}
                   />
-                  <Tooltip
+                  <RechartsTooltip
                     formatter={(value, name) => [
                       value !== null ? (privacyMode ? MASK : formatCurrency(Number(value), userCurrency, locale)) : '\u2014',
                       name === 'current' ? monthLabel(selectedMonth, uiLocale).split(' ')[0] : monthLabel(prevMonth, uiLocale).split(' ')[0],
