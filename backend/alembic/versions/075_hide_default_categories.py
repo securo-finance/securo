@@ -1,7 +1,7 @@
 """add hidden flags to categories and category groups
 
-Revision ID: 074
-Revises: 073
+Revision ID: 075
+Revises: 074
 Create Date: 2026-07-30
 
 Users cannot delete seeded system categories/groups because historical
@@ -13,8 +13,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "074"
-down_revision: Union[str, None] = "073"
+revision: str = "075"
+down_revision: Union[str, None] = "074"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
