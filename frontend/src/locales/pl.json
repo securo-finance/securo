@@ -240,6 +240,8 @@
     "netWorth": "Majątek netto",
     "netWorthTooltip": "Konta + inwestycje, pomniejszone o otwarte rachunki karty kredytowej.",
     "creditCardBalance": "Otwarte rachunki karty kredytowej",
+    "zeroBalanceAccountsHidden": "+{{count}} bez salda",
+    "zeroBalanceAccountsTooltip": "Konta z zerowym saldem, ukryte na liście powyżej:",
     "pendingSharesOwe": "Netto {{net}} po długach grupowych ({{owed}} oczekuje)",
     "pendingSharesOwed": "Netto {{net}}, w tym {{owed}} należne Tobie",
     "pendingSharesTooltip": "Odzwierciedla to, co jesteś winien / co jest Ci winne w grupach, przed rozliczeniem.",

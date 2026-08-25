@@ -240,6 +240,8 @@
     "netWorth": "Net Worth",
     "netWorthTooltip": "Accounts + investments, minus open credit card bills.",
     "creditCardBalance": "Open credit card bills",
+    "zeroBalanceAccountsHidden": "+{{count}} zero-balance",
+    "zeroBalanceAccountsTooltip": "Zero-balance accounts, hidden from the list above:",
     "pendingSharesOwe": "Net {{net}} after group debts ({{owed}} pending)",
     "pendingSharesOwed": "Net {{net}} including {{owed}} owed to you",
     "pendingSharesTooltip": "Reflects what you owe / are owed across your groups, before any settlement.",

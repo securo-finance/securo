@@ -240,6 +240,8 @@
     "netWorth": "Valeur nette",
     "netWorthTooltip": "Comptes + investissements, moins les factures de carte ouvertes.",
     "creditCardBalance": "Factures de carte ouvertes",
+    "zeroBalanceAccountsHidden": "+{{count}} sans solde",
+    "zeroBalanceAccountsTooltip": "Comptes à solde nul, masqués de la liste ci-dessus :",
     "pendingSharesOwe": "Net {{net}} après dettes de groupe ({{owed}} en attente)",
     "pendingSharesOwed": "Net {{net}} incluant {{owed}} qui vous sont dus",
     "pendingSharesTooltip": "Reflète ce que vous devez / ce qu'on vous doit dans vos groupes, avant tout règlement.",

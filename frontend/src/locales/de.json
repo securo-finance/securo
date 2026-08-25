@@ -240,6 +240,8 @@
     "netWorth": "Nettovermögen",
     "netWorthTooltip": "Konten + Investitionen, abzüglich offener Kreditkartenrechnungen.",
     "creditCardBalance": "Offene Kreditkartenrechnungen",
+    "zeroBalanceAccountsHidden": "+{{count}} ohne Saldo",
+    "zeroBalanceAccountsTooltip": "Konten mit Nullsaldo, in der Liste oben ausgeblendet:",
     "pendingSharesOwe": "Netto {{net}} nach Gruppenschulden ({{owed}} ausstehend)",
     "pendingSharesOwed": "Netto {{net}} einschließlich {{owed}}, die dir geschuldet werden",
     "pendingSharesTooltip": "Spiegelt wider, was du in deinen Gruppen schuldest / dir geschuldet wird, vor einer Abrechnung.",

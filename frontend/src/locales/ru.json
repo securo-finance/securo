@@ -240,6 +240,8 @@
     "netWorth": "Собственный капитал",
     "netWorthTooltip": "Счета + инвестиции, за вычетом открытых счетов по кредитной карте.",
     "creditCardBalance": "Открытые счета по кредитной карте",
+    "zeroBalanceAccountsHidden": "+{{count}} без баланса",
+    "zeroBalanceAccountsTooltip": "Счета с нулевым балансом, скрытые из списка выше:",
     "pendingSharesOwe": "Чистый {{net}} после групповых долгов ({{owed}} ожидает)",
     "pendingSharesOwed": "Чистый {{net}} включая {{owed}} задолженность вам",
     "pendingSharesTooltip": "Отражает, что вы должны / вам должны по вашим группам, до урегулирования.",

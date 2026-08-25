@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
-import { getAccountName } from '@/lib/account-utils'
+import { getAccountName, sumAccountBalances } from '@/lib/account-utils'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
@@ -219,14 +219,7 @@ export function AppLayout() {
       .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance)),
     [sharedCreditCycleBalances, visibleAccounts],
   )
-  const sharedBalanceGroups = new Set<string>()
-  const totalBalance = visibleAccounts.reduce((sum, a) => {
-    if (a.shared_balance_group) {
-      if (sharedBalanceGroups.has(a.shared_balance_group)) return sum
-      sharedBalanceGroups.add(a.shared_balance_group)
-    }
-    return sum + Number(a.balance_primary ?? a.current_balance)
-  }, 0)
+  const totalBalance = sumAccountBalances(visibleAccounts)
   const versionA11yLabel = t('app.versionAriaLabel', { version: APP_VERSION })
 
   return (

@@ -240,6 +240,8 @@
     "netWorth": "Patrimonio netto",
     "netWorthTooltip": "Conti + investimenti, meno le fatture della carta di credito aperte.",
     "creditCardBalance": "Fatture della carta aperte",
+    "zeroBalanceAccountsHidden": "+{{count}} senza saldo",
+    "zeroBalanceAccountsTooltip": "Conti con saldo zero, nascosti dall'elenco sopra:",
     "pendingSharesOwe": "Netto {{net}} dopo i debiti di gruppo ({{owed}} in sospeso)",
     "pendingSharesOwed": "Netto {{net}} incluso {{owed}} che ti è dovuto",
     "pendingSharesTooltip": "Riflette ciò che devi / ti è dovuto nei tuoi gruppi, prima di qualsiasi saldo.",

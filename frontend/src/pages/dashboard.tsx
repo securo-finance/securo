@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { getAccountName } from '@/lib/account-utils'
+import { getAccountName, sumAccountBalances } from '@/lib/account-utils'
 import { currentMonth, shiftMonth, monthLastDay, monthLabel, monthRange } from '@/lib/month-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
@@ -353,18 +353,24 @@ export default function DashboardPage() {
   // Available balance: checking/savings accounts only — what's actually
   // spendable today, as opposed to `totalBalance` (net worth: accounts +
   // investments - open card bills). Scoped to the active Collection filter,
-  // same as the rest of the dashboard.
+  // same as the rest of the dashboard. Sums via sumAccountBalances so a
+  // shared credit line (or, in principle, a shared cash balance) is only
+  // counted once, matching the sidebar total.
   const availableBalanceAccounts = useMemo(() => {
     const all = accountsList ?? []
     const scoped = activeAccountIds ? all.filter((a) => activeAccountIds.includes(a.id)) : all
     return scoped.filter((a) => a.type === 'checking' || a.type === 'savings')
   }, [accountsList, activeAccountIds])
-  const availableBalance = availableBalanceAccounts.reduce(
-    (sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0,
+  const availableBalance = sumAccountBalances(availableBalanceAccounts)
+  const nonZeroBalanceAccounts = availableBalanceAccounts.filter(
+    (a) => Math.abs(Number(a.balance_primary ?? a.current_balance)) >= 0.01,
   )
-  const creditCardBalance = (accountsList ?? [])
-    .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type === 'credit_card')
-    .reduce((sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0)
+  const zeroBalanceAccounts = availableBalanceAccounts.filter(
+    (a) => Math.abs(Number(a.balance_primary ?? a.current_balance)) < 0.01,
+  )
+  const creditCardBalance = sumAccountBalances(
+    (accountsList ?? []).filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type === 'credit_card'),
+  )
 
   // Savings rate & projection
   const income = Number(summary?.monthly_income_primary ?? summary?.monthly_income ?? 0)
@@ -604,9 +610,9 @@ export default function DashboardPage() {
               <p className={`text-4xl font-bold tabular-nums leading-tight ${availableBalance < 0 ? 'text-rose-500' : 'text-emerald-600'}`}>
                 {mask(formatCurrency(availableBalance, primaryCurrency, locale))}
               </p>
-              {availableBalanceAccounts.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-2.5">
-                  {availableBalanceAccounts.map((acc) => {
+              {(nonZeroBalanceAccounts.length > 0 || zeroBalanceAccounts.length > 0) && (
+                <div className="flex flex-wrap items-center gap-2 mt-2.5">
+                  {nonZeroBalanceAccounts.map((acc) => {
                     const bal = Number(acc.balance_primary ?? acc.current_balance)
                     return (
                       <span key={acc.id} className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-muted text-foreground">
@@ -617,6 +623,26 @@ export default function DashboardPage() {
                       </span>
                     )
                   })}
+                  {zeroBalanceAccounts.length > 0 && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="text-xs font-medium text-muted-foreground underline decoration-dotted underline-offset-2 cursor-help"
+                        >
+                          {t('dashboard.zeroBalanceAccountsHidden', { count: zeroBalanceAccounts.length })}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="w-64">
+                        <p>{t('dashboard.zeroBalanceAccountsTooltip')}</p>
+                        <ul className="mt-1.5 pt-1.5 border-t border-background/20 space-y-0.5">
+                          {zeroBalanceAccounts.map((acc) => (
+                            <li key={acc.id}>{getAccountName(acc)}</li>
+                          ))}
+                        </ul>
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
                 </div>
               )}
               {/* Net of pending group shares — show only when meaningfully
@@ -700,29 +726,29 @@ export default function DashboardPage() {
                     i
                   </button>
                 </TooltipTrigger>
-                <TooltipContent className="w-56">
+                <TooltipContent className="w-64">
                   <p>{t('dashboard.netWorthTooltip')}</p>
                   <div className="mt-1.5 pt-1.5 border-t border-background/20 space-y-0.5">
                     <div className="flex justify-between gap-3">
                       <span>{t('dashboard.availableBalance')}</span>
-                      <span>{mask(formatCurrency(availableBalance, primaryCurrency, locale))}</span>
+                      <span className="shrink-0 tabular-nums whitespace-nowrap">{mask(formatCurrency(availableBalance, primaryCurrency, locale))}</span>
                     </div>
                     {assetsValue > 0 && (
                       <div className="flex justify-between gap-3">
                         <span>{t('dashboard.assetsValue')}</span>
-                        <span>{mask(formatCurrency(assetsValue, primaryCurrency, locale))}</span>
+                        <span className="shrink-0 tabular-nums whitespace-nowrap">{mask(formatCurrency(assetsValue, primaryCurrency, locale))}</span>
                       </div>
                     )}
                     {creditCardBalance !== 0 && (
                       <div className="flex justify-between gap-3">
                         <span>{t('dashboard.creditCardBalance')}</span>
-                        <span>{mask(formatCurrency(creditCardBalance, primaryCurrency, locale))}</span>
+                        <span className="shrink-0 tabular-nums whitespace-nowrap">{mask(formatCurrency(creditCardBalance, primaryCurrency, locale))}</span>
                       </div>
                     )}
                     {hasProjectedBalance && (
                       <div className="flex justify-between gap-3">
                         <span>{t('dashboard.projectedBalance')}</span>
-                        <span>{mask(formatCurrency(projectedBalance, primaryCurrency, locale))}</span>
+                        <span className="shrink-0 tabular-nums whitespace-nowrap">{mask(formatCurrency(projectedBalance, primaryCurrency, locale))}</span>
                       </div>
                     )}
                   </div>

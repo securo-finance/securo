@@ -240,6 +240,8 @@
     "netWorth": "Património líquido",
     "netWorthTooltip": "Contas + investimentos, descontando faturas de cartão em aberto.",
     "creditCardBalance": "Faturas de cartão em aberto",
+    "zeroBalanceAccountsHidden": "+{{count}} sem saldo",
+    "zeroBalanceAccountsTooltip": "Contas com saldo zero, ocultas da lista acima:",
     "pendingSharesOwe": "Líquido {{net}} após dívidas de grupo ({{owed}} pendente)",
     "pendingSharesOwed": "Líquido {{net}} incluindo {{owed}} a receber",
     "pendingSharesTooltip": "Reflete o que deves ou vais receber em grupos, antes de qualquer acerto.",

@@ -3,6 +3,25 @@ export function getAccountName(account: { name: string; display_name?: string | 
 }
 
 /**
+ * Sum accounts' balances in the primary currency, counting each
+ * `shared_balance_group` only once. Some providers expose several accounts
+ * backed by one consolidated balance (e.g. two cards on the same credit
+ * line) — summing their raw balances individually double-counts that debt.
+ */
+export function sumAccountBalances(
+  accounts: readonly { balance_primary: number | null; current_balance: number; shared_balance_group?: string | null }[],
+): number {
+  const seenGroups = new Set<string>()
+  return accounts.reduce((sum, a) => {
+    if (a.shared_balance_group) {
+      if (seenGroups.has(a.shared_balance_group)) return sum
+      seenGroups.add(a.shared_balance_group)
+    }
+    return sum + Number(a.balance_primary ?? a.current_balance)
+  }, 0)
+}
+
+/**
  * Return a presentation-only copy ordered by the name users see.
  * The input is never mutated, which keeps React Query's cached account list intact.
  */
