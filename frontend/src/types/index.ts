@@ -95,8 +95,14 @@ export interface Category {
   icon: string
   color: string
   is_system: boolean
+  is_hidden: boolean
   treat_as_transfer: boolean
   is_ignored: boolean
+}
+
+/** Active rules that assign a category, used when retiring one. */
+export interface CategoryRuleUsage {
+  rules: { id: string; name: string }[]
 }
 
 export interface CategoryGroup {
@@ -107,6 +113,7 @@ export interface CategoryGroup {
   color: string
   position: number
   is_system: boolean
+  is_hidden: boolean
   categories: Category[]
 }
 

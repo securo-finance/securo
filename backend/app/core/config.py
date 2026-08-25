@@ -2,7 +2,7 @@ from functools import lru_cache
 from os import getenv
 from pathlib import Path
 
-from pydantic import SecretStr
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Use the same environment variable that systemd uses: https://systemd.io/CREDENTIALS/
@@ -22,6 +22,7 @@ class Settings(BaseSettings):
 
     # Auth
     secret_key: SecretStr = SecretStr("change-me-in-production")
+    local_auth_enabled: bool = True
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24  # 24 hours
 
@@ -119,6 +120,26 @@ class Settings(BaseSettings):
     # Set TESOURO_DIRETO_ENABLED=false to fully disable (e.g. to avoid the
     # external dependency on the Brazilian government endpoint).
     tesouro_direto_enabled: bool = True
+
+    @property
+    def oidc_login_available(self) -> bool:
+        return bool(self.oidc_enabled and self.oidc_client_id and self.oidc_discovery_url)
+
+    @model_validator(mode="after")
+    def validate_auth_settings(self) -> "Settings":
+        if not self.local_auth_enabled and not self.oidc_login_available:
+            missing = []
+            if not self.oidc_enabled:
+                missing.append("OIDC_ENABLED=true")
+            if not self.oidc_client_id:
+                missing.append("OIDC_CLIENT_ID")
+            if not self.oidc_discovery_url:
+                missing.append("OIDC_DISCOVERY_URL")
+            raise ValueError(
+                "LOCAL_AUTH_ENABLED=false requires a complete OIDC configuration; "
+                f"missing: {', '.join(missing)}"
+            )
+        return self
 
     # The CWD-relative ".env" is kept for backward compatibility; the anchored
     # backend/.env guarantees the API and the Celery worker/beat resolve the

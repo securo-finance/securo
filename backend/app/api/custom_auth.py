@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_jwt_strategy, get_user_manager
+from app.core.auth_policy import require_local_auth_enabled
 from app.core.database import get_async_session
 from app.core.redis import get_redis
 from app.models.passkey import UserPasskey
@@ -16,7 +17,7 @@ router = APIRouter()
 TEMP_TOKEN_TTL = 300  # 5 minutes
 
 
-@router.post("/login")
+@router.post("/login", dependencies=[Depends(require_local_auth_enabled)])
 async def login(
     credentials: OAuth2PasswordRequestForm = Depends(),
     user_manager=Depends(get_user_manager),

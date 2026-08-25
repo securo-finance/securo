@@ -149,6 +149,27 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
         yield ac
 
 
+@pytest.fixture
+def oidc_only_settings():
+    """Enable a complete OIDC-only policy and restore only changed keys."""
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    previous = {
+        "oidc_enabled": settings.oidc_enabled,
+        "oidc_discovery_url": settings.oidc_discovery_url,
+        "oidc_client_id": settings.oidc_client_id,
+        "local_auth_enabled": settings.local_auth_enabled,
+    }
+    settings.oidc_enabled = True
+    settings.oidc_discovery_url = "https://id.example.com/.well-known/openid-configuration"
+    settings.oidc_client_id = "securo"
+    settings.local_auth_enabled = False
+    yield settings
+    for key, value in previous.items():
+        setattr(settings, key, value)
+
+
 @pytest_asyncio.fixture
 async def test_user(session: AsyncSession, clean_db) -> User:
     """Create a test user with an auto-created Personal workspace.

@@ -200,13 +200,14 @@ export interface RuleDialogInitialData {
 }
 
 export function RuleDialog({
-  open, onClose, rule, categories, categoryGroups, accounts, payees, onSave, loading, initialData,
+  open, onClose, rule, categories, categoryGroups, currentCategories = [], accounts, payees, onSave, loading, initialData,
 }: {
   open: boolean
   onClose: () => void
   rule: Rule | null
   categories: Category[]
   categoryGroups: CategoryGroup[]
+  currentCategories?: Category[]
   accounts: { id: string; name: string; display_name?: string | null }[]
   payees: Payee[]
   onSave: (data: Partial<Rule>) => void
@@ -461,6 +462,9 @@ export function RuleDialog({
                             onChange={(val) => updateAction(i, 'value', val)}
                             categories={categories}
                             groups={categoryGroups}
+                            currentCategory={currentCategories.find(
+                              (category) => category.id === action.value
+                            )}
                             placeholder={t('rules.selectCategory')}
                             className={`${SELECT_CLASS} w-full`}
                           />

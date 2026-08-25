@@ -28,6 +28,7 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
+import { findCategoryReference } from '@/lib/category-reference-utils'
 import { formatCurrency } from '@/lib/format'
 
 function currentMonth() {
@@ -79,6 +80,13 @@ export default function BudgetsPage() {
     queryFn: categoriesApi.list,
   })
 
+  // Budgets can point at a hidden default category. The picker below only
+  // offers visible ones, but existing rows still have to name what they budget.
+  const { data: allCategoriesList } = useQuery({
+    queryKey: ['categories', 'management'],
+    queryFn: categoriesApi.listIncludingHidden,
+  })
+
   const { data: groupsList } = useQuery({
     queryKey: ['category-groups'],
     queryFn: groupsApi.list,
@@ -119,13 +127,15 @@ export default function BudgetsPage() {
     },
   })
 
+  const displayCategories = allCategoriesList ?? categoriesList ?? []
+
   const getCategoryDisplay = (categoryId: string) => {
-    const cat = categoriesList?.find((c) => c.id === categoryId)
-    if (!cat) return <span>{categoryId}</span>
+    const category = findCategoryReference(displayCategories, categoryId)
+    if (!category) return <span>{categoryId}</span>
     return (
       <span className="flex items-center gap-2">
-        <CategoryIcon icon={cat.icon} color={cat.color} size="sm" />
-        <span>{cat.name}</span>
+        <CategoryIcon icon={category.icon} color={category.color} size="sm" />
+        <span>{category.name}</span>
       </span>
     )
   }
@@ -333,7 +343,8 @@ export default function BudgetsPage() {
             ? 'budgets.confirmDeleteRecurringDescription'
             : 'budgets.confirmDeleteDescription',
           {
-            name: categoriesList?.find((category) => category.id === deletingBudget?.category_id)?.name ?? t('budgets.category'),
+            name: findCategoryReference(displayCategories, deletingBudget?.category_id ?? '')?.name
+              ?? t('budgets.category'),
           },
         )}
         isPending={deleteMutation.isPending}

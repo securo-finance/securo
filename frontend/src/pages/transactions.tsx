@@ -457,6 +457,14 @@ export default function TransactionsPage() {
     queryFn: categoriesApi.list,
   })
 
+  // A category filter survives in the URL, so it can outlive the category
+  // being hidden. Kept apart from the list that feeds the picker.
+  const { data: allCategoriesList } = useQuery({
+    queryKey: ['categories', 'management'],
+    queryFn: categoriesApi.listIncludingHidden,
+    enabled: filterCategoryIds.length > 0,
+  })
+
   const { data: categoryGroupsList } = useQuery({
     queryKey: ['categoryGroups'],
     queryFn: categoryGroupsApi.list,
@@ -1398,6 +1406,7 @@ export default function TransactionsPage() {
         }}
         accounts={accountsList ?? []}
         categories={categoriesList ?? []}
+        referenceCategories={allCategoriesList}
         categoryGroups={categoryGroupsList ?? []}
         payees={payeesList ?? []}
         groups={allGroups ?? []}

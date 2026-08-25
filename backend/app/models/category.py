@@ -25,6 +25,7 @@ class Category(Base):
     icon: Mapped[str] = mapped_column(String(50), default="circle-help")
     color: Mapped[str] = mapped_column(String(7), default="#6B7280")
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     # Flag for "money that moves rather than money earned or spent".
     # Transactions in these categories are excluded from income/expense

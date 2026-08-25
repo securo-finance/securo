@@ -17,6 +17,7 @@
     "addMember": "Add member",
     "addMemberTitle": "Add member",
     "addMemberDescription": "Invite an existing user by email, or create a new account by providing a password.",
+    "addMemberDescriptionExistingOnly": "Invite an existing user by email.",
     "role": "Role",
     "roleOwner": "Owner",
     "roleEditor": "Editor",
@@ -167,6 +168,8 @@
     "loginDescription": "Sign in to access your account",
     "invalidCredentials": "Invalid email or password",
     "serverError": "Couldn't connect to the server. Check your connection or that the backend is running, then try again.",
+    "authConfigUnavailable": "Authentication options could not be loaded. Local login remains available; the server will enforce its configured policy.",
+    "noAuthMethodConfigured": "No authentication method is configured. Contact the administrator and check the OIDC settings.",
     "noAccount": "Don't have an account?",
     "hasAccount": "Already have an account?",
     "changePassword": "Change password",
@@ -963,7 +966,15 @@
     "treatAsTransferBadge": "Transfer",
     "ignoreTransfer": "Ignore this transfer",
     "ignoreTransferDesc": "Ignored transactions won't show on income or expense reports.",
-    "ignoreTransferBadge": "Ignore"
+    "ignoreTransferBadge": "Ignore",
+    "hiddenScopeDescription": "Hidden defaults are removed from category pickers and are no longer assigned by rules. Existing transactions, budgets, dashboards, and reports continue to use them.",
+    "hiddenBadge": "Hidden",
+    "showDefault": "Show default category",
+    "hideDefault": "Hide default category",
+    "hideWithRulesTitle": "Hide {{name}}?",
+    "hideWithRulesDescription": "{{count}} active rules assign this category. Hiding it already stops them from categorizing new transactions. Turning them off stops the whole rule, including any payee or notes it also sets.",
+    "hideKeepRules": "Hide only",
+    "hideAndTurnOffRules": "Hide and turn off the rules"
   },
   "groups": {
     "title": "Category Groups",
@@ -980,7 +991,10 @@
     "confirmDeleteTitle": "Delete category group?",
     "noGroup": "No group",
     "systemGroup": "System group",
-    "confirmDeleteDescription": "The category group \"{{name}}\" will be deleted. Its categories will remain and become ungrouped. This action cannot be undone."
+    "confirmDeleteDescription": "The category group \"{{name}}\" will be deleted. Its categories will remain and become ungrouped. This action cannot be undone.",
+    "hiddenBadge": "Hidden",
+    "showDefault": "Show default group",
+    "hideDefault": "Hide default group"
   },
   "import": {
     "acceptedFormats": "Accepted formats: OFX, CSV, QIF, CAMT",

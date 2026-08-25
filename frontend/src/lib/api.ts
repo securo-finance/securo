@@ -8,6 +8,7 @@ import type {
   PasskeyOptionsResponse,
   AppSetting,
   Category,
+  CategoryRuleUsage,
   CategoryGroup,
   BankConnection,
   ConnectionSettings,
@@ -261,8 +262,11 @@ export const auth = {
     })
     return data
   },
-  oidcConfig: async (): Promise<{ enabled: boolean; provider_name: string }> => {
-    const { data } = await api.get('/auth/oidc/config')
+  oidcConfig: async (): Promise<{ enabled: boolean; provider_name: string; local_auth_enabled: boolean }> => {
+    // The login card blocks on this call while it decides which sign-in
+    // methods to offer, so a hung request must fail fast and let the caller
+    // fall back instead of leaving the page stuck on its loading state.
+    const { data } = await api.get('/auth/oidc/config', { timeout: 5000 })
     return data
   },
 }
@@ -273,12 +277,26 @@ export const categories = {
     const { data } = await api.get('/categories')
     return data
   },
+  listIncludingHidden: async (): Promise<Category[]> => {
+    const { data } = await api.get('/categories', { params: { include_hidden: true } })
+    return data
+  },
   create: async (category: Partial<Category>): Promise<Category> => {
     const { data } = await api.post('/categories', category)
     return data
   },
-  update: async (id: string, category: Partial<Category>): Promise<Category> => {
-    const { data } = await api.patch(`/categories/${id}`, category)
+  update: async (
+    id: string,
+    category: Partial<Category>,
+    options?: { deactivateRules?: boolean },
+  ): Promise<Category> => {
+    const { data } = await api.patch(`/categories/${id}`, category, {
+      params: options?.deactivateRules ? { deactivate_rules: true } : undefined,
+    })
+    return data
+  },
+  ruleUsage: async (id: string): Promise<CategoryRuleUsage> => {
+    const { data } = await api.get(`/categories/${id}/rule-usage`)
     return data
   },
   delete: async (id: string): Promise<void> => {
@@ -290,6 +308,10 @@ export const categories = {
 export const categoryGroups = {
   list: async (): Promise<CategoryGroup[]> => {
     const { data } = await api.get('/category-groups')
+    return data
+  },
+  listIncludingHidden: async (): Promise<CategoryGroup[]> => {
+    const { data } = await api.get('/category-groups', { params: { include_hidden: true } })
     return data
   },
   create: async (group: Partial<CategoryGroup>): Promise<CategoryGroup> => {
