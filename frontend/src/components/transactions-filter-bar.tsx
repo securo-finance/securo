@@ -80,6 +80,10 @@ interface TransactionsFilterBarProps {
   onClearAll: () => void
   accounts: Account[]
   categories: Category[]
+  /** Catalog used only to label active filters, so a filter kept in the URL
+   * still names its category after that category is hidden. Selectable
+   * options always come from `categories`. */
+  referenceCategories?: Category[]
   categoryGroups: CategoryGroup[]
   payees: Payee[]
   groups: Group[]
@@ -119,6 +123,7 @@ export function TransactionsFilterBar({
   onClearAll,
   accounts,
   categories,
+  referenceCategories,
   categoryGroups,
   payees,
   groups,
@@ -181,8 +186,9 @@ export function TransactionsFilterBar({
   const categoryById = useMemo(() => {
     const map = new Map<string, Category>()
     categories.forEach((c) => map.set(c.id, c))
+    referenceCategories?.forEach((c) => map.set(c.id, c))
     return map
-  }, [categories])
+  }, [categories, referenceCategories])
 
   const selectedPayee = useMemo(
     () => payees.find((p) => p.id === filterPayee),

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import UserManager, current_active_user, current_superuser, get_user_manager
+from app.core.auth_policy import require_local_auth_enabled
 from app.core.database import get_async_session
 from app.models.user import User
 from app.schemas.admin import (
@@ -45,7 +46,12 @@ async def list_users(
     )
 
 
-@router.post("/users", response_model=AdminUserRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/users",
+    response_model=AdminUserRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_local_auth_enabled)],
+)
 async def create_user(
     data: AdminUserCreate,
     session: AsyncSession = Depends(get_async_session),
@@ -78,6 +84,8 @@ async def update_user(
     session: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(current_superuser),
 ):
+    if data.password is not None:
+        require_local_auth_enabled()
     try:
         user = await admin_service.update_user(session, user_id, data, current_user.id)
     except ValueError as e:

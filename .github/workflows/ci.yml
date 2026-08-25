@@ -103,7 +103,7 @@ jobs:
           echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
 
       - name: Update coverage badge
-        if: github.ref == 'refs/heads/main' && steps.backend-changes.outputs.run_backend == 'true'
+        if: github.repository == 'securo-finance/securo' && github.ref == 'refs/heads/main' && steps.backend-changes.outputs.run_backend == 'true'
         uses: schneegans/dynamic-badges-action@v1.9.0
         with:
           auth: ${{ secrets.GIST_TOKEN }}

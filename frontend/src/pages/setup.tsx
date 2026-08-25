@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useTheme } from 'next-themes'
-import { setup } from '@/lib/api'
+import { setup, auth as authApi } from '@/lib/api'
 import { resolveSupportedLang, SUPPORTED_LANGS } from '@/lib/i18n'
 import { useAuth } from '@/contexts/auth-context'
 import { Button } from '@/components/ui/button'
@@ -42,8 +42,11 @@ export default function SetupPage() {
       navigate('/', { replace: true })
       return
     }
-    setup.status().then(({ has_users }) => {
-      if (has_users) {
+    Promise.all([
+      setup.status(),
+      authApi.oidcConfig().catch(() => null),
+    ]).then(([{ has_users }, authConfig]) => {
+      if (has_users || authConfig?.local_auth_enabled === false) {
         navigate('/login', { replace: true })
       } else {
         setChecking(false)

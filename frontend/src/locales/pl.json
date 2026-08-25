@@ -17,6 +17,7 @@
     "addMember": "Dodaj członka",
     "addMemberTitle": "Dodaj członka",
     "addMemberDescription": "Zaproś istniejącego użytkownika przez e-mail albo utwórz nowe konto, podając hasło.",
+    "addMemberDescriptionExistingOnly": "Zaproś istniejącego użytkownika przez e-mail.",
     "role": "Rola",
     "roleOwner": "Właściciel",
     "roleEditor": "Edytor",
@@ -167,6 +168,8 @@
     "loginDescription": "Zaloguj się, aby uzyskać dostęp do konta",
     "invalidCredentials": "Nieprawidłowy e-mail lub hasło",
     "serverError": "Nie można połączyć się z serwerem. Sprawdź połączenie lub czy backend działa, a następnie spróbuj ponownie.",
+    "authConfigUnavailable": "Nie udało się wczytać opcji uwierzytelniania. Logowanie lokalne pozostaje dostępne; serwer zastosuje skonfigurowane zasady.",
+    "noAuthMethodConfigured": "Nie skonfigurowano żadnej metody uwierzytelniania. Skontaktuj się z administratorem i sprawdź ustawienia OIDC.",
     "noAccount": "Nie masz konta?",
     "hasAccount": "Masz już konto?",
     "changePassword": "Zmień hasło",
@@ -1023,7 +1026,15 @@
     "treatAsTransferBadge": "Transfer",
     "ignoreTransfer": "Ignoruj ten transfer",
     "ignoreTransferDesc": "Ignorowane transakcje nie pojawią się w raportach przychodów ani wydatków.",
-    "ignoreTransferBadge": "Ignoruj"
+    "ignoreTransferBadge": "Ignoruj",
+    "hiddenScopeDescription": "Ukryte kategorie domyślne są usuwane z list wyboru i nie są już przypisywane przez reguły. Istniejące transakcje, budżety, pulpity i raporty nadal z nich korzystają.",
+    "hiddenBadge": "Ukryta",
+    "showDefault": "Pokaż domyślną kategorię",
+    "hideDefault": "Ukryj domyślną kategorię",
+    "hideWithRulesTitle": "Ukryć {{name}}?",
+    "hideWithRulesDescription": "Tę kategorię przypisuje {{count}} aktywnych reguł. Ukrycie jej już powstrzymuje je przed kategoryzowaniem nowych transakcji. Wyłączenie zatrzymuje całą regułę, w tym odbiorcę i notatki, które również ustawia.",
+    "hideKeepRules": "Tylko ukryj",
+    "hideAndTurnOffRules": "Ukryj i wyłącz reguły"
   },
   "groups": {
     "title": "Grupy kategorii",
@@ -1040,7 +1051,10 @@
     "confirmDeleteTitle": "Usunąć grupę kategorii?",
     "noGroup": "Brak grupy",
     "systemGroup": "Grupa systemowa",
-    "confirmDeleteDescription": "Grupa kategorii „{{name}}” zostanie usunięta. Jej kategorie pozostaną i staną się niezgrupowane. Tej operacji nie można cofnąć."
+    "confirmDeleteDescription": "Grupa kategorii „{{name}}” zostanie usunięta. Jej kategorie pozostaną i staną się niezgrupowane. Tej operacji nie można cofnąć.",
+    "hiddenBadge": "Ukryta",
+    "showDefault": "Pokaż domyślną grupę",
+    "hideDefault": "Ukryj domyślną grupę"
   },
   "import": {
     "acceptedFormats": "Akceptowane formaty: OFX, CSV, QIF, CAMT",

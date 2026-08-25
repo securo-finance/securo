@@ -17,6 +17,7 @@
     "addMember": "Adicionar membro",
     "addMemberTitle": "Adicionar membro",
     "addMemberDescription": "Convida um utilizador existente através do e-mail ou cria uma nova conta ao definir uma palavra-passe.",
+    "addMemberDescriptionExistingOnly": "Convide um utilizador existente pelo e-mail.",
     "role": "Função",
     "roleOwner": "Proprietário",
     "roleEditor": "Editor",
@@ -167,6 +168,8 @@
     "loginDescription": "Inicia sessão para aceder à tua conta",
     "invalidCredentials": "E-mail ou palavra-passe incorretos",
     "serverError": "Não foi possível ligar ao servidor. Verifica a tua ligação ou confirma que o backend está em execução e tenta novamente.",
+    "authConfigUnavailable": "Não foi possível carregar as opções de autenticação. O início de sessão local continua disponível; o servidor aplicará a política configurada.",
+    "noAuthMethodConfigured": "Não está configurado nenhum método de autenticação. Contacta o administrador e verifica as definições de OIDC.",
     "noAccount": "Ainda não tens conta?",
     "hasAccount": "Já tens conta?",
     "changePassword": "Alterar palavra-passe",
@@ -963,7 +966,15 @@
     "treatAsTransferBadge": "Transferência",
     "ignoreTransfer": "Ignorar Transações",
     "ignoreTransferDesc": "Transações ignoradas não contarão como receita ou despesa nos relatórios.",
-    "ignoreTransferBadge": "Ignorado"
+    "ignoreTransferBadge": "Ignorado",
+    "hiddenScopeDescription": "As categorias predefinidas ocultas deixam de aparecer nos seletores e deixam de ser atribuídas por regras. As transações, os orçamentos, os painéis e os relatórios existentes continuam a utilizá-las.",
+    "hiddenBadge": "Oculta",
+    "showDefault": "Mostrar categoria predefinida",
+    "hideDefault": "Ocultar categoria predefinida",
+    "hideWithRulesTitle": "Ocultar {{name}}?",
+    "hideWithRulesDescription": "{{count}} regras ativas atribuem esta categoria. Ocultá-la já impede que categorizem novas transações. Desligá-las para a regra inteira, incluindo a pessoa ou as notas que também define.",
+    "hideKeepRules": "Apenas ocultar",
+    "hideAndTurnOffRules": "Ocultar e desligar as regras"
   },
   "groups": {
     "title": "Grupos de Categorias",
@@ -980,7 +991,10 @@
     "confirmDeleteTitle": "Eliminar grupo de categorias?",
     "noGroup": "Sem grupo",
     "systemGroup": "Grupo do sistema",
-    "confirmDeleteDescription": "O grupo de categorias \"{{name}}\" será eliminado. As suas categorias manter-se-ão e ficarão sem grupo. Esta ação não pode ser desfeita."
+    "confirmDeleteDescription": "O grupo de categorias \"{{name}}\" será eliminado. As suas categorias manter-se-ão e ficarão sem grupo. Esta ação não pode ser desfeita.",
+    "hiddenBadge": "Oculto",
+    "showDefault": "Mostrar grupo predefinido",
+    "hideDefault": "Ocultar grupo predefinido"
   },
   "import": {
     "acceptedFormats": "Formatos aceitos: OFX, CSV, QIF, CAMT",

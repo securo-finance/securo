@@ -5,10 +5,11 @@ import { useDateLocale, useDisplayLocale } from '@/hooks/use-display-locale'
 import { formatCurrency } from '@/lib/format'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
-import { currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi } from '@/lib/api'
+import { currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { normalizeRuleMatchValue } from '@/lib/rule-match-utils'
+import { findCategoryReference, getRuleCategoryId } from '@/lib/category-reference-utils'
 import { flattenConditions, hasConditionGroups } from '@/lib/rule-conditions'
 import { cn, normalizeText } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -64,10 +65,6 @@ type PendingInstallmentEdit = {
 
 function isImageType(contentType: string): boolean {
   return contentType.startsWith('image/')
-}
-
-function getRuleCategoryId(rule: Rule): string | null {
-  return rule.actions.find(action => action.op === 'set_category' && action.value)?.value ?? null
 }
 
 function canExtendRuleFromTransaction(rule: Rule): boolean {
@@ -1041,6 +1038,7 @@ function TransactionForm({
             onChange={setCategoryId}
             categories={categories}
             groups={categoryGroups}
+            currentCategory={seed?.category}
             allowNone={true}
             className="bg-card"
           />
@@ -1393,6 +1391,16 @@ function AddTransactionToRuleDialog({
   const [openCombobox, setOpenCombobox] = useState(false)
   const [matchOp, setMatchOp] = useState<'contains' | 'starts_with'>('contains')
   const [matchText, setMatchText] = useState(transactionDescription)
+  const { data: allCategories } = useQuery({
+    queryKey: ['categories', 'management'],
+    queryFn: categoriesApi.listIncludingHidden,
+  })
+  const { data: allCategoryGroups } = useQuery({
+    queryKey: ['categoryGroups', 'management'],
+    queryFn: categoryGroupsApi.listIncludingHidden,
+  })
+  const displayCategories = allCategories ?? categories
+  const displayCategoryGroups = allCategoryGroups ?? categoryGroups
 
   const effectiveRuleId = ruleId && rules.some(rule => rule.id === ruleId)
     ? ruleId
@@ -1407,11 +1415,11 @@ function AddTransactionToRuleDialog({
       let categoryName = t('transactions.uncategorized')
 
       if (categoryId !== 'uncategorized') {
-        const category = categories.find(c => c.id === categoryId)
+        const category = findCategoryReference(displayCategories, categoryId)
         if (category) {
           categoryName = category.name
           if (category.group_id) {
-            const group = categoryGroups.find(g => g.id === category.group_id)
+            const group = displayCategoryGroups.find(g => g.id === category.group_id)
             if (group) {
               categoryName = `${group.name} > ${category.name}`
             }
@@ -1434,7 +1442,7 @@ function AddTransactionToRuleDialog({
       categoryId,
       ...data,
     }))
-  }, [rules, categories, categoryGroups, t])
+  }, [rules, displayCategories, displayCategoryGroups, t])
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
