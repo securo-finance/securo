@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Literal, Optional
 
@@ -270,6 +270,11 @@ class BankProvider(ABC):
     def flow_type(self) -> str:
         """Connection flow type: 'oauth' for redirect-based, 'widget' for embedded widget."""
         return "oauth"
+
+    @property
+    def sync_stale_threshold(self) -> timedelta:
+        """Minimum age before the background scheduler re-syncs this provider."""
+        return timedelta(hours=4)
 
     @property
     def redirect_uri(self) -> str:

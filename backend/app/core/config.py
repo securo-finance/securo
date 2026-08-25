@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     simplefin_enabled: bool = False
     simplefin_api_url: str = "https://beta-bridge.simplefin.org"
 
+    # GoCardless Bank Account Data (UK/EU banks, formerly Nordigen)
+    gocardless_secret_id: str = ""
+    gocardless_secret_key: SecretStr = SecretStr("")
+    gocardless_api_url: str = "https://bankaccountdata.gocardless.com/api/v2"
+    gocardless_oauth_redirect_uri: str = ""  # empty derives from FRONTEND_URL
+
     # Frontend
     frontend_url: str = "http://localhost:5173"
 

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.worker import celery_app
 from app.core.config import get_settings
 from app.models.bank_connection import BankConnection
+from app.providers import get_provider
 from app.providers.base import ProviderNotConfiguredError
 from app.services import connection_service
 
@@ -33,7 +34,10 @@ async def _sync_all() -> int:
         async with session_maker() as session:
             result = await session.execute(
                 select(
-                    BankConnection.id, BankConnection.user_id, BankConnection.last_sync_at
+                    BankConnection.id,
+                    BankConnection.user_id,
+                    BankConnection.last_sync_at,
+                    BankConnection.provider,
                 ).where(
                     BankConnection.status.in_(["active", "error"]),
                     (BankConnection.last_sync_at < cutoff)
@@ -48,7 +52,19 @@ async def _sync_all() -> int:
             cutoff.isoformat(),
         )
 
-        for conn_id, user_id, last_sync in connections:
+        for conn_id, user_id, last_sync, provider_name in connections:
+            threshold = STALE_THRESHOLD
+            try:
+                threshold = get_provider(provider_name).sync_stale_threshold
+            except ValueError:
+                pass
+
+            if last_sync is not None:
+                if last_sync.tzinfo is None:
+                    last_sync = last_sync.replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) - last_sync < threshold:
+                    continue
+
             try:
                 logger.info("Syncing connection %s (last_sync=%s)", conn_id, last_sync)
                 await _sync_one(session_maker, conn_id, user_id)

@@ -740,6 +740,9 @@
       "enable_banking": {
         "description": "Banki europejskie przez open banking PSD2"
       },
+      "gocardless": {
+        "description": "Banki brytyjskie i europejskie przez GoCardless Bank Account Data"
+      },
       "simplefin": {
         "description": "Banki w USA i międzynarodowe przez SimpleFIN Bridge"
       }

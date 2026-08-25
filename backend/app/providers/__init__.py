@@ -41,6 +41,14 @@ KNOWN_PROVIDERS = [
         "requires_institution_select": False,
         "supports_asset_sync": True,
     },
+    {
+        "name": "gocardless",
+        "display_name": "GoCardless",
+        "description": "UK and European banks via GoCardless Bank Account Data",
+        "flow_type": "oauth",
+        "requires_institution_select": True,
+        "supports_asset_sync": False,
+    },
 ]
 
 
@@ -93,6 +101,14 @@ def _auto_register_providers() -> None:
     if settings.simplefin_enabled:
         from app.providers.simplefin import SimpleFinProvider
         register_provider("simplefin", SimpleFinProvider)
+
+    if (
+        settings.gocardless_secret_id
+        and settings.gocardless_secret_key.get_secret_value()
+    ):
+        from app.providers.gocardless import GoCardlessProvider
+
+        register_provider("gocardless", GoCardlessProvider)
 
 
 _auto_register_providers()
