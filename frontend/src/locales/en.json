@@ -260,7 +260,7 @@
     "spendingByCategory": "Spending by Category",
     "monthlyTrend": "Monthly Trend",
     "budgetVsActual": "Budget vs Actual",
-    "balanceFlow": "Balance Evolution",
+    "balanceFlow": "Balance Flow",
     "balanceFlowVsPrev": "In {{month}} on day {{day}}: {{amount}} ({{delta}})",
     "balancePeriodVariation": "Period change",
     "balanceCurrentMonthLegend": "Current month",

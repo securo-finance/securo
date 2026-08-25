@@ -260,7 +260,7 @@
     "spendingByCategory": "Gastos por categoría",
     "monthlyTrend": "Tendencia mensual",
     "budgetVsActual": "Presupuesto vs Real",
-    "balanceFlow": "Evolución del saldo",
+    "balanceFlow": "Flujo de saldo",
     "balanceFlowVsPrev": "En {{month}} día {{day}}: {{amount}} ({{delta}})",
     "balancePeriodVariation": "Variación del período",
     "balanceCurrentMonthLegend": "Mes actual",

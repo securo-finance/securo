@@ -260,7 +260,7 @@
     "spendingByCategory": "Uitgaven per categorie",
     "monthlyTrend": "Maandelijkse trend",
     "budgetVsActual": "Budget versus Werkelijk",
-    "balanceFlow": "Saldo-ontwikkeling",
+    "balanceFlow": "Saldoverloop",
     "balanceFlowVsPrev": "In {{month}} op dag {{day}}: {{amount}} ({{delta}})",
     "balancePeriodVariation": "Wijziging in de periode",
     "balanceCurrentMonthLegend": "Huidige maand",

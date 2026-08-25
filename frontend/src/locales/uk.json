@@ -260,7 +260,7 @@
     "spendingByCategory": "Витрати за категоріями",
     "monthlyTrend": "Місячна динаміка",
     "budgetVsActual": "Бюджет vs Факт",
-    "balanceFlow": "Динаміка балансу",
+    "balanceFlow": "Рух балансу",
     "balanceFlowVsPrev": "У {{month}} на {{day}} день: {{amount}} ({{delta}})",
     "balancePeriodVariation": "Зміна за період",
     "balanceCurrentMonthLegend": "Поточний місяць",
