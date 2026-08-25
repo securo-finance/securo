@@ -281,6 +281,23 @@ async def _sync_holdings(
     # breaking future syncs (matching is by external_id).
     groups_by_key: dict[Optional[str], AssetGroup] = {}
     holding_ids = {h.external_id for h in holdings if h.external_id}
+    # Snapshot before any bucket runs, so payload order can't change it:
+    # once per-account wallets exist under the current connection key, the
+    # plain-keyed wallet is the live connection-default, not a legacy row
+    # awaiting its first split — adopting it would hijack it.
+    has_split_wallets = bool(
+        await session.scalar(
+            select(
+                exists().where(
+                    AssetGroup.user_id == user_id,
+                    AssetGroup.source == source,
+                    AssetGroup.external_id.startswith(
+                        f"{connection.external_id}::", autoescape=True
+                    ),
+                )
+            )
+        )
+    )
 
     async def _holds_synced_asset(group_id: uuid.UUID) -> bool:
         """Does this wallet already hold an asset this payload re-syncs?"""
@@ -319,13 +336,18 @@ async def _sync_holdings(
             )
             # The first claim on a wallet key adopts the wallet these
             # holdings lived in before — the legacy connection-keyed one, or
-            # one left on a stale key by a reconnect — instead of minting a
-            # new row, so an existing user's rename/icon/color/position
+            # one left on a stale key by a reconnect (plain or per-account:
+            # a "…::{account}" suffix match is this very account's wallet
+            # under an older connection key) — instead of minting a new
+            # row, so an existing user's rename/icon/color/position
             # survive. Only an untouched auto-name is refreshed. Guards, in
             # order: never adopt when a wallet already owns the key
             # (re-keying a twin next to it would trip the unique
             # (user, source, external_id) index and fail every sync); never
-            # adopt a wallet another bucket of this run claimed; a
+            # adopt a wallet another bucket of this run claimed; never
+            # reach into another workspace; a plain candidate only counts
+            # before the first split — afterwards it is the live
+            # connection-default wallet, not a legacy awaiting adoption; a
             # stale-keyed candidate must be provably this bank's — still
             # linked to this connection, or an orphan holding assets this
             # payload re-syncs (a deleted sibling connection's orphan is
@@ -340,36 +362,54 @@ async def _sync_holdings(
             legacy: Optional[AssetGroup] = None
             if existing is None:
                 claimed = {g.id for g in groups_by_key.values()}
+                key_shape = ~AssetGroup.external_id.contains("::")
+                if key:
+                    key_shape = or_(
+                        key_shape,
+                        AssetGroup.external_id.endswith(
+                            f"::{key}", autoescape=True
+                        ),
+                    )
                 candidates = [
                     g
                     for g in (
                         await session.execute(
                             select(AssetGroup).where(
                                 AssetGroup.user_id == user_id,
+                                AssetGroup.workspace_id == connection.workspace_id,
                                 AssetGroup.source == source,
                                 or_(
                                     AssetGroup.connection_id == connection.id,
                                     AssetGroup.connection_id.is_(None),
                                 ),
                                 AssetGroup.external_id.isnot(None),
-                                ~AssetGroup.external_id.contains("::"),
+                                key_shape,
                             )
                         )
                     ).scalars().all()
                     if g.id not in claimed
                 ]
+                suffixed = (
+                    [
+                        g
+                        for g in candidates
+                        if g.external_id and g.external_id.endswith(f"::{key}")
+                    ]
+                    if key
+                    else []
+                )
+                plain = [g for g in candidates if g not in suffixed]
+                pool = suffixed or ([] if has_split_wallets else plain)
                 exact = [
-                    g for g in candidates if g.external_id == connection.external_id
+                    g for g in pool if g.external_id == connection.external_id
                 ]
                 if exact:
                     legacy = exact[0]
                 else:
-                    ours = [
-                        g for g in candidates if g.connection_id == connection.id
-                    ]
+                    ours = [g for g in pool if g.connection_id == connection.id]
                     if not ours:
                         ours = [
-                            g for g in candidates if await _holds_synced_asset(g.id)
+                            g for g in pool if await _holds_synced_asset(g.id)
                         ]
                     if len(ours) == 1:
                         legacy = ours[0]
@@ -413,10 +453,12 @@ async def _sync_holdings(
     # disconnect left behind (connection_id went NULL via SET NULL) — their
     # re-adopted assets must still split into per-account wallets instead of
     # staying stranded. An asset sitting in one may be re-attributed below;
-    # a user's custom wallet (source "manual") is never touched.
+    # a user's custom wallet (source "manual") and other workspaces' wallets
+    # are never touched.
     sync_owned_rows = await session.execute(
-        select(AssetGroup.id).where(
+        select(AssetGroup.id, AssetGroup.external_id).where(
             AssetGroup.user_id == user_id,
+            AssetGroup.workspace_id == connection.workspace_id,
             AssetGroup.source == source,
             or_(
                 AssetGroup.connection_id == connection.id,
@@ -424,7 +466,13 @@ async def _sync_holdings(
             ),
         )
     )
-    sync_owned_group_ids = {row[0] for row in sync_owned_rows.all()}
+    sync_owned = sync_owned_rows.all()
+    sync_owned_group_ids = {row[0] for row in sync_owned}
+    # Per-account wallets, by their "…::…" keys. A holding that lost its
+    # account hint must not drain one of these into the default bucket — a
+    # single degraded payload would empty them and the reap would delete
+    # the user's customization with them.
+    split_group_ids = {row[0] for row in sync_owned if row[1] and "::" in row[1]}
 
     # Also pull orphans (connection_id IS NULL) with the same source —
     # those are assets archived by a prior disconnect. Re-matching on
@@ -476,9 +524,15 @@ async def _sync_holdings(
         # user made themselves ("US Stocks", source "manual") is never
         # touched.
         group = await _wallet_for(holding)
+        hint_lost = (
+            holding.account_external_id is None
+            and asset.group_id in split_group_ids
+        )
         if (
-            asset.group_id is None or asset.group_id in sync_owned_group_ids
-        ) and asset.group_id != group.id:
+            not hint_lost
+            and (asset.group_id is None or asset.group_id in sync_owned_group_ids)
+            and asset.group_id != group.id
+        ):
             asset.group_id = group.id
         # Seed a historical value at purchase_date so users get a real
         # evolution curve from day one — not just today's snapshot.

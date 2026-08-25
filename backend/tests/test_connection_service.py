@@ -3452,3 +3452,516 @@ async def test_sync_holdings_reaps_emptied_unreferenced_wallet(
     await session.commit()
 
     assert await session.get(AssetGroup, old_wallet_id) is None
+
+
+@pytest.mark.asyncio
+async def test_sync_holdings_readopts_split_wallet_after_reconnect(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The keys this PR itself writes must survive a delete/re-add cycle: an
+    orphaned per-account wallet on an old connection prefix is matched by its
+    "::{account}" suffix and re-keyed in place — not excluded, re-minted, and
+    reaped (review round 6 on #654)."""
+    from app.models.asset_group import AssetGroup
+    from app.services.connection_service import _sync_holdings
+
+    conn = await _make_connection(session, test_user.id, "Rotate Bank")
+    conn_id = conn.id
+
+    session.add(Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn_id, external_id="acc-1", name="IRA",
+        type="investment", balance=Decimal("0"), currency="USD",
+    ))
+    orphan = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="My IRA", source="test",
+        connection_id=None, external_id="old-conn-ext::acc-1",
+    )
+    session.add(orphan)
+    await session.flush()
+    orphan_id = orphan.id
+    stranded = Asset(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=None, source="test", external_id="h-1",
+        name="Apple", type="investment", currency="USD",
+        valuation_method="manual", group_id=orphan_id, is_archived=True,
+    )
+    session.add(stranded)
+    await session.commit()
+    stranded_id = stranded.id
+
+    mock_provider = AsyncMock()
+    mock_provider.get_holdings.return_value = [
+        HoldingData(
+            external_id="h-1", name="Apple", currency="USD",
+            current_value=Decimal("10"),
+            account_external_id="acc-1", account_name="IRA",
+        ),
+    ]
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+    await session.commit()
+
+    wallet = await session.get(AssetGroup, orphan_id)
+    assert wallet is not None
+    assert wallet.external_id == f"{conn.external_id}::acc-1"
+    assert wallet.connection_id == conn_id
+    assert wallet.name == "My IRA"  # customization kept
+    moved = await session.get(Asset, stranded_id)
+    assert moved is not None
+    assert moved.group_id == orphan_id
+    assert moved.is_archived is False
+
+
+@pytest.mark.asyncio
+async def test_sync_holdings_rekeys_split_wallet_after_inplace_reconnect(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A reconnect-in-place rotates connection.external_id but keeps the
+    wallet linked; the suffix match re-keys it under the new prefix
+    (review round 6 on #654)."""
+    from app.models.asset_group import AssetGroup
+    from app.services.connection_service import _sync_holdings
+
+    conn = await _make_connection(session, test_user.id, "Inplace Bank")
+    conn_id = conn.id
+
+    session.add(Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn_id, external_id="acc-1", name="401(k)",
+        type="investment", balance=Decimal("0"), currency="USD",
+    ))
+    stale = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="My 401k", icon="target", source="test",
+        connection_id=conn_id, external_id="pre-rotation-ext::acc-1",
+    )
+    session.add(stale)
+    await session.commit()
+    stale_id = stale.id
+
+    mock_provider = AsyncMock()
+    mock_provider.get_holdings.return_value = [
+        HoldingData(
+            external_id="h-1", name="Apple", currency="USD",
+            current_value=Decimal("10"),
+            account_external_id="acc-1", account_name="401(k)",
+        ),
+    ]
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+    await session.commit()
+
+    wallet = await session.get(AssetGroup, stale_id)
+    assert wallet is not None
+    assert wallet.external_id == f"{conn.external_id}::acc-1"
+    assert wallet.name == "My 401k"
+    assert wallet.icon == "target"
+
+
+@pytest.mark.asyncio
+async def test_sync_holdings_hint_loss_does_not_drain_split_wallets(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """One payload with the account ids missing must not empty the
+    per-account wallets into the default bucket (the reap would then delete
+    them); when the hints return, everything is back to steady state
+    (review round 6 on #654)."""
+    from app.models.asset_group import AssetGroup
+    from app.services.connection_service import _sync_holdings
+
+    conn = await _make_connection(session, test_user.id, "Hint Bank")
+    conn_id = conn.id
+
+    session.add(Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn_id, external_id="acc-1", name="IRA",
+        type="investment", balance=Decimal("0"), currency="USD",
+    ))
+    wallet = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="My IRA", source="test",
+        connection_id=conn_id, external_id=f"{conn.external_id}::acc-1",
+    )
+    session.add(wallet)
+    await session.flush()
+    wallet_id = wallet.id
+    asset = Asset(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn_id, source="test", external_id="h-1",
+        name="Apple", type="investment", currency="USD",
+        valuation_method="manual", group_id=wallet_id,
+    )
+    session.add(asset)
+    await session.commit()
+    asset_id = asset.id
+
+    degraded = AsyncMock()
+    degraded.get_holdings.return_value = [
+        HoldingData(
+            external_id="h-1", name="Apple", currency="USD",
+            current_value=Decimal("10"),
+        ),
+    ]
+    with patch("app.services.connection_service.get_provider", return_value=degraded):
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+    await session.commit()
+
+    survivor = await session.get(AssetGroup, wallet_id)
+    assert survivor is not None
+    assert survivor.external_id == f"{conn.external_id}::acc-1"
+    assert survivor.name == "My IRA"
+    held = await session.get(Asset, asset_id)
+    assert held is not None
+    assert held.group_id == wallet_id  # not drained into the default bucket
+
+    healthy = AsyncMock()
+    healthy.get_holdings.return_value = [
+        HoldingData(
+            external_id="h-1", name="Apple", currency="USD",
+            current_value=Decimal("11"),
+            account_external_id="acc-1", account_name="IRA",
+        ),
+    ]
+    with patch("app.services.connection_service.get_provider", return_value=healthy):
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+    await session.commit()
+
+    # Steady state restored: the per-account wallet still owns the asset and
+    # the transient default wallet was reaped once emptied of purpose.
+    held = await session.get(Asset, asset_id)
+    assert held is not None
+    assert held.group_id == wallet_id
+    wallets = (
+        await session.execute(select(AssetGroup).where(
+            AssetGroup.user_id == test_user.id, AssetGroup.source == "test"))
+    ).scalars().all()
+    assert {w.external_id for w in wallets} == {f"{conn.external_id}::acc-1"}
+
+
+@pytest.mark.asyncio
+async def test_sync_holdings_new_account_first_keeps_default_wallet(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Once per-account wallets exist, the plain-keyed wallet is the live
+    connection-default — a new account's bucket running first must mint its
+    own wallet, not adopt and re-key the default (review round 6 on #654)."""
+    from app.models.asset_group import AssetGroup
+    from app.services.connection_service import _sync_holdings
+
+    conn = await _make_connection(session, test_user.id, "Grow Bank")
+    conn_id = conn.id
+
+    for ext, name in (("acc-1", "IRA"), ("acc-2", "Brokerage")):
+        session.add(Account(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            connection_id=conn_id, external_id=ext, name=name,
+            type="investment", balance=Decimal("0"), currency="USD",
+        ))
+    split = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="IRA", source="test",
+        connection_id=conn_id, external_id=f"{conn.external_id}::acc-1",
+    )
+    default = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Misc investments", source="test",
+        connection_id=conn_id, external_id=conn.external_id,
+    )
+    session.add_all([split, default])
+    await session.flush()
+    split_id, default_id = split.id, default.id
+    session.add_all([
+        Asset(
+            user_id=test_user.id, workspace_id=test_workspace.id,
+            connection_id=conn_id, source="test", external_id="h-1",
+            name="Apple", type="investment", currency="USD",
+            valuation_method="manual", group_id=split_id,
+        ),
+        Asset(
+            user_id=test_user.id, workspace_id=test_workspace.id,
+            connection_id=conn_id, source="test", external_id="h-2",
+            name="Mystery Fund", type="investment", currency="USD",
+            valuation_method="manual", group_id=default_id,
+        ),
+    ])
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.get_holdings.return_value = [
+        # The NEW account's holding arrives first.
+        HoldingData(
+            external_id="h-3", name="Tesla", currency="USD",
+            current_value=Decimal("20"),
+            account_external_id="acc-2", account_name="Brokerage",
+        ),
+        HoldingData(
+            external_id="h-1", name="Apple", currency="USD",
+            current_value=Decimal("10"),
+            account_external_id="acc-1", account_name="IRA",
+        ),
+        HoldingData(
+            external_id="h-2", name="Mystery Fund", currency="USD",
+            current_value=Decimal("5"),
+        ),
+    ]
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+    await session.commit()
+
+    kept = await session.get(AssetGroup, default_id)
+    assert kept is not None
+    assert kept.external_id == conn.external_id  # not hijacked by acc-2
+    assert kept.name == "Misc investments"
+    minted = await session.scalar(
+        select(AssetGroup).where(
+            AssetGroup.external_id == f"{conn.external_id}::acc-2")
+    )
+    assert minted is not None
+    assert minted.id not in {split_id, default_id}
+
+
+@pytest.mark.asyncio
+async def test_sync_holdings_never_touches_another_workspaces_wallets(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A sync stays inside its connection's workspace: another workspace's
+    orphan wallet is not adopted, drained, or reaped even when its assets
+    overlap the payload (review round 6 on #654)."""
+    from app.models.asset_group import AssetGroup
+    from app.models.workspace import Workspace, WorkspaceMember
+    from app.services.connection_service import _sync_holdings
+
+    conn = await _make_connection(session, test_user.id, "Scoped Bank")
+
+    other_ws = Workspace(
+        id=uuid.uuid4(), name="Elsewhere", kind="personal",
+        created_by_user_id=test_user.id, default_currency="USD", locale="en-US",
+    )
+    session.add(other_ws)
+    await session.flush()
+    session.add(WorkspaceMember(
+        id=uuid.uuid4(), workspace_id=other_ws.id,
+        user_id=test_user.id, role="owner",
+    ))
+    session.add(Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn.id, external_id="acc-1", name="IRA",
+        type="investment", balance=Decimal("0"), currency="USD",
+    ))
+    foreign = AssetGroup(
+        user_id=test_user.id, workspace_id=other_ws.id,
+        name="Other Workspace Wallet", source="test",
+        connection_id=None, external_id="old-ext",
+    )
+    session.add(foreign)
+    await session.flush()
+    foreign_id = foreign.id
+    session.add(Asset(
+        user_id=test_user.id, workspace_id=other_ws.id,
+        connection_id=None, source="test", external_id="h-1",
+        name="Apple", type="investment", currency="USD",
+        valuation_method="manual", group_id=foreign_id, is_archived=True,
+    ))
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.get_holdings.return_value = [
+        HoldingData(
+            external_id="h-1", name="Apple", currency="USD",
+            current_value=Decimal("10"),
+            account_external_id="acc-1", account_name="IRA",
+        ),
+    ]
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+    await session.commit()
+
+    untouched = await session.get(AssetGroup, foreign_id)
+    assert untouched is not None
+    assert untouched.external_id == "old-ext"
+    assert untouched.connection_id is None
+    assert untouched.workspace_id == other_ws.id
+    minted = await session.scalar(
+        select(AssetGroup).where(
+            AssetGroup.external_id == f"{conn.external_id}::acc-1")
+    )
+    assert minted is not None
+    assert minted.workspace_id == test_workspace.id
+
+
+@pytest.mark.asyncio
+async def test_wallet_key_uniqueness_is_enforced_in_the_test_schema(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """The model mirrors migration 034's partial unique index so adoption
+    guards are testable: duplicate keys raise, NULL keys don't
+    (review round 6 on #654)."""
+    from sqlalchemy.exc import IntegrityError
+
+    from app.models.asset_group import AssetGroup
+
+    user_id, ws_id = test_user.id, test_workspace.id
+    session.add(AssetGroup(
+        user_id=user_id, workspace_id=ws_id,
+        name="First", source="test", external_id="dup-key",
+    ))
+    await session.commit()
+
+    session.add(AssetGroup(
+        user_id=user_id, workspace_id=ws_id,
+        name="Second", source="test", external_id="dup-key",
+    ))
+    with pytest.raises(IntegrityError):
+        await session.flush()
+    await session.rollback()
+
+    # The index is partial: NULL keys never collide.
+    session.add_all([
+        AssetGroup(
+            user_id=user_id, workspace_id=ws_id,
+            name="Manual A", source="test",
+        ),
+        AssetGroup(
+            user_id=user_id, workspace_id=ws_id,
+            name="Manual B", source="test",
+        ),
+    ])
+    await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_ensure_group_recovers_when_losing_the_mint_race(
+    session: AsyncSession, test_user, test_workspace, monkeypatch,
+):
+    """When a concurrent sync mints the same wallet key between the lookup
+    and the flush, the loser's IntegrityError is contained and the winner's
+    row is returned (review round 6 on #654)."""
+    from app.models.asset_group import AssetGroup
+    from app.services.asset_group_service import ensure_group_for_connection
+
+    conn = await _make_connection(session, test_user.id, "Race Bank")
+    winner = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Winner", source="test",
+        connection_id=conn.id, external_id="race-key",
+    )
+    session.add(winner)
+    await session.commit()
+    winner_id = winner.id
+
+    real_execute = session.execute
+    state = {"missed": False}
+
+    class _Miss:
+        def scalar_one_or_none(self):
+            return None
+
+    async def racing_execute(stmt, *args, **kwargs):
+        # The first lookup misses — the winner's row lands "between" the
+        # select and the flush, as a concurrent sync's commit would.
+        if not state["missed"]:
+            state["missed"] = True
+            return _Miss()
+        return await real_execute(stmt, *args, **kwargs)
+
+    monkeypatch.setattr(session, "execute", racing_execute)
+    group = await ensure_group_for_connection(
+        session,
+        user_id=test_user.id,
+        connection_id=conn.id,
+        source="test",
+        external_id="race-key",
+        default_name="Race Bank",
+    )
+
+    assert group.id == winner_id
+
+
+@pytest.mark.asyncio
+async def test_sync_holdings_survives_losing_the_adoption_rekey_race(
+    session: AsyncSession, test_user, test_workspace, monkeypatch,
+):
+    """If a concurrent sync claims the wallet key while this one is
+    adopting, the re-key's IntegrityError is contained: the candidate is
+    left as it was and the winner's wallet is used
+    (review round 6 on #654)."""
+    from app.models.asset_group import AssetGroup
+    from app.services.connection_service import _sync_holdings
+
+    conn = await _make_connection(session, test_user.id, "Adopt Race Bank")
+    conn_id = conn.id
+    other = await _make_connection(session, test_user.id, "Other Bank")
+
+    session.add(Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn_id, external_id="acc-1", name="IRA",
+        type="investment", balance=Decimal("0"), currency="USD",
+    ))
+    wallet_key = f"{conn.external_id}::acc-1"
+    # The concurrent sync's wallet already owns the target key, but hangs
+    # off a different connection so it is not an adoption candidate.
+    twin = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Twin", source="test",
+        connection_id=other.id, external_id=wallet_key,
+    )
+    # This sync's own stale candidate, picked via the suffix tier.
+    stale = AssetGroup(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        name="My Stale", source="test",
+        connection_id=conn_id, external_id="old-conn-ext::acc-1",
+    )
+    session.add_all([twin, stale])
+    await session.flush()
+    twin_id, stale_id = twin.id, stale.id
+    # An asset outside the payload keeps the loser's wallet from the reap —
+    # the point here is the contained IntegrityError, not the reap.
+    session.add(Asset(
+        user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn_id, source="test", external_id="other-h",
+        name="Other Fund", type="investment", currency="USD",
+        valuation_method="manual", group_id=stale_id,
+    ))
+    await session.commit()
+
+    real_scalar = session.scalar
+    state = {"missed": False}
+
+    async def racing_scalar(stmt, *args, **kwargs):
+        # Blind only the existence guard (its statement carries the exact
+        # wallet key), simulating the winner committing after the check.
+        params = stmt.compile().params if hasattr(stmt, "compile") else {}
+        if not state["missed"] and wallet_key in params.values():
+            state["missed"] = True
+            return None
+        return await real_scalar(stmt, *args, **kwargs)
+
+    mock_provider = AsyncMock()
+    mock_provider.get_holdings.return_value = [
+        HoldingData(
+            external_id="h-1", name="Apple", currency="USD",
+            current_value=Decimal("10"),
+            account_external_id="acc-1", account_name="IRA",
+        ),
+    ]
+    monkeypatch.setattr(session, "scalar", racing_scalar)
+    with patch(
+        "app.services.connection_service.get_provider", return_value=mock_provider
+    ):
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+    await session.commit()
+
+    # The loser backed off: its candidate is untouched, the winner's wallet
+    # owns the key (re-linked to this connection by the mint path).
+    kept = await session.get(AssetGroup, stale_id)
+    assert kept is not None
+    assert kept.external_id == "old-conn-ext::acc-1"
+    assert kept.name == "My Stale"
+    winner = await session.get(AssetGroup, twin_id)
+    assert winner is not None
+    assert winner.external_id == wallet_key
+    moved = await session.scalar(select(Asset).where(Asset.external_id == "h-1"))
+    assert moved is not None
+    assert moved.group_id == twin_id
