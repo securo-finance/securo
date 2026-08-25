@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { formatAccountMask, getAccountLabel, getAccountName } from '@/lib/account-utils'
-import { getConnectionName } from '@/lib/connection-utils'
+import { connectionRequiresReconnect, getConnectionName } from '@/lib/connection-utils'
 import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
@@ -24,7 +24,7 @@ import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { Account, BankConnection } from '@/types'
-import { RefreshCw, TriangleAlert, Unlink, Settings } from 'lucide-react'
+import { KeyRound, RefreshCw, TriangleAlert, Unlink, Settings } from 'lucide-react'
 import { AccountIcon, ConnectionLogo, getAccountTypeConfig } from '@/components/account-icon'
 import { AccountPageActions } from '@/components/account-page-actions'
 import { AccountRowActions } from '@/components/account-row-actions'
@@ -312,7 +312,8 @@ export default function AccountsPage() {
             <div className="space-y-3">
               {connectionsList.map((conn) => {
                 const connAccounts = bankAccounts.filter((a) => a.connection_id === conn.id)
-                const needsReconnect = conn.status !== 'active'
+                const needsReconnect = connectionRequiresReconnect(conn.status)
+                const canRetry = conn.status === 'error'
                 const syncPending = syncMutation.isPending && syncMutation.variables === conn.id
                 return (
                   <div key={conn.id} className="bg-card rounded-xl border border-border shadow-sm">
@@ -355,7 +356,7 @@ export default function AccountsPage() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className={needsReconnect
+                            className={needsReconnect || canRetry
                               ? 'relative h-8 w-8 p-0 text-amber-500 hover:bg-amber-500/10 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-300'
                               : 'h-8 w-8 p-0 text-muted-foreground hover:text-foreground'}
                             onClick={() => needsReconnect ? handleReconnectClick(conn) : syncMutation.mutate(conn.id)}
@@ -368,13 +369,26 @@ export default function AccountsPage() {
                             aria-label={needsReconnect ? t('accounts.reconnect') : t('accounts.sync')}
                           >
                             <RefreshCw size={14} className={syncPending ? 'animate-spin' : ''} />
-                            {needsReconnect && (
+                            {(needsReconnect || canRetry) && (
                               <TriangleAlert
                                 size={10}
                                 className="absolute -right-0.5 -top-0.5 rounded-full bg-card text-amber-500"
                               />
                             )}
                           </Button>
+                          {canRetry && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                              onClick={() => handleReconnectClick(conn)}
+                              disabled={syncPending}
+                              title={t('accounts.reconnect')}
+                              aria-label={t('accounts.reconnect')}
+                            >
+                              <KeyRound size={14} />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="sm"

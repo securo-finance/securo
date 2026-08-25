@@ -632,7 +632,7 @@
     "noTransactions": "Nenhuma transação para esta conta",
     "syncFailed": "Sincronização falhou",
     "reconnect": "Reconectar",
-    "connectionError": "Erro na ligação — reconecte para corrigir",
+    "connectionError": "Erro na ligação — tente sincronizar novamente",
     "close": "Encerrar conta",
     "reopen": "Reabrir conta",
     "accountClosed": "Conta encerrada",
@@ -676,6 +676,40 @@
       "tokenHelp": "O token é de uso único. O Securo gera uma URL de acesso privada a partir dele e a armazena criptografada.",
       "connect": "Conectar",
       "connecting": "A ligar…",
+      "ibkr": {
+        "title": "Ligar à Interactive Brokers",
+        "description": "Utiliza uma consulta Activity Flex só de leitura. Introduz o token do Flex Web Service e o ID da consulta da IBKR.",
+        "reconnectTitle": "Voltar a ligar à Interactive Brokers",
+        "reconnectDescription": "Introduz novamente o token Flex recém-gerado e o ID da consulta. Os dados existentes no Securo serão preservados.",
+        "openSetup": "Abrir o guia de configuração do IBKR Flex",
+        "tokenLabel": "Token do Flex Web Service",
+        "tokenPlaceholder": "Cola o token do IBKR Flex",
+        "tokenHelp": "O Securo guarda este token de forma encriptada. Gerá-lo novamente na IBKR invalida o token anterior.",
+        "queryIdLabel": "ID da consulta Activity Flex",
+        "queryIdPlaceholder": "Por exemplo, 123456",
+        "queryChecklistTitle": "Secções obrigatórias da consulta XML",
+        "queryChecklistAccount": "Informações da conta (Account Information): ID da conta, nome ou alias e moeda",
+        "queryChecklistCash": "Relatório de caixa (Cash Report): discriminação por moeda e saldo final",
+        "queryChecklistFunds": "Demonstração de fundos (Statement of Funds): IDs da transação e da operação, datas, descrições, montantes e moeda",
+        "queryChecklistPositions": "Posições abertas (Open Positions): nível de detalhe «Summary» com identificadores, quantidade, valor, preço e custo de aquisição",
+        "errorHelp": "Abrir o guia de configuração do IBKR Flex",
+        "errors": {
+          "flex_service_inactive": "Ativa o Flex Web Service na IBKR e tenta novamente.",
+          "credentials_expired": "O token IBKR Flex expirou. Gera um novo token e volta a ligar.",
+          "flex_ip_restricted": "A IBKR recusou o IP deste servidor. Atualiza a restrição de IP e volta a ligar.",
+          "flex_query_invalid": "O ID da consulta Activity Flex é inválido ou não está disponível.",
+          "credentials_invalid": "O token IBKR Flex é inválido. Gera um novo token e volta a ligar.",
+          "flex_account_invalid": "A conta IBKR desta consulta Flex é inválida ou não está disponível.",
+          "flex_query_account_count": "A consulta Flex deve devolver exatamente uma conta IBKR.",
+          "flex_query_missing_section": "Falta uma secção obrigatória na consulta Flex.",
+          "flex_query_missing_field": "Falta um campo obrigatório na consulta Flex.",
+          "flex_query_position_detail": "A secção Open Positions deve usar o nível de detalhe Summary.",
+          "flex_request_invalid": "A IBKR não conseguiu validar o pedido Flex. Confirma o token e o ID da consulta.",
+          "flex_query_output_format": "Define o formato de saída da Activity Flex Query como XML.",
+          "provider_rate_limited": "A IBKR está a limitar os pedidos. Tenta novamente dentro de um minuto.",
+          "provider_transient": "A IBKR não conseguiu concluir o relatório. Tenta novamente mais tarde."
+        }
+      },
       "simplefin": {
         "title": "Conectar via SimpleFIN",
         "description": "O SimpleFIN é um protocolo de leitura de dados bancários. Vai ao SimpleFIN Bridge, escolhe o teu banco e copia o token de configuração aqui."
@@ -685,6 +719,9 @@
       "reconnect": "Reconectar"
     },
     "providers": {
+      "ibkr": {
+        "description": "Sincronização da conta de investimentos só de leitura através do IBKR Flex Web Service"
+      },
       "pluggy": {
         "description": "Fornecedor Open Finance para bancos brasileiros"
       },

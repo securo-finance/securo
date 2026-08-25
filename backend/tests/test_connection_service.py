@@ -410,7 +410,7 @@ async def test_token_reconnect_updates_existing_connection_without_deleting_acco
     assert reconnected.institution_name == "New SimpleFIN Bank"
     assert reconnected.credentials == {"access_url_enc": "new-encrypted-url"}
     assert reconnected.status == "active"
-    assert reconnected.last_sync_at is None
+    assert reconnected.last_sync_at is not None
     remaining_accounts = (
         await session.execute(select(Account).where(Account.connection_id == existing.id))
     ).scalars().all()

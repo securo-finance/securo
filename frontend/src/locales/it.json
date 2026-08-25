@@ -632,7 +632,7 @@
     "noTransactions": "Nessuna transazione per questo conto",
     "syncFailed": "Sincronizzazione fallita",
     "reconnect": "Riconnetti",
-    "connectionError": "Errore di connessione — riconnetti per risolvere",
+    "connectionError": "Errore di connessione — riprova la sincronizzazione",
     "close": "Chiudi conto",
     "reopen": "Riapri conto",
     "accountClosed": "Conto chiuso",
@@ -676,6 +676,40 @@
       "tokenHelp": "Il token di configurazione è monouso. Securo ne ricava un URL di accesso privato e lo memorizza cifrato.",
       "connect": "Collega",
       "connecting": "Connessione…",
+      "ibkr": {
+        "title": "Collega Interactive Brokers",
+        "description": "Usa una query Activity Flex di sola lettura. Inserisci il token Flex Web Service e l’ID della query IBKR.",
+        "reconnectTitle": "Ricollega Interactive Brokers",
+        "reconnectDescription": "Inserisci di nuovo il token Flex appena generato e l’ID della query. I dati Securo esistenti verranno conservati.",
+        "openSetup": "Apri la guida alla configurazione di IBKR Flex",
+        "tokenLabel": "Token Flex Web Service",
+        "tokenPlaceholder": "Incolla il token IBKR Flex",
+        "tokenHelp": "Securo archivia questo token in forma crittografata. La rigenerazione in IBKR rende non valido il token precedente.",
+        "queryIdLabel": "ID della query Activity Flex",
+        "queryIdPlaceholder": "Ad esempio, 123456",
+        "queryChecklistTitle": "Sezioni XML obbligatorie della query",
+        "queryChecklistAccount": "Informazioni sul conto (Account Information): ID del conto, nome o alias e valuta",
+        "queryChecklistCash": "Rapporto di cassa (Cash Report): dettaglio per valuta e saldo finale",
+        "queryChecklistFunds": "Movimenti di cassa (Statement of Funds): ID transazione, ID operazione, date, descrizioni, importi e valuta",
+        "queryChecklistPositions": "Posizioni aperte (Open Positions): livello di dettaglio «Summary» con identificatori, quantità, valore, prezzo e base di costo",
+        "errorHelp": "Apri la guida alla configurazione di IBKR Flex",
+        "errors": {
+          "flex_service_inactive": "Abilita Flex Web Service in IBKR e riprova.",
+          "credentials_expired": "Il token IBKR Flex è scaduto. Generane uno nuovo e riconnetti il conto.",
+          "flex_ip_restricted": "IBKR ha rifiutato l’IP di questo server. Aggiorna la restrizione IP e riconnetti il conto.",
+          "flex_query_invalid": "L’ID della query Activity Flex non è valido o disponibile.",
+          "credentials_invalid": "Il token IBKR Flex non è valido. Generane uno nuovo e riconnetti il conto.",
+          "flex_account_invalid": "Il conto IBKR di questa query Flex non è valido o disponibile.",
+          "flex_query_account_count": "La query Flex deve restituire esattamente un conto IBKR.",
+          "flex_query_missing_section": "Nella query Flex manca una sezione obbligatoria.",
+          "flex_query_missing_field": "Nella query Flex manca un campo obbligatorio.",
+          "flex_query_position_detail": "Open Positions deve usare il livello di dettaglio Summary.",
+          "flex_request_invalid": "IBKR non ha potuto convalidare la richiesta Flex. Controlla il token e l’ID della query.",
+          "flex_query_output_format": "Imposta il formato di output della Activity Flex Query su XML.",
+          "provider_rate_limited": "IBKR sta limitando le richieste. Riprova tra un minuto.",
+          "provider_transient": "IBKR non ha potuto completare il report. Riprova più tardi."
+        }
+      },
       "simplefin": {
         "title": "Collega tramite SimpleFIN",
         "description": "SimpleFIN è un protocollo di dati bancari in sola lettura. Vai su SimpleFIN Bridge, scegli la tua banca e copia qui il token di configurazione."
@@ -685,6 +719,9 @@
       "reconnect": "Riconnetti"
     },
     "providers": {
+      "ibkr": {
+        "description": "Sincronizzazione del conto titoli in sola lettura tramite IBKR Flex Web Service"
+      },
       "pluggy": {
         "description": "Provider open finance per le banche brasiliane"
       },

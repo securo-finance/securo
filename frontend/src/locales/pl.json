@@ -671,7 +671,7 @@
     "noTransactions": "Brak transakcji dla tego konta",
     "syncFailed": "Synchronizacja nie powiodła się",
     "reconnect": "Połącz ponownie",
-    "connectionError": "Błąd połączenia — połącz ponownie, aby naprawić",
+    "connectionError": "Błąd połączenia — spróbuj zsynchronizować ponownie",
     "close": "Zamknij konto",
     "reopen": "Otwórz konto ponownie",
     "accountClosed": "Zamknięto konto",
@@ -718,6 +718,40 @@
       "tokenHelp": "Token konfiguracyjny jest jednorazowy. Securo pobiera z niego prywatny adres URL dostępu i przechowuje go w postaci zaszyfrowanej.",
       "connect": "Połącz",
       "connecting": "Łączenie…",
+      "ibkr": {
+        "title": "Połącz z Interactive Brokers",
+        "description": "Użyj zapytania Activity Flex tylko do odczytu. Wprowadź token Flex Web Service i identyfikator zapytania IBKR.",
+        "reconnectTitle": "Połącz ponownie z Interactive Brokers",
+        "reconnectDescription": "Wprowadź ponownie nowo wygenerowany token Flex i identyfikator zapytania. Istniejące dane Securo zostaną zachowane.",
+        "openSetup": "Otwórz instrukcję konfiguracji IBKR Flex",
+        "tokenLabel": "Token Flex Web Service",
+        "tokenPlaceholder": "Wklej token IBKR Flex",
+        "tokenHelp": "Securo przechowuje ten token w postaci zaszyfrowanej. Wygenerowanie go ponownie w IBKR unieważnia poprzedni token.",
+        "queryIdLabel": "Identyfikator zapytania Activity Flex",
+        "queryIdPlaceholder": "Na przykład 123456",
+        "queryChecklistTitle": "Wymagane sekcje zapytania XML",
+        "queryChecklistAccount": "Informacje o koncie (Account Information): identyfikator konta, nazwa lub alias i waluta",
+        "queryChecklistCash": "Raport środków pieniężnych (Cash Report): podział według waluty i saldo końcowe",
+        "queryChecklistFunds": "Zestawienie przepływów środków (Statement of Funds): identyfikatory transakcji i wykonania, daty, opisy, kwoty i waluta",
+        "queryChecklistPositions": "Otwarte pozycje (Open Positions): poziom szczegółowości „Summary” z identyfikatorami, ilością, wartością, ceną i podstawą kosztową",
+        "errorHelp": "Otwórz instrukcję konfiguracji IBKR Flex",
+        "errors": {
+          "flex_service_inactive": "Włącz Flex Web Service w IBKR i spróbuj ponownie.",
+          "credentials_expired": "Token IBKR Flex wygasł. Wygeneruj nowy token i połącz konto ponownie.",
+          "flex_ip_restricted": "IBKR odrzucił adres IP tego serwera. Zmień ograniczenie IP i połącz konto ponownie.",
+          "flex_query_invalid": "Identyfikator zapytania Activity Flex jest nieprawidłowy lub niedostępny.",
+          "credentials_invalid": "Token IBKR Flex jest nieprawidłowy. Wygeneruj nowy token i połącz konto ponownie.",
+          "flex_account_invalid": "Konto IBKR w tym zapytaniu Flex jest nieprawidłowe lub niedostępne.",
+          "flex_query_account_count": "Zapytanie Flex musi zwracać dokładnie jedno konto IBKR.",
+          "flex_query_missing_section": "W zapytaniu Flex brakuje wymaganej sekcji raportu.",
+          "flex_query_missing_field": "W zapytaniu Flex brakuje wymaganego pola raportu.",
+          "flex_query_position_detail": "Sekcja Open Positions musi używać poziomu szczegółowości Summary.",
+          "flex_request_invalid": "IBKR nie mógł zweryfikować żądania Flex. Sprawdź token i identyfikator zapytania.",
+          "flex_query_output_format": "Ustaw format wyjściowy Activity Flex Query na XML.",
+          "provider_rate_limited": "IBKR ogranicza liczbę zapytań. Spróbuj ponownie za minutę.",
+          "provider_transient": "IBKR nie mógł ukończyć raportu. Spróbuj ponownie później."
+        }
+      },
       "simplefin": {
         "title": "Połącz przez SimpleFIN",
         "description": "SimpleFIN to protokół danych bankowych tylko do odczytu. Przejdź do SimpleFIN Bridge, wybierz swój bank i skopiuj token konfiguracyjny tutaj."
@@ -727,6 +761,9 @@
       "reconnect": "Połącz ponownie"
     },
     "providers": {
+      "ibkr": {
+        "description": "Synchronizacja rachunku maklerskiego tylko do odczytu przez IBKR Flex Web Service"
+      },
       "pluggy": {
         "description": "Dostawca open finance dla banków brazylijskich"
       },

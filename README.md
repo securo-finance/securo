@@ -51,7 +51,7 @@ Open [http://localhost:3000](http://localhost:3000) and create an account. That'
 - Goals and savings targets with progress tracking
 - Asset management with valuation tracking and growth rules
 - Reports: Net Worth and Income vs Expenses with category sparklines
-- Bank sync via providers (Pluggy for Brazilian banks, Enable Banking for ~2500 European PSD2 banks, SimpleFIN for US and international banks, extensible)
+- Bank and brokerage sync via providers (Pluggy, Enable Banking, SimpleFIN, and read-only Interactive Brokers Flex)
 - Multi-currency support with automatic FX conversion
 - Multi-user support with admin panel and registration controls
 - Two-factor authentication (TOTP) with brute-force protection
@@ -95,6 +95,39 @@ SIMPLEFIN_API_URL=https://beta-bridge.simplefin.org   # sandbox; use bridge.simp
 ```
 
 Then in Securo: **Accounts → Connect Bank → SimpleFIN**, and paste the token. The [developer page](https://beta-bridge.simplefin.org/info/developers) gives out free demo tokens if you want to try it without a real bank.
+
+### Interactive Brokers — read-only Flex reports
+
+IBKR Flex sync imports native-currency cash balances, non-trade cash activity,
+and current positions without running Client Portal Gateway or enabling order
+placement. Enable the connector:
+
+```
+IBKR_FLEX_ENABLED=true
+```
+
+In IBKR, create an **XML Activity Flex Query for exactly one account**. Include:
+
+- **Account Information:** Account ID, alias/name, and currency.
+- **Cash Report:** currency breakout and ending cash.
+- **Statement of Funds:** transaction/trade IDs, date, activity description/code,
+  debit, credit, amount, balance, currency, and symbol.
+- **Open Positions:** Summary detail with conid, symbol, description, asset class,
+  currency, position/quantity, multiplier, mark price, position value, cost basis, ISIN,
+  side, and open date.
+
+Then enable Flex Web Service, generate a token, and enter the token plus query
+ID under **Accounts → Connect Bank → Interactive Brokers**. Choose the longest
+appropriate token expiry; restrict it to Securo's static egress IP when your
+deployment has one. Generating a replacement token invalidates the prior token,
+so use **Reconnect** in Securo and enter both values again. Initial import is
+limited to 365 days; later syncs overlap 14 days and deduplicate by IBKR
+transaction ID. Executions and tax lots are intentionally not imported.
+Flex data is statement-based rather than real-time and Securo requests the last
+completed calendar day. A new or newly funded account may not return daily data
+until IBKR has produced its first post-funding statement.
+
+[IBKR Flex Web Service setup](https://www.ibkrguides.com/brokerportal/performanceandstatements/flex3.htm)
 
 ## OIDC Login (Optional)
 

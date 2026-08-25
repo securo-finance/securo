@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     simplefin_enabled: bool = False
     simplefin_api_url: str = "https://beta-bridge.simplefin.org"
 
+    # Interactive Brokers Flex Web Service (read-only brokerage reports).
+    # Each connection supplies its own Flex token and query id.
+    ibkr_flex_enabled: bool = False
+    ibkr_flex_api_url: str = (
+        "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService"
+    )
+
     # Frontend
     frontend_url: str = "http://localhost:5173"
 

@@ -52,6 +52,8 @@ config:
   enableBankingOauthRedirectUri: ""
   simplefinEnabled: "false"
   simplefinApiUrl: "https://beta-bridge.simplefin.org"
+  ibkrFlexEnabled: "false"
+  ibkrFlexApiUrl: "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService"
   oidcEnabled: "false"
   oidcProviderName: "OIDC"
   oidcDiscoveryUrl: ""

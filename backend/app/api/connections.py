@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -12,6 +13,8 @@ from app.core.workspace_context import (
 from app.providers import all_known_providers
 from app.providers.base import (
     ProviderNotConfiguredError,
+    ProviderRateLimited,
+    ProviderTransientError,
     ProviderUserActionRequired,
     SessionExpiredError,
 )
@@ -26,11 +29,42 @@ from app.schemas.bank_connection import (
     OAuthUrlResponse,
     ReauthUrlResponse,
     ReconnectTokenResponse,
+    TokenCallbackRequest,
 )
 from app.services import connection_service
 from app.services.transfer_detection_service import detect_transfer_pairs, unlink_transfer_pair
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/connections", tags=["connections"])
+
+
+def _user_action_http_error(exc: ProviderUserActionRequired) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "message": str(exc),
+            "code": exc.code,
+            "help_url": exc.help_url,
+        },
+    )
+
+
+def _temporary_provider_http_error(
+    exc: ProviderRateLimited | ProviderTransientError,
+) -> HTTPException:
+    rate_limited = isinstance(exc, ProviderRateLimited)
+    return HTTPException(
+        status_code=(
+            status.HTTP_429_TOO_MANY_REQUESTS
+            if rate_limited
+            else status.HTTP_503_SERVICE_UNAVAILABLE
+        ),
+        detail={
+            "message": str(exc),
+            "code": "provider_rate_limited" if rate_limited else "provider_transient",
+        },
+        headers={"Retry-After": "60"} if rate_limited else None,
+    )
 
 
 @router.get("/providers")
@@ -133,6 +167,44 @@ async def oauth_callback(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Failed to connect: {str(e)}",
+        )
+
+
+@router.post("/token/callback", response_model=BankConnectionRead)
+async def token_callback(
+    data: TokenCallbackRequest,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Connect or reconnect a provider using user-supplied token credentials."""
+    try:
+        return await connection_service.handle_token_callback(
+            session,
+            ctx.workspace.id,
+            ctx.user_id,
+            data.provider,
+            data.token,
+            parameters=data.parameters,
+            sync_assets=data.sync_assets,
+            reconnect_connection_id=data.reconnect_connection_id,
+        )
+    except ProviderUserActionRequired as e:
+        raise _user_action_http_error(e)
+    except (ProviderRateLimited, ProviderTransientError) as e:
+        raise _temporary_provider_http_error(e)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as exc:
+        # Provider exceptions can contain request context. Log only the type so
+        # a token can never be copied into application logs.
+        logger.error(
+            "Token connection failed for provider %s (%s)",
+            data.provider,
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="The provider connection failed unexpectedly. Try again later.",
         )
 
 

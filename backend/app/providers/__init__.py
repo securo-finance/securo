@@ -1,11 +1,12 @@
 from app.providers.base import (
     AccountData,
     BankProvider,
-    ConnectTokenData,
     ConnectionData,
+    ConnectTokenData,
     HoldingData,
     InstitutionData,
     InstitutionListData,
+    ProviderTransientError,
     ProviderUserActionRequired,
     RefreshOutcome,
     SessionExpiredError,
@@ -37,6 +38,14 @@ KNOWN_PROVIDERS = [
         "name": "simplefin",
         "display_name": "SimpleFIN",
         "description": "US and international banks via SimpleFIN Bridge",
+        "flow_type": "token",
+        "requires_institution_select": False,
+        "supports_asset_sync": True,
+    },
+    {
+        "name": "ibkr",
+        "display_name": "Interactive Brokers",
+        "description": "Read-only brokerage sync via IBKR Flex Web Service",
         "flow_type": "token",
         "requires_institution_select": False,
         "supports_asset_sync": True,
@@ -94,6 +103,10 @@ def _auto_register_providers() -> None:
         from app.providers.simplefin import SimpleFinProvider
         register_provider("simplefin", SimpleFinProvider)
 
+    if settings.ibkr_flex_enabled:
+        from app.providers.ibkr import IbkrFlexProvider
+        register_provider("ibkr", IbkrFlexProvider)
+
 
 _auto_register_providers()
 
@@ -130,6 +143,7 @@ __all__ = [
     "InstitutionData",
     "InstitutionListData",
     "ProviderUserActionRequired",
+    "ProviderTransientError",
     "RefreshOutcome",
     "SessionExpiredError",
     "register_provider",

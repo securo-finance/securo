@@ -632,7 +632,7 @@
     "noTransactions": "No transactions for this account",
     "syncFailed": "Sync failed",
     "reconnect": "Reconnect",
-    "connectionError": "Connection error — reconnect to fix",
+    "connectionError": "Connection error — try syncing again",
     "close": "Close account",
     "reopen": "Reopen account",
     "accountClosed": "Account closed",
@@ -676,6 +676,40 @@
       "tokenHelp": "The setup token is single-use. Securo claims a private access URL from it and stores it encrypted.",
       "connect": "Connect",
       "connecting": "Connecting…",
+      "ibkr": {
+        "title": "Connect Interactive Brokers",
+        "description": "Use a read-only Activity Flex Query. Enter the Flex Web Service token and query ID from IBKR.",
+        "reconnectTitle": "Reconnect Interactive Brokers",
+        "reconnectDescription": "Enter the newly generated Flex token and the query ID again. Existing Securo data is preserved.",
+        "openSetup": "Open IBKR Flex setup guide",
+        "tokenLabel": "Flex Web Service token",
+        "tokenPlaceholder": "Paste the IBKR Flex token",
+        "tokenHelp": "Securo stores this token encrypted. Regenerating it in IBKR invalidates the previous token.",
+        "queryIdLabel": "Activity Flex Query ID",
+        "queryIdPlaceholder": "For example, 123456",
+        "queryChecklistTitle": "Required XML query sections",
+        "queryChecklistAccount": "Account Information: account ID, name or alias, and currency",
+        "queryChecklistCash": "Cash Report: currency breakout and ending cash",
+        "queryChecklistFunds": "Statement of Funds: transaction ID, trade ID, dates, descriptions, amounts, and currency",
+        "queryChecklistPositions": "Open Positions: Summary detail with identifiers, quantity, value, price, and cost basis",
+        "errorHelp": "Open the IBKR Flex setup guide",
+        "errors": {
+          "flex_service_inactive": "Enable Flex Web Service in IBKR, then try again.",
+          "credentials_expired": "The IBKR Flex token has expired. Generate a new token and reconnect.",
+          "flex_ip_restricted": "IBKR rejected this server's IP address. Update the token's IP restriction and reconnect.",
+          "flex_query_invalid": "The Activity Flex Query ID is invalid or unavailable.",
+          "credentials_invalid": "The IBKR Flex token is invalid. Generate a new token and reconnect.",
+          "flex_account_invalid": "The IBKR account in this Flex query is invalid or unavailable.",
+          "flex_query_account_count": "The Flex query must return exactly one IBKR account.",
+          "flex_query_missing_section": "The Flex query is missing a required report section.",
+          "flex_query_missing_field": "The Flex query is missing a required report field.",
+          "flex_query_position_detail": "Open Positions must use Summary level of detail.",
+          "flex_request_invalid": "IBKR could not validate the Flex request. Check the token and query ID.",
+          "flex_query_output_format": "Set the Activity Flex Query output format to XML.",
+          "provider_rate_limited": "IBKR is rate limiting requests. Try again in a minute.",
+          "provider_transient": "IBKR could not finish the report. Try again later."
+        }
+      },
       "simplefin": {
         "title": "Connect via SimpleFIN",
         "description": "SimpleFIN is a read-only bank data protocol. Go to the SimpleFIN Bridge, pick your bank, and copy the setup token back here."
@@ -685,6 +719,9 @@
       "reconnect": "Reconnect"
     },
     "providers": {
+      "ibkr": {
+        "description": "Read-only brokerage sync via IBKR Flex Web Service"
+      },
       "pluggy": {
         "description": "Open finance provider for Brazilian banks"
       },

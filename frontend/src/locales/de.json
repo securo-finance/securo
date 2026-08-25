@@ -632,7 +632,7 @@
     "noTransactions": "Keine Transaktionen für dieses Konto",
     "syncFailed": "Synchronisierung fehlgeschlagen",
     "reconnect": "Erneut verbinden",
-    "connectionError": "Verbindungsfehler — Erneut verbinden, um das Problem zu beheben",
+    "connectionError": "Verbindungsfehler — Synchronisierung erneut versuchen",
     "close": "Konto schließen",
     "reopen": "Konto wiedereröffnen",
     "accountClosed": "Konto geschlossen",
@@ -676,6 +676,40 @@
       "tokenHelp": "Das Setup-Token ist nur einmalig verwendbar. Securo ruft eine private Zugriffs-URL ab und speichert sie verschlüsselt.",
       "connect": "Verbinden",
       "connecting": "Verbindung wird hergestellt…",
+      "ibkr": {
+        "title": "Interactive Brokers verbinden",
+        "description": "Verwende eine schreibgeschützte Activity Flex Query. Gib das Flex-Web-Service-Token und die Abfrage-ID von IBKR ein.",
+        "reconnectTitle": "Interactive Brokers erneut verbinden",
+        "reconnectDescription": "Gib das neu erzeugte Flex-Token und die Abfrage-ID erneut ein. Vorhandene Securo-Daten bleiben erhalten.",
+        "openSetup": "Einrichtungsanleitung für IBKR Flex öffnen",
+        "tokenLabel": "Flex-Web-Service-Token",
+        "tokenPlaceholder": "IBKR-Flex-Token einfügen",
+        "tokenHelp": "Securo speichert dieses Token verschlüsselt. Wenn du es in IBKR neu erzeugst, wird das vorherige Token ungültig.",
+        "queryIdLabel": "ID der Activity Flex Query",
+        "queryIdPlaceholder": "Zum Beispiel 123456",
+        "queryChecklistTitle": "Erforderliche Abschnitte der XML-Abfrage",
+        "queryChecklistAccount": "Kontoinformationen (Account Information): Konto-ID, Name oder Alias und Währung",
+        "queryChecklistCash": "Barbericht (Cash Report): Aufschlüsselung nach Währung und Endbestand",
+        "queryChecklistFunds": "Kapitalflussrechnung (Statement of Funds): Transaktions-ID, Handels-ID, Datumsangaben, Beschreibungen, Beträge und Währung",
+        "queryChecklistPositions": "Offene Positionen (Open Positions): Detailstufe „Summary“ mit Kennungen, Menge, Wert, Preis und Kostenbasis",
+        "errorHelp": "Einrichtungsanleitung für IBKR Flex öffnen",
+        "errors": {
+          "flex_service_inactive": "Aktiviere den Flex Web Service in IBKR und versuche es erneut.",
+          "credentials_expired": "Das IBKR-Flex-Token ist abgelaufen. Erzeuge ein neues Token und verbinde das Konto erneut.",
+          "flex_ip_restricted": "IBKR hat die IP-Adresse dieses Servers abgelehnt. Aktualisiere die IP-Beschränkung und verbinde das Konto erneut.",
+          "flex_query_invalid": "Die ID der Activity Flex Query ist ungültig oder nicht verfügbar.",
+          "credentials_invalid": "Das IBKR-Flex-Token ist ungültig. Erzeuge ein neues Token und verbinde das Konto erneut.",
+          "flex_account_invalid": "Das IBKR-Konto in dieser Flex Query ist ungültig oder nicht verfügbar.",
+          "flex_query_account_count": "Die Flex Query muss genau ein IBKR-Konto zurückgeben.",
+          "flex_query_missing_section": "In der Flex Query fehlt ein erforderlicher Berichtsabschnitt.",
+          "flex_query_missing_field": "In der Flex Query fehlt ein erforderliches Berichtsfeld.",
+          "flex_query_position_detail": "„Open Positions“ muss die Detailstufe „Summary“ verwenden.",
+          "flex_request_invalid": "IBKR konnte die Flex-Anfrage nicht validieren. Prüfe Token und Abfrage-ID.",
+          "flex_query_output_format": "Stelle das Ausgabeformat der Activity Flex Query auf XML.",
+          "provider_rate_limited": "IBKR begrenzt derzeit die Anfragen. Versuche es in einer Minute erneut.",
+          "provider_transient": "IBKR konnte den Bericht nicht fertigstellen. Versuche es später erneut."
+        }
+      },
       "simplefin": {
         "title": "Verbindung über SimpleFIN",
         "description": "SimpleFIN is a read-only bank data protocol. Go to the SimpleFIN Bridge, pick your bank, and copy the setup token back here."
@@ -685,6 +719,9 @@
       "reconnect": "Erneut verbinden"
     },
     "providers": {
+      "ibkr": {
+        "description": "Schreibgeschützte Depotsynchronisierung über den IBKR Flex Web Service"
+      },
       "pluggy": {
         "description": "Open-Finance-Anbieter für brasilianische Banken"
       },

@@ -638,7 +638,7 @@
     "noTransactions": "Немає транзакцій для цього рахунку",
     "syncFailed": "Синхронізація не вдалася",
     "reconnect": "Перепідключитися",
-    "connectionError": "Помилка підключення — перепідключіться, щоб виправити",
+    "connectionError": "Помилка підключення — повторіть синхронізацію",
     "close": "Закрити рахунок",
     "reopen": "Відкрити рахунок",
     "accountClosed": "Рахунок закрито",
@@ -682,6 +682,40 @@
       "tokenHelp": "Установчий токен одноразовий. Securo отримує з нього приватний URL доступу та зберігає його зашифрованим.",
       "connect": "Підключити",
       "connecting": "Підключення…",
+      "ibkr": {
+        "title": "Підключити Interactive Brokers",
+        "description": "Використовуйте запит Activity Flex лише для читання. Введіть токен Flex Web Service та ідентифікатор запиту IBKR.",
+        "reconnectTitle": "Повторно підключити Interactive Brokers",
+        "reconnectDescription": "Знову введіть новий токен Flex та ідентифікатор запиту. Наявні дані Securo буде збережено.",
+        "openSetup": "Відкрити посібник із налаштування IBKR Flex",
+        "tokenLabel": "Токен Flex Web Service",
+        "tokenPlaceholder": "Вставте токен IBKR Flex",
+        "tokenHelp": "Securo зберігає цей токен у зашифрованому вигляді. Створення нового токена в IBKR робить попередній недійсним.",
+        "queryIdLabel": "Ідентифікатор запиту Activity Flex",
+        "queryIdPlaceholder": "Наприклад, 123456",
+        "queryChecklistTitle": "Обов’язкові розділи XML-запиту",
+        "queryChecklistAccount": "Відомості про рахунок (Account Information): ідентифікатор рахунку, назва або псевдонім і валюта",
+        "queryChecklistCash": "Звіт про кошти (Cash Report): розбивка за валютами та кінцевий залишок",
+        "queryChecklistFunds": "Рух коштів (Statement of Funds): ідентифікатори транзакції та угоди, дати, описи, суми й валюта",
+        "queryChecklistPositions": "Відкриті позиції (Open Positions): рівень деталізації «Summary», ідентифікатори, кількість, вартість, ціна та собівартість",
+        "errorHelp": "Відкрити посібник із налаштування IBKR Flex",
+        "errors": {
+          "flex_service_inactive": "Увімкніть Flex Web Service в IBKR і повторіть спробу.",
+          "credentials_expired": "Термін дії токена IBKR Flex минув. Створіть новий токен і підключіться повторно.",
+          "flex_ip_restricted": "Сервіс IBKR відхилив IP-адресу цього сервера. Оновіть обмеження за IP і підключіться повторно.",
+          "flex_query_invalid": "Ідентифікатор запиту Activity Flex недійсний або недоступний.",
+          "credentials_invalid": "Токен IBKR Flex недійсний. Створіть новий токен і підключіться повторно.",
+          "flex_account_invalid": "Рахунок IBKR у цьому запиті Flex недійсний або недоступний.",
+          "flex_query_account_count": "Запит Flex має повертати рівно один рахунок IBKR.",
+          "flex_query_missing_section": "У запиті Flex відсутній обов’язковий розділ звіту.",
+          "flex_query_missing_field": "У запиті Flex відсутнє обов’язкове поле звіту.",
+          "flex_query_position_detail": "Розділ Open Positions має використовувати рівень деталізації Summary.",
+          "flex_request_invalid": "Сервісу IBKR не вдалося перевірити запит Flex. Перевірте токен та ідентифікатор запиту.",
+          "flex_query_output_format": "Установіть для Activity Flex Query формат виведення XML.",
+          "provider_rate_limited": "IBKR обмежує частоту запитів. Повторіть спробу за хвилину.",
+          "provider_transient": "Сервісу IBKR не вдалося завершити формування звіту. Повторіть спробу пізніше."
+        }
+      },
       "simplefin": {
         "title": "Підключення через SimpleFIN",
         "description": "SimpleFIN — це протокол банківських даних лише для читання. Перейдіть до SimpleFIN Bridge, оберіть свій банк і скопіюйте установчий токен сюди."
@@ -691,6 +725,9 @@
       "reconnect": "Перепідключити"
     },
     "providers": {
+      "ibkr": {
+        "description": "Синхронізація брокерського рахунку лише для читання через IBKR Flex Web Service"
+      },
       "pluggy": {
         "description": "Провайдер відкритих фінансів для бразильських банків"
       },

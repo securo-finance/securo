@@ -382,6 +382,22 @@ export const connections = {
     })
     return data
   },
+  handleTokenCallback: async (
+    token: string,
+    provider: string,
+    parameters?: Record<string, unknown>,
+    settings?: Pick<ConnectionSettings, 'sync_assets'>,
+    reconnectConnectionId?: string,
+  ): Promise<BankConnection> => {
+    const { data } = await api.post('/connections/token/callback', {
+      token,
+      provider,
+      parameters: parameters ?? {},
+      reconnect_connection_id: reconnectConnectionId,
+      ...settings,
+    })
+    return data
+  },
   getReauthUrl: async (connectionId: string): Promise<string> => {
     const { data } = await api.post(`/connections/${connectionId}/oauth/reauth-url`)
     return data.url

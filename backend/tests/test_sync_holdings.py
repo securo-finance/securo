@@ -24,6 +24,7 @@ from app.models.asset_group import AssetGroup
 from app.models.asset_value import AssetValue
 from app.models.bank_connection import BankConnection
 from app.models.user import User
+from app.models.workspace import Workspace
 from app.providers import register_provider
 from app.providers.base import (
     AccountData,
@@ -529,6 +530,51 @@ async def test_returned_holding_is_unarchived_after_reconnect(
 
     assets = {a.external_id: a for a in await _assets_for(session, test_user)}
     assert assets["h-1"].is_archived is False
+
+
+@pytest.mark.asyncio
+async def test_orphan_holding_from_another_workspace_is_not_relinked(
+    session: AsyncSession, test_user: User, mock_connection: BankConnection
+):
+    """Reconnect matching must never move an asset across workspace boundaries."""
+    other_workspace = Workspace(
+        id=uuid.uuid4(),
+        name="Other workspace",
+        created_by_user_id=test_user.id,
+    )
+    session.add(other_workspace)
+    await session.flush()
+    other_asset = Asset(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=other_workspace.id,
+        connection_id=None,
+        source="mock",
+        external_id="h-1",
+        name="Other workspace asset",
+        type="investment",
+        currency="BRL",
+        is_archived=True,
+    )
+    session.add(other_asset)
+    await session.commit()
+
+    _MockProvider._holdings = [_holding(external_id="h-1", current_value=Decimal("500"))]
+    assert mock_connection.credentials is not None
+    await _sync_holdings(
+        session, test_user.id, mock_connection, mock_connection.credentials
+    )
+    await session.commit()
+
+    await session.refresh(other_asset)
+    assert other_asset.connection_id is None
+    assert other_asset.is_archived is True
+    current_workspace_assets = [
+        asset
+        for asset in await _assets_for(session, test_user)
+        if asset.workspace_id == mock_connection.workspace_id
+    ]
+    assert [asset.external_id for asset in current_workspace_assets] == ["h-1"]
 
 
 @pytest.mark.asyncio

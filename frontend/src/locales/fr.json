@@ -632,7 +632,7 @@
     "noTransactions": "Aucune transaction pour ce compte",
     "syncFailed": "Échec de la synchronisation",
     "reconnect": "Reconnecter",
-    "connectionError": "Erreur de connexion — reconnectez-vous pour corriger",
+    "connectionError": "Erreur de connexion — réessayez la synchronisation",
     "close": "Clôturer le compte",
     "reopen": "Rouvrir le compte",
     "accountClosed": "Compte clôturé",
@@ -676,6 +676,40 @@
       "tokenHelp": "Le jeton de configuration est à usage unique. Securo en extrait une URL d'accès privée qu'il stocke chiffrée.",
       "connect": "Connecter",
       "connecting": "Connexion…",
+      "ibkr": {
+        "title": "Connecter Interactive Brokers",
+        "description": "Utilisez une requête Activity Flex en lecture seule. Saisissez le jeton Flex Web Service et l’identifiant de la requête IBKR.",
+        "reconnectTitle": "Reconnecter Interactive Brokers",
+        "reconnectDescription": "Saisissez à nouveau le jeton Flex récemment généré et l’identifiant de la requête. Les données Securo existantes seront conservées.",
+        "openSetup": "Ouvrir le guide de configuration IBKR Flex",
+        "tokenLabel": "Jeton Flex Web Service",
+        "tokenPlaceholder": "Collez le jeton IBKR Flex",
+        "tokenHelp": "Securo stocke ce jeton sous forme chiffrée. Sa régénération dans IBKR invalide le jeton précédent.",
+        "queryIdLabel": "Identifiant de la requête Activity Flex",
+        "queryIdPlaceholder": "Par exemple : 123456",
+        "queryChecklistTitle": "Sections XML requises",
+        "queryChecklistAccount": "Informations sur le compte (Account Information) : identifiant du compte, nom ou alias et devise",
+        "queryChecklistCash": "Rapport de trésorerie (Cash Report) : ventilation par devise et solde final",
+        "queryChecklistFunds": "État des fonds (Statement of Funds) : identifiants de transaction et d’opération, dates, descriptions, montants et devise",
+        "queryChecklistPositions": "Positions ouvertes (Open Positions) : niveau de détail « Summary » avec identifiants, quantité, valeur, prix et coût de revient",
+        "errorHelp": "Ouvrir le guide de configuration IBKR Flex",
+        "errors": {
+          "flex_service_inactive": "Activez Flex Web Service dans IBKR, puis réessayez.",
+          "credentials_expired": "Le jeton IBKR Flex a expiré. Générez-en un nouveau et reconnectez-vous.",
+          "flex_ip_restricted": "IBKR a refusé l’adresse IP de ce serveur. Modifiez la restriction IP et reconnectez-vous.",
+          "flex_query_invalid": "L’identifiant de la requête Activity Flex est invalide ou indisponible.",
+          "credentials_invalid": "Le jeton IBKR Flex est invalide. Générez-en un nouveau et reconnectez-vous.",
+          "flex_account_invalid": "Le compte IBKR de cette requête Flex est invalide ou indisponible.",
+          "flex_query_account_count": "La requête Flex doit renvoyer exactement un compte IBKR.",
+          "flex_query_missing_section": "Il manque une section obligatoire dans la requête Flex.",
+          "flex_query_missing_field": "Il manque un champ obligatoire dans la requête Flex.",
+          "flex_query_position_detail": "La section Open Positions doit utiliser le niveau de détail Summary.",
+          "flex_request_invalid": "IBKR n’a pas pu valider la requête Flex. Vérifiez le jeton et l’identifiant de la requête.",
+          "flex_query_output_format": "Définissez le format de sortie de l’Activity Flex Query sur XML.",
+          "provider_rate_limited": "IBKR limite actuellement la fréquence des requêtes. Réessayez dans une minute.",
+          "provider_transient": "IBKR n’a pas pu terminer le rapport. Réessayez plus tard."
+        }
+      },
       "simplefin": {
         "title": "Connexion via SimpleFIN",
         "description": "SimpleFIN est un protocole de données bancaires en lecture seule. Rendez-vous sur le SimpleFIN Bridge, choisissez votre banque et recopiez le jeton de configuration ici."
@@ -685,6 +719,9 @@
       "reconnect": "Reconnecter"
     },
     "providers": {
+      "ibkr": {
+        "description": "Synchronisation du compte de courtage en lecture seule via IBKR Flex Web Service"
+      },
       "pluggy": {
         "description": "Fournisseur d'open finance pour les banques brésiliennes"
       },

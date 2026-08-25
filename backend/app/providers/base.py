@@ -209,6 +209,16 @@ class ProviderRateLimited(Exception):
     """
 
 
+class ProviderTransientError(Exception):
+    """Raised for temporary upstream failures that should be retried later.
+
+    Unlike an authentication or consent error, this must not put a healthy
+    connection into the reconnect state. Examples include an asynchronously
+    generated report that is still unavailable or a provider maintenance
+    window.
+    """
+
+
 class ProviderNotConfiguredError(Exception):
     """Raised when a connection references a provider missing from the registry.
 
@@ -318,6 +328,29 @@ class BankProvider(ABC):
     async def handle_oauth_callback(self, code: str) -> ConnectionData:
         """Exchange OAuth code for access token and fetch initial data."""
         ...
+
+    async def connect_with_token(
+        self, token: str, parameters: Optional[dict] = None
+    ) -> ConnectionData:
+        """Create a connection from user-supplied token credentials.
+
+        The default preserves the historical token-provider behaviour where
+        SimpleFIN's setup token was sent through the OAuth callback contract.
+        Providers with additional token parameters (for example an IBKR Flex
+        query id) override this method.
+        """
+        return await self.handle_oauth_callback(token)
+
+    async def prepare_sync(
+        self, credentials: dict, since: Optional[date] = None
+    ) -> None:
+        """Optionally preload a provider snapshot shared by all sync reads.
+
+        Most providers expose independent accounts/transactions endpoints and
+        need no preparation. Report-style providers can override this hook to
+        generate one report and reuse it for accounts, activity and holdings.
+        """
+        return None
 
     @abstractmethod
     async def get_accounts(self, credentials: dict) -> list[AccountData]:

@@ -369,11 +369,37 @@ async def test_sync_user_action_required_marks_error_status(
         with pytest.raises(ProviderUserActionRequired):
             await sync_connection(session, conn_id, test_workspace.id, test_user.id)
 
-    # User-action failures are visible in the UI via the reconnect banner.
+    # Non-credential actions can be fixed outside Securo and retried with the
+    # encrypted credentials already on the connection.
     refreshed = (await session.execute(
         select(BankConnection).where(BankConnection.id == conn_id)
     )).scalar_one()
     assert refreshed.status == "error"
+
+
+@pytest.mark.asyncio
+async def test_sync_invalid_credentials_marks_expired_status(
+    session: AsyncSession, test_user, test_workspace,
+):
+    conn = await _make_connection(session, test_user.id, "ExpiredTokenBank")
+    conn_id = conn.id
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(
+        side_effect=ProviderUserActionRequired(
+            "token rejected", code="credentials_invalid"
+        )
+    )
+
+    with patch(
+        "app.services.connection_service.get_provider", return_value=mock_provider
+    ):
+        with pytest.raises(ProviderUserActionRequired):
+            await sync_connection(session, conn_id, test_workspace.id, test_user.id)
+
+    refreshed = (await session.execute(
+        select(BankConnection).where(BankConnection.id == conn_id)
+    )).scalar_one()
+    assert refreshed.status == "expired"
 
 
 # ---------------------------------------------------------------------------
@@ -444,7 +470,7 @@ async def test_oauth_callback_reconnect_updates_existing(
     assert result.institution_name == "NewName"
     assert result.credentials == {"token": "fresh"}
     assert result.status == "active"
-    assert result.last_sync_at is None
+    assert result.last_sync_at is not None
 
 
 # ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BankConnectionBase(BaseModel):
@@ -37,6 +37,14 @@ class OAuthCallbackRequest(BaseModel):
     code: str
     state: Optional[str] = None
     provider: Optional[str] = None
+    sync_assets: Optional[bool] = None
+    reconnect_connection_id: Optional[uuid.UUID] = None
+
+
+class TokenCallbackRequest(BaseModel):
+    provider: str = Field(min_length=1, max_length=50, pattern=r"^[a-z0-9_]+$")
+    token: str = Field(min_length=1, max_length=4096)
+    parameters: dict[str, object] = Field(default_factory=dict, max_length=20)
     sync_assets: Optional[bool] = None
     reconnect_connection_id: Optional[uuid.UUID] = None
 
