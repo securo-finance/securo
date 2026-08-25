@@ -128,6 +128,24 @@ async def test_match_pluggy_prefix(session: AsyncSession, test_user, test_worksp
 
 
 @pytest.mark.asyncio
+async def test_match_pluggy_credit_card_payment(session: AsyncSession, test_user, test_workspace):
+    """Pluggy's 'Credit card payment' category (a level-2 category under
+    Transfers, not a 'Transfer - X' string) maps to Transferências."""
+    await _make_category(session, test_user.id, "Transferências")
+    cat_id = await _match_pluggy_category(session, test_workspace.id, "Credit card payment")
+    assert cat_id is not None
+
+
+@pytest.mark.asyncio
+async def test_match_pluggy_same_person_transfer(session: AsyncSession, test_user, test_workspace):
+    """'Same person transfer - PIX/TED/Cash' (self-transfers) map to Transferências
+    via the ' - ' prefix split, same as 'Transfer - PIX' does."""
+    await _make_category(session, test_user.id, "Transferências")
+    cat_id = await _match_pluggy_category(session, test_workspace.id, "Same person transfer - PIX")
+    assert cat_id is not None
+
+
+@pytest.mark.asyncio
 async def test_match_pluggy_no_match(session: AsyncSession, test_workspace):
     """Unknown Pluggy category returns None."""
     cat_id = await _match_pluggy_category(

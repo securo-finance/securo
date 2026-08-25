@@ -1,6 +1,6 @@
 # Status operacional — Securo
 
-Atualizado em 21/08/2026. Este arquivo é o checklist de operação da instância
+Atualizado em 25/08/2026. Este arquivo é o checklist de operação da instância
 produtiva. Marque um item como concluído somente após registrar a evidência
 correspondente.
 
@@ -105,6 +105,34 @@ Securo.
 - [ ] Documentar regras que não puderem ser representadas nativamente, em vez
       de tentar automatizá-las com agentes.
 
+### 4.1 Achado: Entradas/Saídas do mês incluíam pagamento de fatura e autotransferência
+
+Diagnóstico (25/08/2026): o dashboard soma créditos/débitos de todas as contas
+do workspace, inclusive cartão de crédito, sem excluir por padrão pagamento de
+fatura nem transferência para si mesmo. A exclusão só acontece quando a
+transação está pareada (`transfer_pair_id`) ou sua categoria tem
+`treat_as_transfer = true` — hoje só "Transferências" e "Investimentos" têm
+essa flag por padrão. A categoria "Pagamento de Fatura" do Santander não tinha
+a flag, então o débito da fatura na conta corrente contava como Saída do mês.
+
+- [x] Confirmado no código (`_query_filters.counts_as_pnl`, `PLUGGY_CATEGORY_MAP`
+      em `connection_service.py`) e verificado contra a documentação oficial da
+      Pluggy: os nomes reais de categoria são `"Credit card payment"` e
+      `"Same person transfer - PIX/TED/Cash"`, nenhum dos dois estava mapeado.
+- [x] PR pequeno aberto: mapear as duas categorias para "Transferências" +
+      migration de backfill para transações já sincronizadas sem categoria
+      (nunca sobrescreve categorização manual existente).
+- [ ] Ação manual pendente do administrador: marcar "Tratar como transferência"
+      na categoria "Pagamento de Fatura" já existente (Categorias → editar),
+      para corrigir retroativamente os meses já importados que usam essa
+      categoria específica. Isso é imediato (filtro é calculado em tempo de
+      consulta, sem precisar ressincronizar).
+- [ ] Pendência relacionada, ainda não resolvida: sincronização de
+      investimentos XP incompleta (nem todo o saldo aparece) e o fluxo de
+      "PIX para si mesmo → depois para a XP" precisa de revisão de regras
+      separada (tratar como transferência as duas pernas, sem duplicar como
+      receita/despesa).
+
 ## Fase 5 — MCP e agentes internos
 
 - [ ] Ativar o perfil de agentes somente depois da Fase 3.
@@ -136,3 +164,4 @@ Securo.
 | 2026-08-22 | Diagnóstico de deploy | O workflow verde usava imagens `latest` do upstream; a correção para construir o commit do fork na VPS está em preparação. | Codex |
 | 2026-08-21 | Pluggy | Credenciais configuradas e carregadas em backend, worker e scheduler; `GET /api/health` saudável. | Codex |
 | 2026-08-21 | Reconciliação piloto | Faturas do cartão conferidas contra o Organizze; valores compatíveis. Identificado ajuste de subtipo de poupança no provider Pluggy. | Codex |
+| 2026-08-25 | Diagnóstico Fase 4 | Entradas/Saídas do mês incluíam pagamento de fatura de cartão sem exclusão automática (categoria sem `treat_as_transfer`). Ver seção 4.1. | Claude |

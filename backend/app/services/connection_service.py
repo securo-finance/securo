@@ -79,6 +79,12 @@ PLUGGY_CATEGORY_MAP = {
     "Transfer": "Transferências",
     "Transfers": "Transferências",
     "Wire transfers": "Transferências",
+    # Pluggy's own taxonomy files these as level-2 categories under
+    # "Transfers" rather than as "Transfer - X" strings, so the generic
+    # " - " prefix split below never catches them (issue #<TBD>). Both are
+    # cash movements between the user's own accounts/cards, not spend.
+    "Credit card payment": "Transferências",
+    "Same person transfer": "Transferências",
 }
 
 
