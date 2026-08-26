@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import Optional, cast
 
 from sqlalchemy import CursorResult, case, select, func, update, delete
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.payee import Payee, PayeeMapping, PayeeTaxId
@@ -95,21 +96,60 @@ async def get_or_create_payee(
     if len(name) > 255:
         name = name[:255]
 
-    lookup = select(Payee).where(func.lower(Payee.name) == name.lower())
-    if workspace_id is not None:
-        lookup = lookup.where(Payee.workspace_id == workspace_id)
-    else:
-        lookup = lookup.where(Payee.user_id == user_id)
-    result = await session.execute(lookup)
-    payee = result.scalar_one_or_none()
+    def _scoped(stmt):
+        if workspace_id is not None:
+            return stmt.where(Payee.workspace_id == workspace_id)
+        return stmt.where(Payee.user_id == user_id)
+
+    # Exact match first, and deliberately before the case-insensitive one.
+    # The unique constraint compares names byte for byte, so this is the
+    # only lookup guaranteed to find the row an insert would collide with,
+    # and the only one that can use the constraint's index.
+    #
+    # The case-insensitive query below cannot make that promise: it
+    # lowercases the column in the database and the value in Python, and
+    # the two disagree outside ASCII. Postgres `lower()` follows the
+    # cluster's locale, so one created with the C locale (a common default
+    # in Kubernetes Postgres charts, unlike the en_US.utf8 our compose file
+    # gets) leaves every non-ASCII capital alone where Python folds it. A
+    # name like "MÜLLER GmbH" then never matched itself: the second
+    # transaction naming that counterparty missed the lookup and inserted a
+    # row that was already there, taking the whole bank sync down with it
+    # and leaving the connection with no accounts at all (#678).
+    payee = await session.scalar(_scoped(select(Payee).where(Payee.name == name)))
+    if payee:
+        return payee
+
+    # The same name in a different case is the same counterparty, so a
+    # bank that writes "Amazon" today and "AMAZON" tomorrow reuses one
+    # row. Best effort by nature: on a C-locale database it only folds
+    # ASCII, which is why it can no longer be the only lookup.
+    payee = await session.scalar(
+        _scoped(select(Payee).where(func.lower(Payee.name) == name.lower()))
+    )
     if payee:
         return payee
 
     payee = Payee(user_id=user_id, name=name, source=source)
     if workspace_id is not None:
         payee.workspace_id = workspace_id
-    session.add(payee)
-    await session.flush()
+    try:
+        async with session.begin_nested():
+            session.add(payee)
+            await session.flush()
+    except IntegrityError:
+        # Someone inserted the same name between our lookup and our
+        # insert. Two syncs of one connection can overlap (a manual sync
+        # landing on top of the scheduled one) and the transaction path
+        # already tolerates that same race. Take the row that won rather
+        # than failing a whole sync over a counterparty we were about to
+        # create anyway.
+        existing = await session.scalar(
+            _scoped(select(Payee).where(Payee.name == name))
+        )
+        if existing is None:
+            raise
+        return existing
     return payee
 
 
