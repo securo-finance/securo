@@ -31,7 +31,7 @@ from app.models.goal import Goal
 from app.models.group import Group, GroupMember
 from app.models.group_settlement import GroupSettlement
 from app.models.import_log import ImportLog
-from app.models.payee import Payee, PayeeMapping
+from app.models.payee import Payee, PayeeMapping, PayeeTaxId
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.rule import Rule
 from app.models.transaction import Transaction
@@ -57,6 +57,7 @@ _AUTOSTAMP_MODELS = (
     ImportLog,
     Payee,
     PayeeMapping,
+    PayeeTaxId,
     RecurringTransaction,
     Rule,
     Transaction,
@@ -106,6 +107,7 @@ _PARENT_LOOKUPS: tuple[tuple[str, str], ...] = (
     ("connection_id", "app.models.bank_connection:BankConnection"),
     ("asset_id", "app.models.asset:Asset"),
     ("group_id", "app.models.group:Group"),
+    ("payee_id", "app.models.payee:Payee"),
     ("transaction_id", "app.models.transaction:Transaction"),
     ("agent_id", "app.agents.models.agent:Agent"),
 )

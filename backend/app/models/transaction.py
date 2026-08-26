@@ -32,6 +32,10 @@ class Transaction(Base):
     category_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("categories.id"), nullable=True)
     external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Provider's transaction ID
     description: Mapped[str] = mapped_column(String(500))
+    original_description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    description_is_rule_managed: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     amount: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2))
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     date: Mapped[_date] = mapped_column(Date)
@@ -49,6 +53,13 @@ class Transaction(Base):
     raw_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     import_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("import_logs.id"), nullable=True)
     transfer_pair_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # True on both legs of a cross-currency transfer whose destination amount
+    # the user typed in, instead of letting it be converted at the market rate.
+    # Both amounts are then observed facts, so editing one leg must not
+    # re-derive the other from an FX rate.
+    transfer_amount_explicit: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     amount_primary: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
     fx_rate_used: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=20, scale=10), nullable=True)
     # Installment (parcelamento) metadata. Populated from provider data when available.
@@ -61,6 +72,12 @@ class Transaction(Base):
         Numeric(precision=15, scale=2), nullable=True
     )
     installment_purchase_date: Mapped[Optional[_date]] = mapped_column(Date, nullable=True)
+    # Stable identity for rows created by the manual installment-series
+    # endpoint. Provider-synced installment rows leave this null because their
+    # metadata is only a deduplication fingerprint, not a series identifier.
+    installment_series_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
     # User-set manual override for which bill cycle this tx belongs to. Null
     # by default; only meaningful for credit-card accounts. When set, beats
     # both Pluggy's billId and the cycle-math fallback (issue #92, the

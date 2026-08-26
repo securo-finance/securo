@@ -6,9 +6,10 @@ from typing import Optional, cast
 from sqlalchemy import CursorResult, case, select, func, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.payee import Payee, PayeeMapping
+from app.models.payee import Payee, PayeeMapping, PayeeTaxId
 from app.models.transaction import Transaction
 from app.models.category import Category
+from app.fiscal.registry import TaxIdKind, normalise_and_validate
 from app.schemas.payee import PayeeCreate, PayeeUpdate
 
 
@@ -70,12 +71,22 @@ async def get_or_create_payee(
     name: str,
     *,
     workspace_id: Optional[uuid.UUID] = None,
+    source: str = "sync",
 ) -> Payee:
     """Find a payee by name (case-insensitive) or create a new one.
 
     `user_id` is kept first for backwards compatibility with import/connection
     sync paths. When `workspace_id` is provided, the lookup scopes by workspace;
     otherwise the autostamp listener fills it in on insert.
+
+    `source` is stamped only on rows this call creates. An existing payee is
+    returned untouched, so a counterparty somebody entered by hand keeps
+    saying so even after sync sees the same name — the same protection that
+    already keeps sync from overwriting manual edits.
+
+    Defaults to `sync` because that is what this function is for: the bulk
+    path that turns bank descriptors into rows. The CSV importer passes
+    `import` explicitly.
     """
     name = name.strip()
     if not name:
@@ -94,12 +105,70 @@ async def get_or_create_payee(
     if payee:
         return payee
 
-    payee = Payee(user_id=user_id, name=name)
+    payee = Payee(user_id=user_id, name=name, source=source)
     if workspace_id is not None:
         payee.workspace_id = workspace_id
     session.add(payee)
     await session.flush()
     return payee
+
+
+async def _apply_tax_ids(
+    session: AsyncSession,
+    payee: Payee,
+    workspace_id: uuid.UUID,
+    incoming: list,
+) -> None:
+    """Replace this payee's fiscal documents with `incoming`.
+
+    Replace rather than merge: the caller sends the set that should remain,
+    which makes removing a document the same operation as changing one and
+    leaves no way to end up with a stale row nobody meant to keep.
+
+    Validation is by document kind and deliberately not by the workspace's
+    jurisdiction. A Brazilian consultancy billing a Berlin client stores a
+    German VAT number, and it is checked as a VAT number.
+    """
+    normalised: dict[TaxIdKind, str] = {}
+    for item in incoming:
+        kind = TaxIdKind(item.kind)
+        value, error = normalise_and_validate(kind, item.value)
+        # An emptied field means "drop this document", not "store nothing".
+        if error == "empty":
+            continue
+        if error:
+            raise ValueError(f"invalid_tax_id:{kind.value}:{error}")
+        # One document per kind, enforced by a unique constraint. Keeping the
+        # last silently would discard the caller's earlier value: two CNPJs on
+        # one counterparty is a mistake worth reporting, not resolving.
+        if kind in normalised:
+            raise ValueError(f"duplicate_tax_id:{kind.value}")
+        normalised[kind] = value
+
+    # Queried rather than read off `payee.tax_ids`: a freshly flushed payee
+    # would lazy-load the collection, and lazy IO inside an async session is
+    # exactly the MissingGreenlet this codebase must not hand a user.
+    rows = await session.execute(
+        select(PayeeTaxId).where(PayeeTaxId.payee_id == payee.id)
+    )
+    existing = {row.kind: row for row in rows.scalars().all()}
+    for kind_value, row in existing.items():
+        if TaxIdKind(kind_value) not in normalised:
+            await session.delete(row)
+    for kind, value in normalised.items():
+        row = existing.get(kind.value)
+        if row is None:
+            session.add(
+                PayeeTaxId(
+                    payee_id=payee.id,
+                    workspace_id=workspace_id,
+                    kind=kind.value,
+                    value=value,
+                )
+            )
+        elif row.value != value:
+            row.value = value
+    await session.flush()
 
 
 async def create_payee(
@@ -115,9 +184,13 @@ async def create_payee(
     if existing.scalar_one_or_none():
         raise ValueError("A payee with this name already exists")
 
-    payee = Payee(user_id=user_id, workspace_id=workspace_id, **data.model_dump())
+    fields = data.model_dump(exclude={"tax_ids"})
+    # Stamped here rather than taken from the request: this is the path a
+    # person went through a form to reach.
+    payee = Payee(user_id=user_id, workspace_id=workspace_id, source="manual", **fields)
     session.add(payee)
     await session.flush()
+    await _apply_tax_ids(session, payee, workspace_id, data.tax_ids)
 
     # Self-mapping for merge tracking
     mapping = PayeeMapping(id=payee.id, user_id=user_id, workspace_id=workspace_id, target_id=payee.id)
@@ -137,6 +210,9 @@ async def update_payee(
         return None
 
     update_data = data.model_dump(exclude_unset=True)
+    # Documents are handled separately: they live in their own table and are
+    # replaced as a set, not assigned onto the payee row.
+    tax_ids = update_data.pop("tax_ids", None)
 
     # Check name uniqueness if name is being changed
     if "name" in update_data and update_data["name"]:
@@ -152,6 +228,9 @@ async def update_payee(
 
     for key, value in update_data.items():
         setattr(payee, key, value)
+
+    if tax_ids is not None:
+        await _apply_tax_ids(session, payee, workspace_id, data.tax_ids or [])
 
     await session.commit()
     await session.refresh(payee)

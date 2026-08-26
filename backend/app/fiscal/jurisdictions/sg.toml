@@ -1,0 +1,4 @@
+# Singapore. The UEN identifies every registered entity and doubles as the
+# GST registration number, so an invoice carries the one number.
+code = "SG"
+kinds = ["sg_uen"]

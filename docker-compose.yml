@@ -38,6 +38,7 @@ x-backend-env: &backend-env
   OIDC_ROLES_CLAIM: ${OIDC_ROLES_CLAIM:-groups}
   OIDC_ADMIN_ROLES: ${OIDC_ADMIN_ROLES:-}
   OIDC_WORKSPACE_ROLE_MAP: ${OIDC_WORKSPACE_ROLE_MAP:-}
+  LOCAL_AUTH_ENABLED: ${LOCAL_AUTH_ENABLED:-true}
   REDIS_URL: redis://redis:6379/0
   OPENEXCHANGERATES_APP_ID: ${OPENEXCHANGERATES_APP_ID:-}
   FX_SYNC_MODE: ${FX_SYNC_MODE:-on_demand}
@@ -74,6 +75,11 @@ x-backend-env: &backend-env
 x-backend-base: &backend-base
   build: ./backend
   environment: *backend-env
+  # Lets a connection point at a model server running on the host (LM Studio,
+  # Ollama, llama.cpp) as http://host.docker.internal:<port>. Docker Desktop
+  # resolves the name on its own; this makes it work on Linux too.
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   depends_on:
     db: { condition: service_healthy }
     redis: { condition: service_healthy }
@@ -87,7 +93,7 @@ x-backend-base: &backend-base
 
 services:
   redis:
-    image: docker.io/library/redis:7-alpine
+    image: docker.io/library/redis:8-alpine
     restart: unless-stopped
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']

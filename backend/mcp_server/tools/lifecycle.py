@@ -41,6 +41,7 @@ async def list_recurring_transactions(
             "currency": r.currency,
             "type": r.type,
             "frequency": r.frequency,
+            "weekend_adjustment": r.weekend_adjustment,
             "interval": getattr(r, "interval", None),
             "next_occurrence": r.next_occurrence.isoformat() if getattr(r, "next_occurrence", None) else None,
             "start_date": r.start_date.isoformat() if getattr(r, "start_date", None) else None,

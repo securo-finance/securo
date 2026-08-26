@@ -70,6 +70,13 @@ class AccountData:
     # provider exposes one. Disambiguates accounts a bank reports under an
     # identical name (issue #408). Never the full identifier — see mask_last4.
     masked_number: Optional[str] = None
+    # Per-account institution override (SimpleFIN — issue #345). None = same
+    # as connection. The external id is the provider's stable org id
+    # (SimpleFIN conn_id) so a renamed bank updates its row instead of
+    # minting a new one; name-only hints fall back to name identity.
+    institution_external_id: Optional[str] = None
+    institution_name: Optional[str] = None
+    institution_logo_url: Optional[str] = None
 
 
 @dataclass
@@ -158,6 +165,12 @@ class HoldingData:
     maturity_date: Optional[date] = None
     is_withdrawn: bool = False  # provider signaled the position was sold/transferred
     metadata: Optional[dict] = None
+    # Owning-account hint (SimpleFIN — issue #345): holdings are reported per
+    # account, so each investment account gets its own wallet ("401(k)" apart
+    # from "Rollover IRA"). None = the connection-default wallet, for
+    # providers whose holdings aren't attributable to an account.
+    account_external_id: Optional[str] = None
+    account_name: Optional[str] = None
 
 
 @dataclass
@@ -206,6 +219,17 @@ class ProviderRateLimited(Exception):
     access (commonly ~4/day per resource), so a burst of syncs returns HTTP
     429. The connection is healthy; callers should skip this run and retry
     later rather than flag it as errored.
+    """
+
+
+class ProviderNotConfiguredError(Exception):
+    """Raised when a connection references a provider missing from the registry.
+
+    This is a server configuration problem, not a bank problem — typically one
+    process (e.g. the Celery worker) is not loading the environment that
+    enables the provider while the API process is. The credentials are fine,
+    so callers must not flip the connection to "error": the reconnect banner
+    would send the user chasing the wrong fix (and burning setup tokens).
     """
 
 

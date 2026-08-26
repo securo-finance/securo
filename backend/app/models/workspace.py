@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Literal, Optional, get_args
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
@@ -14,7 +14,17 @@ if TYPE_CHECKING:
 
 # Allowed values for Workspace.kind. Drives template defaults + module
 # visibility. New kinds get added here; the data model is identical.
-WORKSPACE_KINDS = ("personal", "freelancer", "small_business", "accountant_firm")
+#
+# Two values, both describing what the container holds: a household's
+# money or a work's money. `kind` never describes how a workspace is
+# accessed; operating one on someone else's behalf is the separate
+# `managed_by_user_id` primitive below.
+#
+# Set once, at creation, and never edited: it is the premise the
+# workspace's accounts and categories were built on, not a label. A
+# workspace that turns out to be the wrong kind is a new workspace.
+WorkspaceKind = Literal["personal", "business"]
+WORKSPACE_KINDS: tuple[str, ...] = get_args(WorkspaceKind)
 
 # Roles a member can hold inside a workspace. `owner` is the
 # member-management + workspace-config role; `editor` can read/write
@@ -57,6 +67,19 @@ class Workspace(Base):
     # `default_currency` etc. from here.
     default_currency: Mapped[str] = mapped_column(String(3), default="USD", server_default="USD")
     locale: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    # Where this workspace operates fiscally. Selects the jurisdiction pack
+    # that names and validates fiscal documents, and the axis any future
+    # threshold or tax date keys on.
+    #
+    # Emphatically NOT `locale`. A Brazilian who reads the interface in
+    # English still files in Brazil, and a German who prefers Portuguese
+    # does not inherit Brazilian invoicing. Anything fiscal that branches on
+    # `locale` is a bug.
+    #
+    # Nullable, and null is a working configuration: the pack registry falls
+    # back to free-text documents with no mask, so a country nobody has
+    # contributed a pack for is usable on day one.
+    tax_jurisdiction: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     icon: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     color: Mapped[Optional[str]] = mapped_column(String(7), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

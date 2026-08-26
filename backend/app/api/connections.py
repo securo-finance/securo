@@ -10,7 +10,11 @@ from app.core.workspace_context import (
     current_writable_workspace,
 )
 from app.providers import all_known_providers
-from app.providers.base import ProviderUserActionRequired, SessionExpiredError
+from app.providers.base import (
+    ProviderNotConfiguredError,
+    ProviderUserActionRequired,
+    SessionExpiredError,
+)
 from app.schemas.bank_connection import (
     BankConnectionRead,
     ConnectionSettingsUpdate,
@@ -188,6 +192,8 @@ async def sync_connection(
         )
     except SessionExpiredError as e:
         raise HTTPException(status_code=status.HTTP_410_GONE, detail=str(e))
+    except ProviderNotConfiguredError as e:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -198,10 +204,15 @@ async def sync_connection(
 @router.post("/{connection_id}/reconnect-token", response_model=ReconnectTokenResponse)
 async def get_reconnect_token(
     connection_id: uuid.UUID,
-    ctx: WorkspaceContext = Depends(current_workspace),
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Get a connect token for reconnecting an errored/expired connection."""
+    """Get a connect token for reconnecting an errored/expired connection.
+
+    Write-gated: the token this hands out re-links a bank connection, which
+    is the same capability `get_reauth_url` above grants and gates. A
+    read-only member has no business minting one.
+    """
     connection = await connection_service.get_connection(session, connection_id, ctx.workspace.id)
     if not connection:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found")

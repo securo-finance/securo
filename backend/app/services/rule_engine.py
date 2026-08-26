@@ -2,6 +2,7 @@
 import re
 import unicodedata
 import uuid
+from collections.abc import Collection
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING
@@ -14,6 +15,18 @@ def _strip_accents(text: str) -> str:
     """Remove diacritics (accents), preserving case."""
     nfkd = unicodedata.normalize("NFKD", text)
     return "".join(c for c in nfkd if not unicodedata.combining(c))
+
+
+def compile_rule_regex(pattern: str) -> re.Pattern[str]:
+    """Compile a regex using Securo's runtime normalization and safety policy."""
+    effective_pattern = _strip_accents(pattern)
+    try:
+        compiled = re.compile(effective_pattern, re.IGNORECASE)
+    except re.error as exc:
+        raise ValueError("Invalid regular expression") from exc
+    if compiled.search("") is not None:
+        raise ValueError("Regular expression must not match an empty string")
+    return compiled
 
 
 def _normalize(text: str) -> str:
@@ -80,9 +93,9 @@ def _match_condition(condition: dict, tx: "Transaction") -> bool:
                 # normalized text, but keep its case: uppercasing a regex
                 # inverts escape classes (\s -> \S, \b -> \B, \d -> \D) and
                 # breaks inline flags. Case is already handled by IGNORECASE.
-                pattern = _strip_accents(str(value or ""))
-                return bool(re.search(pattern, tx_str, re.IGNORECASE))
-            except re.error:
+                compiled = compile_rule_regex(str(value or ""))
+                return compiled.search(tx_str) is not None
+            except ValueError:
                 return False
 
     # Numeric operators
@@ -115,32 +128,103 @@ def _match_condition(condition: dict, tx: "Transaction") -> bool:
     return False
 
 
-def evaluate_conditions(conditions_op: str, conditions: list[dict], tx: "Transaction") -> bool:
-    """Return True if the transaction matches the rule's conditions."""
+def _is_group(node: dict) -> bool:
+    """A condition list entry is a group when it carries its own condition list."""
+    return isinstance(node, dict) and isinstance(node.get("conditions"), list)
+
+
+def _match_group(group: dict, tx: "Transaction") -> bool:
+    """Evaluate one nested group: its leaves joined by the group's own operator.
+
+    Groups hold leaves only, which caps a rule at two levels. A nested group
+    would reach `_match_condition` with no `field`/`op` and evaluate to False;
+    creation rejects them, so this only guards hand-edited data.
+    """
+    conditions = group.get("conditions") or []
     if not conditions:
         return False
     results = [_match_condition(c, tx) for c in conditions]
+    if group.get("op") == "or":
+        return any(results)
+    return all(results)  # "and" is default
+
+
+def evaluate_conditions(conditions_op: str, conditions: list[dict], tx: "Transaction") -> bool:
+    """Return True if the transaction matches the rule's conditions.
+
+    Each entry is either a leaf condition (`field`/`op`/`value`) or a group that
+    joins its own leaves with its own operator, letting a rule mix AND and OR —
+    e.g. `type is debit AND (description contains UBER OR contains 99POP)`.
+    """
+    if not conditions:
+        return False
+    results = [
+        _match_group(node, tx) if _is_group(node) else _match_condition(node, tx)
+        for node in conditions
+    ]
     if conditions_op == "or":
         return any(results)
     return all(results)  # "and" is default
+
+
+def merge_notes(existing: str | None, incoming: str | None) -> str | None:
+    """Combine two note strings the way `append_notes` combines tags.
+
+    Used when an incoming charge is folded into a row that already has notes:
+    the existing text is never dropped, the incoming one is only appended when
+    it is not already in there.
+    """
+    incoming = (incoming or "").strip()
+    if not incoming:
+        return existing
+    existing = (existing or "").strip()
+    if not existing:
+        return incoming
+    if incoming in existing:
+        return existing
+    return f"{existing} {incoming}"
 
 
 def apply_rule_actions(
     actions: list[dict],
     tx: "Transaction",
     category_already_set: bool,
+    *,
+    skip_description: bool = False,
+    hidden_category_ids: Collection[uuid.UUID] | None = None,
 ) -> bool:
-    """Apply actions to transaction in-place. Returns updated category_already_set flag."""
+    """Apply actions in-place and return the updated category-set flag.
+
+    A category the workspace has hidden is never assigned: hiding it means the
+    user stopped using it, so a rule that still points at one keeps its other
+    actions and drops only the categorization. The transaction is left
+    uncategorized rather than filed under a category the pickers no longer
+    offer.
+    """
     for action in actions:
         op = action.get("op")
         value = action.get("value")
 
         if op == "set_category" and not category_already_set:
             try:
-                tx.category_id = uuid.UUID(str(value))
-                category_already_set = True
+                category_id = uuid.UUID(str(value))
             except (ValueError, AttributeError):
-                pass
+                continue
+            if hidden_category_ids and category_id in hidden_category_ids:
+                continue
+            tx.category_id = category_id
+            category_already_set = True
+
+        elif op == "set_description":
+            if skip_description:
+                continue
+            description = str(value or "").strip()
+            if not description or description == tx.description:
+                continue
+            if getattr(tx, "original_description", None) is None:
+                tx.original_description = tx.description
+            tx.description = description
+            tx.description_is_rule_managed = True
 
         elif op == "set_payee":
             try:

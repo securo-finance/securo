@@ -6,17 +6,16 @@ import type { Account, TransactionCalendarDay, TransactionCalendarItem, Transact
 import { Skeleton } from '@/components/ui/skeleton'
 import { AccountIcon } from '@/components/account-icon'
 import { CategoryIcon } from '@/components/category-icon'
+import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
 import { getAccountName } from '@/lib/account-utils'
-import { activityChartData, dayActivity } from '@/lib/calendar-activity'
+import { activityChartData, dayActivity, isCalendarItemInteractive } from '@/lib/calendar-activity'
 import { weekdayShortLabels } from '@/lib/date-utils'
 import { cn } from '@/lib/utils'
+import { formatCurrency } from '@/lib/format'
+import { shouldShowPendingBadge } from '@/lib/transaction-status'
 
 function parseLocalDate(value: string) {
   return new Date(`${value}T00:00:00`)
-}
-
-function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
 }
 
 function compactCurrency(value: number, currency = 'USD', locale = 'en-US') {
@@ -1214,7 +1213,7 @@ function CalendarItemRow({
   onOpenTransaction: (id: string) => void
 }) {
   const { t } = useTranslation()
-  const interactive = item.kind === 'actual' && !!item.id
+  const interactive = isCalendarItemInteractive(item)
   const amountColor = item.is_ignored
     ? 'text-gray-500'
     : item.type === 'credit'
@@ -1227,7 +1226,9 @@ function CalendarItemRow({
       onClick={() => { if (item.id) onOpenTransaction(item.id) }}
       className={cn(
         'w-full flex items-center gap-3 pl-3 pr-3 py-3 text-left',
-        interactive ? 'hover:bg-muted/50 active:bg-muted/60 transition-colors' : 'cursor-default',
+        interactive
+          ? 'hover:bg-muted/50 active:bg-muted/60 transition-colors'
+          : 'cursor-default opacity-80',
       )}
     >
       <div className="shrink-0">
@@ -1236,10 +1237,8 @@ function CalendarItemRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <p className="text-sm font-semibold text-foreground truncate leading-tight">{item.description}</p>
-          {item.kind === 'projected' && (
-            <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
-              {t('transactions.calendarProjected')}
-            </span>
+          {item.kind === 'projected' && item.source === 'recurring' && item.status !== 'pending' && (
+            <ProjectedTransactionBadge />
           )}
           {item.is_transfer && (
             <ArrowLeftRight className="h-3 w-3 text-blue-600 shrink-0" />
@@ -1247,8 +1246,13 @@ function CalendarItemRow({
           {item.is_ignored && (
             <EyeClosed className="h-3 w-3 text-gray-500 shrink-0" />
           )}
-          {item.status === 'pending' && (
-            <Clock size={12} className="text-muted-foreground shrink-0" />
+          {shouldShowPendingBadge(item) && (
+            <span
+              title={t('transactions.pending')}
+              className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10"
+            >
+              <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
+            </span>
           )}
         </div>
         {(account || item.account_name) && (

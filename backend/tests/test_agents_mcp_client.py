@@ -285,6 +285,26 @@ async def test_registry_discover_swallows_per_server_errors(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_registry_discover_warns_when_a_server_is_unreachable(monkeypatch, caplog):
+    """An unreachable server leaves the agent with no tools while the chat
+    still answers, so the log has to name the server and its URL. Otherwise
+    the only symptom is an assistant saying it can't see any data."""
+    from app.agents.config import get_agent_settings
+
+    monkeypatch.setattr(get_agent_settings(), "extra_mcp_servers", "")
+    monkeypatch.setattr(get_agent_settings(), "builtin_mcp_url", "http://mcp-server:8765/mcp")
+    _FakeAsyncClient.queue.append(_FakeResponse(status_code=500, json_body={}))
+
+    reg = MCPRegistry()
+    with caplog.at_level("WARNING", logger="app.agents.mcp.client"):
+        handles = await reg.discover(user_id=uuid.uuid4())
+
+    assert handles == []
+    assert "http://mcp-server:8765/mcp" in caplog.text
+    assert "securo" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_registry_call_routes_via_namespaced_name():
     _FakeAsyncClient.queue.append(_FakeResponse(json_body={
         "jsonrpc": "2.0", "id": 1, "result": {"isError": False, "structuredContent": {"hello": "world"}, "content": []},

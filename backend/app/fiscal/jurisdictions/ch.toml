@@ -1,0 +1,4 @@
+# Switzerland. One UID per company, reused as the VAT number with an MWST
+# suffix. Not in the EU, so no intra-EU VAT id.
+code = "CH"
+kinds = ["ch_uid"]

@@ -28,6 +28,7 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import type { ReportResponse, CategoryTrendItem } from '@/types'
+import { formatCurrency } from '@/lib/format'
 
 // A small qualitative palette of well-separated hues for the composition
 // detail ring. Capped to a handful of slices, distinct colours make each
@@ -48,10 +49,6 @@ const SLICE_COLORS = [
   '#06B6D4', // cyan
 ]
 const OTHER_SLICE_COLOR = '#9CA3AF'
-
-function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
-}
 
 function formatCompact(value: number, currency = 'USD', locale = 'en-US') {
   return new Intl.NumberFormat(locale, {
@@ -846,8 +843,10 @@ export default function ReportsPage() {
                   contentStyle={tooltipStyle}
                 />
                 <ReferenceLine y={0} stroke="var(--border)" strokeDasharray="3 3" />
-                <Bar dataKey="income" fill="#10B981" radius={[4, 4, 0, 0]} maxBarSize={24} />
-                <Bar dataKey="expenses" fill="#F43F5E" radius={[4, 4, 0, 0]} maxBarSize={24} />
+                  <Bar dataKey="income" fill="#10B981" radius={[4, 4, 0, 0]} maxBarSize={20} />
+                  <Bar dataKey="expenses" fill="#F43F5E" radius={[4, 4, 0, 0]} maxBarSize={20} />
+                  <Bar dataKey="projectedIncome" fill="#34D399" radius={[4, 4, 0, 0]} maxBarSize={20} fillOpacity={0.65} />
+                  <Bar dataKey="projectedExpenses" fill="#FB7185" radius={[4, 4, 0, 0]} maxBarSize={20} fillOpacity={0.65} />
                 <Line
                   type="monotone"
                   dataKey="value"

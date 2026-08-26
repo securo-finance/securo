@@ -2,6 +2,7 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import TypedDict
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -595,14 +596,26 @@ async def test_update_transaction(session: AsyncSession, test_user, test_workspa
         user_id=test_user.id,
         account_id=txn_account.id,
         description="Old",
+        original_description="Bank Raw",
+        description_is_rule_managed=True,
         amount=Decimal("10"),
         date=date(2025, 3, 1),
         type="debit",
-        source="manual",
+        source="sync",
         created_at=datetime.now(timezone.utc),
     )
     session.add(txn)
     await session.commit()
+
+    unchanged = await update_transaction(
+        session,
+        txn.id,
+        test_workspace.id,
+        test_user.id,
+        TransactionUpdate(description="Old", notes="#reviewed"),
+    )
+    assert unchanged is not None
+    assert unchanged.description_is_rule_managed is True
 
     updated = await update_transaction(
         session,
@@ -614,6 +627,8 @@ async def test_update_transaction(session: AsyncSession, test_user, test_workspa
     assert updated is not None
     assert updated.description == "New"
     assert updated.amount == Decimal("99")
+    assert updated.original_description == "Bank Raw"
+    assert updated.description_is_rule_managed is False
 
 
 @pytest.mark.asyncio
@@ -956,7 +971,7 @@ async def test_create_transfer_cross_currency(
         description="Cross-currency",
         amount=Decimal("500"),
         date=date.today(),
-        fx_rate=Decimal("0.2"),
+        destination_amount=Decimal("100.00"),
     )
     debit_tx, credit_tx = await create_transfer(session, test_workspace.id, test_user.id, data)
     assert debit_tx.currency == "BRL"
@@ -1213,6 +1228,78 @@ async def test_update_transaction_restamp_on_amount_change(
 
 
 @pytest.mark.asyncio
+async def test_pending_to_posted_restamps_only_when_fx_is_missing(
+    session: AsyncSession, test_user, test_workspace, txn_account
+):
+    txn = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=txn_account.id,
+        description="Pending USD",
+        amount=Decimal("10"),
+        currency="USD",
+        date=date.today(),
+        type="credit",
+        source="manual",
+        status="pending",
+        amount_primary=None,
+        fx_rate_used=None,
+    )
+    session.add(txn)
+    await session.commit()
+
+    with patch(
+        "app.services.transaction_service.stamp_primary_amount",
+        new=AsyncMock(),
+    ) as restamp:
+        await update_transaction(
+            session,
+            txn.id,
+            test_workspace.id,
+            test_user.id,
+            TransactionUpdate(status="posted"),
+        )
+
+    restamp.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_pending_to_posted_preserves_valid_fx_stamp(
+    session: AsyncSession, test_user, test_workspace, txn_account
+):
+    txn = Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=txn_account.id,
+        description="Pending USD stamped",
+        amount=Decimal("10"),
+        currency="USD",
+        date=date.today(),
+        type="credit",
+        source="manual",
+        status="pending",
+        amount_primary=Decimal("51.75"),
+        fx_rate_used=Decimal("5.175"),
+    )
+    session.add(txn)
+    await session.commit()
+
+    with patch(
+        "app.services.transaction_service.stamp_primary_amount",
+        new=AsyncMock(),
+    ) as restamp:
+        await update_transaction(
+            session,
+            txn.id,
+            test_workspace.id,
+            test_user.id,
+            TransactionUpdate(status="posted"),
+        )
+
+    restamp.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_update_transfer_cascades(
     session: AsyncSession, test_user, test_workspace, txn_account
 ):
@@ -1239,6 +1326,24 @@ async def test_update_transfer_cascades(
             date=date.today(),
         ),
     )
+    credit_tx.description = "Custom paired description"
+    credit_tx.original_description = "Paired bank description"
+    credit_tx.description_is_rule_managed = True
+    await session.commit()
+
+    unchanged = await update_transaction(
+        session,
+        debit_tx.id,
+        test_workspace.id,
+        test_user.id,
+        TransactionUpdate(description="Cascade Xfer", notes="#reviewed"),
+    )
+    assert unchanged is not None
+    paired = await get_transaction(session, credit_tx.id, test_workspace.id)
+    assert paired is not None
+    assert paired.description == "Custom paired description"
+    assert paired.description_is_rule_managed is True
+
     data = TransactionUpdate(description="Updated Xfer")
     updated = await update_transaction(session, debit_tx.id, test_workspace.id, test_user.id, data)
 
@@ -1249,6 +1354,7 @@ async def test_update_transfer_cascades(
 
     assert paired is not None
     assert paired.description == "Updated Xfer"
+    assert paired.description_is_rule_managed is False
 
 
 # ---------------------------------------------------------------------------

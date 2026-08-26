@@ -37,7 +37,7 @@ jobs:
           echo "count=$pretty" >> "$GITHUB_OUTPUT"
 
       - name: Update gist badge
-        uses: schneegans/dynamic-badges-action@v1.7.0
+        uses: schneegans/dynamic-badges-action@v1.9.0
         with:
           auth: ${{ secrets.GIST_TOKEN }}
           gistID: ae627b744aaa2ba89d850ea541c311be

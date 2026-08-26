@@ -1,0 +1,4 @@
+# United States. The EIN is the business identifier; there is no nationwide
+# individual equivalent that belongs on an invoice.
+code = "US"
+kinds = ["ein"]

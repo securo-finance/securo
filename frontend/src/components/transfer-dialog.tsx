@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import { getAccountLabel } from '@/lib/account-utils'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { getAccountLabel, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { localDateString } from '@/lib/date-utils'
 import { Button } from '@/components/ui/button'
@@ -34,32 +34,32 @@ export function TransferDialog({
     date: string
     description: string
     notes?: string
-    fx_rate?: number
+    destination_amount?: number
   }) => void
   loading: boolean
   defaultFromAccountId?: string
 }) {
   const { t } = useTranslation()
-  const [fromAccountId, setFromAccountId] = useState(defaultFromAccountId || (accounts[0]?.id ?? ''))
+  const sortedAccounts = useMemo(() => sortAccountsByDisplayName(accounts), [accounts])
+  const firstAccountId = sortedAccounts[0]?.id ?? ''
+  const [fromAccountId, setFromAccountId] = useState(defaultFromAccountId || firstAccountId)
   const [toAccountId, setToAccountId] = useState('')
   const [amount, setAmount] = useState('')
   const [date, setDate] = useState(localDateString)
   const [description, setDescription] = useState('')
   const [notes, setNotes] = useState('')
-  const [fxRate, setFxRate] = useState('')
-  const [convertedAmount, setConvertedAmount] = useState('')
+  const [destinationAmount, setDestinationAmount] = useState('')
 
   // Reset form when dialog opens
   const resetForm = useCallback(() => {
-    setFromAccountId(defaultFromAccountId || (accounts[0]?.id ?? ''))
+    setFromAccountId(defaultFromAccountId || firstAccountId)
     setToAccountId('')
     setAmount('')
     setDate(localDateString())
     setDescription('')
     setNotes('')
-    setFxRate('')
-    setConvertedAmount('')
-  }, [defaultFromAccountId, accounts])
+    setDestinationAmount('')
+  }, [defaultFromAccountId, firstAccountId])
 
   useEffect(() => {
     if (open) resetForm()
@@ -70,35 +70,7 @@ export function TransferDialog({
   const isCrossCurrency = fromAccount && toAccount && fromAccount.currency !== toAccount.currency
   const isSameAccount = fromAccountId && toAccountId && fromAccountId === toAccountId
 
-  const availableToAccounts = accounts.filter((a) => a.id !== fromAccountId)
-
-  // Sync fx_rate <-> converted amount when one changes
-  const handleFxRateChange = (val: string) => {
-    setFxRate(val)
-    if (val && amount) {
-      setConvertedAmount((parseFloat(amount) * parseFloat(val)).toFixed(2))
-    } else {
-      setConvertedAmount('')
-    }
-  }
-
-  const handleConvertedAmountChange = (val: string) => {
-    setConvertedAmount(val)
-    if (val && amount && parseFloat(amount) > 0) {
-      setFxRate((parseFloat(val) / parseFloat(amount)).toFixed(6))
-    } else {
-      setFxRate('')
-    }
-  }
-
-  const handleAmountChange = (val: string) => {
-    setAmount(val)
-    if (fxRate && val) {
-      setConvertedAmount((parseFloat(val) * parseFloat(fxRate)).toFixed(2))
-    } else if (convertedAmount && val && parseFloat(val) > 0) {
-      setFxRate((parseFloat(convertedAmount) / parseFloat(val)).toFixed(6))
-    }
-  }
+  const availableToAccounts = sortedAccounts.filter((a) => a.id !== fromAccountId)
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -116,7 +88,9 @@ export function TransferDialog({
               date,
               description,
               notes: notes.trim() || undefined,
-              fx_rate: isCrossCurrency && fxRate ? parseFloat(fxRate) : undefined,
+              destination_amount: isCrossCurrency && destinationAmount
+                ? parseFloat(destinationAmount)
+                : undefined,
             })
           }}
           className="space-y-4"
@@ -130,13 +104,12 @@ export function TransferDialog({
                 onChange={(e) => {
                   setFromAccountId(e.target.value)
                   if (e.target.value === toAccountId) setToAccountId('')
-                  setFxRate('')
-                  setConvertedAmount('')
+                  setDestinationAmount('')
                 }}
                 required
               >
                 <option value="" disabled>{t('transactions.account')}</option>
-                {accounts.map((acc) => (
+                {sortedAccounts.map((acc) => (
                   <option key={acc.id} value={acc.id}>
                     {getAccountLabel(acc)} ({acc.currency})
                   </option>
@@ -153,8 +126,7 @@ export function TransferDialog({
                 value={toAccountId}
                 onChange={(e) => {
                   setToAccountId(e.target.value)
-                  setFxRate('')
-                  setConvertedAmount('')
+                  setDestinationAmount('')
                 }}
                 required
               >
@@ -192,7 +164,7 @@ export function TransferDialog({
                 step="0.01"
                 min="0.01"
                 value={amount}
-                onChange={(e) => handleAmountChange(e.target.value)}
+                onChange={(e) => setAmount(e.target.value)}
                 required
               />
             </div>
@@ -207,37 +179,18 @@ export function TransferDialog({
           </div>
 
           {isCrossCurrency && (
-            <div className="space-y-3 p-3 bg-muted/50 border border-border rounded-md">
-              <p className="text-xs font-medium text-muted-foreground">
-                {t('transactions.conversion')}{' '}
-                <span className="font-normal">({t('transactions.conversionHint')})</span>
-              </p>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-xs">
-                    {t('transactions.convertedAmount', { currency: toAccount?.currency })}
-                  </Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={convertedAmount}
-                    onChange={(e) => handleConvertedAmountChange(e.target.value)}
-                    placeholder={t('transactions.autoCalculated')}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs">{t('transactions.exchangeRate')}</Label>
-                  <Input
-                    type="number"
-                    step="0.000001"
-                    min="0"
-                    value={fxRate}
-                    onChange={(e) => handleFxRateChange(e.target.value)}
-                    placeholder={t('transactions.autoCalculated')}
-                  />
-                </div>
-              </div>
+            <div className="space-y-2 p-3 bg-muted/50 border border-border rounded-md">
+              <Label className="text-xs">
+                {t('transactions.convertedAmount', { currency: toAccount?.currency })}
+              </Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={destinationAmount}
+                onChange={(e) => setDestinationAmount(e.target.value)}
+                placeholder={t('transactions.autoCalculated')}
+              />
             </div>
           )}
 

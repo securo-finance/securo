@@ -37,6 +37,7 @@ import { ConnectionSettingsDialog } from '@/components/connection-settings-dialo
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
+import { formatCurrency } from '@/lib/format'
 
 // Account types offered in the create/edit dialog. Shared between the manual
 // type selector and the connected-account override selector so the list stays
@@ -48,10 +49,6 @@ const ACCOUNT_TYPE_OPTIONS = [
   { value: 'investment', labelKey: 'accounts.typeInvestment' },
   { value: 'wallet', labelKey: 'accounts.typeWallet' },
 ] as const
-
-function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
-}
 
 function daysUntil(dateStr: string | null): number | null {
   if (!dateStr) return null
@@ -322,10 +319,14 @@ export default function AccountsPage() {
                     {/* Connection header */}
                     <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
                       <div className="flex items-center gap-3">
-                        <ConnectionLogo logoUrl={conn.logo_url} />
+                        {/* One bank's favicon would misrepresent a multi-
+                            institution link — fall back to the generic icon. */}
+                        <ConnectionLogo
+                          logoUrl={(conn.institutions?.length ?? 0) > 1 ? null : conn.logo_url}
+                        />
                         <div>
                           <div className="flex items-center gap-2">
-                            <p className="text-sm font-semibold text-foreground">{getConnectionName(conn)}</p>
+                            <p className="text-sm font-semibold text-foreground">{getConnectionName(conn, t)}</p>
                             <Badge
                               variant={conn.status === 'active' ? 'default' : 'secondary'}
                               className={
@@ -528,7 +529,7 @@ export default function AccountsPage() {
             <DialogTitle>{t('accounts.confirmDisconnectTitle')}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            {t('accounts.confirmDisconnectDesc', { institution: disconnectingConnection ? getConnectionName(disconnectingConnection) : '' })}
+            {t('accounts.confirmDisconnectDesc', { institution: disconnectingConnection ? getConnectionName(disconnectingConnection, t) : '' })}
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDisconnectingConnection(null)}>

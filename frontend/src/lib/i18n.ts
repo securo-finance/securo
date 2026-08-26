@@ -12,6 +12,7 @@ import ru from '@/locales/ru.json'
 import uk from '@/locales/uk.json'
 import de from '@/locales/de.json'
 import fr from '@/locales/fr.json'
+import nl from '@/locales/nl.json'
 
 function syncHtmlLang(lng: string) {
   document.documentElement.lang = lng
@@ -32,6 +33,7 @@ i18n
       uk: { translation: uk },
       de: { translation: de },
       fr: { translation: fr },
+      nl: { translation: nl },
     },
     fallbackLng: 'en',
     // English is the default. Honour an explicit, persisted choice
@@ -50,7 +52,36 @@ i18n
 syncHtmlLang(i18n.language)
 i18n.on('languageChanged', syncHtmlLang)
 
-export type SupportedLang = 'pt-BR' | 'pt-PT' | 'en' | 'es' | 'pl' | 'it' | 'ru' | 'uk' | 'de' | 'fr'
+export type SupportedLang =
+  | 'pt-BR'
+  | 'pt-PT'
+  | 'en'
+  | 'es'
+  | 'pl'
+  | 'it'
+  | 'ru'
+  | 'uk'
+  | 'de'
+  | 'fr'
+  | 'nl'
+
+// Single source of truth for language pickers. When adding a locale, register
+// the bundle above and add one entry here; every picker stays in sync instead
+// of each hand-rolling its own list (the setup screen's button row broke a
+// little more with every translation PR before this existed).
+export const SUPPORTED_LANGS: { code: SupportedLang; label: string }[] = [
+  { code: 'en', label: 'English' },
+  { code: 'pt-BR', label: 'Português (BR)' },
+  { code: 'pt-PT', label: 'Português (PT)' },
+  { code: 'es', label: 'Español' },
+  { code: 'fr', label: 'Français' },
+  { code: 'de', label: 'Deutsch' },
+  { code: 'it', label: 'Italiano' },
+  { code: 'pl', label: 'Polski' },
+  { code: 'ru', label: 'Русский' },
+  { code: 'uk', label: 'Українська' },
+  { code: 'nl', label: 'Nederlands' },
+]
 
 // Normalise any browser/i18n language tag to one of our supported keys. The
 // backend and resource bundles key Portuguese as the region-tagged 'pt-BR'
@@ -71,6 +102,7 @@ export function resolveSupportedLang(lng?: string | null): SupportedLang {
   if (tag.startsWith('uk')) return 'uk'
   if (tag.startsWith('de')) return 'de'
   if (tag.startsWith('fr')) return 'fr'
+  if (tag.startsWith('nl')) return 'nl'
   return 'en'
 }
 

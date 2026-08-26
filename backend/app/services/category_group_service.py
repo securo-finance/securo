@@ -10,6 +10,10 @@ from app.models.category_group import CategoryGroup
 from app.schemas.category_group import CategoryGroupCreate, CategoryGroupUpdate
 
 
+class CategoryGroupVisibilityError(ValueError):
+    """Raised when visibility is changed for a user-created category group."""
+
+
 # Language-keyed translations for default groups
 # Keys are internal identifiers, values are {lang: display_name}
 DEFAULT_GROUPS_I18N = {
@@ -72,12 +76,25 @@ async def create_default_groups(
     return groups
 
 
-async def get_groups(session: AsyncSession, workspace_id: uuid.UUID) -> list[CategoryGroup]:
+async def get_groups(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    *,
+    include_hidden: bool = False,
+) -> list[CategoryGroup]:
+    filters = [CategoryGroup.workspace_id == workspace_id]
+    if not include_hidden:
+        filters.append(CategoryGroup.is_hidden.is_(False))
+
+    category_loader = selectinload(CategoryGroup.categories)
+    if not include_hidden:
+        category_loader = selectinload(CategoryGroup.categories.and_(Category.is_hidden.is_(False)))
+
     result = await session.execute(
         select(CategoryGroup)
-        .where(CategoryGroup.workspace_id == workspace_id)
-        .options(selectinload(CategoryGroup.categories))
-        .order_by(CategoryGroup.position)
+        .where(*filters)
+        .options(category_loader)
+        .order_by(CategoryGroup.is_hidden.asc(), CategoryGroup.position)
     )
     return list(result.scalars().all())
 
@@ -113,7 +130,11 @@ async def update_group(
     if not group:
         return None
 
-    for key, value in data.model_dump(exclude_unset=True).items():
+    changes = data.model_dump(exclude_unset=True)
+    if changes.get("is_hidden") is True and not group.is_system:
+        raise CategoryGroupVisibilityError("Only system category groups can be hidden")
+
+    for key, value in changes.items():
         setattr(group, key, value)
 
     await session.commit()

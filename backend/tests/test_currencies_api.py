@@ -58,3 +58,39 @@ async def test_currencies_include_uah_with_metadata(client: AsyncClient):
     assert uah["symbol"] == "₴"
     assert uah["name"] == "Ukrainian Hryvnia"
     assert uah["flag"] == "🇺🇦"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_nzd_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    nzd = next((currency for currency in data if currency["code"] == "NZD"), None)
+
+    assert nzd is not None
+    assert nzd["symbol"] == "NZ$"
+    assert nzd["name"] == "New Zealand Dollar"
+    assert nzd["flag"] == "🇳🇿"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_vnd_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    vnd = next((currency for currency in data if currency["code"] == "VND"), None)
+
+    assert vnd is not None
+    assert vnd["symbol"] == "₫"
+    assert vnd["name"] == "Vietnamese Dong"
+    assert vnd["flag"] == "🇻🇳"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_sgd_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    sgd = next((currency for currency in data if currency["code"] == "SGD"), None)
+
+    assert sgd is not None
+    assert sgd["symbol"] == "S$"
+    assert sgd["name"] == "Singapore Dollar"
+    assert sgd["flag"] == "🇸🇬"

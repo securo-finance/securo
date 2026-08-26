@@ -1,12 +1,12 @@
 # backend/app/schemas/rule.py
 import uuid
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class RuleCondition(BaseModel):
-    field: str   # description, notes, amount, type, account_id, payee_id, date
+    field: str   # description, payee, notes, amount, type, account_id, payee_id, date
     op: str      # contains, not_contains, equals, not_equals, starts_with, ends_with, regex, gt, gte, lt, lte
     value: Any   # str or number depending on field
 
@@ -24,15 +24,49 @@ class RuleCondition(BaseModel):
         return v
 
 
+class RuleConditionGroup(BaseModel):
+    """A nested group of conditions joined by its own operator.
+
+    Groups let a rule mix AND and OR — `type is debit AND (contains UBER OR
+    contains 99POP)`. They hold leaf conditions only: `conditions` is typed as
+    `list[RuleCondition]`, so a nested group fails validation and rule depth
+    stays capped at two levels, which is what the engine and editor support.
+    """
+
+    op: str = "or"   # and, or
+    conditions: list[RuleCondition]
+
+    @field_validator("op")
+    @classmethod
+    def op_must_be_and_or(cls, v: str) -> str:
+        if v not in ("and", "or"):
+            raise ValueError("Condition group operator must be 'and' or 'or'")
+        return v
+
+    @field_validator("conditions")
+    @classmethod
+    def group_must_not_be_empty(cls, v: list[RuleCondition]) -> list[RuleCondition]:
+        """An empty group never matches, so it can only make a rule confusing."""
+        if not v:
+            raise ValueError("Condition group cannot be empty")
+        return v
+
+
+# A rule's condition list mixes leaves and one level of groups. The two shapes
+# are disjoint — a leaf has no `conditions`, a group has no `field`/`value` — so
+# Pydantic's smart union resolves them without a discriminator.
+RuleConditionNode = Union[RuleConditionGroup, RuleCondition]
+
+
 class RuleAction(BaseModel):
-    op: str      # set_category, set_payee, append_notes, ignore
-    value: Any   # category UUID str or notes string
+    op: str      # set_category, set_payee, set_description, append_notes, ignore
+    value: Any   # entity UUID or text depending on action
 
 
 class RuleCreate(BaseModel):
     name: str
     conditions_op: str = "and"
-    conditions: list[RuleCondition]
+    conditions: list[RuleConditionNode]
     actions: list[RuleAction]
     priority: int = 0
     is_active: bool = True
@@ -43,7 +77,7 @@ class RuleCreate(BaseModel):
 class RuleUpdate(BaseModel):
     name: Optional[str] = None
     conditions_op: Optional[str] = None
-    conditions: Optional[list[RuleCondition]] = None
+    conditions: Optional[list[RuleConditionNode]] = None
     actions: Optional[list[RuleAction]] = None
     priority: Optional[int] = None
     is_active: Optional[bool] = None
@@ -77,7 +111,7 @@ class RuleCreateResponse(RuleMutationResponse):
 class RuleExportItem(BaseModel):
     name: str
     conditions_op: str = "and"
-    conditions: list[RuleCondition]
+    conditions: list[RuleConditionNode]
     actions: list[RuleAction]
     priority: int = 0
     is_active: bool = True

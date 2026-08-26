@@ -1,20 +1,21 @@
 import { useState, useRef, useCallback } from 'react'
-import { getAccountName } from '@/lib/account-utils'
+import { useSearchParams } from 'react-router-dom'
+import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { transactions as transactionsApi, accounts as accountsApi, importLogs as importLogsApi, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
+import { transactions as transactionsApi, accounts as accountsApi, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
-import { formatCurrency } from '@/lib/format'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import type { ImportPreviewTransaction, ImportReviewTransaction, ImportLog } from '@/types'
-import { Upload, FileText, X, CheckCircle2, AlertCircle, History, Trash2, Settings2, Download } from 'lucide-react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import type { ImportPreviewTransaction, ImportReviewTransaction } from '@/types'
+import { Upload, FileText, X, CheckCircle2, AlertCircle, Settings2, Download } from 'lucide-react'
 import { PageHeader } from '@/components/page-header'
+import { AssetImportPanel } from '@/components/asset-import-panel'
 import { ImportSummaryBar } from '@/components/import-summary-bar'
 import { ImportReviewTable } from '@/components/import-review-table'
+import { ImportHistory } from '@/components/import-history'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 
@@ -48,7 +49,7 @@ function toReviewTransactions(txns: ImportPreviewTransaction[]): ImportReviewTra
   }))
 }
 
-export default function ImportPage() {
+function TransactionImportPanel() {
   const { t } = useTranslation()
   const { user } = useAuth()
   const { canWrite } = useWorkspace()
@@ -63,7 +64,6 @@ export default function ImportPage() {
   const [dragOver, setDragOver] = useState(false)
   const [fileName, setFileName] = useState<string | null>(null)
   const [currentFile, setCurrentFile] = useState<File | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<ImportLog | null>(null)
   const [csvHeaders, setCsvHeaders] = useState<string[]>([])
 
   const [searchQuery, setSearchQuery] = useState('')
@@ -93,11 +93,6 @@ export default function ImportPage() {
   const { data: categoryGroupsList = [] } = useQuery({
     queryKey: ['category-groups'],
     queryFn: categoryGroupsApi.list,
-  })
-
-  const { data: importHistory = [] } = useQuery({
-    queryKey: ['import-logs'],
-    queryFn: importLogsApi.list,
   })
 
   const previewMutation = useMutation({
@@ -167,15 +162,6 @@ export default function ImportPage() {
     onError: (error: unknown) => {
       const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       toast.error(detail || t('import.importError'))
-    },
-  })
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => importLogsApi.delete(id),
-    onSuccess: () => {
-      invalidateFinancialQueries(queryClient)
-      queryClient.invalidateQueries({ queryKey: ['import-logs'] })
-      setDeleteTarget(null)
     },
   })
 
@@ -274,6 +260,9 @@ export default function ImportPage() {
   }, [])
 
   const isCsvFile = fileName?.toLowerCase().endsWith('.csv') ?? false
+  // QIF dates are ambiguous for days 1-12 (DD/MM vs MM/DD), so the file
+  // options panel is shown for QIF too, limited to the date-format selector.
+  const isQifFile = fileName?.toLowerCase().endsWith('.qif') ?? false
 
   const incomeCount = previewData?.transactions.filter(t => t.type === 'credit').length ?? 0
   const expenseCount = previewData?.transactions.filter(t => t.type === 'debit').length ?? 0
@@ -282,8 +271,6 @@ export default function ImportPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader section={t('import.title')} title={t('import.subtitle')} />
-
       {/* Upload zone */}
       {canWrite && <div
         className={`bg-card rounded-xl border-2 border-dashed transition-all cursor-pointer ${
@@ -390,7 +377,7 @@ export default function ImportPage() {
                 onChange={(e) => setSelectedAccount(e.target.value)}
               >
                 <option value="">{t('import.selectAccount')}</option>
-                {accountsList?.map((acc) => (
+                {sortAccountsByDisplayName(accountsList ?? []).map((acc) => (
                   <option key={acc.id} value={acc.id}>{getAccountName(acc)} ({t(TYPE_LABELS[acc.type] || acc.type)})</option>
                 ))}
               </select>
@@ -403,12 +390,14 @@ export default function ImportPage() {
             </div>
           </div>
 
-          {/* CSV Options */}
-          {isCsvFile && previewData && (
+          {/* CSV/QIF Options */}
+          {(isCsvFile || isQifFile) && previewData && (
             <div className="px-5 py-4 border-b border-border bg-muted/30">
               <div className="flex items-center gap-2 mb-3">
                 <Settings2 size={14} className="text-muted-foreground" />
-                <p className="text-xs font-medium text-muted-foreground">{t('import.csvOptions')}</p>
+                <p className="text-xs font-medium text-muted-foreground">
+                  {isCsvFile ? t('import.csvOptions') : t('import.importOptions')}
+                </p>
               </div>
 
               {previewData.parse_error && (
@@ -431,7 +420,7 @@ export default function ImportPage() {
                     <option value="YYYY-MM-DD">YYYY-MM-DD</option>
                   </select>
                 </div>
-                <div className="flex items-center gap-2 pt-4">
+                {isCsvFile && <div className="flex items-center gap-2 pt-4">
                   <input
                     type="checkbox"
                     id="flip-amount"
@@ -442,8 +431,8 @@ export default function ImportPage() {
                   <Label htmlFor="flip-amount" className="text-sm text-muted-foreground cursor-pointer">
                     {t('import.flipAmounts')}
                   </Label>
-                </div>
-                <div className="flex items-center gap-2 pt-4">
+                </div>}
+                {isCsvFile && <div className="flex items-center gap-2 pt-4">
                   <input
                     type="checkbox"
                     id="split-columns"
@@ -454,8 +443,8 @@ export default function ImportPage() {
                   <Label htmlFor="split-columns" className="text-sm text-muted-foreground cursor-pointer">
                     {t('import.splitColumns')}
                   </Label>
-                </div>
-                <div className="flex items-center gap-2 pt-4">
+                </div>}
+                {isCsvFile && <div className="flex items-center gap-2 pt-4">
                   <input
                     type="checkbox"
                     id="detect-duplicates"
@@ -466,7 +455,7 @@ export default function ImportPage() {
                   <Label htmlFor="detect-duplicates" className="text-sm text-muted-foreground cursor-pointer">
                     {t('import.detectDuplicates')}
                   </Label>
-                </div>
+                </div>}
               </div>
 
               {csvSplitColumns && csvHeaders.length > 0 && (
@@ -574,98 +563,51 @@ export default function ImportPage() {
         </div>
       )}
 
-      {/* Import History */}
-      <div className="mt-8">
-        <div className="flex items-center gap-2 mb-4">
-          <History className="w-5 h-5 text-muted-foreground" />
-          <h2 className="text-lg font-semibold text-foreground">{t('import.history')}</h2>
-        </div>
+      <ImportHistory entity="transactions" />
 
-        {importHistory.length === 0 ? (
-          <div className="bg-card rounded-xl border border-border p-8 text-center text-muted-foreground">
-            {t('import.noHistory')}
-          </div>
-        ) : (
-          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left px-3 sm:px-4 py-3 font-medium text-muted-foreground">{t('import.historyDate')}</th>
-                  <th className="text-left px-3 sm:px-4 py-3 font-medium text-muted-foreground">{t('import.historyFile')}</th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">{t('import.historyFormat')}</th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">{t('import.historyAccount')}</th>
-                  <th className="text-right px-3 sm:px-4 py-3 font-medium text-muted-foreground">{t('import.historyCount')}</th>
-                  <th className="text-right px-4 py-3 font-medium text-muted-foreground hidden sm:table-cell">{t('import.historyCredit')}</th>
-                  <th className="text-right px-4 py-3 font-medium text-muted-foreground hidden sm:table-cell">{t('import.historyDebit')}</th>
-                  <th className="px-3 sm:px-4 py-3" aria-label={t('common.more')}></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {importHistory.map((log) => (
-                  <tr key={log.id} className="hover:bg-muted">
-                    <td className="px-3 sm:px-4 py-3 text-xs sm:text-sm text-muted-foreground whitespace-nowrap">
-                      {new Date(log.created_at).toLocaleString(dateLocale, { dateStyle: 'short', timeStyle: 'short' })}
-                    </td>
-                    <td className="px-3 sm:px-4 py-3 font-mono text-xs text-foreground max-w-[120px] sm:max-w-none truncate">{log.filename || '—'}</td>
-                    <td className="px-4 py-3 hidden lg:table-cell">
-                      <span className="bg-muted text-muted-foreground text-xs px-2 py-0.5 rounded font-mono uppercase">
-                        {log.format || '—'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">{log.account_name || '—'}</td>
-                    <td className="px-3 sm:px-4 py-3 text-right text-foreground">{log.transaction_count}</td>
-                    <td className="px-4 py-3 text-right text-emerald-600 font-medium hidden sm:table-cell">
-                      {formatCurrency(log.total_credit, userCurrency, locale)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-rose-600 font-medium hidden sm:table-cell">
-                      {formatCurrency(log.total_debit, userCurrency, locale)}
-                    </td>
-                    <td className="px-3 sm:px-4 py-3 text-right">
-                      {canWrite && (
-                        <button
-                          onClick={() => setDeleteTarget(log)}
-                          className="text-muted-foreground hover:text-rose-500 transition-colors"
-                          aria-label={t('import.undoImport')}
-                          title={t('import.undoImport')}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+    </div>
+  )
+}
+
+/** Both importers live behind one menu entry: someone with a file to upload
+    should not have to know first whether it holds transactions or orders. */
+export default function ImportPage() {
+  const { t } = useTranslation()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = searchParams.get('tab') === 'investments' ? 'investments' : 'transactions'
+
+  function selectTab(next: 'transactions' | 'investments') {
+    const params = new URLSearchParams(searchParams)
+    if (next === 'transactions') params.delete('tab')
+    else params.set('tab', next)
+    setSearchParams(params, { replace: true })
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* The title follows the tab: "Bank statement" is about the file you
+          are uploading, and an order file is not one. */}
+      <PageHeader
+        section={t('import.title')}
+        title={tab === 'investments' ? t('assetImport.title') : t('import.subtitle')}
+      />
+
+      <div className="inline-flex items-center rounded-lg border border-border bg-muted/40 p-0.5">
+        {(['transactions', 'investments'] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => selectTab(value)}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+              tab === value ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {t(value === 'transactions' ? 'import.tabTransactions' : 'import.tabInvestments')}
+          </button>
+        ))}
       </div>
 
-      {/* Delete confirmation dialog */}
-      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('import.undoImport')}</DialogTitle>
-            <DialogDescription>
-              {t('import.undoDescription', { count: deleteTarget?.transaction_count, filename: deleteTarget?.filename || '—' })}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <button
-              onClick={() => setDeleteTarget(null)}
-              className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
-            >
-              {t('common.cancel')}
-            </button>
-            <button
-              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
-              disabled={deleteMutation.isPending}
-              className="px-4 py-2 text-sm bg-rose-500 text-white rounded-lg hover:bg-rose-600 disabled:opacity-50"
-            >
-              {deleteMutation.isPending ? t('import.deleting') : t('import.deleteAll')}
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {tab === 'investments' ? <AssetImportPanel /> : <TransactionImportPanel />}
     </div>
   )
 }

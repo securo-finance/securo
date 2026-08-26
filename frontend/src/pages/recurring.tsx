@@ -1,13 +1,15 @@
-import React, { useState } from 'react'
-import { getAccountName } from '@/lib/account-utils'
+import React, { useMemo, useState } from 'react'
+import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { categories as categoriesApi, categoryGroups as categoryGroupsApi, recurring as recurringApi, accounts as accountsApi, currencies as currenciesApi } from '@/lib/api'
+import { extractApiError } from '@/lib/api-errors'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -26,10 +28,7 @@ import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
-
-function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
-}
+import { formatCurrency } from '@/lib/format'
 
 const TH = 'text-xs font-medium text-muted-foreground py-3'
 
@@ -72,6 +71,7 @@ function RecurringTab() {
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<RecurringTransaction | null>(null)
+  const [deletingRecurring, setDeletingRecurring] = useState<RecurringTransaction | null>(null)
 
   const { data: recurringList } = useQuery({
     queryKey: ['recurring'],
@@ -81,6 +81,12 @@ function RecurringTab() {
   const { data: categoriesList } = useQuery({
     queryKey: ['categories'],
     queryFn: categoriesApi.list,
+  })
+
+  const { data: allCategoriesList } = useQuery({
+    queryKey: ['categories', 'management'],
+    queryFn: categoriesApi.listIncludingHidden,
+    enabled: Boolean(editing?.category_id),
   })
 
   const { data: categoryGroupsList } = useQuery({
@@ -122,7 +128,11 @@ function RecurringTab() {
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
       queryClient.invalidateQueries({ queryKey: ['recurring'] })
+      setDeletingRecurring(null)
       toast.success(t('recurring.deleted'))
+    },
+    onError: (err: unknown) => {
+      toast.error(extractApiError(err, t('common.error')))
     },
   })
 
@@ -224,7 +234,7 @@ function RecurringTab() {
                         </button>
                         <button
                           className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
-                          onClick={() => deleteMutation.mutate(rt.id)}
+                          onClick={() => setDeletingRecurring(rt)}
                           disabled={deleteMutation.isPending}
                           aria-label={t('common.delete')}
                           title={t('common.delete')}
@@ -253,6 +263,9 @@ function RecurringTab() {
             recurring={editing}
             categories={categoriesList ?? []}
             categoryGroups={categoryGroupsList ?? []}
+            currentCategory={allCategoriesList?.find(
+              (category) => category.id === editing?.category_id
+            )}
             accounts={accountsList ?? []}
             onSave={(data) => {
               if (editing) {
@@ -266,6 +279,15 @@ function RecurringTab() {
           />
         </DialogContent>
       </Dialog>
+
+      <DeleteConfirmationDialog
+        open={!!deletingRecurring}
+        title={t('recurring.confirmDeleteTitle')}
+        description={t('recurring.confirmDeleteDescription', { description: deletingRecurring?.description })}
+        isPending={deleteMutation.isPending}
+        onClose={() => setDeletingRecurring(null)}
+        onConfirm={() => deletingRecurring && deleteMutation.mutate(deletingRecurring.id)}
+      />
     </>
   )
 }
@@ -274,6 +296,7 @@ function RecurringForm({
   recurring,
   categories,
   categoryGroups,
+  currentCategory,
   accounts,
   onSave,
   onCancel,
@@ -282,7 +305,8 @@ function RecurringForm({
   recurring: RecurringTransaction | null
   categories: Category[]
   categoryGroups: CategoryGroup[]
-  accounts: { id: string; name: string }[]
+  currentCategory?: Category
+  accounts: { id: string; name: string; display_name?: string | null }[]
   onSave: (data: Partial<RecurringTransaction>) => void
   onCancel: () => void
   loading: boolean
@@ -290,6 +314,7 @@ function RecurringForm({
   const { t } = useTranslation()
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const sortedAccounts = useMemo(() => sortAccountsByDisplayName(accounts), [accounts])
   const { data: supportedCurrencies } = useQuery({
     queryKey: ['currencies'],
     queryFn: currenciesApi.list,
@@ -300,11 +325,14 @@ function RecurringForm({
   const [currency, setCurrency] = useState(recurring?.currency ?? userCurrency)
   const [type, setType] = useState<'debit' | 'credit'>(recurring?.type ?? 'debit')
   const [frequency, setFrequency] = useState(recurring?.frequency ?? 'monthly')
+  const [weekendAdjustment, setWeekendAdjustment] = useState<RecurringTransaction['weekend_adjustment']>(
+    recurring?.weekend_adjustment ?? 'none'
+  )
   const [dayOfMonth, setDayOfMonth] = useState(recurring?.day_of_month?.toString() ?? '')
   const [startDate, setStartDate] = useState(recurring?.start_date ?? localDateString())
   const [endDate, setEndDate] = useState(recurring?.end_date ?? '')
   const [categoryId, setCategoryId] = useState(recurring?.category_id ?? '')
-  const [accountId, setAccountId] = useState(recurring?.account_id ?? accounts[0]?.id ?? '')
+  const [accountId, setAccountId] = useState(recurring?.account_id ?? sortedAccounts[0]?.id ?? '')
   const [isActive, setIsActive] = useState(recurring?.is_active ?? true)
   const [autoGenerate, setAutoGenerate] = useState(recurring?.auto_generate ?? true)
 
@@ -320,6 +348,7 @@ function RecurringForm({
           currency,
           type,
           frequency,
+          weekend_adjustment: weekendAdjustment,
           day_of_month: dayOfMonth ? parseInt(dayOfMonth) : null,
           start_date: startDate,
           end_date: endDate || null,
@@ -373,6 +402,18 @@ function RecurringForm({
           </div>
         )}
       </div>
+      <div className="space-y-2">
+        <Label>{t('recurring.weekendAdjustment')}</Label>
+        <select
+          className={selectClass}
+          value={weekendAdjustment}
+          onChange={(e) => setWeekendAdjustment(e.target.value as RecurringTransaction['weekend_adjustment'])}
+        >
+          <option value="none">{t('recurring.weekendAdjustmentNone')}</option>
+          <option value="previous_friday">{t('recurring.weekendAdjustmentPreviousFriday')}</option>
+          <option value="next_monday">{t('recurring.weekendAdjustmentNextMonday')}</option>
+        </select>
+      </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label>{t('recurring.startDate')}</Label>
@@ -391,6 +432,7 @@ function RecurringForm({
             onChange={setCategoryId}
             categories={categories}
             groups={categoryGroups}
+            currentCategory={currentCategory}
             allowNone={true}
             className={selectClass}
           />
@@ -404,7 +446,7 @@ function RecurringForm({
             required
           >
             {!accountId && <option value="" disabled>{t('recurring.noAccount')}</option>}
-            {accounts.map((acc) => (
+            {sortedAccounts.map((acc) => (
               <option key={acc.id} value={acc.id}>{getAccountName(acc)}</option>
             ))}
           </select>

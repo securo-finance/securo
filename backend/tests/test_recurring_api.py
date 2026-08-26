@@ -26,6 +26,7 @@ async def test_create_recurring_transaction(client, auth_headers, test_categorie
     assert data["description"] == "Netflix"
     assert data["frequency"] == "monthly"
     assert data["is_active"] is True
+    assert data["weekend_adjustment"] == "none"
     # next_occurrence should be start_date since skip_first not set
     assert data["next_occurrence"] == "2026-03-01"
 
@@ -314,3 +315,128 @@ async def test_generate_pending_skips_legacy_null_account(
     # Should not raise; should report 0 generated for the legacy row.
     count = await generate_pending(session, test_user.id, up_to=_date(2026, 4, 1))
     assert count == 0
+
+
+@pytest.mark.asyncio
+async def test_weekend_adjustment_create_read_and_update(
+    client, auth_headers, test_account
+):
+    create_response = await client.post(
+        "/api/recurring-transactions",
+        json={
+            "description": "Adjusted rent",
+            "amount": 1200,
+            "currency": "BRL",
+            "type": "debit",
+            "frequency": "monthly",
+            "start_date": "2026-08-01",
+            "weekend_adjustment": "previous_friday",
+            "account_id": str(test_account.id),
+        },
+        headers=auth_headers,
+    )
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert created["weekend_adjustment"] == "previous_friday"
+    assert created["next_occurrence"] == "2026-08-01"
+
+    list_response = await client.get(
+        "/api/recurring-transactions", headers=auth_headers
+    )
+    listed = next(row for row in list_response.json() if row["id"] == created["id"])
+    assert listed["weekend_adjustment"] == "previous_friday"
+
+    update_response = await client.patch(
+        f"/api/recurring-transactions/{created['id']}",
+        json={"weekend_adjustment": "next_monday"},
+        headers=auth_headers,
+    )
+    assert update_response.status_code == 200
+    updated = update_response.json()
+    assert updated["weekend_adjustment"] == "next_monday"
+    assert updated["next_occurrence"] == "2026-08-01"
+
+
+@pytest.mark.asyncio
+async def test_invalid_weekend_adjustment_is_rejected(
+    client, auth_headers, test_account
+):
+    create_response = await client.post(
+        "/api/recurring-transactions",
+        json={
+            "description": "Invalid policy",
+            "amount": 10,
+            "type": "debit",
+            "frequency": "monthly",
+            "start_date": "2026-08-01",
+            "weekend_adjustment": "nearest_weekday",
+            "account_id": str(test_account.id),
+        },
+        headers=auth_headers,
+    )
+    assert create_response.status_code == 422
+
+    valid_response = await client.post(
+        "/api/recurring-transactions",
+        json={
+            "description": "Valid policy",
+            "amount": 10,
+            "type": "debit",
+            "frequency": "monthly",
+            "start_date": "2026-08-01",
+            "account_id": str(test_account.id),
+        },
+        headers=auth_headers,
+    )
+    recurring_id = valid_response.json()["id"]
+    update_response = await client.patch(
+        f"/api/recurring-transactions/{recurring_id}",
+        json={"weekend_adjustment": "nearest_weekday"},
+        headers=auth_headers,
+    )
+    assert update_response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_weekend_adjustment_update_rejects_null_but_allows_omission(
+    client, auth_headers, test_account
+):
+    create_response = await client.post(
+        "/api/recurring-transactions",
+        json={
+            "description": "Null policy regression",
+            "amount": 10,
+            "type": "debit",
+            "frequency": "monthly",
+            "start_date": "2026-08-01",
+            "weekend_adjustment": "previous_friday",
+            "account_id": str(test_account.id),
+        },
+        headers=auth_headers,
+    )
+    assert create_response.status_code == 201
+    recurring_id = create_response.json()["id"]
+
+    omitted_response = await client.patch(
+        f"/api/recurring-transactions/{recurring_id}",
+        json={},
+        headers=auth_headers,
+    )
+    assert omitted_response.status_code == 200
+    assert omitted_response.json()["weekend_adjustment"] == "previous_friday"
+
+    null_response = await client.patch(
+        f"/api/recurring-transactions/{recurring_id}",
+        json={"weekend_adjustment": None},
+        headers=auth_headers,
+    )
+    assert null_response.status_code == 400
+    assert null_response.json()["detail"] == "weekend_adjustment is required"
+
+    list_response = await client.get(
+        "/api/recurring-transactions", headers=auth_headers
+    )
+    listed = next(
+        row for row in list_response.json() if row["id"] == recurring_id
+    )
+    assert listed["weekend_adjustment"] == "previous_friday"

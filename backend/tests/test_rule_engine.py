@@ -4,6 +4,8 @@ from decimal import Decimal
 from datetime import date
 
 
+import pytest
+
 from app.models import Transaction
 from app.services.rule_engine import evaluate_conditions, apply_rule_actions
 
@@ -128,6 +130,39 @@ def test_regex_accented_pattern_still_matches():
     assert evaluate_conditions("and", conditions, tx) is True
 
 
+@pytest.mark.parametrize(
+    "pattern",
+    ["foo|", "|foo", "(foo|)", "(?:foo|)", "a*", ".*", "^", "$"],
+)
+def test_unsafe_persisted_regex_does_not_match_unrelated_transaction(pattern):
+    conditions = [{"field": "description", "op": "regex", "value": pattern}]
+    tx = make_tx(description="UNRELATED TRANSACTION")
+
+    assert evaluate_conditions("and", conditions, tx) is False
+
+
+def test_empty_only_regex_is_inert_for_empty_transaction_field():
+    conditions = [{"field": "description", "op": "regex", "value": "^$"}]
+    tx = make_tx(description="")
+
+    # Empty-matching regexes are disallowed for rule safety. Keeping legacy
+    # definitions inert aligns runtime behavior with future save-time validation.
+    assert evaluate_conditions("and", conditions, tx) is False
+
+
+def test_safe_alternation_regex_remains_selective():
+    conditions = [{"field": "description", "op": "regex", "value": "foo|bar"}]
+
+    assert evaluate_conditions("and", conditions, make_tx(description="foo")) is True
+    assert evaluate_conditions("and", conditions, make_tx(description="bar")) is True
+    assert (
+        evaluate_conditions(
+            "and", conditions, make_tx(description="UNRELATED TRANSACTION")
+        )
+        is False
+    )
+
+
 def test_amount_lt():
     conditions = [{"field": "amount", "op": "lt", "value": 50}]
     tx = make_tx(amount=Decimal("25.50"))
@@ -225,6 +260,46 @@ def test_ignore_action_sets_flag():
     tx = make_tx(is_ignored=False)
     apply_rule_actions(actions, tx, category_already_set=False)
     assert tx.is_ignored is True
+
+def test_set_description_preserves_first_original_and_is_idempotent():
+    tx = make_tx(description="|fd*f|ood Club", original_description=None)
+
+    apply_rule_actions(
+        [{"op": "set_description", "value": "iFood"}],
+        tx,
+        category_already_set=False,
+    )
+    assert tx.description == "iFood"
+    assert tx.original_description == "|fd*f|ood Club"
+    assert tx.description_is_rule_managed is True
+
+    apply_rule_actions(
+        [{"op": "set_description", "value": "iFood Delivery"}],
+        tx,
+        category_already_set=False,
+    )
+    assert tx.description == "iFood Delivery"
+    assert tx.original_description == "|fd*f|ood Club"
+    assert tx.description_is_rule_managed is True
+
+
+def test_raw_payee_condition_is_case_and_accent_insensitive():
+    tx = make_tx(payee="IFOOD.COM AGÊNCIA DE RESTAURANTES ONLINE S.A.")
+    conditions = [
+        {"field": "payee", "op": "contains", "value": "ifood.com agencia"}
+    ]
+
+    assert evaluate_conditions("and", conditions, tx) is True
+
+
+def test_payee_id_condition_remains_compatible():
+    payee_id = uuid.uuid4()
+    tx = make_tx(payee_id=payee_id)
+    conditions = [
+        {"field": "payee_id", "op": "equals", "value": str(payee_id)}
+    ]
+
+    assert evaluate_conditions("and", conditions, tx) is True
 
 
 # --- Edge-case: evaluate_conditions ---
@@ -498,3 +573,108 @@ def test_zero_value_still_matches():
     tx = make_tx(amount=Decimal("25.50"))
     conditions = [{"field": "amount", "op": "gt", "value": 0}]
     assert evaluate_conditions("and", conditions, tx) is True
+
+
+# --- nested condition groups (mixing AND and OR) ---
+
+def _group(op, *conditions):
+    return {"op": op, "conditions": list(conditions)}
+
+
+def test_and_of_or_group_matches():
+    """`type is debit AND (description contains UBER OR contains 99POP)`."""
+    conditions = [
+        {"field": "type", "op": "equals", "value": "debit"},
+        _group(
+            "or",
+            {"field": "description", "op": "contains", "value": "UBER"},
+            {"field": "description", "op": "contains", "value": "99POP"},
+        ),
+    ]
+    assert evaluate_conditions("and", conditions, make_tx(description="99POP VIAGEM")) is True
+    assert evaluate_conditions("and", conditions, make_tx(description="UBER TRIP")) is True
+
+
+def test_and_of_or_group_outer_condition_fails():
+    conditions = [
+        {"field": "type", "op": "equals", "value": "debit"},
+        _group(
+            "or",
+            {"field": "description", "op": "contains", "value": "UBER"},
+            {"field": "description", "op": "contains", "value": "99POP"},
+        ),
+    ]
+    tx = make_tx(description="UBER TRIP", type="credit")
+    assert evaluate_conditions("and", conditions, tx) is False
+
+
+def test_and_of_or_group_no_leaf_matches():
+    conditions = [
+        {"field": "type", "op": "equals", "value": "debit"},
+        _group(
+            "or",
+            {"field": "description", "op": "contains", "value": "UBER"},
+            {"field": "description", "op": "contains", "value": "99POP"},
+        ),
+    ]
+    assert evaluate_conditions("and", conditions, make_tx(description="IFOOD")) is False
+
+
+def test_or_of_and_group():
+    """`description contains IFOOD OR (contains MERCADO AND amount > 100)`."""
+    conditions = [
+        {"field": "description", "op": "contains", "value": "IFOOD"},
+        _group(
+            "and",
+            {"field": "description", "op": "contains", "value": "MERCADO"},
+            {"field": "amount", "op": "gt", "value": 100},
+        ),
+    ]
+    assert evaluate_conditions("or", conditions, make_tx(description="IFOOD PEDIDO")) is True
+    assert evaluate_conditions(
+        "or", conditions, make_tx(description="MERCADO X", amount=Decimal("250.00"))
+    ) is True
+    assert evaluate_conditions(
+        "or", conditions, make_tx(description="MERCADO X", amount=Decimal("30.00"))
+    ) is False
+
+
+def test_group_defaults_to_and_without_op():
+    conditions = [
+        _group(
+            None,
+            {"field": "description", "op": "contains", "value": "UBER"},
+            {"field": "type", "op": "equals", "value": "debit"},
+        ),
+    ]
+    assert evaluate_conditions("and", conditions, make_tx(description="UBER TRIP")) is True
+    conditions[0]["conditions"][1]["value"] = "credit"
+    assert evaluate_conditions("and", conditions, make_tx(description="UBER TRIP")) is False
+
+
+def test_empty_group_never_matches():
+    """An empty group has nothing to match, like an empty condition list."""
+    conditions = [_group("or")]
+    assert evaluate_conditions("and", conditions, make_tx()) is False
+    assert evaluate_conditions("or", conditions, make_tx()) is False
+
+
+def test_blank_value_inside_group_never_matches():
+    conditions = [
+        _group(
+            "or",
+            {"field": "description", "op": "contains", "value": ""},
+            {"field": "description", "op": "contains", "value": "IFOOD"},
+        ),
+    ]
+    assert evaluate_conditions("and", conditions, make_tx(description="UBER TRIP")) is False
+
+
+def test_flat_conditions_still_evaluate_unchanged():
+    """Rules saved before groups existed keep their exact meaning."""
+    conditions = [
+        {"field": "description", "op": "contains", "value": "UBER"},
+        {"field": "type", "op": "equals", "value": "debit"},
+    ]
+    assert evaluate_conditions("and", conditions, make_tx(description="UBER TRIP")) is True
+    assert evaluate_conditions("or", conditions, make_tx(description="IFOOD")) is True

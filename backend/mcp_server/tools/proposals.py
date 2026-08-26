@@ -33,6 +33,7 @@ from app.schemas.goal import GoalCreate
 from app.schemas.recurring_transaction import (
     RecurringTransactionCreate,
     RecurringTransactionUpdate,
+    WeekendAdjustment,
 )
 from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
 from app.schemas.transaction import TransactionCreate
@@ -621,6 +622,11 @@ async def propose_create_transaction(
             "amount": {"type": "number", "exclusiveMinimum": 0},
             "type": {"type": "string", "enum": ["debit", "credit"]},
             "frequency": {"type": "string", "enum": ["weekly", "monthly", "quarterly", "yearly"]},
+            "weekend_adjustment": {
+                "type": "string",
+                "enum": ["none", "previous_friday", "next_monday"],
+                "default": "none",
+            },
             "day_of_month": {"type": "integer", "minimum": 1, "maximum": 31, "description": "Required for monthly or quarterly"},
             "start_date": {"type": "string", "format": "date", "description": "Defaults to today"},
             "end_date": {"type": "string", "format": "date"},
@@ -644,6 +650,7 @@ async def propose_create_recurring_transaction(
     type: str,
     frequency: str,
     account_id: str,
+    weekend_adjustment: WeekendAdjustment = "none",
     day_of_month: int | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -686,6 +693,7 @@ async def propose_create_recurring_transaction(
             "currency": resolved_currency,
             "type": type,
             "frequency": frequency,
+            "weekend_adjustment": weekend_adjustment,
             "day_of_month": int(day_of_month) if day_of_month else None,
             "start_date": target_start.isoformat(),
             "end_date": target_end.isoformat() if target_end else None,
@@ -708,6 +716,7 @@ async def propose_create_recurring_transaction(
                 currency=resolved_currency,
                 type=type,
                 frequency=frequency,
+                weekend_adjustment=weekend_adjustment,
                 day_of_month=int(day_of_month) if day_of_month else None,
                 start_date=target_start,
                 end_date=target_end,
@@ -737,6 +746,10 @@ async def propose_create_recurring_transaction(
             "description": {"type": "string", "minLength": 1, "maxLength": 500},
             "amount": {"type": "number", "exclusiveMinimum": 0},
             "frequency": {"type": "string", "enum": ["weekly", "monthly", "quarterly", "yearly"]},
+            "weekend_adjustment": {
+                "type": "string",
+                "enum": ["none", "previous_friday", "next_monday"],
+            },
             "day_of_month": {"type": "integer", "minimum": 1, "maximum": 31},
             "end_date": {"type": "string", "format": "date"},
             "category_id": {"type": "string", "format": "uuid"},
@@ -757,6 +770,7 @@ async def propose_update_recurring_transaction(
     description: str | None = None,
     amount: float | None = None,
     frequency: str | None = None,
+    weekend_adjustment: str | None = None,
     day_of_month: int | None = None,
     end_date: str | None = None,
     category_id: str | None = None,
@@ -794,6 +808,8 @@ async def propose_update_recurring_transaction(
         changes["amount"] = float(amount)
     if frequency is not None:
         changes["frequency"] = frequency
+    if weekend_adjustment is not None:
+        changes["weekend_adjustment"] = weekend_adjustment
     if day_of_month is not None:
         changes["day_of_month"] = int(day_of_month)
     if end_date is not None:
@@ -815,6 +831,7 @@ async def propose_update_recurring_transaction(
             "amount": num(rt.amount),
             "currency": rt.currency,
             "frequency": rt.frequency,
+            "weekend_adjustment": rt.weekend_adjustment,
             "day_of_month": rt.day_of_month,
             "is_active": bool(getattr(rt, "is_active", True)),
         },
@@ -830,6 +847,8 @@ async def propose_update_recurring_transaction(
             update_data["amount"] = Decimal(str(changes["amount"]))
         if "frequency" in changes:
             update_data["frequency"] = changes["frequency"]
+        if "weekend_adjustment" in changes:
+            update_data["weekend_adjustment"] = changes["weekend_adjustment"]
         if "day_of_month" in changes:
             update_data["day_of_month"] = changes["day_of_month"]
         if "end_date" in changes:

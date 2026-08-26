@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
+import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -50,10 +51,7 @@ import { CategoryIcon } from '@/components/category-icon'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { PageHeader } from '@/components/page-header'
 import type { GroupMember, GroupSettlement, Transaction } from '@/types'
-
-function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
-}
+import { formatCurrency } from '@/lib/format'
 
 function SectionCard({ children }: { children: React.ReactNode }) {
   return (
@@ -1073,9 +1071,9 @@ export default function GroupDetailPage() {
                         onChange={(e) => setSettleAccountId(e.target.value)}
                       >
                         <option value="">{t('splitGroups.selectAccount')}</option>
-                        {(accountsList ?? []).map((a) => (
+                        {sortAccountsByDisplayName(accountsList ?? []).map((a) => (
                           <option key={a.id} value={a.id}>
-                            {a.display_name || a.name}
+                            {getAccountName(a)}
                           </option>
                         ))}
                       </select>

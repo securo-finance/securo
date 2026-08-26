@@ -1,8 +1,12 @@
 """Tests for dashboard API endpoints."""
 import calendar
+import uuid
 from datetime import date, timedelta
+from decimal import Decimal
 
 import pytest
+
+from app.models.transaction import Transaction
 
 
 def _current_month_str() -> str:
@@ -136,7 +140,8 @@ async def test_dashboard_virtual_recurring_projection(
     )
     assert cat_spending is not None
     # At least 4 weekly occurrences in a month = at least 200
-    assert cat_spending["total"] >= 200.0
+    assert cat_spending["total"] == 0.0
+    assert cat_spending["projected_total"] >= 200.0
 
     # CRITICAL: No transactions should have been created in the DB (virtual projection)
     # Compute the last day of next month for the query range
@@ -160,7 +165,9 @@ async def test_dashboard_virtual_recurring_projection(
         headers=auth_headers,
     )
     assert summary_resp.status_code == 200
-    assert summary_resp.json()["monthly_expenses"] >= 200.0
+    summary = summary_resp.json()
+    assert summary["monthly_expenses"] == 0.0
+    assert summary["projected_expenses"] >= 200.0
 
 
 @pytest.mark.asyncio
@@ -259,7 +266,8 @@ async def test_recurring_projection_respects_end_date(
         (s for s in spending_resp.json() if s["category_id"] == str(test_categories[0].id)), None
     )
     assert cat_spending is not None
-    assert cat_spending["total"] == 60.0
+    assert cat_spending["total"] == 0.0
+    assert cat_spending["projected_total"] == 60.0
 
 
 @pytest.mark.asyncio
@@ -353,10 +361,57 @@ async def test_total_balance_computed_from_transactions(client, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_future_month_balance_includes_recurring_projections(
+async def test_pending_and_future_rows_are_current_vs_projected(
+    client, auth_headers
+):
+    """Pending and future rows affect the forecast, never a manual current balance."""
+    today = date.today()
+    acc_resp = await client.post(
+        "/api/accounts",
+        json={"name": "Forecast split", "type": "checking", "balance": 1000.00, "currency": "BRL"},
+        headers=auth_headers,
+    )
+    assert acc_resp.status_code == 201
+    acc_id = acc_resp.json()["id"]
+
+    for payload in (
+        {
+            "description": "Pending bank debit",
+            "amount": 100.00,
+            "currency": "BRL",
+            "type": "debit",
+            "date": today.isoformat(),
+            "status": "pending",
+        },
+        {
+            "description": "Future installment",
+            "amount": 200.00,
+            "currency": "BRL",
+            "type": "debit",
+            "date": (today + timedelta(days=3)).isoformat(),
+            "status": "posted",
+        },
+    ):
+        payload["account_id"] = acc_id
+        tx_resp = await client.post("/api/transactions", json=payload, headers=auth_headers)
+        assert tx_resp.status_code == 201
+
+    resp = await client.get(
+        "/api/dashboard/summary",
+        params={"month": _current_month_str()},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert sum(float(v) for v in data["total_balance"].values()) == pytest.approx(1000.0)
+    assert sum(float(v) for v in data["projected_balance"].values()) == pytest.approx(700.0)
+
+
+@pytest.mark.asyncio
+async def test_future_month_balance_exposes_recurring_projection_separately(
     client, auth_headers, test_categories
 ):
-    """When viewing a future month, total_balance must reflect projected recurring cash flows."""
+    """Current balance stays stable while the selected future month is projected."""
     next_month = _next_month_str()
     month_after = _future_month_str(2)
 
@@ -394,14 +449,19 @@ async def test_future_month_balance_includes_recurring_projections(
     assert current_resp.status_code == 200
     base_total = sum(float(v) for v in current_resp.json()["total_balance"].values())
 
-    # Next month: 2000 - 500 (projected rent) = 1500
+    # Next month: current remains 2000; the projected month-end value is 1500.
     next_resp = await client.get(
         "/api/dashboard/summary", params={"month": next_month}, headers=auth_headers
     )
     assert next_resp.status_code == 200
-    next_total = sum(float(v) for v in next_resp.json()["total_balance"].values())
-    assert next_total == base_total - 500.0, (
-        f"Next month balance should be 500 less; got {next_total} vs {base_total}"
+    next_data = next_resp.json()
+    next_total = sum(float(v) for v in next_data["total_balance"].values())
+    next_projected = sum(float(v) for v in next_data["projected_balance"].values())
+    assert next_total == base_total, (
+        f"Future-month current balance should remain unchanged; got {next_total} vs {base_total}"
+    )
+    assert next_projected == base_total - 500.0, (
+        f"Next month projected balance should be 500 less; got {next_projected} vs {base_total}"
     )
 
     # Month after: 2000 - 500 - 500 = 1000
@@ -409,9 +469,12 @@ async def test_future_month_balance_includes_recurring_projections(
         "/api/dashboard/summary", params={"month": month_after}, headers=auth_headers
     )
     assert after_resp.status_code == 200
-    after_total = sum(float(v) for v in after_resp.json()["total_balance"].values())
-    assert after_total == base_total - 1000.0, (
-        f"Month+2 balance should be 1000 less; got {after_total} vs {base_total}"
+    after_data = after_resp.json()
+    after_total = sum(float(v) for v in after_data["total_balance"].values())
+    after_projected = sum(float(v) for v in after_data["projected_balance"].values())
+    assert after_total == base_total
+    assert after_projected == base_total - 1000.0, (
+        f"Month+2 projected balance should be 1000 less; got {after_projected} vs {base_total}"
     )
 
 
@@ -554,3 +617,187 @@ async def test_balance_date_parameter_overrides_default_cutoff(client, auth_head
     )
     total2 = sum(float(v) for v in resp2.json()["total_balance"].values())
     assert total2 == 700.0, f"Expected 700.0 with default cutoff, got {total2}"
+
+
+@pytest.mark.asyncio
+async def test_projected_transactions_account_id_and_range(client, auth_headers, test_account, test_categories):
+    """projected-transactions filters by account_id and an inclusive from/to range."""
+    next_month = _next_month_str()
+
+    # Second account via API so we can prove the account_id filter.
+    resp = await client.post(
+        "/api/accounts",
+        headers=auth_headers,
+        json={"name": "Conta Investimentos", "type": "wallet", "balance": "0.00", "currency": "BRL"},
+    )
+    assert resp.status_code == 201
+    second_account_id = resp.json()["id"]
+
+    # Recurring on each account, both starting the 1st of next month.
+    for account_id, desc in ((str(test_account.id), "Assinatura A"), (second_account_id, "Assinatura B")):
+        rec_resp = await client.post(
+            "/api/recurring-transactions",
+            json={
+                "description": desc,
+                "amount": 30.00,
+                "currency": "BRL",
+                "type": "debit",
+                "frequency": "monthly",
+                "start_date": next_month,
+                "category_id": str(test_categories[0].id),
+                "account_id": account_id,
+            },
+            headers=auth_headers,
+        )
+        assert rec_resp.status_code == 201
+
+    # account_id + inclusive one-day range [1st, 1st] → exactly the 1st occurrence of A.
+    filtered = await client.get(
+        "/api/dashboard/projected-transactions",
+        params={"account_id": str(test_account.id), "from": next_month, "to": next_month},
+        headers=auth_headers,
+    )
+    assert filtered.status_code == 200
+    items = filtered.json()
+    assert len(items) == 1
+    assert items[0]["description"] == "Assinatura A"
+    assert items[0]["date"] == next_month
+
+    # Same range without account_id → both accounts project.
+    both = await client.get(
+        "/api/dashboard/projected-transactions",
+        params={"from": next_month, "to": next_month},
+        headers=auth_headers,
+    )
+    assert both.status_code == 200
+    assert {p["description"] for p in both.json()} == {"Assinatura A", "Assinatura B"}
+
+    # No params → defaults to the current month, where nothing is projected.
+    defaults = await client.get("/api/dashboard/projected-transactions", headers=auth_headers)
+    assert defaults.status_code == 200
+    assert defaults.json() == []
+
+
+@pytest.mark.asyncio
+async def test_projected_transactions_range_excludes_outside_dates(
+    client, auth_headers, test_account, test_categories
+):
+    """The from/to range is inclusive: dates outside it are not projected."""
+    next_month = _next_month_str()
+    next_month_date = date.fromisoformat(next_month)
+    day_after = (next_month_date + timedelta(days=1)).isoformat()
+
+    rec_resp = await client.post(
+        "/api/recurring-transactions",
+        json={
+            "description": "Aluguel",
+            "amount": 900.00,
+            "currency": "BRL",
+            "type": "debit",
+            "frequency": "monthly",
+            "start_date": next_month,
+            "category_id": str(test_categories[0].id),
+            "account_id": str(test_account.id),
+        },
+        headers=auth_headers,
+    )
+    assert rec_resp.status_code == 201
+
+    # Range entirely before the occurrence → nothing returned.
+    prev_month = _prev_month_str()
+    empty = await client.get(
+        "/api/dashboard/projected-transactions",
+        params={"from": prev_month, "to": prev_month},
+        headers=auth_headers,
+    )
+    assert empty.status_code == 200
+    assert empty.json() == []
+
+    # Range covering the 1st and the day after → only the 1st occurrence.
+    covering = await client.get(
+        "/api/dashboard/projected-transactions",
+        params={"from": next_month, "to": day_after},
+        headers=auth_headers,
+    )
+    assert covering.status_code == 200
+    assert len(covering.json()) == 1
+    assert covering.json()[0]["date"] == next_month
+
+
+@pytest.mark.asyncio
+async def test_projected_transactions_excludes_materialized_occurrence(
+    client, auth_headers, session, test_user, test_workspace, test_account,
+    test_categories,
+):
+    """A linked real row replaces, rather than duplicates, its projection."""
+    occurrence = _next_month_str()
+    rec_resp = await client.post(
+        "/api/recurring-transactions",
+        json={
+            "description": "CXC - Auth0",
+            "amount": 13037.13,
+            "currency": "BRL",
+            "type": "credit",
+            "frequency": "monthly",
+            "start_date": occurrence,
+            "category_id": str(test_categories[0].id),
+            "account_id": str(test_account.id),
+        },
+        headers=auth_headers,
+    )
+    assert rec_resp.status_code == 201
+    recurring_id = uuid.UUID(rec_resp.json()["id"])
+    occurrence_date = date.fromisoformat(occurrence)
+
+    session.add(Transaction(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=test_account.id,
+        category_id=test_categories[0].id,
+        description="CXC - Auth0",
+        amount=Decimal("13037.13"),
+        currency="BRL",
+        date=occurrence_date,
+        effective_date=occurrence_date,
+        type="credit",
+        source="recurring",
+        status="pending",
+        recurring_transaction_id=recurring_id,
+    ))
+    await session.commit()
+
+    response = await client.get(
+        "/api/dashboard/projected-transactions",
+        params={"account_id": str(test_account.id), "from": occurrence, "to": occurrence},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+async def test_projected_transactions_from_to_must_be_pair(client, auth_headers, test_account, test_categories):
+    """Lone or inverted from/to bounds are rejected with 422."""
+    next_month = _next_month_str()
+
+    lone_from = await client.get(
+        "/api/dashboard/projected-transactions",
+        params={"from": next_month},
+        headers=auth_headers,
+    )
+    assert lone_from.status_code == 422
+
+    lone_to = await client.get(
+        "/api/dashboard/projected-transactions",
+        params={"to": next_month},
+        headers=auth_headers,
+    )
+    assert lone_to.status_code == 422
+
+    prev_month = _prev_month_str()
+    inverted = await client.get(
+        "/api/dashboard/projected-transactions",
+        params={"from": next_month, "to": prev_month},
+        headers=auth_headers,
+    )
+    assert inverted.status_code == 422

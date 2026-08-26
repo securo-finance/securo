@@ -39,6 +39,52 @@ class TransactionCreate(TransactionBase):
     # (not yet settled) to record an entry that isn't settled yet. Only
     # posted/pending are valid.
     status: Optional[Literal["posted", "pending"]] = None
+    # Manual installment metadata. When present, this transaction is one
+    # installment of a manually-created series (created via the regular
+    # endpoint, e.g. a single installment, or via the series endpoint
+    # which fans out a payload into N rows). All four fields must be set
+    # together (validated below).
+    installment_number: Optional[int] = Field(default=None, ge=1)
+    total_installments: Optional[int] = Field(default=None, ge=1)
+    installment_total_amount: Optional[Decimal] = None
+    installment_purchase_date: Optional[_Date] = None
+
+    @model_validator(mode="after")
+    def validate_installment_fields(self):
+        installment_number = self.installment_number
+        total_installments = self.total_installments
+        installment_total_amount = self.installment_total_amount
+        installment_purchase_date = self.installment_purchase_date
+        provided = [
+            installment_number is not None,
+            total_installments is not None,
+            installment_total_amount is not None,
+            installment_purchase_date is not None,
+        ]
+        if any(provided) and not all(provided):
+            raise ValueError(
+                "installment_number, total_installments, installment_total_amount and "
+                "installment_purchase_date must be provided together"
+            )
+        if (
+            installment_number is not None
+            and total_installments is not None
+            and installment_total_amount is not None
+            and installment_purchase_date is not None
+        ):
+            if installment_number > total_installments:
+                raise ValueError(
+                    "installment_number must be between 1 and total_installments"
+                )
+            if installment_total_amount <= 0:
+                raise ValueError("installment_total_amount must be positive")
+            # The purchase date is the date of the first installment, so a
+            # given installment can never predate it.
+            if installment_purchase_date > self.date:
+                raise ValueError(
+                    "installment_purchase_date cannot be after the transaction date"
+                )
+        return self
 
 
 class TransactionUpdate(BaseModel):
@@ -65,6 +111,31 @@ class TransactionUpdate(BaseModel):
     # When provided, replaces the transaction's splits wholesale. Pass
     # an object with an empty `splits` list to clear them.
     splits: Optional[TransactionSplitsInput] = None
+    # Installment-series scope for edits. "this" (default) only touches the
+    # target row; "future" touches it plus all later installments of the
+    # same series; "all" touches every row in the series. Ignored when the
+    # transaction has no installment fingerprint.
+    apply_to: Literal["this", "future", "all"] = "this"
+
+
+class InstallmentSeriesCreate(BaseModel):
+    """Payload for POST /api/transactions/installments — repeats a purchase
+    as ``installments`` equal payments."""
+
+    base: TransactionCreate
+    installments: int = Field(ge=2, le=360, description="Number of parcels (>= 2)")
+    # Status of the first installment; subsequent ones are created "pending".
+    first_installment_status: Literal["posted", "pending"] = "posted"
+    # Period between installments. Defaults to monthly. Matches the
+    # recurring-transaction frequencies so "repeat as installments" offers
+    # the same cadence choices as a recurring bill.
+    frequency: Literal["monthly", "quarterly", "weekly", "yearly"] = "monthly"
+
+    @model_validator(mode="after")
+    def validate_amounts(self):
+        if self.base.amount <= 0:
+            raise ValueError("amount must be positive")
+        return self
 
 
 class TransactionRead(TransactionBase):
@@ -77,6 +148,7 @@ class TransactionRead(TransactionBase):
     source: str
     status: str = "posted"
     payee: Optional[str] = None
+    original_description: Optional[str] = None
     payee_id: Optional[uuid.UUID] = None
     payee_name: Optional[str] = None
     notes: Optional[str] = None
@@ -89,6 +161,7 @@ class TransactionRead(TransactionBase):
     total_installments: Optional[int] = None
     installment_total_amount: Optional[float] = None
     installment_purchase_date: Optional[_Date] = None
+    installment_series_id: Optional[uuid.UUID] = None
     bill_id: Optional[uuid.UUID] = None
     effective_bill_date: Optional[_Date] = None
     recurring_transaction_id: Optional[uuid.UUID] = None
@@ -120,6 +193,10 @@ class BulkCategorizeRequest(BaseModel):
     category_id: Optional[uuid.UUID] = None
 
 
+class TransactionBulkDeleteRequest(BaseModel):
+    transaction_ids: list[uuid.UUID]
+
+
 class BulkAddToGroupRequest(BaseModel):
     transaction_ids: list[uuid.UUID]
     group_id: uuid.UUID
@@ -133,13 +210,22 @@ class BulkAddToGroupRequest(BaseModel):
 
 
 class TransferCreate(BaseModel):
+    # `extra="forbid"` so the removed `fx_rate` field fails loudly instead of
+    # being dropped silently: a client still sending a rate would otherwise get
+    # a transfer converted at the market rate without any hint that its input
+    # was ignored.
+    model_config = ConfigDict(extra="forbid")
+
     from_account_id: uuid.UUID
     to_account_id: uuid.UUID
     amount: Decimal
+    # Amount that actually landed on the destination account, for
+    # cross-currency transfers. Left blank, the destination is converted at the
+    # market rate for `date`.
+    destination_amount: Optional[Decimal] = Field(default=None, gt=0)
     date: _Date
     description: str
     notes: Optional[str] = None
-    fx_rate: Optional[Decimal] = None
 
 
 class LinkTransferRequest(BaseModel):

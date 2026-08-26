@@ -1,0 +1,4 @@
+# Netherlands. The BTW-id is the VAT number; the older BTW-nummer is not
+# used on invoices any more.
+code = "NL"
+kinds = ["vat"]

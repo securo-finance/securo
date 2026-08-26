@@ -25,15 +25,28 @@ from app.services.rule_service import DuplicateRuleError
 router = APIRouter(prefix="/api/rules", tags=["rules"])
 
 
-def _normalize_conditions(conditions: list[dict]) -> list[dict]:
-    return [
-        {
-            "field": condition.get("field"),
+def _normalize_condition(condition: dict) -> dict:
+    """Reduce one condition list entry to the keys that decide what it matches.
+
+    A group entry carries its own operator and leaves instead of a field, so it
+    has to be normalized recursively — flattening it to `field: None` would make
+    every group compare equal and hide real edits from the change check below.
+    """
+    nested = condition.get("conditions")
+    if isinstance(nested, list):
+        return {
             "op": condition.get("op"),
-            "value": condition.get("value"),
+            "conditions": [_normalize_condition(c) for c in nested],
         }
-        for condition in conditions
-    ]
+    return {
+        "field": condition.get("field"),
+        "op": condition.get("op"),
+        "value": condition.get("value"),
+    }
+
+
+def _normalize_conditions(conditions: list[dict]) -> list[dict]:
+    return [_normalize_condition(condition) for condition in conditions]
 
 
 def _rule_match_definition_changed(rule: RuleRead, data: RuleUpdate) -> bool:

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.app_settings import AppSetting
 from app.models.user import User
+from app.core.auth import get_jwt_strategy
 
 
 pytestmark = pytest.mark.asyncio
@@ -49,6 +50,47 @@ class TestAdminUserCRUD:
         assert data["email"] == "newuser@example.com"
         assert data["is_active"] is True
         assert data["is_superuser"] is False
+
+    async def test_create_user_forbidden_when_local_auth_disabled(
+        self,
+        client: AsyncClient,
+        test_superuser: User,
+        oidc_only_settings,
+    ):
+        token = await get_jwt_strategy().write_token(test_superuser)
+        response = await client.post(
+            "/api/admin/users",
+            json={"email": "newuser@example.com", "password": "password123"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "LOCAL_AUTH_DISABLED"
+
+    async def test_admin_password_update_forbidden_but_profile_update_allowed(
+        self,
+        client: AsyncClient,
+        test_superuser: User,
+        oidc_only_settings,
+    ):
+        headers = {
+            "Authorization": f"Bearer {await get_jwt_strategy().write_token(test_superuser)}"
+        }
+        password_response = await client.patch(
+            f"/api/admin/users/{test_superuser.id}",
+            json={"password": "newpassword456"},
+            headers=headers,
+        )
+        profile_response = await client.patch(
+            f"/api/admin/users/{test_superuser.id}",
+            json={"preferences": {"language": "de"}},
+            headers=headers,
+        )
+
+        assert password_response.status_code == 403
+        assert password_response.json()["detail"] == "LOCAL_AUTH_DISABLED"
+        assert profile_response.status_code == 200
+        assert profile_response.json()["preferences"]["language"] == "de"
 
     async def test_create_user_seeds_defaults(
         self, client: AsyncClient, admin_auth_headers: dict, test_superuser: User

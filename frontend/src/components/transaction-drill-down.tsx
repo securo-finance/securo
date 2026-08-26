@@ -5,9 +5,11 @@ import { useQuery } from '@tanstack/react-query'
 import { transactions as transactionsApi, dashboard, admin } from '@/lib/api'
 import { AlertTriangle, Info, Paperclip, X } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
+import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
 import { useAuth } from '@/contexts/auth-context'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import type { Transaction } from '@/types'
+import { formatCurrency } from '@/lib/format'
 
 export type DrillDownFilter = {
   title: string
@@ -35,10 +37,6 @@ type DisplayItem = {
   isProjected: boolean
   attachmentCount: number
   transaction: Transaction | null
-}
-
-function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
 }
 
 export function TransactionDrillDown({
@@ -80,7 +78,7 @@ export function TransactionDrillDown({
 
   const { data: projectedTxs } = useQuery({
     queryKey: ['dashboard', 'projected-transactions', monthParam],
-    queryFn: () => dashboard.projectedTransactions(monthParam),
+    queryFn: () => dashboard.projectedTransactions({ month: monthParam }),
     enabled: !!filter && !!monthParam,
   })
 
@@ -254,9 +252,7 @@ export function TransactionDrillDown({
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium text-foreground truncate">{item.description}</p>
                       {item.isProjected && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-600 shrink-0">
-                          {t('transactions.recurringBadge')}
-                        </span>
+                        <ProjectedTransactionBadge />
                       )}
                       {item.attachmentCount > 0 && (
                         <Paperclip size={12} className="text-muted-foreground shrink-0" />

@@ -5,16 +5,21 @@ import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, addDays, addMonths, parseISO } from 'date-fns'
-import { accounts, transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
+import { accounts, dashboard, transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
+import { applyTransactionToBalance, excludeMaterializedProjections, transactionAmountForBalance } from '@/lib/account-detail-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
+import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { toast } from 'sonner'
-import type { CreditCardBill, Transaction } from '@/types'
+import type { CreditCardBill, ProjectedTransaction, Transaction } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, EyeClosed, HelpCircle, Paperclip, Pencil, X } from 'lucide-react'
+import { MobileTransactionRow } from '@/components/mobile-transaction-row'
 import { CategoryIcon } from '@/components/category-icon'
-import { TransactionDialog, extractApiError } from '@/components/transaction-dialog'
+import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
+import { TransactionDialog, type TransactionSavePayload } from '@/components/transaction-dialog'
+import { extractApiError } from '@/lib/api-errors'
 import { TransferDialog } from '@/components/transfer-dialog'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -22,12 +27,15 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
+import { useIsMobile } from '@/hooks/use-mobile'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
+import { formatCurrency } from '@/lib/format'
 import {
   AreaChart,
   Area,
+  Line,
   XAxis,
   YAxis,
   Tooltip,
@@ -40,7 +48,8 @@ function defaultFrom() {
 }
 
 function defaultTo() {
-  return localDateString()
+  const now = new Date()
+  return localDateString(new Date(now.getFullYear(), now.getMonth() + 1, 0))
 }
 
 function daysInMonth(year: number, month: number): number {
@@ -230,10 +239,6 @@ function creditCardCycleBoundaries(
   }
 }
 
-function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
-}
-
 function formatDateStr(dateStr: string, locale = 'pt-BR') {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString(locale)
 }
@@ -273,6 +278,7 @@ export default function AccountDetailPage() {
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
+  const isMobile = useIsMobile()
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
@@ -465,19 +471,19 @@ export default function AccountDetailPage() {
       if (account.statement_close_day) {
         cycles.push(creditCardCycleBoundaries(account.statement_close_day, new Date()))
       }
-      return cycles.slice(-6)
+      return cycles.slice(isMobile ? -4 : -6)
     }
 
     if (!account.statement_close_day) return []
     const cycles: { start: string; end: string }[] = []
     let ref = new Date()
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < (isMobile ? 4 : 6); i++) {
       const c = creditCardCycleBoundaries(account.statement_close_day, ref)
       cycles.unshift(c)
       ref = new Date(parseISO(c.start + 'T00:00:00').getTime() - 86400000)
     }
     return cycles
-  }, [account, billsAsc])
+  }, [account, billsAsc, isMobile])
 
   const timelineQueries = useQueries({
     queries: timelineCycles.map(c => ({
@@ -495,12 +501,6 @@ export default function AccountDetailPage() {
       ),
       enabled: !!id,
     })),
-  })
-
-  const { data: balanceHistory, isLoading: balanceHistoryLoading } = useQuery({
-    queryKey: ['accounts', id, 'balance-history', filterFrom, filterTo],
-    queryFn: () => accounts.balanceHistory(id!, filterFrom || undefined, filterTo || undefined),
-    enabled: !!id,
   })
 
   const { data: txData, isLoading: txLoading } = useQuery({
@@ -524,6 +524,15 @@ export default function AccountDetailPage() {
     enabled: !!id,
   })
 
+  // Non-materialized recurring projections are forecast rows. They are kept
+  // separate from real transactions so pending and future commitments never
+  // alter the current balance.
+  const { data: projectedTxData } = useQuery({
+    queryKey: ['dashboard', 'projected-transactions', { account_id: id, from: filterFrom, to: filterTo }],
+    queryFn: () => dashboard.projectedTransactions({ account_id: id!, from: filterFrom, to: filterTo }),
+    enabled: !!id && account?.type !== 'credit_card',
+  })
+
   const { data: categoriesList } = useQuery({
     queryKey: ['categories'],
     queryFn: categoriesApi.list,
@@ -535,7 +544,7 @@ export default function AccountDetailPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id: txId, ...data }: Partial<Transaction> & { id: string }) =>
+    mutationFn: ({ id: txId, ...data }: TransactionSavePayload & { id: string }) =>
       transactions.update(txId, data),
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
@@ -603,7 +612,7 @@ export default function AccountDetailPage() {
       date: string
       description: string
       notes?: string
-      fx_rate?: number
+      destination_amount?: number
     }) => transactions.createTransfer(data),
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
@@ -621,8 +630,76 @@ export default function AccountDetailPage() {
   const usePrimary = !isForeignCurrency || showPrimary
   const displayCurrency = (isForeignCurrency && !showPrimary) ? (account?.currency || userCurrency) : userCurrency
 
+  // Pseudo-transaction rows for non-materialized recurring projections.
+  // Virtual: rendered with a "Previsão" badge, non-clickable, and merged
+  // into displayRows where running balances are computed for them.
+  const projectedRows = useMemo((): TxWithBalance[] => {
+    if (!projectedTxData) return []
+    const unmaterialized = excludeMaterializedProjections(
+      projectedTxData,
+      txData?.items ?? [],
+    )
+    return unmaterialized.map((p: ProjectedTransaction): TxWithBalance => ({
+      id: `projected-${p.recurring_id}-${p.date}`,
+      user_id: '',
+      account_id: id ?? null,
+      category_id: p.category_id,
+      category: p.category_name || p.category_icon || p.category_color
+        ? {
+            id: p.category_id ?? '',
+            user_id: '',
+            group_id: null,
+            name: p.category_name ?? '',
+            icon: p.category_icon ?? '',
+            color: p.category_color ?? '',
+            is_system: false,
+            is_hidden: false,
+            treat_as_transfer: false,
+            is_ignored: false,
+          }
+        : null,
+      external_id: null,
+      description: p.description,
+      original_description: null,
+      amount: p.amount,
+      currency: p.currency,
+      date: p.date,
+      type: p.type,
+      source: 'projected',
+      status: 'posted',
+      payee: null,
+      payee_id: null,
+      payee_name: null,
+      notes: null,
+      transfer_pair_id: null,
+      amount_primary: p.amount_primary,
+      fx_rate_used: null,
+      fx_fallback: false,
+      installment_series_id: null,
+      installment_number: null,
+      total_installments: null,
+      installment_total_amount: null,
+      installment_purchase_date: null,
+      bill_id: null,
+      effective_bill_date: null,
+      recurring_transaction_id: p.recurring_id,
+      splits: [],
+      is_ignored: false,
+      virtual: true,
+      runningBalance: 0,
+    }))
+  }, [projectedTxData, txData?.items, id])
+
+  // Balance at the start of the period, used to seed the running-balance
+  // walk so that the last row's balance matches the projected balance at
+  // date_to. For CC accounts this is not used (cycle total starts from 0).
+  const openingBalance = usePrimary
+    ? (summary?.opening_balance_primary ?? summary?.opening_balance ?? 0)
+    : (summary?.opening_balance ?? 0)
+
   // Chart data:
-  // - Non-CC: daily running balance from /balance-history
+  // - Non-CC: daily running balance seeded from the current posted balance.
+  //   Pending and recurring rows are added only to this forecast walk.
   // - CC: cumulative charges within the current cycle, starting at 0
   //   (answers "how much have I spent this cycle", ignores bill payments/transfers)
   const chartData = useMemo(() => {
@@ -633,7 +710,8 @@ export default function AccountDetailPage() {
         if (tx.type !== 'debit') continue
         if (tx.source === 'opening_balance') continue
         if (tx.transfer_pair_id) continue
-        const amt = usePrimary && tx.amount_primary != null ? Number(tx.amount_primary) : Number(tx.amount)
+        const amt = transactionAmountForBalance(tx, usePrimary, displayCurrency)
+        if (amt == null) continue
         byDay.set(tx.date, (byDay.get(tx.date) ?? 0) + amt)
       }
       // Chart span: when a real bill is active, derive the range from the
@@ -670,63 +748,104 @@ export default function AccountDetailPage() {
       }
       return series
     }
-    if (!balanceHistory) return []
-    return balanceHistory.map(p => ({
-      label: formatDateStr(p.date, dateLocale),
-      date: p.date,
-      balance: usePrimary ? (p.balance_primary ?? p.balance) : p.balance,
-    }))
-  }, [isCreditCard, txData, filterFrom, filterTo, balanceHistory, locale, dateLocale, usePrimary, activeBill])
-
-  // Running balance computation for transaction table
-  const txWithRunningBalance = useMemo((): TxWithBalance[] => {
-    if (!txData?.items) return []
-
-    if (isCreditCard) {
-      // Cycle running total: debits add, refund credits subtract (net
-      // matches the bank's bill total). Excludes opening_balance and any
-      // transfer-paired tx (bill payments — those zero out separately).
-      // Computed oldest → newest, then reversed (not re-sorted) so
-      // same-day rows read monotonically top-down.
-      const ascending = [...txData.items].sort(
-        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-      )
-      let running = 0
-      const withBalance = ascending.map((tx) => {
-        if (tx.source !== 'opening_balance' && !tx.transfer_pair_id) {
-          const amt = usePrimary && tx.amount_primary != null ? Number(tx.amount_primary) : Number(tx.amount)
-          if (tx.type === 'debit') running += amt
-          else if (tx.type === 'credit') running -= amt
-        }
-        return { ...tx, runningBalance: running }
-      })
-      return withBalance.reverse()
+    if (!txData?.items || !summary || !filterFrom || !filterTo) return []
+    const allTx = [...txData.items, ...projectedRows]
+    const txByDay = new Map<string, number>()
+    for (const tx of allTx) {
+      const previous = txByDay.get(tx.date) ?? 0
+      txByDay.set(tx.date, applyTransactionToBalance(previous, tx, usePrimary, displayCurrency))
     }
+    const series: { label: string; date: string; balance: number }[] = []
+    let balance = openingBalance
+    const cur = new Date(filterFrom + 'T00:00:00')
+    const end = new Date(filterTo + 'T00:00:00')
+    while (cur <= end) {
+      const key = cur.toLocaleDateString('sv-SE')
+      balance += txByDay.get(key) ?? 0
+      series.push({ label: formatDateStr(key, dateLocale), date: key, balance })
+      cur.setDate(cur.getDate() + 1)
+    }
+    return series
+  }, [isCreditCard, txData, projectedRows, filterFrom, filterTo, dateLocale, usePrimary, displayCurrency, summary, openingBalance, activeBill])
 
-    if (summary === undefined) return []
-    const endBalance = usePrimary
-      ? (balanceHistory?.length
-          ? (balanceHistory[balanceHistory.length - 1].balance_primary ?? balanceHistory[balanceHistory.length - 1].balance)
-          : (summary.current_balance_primary ?? summary.current_balance))
-      : (balanceHistory?.length
-          ? balanceHistory[balanceHistory.length - 1].balance
-          : summary.current_balance)
-    const sorted = [...txData.items].sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  const ccRunningTotal = useMemo((): TxWithBalance[] => {
+    if (!isCreditCard || !txData?.items) return []
+    const ascending = [...txData.items].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
     )
-    let running = endBalance
-    return sorted.map((tx) => {
-      const balanceAtPoint = running
-      const amt = usePrimary && tx.amount_primary != null ? Number(tx.amount_primary) : Number(tx.amount)
-      running -= tx.type === 'credit' ? amt : -amt
-      return { ...tx, runningBalance: balanceAtPoint }
+    let running = 0
+    const withBalance = ascending.map((tx) => {
+      if (!tx.is_ignored && tx.source !== 'opening_balance' && !tx.transfer_pair_id) {
+        const amt = transactionAmountForBalance(tx, usePrimary, displayCurrency)
+        if (amt == null) return { ...tx, runningBalance: running }
+        if (tx.type === 'debit') running += amt
+        else if (tx.type === 'credit') running -= amt
+      }
+      return { ...tx, runningBalance: running }
     })
-  }, [txData, summary, isCreditCard, balanceHistory, usePrimary])
+    return withBalance.reverse()
+  }, [txData, isCreditCard, usePrimary, displayCurrency])
+
+  // Merged list: real transactions, pending rows, and virtual recurring
+  // projections. The newest row is the forecast at the end of the range.
+  const displayRows = useMemo((): TxWithBalance[] => {
+    if (isCreditCard) return ccRunningTotal
+    if (!txData?.items || summary === undefined) return []
+
+    // Secondary sort by the original index in txData.items preserves the
+    // API's insertion order for same-day transactions (creation sequence).
+    const txIndex = new Map(txData.items.map((t, i) => [t.id, i]))
+    const merged = [...txData.items, ...projectedRows].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+        || (txIndex.get(a.id) ?? Infinity) - (txIndex.get(b.id) ?? Infinity),
+    )
+
+    let balance = openingBalance
+    const withBalance = merged.map((tx) => ({
+      ...tx,
+      runningBalance: balance = applyTransactionToBalance(balance, tx, usePrimary, displayCurrency),
+    }))
+    return withBalance.reverse()
+  }, [txData, projectedRows, isCreditCard, summary, usePrimary, displayCurrency, openingBalance, ccRunningTotal])
+
+  const totalBalance = (usePrimary ? summary?.current_balance_primary : undefined) ?? summary?.current_balance ?? 0
+  const projectedBalance = displayRows.length > 0 ? displayRows[0].runningBalance : openingBalance
+
+  const actualIncome = (usePrimary ? summary?.monthly_income_primary : undefined) ?? summary?.monthly_income ?? 0
+  const actualExpenses = (usePrimary ? summary?.monthly_expenses_primary : undefined) ?? summary?.monthly_expenses ?? 0
+  const projectedIncome = (usePrimary ? summary?.projected_income_primary : undefined) ?? summary?.projected_income ?? actualIncome
+  const projectedExpenses = (usePrimary ? summary?.projected_expenses_primary : undefined) ?? summary?.projected_expenses ?? actualExpenses
+  const hasProjectedIncome = Math.abs(projectedIncome - actualIncome) > 0.005
+  const hasProjectedExpenses = Math.abs(projectedExpenses - actualExpenses) > 0.005
 
   const resolvedDefaultRange = account?.type === 'credit_card'
     ? defaultCycleForCreditCard(account.statement_close_day, account.payment_due_day, new Date())
     : { start: defaultFrom(), end: defaultTo() }
   const hasFilters = filterFrom !== resolvedDefaultRange.start || filterTo !== resolvedDefaultRange.end
+
+  // The mobile transaction view is intentionally grouped by day so the date
+  // remains visible without spending a full column on every row.
+  const groupedByDate = useMemo(() => {
+    const groups: { date: string; label: string; items: TxWithBalance[] }[] = []
+    let current: { date: string; label: string; items: TxWithBalance[] } | null = null
+    for (const tx of displayRows) {
+      if (!current || current.date !== tx.date) {
+        current = {
+          date: tx.date,
+          label: new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale, {
+            weekday: 'short',
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+          }),
+          items: [],
+        }
+        groups.push(current)
+      }
+      current.items.push(tx)
+    }
+    return groups
+  }, [displayRows, dateLocale])
 
   const isLoading = accountLoading || summaryLoading
 
@@ -763,7 +882,7 @@ export default function AccountDetailPage() {
             <h1 className="text-2xl sm:text-3xl font-semibold text-foreground tracking-tight truncate">
               {getAccountName(account)}
             </h1>
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <div className="flex items-center gap-2 mt-1 overflow-hidden">
               <span className="text-xs font-medium text-muted-foreground">
                 {t(`accounts.type${account.type.split('_').map(s => s[0].toUpperCase() + s.slice(1)).join('')}`, account.type)}
               </span>
@@ -814,7 +933,7 @@ export default function AccountDetailPage() {
             </Button>
           )}
         </div>
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+        <div className="flex items-center gap-2 sm:gap-3">
           {isCreditCard ? (
             <div className="flex items-center gap-1">
               <button
@@ -890,7 +1009,7 @@ export default function AccountDetailPage() {
             <Button
               variant="ghost"
               size="sm"
-              className="text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground min-h-[44px] min-w-[44px] px-3 shrink-0"
               onClick={() => {
                 filterTouched.current = false
                 if (account?.type === 'credit_card') {
@@ -907,8 +1026,8 @@ export default function AccountDetailPage() {
                 }
               }}
             >
-              <X className="h-3.5 w-3.5 mr-1" />
-              {t('transactions.clearFilters')}
+              <X className="h-3.5 w-3.5 sm:mr-1" />
+              <span className="hidden sm:inline">{t('transactions.clearFilters')}</span>
             </Button>
           )}
           {isForeignCurrency && (
@@ -955,7 +1074,7 @@ export default function AccountDetailPage() {
           // filtered by bill_id when the cycle has a bill (handles dynamic
           // close days) or by [start, end] otherwise. Same number whether
           // the bar is active or not — clicking doesn't shift the value.
-          const total = Number(q.data?.monthly_expenses ?? 0)
+          const total = Number(q.data?.projected_expenses ?? q.data?.monthly_expenses ?? 0)
           return {
             ...c,
             total,
@@ -1017,7 +1136,7 @@ export default function AccountDetailPage() {
         // can lag any charges added since the last sync). Otherwise use the
         // summary endpoint's monthly_expenses now nets refund credits against
         // debits for CC accounts (matches the bank's bill total).
-        const billTotal = (showPrimary ? summary?.monthly_expenses_primary : undefined) ?? summary?.monthly_expenses ?? 0
+        const billTotal = (showPrimary ? summary?.projected_expenses_primary : undefined) ?? summary?.projected_expenses ?? summary?.monthly_expenses ?? 0
         // "Default cycle" = the bill the user is here to pay (next due). The
         // AGORA tag on Limite disponível only shows when viewing a different cycle.
         const isDefaultCycle =
@@ -1075,11 +1194,11 @@ export default function AccountDetailPage() {
             : null
         return (
           <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6">
-            <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4">
-              <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1">
+            <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4 overflow-hidden">
+              <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1 truncate">
                 {t('accounts.cycleBillTotal')}
               </p>
-              <p className="text-base sm:text-2xl font-bold tabular-nums text-foreground">
+              <p className="text-[length:clamp(0.7rem,3.5vw,1.25rem)] sm:text-2xl font-bold tabular-nums text-foreground">
                 {mask(formatCurrency(billTotal, displayCurrency, locale))}
               </p>
               {deltaPct != null && prevCycleLabel && (
@@ -1088,24 +1207,24 @@ export default function AccountDetailPage() {
                 </p>
               )}
             </div>
-            <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4">
-              <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1.5">
+            <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4 overflow-hidden">
+              <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1 truncate">
                 {t('accounts.availableCredit')}
-                <span className="inline-flex items-center px-1 py-0 rounded text-[9px] font-bold uppercase tracking-wide bg-muted text-muted-foreground">
+                <span className="inline-flex items-center px-1 py-0 rounded text-[8px] sm:text-[9px] font-bold uppercase tracking-wide bg-muted text-muted-foreground shrink-0">
                   {t('accounts.currentTag')}
                 </span>
               </p>
-              <p className="text-base sm:text-2xl font-bold tabular-nums text-emerald-600">
+              <p className="text-[length:clamp(0.7rem,3.5vw,1.25rem)] sm:text-2xl font-bold tabular-nums text-emerald-600">
                 {account.available_credit != null
                   ? mask(formatCurrency(Number(account.available_credit), account.currency, locale))
                   : '—'}
               </p>
             </div>
-            <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4">
-              <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1">
+            <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4 overflow-hidden">
+              <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1 truncate">
                 {t('accounts.dueDate')}
               </p>
-              <p className="text-base sm:text-2xl font-bold tabular-nums text-foreground">
+              <p className="text-[length:clamp(0.7rem,3.5vw,1.25rem)] sm:text-2xl font-bold tabular-nums text-foreground">
                 {cycleDueDate ? formatFriendlyDate(cycleDueDate, dateLocale) : '—'}
               </p>
               {dueSubtitle && (
@@ -1117,39 +1236,57 @@ export default function AccountDetailPage() {
           </div>
         )
       })() : (
-        <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-6">
-          <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4">
-            <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-4 mb-6">
+          <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4 overflow-hidden">
+            <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1 truncate">
               {t('accounts.currentBalance')}
             </p>
-            <p className={`text-base sm:text-2xl font-bold tabular-nums ${(summary?.current_balance ?? 0) < 0 ? 'text-rose-500' : 'text-foreground'}`}>
-              {mask(formatCurrency(
-                (showPrimary ? summary?.current_balance_primary : undefined) ?? summary?.current_balance ?? 0,
-                displayCurrency, locale
-              ))}
+            <p className={`text-[length:clamp(0.7rem,3.5vw,1.25rem)] sm:text-2xl font-bold tabular-nums ${(summary?.current_balance ?? 0) < 0 ? 'text-rose-500' : 'text-emerald-600'}`}>
+              {mask(formatCurrency(totalBalance, displayCurrency, locale))}
             </p>
           </div>
-          <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4">
-            <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1">
+          <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4 overflow-hidden">
+            <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1 truncate">
+              {t('accounts.projectedBalance', 'Projected balance')}
+            </p>
+            <p className={`text-[length:clamp(0.7rem,3.5vw,1.25rem)] sm:text-2xl font-bold tabular-nums ${projectedBalance < 0 ? 'text-rose-500' : 'text-emerald-600'}`}>
+              {mask(formatCurrency(projectedBalance, displayCurrency, locale))}
+            </p>
+            {/* Naming the gap keeps the two cards from reading as a
+                contradiction: the forecast is the current balance plus the
+                money that has not settled yet. Same "label: value" shape as
+                the projected income/expense sub-lines beside it. */}
+            {Math.abs(projectedBalance - totalBalance) > 0.005 && (
+              <p className="text-[10px] sm:text-xs text-muted-foreground truncate">
+                {t('accounts.notSettled')}: {mask(formatCurrency(Math.abs(projectedBalance - totalBalance), displayCurrency, locale))}
+              </p>
+            )}
+          </div>
+          <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4 overflow-hidden">
+            <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1 truncate">
               {t('accounts.income')}
             </p>
-            <p className="text-base sm:text-2xl font-bold tabular-nums text-emerald-600">
-              {mask(formatCurrency(
-                (showPrimary ? summary?.monthly_income_primary : undefined) ?? summary?.monthly_income ?? 0,
-                displayCurrency, locale
-              ))}
+            <p className="text-[length:clamp(0.7rem,3.5vw,1.25rem)] sm:text-2xl font-bold tabular-nums text-emerald-600">
+              {mask(formatCurrency(actualIncome, displayCurrency, locale))}
             </p>
+            {hasProjectedIncome && (
+              <p className="text-[10px] sm:text-xs text-muted-foreground truncate">
+                {t('accounts.projectedIncome')}: {mask(formatCurrency(projectedIncome, displayCurrency, locale))}
+              </p>
+            )}
           </div>
-          <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4">
-            <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1">
+          <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4 overflow-hidden">
+            <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1 truncate">
               {t('accounts.expenses')}
             </p>
-            <p className="text-base sm:text-2xl font-bold tabular-nums text-rose-500">
-              {mask(formatCurrency(
-                (showPrimary ? summary?.monthly_expenses_primary : undefined) ?? summary?.monthly_expenses ?? 0,
-                displayCurrency, locale
-              ))}
+            <p className="text-[length:clamp(0.7rem,3.5vw,1.25rem)] sm:text-2xl font-bold tabular-nums text-rose-500">
+              {mask(formatCurrency(actualExpenses, displayCurrency, locale))}
             </p>
+            {hasProjectedExpenses && (
+              <p className="text-[10px] sm:text-xs text-muted-foreground truncate">
+                {t('accounts.projectedExpenses')}: {mask(formatCurrency(projectedExpenses, displayCurrency, locale))}
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -1160,7 +1297,7 @@ export default function AccountDetailPage() {
         // currently being viewed. For the current cycle this matches the "current
         // open balance" since nothing has been paid yet; for past cycles it shows
         // that month's burn rate against the (current) limit.
-        const cycleBillTotal = (showPrimary ? summary?.monthly_expenses_primary : undefined) ?? summary?.monthly_expenses ?? 0
+        const cycleBillTotal = (showPrimary ? summary?.projected_expenses_primary : undefined) ?? summary?.projected_expenses ?? summary?.monthly_expenses ?? 0
         const utilized = limit != null ? cycleBillTotal : null
         const rawPct = limit != null && limit > 0 && utilized != null ? (utilized / limit) * 100 : null
         const pct = rawPct != null ? Math.min(100, rawPct) : null
@@ -1249,6 +1386,30 @@ export default function AccountDetailPage() {
       {/* Balance / Cycle spending chart */}
       {(() => {
         const cycleEmpty = isCreditCard && chartData.length > 0 && chartData[chartData.length - 1].balance === 0
+        const balances = chartData.map(d => d.balance)
+        const dataMin = balances.length > 0 ? Math.min(...balances) : 0
+        const dataMax = balances.length > 0 ? Math.max(...balances) : 0
+        const flat = dataMin === 0 && dataMax === 0
+        // The Y axis rounds its bounds outward to hundreds and the area path
+        // is drawn down to that rounded floor, so the fill's gradient box
+        // spans the axis domain, not the data. Deriving the zero split from
+        // the data would put the colour flip at the wrong height: for a
+        // series of [-680, 105] the real zero sits at 22% of the domain while
+        // the data ratio says 13%. Keep both in step with the axis below.
+        const domainMin = dataMin < 0 ? Math.floor(dataMin / 100) * 100 : 0
+        const domainMax = dataMax === 0 ? 100 : Math.ceil(dataMax / 100) * 100
+        const zeroFrac = domainMax === domainMin
+          ? 1
+          : Math.min(1, Math.max(0, domainMax / (domainMax - domainMin)))
+        const crossesZero = dataMin < 0 && dataMax > 0
+        // The line path never touches the baseline, so its gradient box is
+        // the data extent rather than the domain.
+        const strokeSplit = crossesZero
+          ? Math.min(1, Math.max(0, dataMax / (dataMax - dataMin)))
+          : 1
+        const strokeSplitFrac = flat ? 1 : Math.min(1, strokeSplit + 0.01)
+        const strokeSolid = dataMin >= 0 ? '#10B981' : '#F43F5E'
+        const lastBalance = balances.length > 0 ? balances[balances.length - 1] : 0
         return (
       <div className="bg-card rounded-xl border border-border shadow-sm mb-6">
         <div className="px-5 pt-5 pb-3">
@@ -1257,7 +1418,7 @@ export default function AccountDetailPage() {
           </p>
         </div>
         <div className="px-1 pb-4 h-[280px]">
-          {(isCreditCard ? txLoading : balanceHistoryLoading) ? (
+          {txLoading ? (
             <Skeleton className="h-full w-full" />
           ) : cycleEmpty ? (
             <div className="h-full w-full flex flex-col items-center justify-center gap-2 text-muted-foreground">
@@ -1271,10 +1432,35 @@ export default function AccountDetailPage() {
                 margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
               >
                 <defs>
-                  <linearGradient id="acctBalGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor={isCreditCard ? '#F43F5E' : '#10B981'} stopOpacity={0.18} />
-                    <stop offset="95%" stopColor={isCreditCard ? '#F43F5E' : '#10B981'} stopOpacity={0.02} />
-                  </linearGradient>
+                  {isCreditCard ? (
+                    <linearGradient id="acctBalGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#F43F5E" stopOpacity={0.18} />
+                      <stop offset="95%" stopColor="#F43F5E" stopOpacity={0.02} />
+                    </linearGradient>
+                  ) : (
+                    <>
+                      <linearGradient id="acctBalGrad" x1="0" y1="0" x2="0" y2="1">
+                        {crossesZero || dataMin >= 0 ? (
+                          <>
+                            <stop offset="0%" stopColor="#10B981" stopOpacity={0.18} />
+                            <stop offset={`${zeroFrac * 100}%`} stopColor="#10B981" stopOpacity={0.02} />
+                          </>
+                        ) : null}
+                        {crossesZero || dataMax <= 0 ? (
+                          <>
+                            <stop offset={`${zeroFrac * 100}%`} stopColor="#F43F5E" stopOpacity={0.02} />
+                            <stop offset="100%" stopColor="#F43F5E" stopOpacity={0.18} />
+                          </>
+                        ) : null}
+                      </linearGradient>
+                      {crossesZero && (
+                        <linearGradient id="acctBalStroke" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset={`${strokeSplitFrac * 100}%`} stopColor="#10B981" />
+                          <stop offset={`${strokeSplitFrac * 100}%`} stopColor="#F43F5E" />
+                        </linearGradient>
+                      )}
+                    </>
+                  )}
                 </defs>
                 <XAxis
                   dataKey="label"
@@ -1297,7 +1483,7 @@ export default function AccountDetailPage() {
                   tickCount={5}
                   domain={[
                     (dataMin: number) => dataMin < 0 ? Math.floor(dataMin / 100) * 100 : 0,
-                    (dataMax: number) => Math.ceil(dataMax / 100) * 100,
+                    (dataMax: number) => dataMax === 0 ? 100 : Math.ceil(dataMax / 100) * 100,
                   ]}
                 />
                 <Tooltip
@@ -1318,11 +1504,17 @@ export default function AccountDetailPage() {
                 <Area
                   type="monotone"
                   dataKey="balance"
-                  stroke={isCreditCard ? '#F43F5E' : '#10B981'}
+                  stroke="none"
+                  tooltipType="none"
+                  fill={flat ? '#10B981' : 'url(#acctBalGrad)'}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="balance"
+                  stroke={isCreditCard ? '#F43F5E' : (crossesZero ? 'url(#acctBalStroke)' : strokeSolid)}
                   strokeWidth={2}
-                  fill="url(#acctBalGrad)"
                   dot={false}
-                  activeDot={{ r: 3, fill: isCreditCard ? '#F43F5E' : '#10B981' }}
+                  activeDot={{ r: 3, fill: isCreditCard ? '#F43F5E' : (lastBalance >= 0 ? '#10B981' : '#F43F5E') }}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -1344,32 +1536,69 @@ export default function AccountDetailPage() {
             <div className="p-6 space-y-3">
               {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10" />)}
             </div>
-          ) : txWithRunningBalance.length === 0 ? (
+          ) : displayRows.length === 0 ? (
             <p className="p-6 text-center text-muted-foreground">{t('accounts.noTransactions')}</p>
+          ) : isMobile ? (
+            <div>
+              {groupedByDate.map((group) => (
+                <div key={group.date}>
+                  <div className="bg-muted/80 px-4 py-1.5 border-b border-border">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      {group.label}
+                    </span>
+                  </div>
+                  {group.items.map((tx) => (
+                    <MobileTransactionRow
+                      key={tx.id}
+                      tx={tx}
+                      account={account}
+                      groupName={undefined}
+                      selected={false}
+                      selectable={false}
+                      canWrite={canWrite}
+                      highlighted={false}
+                      locale={locale}
+                      userCurrency={userCurrency}
+                      onSelect={() => {}}
+                      showPayee
+                      onClick={(clickedTx) => {
+                        // The opening-balance row is synthetic; the desktop
+                        // table makes it non-clickable and mobile must match.
+                        if (clickedTx.source === 'opening_balance') return
+                        if (!clickedTx.is_shared && canWrite) {
+                          setEditingTx(clickedTx)
+                          setDialogOpen(true)
+                        }
+                      }}
+                    />
+                  ))}
+                </div>
+              ))}
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b">
-                    <th className="px-3 sm:px-4 py-3 text-left font-medium">{t('transactions.date')}</th>
-                    <th className="px-3 sm:px-4 py-3 text-left font-medium">{t('transactions.description')}</th>
-                    <th className="px-4 py-3 text-left font-medium hidden md:table-cell">{t('transactions.category')}</th>
-                    <th className="px-3 sm:px-4 py-3 text-right font-medium">{t('transactions.amount')}</th>
-                    <th className="px-4 py-3 text-right font-medium hidden sm:table-cell">{t('accounts.runningBalance')}</th>
+                    <th className="px-2 sm:px-4 py-3 text-left font-medium whitespace-nowrap">{t('transactions.date')}</th>
+                    <th className="px-2 sm:px-4 py-3 text-left font-medium">{t('transactions.description')}</th>
+                    <th className="px-2 sm:px-4 py-3 text-left font-medium hidden md:table-cell">{t('transactions.category')}</th>
+                    <th className="px-2 sm:px-4 py-3 text-right font-medium whitespace-nowrap">{t('transactions.amount')}</th>
+                    <th className="px-2 sm:px-4 py-3 text-right font-medium hidden sm:table-cell whitespace-nowrap">{t('accounts.runningBalance')}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {txWithRunningBalance.map((tx) => {
+                  {displayRows.map((tx) => {
                     const isOpening = tx.source === 'opening_balance'
                     const isTransfer = !!tx.transfer_pair_id
-                    const isPending = tx.status === 'pending'
                     const isIgnored = tx.is_ignored
+                    const isVirtual = tx.virtual === true
                     return (
                       <tr
                         key={tx.id}
-                        className={`border-b last:border-0 transition-colors ${isOpening ? 'bg-muted/60' : isPending ? 'opacity-60' : canWrite ? 'hover:bg-muted cursor-pointer' : ''}`}
+                        className={`border-b last:border-0 transition-colors ${isOpening ? 'bg-muted/60' : (canWrite && !isVirtual) ? 'hover:bg-muted cursor-pointer' : ''} ${isVirtual ? 'opacity-80' : ''}`}
                         onClick={() => {
-                          if (!isOpening && canWrite) {
+                          if (!isOpening && !isVirtual && canWrite) {
                             setEditingTx(tx)
                             setDialogOpen(true)
                           }
@@ -1378,9 +1607,10 @@ export default function AccountDetailPage() {
                         <td className="px-3 sm:px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
                           {formatDateStr(tx.date, dateLocale)}
                         </td>
-                        <td className="px-3 sm:px-4 py-3">
-                          <div>
-                            <span className="font-semibold text-foreground text-sm">{tx.description}</span>
+                        <td className="px-3 sm:px-4 py-3 w-full max-w-0">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="font-semibold text-foreground text-sm truncate">{tx.description}</span>
+                            <div className="flex items-center gap-1 shrink-0">
                             {isOpening && (
                               <span className="ml-2 text-xs text-muted-foreground font-normal border border-border rounded px-1.5 py-0.5">
                                 {t('accounts.openingBalance')}
@@ -1393,17 +1623,22 @@ export default function AccountDetailPage() {
                                 <span title={t('transactions.transferTooltip')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
                               </span>
                             )}
-                            {isPending && (
-                              <span className="ml-2 inline-flex items-center gap-1 text-xs text-amber-600 font-normal bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-                                <Clock className="h-3 w-3" />
-                                {t('transactions.pending')}
-                              </span>
-                            )}
                             {isIgnored && (
                               <span className="ml-2 inline-flex items-center gap-1 text-xs text-gray-600 font-normal bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
                                 <EyeClosed className="h-3 w-3" />
                                 {t('transactions.ignored')}
                                 <span title={t('transactions.ignoreTransferHint')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
+                              </span>
+                            )}
+                            {isVirtual && (
+                              <ProjectedTransactionBadge />
+                            )}
+                            {tx.recurring_transaction_id != null && !isVirtual && (
+                              <span
+                                className="text-[10px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1.5 py-0.5 rounded-full shrink-0"
+                                title={t('transactions.recurringLinkedTooltip')}
+                              >
+                                {t('transactions.recurringBadge')}
                               </span>
                             )}
                             {tx.installment_number != null && tx.total_installments != null && (
@@ -1414,6 +1649,14 @@ export default function AccountDetailPage() {
                                   : undefined}
                               >
                                 {tx.installment_number}/{tx.total_installments}
+                              </span>
+                            )}
+                            {shouldShowPendingBadge(tx) && (
+                              <span
+                                title={t('transactions.pending')}
+                                className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10"
+                              >
+                                <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
                               </span>
                             )}
                             {tx.effective_bill_date && (
@@ -1428,9 +1671,10 @@ export default function AccountDetailPage() {
                             {(tx.attachment_count ?? 0) > 0 && (
                               <Paperclip size={12} className="ml-2 inline text-muted-foreground" />
                             )}
+                            </div>
                           </div>
                           {(tx.payee_name || tx.payee) && (tx.payee_name || tx.payee) !== tx.description && (
-                            <p className="text-xs text-muted-foreground mt-0.5">{tx.payee_name || tx.payee}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5 truncate">{tx.payee_name || tx.payee}</p>
                           )}
                         </td>
                         <td className="px-4 py-3 hidden md:table-cell">
@@ -1443,7 +1687,7 @@ export default function AccountDetailPage() {
                             <span className="text-muted-foreground">—</span>
                           )}
                         </td>
-                        <td className={`px-3 sm:px-4 py-3 text-right text-xs sm:text-sm font-semibold tabular-nums ${tx.is_ignored ? 'text-gray-500' : tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
+                        <td className={`px-2 sm:px-4 py-3 text-right text-xs sm:text-sm font-semibold tabular-nums whitespace-nowrap ${tx.is_ignored ? 'text-gray-500' : tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
                           {mask(`${tx.is_ignored ? ' ' : tx.type === 'credit' ? '+' : '-'}${formatCurrency(Math.abs(Number(tx.amount)), tx.currency, locale)}`)}
                           {tx.currency !== userCurrency && tx.amount_primary != null && (
                             <span className="block text-[10px] text-muted-foreground tabular-nums">
@@ -1451,7 +1695,7 @@ export default function AccountDetailPage() {
                             </span>
                           )}
                         </td>
-                        <td className={`px-4 py-3 text-right tabular-nums text-sm hidden sm:table-cell ${(account.type === 'credit_card' ? tx.runningBalance > 0 : tx.runningBalance < 0) ? 'text-rose-500' : 'text-muted-foreground'}`}>
+                        <td className={`px-4 py-3 text-right tabular-nums text-sm hidden sm:table-cell whitespace-nowrap ${(account.type === 'credit_card' ? tx.runningBalance > 0 : tx.runningBalance < 0) ? 'text-rose-500' : 'text-muted-foreground'}`}>
                           {mask(formatCurrency(tx.runningBalance, displayCurrency, locale))}
                         </td>
                       </tr>

@@ -2,7 +2,7 @@ from functools import lru_cache
 from os import getenv
 from pathlib import Path
 
-from pydantic import SecretStr
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Use the same environment variable that systemd uses: https://systemd.io/CREDENTIALS/
@@ -22,6 +22,7 @@ class Settings(BaseSettings):
 
     # Auth
     secret_key: SecretStr = SecretStr("change-me-in-production")
+    local_auth_enabled: bool = True
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24  # 24 hours
 
@@ -65,7 +66,7 @@ class Settings(BaseSettings):
 
     # FX Rates
     openexchangerates_app_id: str = ""
-    supported_currencies: str = "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,CLP,DOP,RUB,GTQ,PHP,UAH"  # comma-separated list
+    supported_currencies: str = "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,CLP,DOP,RUB,GTQ,PHP,UAH,NZD,VND,SGD"  # comma-separated list
     fx_sync_mode: str = "on_demand"  # "on_demand" or "scheduled"
 
     # Storage
@@ -120,7 +121,43 @@ class Settings(BaseSettings):
     # external dependency on the Brazilian government endpoint).
     tesouro_direto_enabled: bool = True
 
-    model_config = SettingsConfigDict(env_file=".env", secrets_dir=CREDENTIALS_DIRECTORY)
+    @property
+    def oidc_login_available(self) -> bool:
+        return bool(self.oidc_enabled and self.oidc_client_id and self.oidc_discovery_url)
+
+    @model_validator(mode="after")
+    def validate_auth_settings(self) -> "Settings":
+        if not self.local_auth_enabled and not self.oidc_login_available:
+            missing = []
+            if not self.oidc_enabled:
+                missing.append("OIDC_ENABLED=true")
+            if not self.oidc_client_id:
+                missing.append("OIDC_CLIENT_ID")
+            if not self.oidc_discovery_url:
+                missing.append("OIDC_DISCOVERY_URL")
+            raise ValueError(
+                "LOCAL_AUTH_ENABLED=false requires a complete OIDC configuration; "
+                f"missing: {', '.join(missing)}"
+            )
+        return self
+
+    # The CWD-relative ".env" is kept for backward compatibility; the anchored
+    # backend/.env guarantees the API and the Celery worker/beat resolve the
+    # same file no matter which working directory each service is launched
+    # from (a systemd unit without WorkingDirectory= used to leave the worker
+    # with default settings, silently disabling every bank-sync provider).
+    #
+    # extra="ignore" because the same .env is shared with Docker Compose and with
+    # the optional modules: it legitimately holds keys this model doesn't declare
+    # (COMPOSE_PROFILES, FRONTEND_PORT, AGENTS_*, ...). Unknown keys coming from
+    # the process environment are ignored by pydantic-settings anyway; without
+    # this, the very same key written into the .env file aborted startup with
+    # "Extra inputs are not permitted".
+    model_config = SettingsConfigDict(
+        env_file=(".env", Path(__file__).resolve().parents[2] / ".env"),
+        secrets_dir=CREDENTIALS_DIRECTORY,
+        extra="ignore",
+    )
 
 
 @lru_cache

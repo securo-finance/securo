@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import type { TransactionCalendarDay } from '../types'
-import { activityChartData, dayActivity } from './calendar-activity'
+import type { TransactionCalendarDay, TransactionCalendarItem } from '../types'
+import { activityChartData, dayActivity, isCalendarItemInteractive } from './calendar-activity'
 
 function day(overrides: Partial<TransactionCalendarDay>): TransactionCalendarDay {
   return {
@@ -110,5 +110,26 @@ describe('activityChartData', () => {
     const data = activityChartData([])
     expect(data.days).toEqual([])
     expect(data.hasActivity).toBe(false)
+  })
+})
+
+describe('isCalendarItemInteractive', () => {
+  it('allows persisted pending and future forecast rows to open', () => {
+    const item = {
+      kind: 'projected',
+      id: 'transaction-id',
+    } as TransactionCalendarItem
+
+    expect(isCalendarItemInteractive(item)).toBe(true)
+  })
+
+  it('keeps virtual recurring projections read-only', () => {
+    const item = {
+      kind: 'projected',
+      id: null,
+      recurring_id: 'recurring-id',
+    } as TransactionCalendarItem
+
+    expect(isCalendarItemInteractive(item)).toBe(false)
   })
 })

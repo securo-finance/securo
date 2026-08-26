@@ -1,0 +1,4 @@
+# Belgium. One enterprise number, quoted as the VAT number with a BE
+# prefix.
+code = "BE"
+kinds = ["vat"]

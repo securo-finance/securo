@@ -27,7 +27,11 @@ async def sync_rates(
     Idempotent — existing rates for the same date are updated.
     Returns the number of rates synced.
     """
-    target = target_date or date.today()
+    requested_target = target_date or date.today()
+    # Providers cannot return a historical rate for a date that has not
+    # happened yet. Treat a future request as a request for today's latest
+    # published rate and store it under today's date.
+    target = min(requested_target, date.today())
     supported = set(get_settings().supported_currencies.split(","))
 
     if target == date.today():
@@ -78,7 +82,11 @@ async def _resolve_rate(
     if from_currency == to_currency:
         return Decimal("1")
 
-    target = target_date or date.today()
+    requested_target = target_date or date.today()
+    # A future transaction must use the latest real rate, never query a
+    # not-yet-existing historical snapshot. Looking up against today also
+    # lets the closest-rate fallback select the last cached business day.
+    target = min(requested_target, date.today())
 
     # Step 1: Try exact date
     usd_to_source = await _get_exact_date_rate(session, from_currency, target)

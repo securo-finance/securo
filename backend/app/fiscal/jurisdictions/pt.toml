@@ -1,0 +1,4 @@
+# Portugal. The NIF identifies companies and individuals alike; VAT is the
+# intra-EU number for cross-border invoicing.
+code = "PT"
+kinds = ["pt_nif", "vat"]
