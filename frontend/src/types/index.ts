@@ -117,6 +117,11 @@ export interface CategoryGroup {
   categories: Category[]
 }
 
+export interface ConnectionInstitution {
+  name: string
+  logo_url: string | null
+}
+
 export interface BankConnection {
   id: string
   user_id: string
@@ -129,6 +134,9 @@ export interface BankConnection {
   settings: ConnectionSettings | null
   last_sync_at: string | null
   created_at: string
+  // Institutions this link spans (issue #345). Empty for one-institution
+  // providers — institution_name covers those.
+  institutions: ConnectionInstitution[]
 }
 
 export interface ConnectionSettings {

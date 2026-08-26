@@ -1534,9 +1534,9 @@ function AddTransactionToRuleDialog({
             )}
           </div>
 
-          <div className="grid grid-cols-[140px_1fr] gap-3">
+          <div className="grid grid-cols-[auto_1fr] gap-3">
             <div className="space-y-2">
-              <Label>{t('transactions.matchOperator')}</Label>
+              <Label className="whitespace-nowrap">{t('transactions.matchOperator')}</Label>
               <Select
                 value={matchOp}
                 onValueChange={(value) => setMatchOp(value as 'contains' | 'starts_with')}
