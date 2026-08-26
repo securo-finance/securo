@@ -133,6 +133,38 @@ a flag, então o débito da fatura na conta corrente contava como Saída do mês
       separada (tratar como transferência as duas pernas, sem duplicar como
       receita/despesa).
 
+### 4.2 Itens levantados em 25/08/2026, ainda em avaliação (sem fix aplicado)
+
+- [ ] **Final do cartão só aparece na conta, não na transação.** A Pluggy
+      manda `creditCardMetadata.cardNumber` (últimos 4 dígitos) por transação
+      quando o `creditCardMetadata` vem preenchido, mas `providers/pluggy.py`
+      hoje só promove `installmentNumber`/`totalInstallments`/`totalAmount`/
+      `purchaseDate`/`billId` para colunas de primeira classe — `cardNumber`
+      fica só dentro de `raw_data`, sem ser extraído nem exibido na lista de
+      transações. Verificar antes de implementar se a base real sincronizada
+      (Santander) de fato preenche esse campo em transações não parceladas,
+      não só nas parceladas do exemplo da documentação.
+- [ ] **Por que o Platinum Prime aparece com "Linha de crédito
+      compartilhada".** Não é uma heurística de "número de cartão diferente
+      = mesma linha". `_consolidated_credit_balance_group()` em
+      `providers/pluggy.py` só agrupa duas contas quando o Open Finance do
+      banco reporta, em `disaggregatedCreditLimits`, uma linha com
+      `consolidationType = CONSOLIDADO` e `creditLineLimitType =
+      LIMITE_CREDITO_TOTAL` cujo `usedAmount` bate exatamente com o saldo da
+      conta — e cria a chave de agrupamento a partir de moeda + nome da linha
+      + limite + valor usado (hash SHA-256, sem espaço para falso positivo
+      por coincidência). Isso é exatamente como o Open Finance representa um
+      cartão adicional/virtual que puxa do mesmo limite do cartão físico —
+      se for esse o caso do Platinum Prime, o agrupamento está correto, não é
+      bug. Para confirmar: checar na tela Contas qual é a outra conta
+      agrupada com o Platinum Prime e se ela é de fato o cartão virtual.
+- [ ] **XP mostrando duas "contas correntes" com o mesmo final de cartão.**
+      Ainda não investigado — hipótese a validar: pode ser o mesmo produto
+      exposto duas vezes pelo Open Finance da XP (ex.: conta corrente + conta
+      de liquidação/custódia usada como sweep), ou uma falha de deduplicação
+      no sync. Reportar exemplo concreto (nomes das duas contas e saldos)
+      antes de decidir se é dado da própria XP ou dedupe faltando no Securo.
+
 ## Fase 5 — MCP e agentes internos
 
 - [ ] Ativar o perfil de agentes somente depois da Fase 3.
