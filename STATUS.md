@@ -135,15 +135,14 @@ a flag, então o débito da fatura na conta corrente contava como Saída do mês
 
 ### 4.2 Itens levantados em 25/08/2026, ainda em avaliação (sem fix aplicado)
 
-- [ ] **Final do cartão só aparece na conta, não na transação.** A Pluggy
-      manda `creditCardMetadata.cardNumber` (últimos 4 dígitos) por transação
-      quando o `creditCardMetadata` vem preenchido, mas `providers/pluggy.py`
-      hoje só promove `installmentNumber`/`totalInstallments`/`totalAmount`/
-      `purchaseDate`/`billId` para colunas de primeira classe — `cardNumber`
-      fica só dentro de `raw_data`, sem ser extraído nem exibido na lista de
-      transações. Verificar antes de implementar se a base real sincronizada
-      (Santander) de fato preenche esse campo em transações não parceladas,
-      não só nas parceladas do exemplo da documentação.
+- [x] **Final do cartão só aparece na conta, não na transação — validado.** A
+      Pluggy manda `creditCardMetadata.cardNumber` (últimos 4 dígitos) por
+      transação, mas `providers/pluggy.py` hoje só promove
+      `installmentNumber`/`totalInstallments`/`totalAmount`/`purchaseDate`/
+      `billId` para colunas de primeira classe — `cardNumber` fica só dentro
+      de `raw_data`. Confirmado contra a base real sincronizada (Santander):
+      o campo vem preenchido também em transações não parceladas, não só no
+      exemplo da documentação. Ver plano de implementação na seção 4.3.
 - [ ] **Por que o Platinum Prime aparece com "Linha de crédito
       compartilhada".** Não é uma heurística de "número de cartão diferente
       = mesma linha". `_consolidated_credit_balance_group()` em
@@ -164,6 +163,44 @@ a flag, então o débito da fatura na conta corrente contava como Saída do mês
       de liquidação/custódia usada como sweep), ou uma falha de deduplicação
       no sync. Reportar exemplo concreto (nomes das duas contas e saldos)
       antes de decidir se é dado da própria XP ou dedupe faltando no Securo.
+
+### 4.3 Titularidade de cartão: adicional vs. conta conjunta (investigado em 25/08/2026)
+
+Motivação: conta Santander com cartões Visa e Mastercard, cada um podendo ter
+cartão adicional de outro CPF (conta conjunta). Objetivo: entender o que o
+Securo consegue diferenciar hoje com o dado que o Pluggy entrega.
+
+- [x] Confirmado contra o payload real da API Pluggy (conexão Santander em
+      produção): `account.owner`/`account.taxNumber` existem no schema, mas
+      para contas de crédito o conector do Santander retorna `taxNumber` e
+      `creditData.holderType` vazios — não há como atribuir titular/adicional
+      por CPF de forma automática com o dado atual do provedor.
+- [x] `creditData.additionalCards` traz os últimos 4 dígitos dos cartões
+      adicionais por bandeira quando o conector os reporta. Validado: uma das
+      duas bandeiras da conta piloto retornou a lista populada, a outra veio
+      vazia mesmo havendo adicional físico segundo o titular — confirmar no
+      extrato oficial do banco se é atraso do conector ou adicional inativo
+      antes de estranhar o dado.
+- [x] Confirmado que `creditCardMetadata.cardNumber`, já presente em
+      transações reais sincronizadas (ver 4.2), permite — comparando com
+      `account.number` e `creditData.additionalCards` — classificar cada
+      transação como titular ou adicional, sem nome/CPF do portador.
+- [ ] Migration: nova coluna em `accounts` para os finais de cartão adicional
+      (ex. `additional_card_numbers`).
+- [ ] Migration: nova coluna em `transactions` para o final do cartão usado
+      (ex. `card_last4`), extraído de `creditCardMetadata.cardNumber` no
+      parser de transações (`providers/pluggy.py`).
+- [ ] Mapear `creditData.additionalCards` em `_build_account_data`
+      (`providers/pluggy.py`).
+- [ ] Exibir final do cartão + classificação titular/adicional na lista de
+      transações e nos detalhes do cartão. Fora de escopo nesta etapa:
+      atribuir nome/CPF ao portador do adicional (o provedor não entrega esse
+      dado) e tela de rotulagem manual de portador.
+
+**Decisão registrada:** conta conjunta com múltiplos CPFs não é resolvível
+automaticamente com o dado atual do Pluggy/Santander — `owner`/`taxNumber` no
+payload são sempre do titular principal da conexão; nenhum segundo CPF é
+reportado pelo conector nas contas testadas.
 
 ## Fase 5 — MCP e agentes internos
 
@@ -197,3 +234,4 @@ a flag, então o débito da fatura na conta corrente contava como Saída do mês
 | 2026-08-21 | Pluggy | Credenciais configuradas e carregadas em backend, worker e scheduler; `GET /api/health` saudável. | Codex |
 | 2026-08-21 | Reconciliação piloto | Faturas do cartão conferidas contra o Organizze; valores compatíveis. Identificado ajuste de subtipo de poupança no provider Pluggy. | Codex |
 | 2026-08-25 | Diagnóstico Fase 4 | Entradas/Saídas do mês incluíam pagamento de fatura de cartão sem exclusão automática (categoria sem `treat_as_transfer`). Ver seção 4.1. | Claude |
+| 2026-08-25 | Titularidade de cartão | Validado contra payload real da conexão Santander: `holderType`/`taxNumber` vazios em crédito, `additionalCards` e `creditCardMetadata.cardNumber` preenchidos e suficientes para classificar transação por cartão físico, sem CPF/nome do portador. Ver seção 4.3. | Claude |
