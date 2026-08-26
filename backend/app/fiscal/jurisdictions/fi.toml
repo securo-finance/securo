@@ -1,0 +1,3 @@
+# Finland. The Y-tunnus becomes the VAT number behind an FI prefix.
+code = "FI"
+kinds = ["vat"]

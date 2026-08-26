@@ -2,9 +2,11 @@ import { useRef, useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { categories as categoriesApi, categoryGroups as categoryGroupsApi, rules as rulesApi, accounts as accountsApi, payees as payeesApi } from '@/lib/api'
+import { extractApiError } from '@/lib/api-errors'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 import { Label } from '@/components/ui/label'
 import {
   Dialog,
@@ -12,12 +14,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import type { Category, Payee, Rule, RuleAction, RuleCondition, RuleExportPayload } from '@/types'
+import type { Category, Payee, Rule, RuleAction, RuleCondition, RuleConditionNode, RuleExportPayload } from '@/types'
+import { isConditionGroup } from '@/lib/rule-conditions'
 import { Trash2, Plus, RefreshCw, Package, Check, ArrowUpDown, ArrowUp, ArrowDown, Download, Upload } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { RuleDialog } from '@/components/rule-dialog'
+import { findCategoryReference, getRuleCategoryName } from '@/lib/category-reference-utils'
 
 function SectionCard({ children }: { children: React.ReactNode }) {
   return (
@@ -38,6 +42,7 @@ function SectionHeader({ title, action }: { title: string; action?: React.ReactN
 
 const CONDITION_FIELDS = [
   { value: 'description', label: 'rules.fieldDescription' },
+  { value: 'payee', label: 'rules.fieldRawPayee' },
   { value: 'notes', label: 'rules.fieldNotes' },
   { value: 'amount', label: 'rules.fieldAmount' },
   { value: 'type', label: 'rules.fieldType' },
@@ -74,7 +79,7 @@ function getOpsForField(field: string) {
   return STRING_OPS
 }
 
-function conditionSummary(conditions: RuleCondition[], conditionsOp: string, t: (key: string) => string, payeesList: Payee[]): string {
+function conditionSummary(conditions: RuleConditionNode[], conditionsOp: string, t: (key: string) => string, payeesList: Payee[]): string {
   const fieldLabel = (f: string) => {
     const key = CONDITION_FIELDS.find(x => x.value === f)?.label
     return key ? t(key) : f
@@ -90,19 +95,29 @@ function conditionSummary(conditions: RuleCondition[], conditionsOp: string, t: 
     }
     return String(c.value)
   }
-  const parts = conditions.map(c => `${fieldLabel(c.field)} ${opLabel(c.field, c.op)} "${valueLabel(c)}"`)
-  return parts.join(` ${conditionsOp === 'or' ? t('rules.orOp') : t('rules.andOp')} `) || t('rules.noConditions')
+  const leafSummary = (c: RuleCondition) => `${fieldLabel(c.field)} ${opLabel(c.field, c.op)} "${valueLabel(c)}"`
+  const joiner = (op: string) => ` ${op === 'or' ? t('rules.orOp') : t('rules.andOp')} `
+  // Groups get parentheses so a mixed AND/OR rule reads unambiguously.
+  const parts = conditions.map(node => (
+    isConditionGroup(node)
+      ? `(${node.conditions.map(leafSummary).join(joiner(node.op))})`
+      : leafSummary(node)
+  ))
+  return parts.join(joiner(conditionsOp)) || t('rules.noConditions')
 }
 
 function actionSummary(actions: RuleAction[], categories: Category[], payeesList: Payee[], t: (key: string) => string): string {
   return actions.map(a => {
     if (a.op === 'set_category') {
-      const cat = categories.find(c => c.id === a.value)
+      const cat = findCategoryReference(categories, a.value)
       return cat ? `→ ${cat.name}` : `→ ${t('transactions.category')}`
     }
     if (a.op === 'set_payee') {
       const p = payeesList.find(p => p.id === a.value)
       return p ? `→ ${t('payees.payee')}: ${p.name}` : `→ ${t('payees.payee')}`
+    }
+    if (a.op === 'set_description') {
+      return `→ ${t('rules.fieldDescription')}: ${a.value}`
     }
     if (a.op === 'append_notes') return `→ ${t('rules.fieldNotes')}: ${a.value}`
     if (a.op === 'ignore') return `→ ${t('rules.ignoreAction')}`
@@ -121,6 +136,7 @@ export default function RulesPage() {
   const [pendingImportName, setPendingImportName] = useState('')
   const importInputRef = useRef<HTMLInputElement | null>(null)
   const [editing, setEditing] = useState<Rule | null>(null)
+  const [deletingRule, setDeletingRule] = useState<Rule | null>(null)
   // Bumped on every open so the dialog remounts with fresh state instead of
   // retaining the previously entered rule (issue #306).
   const [dialogInstance, setDialogInstance] = useState(0)
@@ -145,6 +161,11 @@ export default function RulesPage() {
   const { data: categoriesList } = useQuery({
     queryKey: ['categories'],
     queryFn: categoriesApi.list,
+  })
+
+  const { data: allCategoriesList } = useQuery({
+    queryKey: ['categories', 'management'],
+    queryFn: categoriesApi.listIncludingHidden,
   })
 
   const { data: categoryGroupsList } = useQuery({
@@ -220,7 +241,11 @@ export default function RulesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rules'] })
       queryClient.invalidateQueries({ queryKey: ['rule-packs'] })
+      setDeletingRule(null)
       toast.success(t('rules.deleted'))
+    },
+    onError: (err: unknown) => {
+      toast.error(extractApiError(err, t('common.error')))
     },
   })
 
@@ -271,6 +296,10 @@ export default function RulesPage() {
   }
 
   const categories = useMemo(() => categoriesList ?? [], [categoriesList])
+  const displayCategories = useMemo(
+    () => allCategoriesList ?? categoriesList ?? [],
+    [allCategoriesList, categoriesList],
+  )
   const payees = useMemo(() => payeesList ?? [], [payeesList])
 
   const [sortBy, setSortBy] = useState<'priority' | 'name' | 'category'>('priority')
@@ -284,15 +313,12 @@ export default function RulesPage() {
     }
     if (sortBy === 'category') {
       const getCategoryName = (rule: Rule) => {
-        const action = rule.actions.find(a => a.op === 'set_category')
-        if (!action) return ''
-        const cat = categories.find(c => c.id === action.value)
-        return cat?.name ?? ''
+        return getRuleCategoryName(rule, displayCategories) ?? ''
       }
       return list.sort((a, b) => dir * getCategoryName(a).localeCompare(getCategoryName(b)))
     }
     return list.sort((a, b) => dir * (a.priority - b.priority))
-  }, [rulesList, categories, sortBy, sortDir])
+  }, [rulesList, displayCategories, sortBy, sortDir])
 
   return (
     <div>
@@ -348,7 +374,7 @@ export default function RulesPage() {
                   size="sm"
                   className="gap-1.5 h-8"
                   onClick={() => {
-                    if (window.confirm(t('rules.confirmResetAndReapplyAll', 'Reset matching transaction categories and notes, then reapply all active rules?'))) {
+                    if (window.confirm(t('rules.confirmResetAndReapplyAll', 'Reset matching transaction categories, notes, and rule-managed descriptions, then reapply all active rules?'))) {
                       applyAllMutation.mutate()
                     }
                   }}
@@ -415,14 +441,14 @@ export default function RulesPage() {
                       {conditionSummary(rule.conditions, rule.conditions_op, t, payees)}
                     </p>
                     <p className="text-xs text-emerald-600 font-medium mt-0.5">
-                      {actionSummary(rule.actions, categories, payees, t)}
+                      {actionSummary(rule.actions, displayCategories, payees, t)}
                     </p>
                   </div>
                   {canWrite && (
                     <div className="flex items-center gap-1 shrink-0">
                       <button
                         className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
-                        onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(rule.id) }}
+                        onClick={(e) => { e.stopPropagation(); setDeletingRule(rule) }}
                         disabled={deleteMutation.isPending}
                         title={t('common.delete')}
                       >
@@ -438,6 +464,15 @@ export default function RulesPage() {
           <p className="text-sm text-muted-foreground text-center py-10">{t('rules.empty')}</p>
         )}
       </SectionCard>
+
+      <DeleteConfirmationDialog
+        open={!!deletingRule}
+        title={t('rules.confirmDeleteTitle')}
+        description={t('rules.confirmDeleteDescription', { name: deletingRule?.name })}
+        isPending={deleteMutation.isPending}
+        onClose={() => setDeletingRule(null)}
+        onConfirm={() => deletingRule && deleteMutation.mutate(deletingRule.id)}
+      />
 
       <RulePacksDialog
         open={packsDialogOpen}
@@ -481,6 +516,7 @@ export default function RulesPage() {
         rule={editing}
         categories={categories}
         categoryGroups={categoryGroupsList ?? []}
+        currentCategories={allCategoriesList ?? []}
         accounts={accountsList ?? []}
         payees={payees}
         onSave={(data) => {

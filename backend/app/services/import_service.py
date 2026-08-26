@@ -8,7 +8,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from ofxparse import OfxParser
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -19,8 +19,9 @@ from app.models.transaction import Transaction
 from app.schemas.transaction import TransactionImport
 from app.services import recurring_match_service
 from app.services.credit_card_service import apply_effective_date
-from app.services.rule_engine import apply_rule_actions, evaluate_conditions
-from app.services.rule_service import apply_rules_to_transaction
+from app.services.category_service import get_hidden_category_ids
+from app.services.rule_engine import apply_rule_actions, evaluate_conditions, merge_notes
+from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
 from app.services.fx_rate_service import stamp_primary_amount
 from app.services.payee_service import get_or_create_payee
 
@@ -621,6 +622,7 @@ async def enrich_with_category_suggestions(
         select(Category).where(Category.workspace_id == workspace_id)
     )
     category_name_map = {str(c.id): c.name for c in category_result.scalars()}
+    hidden_categories = await get_hidden_category_ids(session, workspace_id)
 
     if not rules:
         return transactions
@@ -641,7 +643,12 @@ async def enrich_with_category_suggestions(
             conditions = rule.conditions or []
             actions = rule.actions or []
             if evaluate_conditions(rule.conditions_op, conditions, proxy):
-                category_set = apply_rule_actions(actions, proxy, category_set)
+                category_set = apply_rule_actions(
+                    actions,
+                    proxy,
+                    category_set,
+                    hidden_category_ids=hidden_categories,
+                )
         if proxy.category_id:
             txn.suggested_category_id = proxy.category_id
             txn.suggested_category_name = category_name_map.get(str(proxy.category_id))
@@ -711,12 +718,10 @@ async def import_transactions(
         txn_currency = txn_data.currency or account_currency
 
         if should_detect_duplicates:
-            # Duplicate detection: use external_id when available (OFX FITID),
-            # fall back to field-based matching for formats without unique IDs.
-            # When matching by external_id, also require the same `date` so that
-            # Brazilian credit-card installments — where some banks reuse one
-            # purchase FITID across every monthly statement — don't get skipped
-            # as duplicates from later monthly imports (issue #98).
+            # Prefer an external ID (OFX FITID), with date retained because some
+            # Brazilian cards reuse one purchase FITID across monthly installments.
+            # Formats without unique IDs fall back to transaction fields; compare
+            # both descriptions because rules may have changed the displayed one.
             if txn_data.external_id:
                 existing = await session.execute(
                     select(Transaction).where(
@@ -732,63 +737,47 @@ async def import_transactions(
                         Transaction.date == txn_data.date,
                         Transaction.amount == txn_data.amount,
                         Transaction.type == txn_data.type,
-                        Transaction.description == txn_data.description,
+                        or_(
+                            Transaction.description == txn_data.description,
+                            Transaction.original_description == txn_data.description,
+                        ),
                     )
                 )
-            # `.first()` rather than `.scalar_one_or_none()`: the dedup key can
-            # legitimately match more than one row (e.g. a prior sync/import race
-            # left a duplicate, or a bank reuses one FITID across statements),
-            # and we only need to know whether *any* match exists. Requiring
-            # exactly one would raise MultipleResultsFound and abort the import.
+            # `.first()` is intentional: duplicate keys can legitimately match
+            # multiple rows after an import/sync race or reused bank identifier,
+            # and duplicate detection only needs to establish that any row exists.
             if existing.scalars().first() is not None:
                 skipped += 1
                 continue
 
-        # Resolve payee entity from raw payee text (OFX/QIF)
         import_payee_id = None
         import_payee_raw = getattr(txn_data, "payee_raw", None)
         if import_payee_raw:
             import_payee_entity = await get_or_create_payee(
-                session, user_id, import_payee_raw, workspace_id=workspace_id
+                session, user_id, import_payee_raw, workspace_id=workspace_id,
+                source="import",
             )
             import_payee_id = import_payee_entity.id
 
-        # Recurring bill reconciliation (issue #116): if this imported charge
-        # fulfills a generated placeholder, merge into it instead of creating a
-        # duplicate; the recurring link is preserved.
-        placeholder = await recurring_match_service.find_placeholder_for_incoming(
-            session, account_id, txn_data.amount, txn_currency, txn_data.type,
-            txn_data.date, txn_data.description,
-        )
-        if placeholder and not placeholder.is_ignored:
-            placeholder.source = source
-            placeholder.external_id = txn_data.external_id
-            placeholder.import_id = import_log.id
-            if import_payee_raw and not placeholder.payee:
-                placeholder.payee = import_payee_raw
-                placeholder.payee_id = import_payee_id
-            imported += 1
-            continue
-
-        # Otherwise, link to an active bill's next occurrence if this fulfills it.
-        recurring_link = await recurring_match_service.find_bill_for_incoming(
-            session, user_id, account_id, txn_data.amount, txn_currency, txn_data.type,
-            txn_data.date, txn_data.description,
-        )
-
         user_category_id = txn_data.category_id
         suggested_cat_id = txn_data.suggested_category_id
-        csv_category_id = category_map.get(txn_data.category_name) if txn_data.category_name else None
-        if txn_data.force_uncategorized:
-            category_id = None
-        else:
-            category_id = user_category_id or suggested_cat_id or csv_category_id
+        csv_category_id = (
+            category_map.get(txn_data.category_name)
+            if txn_data.category_name
+            else None
+        )
+        category_id = (
+            None
+            if txn_data.force_uncategorized
+            else user_category_id or suggested_cat_id or csv_category_id
+        )
 
-        transaction = Transaction(
+        incoming = Transaction(
             user_id=user_id,
             workspace_id=workspace_id,
             account_id=account_id,
             description=txn_data.description,
+            original_description=txn_data.description,
             amount=txn_data.amount,
             date=txn_data.date,
             type=txn_data.type,
@@ -800,24 +789,83 @@ async def import_transactions(
             payee_id=import_payee_id,
             category_id=category_id,
             notes=getattr(txn_data, "notes", None),
-            recurring_transaction_id=recurring_link.id if recurring_link else None,
         )
-        apply_effective_date(transaction, account)
+        apply_effective_date(incoming, account)
+        preview = await preview_rules_for_transaction(
+            session,
+            user_id,
+            incoming,
+            skip_category_rules=txn_data.force_uncategorized,
+        )
 
+        # Normalize a detached candidate before either recurring match. If a
+        # generated placeholder already represents this occurrence, upgrade it
+        # in place; otherwise link the new row to an active recurring definition.
+        placeholder = await recurring_match_service.find_placeholder_for_incoming(
+            session,
+            account_id,
+            txn_data.amount,
+            txn_currency,
+            txn_data.type,
+            txn_data.date,
+            preview.description,
+        )
+        if placeholder and not placeholder.is_ignored:
+            placeholder.source = source
+            placeholder.external_id = txn_data.external_id
+            placeholder.import_id = import_log.id
+            placeholder.status = "posted"
+            # The rules already ran, against the incoming charge, to build
+            # `preview`. Fold that result in rather than re-running them
+            # against the placeholder: its description is the recurring
+            # definition's own wording, so conditions written for the bank's
+            # text would no longer match. Everything the user can already see
+            # wins, the charge only fills what is still empty, and only its
+            # provenance is recorded outright.
+            placeholder.original_description = txn_data.description
+            if placeholder.category_id is None:
+                placeholder.category_id = preview.category_id
+            if import_payee_raw and not placeholder.payee:
+                placeholder.payee = import_payee_raw
+            if placeholder.payee_id is None:
+                placeholder.payee_id = preview.payee_id
+            placeholder.notes = merge_notes(placeholder.notes, preview.notes)
+            if preview.is_ignored:
+                placeholder.is_ignored = True
+            imported += 1
+            continue
+
+        recurring_link = await recurring_match_service.find_bill_for_incoming(
+            session,
+            user_id,
+            account_id,
+            txn_data.amount,
+            txn_currency,
+            txn_data.type,
+            txn_data.date,
+            preview.description,
+        )
+        incoming.recurring_transaction_id = (
+            recurring_link.id if recurring_link else None
+        )
         if txn_data.fx_rate:
-            transaction.fx_rate_used = txn_data.fx_rate
-            transaction.amount_primary = txn_data.amount * txn_data.fx_rate
+            incoming.fx_rate_used = txn_data.fx_rate
+            incoming.amount_primary = txn_data.amount * txn_data.fx_rate
 
-        session.add(transaction)
+        session.add(incoming)
         await session.flush()
         if recurring_link is not None:
             recurring_match_service.advance_past(recurring_link, txn_data.date)
 
-        await apply_rules_to_transaction(session, user_id, transaction, skip_category_rules=txn_data.force_uncategorized)
+        await apply_rules_to_transaction(
+            session,
+            user_id,
+            incoming,
+            skip_category_rules=txn_data.force_uncategorized,
+        )
 
-        # Only auto-convert if no fx_rate was provided by the CSV
         if not txn_data.fx_rate:
-            await stamp_primary_amount(session, user_id, transaction)
+            await stamp_primary_amount(session, user_id, incoming)
 
         imported += 1
 

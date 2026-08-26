@@ -65,11 +65,17 @@ async def get_account_summary(
     primary_currency = ctx.user.primary_currency
     if account and account.currency != primary_currency:
         bal, _ = await convert(session, Decimal(str(summary["current_balance"])), account.currency, primary_currency)
+        opening, _ = await convert(session, Decimal(str(summary["opening_balance"])), account.currency, primary_currency)
         inc, _ = await convert(session, Decimal(str(summary["monthly_income"])), account.currency, primary_currency)
         exp, _ = await convert(session, Decimal(str(summary["monthly_expenses"])), account.currency, primary_currency)
+        projected_inc, _ = await convert(session, Decimal(str(summary["projected_income"])), account.currency, primary_currency)
+        projected_exp, _ = await convert(session, Decimal(str(summary["projected_expenses"])), account.currency, primary_currency)
         summary["current_balance_primary"] = float(bal)
+        summary["opening_balance_primary"] = float(opening)
         summary["monthly_income_primary"] = float(inc)
         summary["monthly_expenses_primary"] = float(exp)
+        summary["projected_income_primary"] = float(projected_inc)
+        summary["projected_expenses_primary"] = float(projected_exp)
 
     return summary
 
@@ -159,7 +165,12 @@ async def update_account(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
-    return account_service.serialize_account(account, None, None)
+    # Re-read post-commit so the response resolves the institution/display
+    # name pair exactly like GET (update_account leaves the row expired).
+    account = await account_service.get_account(session, account_id, ctx.workspace.id)
+    if not account:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+    return account_service.serialize_account(account, None, None, account.connection)
 
 
 @router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)

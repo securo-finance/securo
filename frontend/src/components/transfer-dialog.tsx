@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import { getAccountLabel } from '@/lib/account-utils'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { getAccountLabel, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { localDateString } from '@/lib/date-utils'
 import { Button } from '@/components/ui/button'
@@ -40,7 +40,9 @@ export function TransferDialog({
   defaultFromAccountId?: string
 }) {
   const { t } = useTranslation()
-  const [fromAccountId, setFromAccountId] = useState(defaultFromAccountId || (accounts[0]?.id ?? ''))
+  const sortedAccounts = useMemo(() => sortAccountsByDisplayName(accounts), [accounts])
+  const firstAccountId = sortedAccounts[0]?.id ?? ''
+  const [fromAccountId, setFromAccountId] = useState(defaultFromAccountId || firstAccountId)
   const [toAccountId, setToAccountId] = useState('')
   const [amount, setAmount] = useState('')
   const [date, setDate] = useState(localDateString)
@@ -50,14 +52,14 @@ export function TransferDialog({
 
   // Reset form when dialog opens
   const resetForm = useCallback(() => {
-    setFromAccountId(defaultFromAccountId || (accounts[0]?.id ?? ''))
+    setFromAccountId(defaultFromAccountId || firstAccountId)
     setToAccountId('')
     setAmount('')
     setDate(localDateString())
     setDescription('')
     setNotes('')
     setDestinationAmount('')
-  }, [defaultFromAccountId, accounts])
+  }, [defaultFromAccountId, firstAccountId])
 
   useEffect(() => {
     if (open) resetForm()
@@ -68,7 +70,7 @@ export function TransferDialog({
   const isCrossCurrency = fromAccount && toAccount && fromAccount.currency !== toAccount.currency
   const isSameAccount = fromAccountId && toAccountId && fromAccountId === toAccountId
 
-  const availableToAccounts = accounts.filter((a) => a.id !== fromAccountId)
+  const availableToAccounts = sortedAccounts.filter((a) => a.id !== fromAccountId)
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -107,7 +109,7 @@ export function TransferDialog({
                 required
               >
                 <option value="" disabled>{t('transactions.account')}</option>
-                {accounts.map((acc) => (
+                {sortedAccounts.map((acc) => (
                   <option key={acc.id} value={acc.id}>
                     {getAccountLabel(acc)} ({acc.currency})
                   </option>

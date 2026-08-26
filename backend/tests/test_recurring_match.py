@@ -337,6 +337,8 @@ async def test_generate_pending_stamps_placeholder_link(session, test_user, test
     )
     tx = result.scalar_one()
     assert tx.recurring_transaction_id == bill.id
+    # Due occurrences are actuals; forecast lives in the projection layer.
+    assert tx.status == "posted"
 
 
 @pytest.mark.asyncio

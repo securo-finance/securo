@@ -1686,14 +1686,15 @@ class TestEffectiveBillDateFiltersList:
         )
 
     @pytest.mark.asyncio
-    async def test_summary_includes_pending_sync_with_override(
+    async def test_summary_forecast_includes_pending_sync_with_override(
         self, session, test_user, test_workspace, cc_account
     ):
         """get_account_summary mirrors get_transactions: a pending sync tx
         with `effective_bill_date` in the cycle window must contribute to
-        the totals card and bar chart even when the override doesn't snap
-        to a bill's due_date (so bill_id stays null). Without this the
-        strip pill totals diverge from the tx list (issue #162)."""
+        the projected totals even when the override doesn't snap to a bill's
+        due_date (so bill_id stays null). Actual totals remain posted-only.
+        Without this the projected bill total diverges from the tx list
+        (issue #162)."""
         from app.services.account_service import get_account_summary
         from app.models.credit_card_bill import CreditCardBill
         from datetime import datetime, timezone
@@ -1725,7 +1726,8 @@ class TestEffectiveBillDateFiltersList:
         )
 
         assert summary is not None
-        assert summary["monthly_expenses"] == 105.0
+        assert summary["monthly_expenses"] == 0.0
+        assert summary["projected_expenses"] == 105.0
 
     @pytest.mark.asyncio
     async def test_override_past_in_progress_window_lands_in_in_progress(

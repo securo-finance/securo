@@ -157,6 +157,37 @@ async def test_transaction_calendar_respects_account_filter(
 
 
 @pytest.mark.asyncio
+async def test_transaction_calendar_keeps_pending_in_projected_activity(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Pending calendar", type="checking", balance=Decimal("0"), currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+    pending = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=account.id, description="Pending bill", amount=Decimal("80"),
+        currency="BRL", date=date(2026, 7, 8), type="debit", source="sync",
+        status="pending",
+    )
+    session.add(pending)
+    await session.commit()
+
+    calendar = await get_transaction_calendar(
+        session, test_workspace.id, test_user.id, month=date(2026, 7, 1)
+    )
+    july_8 = next(day for day in calendar.days if day.date == date(2026, 7, 8))
+    assert july_8.actual_count == 0
+    assert july_8.projected_count == 1
+    assert july_8.actual_expense == 0.0
+    assert july_8.projected_expense == 80.0
+    assert july_8.ending_balance == -80.0
+    assert july_8.items[0].kind == "projected"
+
+
+@pytest.mark.asyncio
 async def test_transaction_calendar_single_foreign_account_uses_primary_currency_balance(
     session: AsyncSession, test_user, test_workspace
 ):

@@ -285,6 +285,25 @@ async def generate_pending(
             if existing_real is not None:
                 existing_real.recurring_transaction_id = recurring.id
             else:
+                account = await session.get(Account, recurring.account_id)
+                # Only occurrences that already came due reach this point, so
+                # the row is a charge that happened rather than a forecast.
+                # Whether to trust that depends on who else writes to the
+                # account:
+                #
+                # Bank-synced: the incoming charge often fails to match this
+                # placeholder, and two posted rows for one charge inflate the
+                # balance silently. Holding the placeholder as pending keeps
+                # it out of the actuals until something confirms it, so a
+                # missed match costs a visible stale row instead of a wrong
+                # number. Improving the match itself is the real fix (#588);
+                # this is the guard until then.
+                #
+                # Manual: nothing else ever writes to the account, so there is
+                # no charge to duplicate against and nothing that would ever
+                # post the row. Pending there buys no safety and stops the
+                # balance from moving.
+                is_synced_account = account is not None and account.connection_id is not None
                 transaction = Transaction(
                     user_id=user_id,
                     account_id=recurring.account_id,
@@ -295,9 +314,9 @@ async def generate_pending(
                     date=effective_occurrence,
                     type=recurring.type,
                     source="recurring",
+                    status="pending" if is_synced_account else "posted",
                     recurring_transaction_id=recurring.id,
                 )
-                account = await session.get(Account, recurring.account_id)
                 apply_effective_date(transaction, account)
                 session.add(transaction)
                 await session.flush()

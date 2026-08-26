@@ -54,11 +54,15 @@ async def _make_account(
     return acc
 
 
-async def _add_txn(session, user_id, account_id, workspace_id, amount, typ, dt, currency="BRL"):
+async def _add_txn(
+    session, user_id, account_id, workspace_id, amount, typ, dt,
+    currency="BRL", status="posted",
+):
     txn = Transaction(
         id=uuid.uuid4(), user_id=user_id, account_id=account_id,
         workspace_id=workspace_id, description="t", amount=Decimal(str(amount)),
         date=dt, type=typ, source="manual", currency=currency,
+        status=status,
         created_at=datetime.now(timezone.utc),
     )
     session.add(txn)
@@ -267,6 +271,30 @@ async def test_resolve_manual(session: AsyncSession, test_user, test_workspace):
 async def test_resolve_account_same_currency(session, test_user, test_workspace):
     acc = await _make_account(session, test_user.id, test_workspace.id, currency="BRL")
     await _add_txn(session, test_user.id, acc.id, test_workspace.id, 1500, "credit", date.today())
+    goal = await _make_goal(
+        session, test_user.id, test_workspace.id,
+        tracking_type="account", account_id=acc.id, currency="BRL",
+    )
+    val = await _resolve_current_amount(session, goal, test_user.id)
+    assert val == pytest.approx(Decimal("1500"))
+
+
+@pytest.mark.asyncio
+async def test_resolve_account_excludes_pending_and_future_rows(
+    session, test_user, test_workspace
+):
+    """Goal current amount follows posted balance, including for forecast rows."""
+    today = date.today()
+    acc = await _make_account(session, test_user.id, test_workspace.id, currency="BRL")
+    await _add_txn(session, test_user.id, acc.id, test_workspace.id, 1500, "credit", today)
+    await _add_txn(
+        session, test_user.id, acc.id, test_workspace.id, 200, "debit", today,
+        status="pending",
+    )
+    await _add_txn(
+        session, test_user.id, acc.id, test_workspace.id, 300, "debit",
+        today + timedelta(days=3),
+    )
     goal = await _make_goal(
         session, test_user.id, test_workspace.id,
         tracking_type="account", account_id=acc.id, currency="BRL",

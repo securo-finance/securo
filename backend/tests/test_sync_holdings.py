@@ -1,10 +1,13 @@
 """Cover the Asset lifecycle through `_sync_holdings`.
 
 The sync contract is a bit subtle: provider data drives creation *and*
-closure of Assets, but user-set fields (sell_date, group_id) are load-
-bearing and must never be overwritten. These tests pin the full matrix:
-new/existing × active/withdrawn, same-day vs next-day re-syncs,
-historical seeding idempotency, and sparse-field merging.
+closure of Assets, but user-set fields are load-bearing — sell_date is
+never overwritten, and group_id is rewritten only between wallets the
+sync itself owns (per-account re-attribution, issue #345); a wallet the
+user chose is never touched (see test_connection_service.py for the
+re-attribution matrix). These tests pin the rest: new/existing ×
+active/withdrawn, same-day vs next-day re-syncs, historical seeding
+idempotency, and sparse-field merging.
 """
 
 from __future__ import annotations

@@ -1,0 +1,145 @@
+name: Prepare Release
+
+# Bumps the version numbers that live in the repo and opens a PR with them.
+# It deliberately stops before the tag: the release build (release.yml) runs on
+# the commit the tag points at, so the bump has to be merged into main *first*
+# or the published images carry a stale version.
+#
+# Flow: run this workflow -> review and merge the PR -> publish the GitHub
+# release for the same version, targeting main.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, without the leading v (e.g. 0.14.3)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    name: Bump versions and open PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          # A PR opened with the default GITHUB_TOKEN does not start CI, so the
+          # required checks never report and the PR stays unmergeable. Set a
+          # RELEASE_TOKEN secret (fine-grained PAT with contents + pull requests
+          # write) and CI runs on the release PR like on any other one.
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Validate version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          VERSION="${INPUT_VERSION#v}"
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$INPUT_VERSION' is not a X.Y.Z version"
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            echo "::error::tag v$VERSION already exists"
+            exit 1
+          fi
+
+          # An abandoned attempt leaves the branch behind (closing a PR does not
+          # delete it), and the push would then be rejected after all the work.
+          BRANCH="chore/release-v$VERSION"
+          if git ls-remote --exit-code --heads origin "refs/heads/$BRANCH" >/dev/null 2>&1; then
+            echo "::error::branch $BRANCH already exists. Delete it first: git push origin --delete $BRANCH"
+            exit 1
+          fi
+
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "BRANCH=$BRANCH" >> "$GITHUB_ENV"
+
+      - name: Bump version files
+        run: |
+          set -euo pipefail
+
+          # backend/pyproject.toml is installed into the image with `pip install -e .`,
+          # so this is the version the running backend actually reports.
+          sed -i -E "0,/^version = /s|^version = .*|version = \"$VERSION\"|" backend/pyproject.toml
+
+          # frontend/package.json (+ its lockfile). The UI reads VITE_APP_VERSION,
+          # injected from the tag at build time, but the manifest should still match.
+          npm --prefix frontend version "$VERSION" --no-git-tag-version --allow-same-version
+
+          # charts/securo/Chart.yaml: release.yml repackages the chart with
+          # --version/--app-version, this keeps the checked-in chart honest.
+          sed -i -E "0,/^version:/s|^version:.*|version: $VERSION|" charts/securo/Chart.yaml
+          sed -i -E "0,/^appVersion:/s|^appVersion:.*|appVersion: \"$VERSION\"|" charts/securo/Chart.yaml
+
+      - name: Regenerate uv.lock
+        run: |
+          set -euo pipefail
+
+          # uv.lock carries the project's own version, so CI's `uv lock --check`
+          # fails if the pyproject bump lands alone. Same pinned uv as ci.yml and
+          # the backend image.
+          # renovate: datasource=pypi depName=uv
+          pip install -q uv==0.12.5
+          cd backend
+          uv lock
+          uv lock --check
+
+      - name: Verify the bump landed
+        run: |
+          set -euo pipefail
+
+          grep -qx "version = \"$VERSION\"" backend/pyproject.toml
+          # the project's own entry in the lock, not one of its dependencies
+          grep -A1 -x 'name = "securo-backend"' backend/uv.lock | grep -qx "version = \"$VERSION\""
+          grep -qx "  \"version\": \"$VERSION\"," frontend/package.json
+          grep -qx "version: $VERSION" charts/securo/Chart.yaml
+          grep -qx "appVersion: \"$VERSION\"" charts/securo/Chart.yaml
+
+          if git diff --quiet; then
+            echo "::error::nothing changed. Is $VERSION already the current version?"
+            exit 1
+          fi
+
+          git --no-pager diff --stat
+
+      - name: Open the release PR
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          HAS_RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git commit -am "chore: release v$VERSION"
+          git push -u origin "$BRANCH"
+
+          {
+            echo "Version bump for v$VERSION: \`backend/pyproject.toml\`, \`frontend/package.json\`, \`charts/securo/Chart.yaml\`."
+            echo
+            echo "After merging, publish the \`v$VERSION\` GitHub release targeting \`main\` to build and push the images."
+          } > /tmp/pr-body.md
+
+          PR_URL="$(gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore: release v$VERSION" \
+            --body-file /tmp/pr-body.md)"
+
+          echo "::notice::$PR_URL"
+          echo "Release PR for v$VERSION: $PR_URL" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$HAS_RELEASE_TOKEN" != "true" ]; then
+            echo "::warning::No RELEASE_TOKEN secret, so CI did not start on the PR. Close and reopen it to run the required checks."
+          fi

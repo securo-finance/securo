@@ -1,0 +1,3 @@
+# Guatemala. The NIT check character may be a K, so it is stored as text.
+code = "GT"
+kinds = ["gt_nit"]

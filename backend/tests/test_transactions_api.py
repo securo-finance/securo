@@ -798,3 +798,73 @@ async def test_list_transactions_summary_respects_filters(
     assert summary["income"] == pytest.approx(0.0)
     assert summary["expense"] == pytest.approx(25.5)
     assert summary["net"] == pytest.approx(-25.5)
+
+
+@pytest.mark.asyncio
+async def test_list_transactions_includes_ignored_by_default(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_transactions: list[Transaction],
+):
+    """The flag has to be asked for: an ignored row is still part of the ledger."""
+    test_transactions[0].is_ignored = True
+    await session.commit()
+
+    response = await client.get("/api/transactions", headers=auth_headers)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == len(test_transactions)
+    assert test_transactions[0].description in [item["description"] for item in data["items"]]
+
+
+@pytest.mark.asyncio
+async def test_list_transactions_exclude_ignored(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_transactions: list[Transaction],
+):
+    test_transactions[0].is_ignored = True
+    await session.commit()
+
+    response = await client.get("/api/transactions?exclude_ignored=true", headers=auth_headers)
+
+    assert response.status_code == 200
+    data = response.json()
+    descriptions = [item["description"] for item in data["items"]]
+    assert test_transactions[0].description not in descriptions
+    # `total` drives the pager, so it has to shrink with the rows.
+    assert data["total"] == len(test_transactions) - 1
+
+
+@pytest.mark.asyncio
+async def test_list_transactions_exclude_ignored_drops_rows_in_an_ignored_category(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_transactions: list[Transaction],
+    test_categories: list[Category],
+):
+    """The list badges a row as ignored when its category is, so hiding must
+    follow the badge rather than the column."""
+    test_categories[0].is_ignored = True
+    await session.commit()
+
+    in_ignored_category = [t.description for t in test_transactions if t.category_id == test_categories[0].id]
+    assert in_ignored_category, "fixture no longer has a transaction in this category"
+
+    response = await client.get("/api/transactions?exclude_ignored=true", headers=auth_headers)
+
+    descriptions = [item["description"] for item in response.json()["items"]]
+    for description in in_ignored_category:
+        assert description not in descriptions
+
+
+@pytest.mark.asyncio
+async def test_export_transactions_exclude_ignored(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_transactions: list[Transaction],
+):
+    """The CSV is the list you are looking at, so it takes the same filter."""
+    test_transactions[0].is_ignored = True
+    await session.commit()
+
+    response = await client.get("/api/transactions/export?exclude_ignored=true", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert test_transactions[0].description not in response.text

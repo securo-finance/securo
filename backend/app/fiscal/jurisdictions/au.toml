@@ -1,0 +1,4 @@
+# Australia. The ABN goes on every tax invoice; the ACN it derives from
+# identifies the company at ASIC.
+code = "AU"
+kinds = ["abn"]

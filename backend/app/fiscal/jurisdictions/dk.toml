@@ -1,0 +1,4 @@
+# Denmark. The CVR number is the company register id, and the VAT number
+# is the same digits behind a DK prefix.
+code = "DK"
+kinds = ["cvr", "vat"]

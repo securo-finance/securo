@@ -26,6 +26,7 @@ from webauthn.helpers.structs import (
 )
 
 from app.core.auth import current_active_user, get_jwt_strategy
+from app.core.auth_policy import require_local_auth_enabled
 from app.core.config import get_settings
 from app.core.database import get_async_session
 from app.core.rate_limit import login_rate_limit
@@ -199,7 +200,11 @@ async def list_passkeys(
     return result.scalars().all()
 
 
-@router.post("/passkeys/register/options", response_model=PasskeyOptionsResponse)
+@router.post(
+    "/passkeys/register/options",
+    response_model=PasskeyOptionsResponse,
+    dependencies=[Depends(require_local_auth_enabled)],
+)
 async def passkey_registration_options(
     request: Request,
     body: PasskeyRegisterOptionsRequest,
@@ -241,7 +246,11 @@ async def passkey_registration_options(
     return PasskeyOptionsResponse(challenge_id=challenge_id, options=_options_dict(options))
 
 
-@router.post("/passkeys/register/verify", response_model=PasskeyRead)
+@router.post(
+    "/passkeys/register/verify",
+    response_model=PasskeyRead,
+    dependencies=[Depends(require_local_auth_enabled)],
+)
 async def verify_passkey_registration(
     body: PasskeyRegisterVerifyRequest,
     user: User = Depends(current_active_user),
@@ -304,7 +313,7 @@ async def delete_passkey(
 @router.post(
     "/passkeys/authenticate/options",
     response_model=PasskeyOptionsResponse,
-    dependencies=[Depends(login_rate_limit)],
+    dependencies=[Depends(require_local_auth_enabled), Depends(login_rate_limit)],
 )
 async def passkey_authentication_options(
     request: Request,
@@ -354,7 +363,10 @@ async def passkey_authentication_options(
     return PasskeyOptionsResponse(challenge_id=challenge_id, options=_options_dict(options))
 
 
-@router.post("/passkeys/authenticate/verify", dependencies=[Depends(login_rate_limit)])
+@router.post(
+    "/passkeys/authenticate/verify",
+    dependencies=[Depends(require_local_auth_enabled), Depends(login_rate_limit)],
+)
 async def verify_passkey_authentication(
     body: PasskeyAuthenticateVerifyRequest,
     session: AsyncSession = Depends(get_async_session),
@@ -389,7 +401,11 @@ async def verify_passkey_authentication(
     return {"access_token": token, "token_type": "bearer"}
 
 
-@router.post("/passkeys/2fa/options", response_model=PasskeyOptionsResponse, dependencies=[Depends(login_rate_limit)])
+@router.post(
+    "/passkeys/2fa/options",
+    response_model=PasskeyOptionsResponse,
+    dependencies=[Depends(require_local_auth_enabled), Depends(login_rate_limit)],
+)
 async def passkey_second_factor_options(
     request: Request,
     body: PasskeySecondFactorOptionsRequest,
@@ -424,7 +440,10 @@ async def passkey_second_factor_options(
     return PasskeyOptionsResponse(challenge_id=challenge_id, options=_options_dict(options))
 
 
-@router.post("/passkeys/2fa/verify", dependencies=[Depends(login_rate_limit)])
+@router.post(
+    "/passkeys/2fa/verify",
+    dependencies=[Depends(require_local_auth_enabled), Depends(login_rate_limit)],
+)
 async def verify_passkey_second_factor(
     body: PasskeySecondFactorVerifyRequest,
     session: AsyncSession = Depends(get_async_session),

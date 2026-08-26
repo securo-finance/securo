@@ -204,6 +204,23 @@ class TestResolveRate:
         assert rate == Decimal("5.0000000000")
 
     @pytest.mark.asyncio
+    async def test_future_date_fetches_latest_rate_instead_of_future_history(
+        self, session: AsyncSession, clean_db
+    ):
+        from app.services.fx_rate_service import _resolve_rate
+
+        async def sync_latest(db: AsyncSession, target: date) -> int:
+            assert target == date.today()
+            await _insert_rate(db, "BRL", Decimal("5.2500000000"), target)
+            return 1
+
+        future_date = date.today() + timedelta(days=10)
+        with patch("app.services.fx_rate_service.sync_rates", side_effect=sync_latest):
+            rate = await _resolve_rate(session, "USD", "BRL", future_date)
+
+        assert rate == Decimal("5.2500000000")
+
+    @pytest.mark.asyncio
     async def test_get_rate_still_falls_back_to_one_for_live_reads(
         self, session: AsyncSession
     ):
@@ -726,6 +743,25 @@ class TestSyncRates:
 
         # Should call fetch_latest (not fetch_historical) when no date given
         mock_provider.fetch_latest.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_sync_rates_future_date_calls_provider_latest(self):
+        from app.services.fx_rate_service import sync_rates
+
+        mock_provider = MagicMock()
+        mock_provider.name = "test_provider"
+        mock_provider.fetch_latest = AsyncMock(return_value={
+            "BRL": Decimal("5.25"),
+        })
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock()
+        mock_session.commit = AsyncMock()
+
+        with patch("app.services.fx_rate_service._provider", mock_provider):
+            await sync_rates(mock_session, date.today() + timedelta(days=10))
+
+        mock_provider.fetch_latest.assert_awaited_once()
+        mock_provider.fetch_historical.assert_not_called()
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -1,0 +1,4 @@
+# India. The GSTIN is per state, so one company registered in several
+# states holds several. The PAN inside it is the entity-level id.
+code = "IN"
+kinds = ["gstin", "pan"]

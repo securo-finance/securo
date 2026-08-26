@@ -1,0 +1,3 @@
+# Spain. NIF covers the DNI and NIE shapes.
+code = "ES"
+kinds = ["es_nif", "vat"]

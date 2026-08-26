@@ -10,6 +10,7 @@ import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
 import {
   Select,
   SelectContent,
@@ -36,14 +37,15 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts'
-import { CheckCircle2, CalendarIcon, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed } from 'lucide-react'
+import { CheckCircle2, CalendarIcon, Clock, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ICON_MAP } from '@/lib/category-icons'
 import { PageHeader } from '@/components/page-header'
 import { CategoryIcon } from '@/components/category-icon'
 import { AccountIcon } from '@/components/account-icon'
 import { TransactionDrillDown, type DrillDownFilter } from '@/components/transaction-drill-down'
-import { TransactionDialog, extractApiError } from '@/components/transaction-dialog'
+import { TransactionDialog, type TransactionSavePayload } from '@/components/transaction-dialog'
+import { extractApiError } from '@/lib/api-errors'
 import { TransactionCalendarView } from '@/components/transaction-calendar-view'
 import { TransactionsViewSwitcher, type TransactionsViewMode } from '@/components/transactions-view-switcher'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
@@ -54,6 +56,7 @@ import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import type { Rule, Transaction } from '@/types'
 import { formatCurrency } from '@/lib/format'
+import { shouldShowPendingBadge } from '@/lib/transaction-status'
 
 function formatDate(dateStr: string, locale = 'pt-BR') {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString(locale)
@@ -240,7 +243,7 @@ export default function DashboardPage() {
 
   const { data: projectedTxs, isLoading: projectedTxLoading } = useQuery({
     queryKey: ['dashboard', 'projected-transactions', selectedMonth],
-    queryFn: () => dashboard.projectedTransactions(monthParam),
+    queryFn: () => dashboard.projectedTransactions({ month: monthParam }),
   })
 
   const { data: budgetComparison } = useQuery({
@@ -274,7 +277,7 @@ export default function DashboardPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: Partial<Transaction> & { id: string }) =>
+    mutationFn: ({ id, ...data }: TransactionSavePayload & { id: string }) =>
       transactions.update(id, data),
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
@@ -385,11 +388,15 @@ export default function DashboardPage() {
 
   const primaryCurrency = summary?.primary_currency ?? userCurrency
   const totalBalance = summary?.total_balance_primary ?? Object.values(summary?.total_balance ?? {}).reduce((a, b) => a + Number(b), 0)
+  const projectedBalance = summary?.projected_balance_primary ?? Object.values(summary?.projected_balance ?? {}).reduce((a, b) => a + Number(b), 0)
+  const hasProjectedBalance = Math.abs(projectedBalance - totalBalance) >= 0.01
 
 
   // Savings rate & projection
   const income = Number(summary?.monthly_income_primary ?? summary?.monthly_income ?? 0)
   const expenses = Number(summary?.monthly_expenses_primary ?? summary?.monthly_expenses ?? 0)
+  const projectedIncome = Number(summary?.projected_income_primary ?? summary?.projected_income ?? income)
+  const projectedExpenses = Number(summary?.projected_expenses_primary ?? summary?.projected_expenses ?? expenses)
   const savingsRate = income > 0 ? ((income - expenses) / income) * 100 : 0
   const isCurrentMonth = selectedMonth === currentMonth()
   const daysElapsed = isCurrentMonth ? new Date().getDate() : monthLastDay(selectedMonth)
@@ -467,6 +474,9 @@ export default function DashboardPage() {
     parentOwnerName: string | null
     groupName: string | null
     isIgnored: boolean
+    installmentNumber: number | null
+    totalInstallments: number | null
+    showPendingBadge: boolean
   }
 
   const [txPerPage, setTxPerPage] = useState<number>(() => {
@@ -513,7 +523,10 @@ export default function DashboardPage() {
         groupId,
         parentOwnerName: isShared ? tx.parent_owner_name ?? null : null,
         groupName: groupId ? groupNameById.get(groupId) ?? null : null,
-        isIgnored: tx.is_ignored
+        isIgnored: tx.is_ignored,
+        installmentNumber: tx.installment_number,
+        totalInstallments: tx.total_installments,
+        showPendingBadge: shouldShowPendingBadge(tx),
       })
     }
     for (const pt of projectedTxs ?? []) {
@@ -528,7 +541,7 @@ export default function DashboardPage() {
         categoryIcon: pt.category_icon,
         categoryName: pt.category_name,
         categoryColor: pt.category_color ?? null,
-        accountId: null,
+        accountId: pt.account_id,
         isProjected: true,
         attachmentCount: 0,
         isShared: false,
@@ -537,7 +550,10 @@ export default function DashboardPage() {
         groupId: null,
         parentOwnerName: null,
         groupName: null,
-        isIgnored: false
+        isIgnored: false,
+        installmentNumber: null,
+        totalInstallments: null,
+        showPendingBadge: false,
       })
     }
     rows.sort((a, b) => txSortDesc ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date))
@@ -649,6 +665,11 @@ export default function DashboardPage() {
                         ))}
                       </div>
                     )}
+                    {hasProjectedBalance && (
+                      <p className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
+                        {t('dashboard.projectedBalance')} {mask(formatCurrency(projectedBalance, primaryCurrency, locale))}
+                      </p>
+                    )}
                     {/* Net of pending group shares — show only when
                         meaningfully nonzero so users without groups
                         see the same UI as before. */}
@@ -688,9 +709,16 @@ export default function DashboardPage() {
                 {summaryLoading ? (
                   <Skeleton className="h-7 w-24" />
                 ) : (
-                  <p className="text-lg font-bold tabular-nums text-emerald-600">
-                    +{mask(formatCurrency(income, primaryCurrency, locale))}
-                  </p>
+                  <>
+                    <p className="text-lg font-bold tabular-nums text-emerald-600">
+                      +{mask(formatCurrency(income, primaryCurrency, locale))}
+                    </p>
+                    {Math.abs(projectedIncome - income) >= 0.01 && (
+                      <p className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
+                        {t('dashboard.projectedIncome')} {mask(formatCurrency(projectedIncome, primaryCurrency, locale))}
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
 
@@ -708,9 +736,16 @@ export default function DashboardPage() {
                 {summaryLoading ? (
                   <Skeleton className="h-7 w-24" />
                 ) : (
-                  <p className="text-lg font-bold tabular-nums text-rose-500">
-                    -{mask(formatCurrency(expenses, primaryCurrency, locale))}
-                  </p>
+                  <>
+                    <p className="text-lg font-bold tabular-nums text-rose-500">
+                      -{mask(formatCurrency(expenses, primaryCurrency, locale))}
+                    </p>
+                    {Math.abs(projectedExpenses - expenses) >= 0.01 && (
+                      <p className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
+                        {t('dashboard.projectedExpenses')} {mask(formatCurrency(projectedExpenses, primaryCurrency, locale))}
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
 
@@ -869,10 +904,23 @@ export default function DashboardPage() {
                 </p>
               </div>
               {!balanceHistoryLoading && lastCurrentPoint && (
-                <span className={`text-lg font-bold tabular-nums ${monthVariation >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                  {mask(`${monthVariation > 0 ? '+' : ''}${formatCurrency(monthVariation, userCurrency, locale)}`)}
-                </span>
+                <div className="text-right">
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{t('dashboard.balancePeriodVariation')}</p>
+                  <span className={`text-lg font-bold tabular-nums ${monthVariation >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                    {mask(`${monthVariation > 0 ? '+' : ''}${formatCurrency(monthVariation, userCurrency, locale)}`)}
+                  </span>
+                </div>
               )}
+            </div>
+            <div className="flex items-center gap-3 mt-2">
+              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span className="inline-block w-3 h-0.5 rounded-full bg-emerald-500" />
+                {t('dashboard.balanceCurrentMonthLegend')}
+              </span>
+              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span className="inline-block w-3 border-t-2 border-dashed border-slate-400" />
+                {t('dashboard.balancePreviousMonthLegend')}
+              </span>
             </div>
           </div>
           <div className="px-1 pb-4 flex-1 min-h-0">
@@ -1157,8 +1205,19 @@ export default function DashboardPage() {
                             </span>
                           )}
                           {row.isProjected && (
-                            <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1 py-0.5 rounded-full shrink-0">
-                              {t('transactions.recurringBadge')}
+                            <ProjectedTransactionBadge />
+                          )}
+                          {row.installmentNumber != null && row.totalInstallments != null && (
+                            <span className="inline-flex items-center text-[9px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1 py-0.5 rounded-full shrink-0">
+                              {row.installmentNumber}/{row.totalInstallments}
+                            </span>
+                          )}
+                          {row.showPendingBadge && (
+                            <span
+                              title={t('transactions.pending')}
+                              className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10"
+                            >
+                              <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
                             </span>
                           )}
                           {row.isIgnored && (
@@ -1261,8 +1320,19 @@ export default function DashboardPage() {
                                 </span>
                               )}
                               {row.isProjected && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-600 shrink-0">
-                                  {t('transactions.recurringBadge')}
+                                <ProjectedTransactionBadge />
+                              )}
+                              {row.installmentNumber != null && row.totalInstallments != null && (
+                                <span className="inline-flex items-center text-[10px] font-bold tabular-nums text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-500/20 border border-amber-200 dark:border-amber-500/30 px-1.5 py-0.5 rounded-full shrink-0">
+                                  {row.installmentNumber}/{row.totalInstallments}
+                                </span>
+                              )}
+                              {row.showPendingBadge && (
+                                <span
+                                  title={t('transactions.pending')}
+                                  className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10"
+                                >
+                                  <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
                                 </span>
                               )}
                               {row.isIgnored && (

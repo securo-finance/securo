@@ -18,7 +18,11 @@ from app.schemas.transaction_calendar import (
     TransactionCalendarItem,
     TransactionCalendarResponse,
 )
-from app.services.dashboard_service import _balance_at, _daily_balance_deltas_by_date
+from app.services.dashboard_service import (
+    _balance_at,
+    _daily_balance_deltas_by_date,
+    _get_forecast_transactions,
+)
 from app.services.fx_rate_service import convert as fx_convert
 from app.services.recurring_transaction_service import (
     adjust_weekend_date,
@@ -78,7 +82,23 @@ async def get_transaction_calendar(
         grid_start - timedelta(days=1),
         primary_currency_hint=primary_currency,
         account_ids=requested_account_ids,
+        include_pending=True,
     )
+
+    # A future calendar month starts after today's current balance. Carry real
+    # forecast rows that fall in the gap into the projected seed, just like
+    # virtual recurring occurrences are carried below.
+    if grid_start > date.today():
+        before_grid_rows = await _get_forecast_transactions(
+            session, workspace_id, date.today() + timedelta(days=1), grid_start,
+            requested_account_ids,
+        )
+        for tx in before_grid_rows:
+            if tx.is_ignored or (tx.category and tx.category.is_ignored):
+                continue
+            start_balance += await _signed_balance_delta_primary(
+                session, tx, primary_currency
+            )
 
     actual_rows = await _load_actual_transactions(
         session, workspace_id, grid_start, grid_end, requested_account_ids
@@ -122,6 +142,46 @@ async def get_transaction_calendar(
         day.actual_count += 1
         day.items.append(_actual_item(tx, amount_primary, is_transfer, ignored))
 
+    forecast_rows = await _get_forecast_transactions(
+        session, workspace_id, grid_start, grid_end, requested_account_ids
+    )
+    forecast_deltas: dict[date, float] = {}
+    for tx in forecast_rows:
+        if tx.date not in days:
+            continue
+        day = days[tx.date]
+        amount_primary = await _positive_primary_amount(
+            session, tx.amount, tx.currency, primary_currency, tx.amount_primary
+        )
+        is_transfer = bool(tx.transfer_pair_id) or bool(
+            tx.category and tx.category.treat_as_transfer
+        )
+        ignored = bool(tx.is_ignored or (tx.category and tx.category.is_ignored))
+        if not ignored:
+            if is_transfer or tx.source == "transfer":
+                delta = await _signed_balance_delta_primary(session, tx, primary_currency)
+                day.transfer_net += delta
+                day.projected_transfer_net += delta
+                day.has_transfer = True
+            elif tx.type == "credit":
+                day.income += amount_primary
+                day.projected_income += amount_primary
+                day.has_income = True
+            else:
+                day.expense += amount_primary
+                day.projected_expense += amount_primary
+                day.has_expense = True
+        day.projected_count += 1
+        day.items.append(_forecast_item(tx, amount_primary, is_transfer, ignored))
+
+        # Forecast rows are excluded from actual deltas but included in the
+        # projected walk. The seed already contains forecast rows before the
+        # grid; rows inside the grid are applied here.
+        if not ignored:
+            forecast_deltas[tx.date] = forecast_deltas.get(tx.date, 0.0) + await _signed_balance_delta_primary(
+                session, tx, primary_currency
+            )
+
     projected_items, projected_deltas, carried_projected_delta = await _project_recurring_items(
         session,
         workspace_id,
@@ -155,6 +215,8 @@ async def get_transaction_calendar(
         day.items.append(item)
 
     for delta_date, delta in projected_deltas.items():
+        balance_deltas[delta_date] = balance_deltas.get(delta_date, 0.0) + delta
+    for delta_date, delta in forecast_deltas.items():
         balance_deltas[delta_date] = balance_deltas.get(delta_date, 0.0) + delta
 
     running = start_balance
@@ -234,6 +296,8 @@ async def _load_actual_transactions(
             Account.is_closed == False,
             Transaction.date >= start,
             Transaction.date < end,
+            Transaction.date <= date.today(),
+            Transaction.status == "posted",
         )
         .options(
             selectinload(Transaction.account),
@@ -288,6 +352,34 @@ def _actual_item(
     account = tx.account
     return TransactionCalendarItem(
         kind="actual",
+        id=tx.id,
+        date=tx.date,
+        description=tx.description,
+        amount=float(tx.amount),
+        amount_primary=amount_primary,
+        currency=tx.currency,
+        type=cast(Literal["debit", "credit"], tx.type),
+        account_id=tx.account_id,
+        account_name=account.display_name or account.name if account else None,
+        category_id=tx.category_id,
+        category_name=category.name if category else None,
+        category_icon=category.icon if category else None,
+        category_color=category.color if category else None,
+        status=tx.status,
+        source=tx.source,
+        transfer_pair_id=tx.transfer_pair_id,
+        is_transfer=is_transfer,
+        is_ignored=ignored,
+    )
+
+
+def _forecast_item(
+    tx: Transaction, amount_primary: float, is_transfer: bool, ignored: bool
+) -> TransactionCalendarItem:
+    category = tx.category
+    account = tx.account
+    return TransactionCalendarItem(
+        kind="projected",
         id=tx.id,
         date=tx.date,
         description=tx.description,

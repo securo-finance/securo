@@ -38,6 +38,8 @@ class BudgetVsActual(BaseModel):
     group_name: Optional[str] = None
     budget_amount: Optional[Decimal] = None
     actual_amount: Decimal
+    projected_amount: Decimal = Decimal("0")
     prev_month_amount: Decimal = Decimal("0")
+    projected_prev_month_amount: Decimal = Decimal("0")
     percentage_used: Optional[float] = None
     is_recurring: bool = False

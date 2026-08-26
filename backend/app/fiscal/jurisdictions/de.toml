@@ -1,0 +1,4 @@
+# Germany. Two numbers that get confused routinely: the USt-IdNr is the
+# intra-EU VAT id, the Steuernummer is the domestic one.
+code = "DE"
+kinds = ["vat", "steuernummer"]

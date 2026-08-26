@@ -4,8 +4,10 @@ import { useDisplayLocale } from '@/hooks/use-display-locale'
 import { monthLabel } from '@/lib/month-utils'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { categories as categoriesApi, categoryGroups as groupsApi, budgets as budgetsApi } from '@/lib/api'
+import { extractApiError } from '@/lib/api-errors'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -26,6 +28,7 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
+import { findCategoryReference } from '@/lib/category-reference-utils'
 import { formatCurrency } from '@/lib/format'
 
 function currentMonth() {
@@ -65,6 +68,7 @@ export default function BudgetsPage() {
   const monthParam = `${selectedMonth}-01`
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Budget | null>(null)
+  const [deletingBudget, setDeletingBudget] = useState<Budget | null>(null)
 
   const { data: budgetsList } = useQuery({
     queryKey: ['budgets', selectedMonth],
@@ -74,6 +78,13 @@ export default function BudgetsPage() {
   const { data: categoriesList } = useQuery({
     queryKey: ['categories'],
     queryFn: categoriesApi.list,
+  })
+
+  // Budgets can point at a hidden default category. The picker below only
+  // offers visible ones, but existing rows still have to name what they budget.
+  const { data: allCategoriesList } = useQuery({
+    queryKey: ['categories', 'management'],
+    queryFn: categoriesApi.listIncludingHidden,
   })
 
   const { data: groupsList } = useQuery({
@@ -108,17 +119,23 @@ export default function BudgetsPage() {
     mutationFn: (id: string) => budgetsApi.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['budgets'] })
+      setDeletingBudget(null)
       toast.success(t('budgets.deleted'))
+    },
+    onError: (err: unknown) => {
+      toast.error(extractApiError(err, t('common.error')))
     },
   })
 
+  const displayCategories = allCategoriesList ?? categoriesList ?? []
+
   const getCategoryDisplay = (categoryId: string) => {
-    const cat = categoriesList?.find((c) => c.id === categoryId)
-    if (!cat) return <span>{categoryId}</span>
+    const category = findCategoryReference(displayCategories, categoryId)
+    if (!category) return <span>{categoryId}</span>
     return (
       <span className="flex items-center gap-2">
-        <CategoryIcon icon={cat.icon} color={cat.color} size="sm" />
-        <span>{cat.name}</span>
+        <CategoryIcon icon={category.icon} color={category.color} size="sm" />
+        <span>{category.name}</span>
       </span>
     )
   }
@@ -222,7 +239,7 @@ export default function BudgetsPage() {
                         </button>
                         <button
                           className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
-                          onClick={() => deleteMutation.mutate(budget.id)}
+                          onClick={() => setDeletingBudget(budget)}
                           disabled={deleteMutation.isPending}
                           aria-label={t('common.delete')}
                           title={t('common.delete')}
@@ -317,6 +334,23 @@ export default function BudgetsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <DeleteConfirmationDialog
+        open={!!deletingBudget}
+        title={t('budgets.confirmDeleteTitle')}
+        description={t(
+          deletingBudget?.is_recurring
+            ? 'budgets.confirmDeleteRecurringDescription'
+            : 'budgets.confirmDeleteDescription',
+          {
+            name: findCategoryReference(displayCategories, deletingBudget?.category_id ?? '')?.name
+              ?? t('budgets.category'),
+          },
+        )}
+        isPending={deleteMutation.isPending}
+        onClose={() => setDeletingBudget(null)}
+        onConfirm={() => deletingBudget && deleteMutation.mutate(deletingBudget.id)}
+      />
     </div>
   )
 }

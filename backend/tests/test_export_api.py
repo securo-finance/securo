@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+import pyzipper
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -142,3 +143,63 @@ async def test_backup_metadata_structure(client: AsyncClient, auth_headers):
         assert "export_date" in meta
         assert meta["format_version"] == "1.0"
         assert "entity_counts" in meta
+
+
+@pytest.mark.asyncio
+async def test_backup_post_without_password_is_a_plain_zip(client: AsyncClient, auth_headers):
+    """The password is optional: omitting it must not change the archive."""
+    resp = await client.post("/api/export/backup", json={}, headers=auth_headers)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/zip"
+
+    with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+        assert "metadata.json" in zf.namelist()
+        assert json.loads(zf.read("metadata.json"))["format_version"] == "1.0"
+
+
+@pytest.mark.asyncio
+async def test_backup_post_with_password_encrypts_the_entries(
+    client: AsyncClient, auth_headers, test_account: Account
+):
+    resp = await client.post(
+        "/api/export/backup", json={"password": "correct horse battery"}, headers=auth_headers
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/zip"
+
+    # Readable with the password, and the data really is in there.
+    with pyzipper.AESZipFile(io.BytesIO(resp.content)) as zf:
+        zf.setpassword(b"correct horse battery")
+        accounts = json.loads(zf.read("accounts.json"))
+    assert any(a["name"] == test_account.name for a in accounts)
+
+    # ...and unreadable without it, which is the whole point.
+    with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
+        assert "accounts.json" in zf.namelist()
+        with pytest.raises(RuntimeError):
+            zf.read("accounts.json")
+
+
+@pytest.mark.asyncio
+async def test_backup_post_rejects_the_wrong_password(client: AsyncClient, auth_headers):
+    resp = await client.post(
+        "/api/export/backup", json={"password": "correct horse battery"}, headers=auth_headers
+    )
+
+    with pyzipper.AESZipFile(io.BytesIO(resp.content)) as zf:
+        zf.setpassword(b"wrong horse battery")
+        with pytest.raises(RuntimeError):
+            zf.read("metadata.json")
+
+
+@pytest.mark.asyncio
+async def test_backup_post_rejects_a_short_password(client: AsyncClient, auth_headers):
+    """Refused up front rather than written into an archive that looks safe."""
+    resp = await client.post("/api/export/backup", json={"password": "short"}, headers=auth_headers)
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_backup_post_unauthenticated(client: AsyncClient):
+    resp = await client.post("/api/export/backup", json={"password": "correct horse battery"})
+    assert resp.status_code == 401

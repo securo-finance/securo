@@ -67,9 +67,22 @@ async def get_balance_history(
 @router.get("/projected-transactions", response_model=list[ProjectedTransaction])
 async def get_projected_transactions(
     month: Optional[date] = Query(None),
+    account_id: Optional[uuid.UUID] = Query(None),
+    from_date: Optional[date] = Query(None, alias="from"),
+    to_date: Optional[date] = Query(None, alias="to"),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    return await dashboard_service.get_projected_transactions(
-        session, ctx.workspace.id, ctx.user_id, month
-    )
+    try:
+        return await dashboard_service.get_projected_transactions(
+            session,
+            ctx.workspace.id,
+            ctx.user_id,
+            month,
+            account_id=account_id,
+            from_date=from_date,
+            to_date=to_date,
+        )
+    except ValueError as exc:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

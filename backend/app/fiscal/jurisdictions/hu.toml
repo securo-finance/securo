@@ -1,0 +1,4 @@
+# Hungary. The adoszam carries the VAT and county codes as suffixes, so it
+# is quoted at either eight or eleven digits.
+code = "HU"
+kinds = ["adoszam", "vat"]

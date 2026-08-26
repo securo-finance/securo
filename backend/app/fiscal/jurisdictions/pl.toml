@@ -1,0 +1,4 @@
+# Poland. The NIP is the tax number; the intra-EU VAT id is the same
+# digits behind a PL prefix.
+code = "PL"
+kinds = ["nip", "vat"]

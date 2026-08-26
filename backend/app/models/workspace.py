@@ -67,6 +67,19 @@ class Workspace(Base):
     # `default_currency` etc. from here.
     default_currency: Mapped[str] = mapped_column(String(3), default="USD", server_default="USD")
     locale: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
+    # Where this workspace operates fiscally. Selects the jurisdiction pack
+    # that names and validates fiscal documents, and the axis any future
+    # threshold or tax date keys on.
+    #
+    # Emphatically NOT `locale`. A Brazilian who reads the interface in
+    # English still files in Brazil, and a German who prefers Portuguese
+    # does not inherit Brazilian invoicing. Anything fiscal that branches on
+    # `locale` is a bug.
+    #
+    # Nullable, and null is a working configuration: the pack registry falls
+    # back to free-text documents with no mask, so a country nobody has
+    # contributed a pack for is usable on day one.
+    tax_jurisdiction: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     icon: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     color: Mapped[Optional[str]] = mapped_column(String(7), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

@@ -191,4 +191,22 @@ describe('i18n locale files', () => {
       })
     }
   })
+
+  it('contains imported-description normalization labels in every locale', () => {
+    const required = [
+      'transactions.originalDescription',
+      'rules.setDescription',
+      'rules.descriptionValuePlaceholder',
+      'rules.invalidDescriptionValue',
+      'rules.fieldRawPayee',
+    ]
+
+    for (const locale of LOCALES) {
+      const keys = new Set(flattenKeys(JSON.parse(readRaw(locale))))
+      expect(
+        required.filter((key) => !keys.has(key)),
+        `Normalization labels missing in ${locale}:`,
+      ).toEqual([])
+    }
+  })
 })

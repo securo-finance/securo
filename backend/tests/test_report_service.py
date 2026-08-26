@@ -454,7 +454,9 @@ async def test_income_expenses_api_endpoint(client, auth_headers, test_transacti
     data = response.json()
 
     assert data["meta"]["type"] == "income_expenses"
-    assert data["meta"]["series_keys"] == ["income", "expenses"]
+    assert data["meta"]["series_keys"] == [
+        "income", "expenses", "projectedIncome", "projectedExpenses"
+    ]
     assert "summary" in data
     assert "trend" in data
 
@@ -559,7 +561,7 @@ async def test_income_expenses_api_accepts_ytd_period(client, auth_headers, monk
             trend=[],
             meta=ReportMeta(
                 type="income_expenses",
-                series_keys=["income", "expenses"],
+                series_keys=["income", "expenses", "projectedIncome", "projectedExpenses"],
                 currency=currency,
                 interval=interval,
             ),
@@ -594,7 +596,7 @@ async def test_income_expenses_api_forwards_days_window(client, auth_headers, mo
             trend=[],
             meta=ReportMeta(
                 type="income_expenses",
-                series_keys=["income", "expenses"],
+                series_keys=["income", "expenses", "projectedIncome", "projectedExpenses"],
                 currency=currency,
                 interval=interval,
             ),
