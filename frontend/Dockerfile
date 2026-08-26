@@ -6,8 +6,7 @@ ARG VITE_APP_VERSION
 ENV VITE_APP_VERSION=$VITE_APP_VERSION
 
 COPY package.json package-lock.json .npmrc ./
-RUN npm install --global npm@11.10.0 --ignore-scripts \
-	&& npm ci
+RUN npm ci
 
 COPY . .
 RUN npm run build

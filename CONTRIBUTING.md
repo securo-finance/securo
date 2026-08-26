@@ -73,6 +73,21 @@ local and CI stay in sync.
 
 [prek](https://github.com/j178/prek) is a drop-in replacement for pre-commit:
 same `.pre-commit-config.yaml`, but a single binary with no Python bootstrap.
+
+### Adding a frontend dependency
+
+`frontend/.npmrc` never runs a package's install scripts, and asks npm to skip
+releases younger than seven days so a compromised publish has time to be caught.
+The cooldown needs npm 11.10 or newer; the npm that ships with Node 22 is older
+and will ignore that line without saying so, so upgrade before you add anything:
+
+```bash
+npm install --global npm@latest
+cd frontend && npm install <package>     # commit package.json and package-lock.json
+```
+
+If the package you want was published in the last week, npm resolves the release
+before it. That is the point — wait, or say in the PR why you can't.
 Either works.
 
 ## Commit Messages
