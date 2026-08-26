@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.accounts import router as accounts_router
 from app.api.budgets import router as budgets_router
+from app.api.backups import router as backups_router
 from app.api.goals import router as goals_router
 from app.api.groups import router as groups_router
 from app.api.categories import router as categories_router
@@ -182,6 +183,7 @@ app.include_router(setup_router)
 app.include_router(currencies_router)
 app.include_router(fx_rates_router)
 app.include_router(export_router)
+app.include_router(backups_router)
 app.include_router(attachments_router)
 app.include_router(fiscal_router)
 app.include_router(payees_router)

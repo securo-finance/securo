@@ -39,7 +39,7 @@ async def test_backup_empty(client: AsyncClient, auth_headers):
         assert "transactions.json" in names
 
         metadata = json.loads(zf.read("metadata.json"))
-        assert metadata["format_version"] == "1.0"
+        assert metadata["format_version"] == "1.1"
         assert "export_date" in metadata
         for count in metadata["entity_counts"].values():
             assert count == 0
@@ -92,6 +92,7 @@ async def test_backup_with_data(
         accounts = json.loads(zf.read("accounts.json"))
         assert len(accounts) == 1
         assert accounts[0]["name"] == "Conta Corrente"
+        assert accounts[0]["connection_id"] is None
 
         transactions = json.loads(zf.read("transactions.json"))
         assert len(transactions) == len(test_transactions)
@@ -141,7 +142,8 @@ async def test_backup_metadata_structure(client: AsyncClient, auth_headers):
         assert "metadata.json" in names
         meta = json.loads(zf.read("metadata.json"))
         assert "export_date" in meta
-        assert meta["format_version"] == "1.0"
+        assert meta["format_version"] == "1.1"
+        assert meta["content"] == "both"
         assert "entity_counts" in meta
 
 

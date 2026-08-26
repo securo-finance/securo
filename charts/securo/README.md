@@ -18,7 +18,7 @@
 - Persistent Volume (PV) provisioner support in the underlying infrastructure
 
 ### Persistent Storage Requirements
-Since the Backend, Celery Worker, and MCP Server all share the same files (like uploaded attachments and AI knowledge bases), they all mount the same Persistent Volume Claims concurrently.
+Since the Backend, Celery Worker, Celery Beat, and MCP Server share persistent files (like uploaded attachments, managed backups, and AI knowledge bases), they mount Persistent Volume Claims concurrently.
 **If your cluster spans multiple nodes, you MUST use a StorageClass that supports `ReadWriteMany` (RWX) access mode (e.g., NFS, CephFS, or Longhorn RWX).**
 If your storage only supports `ReadWriteOnce` (RWO), you must restrict all Securo pods to run on a single node (using `nodeSelector` or `podAffinity`) but that is an antipattern in Kubernetes.
 

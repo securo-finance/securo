@@ -80,6 +80,10 @@ x-backend-base: &backend-base
   volumes:
     - ./secrets:/app/secrets:ro
     - attachments:/app/data/attachments
+    # Managed/scheduled backup ZIPs are written inside containers to /app/data/backups.
+    # Set BACKUP_HOST_PATH to expose that internal directory wherever you want on
+    # the host, e.g. BACKUP_HOST_PATH=/srv/securo/backups.
+    - ${BACKUP_HOST_PATH:-./data/backups}:/app/data/backups
     - agent_knowledge:/app/data/agent_knowledge
     - agent_embedding_models:/app/data/embedding_models
   restart: unless-stopped

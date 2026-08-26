@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,7 +19,9 @@ from app.models.import_log import ImportLog
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.rule import Rule
 from app.models.transaction import Transaction
+from app.schemas.backup import BackupContent
 from app.schemas.export import BackupRequest
+from app.services import backup_service
 from app.services.backup_service import build_backup_archive
 
 router = APIRouter(prefix="/api/export", tags=["export"])
@@ -101,16 +103,17 @@ def _as_download(archive: bytes) -> StreamingResponse:
 
 @router.get("/backup")
 async def backup(
+    content: BackupContent = Query(BackupContent.both),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Export every entity in the current workspace as a JSON zip.
-
-    Backup is scoped to one workspace at a time — users with multiple
-    workspaces back each one up separately. AssetValue inherits its
-    workspace from its Asset and is filtered transitively.
-    """
-    return _as_download(build_backup_archive(await _collect(ctx, session)))
+    """Export the selected workspace content as a restorable JSON ZIP."""
+    archive = await backup_service.build_backup_zip(
+        session,
+        ctx.workspace,
+        content=content,
+    )
+    return _as_download(archive)
 
 
 @router.post("/backup")

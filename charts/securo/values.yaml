@@ -182,6 +182,11 @@ persistence:
     size: 5Gi
     storageClass: ""
     accessMode: ReadWriteOnce
+  backups:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+    accessMode: ReadWriteOnce
   agentKnowledge:
     enabled: true
     size: 5Gi
