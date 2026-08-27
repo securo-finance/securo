@@ -71,25 +71,25 @@ def _compe_from_transfer_number(transfer_number) -> Optional[str]:
 # participant registry — free, no API key, no rate limits seen in practice.
 # https://brasilapi.com.br/api/banks/v1/{code}
 BRASIL_API_BANKS_URL = "https://brasilapi.com.br/api/banks/v1"
-_BANK_NAME_CACHE_TTL_SECONDS = 60 * 60 * 24 * 30  # 30 days — COMPE codes are static
+_BANK_INFO_CACHE_TTL_SECONDS = 60 * 60 * 24 * 30  # 30 days — COMPE codes are static
 
 
-async def _lookup_bank_name(compe: str) -> Optional[str]:
-    """Best-effort institution name for a COMPE code via BrasilAPI.
+async def _lookup_bank_info(compe: str) -> Optional[dict]:
+    """Best-effort ``{"name", "logo_url"}`` for a COMPE code via BrasilAPI.
 
-    Cached in Redis since a bank's registered name effectively never changes.
-    A lookup failure (network, cache, anything) must never break sync — it
-    just means the affected account keeps its generic provider-given name.
+    Cached in Redis since a bank's registered name/logo effectively never
+    change. A lookup failure must never break sync: the account falls back to
+    the connection's institution fields.
     """
     from app.core.redis import get_redis
 
-    cache_key = f"pluggy:bank_name:{compe}"
+    cache_key = f"pluggy:bank_info:{compe}"
     redis_client = None
     try:
         redis_client = await get_redis()
         cached = await redis_client.get(cache_key)
         if cached is not None:
-            return cached or None  # empty string cached = "looked up, not found"
+            return json.loads(cached) if cached else None
     except Exception:
         redis_client = None
 
@@ -97,39 +97,35 @@ async def _lookup_bank_name(compe: str) -> Optional[str]:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(f"{BRASIL_API_BANKS_URL}/{int(compe)}")
             resp.raise_for_status()
-            # `name` (e.g. "BCO XP S.A.") is short, matching the style Pluggy
-            # itself uses for account names — `fullName` is the full legal
-            # razão social and too long for a display_name.
-            name = resp.json().get("name") or None
+            payload = resp.json()
+            name = payload.get("name") or None
+            logo_url = payload.get("logo_url") or None
+            info = {"name": name, "logo_url": logo_url} if name else None
     except Exception:
         logger.warning(
-            "BrasilAPI bank-name lookup failed for COMPE %s", compe, exc_info=True
+            "BrasilAPI bank-info lookup failed for COMPE %s", compe, exc_info=True
         )
         return None
 
     if redis_client is not None:
         try:
-            await redis_client.set(cache_key, name or "", ex=_BANK_NAME_CACHE_TTL_SECONDS)
+            await redis_client.set(
+                cache_key, json.dumps(info) if info else "", ex=_BANK_INFO_CACHE_TTL_SECONDS
+            )
         except Exception:
             pass
-    return name
+    return info
 
 
-async def _annotate_institution_names(
+async def _annotate_institutions(
     raw_accounts: list[dict], accounts: list[AccountData]
 ) -> None:
     """Tell apart same-subtype accounts that belong to different legal
     institutions under one Pluggy connection.
 
-    Pluggy reports both a bank's checking account and (for banking groups
-    with a brokerage arm, e.g. XP) the brokerage's settlement account as
-    BANK/CHECKING_ACCOUNT — same `type`, no field distinguishes them except
-    the COMPE code embedded in ``bankData.transferNumber``. When every
-    account of a given `type` in this connection shares one COMPE code (the
-    common case: one checking + one savings, same bank), nothing is
-    ambiguous and no account is touched. Only when a `type` collides across
-    more than one COMPE code do we resolve and set ``institution_name`` on
-    the accounts involved.
+    Only same-type accounts with different COMPE codes are ambiguous. Those
+    accounts get a stable institution id, name and logo that the shared
+    ``Institution`` model persists on the next sync.
     """
     codes_by_external_id: dict[str, str] = {}
     codes_by_type: dict[str, set[str]] = {}
@@ -149,7 +145,11 @@ async def _annotate_institution_names(
             continue
         code = codes_by_external_id.get(acc.external_id)
         if code:
-            acc.institution_name = await _lookup_bank_name(code)
+            info = await _lookup_bank_info(code)
+            if info:
+                acc.institution_external_id = code
+                acc.institution_name = info["name"]
+                acc.institution_logo_url = info["logo_url"]
 
 
 def _resolve_connector_logo(connector: dict, accounts: list[dict]) -> Optional[str]:
@@ -513,7 +513,7 @@ class PluggyProvider(BankProvider):
         accounts = []
         for acc in data.get("results", []):
             accounts.append(_build_account_data(acc, self._map_account_type))
-        await _annotate_institution_names(data.get("results", []), accounts)
+        await _annotate_institutions(data.get("results", []), accounts)
         return accounts
 
     async def get_transactions(
