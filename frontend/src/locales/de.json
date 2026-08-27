@@ -637,7 +637,15 @@
     "noTransactions": "Keine Transaktionen für dieses Konto",
     "syncFailed": "Synchronisierung fehlgeschlagen",
     "reconnect": "Erneut verbinden",
-    "connectionError": "Verbindungsfehler — Erneut verbinden, um das Problem zu beheben",
+    "connectionError": "Diese Anbieterverbindung erfordert Aufmerksamkeit. Verbinde sie erneut, um die Synchronisierung der unten aufgeführten Konten fortzusetzen.",
+    "connectionSyncError": "Die letzte Synchronisierung dieser Verbindung ist fehlgeschlagen. Es wurde kein einzelnes Konto ermittelt; alle verknüpften Konten sind unten aufgeführt.",
+    "connectionAccountError": "Die letzte Synchronisierung ist bei der Verarbeitung von {{account}} fehlgeschlagen.",
+    "connectionStatus": {
+      "active": "Verbunden",
+      "error": "Erneute Verbindung erforderlich",
+      "expired": "Abgelaufen",
+      "sync_error": "Synchronisierung fehlgeschlagen"
+    },
     "close": "Konto schließen",
     "reopen": "Konto wiedereröffnen",
     "accountClosed": "Konto geschlossen",
@@ -658,7 +666,7 @@
     "noInstitutionsFound": "Keine Banken für dieses Land verfügbar",
     "loadingInstitutions": "Lade Banken…",
     "loadingInstitutionsError": "Fehler beim Laden der Banken",
-    "connectionExpired": "Verbindung abgelaufen — Erneut verbinden, um das Problem zu beheben",
+    "connectionExpired": "Diese Verbindung ist abgelaufen. Verbinde sie erneut, um die Synchronisierung der unten aufgeführten Konten fortzusetzen.",
     "back": "Zurück",
     "redirecting": "Weiterleitung zu deiner Bank…",
     "oauthCallback": {

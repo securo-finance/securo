@@ -638,6 +638,14 @@
     "syncFailed": "Échec de la synchronisation",
     "reconnect": "Reconnecter",
     "connectionError": "Erreur de connexion — reconnectez-vous pour corriger",
+    "connectionSyncError": "La dernière synchronisation de cette connexion a échoué. Aucun compte précis n'a été identifié ; tous les comptes liés sont listés ci-dessous.",
+    "connectionAccountError": "La dernière synchronisation a échoué lors du traitement de {{account}}.",
+    "connectionStatus": {
+      "active": "Connecté",
+      "error": "Reconnexion requise",
+      "expired": "Expiré",
+      "sync_error": "Échec de la synchronisation"
+    },
     "close": "Clôturer le compte",
     "reopen": "Rouvrir le compte",
     "accountClosed": "Compte clôturé",

@@ -1,14 +1,17 @@
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from unittest.mock import MagicMock
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.payee import PayeeMapping
+from app.models.payee import Payee, PayeeMapping
 from app.models.transaction import Transaction
 from app.models.account import Account
 from app.models.user import User
+from app.models.workspace import Workspace
 from app.schemas.payee import PayeeCreate, PayeeUpdate
 from app.services.payee_service import (
     create_payee,
@@ -188,7 +191,9 @@ async def test_get_payees_includes_zero_transaction_payees(session: AsyncSession
 
 @pytest.mark.asyncio
 async def test_get_or_create_payee_creates_new(session: AsyncSession, test_user, test_workspace):
-    payee = await get_or_create_payee(session, test_user.id, "New Payee")
+    payee = await get_or_create_payee(
+        session, test_user.id, "New Payee", workspace_id=test_workspace.id
+    )
     assert payee.name == "New Payee"
     assert payee.user_id == test_user.id
 
@@ -196,20 +201,110 @@ async def test_get_or_create_payee_creates_new(session: AsyncSession, test_user,
 @pytest.mark.asyncio
 async def test_get_or_create_payee_returns_existing(session: AsyncSession, test_user, test_workspace):
     original = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="Existing"))
-    found = await get_or_create_payee(session, test_user.id, "existing")  # case-insensitive
+    found = await get_or_create_payee(
+        session, test_user.id, "existing", workspace_id=test_workspace.id
+    )
     assert found.id == original.id
 
 
 @pytest.mark.asyncio
 async def test_get_or_create_payee_strips_whitespace(session: AsyncSession, test_user, test_workspace):
-    payee = await get_or_create_payee(session, test_user.id, "  Trimmed  ")
+    payee = await get_or_create_payee(
+        session, test_user.id, "  Trimmed  ", workspace_id=test_workspace.id
+    )
     assert payee.name == "Trimmed"
 
 
 @pytest.mark.asyncio
 async def test_get_or_create_payee_empty_raises(session: AsyncSession, test_user, test_workspace):
     with pytest.raises(ValueError, match="cannot be empty"):
-        await get_or_create_payee(session, test_user.id, "  ")
+        await get_or_create_payee(
+            session, test_user.id, "  ", workspace_id=test_workspace.id
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_payee_returns_case_insensitive_concurrent_winner(
+    session: AsyncSession, test_user, test_workspace, monkeypatch
+):
+    winner = await create_payee(
+        session,
+        test_workspace.id,
+        test_user.id,
+        PayeeCreate(name="Same Payee"),
+    )
+
+    real_execute = session.execute
+    missing = MagicMock()
+    missing.scalar_one_or_none.return_value = None
+    first_lookup = True
+
+    async def miss_once(*args, **kwargs):
+        nonlocal first_lookup
+        if first_lookup:
+            first_lookup = False
+            return missing
+        return await real_execute(*args, **kwargs)
+
+    monkeypatch.setattr(session, "execute", miss_once)
+
+    result = await get_or_create_payee(
+        session, test_user.id, "same payee", workspace_id=test_workspace.id
+    )
+
+    assert result.id == winner.id
+
+
+@pytest.mark.asyncio
+async def test_payee_name_is_case_insensitive_within_workspace(
+    session: AsyncSession, test_user, test_workspace
+):
+    session.add(Payee(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Case Variant",
+    ))
+    await session.flush()
+    session.add(Payee(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="  case variant  ",
+    ))
+
+    with pytest.raises(IntegrityError):
+        await session.flush()
+    await session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_same_user_can_have_same_payee_name_in_different_workspaces(
+    session: AsyncSession, test_user, test_workspace
+):
+    second_workspace = Workspace(
+        name="Second",
+        kind="personal",
+        created_by_user_id=test_user.id,
+        default_currency="USD",
+    )
+    session.add(second_workspace)
+    await session.flush()
+
+    first = await get_or_create_payee(
+        session,
+        test_user.id,
+        "Shared Name",
+        workspace_id=test_workspace.id,
+    )
+    second = await get_or_create_payee(
+        session,
+        test_user.id,
+        "shared name",
+        workspace_id=second_workspace.id,
+    )
+
+    assert first.id != second.id
+    assert first.workspace_id == test_workspace.id
+    assert second.workspace_id == second_workspace.id
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +327,28 @@ async def test_update_payee(session: AsyncSession, test_user, test_workspace):
     # nature for this one, which is the resting state now that there is no
     # catch-all default.
     assert updated.type is None
+
+
+@pytest.mark.asyncio
+async def test_create_and_update_payee_strip_names(
+    session: AsyncSession, test_user, test_workspace
+):
+    payee = await create_payee(
+        session,
+        test_workspace.id,
+        test_user.id,
+        PayeeCreate(name="  Trimmed Create  "),
+    )
+    assert payee.name == "Trimmed Create"
+
+    updated = await update_payee(
+        session,
+        payee.id,
+        test_workspace.id,
+        PayeeUpdate(name="  Trimmed Update  "),
+    )
+    assert updated is not None
+    assert updated.name == "Trimmed Update"
 
 
 @pytest.mark.asyncio

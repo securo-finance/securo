@@ -225,16 +225,20 @@ async def test_sync_trigger_refresh_needs_user_action(session: AsyncSession, tes
     mock_provider.trigger_refresh = AsyncMock(return_value="needs_user_action")
 
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        with pytest.raises(RuntimeError, match="reconnect"):
+        with pytest.raises(ProviderUserActionRequired, match="reconnect") as exc:
             await sync_connection(
                 session, conn.id, test_workspace.id, test_user.id,
                 trigger_provider_refresh=True,
             )
+    assert exc.value.code == "credentials_invalid"
     # status marked error and committed
     refreshed = (await session.execute(
         select(BankConnection).where(BankConnection.id == conn.id)
     )).scalar_one()
     assert refreshed.status == "error"
+    assert refreshed.sync_state_version == 1
+    assert refreshed.settings is not None
+    assert "last_provider_refresh_at" in refreshed.settings
 
 
 @pytest.mark.asyncio
@@ -257,6 +261,8 @@ async def test_sync_trigger_refresh_refreshed_then_reads(session: AsyncSession, 
             trigger_provider_refresh=True,
         )
     assert result.status == "active"
+    assert result.settings is not None
+    assert "last_provider_refresh_at" in result.settings
     mock_provider.trigger_refresh.assert_awaited_once()
 
 

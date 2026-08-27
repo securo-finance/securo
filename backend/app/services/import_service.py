@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.account import Account
+from app.models.bank_connection import BankConnection
 from app.models.category import Category
 from app.models.rule import Rule
 from app.models.transaction import Transaction
@@ -24,6 +25,7 @@ from app.services.rule_engine import apply_rule_actions, evaluate_conditions, me
 from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
 from app.services.fx_rate_service import stamp_primary_amount
 from app.services.payee_service import get_or_create_payee
+from app.services.transaction_match_service import find_unique_transaction_match
 
 
 # Descriptions used by some Brazilian banks (e.g. Banco do Brasil) for
@@ -696,10 +698,19 @@ async def import_transactions(
     await session.flush()  # Get the import_log.id
 
     # Look up account currency for fallback
-    account_result = await session.execute(
-        select(Account).where(Account.id == account_id)
-    )
+    account_result = await session.execute(select(Account).where(Account.id == account_id))
     account = account_result.scalar_one_or_none()
+    if account and account.connection_id:
+        await session.execute(
+            select(BankConnection.id)
+            .where(BankConnection.id == account.connection_id)
+            .with_for_update()
+        )
+    if account:
+        account_result = await session.execute(
+            select(Account).where(Account.id == account_id).with_for_update()
+        )
+        account = account_result.scalar_one()
     account_currency = account.currency if account else get_settings().default_currency
 
     # Build category name → id map scoped to the workspace.
@@ -710,6 +721,7 @@ async def import_transactions(
 
     imported = 0
     skipped = 0
+    matched_existing_ids: set[uuid.UUID] = set()
     effective_format = (detected_format or source or "").lower()
     should_detect_duplicates = detect_duplicates if effective_format == "csv" else True
 
@@ -723,30 +735,45 @@ async def import_transactions(
             # Formats without unique IDs fall back to transaction fields; compare
             # both descriptions because rules may have changed the displayed one.
             if txn_data.external_id:
-                existing = await session.execute(
-                    select(Transaction).where(
-                        Transaction.account_id == account_id,
-                        Transaction.external_id == txn_data.external_id,
-                        Transaction.date == txn_data.date,
-                    )
+                existing_statement = select(Transaction).where(
+                    Transaction.account_id == account_id,
+                    Transaction.external_id == txn_data.external_id,
+                    Transaction.date == txn_data.date,
                 )
             else:
-                existing = await session.execute(
-                    select(Transaction).where(
-                        Transaction.account_id == account_id,
-                        Transaction.date == txn_data.date,
-                        Transaction.amount == txn_data.amount,
-                        Transaction.type == txn_data.type,
-                        or_(
-                            Transaction.description == txn_data.description,
-                            Transaction.original_description == txn_data.description,
-                        ),
-                    )
+                existing_statement = select(Transaction).where(
+                    Transaction.account_id == account_id,
+                    Transaction.date == txn_data.date,
+                    Transaction.amount == txn_data.amount,
+                    Transaction.type == txn_data.type,
+                    or_(
+                        Transaction.description == txn_data.description,
+                        Transaction.original_description == txn_data.description,
+                    ),
                 )
-            # `.first()` is intentional: duplicate keys can legitimately match
-            # multiple rows after an import/sync race or reused bank identifier,
-            # and duplicate detection only needs to establish that any row exists.
-            if existing.scalars().first() is not None:
+            # `.first()` rather than `.scalar_one_or_none()`: the dedup key can
+            # legitimately match more than one row (e.g. a prior sync/import race
+            # left a duplicate, or a bank reuses one FITID across statements),
+            # and we only need to know whether *any* match exists. Requiring
+            # exactly one would raise MultipleResultsFound and abort the import.
+            if matched_existing_ids and not txn_data.external_id:
+                existing_statement = existing_statement.where(
+                    Transaction.id.not_in(matched_existing_ids)
+                )
+            existing = await session.execute(
+                existing_statement.order_by(Transaction.created_at, Transaction.id)
+            )
+            duplicate = existing.scalars().first()
+            if not duplicate:
+                duplicate = await find_unique_transaction_match(
+                    session,
+                    account_id,
+                    txn_data,
+                    {"sync"},
+                    exclude_ids=matched_existing_ids,
+                )
+            if duplicate:
+                matched_existing_ids.add(duplicate.id)
                 skipped += 1
                 continue
 
@@ -854,6 +881,8 @@ async def import_transactions(
 
         session.add(incoming)
         await session.flush()
+        if should_detect_duplicates and not txn_data.external_id:
+            matched_existing_ids.add(incoming.id)
         if recurring_link is not None:
             recurring_match_service.advance_past(recurring_link, txn_data.date)
 

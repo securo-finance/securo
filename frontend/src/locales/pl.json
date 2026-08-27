@@ -678,7 +678,15 @@
     "noTransactions": "Brak transakcji dla tego konta",
     "syncFailed": "Synchronizacja nie powiodła się",
     "reconnect": "Połącz ponownie",
-    "connectionError": "Błąd połączenia — połącz ponownie, aby naprawić",
+    "connectionError": "To połączenie z dostawcą wymaga uwagi. Połącz je ponownie, aby wznowić synchronizację kont wymienionych poniżej.",
+    "connectionSyncError": "Ostatnia synchronizacja tego połączenia nie powiodła się. Nie wskazano jednego konta; wszystkie połączone konta wymieniono poniżej.",
+    "connectionAccountError": "Ostatnia synchronizacja nie powiodła się podczas przetwarzania konta {{account}}.",
+    "connectionStatus": {
+      "active": "Połączono",
+      "error": "Wymagane ponowne połączenie",
+      "expired": "Wygasło",
+      "sync_error": "Synchronizacja nieudana"
+    },
     "close": "Zamknij konto",
     "reopen": "Otwórz konto ponownie",
     "accountClosed": "Zamknięto konto",
@@ -702,7 +710,7 @@
     "noInstitutionsFound": "Brak banków dostępnych dla tego kraju",
     "loadingInstitutions": "Wczytywanie banków…",
     "loadingInstitutionsError": "Nie udało się wczytać banków",
-    "connectionExpired": "Połączenie wygasło — połącz ponownie, aby naprawić",
+    "connectionExpired": "To połączenie wygasło. Połącz je ponownie, aby wznowić synchronizację kont wymienionych poniżej.",
     "back": "Wstecz",
     "redirecting": "Przekierowywanie do banku…",
     "oauthCallback": {

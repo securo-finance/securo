@@ -20,6 +20,7 @@ type PayeeSource = NonNullable<ConnectionSettings['payee_source']>
 interface ConnectionSettingsDialogProps {
   open: boolean
   onClose: () => void
+  onReconnect: () => void
   connection: BankConnection | null
   supportsAssetSync?: boolean
 }
@@ -27,6 +28,7 @@ interface ConnectionSettingsDialogProps {
 export function ConnectionSettingsDialog({
   open,
   onClose,
+  onReconnect,
   connection,
   supportsAssetSync = false,
 }: ConnectionSettingsDialogProps) {
@@ -123,6 +125,9 @@ export function ConnectionSettingsDialog({
           )}
         </div>
         <DialogFooter>
+          <Button variant="outline" onClick={onReconnect}>
+            {t('accounts.reconnect')}
+          </Button>
           <Button variant="outline" onClick={onClose}>
             {t('common.cancel')}
           </Button>

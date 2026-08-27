@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -29,6 +30,8 @@ from app.schemas.bank_connection import (
 )
 from app.services import connection_service
 from app.services.transfer_detection_service import detect_transfer_pairs, unlink_transfer_pair
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/connections", tags=["connections"])
 
@@ -194,10 +197,11 @@ async def sync_connection(
         raise HTTPException(status_code=status.HTTP_410_GONE, detail=str(e))
     except ProviderNotConfiguredError as e:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
-    except Exception as e:
+    except Exception:
+        logger.exception("Sync failed for connection %s", connection_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Sync failed: {str(e)}",
+            detail="Sync failed. Please try again.",
         )
 
 

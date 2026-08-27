@@ -638,6 +638,14 @@
     "syncFailed": "Synchronisatie mislukt",
     "reconnect": "Maak opnieuw verbinding",
     "connectionError": "Verbindingsfout: maak opnieuw verbinding om het probleem op te lossen",
+    "connectionSyncError": "De laatste synchronisatie voor deze verbinding is mislukt. Er is geen specifieke rekening geïdentificeerd; alle gekoppelde rekeningen worden hieronder weergegeven.",
+    "connectionAccountError": "De laatste synchronisatie is mislukt tijdens het verwerken van {{account}}.",
+    "connectionStatus": {
+      "active": "Verbonden",
+      "error": "Opnieuw verbinden vereist",
+      "expired": "Verlopen",
+      "sync_error": "Synchronisatie mislukt"
+    },
     "close": "Sluit rekening",
     "reopen": "Rekening opnieuw openen",
     "accountClosed": "Rekening gesloten",

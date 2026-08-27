@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -49,6 +50,24 @@ async def test_list_connections_empty(client: AsyncClient, auth_headers):
     response = await client.get("/api/connections", headers=auth_headers)
     assert response.status_code == 200
     assert response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_list_connections_identifies_sync_error_account(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_connection: BankConnection,
+    test_account,
+):
+    test_connection.status = "sync_error"
+    test_connection.last_sync_error_account_id = test_account.id
+    await session.commit()
+
+    response = await client.get("/api/connections", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.json()[0]["last_sync_error_account_id"] == str(test_account.id)
 
 
 @pytest.mark.asyncio
@@ -275,6 +294,25 @@ async def test_sync_connection_session_expired_returns_gone(
 
     assert resp.status_code == 410
     assert resp.json()["detail"] == "SimpleFIN access URL is missing"
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_hides_internal_error(
+    client: AsyncClient, auth_headers, caplog
+):
+    connection_id = uuid.uuid4()
+    with patch(
+        "app.api.connections.connection_service.sync_connection",
+        new_callable=AsyncMock,
+    ) as mock_sync, caplog.at_level(logging.ERROR, logger="app.api.connections"):
+        mock_sync.side_effect = RuntimeError("secret database details")
+        resp = await client.post(
+            f"/api/connections/{connection_id}/sync", headers=auth_headers,
+        )
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"] == "Sync failed. Please try again."
+    assert "secret database details" in caplog.text
 
 
 @pytest.mark.asyncio

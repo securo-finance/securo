@@ -638,6 +638,14 @@
     "syncFailed": "Sincronização falhou",
     "reconnect": "Reconectar",
     "connectionError": "Erro na ligação — reconecte para corrigir",
+    "connectionSyncError": "A última sincronização desta ligação falhou. Não foi identificada nenhuma conta específica; todas as contas associadas estão listadas abaixo.",
+    "connectionAccountError": "A última sincronização falhou ao processar {{account}}.",
+    "connectionStatus": {
+      "active": "Ligado",
+      "error": "É necessário voltar a ligar",
+      "expired": "Expirada",
+      "sync_error": "Falha na sincronização"
+    },
     "close": "Encerrar conta",
     "reopen": "Reabrir conta",
     "accountClosed": "Conta encerrada",

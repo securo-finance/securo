@@ -637,7 +637,15 @@
     "noTransactions": "No hay transacciones para esta cuenta",
     "syncFailed": "Sincronización fallida",
     "reconnect": "Reconectar",
-    "connectionError": "Error de conexión — reconecta para solucionarlo",
+    "connectionError": "Esta conexión con el proveedor requiere atención. Vuelve a conectarla para reanudar la sincronización de las cuentas que aparecen debajo.",
+    "connectionSyncError": "La última sincronización de esta conexión falló. No se identificó una cuenta concreta; todas las cuentas vinculadas aparecen debajo.",
+    "connectionAccountError": "La última sincronización falló al procesar {{account}}.",
+    "connectionStatus": {
+      "active": "Conectado",
+      "error": "Se requiere reconexión",
+      "expired": "Caducado",
+      "sync_error": "Sincronización fallida"
+    },
     "close": "Cerrar cuenta",
     "reopen": "Reabrir cuenta",
     "accountClosed": "Cuenta cerrada",
@@ -658,7 +666,7 @@
     "noInstitutionsFound": "No hay bancos disponibles para este país",
     "loadingInstitutions": "Cargando bancos…",
     "loadingInstitutionsError": "Error al cargar bancos",
-    "connectionExpired": "Conexión expirada — reconecta para solucionarlo",
+    "connectionExpired": "Esta conexión ha caducado. Vuelve a conectarla para reanudar la sincronización de las cuentas que aparecen debajo.",
     "back": "Atrás",
     "redirecting": "Redirigiendo a tu banco…",
     "oauthCallback": {

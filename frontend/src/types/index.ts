@@ -133,6 +133,7 @@ export interface BankConnection {
   status: string
   settings: ConnectionSettings | null
   last_sync_at: string | null
+  last_sync_error_account_id: string | null
   created_at: string
   // Institutions this link spans (issue #345). Empty for one-institution
   // providers — institution_name covers those.
