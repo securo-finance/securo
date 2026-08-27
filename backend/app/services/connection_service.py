@@ -1257,6 +1257,12 @@ async def sync_connection(
                 # that intermittently omits it can't blank out a known mask.
                 if acc_data.masked_number is not None:
                     account.masked_number = acc_data.masked_number
+                # Only fills a blank display_name — never overrides a name the
+                # user already set. Populated by providers that detect an
+                # account belongs to a different legal institution than its
+                # connection's nominal one (see AccountData.institution_name).
+                if account.display_name is None and acc_data.institution_name:
+                    account.display_name = acc_data.institution_name
                 if acc_data.type == "credit_card":
                     # Preserve existing CC metadata when the provider doesn't
                     # expose it. Pluggy's creditData fields (limit, close/due
@@ -1288,6 +1294,7 @@ async def sync_connection(
                     connection_id=connection.id,
                     external_id=acc_data.external_id,
                     name=acc_data.name,
+                    display_name=acc_data.institution_name,
                     masked_number=acc_data.masked_number,
                     type=acc_data.type,
                     balance=acc_data.balance,

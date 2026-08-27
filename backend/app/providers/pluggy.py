@@ -67,6 +67,91 @@ def _compe_from_transfer_number(transfer_number) -> Optional[str]:
     return code.zfill(3) if code.isdigit() else None
 
 
+# Public, community-maintained mirror of the Bacen (Central Bank) COMPE
+# participant registry — free, no API key, no rate limits seen in practice.
+# https://brasilapi.com.br/api/banks/v1/{code}
+BRASIL_API_BANKS_URL = "https://brasilapi.com.br/api/banks/v1"
+_BANK_NAME_CACHE_TTL_SECONDS = 60 * 60 * 24 * 30  # 30 days — COMPE codes are static
+
+
+async def _lookup_bank_name(compe: str) -> Optional[str]:
+    """Best-effort institution name for a COMPE code via BrasilAPI.
+
+    Cached in Redis since a bank's registered name effectively never changes.
+    A lookup failure (network, cache, anything) must never break sync — it
+    just means the affected account keeps its generic provider-given name.
+    """
+    from app.core.redis import get_redis
+
+    cache_key = f"pluggy:bank_name:{compe}"
+    redis_client = None
+    try:
+        redis_client = await get_redis()
+        cached = await redis_client.get(cache_key)
+        if cached is not None:
+            return cached or None  # empty string cached = "looked up, not found"
+    except Exception:
+        redis_client = None
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{BRASIL_API_BANKS_URL}/{int(compe)}")
+            resp.raise_for_status()
+            # `name` (e.g. "BCO XP S.A.") is short, matching the style Pluggy
+            # itself uses for account names — `fullName` is the full legal
+            # razão social and too long for a display_name.
+            name = resp.json().get("name") or None
+    except Exception:
+        logger.warning(
+            "BrasilAPI bank-name lookup failed for COMPE %s", compe, exc_info=True
+        )
+        return None
+
+    if redis_client is not None:
+        try:
+            await redis_client.set(cache_key, name or "", ex=_BANK_NAME_CACHE_TTL_SECONDS)
+        except Exception:
+            pass
+    return name
+
+
+async def _annotate_institution_names(
+    raw_accounts: list[dict], accounts: list[AccountData]
+) -> None:
+    """Tell apart same-subtype accounts that belong to different legal
+    institutions under one Pluggy connection.
+
+    Pluggy reports both a bank's checking account and (for banking groups
+    with a brokerage arm, e.g. XP) the brokerage's settlement account as
+    BANK/CHECKING_ACCOUNT — same `type`, no field distinguishes them except
+    the COMPE code embedded in ``bankData.transferNumber``. When every
+    account of a given `type` in this connection shares one COMPE code (the
+    common case: one checking + one savings, same bank), nothing is
+    ambiguous and no account is touched. Only when a `type` collides across
+    more than one COMPE code do we resolve and set ``institution_name`` on
+    the accounts involved.
+    """
+    codes_by_external_id: dict[str, str] = {}
+    codes_by_type: dict[str, set[str]] = {}
+    for raw, acc in zip(raw_accounts, accounts):
+        code = _compe_from_transfer_number((raw.get("bankData") or {}).get("transferNumber"))
+        if not code:
+            continue
+        codes_by_external_id[acc.external_id] = code
+        codes_by_type.setdefault(acc.type, set()).add(code)
+
+    ambiguous_types = {t for t, codes in codes_by_type.items() if len(codes) > 1}
+    if not ambiguous_types:
+        return
+
+    for acc in accounts:
+        if acc.type not in ambiguous_types:
+            continue
+        code = codes_by_external_id.get(acc.external_id)
+        if code:
+            acc.institution_name = await _lookup_bank_name(code)
+
+
 def _resolve_connector_logo(connector: dict, accounts: list[dict]) -> Optional[str]:
     """Institution logo URL for a Pluggy connection, or None.
 
@@ -428,6 +513,7 @@ class PluggyProvider(BankProvider):
         accounts = []
         for acc in data.get("results", []):
             accounts.append(_build_account_data(acc, self._map_account_type))
+        await _annotate_institution_names(data.get("results", []), accounts)
         return accounts
 
     async def get_transactions(

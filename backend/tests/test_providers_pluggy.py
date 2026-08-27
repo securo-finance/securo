@@ -474,3 +474,90 @@ def test_build_account_data_without_subtype_still_maps_bank_to_checking():
     out = _build_account_data(acc, PluggyProvider._map_account_type)
 
     assert out.type == "checking"
+
+
+def _bank_account(external_id: str, compe: str) -> dict:
+    return {
+        "id": external_id,
+        "name": "XP",
+        "type": "BANK",
+        "subtype": "CHECKING_ACCOUNT",
+        "balance": 0,
+        "currencyCode": "BRL",
+        "bankData": {"transferNumber": f"{compe}/0001/00437907-0"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_annotate_institution_names_resolves_colliding_checking_accounts():
+    """Two BANK/CHECKING_ACCOUNT rows in the same connection with different
+    COMPE codes (bank vs. its brokerage arm, e.g. XP 348/102) are ambiguous —
+    both get `institution_name` resolved."""
+    from app.providers.pluggy import _annotate_institution_names, _build_account_data
+
+    raw = [_bank_account("acc-bank", "348"), _bank_account("acc-broker", "102")]
+    accounts = [_build_account_data(a, PluggyProvider._map_account_type) for a in raw]
+
+    async def fake_lookup(compe):
+        return {"348": "Banco XP S.A.", "102": "XP Investimentos CCTVM S/A"}[compe]
+
+    with patch("app.providers.pluggy._lookup_bank_name", side_effect=fake_lookup):
+        await _annotate_institution_names(raw, accounts)
+
+    by_id = {a.external_id: a for a in accounts}
+    assert by_id["acc-bank"].institution_name == "Banco XP S.A."
+    assert by_id["acc-broker"].institution_name == "XP Investimentos CCTVM S/A"
+
+
+@pytest.mark.asyncio
+async def test_annotate_institution_names_leaves_non_colliding_accounts_untouched():
+    """Checking + savings at the same bank (identical COMPE code) is the
+    common case — no ambiguity, no lookup call, no institution_name set."""
+    from app.providers.pluggy import _annotate_institution_names, _build_account_data
+
+    checking = _bank_account("acc-checking", "237")
+    savings = dict(checking, id="acc-savings", subtype="SAVINGS_ACCOUNT")
+    raw = [checking, savings]
+    accounts = [_build_account_data(a, PluggyProvider._map_account_type) for a in raw]
+
+    with patch("app.providers.pluggy._lookup_bank_name") as fake_lookup:
+        await _annotate_institution_names(raw, accounts)
+
+    fake_lookup.assert_not_called()
+    assert all(a.institution_name is None for a in accounts)
+
+
+@pytest.mark.asyncio
+async def test_lookup_bank_name_returns_cached_value_without_http_call():
+    from app.providers.pluggy import _lookup_bank_name
+
+    fake_redis = MagicMock()
+    fake_redis.get = AsyncMock(return_value="Banco XP S.A.")
+
+    with patch("app.core.redis.get_redis", new=AsyncMock(return_value=fake_redis)), \
+         patch("app.providers.pluggy.httpx.AsyncClient") as fake_client_cls:
+        result = await _lookup_bank_name("348")
+
+    assert result == "Banco XP S.A."
+    fake_client_cls.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_lookup_bank_name_is_none_and_non_fatal_on_http_failure():
+    """A BrasilAPI outage must never break sync — it just means no name."""
+    from app.providers.pluggy import _lookup_bank_name
+
+    fake_redis = MagicMock()
+    fake_redis.get = AsyncMock(return_value=None)
+    fake_redis.set = AsyncMock()
+
+    fake_client = MagicMock()
+    fake_client.get = AsyncMock(side_effect=RuntimeError("boom"))
+    fake_client.__aenter__ = AsyncMock(return_value=fake_client)
+    fake_client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("app.core.redis.get_redis", new=AsyncMock(return_value=fake_redis)), \
+         patch("app.providers.pluggy.httpx.AsyncClient", return_value=fake_client):
+        result = await _lookup_bank_name("348")
+
+    assert result is None

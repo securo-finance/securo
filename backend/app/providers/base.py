@@ -71,6 +71,13 @@ class AccountData:
     # identical name (issue #408). Never the full identifier — see mask_last4.
     masked_number: Optional[str] = None
     shared_balance_group: Optional[str] = None
+    # Best-effort legal-institution name for THIS account, populated only when
+    # a provider detects it belongs to a different institution than its
+    # connection's nominal one (e.g. a brokerage's settlement account sharing
+    # a Pluggy connection with its parent bank — both report as BANK/
+    # CHECKING_ACCOUNT under the same connection, with no other signal to
+    # tell them apart). None for providers/accounts with no such ambiguity.
+    institution_name: Optional[str] = None
 
 
 @dataclass

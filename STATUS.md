@@ -157,12 +157,24 @@ a flag, então o débito da fatura na conta corrente contava como Saída do mês
       se for esse o caso do Platinum Prime, o agrupamento está correto, não é
       bug. Para confirmar: checar na tela Contas qual é a outra conta
       agrupada com o Platinum Prime e se ela é de fato o cartão virtual.
-- [ ] **XP mostrando duas "contas correntes" com o mesmo final de cartão.**
-      Ainda não investigado — hipótese a validar: pode ser o mesmo produto
-      exposto duas vezes pelo Open Finance da XP (ex.: conta corrente + conta
-      de liquidação/custódia usada como sweep), ou uma falha de deduplicação
-      no sync. Reportar exemplo concreto (nomes das duas contas e saldos)
-      antes de decidir se é dado da própria XP ou dedupe faltando no Securo.
+- [x] **XP mostrando duas "contas correntes" com o mesmo final de cartão —
+      investigado, não é duplicata.** Consultando a Pluggy ao vivo
+      (`GET /accounts` na conexão XP real): as duas contas têm `subtype:
+      CHECKING_ACCOUNT` idêntico e o mesmo `masked_number`, mas o código do
+      banco embutido em `bankData.transferNumber` diverge — `348` (Banco XP
+      S.A.) numa, `102` (XP Investimentos CCTVM S/A) na outra. São duas
+      pessoas jurídicas diferentes do mesmo grupo (o banco e a corretora),
+      cada uma reportando sua conta como BANK/CHECKING_ACCOUNT — confirmado
+      também pelas transações reais de cada uma (PIX/TED numa, resgates de
+      fundos/juros de NTN-B/IOF na outra). Bradesco, Inter e Santander não
+      têm esse problema: cada um tem só corrente + poupança, com o mesmo
+      código de banco nas duas (o `subtype` já resolve, mecanismo existente).
+      Fix implementado: `_annotate_institution_names` em `pluggy.py` detecta
+      quando duas contas do mesmo `subtype` numa conexão têm código de banco
+      diferente, resolve o nome da instituição via BrasilAPI (pública, sem
+      chave, com cache Redis) e popula `Account.display_name` — só quando
+      vazio, nunca sobrescrevendo customização do usuário. Issue registrada
+      no upstream: securo-finance/securo#723.
 
 ### 4.3 Titularidade de cartão: adicional vs. conta conjunta (investigado em 25/08/2026)
 
