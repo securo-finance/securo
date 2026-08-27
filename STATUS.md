@@ -169,12 +169,29 @@ a flag, então o débito da fatura na conta corrente contava como Saída do mês
       fundos/juros de NTN-B/IOF na outra). Bradesco, Inter e Santander não
       têm esse problema: cada um tem só corrente + poupança, com o mesmo
       código de banco nas duas (o `subtype` já resolve, mecanismo existente).
-      Fix implementado: `_annotate_institution_names` em `pluggy.py` detecta
-      quando duas contas do mesmo `subtype` numa conexão têm código de banco
-      diferente, resolve o nome da instituição via BrasilAPI (pública, sem
-      chave, com cache Redis) e popula `Account.display_name` — só quando
-      vazio, nunca sobrescrevendo customização do usuário. Issue registrada
-      no upstream: securo-finance/securo#723.
+      Fix implementado neste fork (PR #24, mergeado e já rodando em produção):
+      `_annotate_institution_names` em `pluggy.py` detecta quando duas contas
+      do mesmo `subtype` numa conexão têm código de banco diferente, resolve
+      o nome da instituição via BrasilAPI (pública, sem chave, com cache
+      Redis) e popula `Account.display_name` — só quando vazio, nunca
+      sobrescrevendo customização do usuário. Validado com sync real na
+      conexão XP: as duas contas passaram a mostrar `BCO XP S.A.` e
+      `XP INVESTIMENTOS CCTVM S/A`.
+
+      **Achado só depois de já ter implementado o fix acima:** o upstream
+      (`securo-finance/securo:main`) já tem um mecanismo pronto pra exatamente
+      esse formato de problema — o modelo `Institution`
+      (`app/models/institution.py`, issue #345, construído para o SimpleFIN)
+      e os campos `AccountData.institution_name`/`institution_external_id`/
+      `institution_logo_url`, com `_resolve_institution` fazendo
+      get-or-create automático. Nosso fork ainda não tem esse modelo (ainda
+      não sincronizamos essa parte do upstream). PR upstream aberto usando
+      esse mecanismo em vez do `display_name`:
+      securo-finance/securo#724 (fixes #723). Enquanto o fork não sincronizar
+      com o `Institution` model do upstream, as duas implementações convivem
+      divergentes — a nossa em produção usa `display_name`; quando
+      sincronizarmos, vale revisitar e migrar para `Institution` por
+      consistência.
 
 ### 4.3 Titularidade de cartão: adicional vs. conta conjunta (investigado em 25/08/2026)
 
