@@ -6,6 +6,7 @@ import { transactions as transactionsApi, dashboard, admin } from '@/lib/api'
 import { AlertTriangle, Clock, Info, Paperclip, X } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuth } from '@/contexts/auth-context'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import type { Transaction } from '@/types'
@@ -268,12 +269,14 @@ export function TransactionDrillDown({
                         <ProjectedTransactionBadge />
                       )}
                       {item.isPending && (
-                        <span
-                          title={t('transactions.pending')}
-                          className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10"
-                        >
-                          <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
-                        </span>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10">
+                              <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>{t('transactions.pending')}</TooltipContent>
+                        </Tooltip>
                       )}
                       {item.attachmentCount > 0 && (
                         <Paperclip size={12} className="text-muted-foreground shrink-0" />
