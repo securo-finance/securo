@@ -1,6 +1,6 @@
 # Status operacional — Securo
 
-Atualizado em 25/08/2026. Este arquivo é o checklist de operação da instância
+Atualizado em 27/08/2026. Este arquivo é o checklist de operação da instância
 produtiva. Marque um item como concluído somente após registrar a evidência
 correspondente.
 
@@ -221,6 +221,33 @@ reportado pelo conector nas contas testadas.
 - [ ] Conferir logs e health check após cada deploy.
 - [ ] Revisar acessos SSH, chaves, tokens e 2FA a cada trimestre.
 - [ ] Revisar retenção e testar restauração de backup a cada trimestre.
+
+## Contribuições ao projeto principal (securo-finance/securo)
+
+Todo PR que abrimos no projeto principal deveria ter uma issue correspondente
+lá (padrão do projeto). Esta tabela é o rastreamento de quais fixes/features
+que fazemos no fork já viraram issue/PR no upstream, e o status de cada um.
+Atualizar sempre que um PR upstream mudar de estado ou um novo for aberto.
+
+| Status | O que foi feito | PR no fork | Issue upstream | PR upstream |
+| --- | --- | --- | --- | --- |
+| ✅ Merged | Preservar subtipo de conta poupança da Pluggy | [fork #3](https://github.com/vhsantos26/securo/pull/3) | [#660](https://github.com/securo-finance/securo/issues/660) (closed) | [#662](https://github.com/securo-finance/securo/pull/662) |
+| ✅ Merged | Esclarecer label de "ativos investidos" no dashboard | [fork #9](https://github.com/vhsantos26/securo/pull/9) | [#686](https://github.com/securo-finance/securo/issues/686) (closed) | [#687](https://github.com/securo-finance/securo/pull/687) |
+| ✅ Merged | Esclarecer gráfico de evolução de saldo | [fork #10](https://github.com/vhsantos26/securo/pull/10) | [#688](https://github.com/securo-finance/securo/issues/688) (aberta — PR usou `Refs`, não `Closes`; fechar manualmente) | [#689](https://github.com/securo-finance/securo/pull/689) |
+| ✅ Merged | Corrigir quebra de linha no label de tipo de regra | [fork #13](https://github.com/vhsantos26/securo/pull/13) | [#692](https://github.com/securo-finance/securo/issues/692) (closed) | [#693](https://github.com/securo-finance/securo/pull/693) |
+| 🟡 PR aberto | Deduplicar saldo de crédito compartilhado (cartão adicional) | [fork #6](https://github.com/vhsantos26/securo/pull/6) | [#680](https://github.com/securo-finance/securo/issues/680) | [#682](https://github.com/securo-finance/securo/pull/682) |
+| 🟡 PR aberto | Detalhar pendente/liquidado no drill-down de categoria + tooltip compartilhado | [fork #20](https://github.com/vhsantos26/securo/pull/20), [fork #21](https://github.com/vhsantos26/securo/pull/21) | [#715](https://github.com/securo-finance/securo/issues/715) | [#716](https://github.com/securo-finance/securo/pull/716) |
+| 🟡 PR aberto | Não deixar categoria de transferência encolher o total da fatura do cartão | *(feito direto neste branch, sem PR próprio no fork ainda)* | [#647](https://github.com/securo-finance/securo/issues/647) | [#649](https://github.com/securo-finance/securo/pull/649) |
+| 🟠 Issue aberta, sem PR | Total de fatura por cartão individual (Santander) + faturas de cartão compartilhado na sidebar | [fork #7](https://github.com/vhsantos26/securo/pull/7), [fork #8](https://github.com/vhsantos26/securo/pull/8) | [#684](https://github.com/securo-finance/securo/issues/684) | — |
+| 🟠 Issue aberta, sem PR | Redesenho do card principal (saldo disponível vs patrimônio líquido) | [fork #11](https://github.com/vhsantos26/securo/pull/11) | [#691](https://github.com/securo-finance/securo/issues/691) — validar se vale propor upstream; é decisão de design mais opinativa | — |
+| ⚪ Sem issue nem PR | Deduplicar saldo de crédito compartilhado no card principal do dashboard | [fork #12](https://github.com/vhsantos26/securo/pull/12) | — *(relacionado à mesma causa raiz de [#680](https://github.com/securo-finance/securo/issues/680))* | — |
+| ⚪ Sem issue nem PR | Reconhecer categorias Pluggy "pagamento de fatura" e "self-transfer" | [fork #16](https://github.com/vhsantos26/securo/pull/16) | — *(fecha apenas issue interna do fork [#15](https://github.com/vhsantos26/securo/issues/15))* | — |
+| ⚫ Backlog upstream, sem trabalho no fork | Mostrar estado de liquidação (paga/parcial) de faturas de cartão Pluggy | — | [#681](https://github.com/securo-finance/securo/issues/681) | — |
+| ⚫ Backlog upstream, sem trabalho no fork | Falso positivo no pareamento automático quando um reembolso de terceiro coincide em valor com uma compra | — | [#648](https://github.com/securo-finance/securo/issues/648) | — |
+| ⬜ Só nossa operação (N/A upstream) | Infra de deploy na VPS (CI/CD, health check) | [fork #1](https://github.com/vhsantos26/securo/pull/1), [fork #2](https://github.com/vhsantos26/securo/pull/2), [fork #4](https://github.com/vhsantos26/securo/pull/4) | — | — |
+| ⬜ Só nossa operação (N/A upstream) | Sync de `deploy` com a v0.14.4 do upstream | [fork #5](https://github.com/vhsantos26/securo/pull/5) | — | — |
+| ⬜ Só nossa operação (N/A upstream) | Resolução de revisão duplicada do Alembic (conflito de numeração só no fork) | [fork #14](https://github.com/vhsantos26/securo/pull/14) | — | — |
+| ⬜ Só nossa operação (N/A upstream) | Registro de investigação no STATUS.md (seções 4.2 e 4.3), ainda sem código | [fork #17](https://github.com/vhsantos26/securo/pull/17), [fork #18](https://github.com/vhsantos26/securo/pull/18) | — | — |
 
 ## Registro de evidências
 
