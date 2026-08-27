@@ -672,7 +672,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Secondary indicators */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-x-5 gap-y-4">
           {/* Income */}
           <div
             className="min-w-0 cursor-pointer hover:opacity-70 transition-opacity"
@@ -687,7 +687,7 @@ export default function DashboardPage() {
             {summaryLoading ? (
               <Skeleton className="h-7 w-20" />
             ) : (
-              <p className="text-2xl font-bold tabular-nums text-emerald-600">
+              <p className="text-2xl font-bold tabular-nums text-emerald-600 truncate">
                 +{mask(formatCurrency(income, primaryCurrency, locale))}
               </p>
             )}
@@ -707,7 +707,7 @@ export default function DashboardPage() {
             {summaryLoading ? (
               <Skeleton className="h-7 w-20" />
             ) : (
-              <p className="text-2xl font-bold tabular-nums text-rose-500">
+              <p className="text-2xl font-bold tabular-nums text-rose-500 truncate">
                 -{mask(formatCurrency(expenses, primaryCurrency, locale))}
               </p>
             )}
@@ -758,7 +758,7 @@ export default function DashboardPage() {
             {summaryLoading ? (
               <Skeleton className="h-7 w-24" />
             ) : (
-              <p className={`text-2xl font-bold tabular-nums ${totalBalance < 0 ? 'text-rose-500' : 'text-blue-600'}`}>
+              <p className={`text-2xl font-bold tabular-nums truncate ${totalBalance < 0 ? 'text-rose-500' : 'text-blue-600'}`}>
                 {mask(formatCurrency(totalBalance, primaryCurrency, locale))}
               </p>
             )}
@@ -771,7 +771,7 @@ export default function DashboardPage() {
               <Skeleton className="h-7 w-16" />
             ) : (
               <>
-                <p className={`text-2xl font-bold tabular-nums ${savingsRateColor}`}>
+                <p className={`text-2xl font-bold tabular-nums truncate ${savingsRateColor}`}>
                   {savingsRateDisplay}
                 </p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">{t('dashboard.savingsRateCaption')}</p>
