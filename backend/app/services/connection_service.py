@@ -110,9 +110,11 @@ async def _resolve_institution(
     Matched by the provider's stable org id when it sends one, so a bank
     renamed on the provider side updates its row in place instead of minting
     a new one (review on #654); name identity is the fallback for servers
-    that only send a name. Providers without per-account hints
-    (Pluggy/Enable — one institution per connection) return None, and
-    serialization falls back to the connection's own fields.
+    that only send a name. Most Pluggy/Enable connections are one
+    institution and never send this hint (returns None, serialization falls
+    back to the connection's own fields) — the exception is a Pluggy
+    connection spanning a banking group's brokerage arm (issue #723), which
+    the provider detects and hints the same way SimpleFIN already does.
     """
     name = _clean_institution_name(acc_data.institution_name)
     if not name:
