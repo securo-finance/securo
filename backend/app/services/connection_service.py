@@ -50,7 +50,7 @@ from app.services.rule_engine import merge_notes
 from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
 from app.services.transfer_detection_service import detect_transfer_pairs
 from app.services.fx_rate_service import stamp_primary_amount
-from app.services.payee_service import get_or_create_payee
+from app.services.payee_service import get_or_create_payee, tax_id_from_provider
 
 logger = logging.getLogger(__name__)
 
@@ -1064,11 +1064,19 @@ async def handle_oauth_callback(
             category_id = await _match_pluggy_category(
                 session, workspace_id, txn_data.pluggy_category, enabled=use_provider_cats
             )
-            # Resolve payee entity from raw payee text
+            # Resolve payee entity from raw payee text, plus the document
+            # when the provider sent one — that is what lets a counterparty
+            # renamed by hand still be recognised on the next run.
             payee_id = None
             if txn_data.payee:
                 payee_entity = await get_or_create_payee(
-                    session, user_id, txn_data.payee, workspace_id=workspace_id
+                    session,
+                    user_id,
+                    txn_data.payee,
+                    workspace_id=workspace_id,
+                    tax_id=tax_id_from_provider(
+                        txn_data.payee_tax_id_kind, txn_data.payee_tax_id_value
+                    ),
                 )
                 payee_id = payee_entity.id
 
@@ -1860,6 +1868,9 @@ async def sync_connection(
                         user_id,
                         txn_data.payee,
                         workspace_id=workspace_id,
+                        tax_id=tax_id_from_provider(
+                            txn_data.payee_tax_id_kind, txn_data.payee_tax_id_value
+                        ),
                     )
                     sync_payee_id = sync_payee_entity.id
 

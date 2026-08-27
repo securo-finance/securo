@@ -31,6 +31,19 @@ class Payee(Base):
         UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
     )
     name: Mapped[str] = mapped_column(String(255))
+    # What the provider called this counterparty when the row was created.
+    #
+    # `name` is the one field a person is invited to edit, and sync used to
+    # identify a counterparty by it alone — so correcting "529.982.247-25"
+    # to a real name meant the next sync no longer recognised it and
+    # inserted a second payee. Keeping the original string gives the
+    # lookup something stable to fall back on, and the rename sticks.
+    #
+    # Set once, at creation, from the raw counterparty text and never
+    # updated afterwards, for the same reason `source` is not: it records
+    # what arrived, not what the row has since become. Null on rows a
+    # person typed in by hand, which no provider will ever send.
+    original_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     # Legal nature: `person` or `company`, and null when unknown.
     #
     # Null is the common case and is not a gap to be filled: sync names a

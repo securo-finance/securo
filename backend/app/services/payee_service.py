@@ -65,6 +65,50 @@ async def get_payee(session: AsyncSession, payee_id: uuid.UUID, workspace_id: uu
     return result.scalar_one_or_none()
 
 
+def _normalised_tax_id(tax_id: Optional[tuple[TaxIdKind, str]]) -> Optional[tuple[TaxIdKind, str]]:
+    """Store-ready document, or None when there is nothing usable.
+
+    Deliberately swallows an invalid value instead of raising. This runs on
+    the sync path, where the document is whatever an institution chose to
+    send; a malformed one means "match by name instead", never "fail the
+    whole sync". The manual API keeps raising, because there a person typed
+    it and wants to be told.
+    """
+    if tax_id is None:
+        return None
+    kind, raw = tax_id
+    if not raw:
+        return None
+    value, error = normalise_and_validate(kind, raw)
+    if error:
+        return None
+    return kind, value
+
+
+#: Legal nature implied by a document. A CPF belongs to an individual and a
+#: CNPJ to a company; nothing else in the registry settles the question, so
+#: nothing else appears here.
+_TYPE_BY_TAX_ID_KIND = {
+    TaxIdKind.CPF: "person",
+    TaxIdKind.CNPJ: "company",
+}
+
+
+def tax_id_from_provider(kind: Optional[str], value: Optional[str]) -> Optional[tuple[TaxIdKind, str]]:
+    """Turn a provider's document fields into something `get_or_create_payee` takes.
+
+    A kind outside the registry returns None rather than raising: providers
+    add document types on their own schedule, and an unrecognised one means
+    this payment tells us nothing about identity, not that the sync is broken.
+    """
+    if not kind or not value:
+        return None
+    try:
+        return TaxIdKind(kind), value
+    except ValueError:
+        return None
+
+
 async def get_or_create_payee(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -72,17 +116,31 @@ async def get_or_create_payee(
     *,
     workspace_id: Optional[uuid.UUID] = None,
     source: str = "sync",
+    tax_id: Optional[tuple[TaxIdKind, str]] = None,
 ) -> Payee:
-    """Find a payee by name (case-insensitive) or create a new one.
+    """Find the payee this counterparty already is, or create it.
 
     `user_id` is kept first for backwards compatibility with import/connection
     sync paths. When `workspace_id` is provided, the lookup scopes by workspace;
     otherwise the autostamp listener fills it in on insert.
 
+    Resolution runs document, then name, then original name. The document
+    comes first because it identifies the counterparty rather than describing
+    it: the same person reached through two channels carries one CPF but may
+    arrive under two different descriptors. The display name comes next
+    because it is the most current thing anybody has said about the row. The
+    original name is the backstop, and the reason a rename now survives —
+    matching on the display name alone meant correcting a payee the bank had
+    named after a document made the next sync insert a second one.
+
+    A hit fills in whatever the existing row is missing, so payees created
+    before any of this acquire their document and original name the first
+    time sync sees them again, with no migration to run.
+
     `source` is stamped only on rows this call creates. An existing payee is
-    returned untouched, so a counterparty somebody entered by hand keeps
-    saying so even after sync sees the same name — the same protection that
-    already keeps sync from overwriting manual edits.
+    returned untouched in every other respect, so a counterparty somebody
+    entered by hand keeps saying so even after sync sees the same name — the
+    same protection that already keeps sync from overwriting manual edits.
 
     Defaults to `sync` because that is what this function is for: the bulk
     path that turns bank descriptors into rows. The CSV importer passes
@@ -95,22 +153,93 @@ async def get_or_create_payee(
     if len(name) > 255:
         name = name[:255]
 
-    lookup = select(Payee).where(func.lower(Payee.name) == name.lower())
-    if workspace_id is not None:
-        lookup = lookup.where(Payee.workspace_id == workspace_id)
-    else:
-        lookup = lookup.where(Payee.user_id == user_id)
-    result = await session.execute(lookup)
-    payee = result.scalar_one_or_none()
-    if payee:
+    def _scoped(stmt):
+        """Confine a lookup to the caller's workspace, or user when it has none."""
+        if workspace_id is not None:
+            return stmt.where(Payee.workspace_id == workspace_id)
+        return stmt.where(Payee.user_id == user_id)
+
+    # Oldest wins, always. Nothing stops two payees sharing a document or an
+    # original name — a merge or a hand-created row can produce it — and a
+    # lookup that raised on the second one would be a sync failure over data
+    # the user is entitled to have.
+    def _first(stmt):
+        return _scoped(stmt).order_by(Payee.created_at, Payee.id).limit(1)
+
+    normalised = _normalised_tax_id(tax_id)
+
+    payee: Optional[Payee] = None
+
+    if normalised is not None:
+        kind, value = normalised
+        result = await session.execute(
+            _first(
+                select(Payee)
+                .join(PayeeTaxId, PayeeTaxId.payee_id == Payee.id)
+                .where(PayeeTaxId.kind == kind.value, PayeeTaxId.value == value)
+            )
+        )
+        payee = result.scalars().first()
+
+    if payee is None:
+        result = await session.execute(_first(select(Payee).where(func.lower(Payee.name) == name.lower())))
+        payee = result.scalars().first()
+
+    if payee is None:
+        result = await session.execute(
+            _first(select(Payee).where(func.lower(Payee.original_name) == name.lower()))
+        )
+        payee = result.scalars().first()
+
+    if payee is not None:
+        # Backfill on the way past. The row was created before it could carry
+        # these, and the next rename depends on them being there.
+        if payee.original_name is None:
+            payee.original_name = name
+        if normalised is not None:
+            await _attach_tax_id_if_missing(session, payee, normalised)
+        await session.flush()
         return payee
 
-    payee = Payee(user_id=user_id, name=name, source=source)
+    payee = Payee(user_id=user_id, name=name, original_name=name, source=source)
     if workspace_id is not None:
         payee.workspace_id = workspace_id
+    if normalised is not None:
+        payee.type = _TYPE_BY_TAX_ID_KIND.get(normalised[0])
     session.add(payee)
     await session.flush()
+    if normalised is not None:
+        await _attach_tax_id_if_missing(session, payee, normalised)
+        await session.flush()
     return payee
+
+
+async def _attach_tax_id_if_missing(
+    session: AsyncSession,
+    payee: Payee,
+    tax_id: tuple[TaxIdKind, str],
+) -> None:
+    """Add a document to a payee that has none of that kind.
+
+    Add, never replace: `_apply_tax_ids` owns replacement because a person
+    editing the form is stating the complete set. A provider is not — it
+    reports one document about one payment, and letting that overwrite what
+    somebody entered by hand would lose the more considered value.
+    """
+    kind, value = tax_id
+    existing = await session.execute(
+        select(PayeeTaxId).where(PayeeTaxId.payee_id == payee.id, PayeeTaxId.kind == kind.value)
+    )
+    if existing.scalars().first() is not None:
+        return
+    session.add(
+        PayeeTaxId(
+            payee_id=payee.id,
+            workspace_id=payee.workspace_id,
+            kind=kind.value,
+            value=value,
+        )
+    )
 
 
 async def _apply_tax_ids(

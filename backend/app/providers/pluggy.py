@@ -451,6 +451,12 @@ class PluggyProvider(BankProvider):
                     # Smart payee extraction (merchant → payment data → None)
                     payee = self._extract_payee(txn, txn_type, payee_source)
 
+                    # Extracted regardless of payee_source and regardless of
+                    # whether a name was found: the document identifies the
+                    # counterparty, so it is worth keeping even for the ones
+                    # that already came named.
+                    tax_id_kind, tax_id_value = self._extract_tax_id(txn, txn_type)
+
                     # Bank-provided conversion for international transactions
                     amt_in_acct = txn.get("amountInAccountCurrency")
                     amount_in_account_currency = (
@@ -496,6 +502,8 @@ class PluggyProvider(BankProvider):
                             pluggy_category=txn.get("category"),
                             status=status,
                             payee=payee,
+                            payee_tax_id_kind=tax_id_kind,
+                            payee_tax_id_value=tax_id_value,
                             raw_data=txn,
                             installment_number=inst_number if isinstance(inst_number, int) else None,
                             total_installments=inst_total if isinstance(inst_total, int) else None,
@@ -757,6 +765,50 @@ class PluggyProvider(BankProvider):
                         return doc["value"]
 
         return None
+
+    #: Pluggy names a document by its Brazilian type. Mapped to the fiscal
+    #: registry's vocabulary rather than passed through, so an unfamiliar
+    #: type is ignored instead of being stored as a kind nothing validates.
+    _TAX_ID_KIND_BY_PLUGGY_TYPE = {
+        "CPF": "cpf",
+        "CNPJ": "cnpj",
+    }
+
+    @classmethod
+    def _extract_tax_id(cls, txn: dict, txn_type: str) -> tuple[Optional[str], Optional[str]]:
+        """The counterparty's document, as (kind, value), or (None, None).
+
+        Same side of the payment as `_extract_payee` reads for the name: on a
+        debit the money went to the receiver, on a credit it came from the
+        payer.
+
+        Deliberately independent of `payee_source`. That setting chooses what
+        to *call* a counterparty; this identifies it, and the two want
+        different answers — a payee named from a merchant descriptor still
+        benefits from carrying the CNPJ that came alongside it.
+
+        Note the document survives here even when the description masks it.
+        Institutions redact the document in the descriptor text
+        (`***.204.531-**`) while sending it in full under paymentData, so
+        this payload is the only place it can be read reliably.
+        """
+        payment_data = txn.get("paymentData")
+        if not payment_data:
+            return None, None
+
+        party = payment_data.get("receiver") if txn_type == "debit" else payment_data.get("payer")
+        if not party:
+            return None, None
+
+        doc = party.get("documentNumber")
+        if not doc:
+            return None, None
+
+        kind = cls._TAX_ID_KIND_BY_PLUGGY_TYPE.get(str(doc.get("type") or "").upper())
+        value = doc.get("value")
+        if not kind or not value:
+            return None, None
+        return kind, value
 
     @staticmethod
     def _map_account_type(pluggy_type: str, pluggy_subtype: Optional[str] = None) -> str:

@@ -70,6 +70,11 @@ class PayeeRead(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
     name: str
+    # Read-only, and exposed so the UI can show what the bank actually sent
+    # next to a name somebody has since corrected. Never accepted on the way
+    # in: it records what a provider said, and a client claiming otherwise
+    # would defeat the point, exactly as for `source`.
+    original_name: Optional[str] = None
     type: Optional[PayeeType] = None
     # Read-only. Exposed so a client picker can tell the handful of
     # counterparties somebody entered on purpose from the hundreds sync

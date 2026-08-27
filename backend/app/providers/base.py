@@ -91,6 +91,15 @@ class TransactionData:
     pluggy_category: Optional[str] = None
     status: str = "posted"  # posted, pending
     payee: Optional[str] = None
+    # The counterparty's fiscal document, when the provider reports one.
+    # `kind` is a `fiscal.registry.TaxIdKind` value; `value` is raw and gets
+    # normalised and validated at the point it is stored. Carried separately
+    # from `payee` because it identifies the counterparty rather than naming
+    # it, and it is the only part of a bank descriptor stable enough to
+    # survive somebody correcting the name. Providers that expose no such
+    # field leave both None and behave exactly as before.
+    payee_tax_id_kind: Optional[str] = None
+    payee_tax_id_value: Optional[str] = None
     raw_data: Optional[dict] = None
     # Installment metadata (parcelamento) — populated by CC providers that expose it.
     installment_number: Optional[int] = None
