@@ -1339,6 +1339,7 @@
   "payees": {
     "addFavorite": "Zu Favoriten hinzufügen",
     "removeFavorite": "Aus Favoriten entfernen",
+    "favoriteError": "Favorit konnte nicht aktualisiert werden",
     "title": "Zahlungsempfänger",
     "section": "Einrichtung",
     "payee": "Zahlungsempfänger",

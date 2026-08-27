@@ -1338,6 +1338,7 @@
   "payees": {
     "addFavorite": "Add to favorites",
     "removeFavorite": "Remove from favorites",
+    "favoriteError": "Could not update favorite",
     "title": "Payees",
     "section": "Setup",
     "payee": "Payee",

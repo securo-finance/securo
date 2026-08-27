@@ -1339,6 +1339,7 @@
   "payees": {
     "addFavorite": "Adicionar aos favoritos",
     "removeFavorite": "Remover dos favoritos",
+    "favoriteError": "Não foi possível atualizar o favorito",
     "title": "Entidades",
     "section": "Configuração",
     "payee": "Entidade",

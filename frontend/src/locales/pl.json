@@ -1419,6 +1419,7 @@
   "payees": {
     "addFavorite": "Dodaj do ulubionych",
     "removeFavorite": "Usuń z ulubionych",
+    "favoriteError": "Nie udało się zaktualizować ulubionych",
     "title": "Odbiorcy",
     "section": "Konfiguracja",
     "payee": "Odbiorca",
