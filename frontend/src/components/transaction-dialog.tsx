@@ -41,12 +41,15 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { CategorySelect } from '@/components/category-select'
+import { PayeeSelect } from '@/components/payee-select'
+import { PayeeFormDialog } from '@/components/payee-form-dialog'
+import { useWorkspace } from '@/contexts/workspace-context'
 import { TransactionAttachments } from '@/components/transaction-attachments'
 import type { AttachmentPreview } from '@/components/transaction-attachments'
 import { TransactionSplitsSection } from '@/components/transaction-splits-section'
 import { buildInstallmentSeriesInput, hasNonStatusChange, isManualInstallmentSeriesRow } from '@/lib/installment-series'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
-import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, Rule, RuleCondition } from '@/types'
+import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, Payee, Rule, RuleCondition } from '@/types'
 import { toast } from 'sonner'
 
 export type SaveAction = 'save' | 'saveAndNew' | 'saveAndDuplicate'
@@ -423,6 +426,7 @@ function TransactionForm({
     queryKey: ['payees'],
     queryFn: payeesApi.list,
   })
+  const { canWrite } = useWorkspace()
   const seed = transaction ?? duplicateDraft
   const [description, setDescription] = useState(seed?.description ?? '')
   const [amount, setAmount] = useState(seed?.amount?.toString() ?? '')
@@ -432,6 +436,15 @@ function TransactionForm({
   const [currency, setCurrency] = useState(seed?.currency ?? userCurrency)
   const [categoryId, setCategoryId] = useState(seed?.category_id ?? '')
   const [payeeId, setPayeeId] = useState(seed?.payee_id ?? '')
+  // Editing the payee from here is the point: sync names a counterparty
+  // after the raw bank descriptor, and the transaction is where you notice.
+  const [payeeDialogOpen, setPayeeDialogOpen] = useState(false)
+  const [payeeBeingEdited, setPayeeBeingEdited] = useState<Payee | null>(null)
+  const [payeeDraftName, setPayeeDraftName] = useState('')
+  const selectedPayee = useMemo(
+    () => (payeesList ?? []).find((p) => p.id === payeeId) ?? null,
+    [payeesList, payeeId],
+  )
   const [accountId, setAccountId] = useState(seed?.account_id ?? sortedAccounts[0]?.id ?? '')
   const [notes, setNotes] = useState(seed?.notes ?? '')
   // Manual CC bucketing override (issue #92). Empty = auto. Visible only
@@ -1047,16 +1060,32 @@ function TransactionForm({
       <div className={cn("grid gap-4", isSynced ? "grid-cols-1" : "grid-cols-2")}>
         <div className="space-y-2">
           <Label>{t('payees.payee')}</Label>
-          <select
-            className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+          <PayeeSelect
             value={payeeId}
-            onChange={(e) => setPayeeId(e.target.value)}
-          >
-            <option value="">{t('payees.noPayee')}</option>
-            {(payeesList ?? []).map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
+            onChange={setPayeeId}
+            payees={payeesList ?? []}
+            currentPayee={selectedPayee}
+            allowNone
+            className="bg-card"
+            onEditPayee={
+              canWrite
+                ? (p) => {
+                    setPayeeBeingEdited(p)
+                    setPayeeDraftName('')
+                    setPayeeDialogOpen(true)
+                  }
+                : undefined
+            }
+            onCreatePayee={
+              canWrite
+                ? (name) => {
+                    setPayeeBeingEdited(null)
+                    setPayeeDraftName(name)
+                    setPayeeDialogOpen(true)
+                  }
+                : undefined
+            }
+          />
           {isSynced && transaction?.payee && (
             <p className="text-xs text-muted-foreground">{t('payees.rawPayee')}: {transaction.payee}</p>
           )}
@@ -1361,6 +1390,16 @@ function TransactionForm({
           onSubmit={({ rule, condition }) => extendRuleMutation.mutate({ rule, condition })}
         />
       )}
+      <PayeeFormDialog
+        open={payeeDialogOpen}
+        onOpenChange={setPayeeDialogOpen}
+        payee={payeeBeingEdited}
+        defaultName={payeeDraftName}
+        // Covers both cases: selects a payee just created, no-op on an edit.
+        onSaved={(saved) => setPayeeId(saved.id)}
+        // No onRequestDelete on purpose — deleting the payee you are half-way
+        // through attaching to a transaction has no confirmation surface here.
+      />
     </form>
   )
 }

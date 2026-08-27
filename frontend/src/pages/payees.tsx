@@ -1,17 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { TFunction } from 'i18next'
-import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { payees as payeesApi, transactions as transactionsApi } from '@/lib/api'
+import type { Query } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
+import { payees as payeesApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { fiscal as fiscalApi, type PayeeWritePayload } from '@/lib/api'
-import { applyMask, formatTaxId } from '@/lib/tax-id'
-import { TaxIdKindPicker } from '@/components/tax-id-kind-picker'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -30,6 +25,13 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -44,36 +46,18 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
+import { PayeeDetailDialog } from '@/components/payee-detail-dialog'
+import { PayeeFormDialog } from '@/components/payee-form-dialog'
 import { calculateRangeSelection } from '@/lib/selection-utils'
-import { Search, Star, Merge, Trash2, ArrowRight, ListFilter, X, Check, Pencil, Plus } from 'lucide-react'
-import { usePrivacyMode } from '@/hooks/use-privacy-mode'
-import { useAuth } from '@/contexts/auth-context'
+import { Search, Star, Merge, Trash2, ListFilter, X, Check, Pencil } from 'lucide-react'
 import { useWorkspace } from '@/contexts/workspace-context'
 import type { Payee } from '@/types'
-import { formatCurrency } from '@/lib/format'
 
-
-/** Turn the server's machine-readable document error into something a person
- *  can act on. It arrives as `invalid_tax_id:<kind>:<reason>`; the reason is
- *  useful in logs, the document name is what the user needs to look at. */
-function taxIdErrorMessage(error: unknown, t: TFunction): string | null {
-  const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-  if (typeof detail !== 'string' || !detail.startsWith('invalid_tax_id:')) return null
-  const kind = detail.split(':')[1] ?? ''
-  const name = t(`fiscal.kind.${kind}`, kind.toUpperCase())
-  return `${name}: ${t('payees.invalidTaxId')}`
-}
 
 export default function PayeesPage() {
   const { t } = useTranslation()
   const [searchParams] = useSearchParams()
-  const navigate = useNavigate()
-  const locale = useDisplayLocale()
-  const dateLocale = useDateLocale()
-  const { mask } = usePrivacyMode()
-  const { user } = useAuth()
   const { canWrite } = useWorkspace()
-  const userCurrency = user?.preferences?.currency_display ?? 'USD'
   // No entry for an unset type: most rows come from sync, which cannot know
   // a legal nature from a bank descriptor, and a badge reading "unknown" on
   // hundreds of rows is noise rather than information.
@@ -97,6 +81,19 @@ export default function PayeesPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [payeesToDelete, setPayeesToDelete] = useState<string[]>([])
   const prevSearchRef = useRef<string | null>(null)
+  const prevFiltersRef = useRef<string | null>(null)
+  const filterKey = `${searchQuery}|${filterType}|${filterFavorites}`
+  // Seeded from the URL so a link to page 3 lands on page 3. Page size is a
+  // preference rather than a location, so it lives in storage instead.
+  const [page, setPage] = useState(() => Math.max(1, Number(searchParams.get('page')) || 1))
+  const [pageSize, setPageSize] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('securo.payees.pageSize')
+      return stored ? Number(stored) : 20
+    } catch {
+      return 20
+    }
+  })
 
   // Sync state from URL when navigating
   useEffect(() => {
@@ -105,10 +102,17 @@ export default function PayeesPage() {
     prevSearchRef.current = searchStr
 
     const nextQ = searchParams.get('q') ?? ''
+    const nextType = searchParams.get('type') ?? ''
+    const nextFavorites = searchParams.get('is_favorite') === 'true'
     setSearch(nextQ)
     setSearchQuery(nextQ)
-    setFilterType(searchParams.get('type') ?? '')
-    setFilterFavorites(searchParams.get('is_favorite') === 'true')
+    setFilterType(nextType)
+    setFilterFavorites(nextFavorites)
+    setPage(Math.max(1, Number(searchParams.get('page')) || 1))
+    // Filters and page arrived together, so this is not a filter *change*.
+    // Priming the ref stops the reset effect below from throwing away the
+    // page the same URL just asked for.
+    prevFiltersRef.current = `${nextQ}|${nextType}|${nextFavorites}`
   }, [searchParams])
 
   // Sync states back to URL searchParams
@@ -118,6 +122,7 @@ export default function PayeesPage() {
         ['q', searchQuery],
         ['type', filterType],
         ['is_favorite', filterFavorites ? 'true' : ''],
+        ['page', page > 1 ? String(page) : ''],
       ].filter(([, v]) => v && v.length),
     )
 
@@ -126,7 +131,7 @@ export default function PayeesPage() {
       '',
       params.size ? `?${params}` : window.location.pathname,
     )
-  }, [searchQuery, filterType, filterFavorites])
+  }, [searchQuery, filterType, filterFavorites, page])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -138,43 +143,20 @@ export default function PayeesPage() {
     }
   }, [search])
 
-  // Clear selection on filter or search query change
+  // Clear selection and go back to the first page when the filters change.
+  // Guarded rather than fired on every run: this effect also runs on mount and
+  // on a URL-driven filter change, and an unguarded reset would discard the
+  // `?page=` those two cases carry.
   useEffect(() => {
+    if (prevFiltersRef.current === null || prevFiltersRef.current === filterKey) {
+      prevFiltersRef.current = filterKey
+      return
+    }
+    prevFiltersRef.current = filterKey
     setSelectedIds(new Set())
     setLastSelectedId(null)
-  }, [searchQuery, filterType, filterFavorites])
-
-  // Form state
-  const [formName, setFormName] = useState('')
-  // '' means the legal nature was not stated, which is the resting state for
-  // anything sync created and a legitimate answer, not a missing one.
-  type FormType = '' | 'person' | 'company'
-  const [formType, setFormType] = useState<FormType>('')
-  const [formNotes, setFormNotes] = useState('')
-  const [formEmail, setFormEmail] = useState('')
-  const [formPhone, setFormPhone] = useState('')
-  const [formAddress, setFormAddress] = useState('')
-  const [formWebsite, setFormWebsite] = useState('')
-  // Documents this payee has, as ordered rows. A list rather than a slot per
-  // possible kind: most cadastros need one document, and a column of empty
-  // boxes labelled with documents the user has never heard of reads as a
-  // form to fill rather than a fact to record.
-  const [taxIdRows, setTaxIdRows] = useState<{ kind: string; value: string }[]>([])
-
-  // Labels, masks and ordering come from the server: the jurisdiction that
-  // decides them lives on the workspace, and a second copy of the rule here
-  // would drift from it.
-  const { data: taxIdMeta } = useQuery({
-    queryKey: ['tax-id-kinds'],
-    queryFn: fiscalApi.taxIdKinds,
-    staleTime: 1000 * 60 * 60,
-  })
-  const allKinds = taxIdMeta?.kinds ?? []
-  const kindOption = (kind: string) => allKinds.find((k) => k.kind === kind)
-  // What this jurisdiction asks for, in pack order. Drives which document a
-  // new row starts on; the picker itself groups every country.
-  const localKinds = allKinds.filter((k) => k.offered)
-  const usedKinds = new Set(taxIdRows.map((r) => r.kind))
+    setPage(1)
+  }, [filterKey])
 
   const { data: payeesList, isLoading } = useQuery({
     queryKey: ['payees', searchQuery, filterType, filterFavorites],
@@ -183,39 +165,6 @@ export default function PayeesPage() {
       type: filterType || undefined,
       is_favorite: filterFavorites || undefined,
     }),
-  })
-
-  const { data: summaryData, isLoading: summaryLoading } = useQuery({
-    queryKey: ['payees', summaryPayee, 'summary'],
-    queryFn: () => payeesApi.summary(summaryPayee!),
-    enabled: !!summaryPayee,
-  })
-
-  const { data: recentTxData } = useQuery({
-    queryKey: ['payees', summaryPayee, 'recent-transactions'],
-    queryFn: () => transactionsApi.list({ payee_id: summaryPayee!, limit: 5 }),
-    enabled: !!summaryPayee,
-  })
-
-  const createMutation = useMutation({
-    mutationFn: (data: PayeeWritePayload & { name: string }) => payeesApi.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['payees'] })
-      setDialogOpen(false)
-      toast.success(t('payees.created'))
-    },
-    onError: (e: unknown) => toast.error(taxIdErrorMessage(e, t) ?? t('common.error')),
-  })
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: PayeeWritePayload & { id: string }) => payeesApi.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['payees'] })
-      setDialogOpen(false)
-      setEditingPayee(null)
-      toast.success(t('payees.updated'))
-    },
-    onError: (e: unknown) => toast.error(taxIdErrorMessage(e, t) ?? t('common.error')),
   })
 
   const deleteMutation = useMutation({
@@ -241,10 +190,35 @@ export default function PayeesPage() {
     onError: () => toast.error(t('common.error')),
   })
 
+  // The star is the one control on this page people click in bursts, and an
+  // invalidate-only mutation leaves it unchanged until the refetch lands. On a
+  // slow link that reads as the click having missed, so this one patches the
+  // cache up front and puts it back if the server disagrees.
   const favoriteMutation = useMutation({
     mutationFn: ({ id, is_favorite }: { id: string; is_favorite: boolean }) =>
       payeesApi.update(id, { is_favorite }),
-    onSuccess: () => {
+    onMutate: async ({ id, is_favorite }) => {
+      // Array-shaped caches only. `['payees']` is a prefix that also matches
+      // `['payees', id, 'summary']`, whose data is an object, and mapping over
+      // that would throw. Every page that lists payees caches an array under
+      // this prefix, so they all stay in step for free.
+      const listFilter = {
+        queryKey: ['payees'],
+        predicate: (query: Query) => Array.isArray(query.state.data),
+      }
+      await queryClient.cancelQueries(listFilter)
+      const snapshots = queryClient.getQueriesData<Payee[]>(listFilter)
+      queryClient.setQueriesData<Payee[]>(listFilter, (old) =>
+        old?.map((payee) => (payee.id === id ? { ...payee, is_favorite } : payee)),
+      )
+      return { snapshots }
+    },
+    onError: (_error, _variables, context) => {
+      for (const [key, data] of context?.snapshots ?? []) queryClient.setQueryData(key, data)
+      toast.error(t('payees.favoriteError'))
+    },
+    // Prefix invalidation is safe here: it only marks stale and refetches.
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['payees'] })
     },
   })
@@ -283,98 +257,57 @@ export default function PayeesPage() {
     onError: () => toast.error(t('common.error')),
   })
 
-
-  // A workspace that files somewhere gets its primary document ready to type
-  // into. A company whose clients are all local should never have to ask for
-  // the field it uses every single time.
-  //
-  // Only when a jurisdiction is set: with none, the only offered kind is the
-  // generic one, and a permanently empty "Other document" box is the confusing
-  // thing this replaced.
-  const seedTaxIdRows = (payee?: Payee | null): { kind: string; value: string }[] => {
-    const existing = (payee?.tax_ids ?? []).map((t) => ({
-      kind: t.kind,
-      value: formatTaxId(t.value, kindOption(t.kind)?.mask ?? null),
-    }))
-    if (existing.length > 0) return existing
-    const primary = taxIdMeta?.jurisdiction ? localKinds[0] : undefined
-    return primary ? [{ kind: primary.kind, value: '' }] : []
-  }
-
   const openCreate = () => {
     setEditingPayee(null)
-    setFormName('')
-    setFormType('')
-    setFormNotes('')
-    setFormEmail('')
-    setFormPhone('')
-    setFormAddress('')
-    setFormWebsite('')
-    setTaxIdRows(seedTaxIdRows())
     setDialogOpen(true)
   }
 
   const openEdit = (payee: Payee) => {
     setEditingPayee(payee)
-    setFormName(payee.name)
-    setFormType(payee.type ?? '')
-    setFormNotes(payee.notes ?? '')
-    setFormEmail(payee.email ?? '')
-    setFormPhone(payee.phone ?? '')
-    setFormAddress(payee.address ?? '')
-    setFormWebsite(payee.website ?? '')
-    // Every stored document becomes a row, including kinds this jurisdiction
-    // does not ask for: a German VAT number on a Brazilian workspace is a
-    // normal state, and hiding it would be worse than showing it.
-    setTaxIdRows(seedTaxIdRows(payee))
     setDialogOpen(true)
   }
 
-  const handleSave = () => {
-    const payload = {
-      name: formName,
-      // Empty means the legal nature was not stated, which is a value, not a
-      // blank to be coerced into one.
-      type: formType || null,
-      notes: formNotes || undefined,
-      email: formEmail.trim() || null,
-      phone: formPhone.trim() || null,
-      address: formAddress.trim() || null,
-      website: formWebsite.trim() || null,
-      // An emptied field means "drop this document", so blanks are sent and
-      // the server treats them as removals.
-      tax_ids: taxIdRows
-        .filter((row) => row.value.trim() !== '')
-        .map((row) => ({ kind: row.kind, value: row.value })),
-    }
-    if (editingPayee) {
-      updateMutation.mutate({ id: editingPayee.id, ...payload })
-    } else {
-      createMutation.mutate(payload)
-    }
-  }
+  const filtered = payeesList ?? []
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const safePage = Math.min(page, totalPages)
+  const pageItems = filtered.slice((safePage - 1) * pageSize, safePage * pageSize)
 
+  // Deleting the last page's contents strands `page` past the end. `safePage`
+  // already covers what renders; this keeps the state and the URL honest.
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+
+  // Resolved against the whole filtered list, not the page, so the dialog
+  // survives paging away from the row that opened it.
+  const detailPayee = summaryPayee ? filtered.find(payee => payee.id === summaryPayee) ?? null : null
+
+  // Every selection gesture is scoped to what the user can actually see.
+  // Against the full list, shift-clicking across a page boundary would sweep
+  // up rows nobody looked at — and the neighbouring button is a bulk delete.
   const toggleSelect = (id: string, isShiftKey: boolean = false) => {
     setSelectedIds(prev =>
-      calculateRangeSelection(prev, lastSelectedId, id, filtered, isShiftKey)
+      calculateRangeSelection(prev, lastSelectedId, id, pageItems, isShiftKey)
     )
     setLastSelectedId(id)
   }
 
-  const filtered = payeesList ?? []
+  const allSelected = pageItems.length > 0 && pageItems.every(payee => selectedIds.has(payee.id))
+  const someSelected = pageItems.some(payee => selectedIds.has(payee.id)) && !allSelected
 
   const toggleSelectAll = () => {
-    if (!filtered.length) return
-    const allSelected = filtered.every(payee => selectedIds.has(payee.id))
-    if (allSelected) {
-      setSelectedIds(new Set())
-    } else {
-      setSelectedIds(new Set(filtered.map(payee => payee.id)))
-    }
+    if (!pageItems.length) return
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      // Add or remove only this page: the selection itself spans pages, so
+      // clearing it wholesale would silently drop rows picked elsewhere.
+      for (const payee of pageItems) {
+        if (allSelected) next.delete(payee.id)
+        else next.add(payee.id)
+      }
+      return next
+    })
   }
-
-  const allSelected = filtered.length > 0 && filtered.every(payee => selectedIds.has(payee.id))
-  const someSelected = filtered.some(payee => selectedIds.has(payee.id)) && !allSelected
 
   return (
     <div>
@@ -569,91 +502,6 @@ export default function PayeesPage() {
         )}
       </div>
 
-      {/* Summary panel, above the table on purpose: a workspace whose payees
-          were created by sync has hundreds of rows, and a panel rendered after
-          the table opens below the fold, which reads as the click doing nothing. */}
-      {summaryPayee && (
-        <div className="bg-card rounded-xl border border-border shadow-sm p-5 mb-4">
-          {summaryLoading ? (
-            <Skeleton className="h-24 w-full" />
-          ) : summaryData ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-bold">{summaryData.payee.name}</h3>
-                <Button variant="ghost" size="sm" onClick={() => setSummaryPayee(null)}>
-                  &times;
-                </Button>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div>
-                  <p className="text-xs text-muted-foreground">{t('payees.totalSpent')}</p>
-                  <p className="text-lg font-bold text-rose-500 tabular-nums">
-                    {mask(formatCurrency(summaryData.total_spent, userCurrency, locale))}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">{t('payees.totalReceived')}</p>
-                  <p className="text-lg font-bold text-emerald-600 tabular-nums">
-                    {mask(formatCurrency(summaryData.total_received, userCurrency, locale))}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">{t('payees.transactionCount')}</p>
-                  <p className="text-lg font-bold tabular-nums">{summaryData.transaction_count}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">{t('payees.lastTransaction')}</p>
-                  <p className="text-sm font-medium">
-                    {summaryData.last_transaction_date
-                      ? new Date(summaryData.last_transaction_date + 'T00:00:00').toLocaleDateString(dateLocale)
-                      : '—'}
-                  </p>
-                </div>
-              </div>
-              {summaryData.most_common_category && (
-                <p className="text-xs text-muted-foreground">
-                  {t('payees.topCategory')}: <span className="font-medium text-foreground">{summaryData.most_common_category.name}</span>
-                </p>
-              )}
-
-              {/* Recent transactions */}
-              {recentTxData && recentTxData.items.length > 0 && (
-                <div className="pt-3 border-t border-border space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">{t('dashboard.recentTransactions')}</p>
-                  <div className="divide-y divide-border rounded-lg border border-border overflow-hidden">
-                    {recentTxData.items.map((tx) => (
-                      <div key={tx.id} className="flex items-center justify-between px-3 py-2 bg-background text-sm">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-foreground truncate">{tx.description}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale)}
-                            {tx.category?.name && <> · {tx.category.name}</>}
-                          </p>
-                        </div>
-                        <span className={`text-sm font-semibold tabular-nums ml-3 ${tx.type === 'debit' ? 'text-rose-500' : 'text-emerald-600'}`}>
-                          {mask(formatCurrency(tx.amount, tx.currency, locale))}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  {recentTxData.total > 5 && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="w-full text-xs text-muted-foreground hover:text-foreground gap-1"
-                      onClick={() => navigate(`/transactions?payee_id=${summaryPayee}`)}
-                    >
-                      {t('payees.viewAllTransactions', { count: recentTxData.total })}
-                      <ArrowRight size={12} />
-                    </Button>
-                  )}
-                </div>
-              )}
-            </div>
-          ) : null}
-        </div>
-      )}
-
       {/* Table */}
       <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden mb-4">
         {isLoading ? (
@@ -663,6 +511,7 @@ export default function PayeesPage() {
             ))}
           </div>
         ) : (
+          <>
           <Table>
             <TableHeader>
               <TableRow className="border-b border-border hover:bg-transparent">
@@ -678,22 +527,20 @@ export default function PayeesPage() {
                    </TableHead>
                  )}
                 <TableHead className="text-xs font-medium text-muted-foreground py-3 w-[32px]" />
-                <TableHead className="text-xs font-medium text-muted-foreground py-3">{t('payees.name')}</TableHead>
+                <TableHead className="text-xs font-medium text-muted-foreground py-3 w-full max-w-0">{t('payees.name')}</TableHead>
                 <TableHead className="hidden md:table-cell text-xs font-medium text-muted-foreground py-3 w-[120px]">{t('payees.type')}</TableHead>
                 <TableHead className="text-xs font-medium text-muted-foreground py-3 text-right w-[120px]">{t('payees.transactionCount')}</TableHead>
                 {canWrite && <TableHead className="w-[100px]" />}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((payee) => (
+              {pageItems.map((payee) => (
                 <TableRow
                   key={payee.id}
                   className={`cursor-pointer hover:bg-muted border-b border-border last:border-0 ${
                     summaryPayee === payee.id ? 'bg-muted/80 font-medium' : selectedIds.has(payee.id) ? 'bg-primary/5' : ''
                   }`}
-                  onClick={() => {
-                    setSummaryPayee(summaryPayee === payee.id ? null : payee.id)
-                  }}
+                  onClick={() => setSummaryPayee(payee.id)}
                 >
                   {canWrite && (
                     <TableCell className="py-2.5 pl-4 pr-0 w-[40px]">
@@ -718,6 +565,7 @@ export default function PayeesPage() {
                         }}
                         className="p-1 rounded hover:bg-accent"
                         title={payee.is_favorite ? t('payees.removeFavorite') : t('payees.addFavorite')}
+                        aria-pressed={payee.is_favorite}
                       >
                         <Star
                           size={14}
@@ -731,11 +579,13 @@ export default function PayeesPage() {
                       />
                     )}
                   </TableCell>
-                  <TableCell className="py-2.5">
-                    <span className="text-sm font-semibold text-foreground">{payee.name}</span>
-                    {payee.notes && (
-                      <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-[300px]">{payee.notes}</p>
-                    )}
+                  <TableCell className="py-2.5 max-w-0 w-full">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-foreground truncate" title={payee.name}>{payee.name}</p>
+                      {payee.notes && (
+                        <p className="text-xs text-muted-foreground mt-0.5 truncate" title={payee.notes}>{payee.notes}</p>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="hidden md:table-cell py-2.5">
                     {payee.type && (
@@ -781,184 +631,93 @@ export default function PayeesPage() {
               )}
             </TableBody>
           </Table>
-        )}
-      </div>
 
-      {/* Create/Edit Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        {/* The body scrolls, the footer does not: with contact details plus a
-            jurisdiction's worth of document fields this form is taller than a
-            laptop viewport, and a Save button below the fold is a Save button
-            nobody can reach. Mirrors transaction-dialog. */}
-        <DialogContent className="sm:max-w-md flex flex-col max-h-[calc(100dvh-2rem)]">
-          <DialogHeader>
-            <DialogTitle>{editingPayee ? t('payees.edit') : t('payees.add')}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 overflow-y-auto flex-1 -mx-1 px-1">
-            <div className="space-y-2">
-              <Label>{t('payees.name')}</Label>
-              <Input value={formName} onChange={(e) => setFormName(e.target.value)} required />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('payees.type')}</Label>
-              <select
-                className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
-                value={formType}
-                onChange={(e) => setFormType(e.target.value as FormType)}
-              >
-                {/* Unset first, and it is the default: the legal nature
-                    only matters once a document is attached, and the
-                    document settles it anyway. */}
-                <option value="">{t('payees.typeUnset', 'Not specified')}</option>
-                <option value="person">{t('payees.typePerson')}</option>
-                <option value="company">{t('payees.typeCompany')}</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label>{t('payees.notes')}</Label>
-              <textarea
-                className="w-full border border-input rounded-md px-3 py-2 text-sm bg-card resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-                rows={2}
-                value={formNotes}
-                onChange={(e) => setFormNotes(e.target.value)}
-              />
-            </div>
-
-            {/* Contact and billing. Every field optional: most rows here were
-                created by sync for a card merchant and will never need any. */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label>{t('payees.email', 'Email')}</Label>
-                <Input
-                  type="email"
-                  value={formEmail}
-                  onChange={(e) => setFormEmail(e.target.value)}
-                  placeholder="fin@cliente.com"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>{t('payees.phone', 'Phone')}</Label>
-                <Input value={formPhone} onChange={(e) => setFormPhone(e.target.value)} />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>{t('payees.address', 'Address')}</Label>
-              <Input value={formAddress} onChange={(e) => setFormAddress(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('payees.website', 'Website')}</Label>
-              <Input
-                value={formWebsite}
-                onChange={(e) => setFormWebsite(e.target.value)}
-                placeholder="acme.com"
-              />
-            </div>
-
-            {/* Fiscal documents. Which ones appear comes from the workspace's
-                jurisdiction; the rest stay reachable through "other", since a
-                counterparty abroad has documents this jurisdiction never
-                asks for. */}
-            {allKinds.length > 0 && (
-              <div className="space-y-2">
-                <Label>{t('payees.taxIds', 'Tax IDs')}</Label>
-                {taxIdRows.length === 0 && (
-                  <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    {t('payees.taxIdsEmpty', 'None yet. Add one if you need it for tax purposes.')}
-                  </p>
-                )}
-                {taxIdRows.map((row, index) => {
-                  const option = kindOption(row.kind)
-                  return (
-                    <div key={index} className="flex items-center gap-2">
-                      <TaxIdKindPicker
-                        kinds={allKinds}
-                        jurisdictions={taxIdMeta?.jurisdictions ?? []}
-                        activeJurisdiction={taxIdMeta?.jurisdiction ?? null}
-                        value={row.kind}
-                        documentValue={row.value}
-                        used={usedKinds}
-                        onChange={(kind) =>
-                          setTaxIdRows((prev) =>
-                            prev.map((r, i) =>
-                              i === index
-                                ? // Re-mask under the new kind: what the user typed
-                                  // for a CNPJ is not formatted like a VAT id.
-                                  { kind, value: applyMask(r.value, kindOption(kind)?.mask ?? null) }
-                                : r,
-                            ),
-                          )
-                        }
-                      />
-                      <Input
-                        value={row.value}
-                        onChange={(e) =>
-                          setTaxIdRows((prev) =>
-                            prev.map((r, i) =>
-                              i === index
-                                ? { ...r, value: applyMask(e.target.value, option?.mask ?? null) }
-                                : r,
-                            ),
-                          )
-                        }
-                        placeholder={option?.mask ?? ''}
-                      />
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={t('common.remove', 'Remove')}
-                        onClick={() => setTaxIdRows((prev) => prev.filter((_, i) => i !== index))}
-                      >
-                        <X size={14} className="text-muted-foreground" />
-                      </Button>
-                    </div>
-                  )
-                })}
-                {usedKinds.size < allKinds.length && (
+          {/* Pagination. Inside the card so the strip reads as part of the
+              table rather than as loose controls under it. */}
+          {filtered.length > 10 && (
+            <div className="px-5 py-3 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4">
+              {totalPages > 1 ? (
+                <div className="flex items-center gap-2">
                   <Button
                     variant="outline"
                     size="sm"
-                    className="w-full"
-                    onClick={() => {
-                      // Default to the jurisdiction's primary document, which is
-                      // the one the overwhelming majority of rows will use.
-                      const next =
-                        localKinds.find((k) => !usedKinds.has(k.kind)) ??
-                        allKinds.find((k) => !usedKinds.has(k.kind))
-                      if (next) setTaxIdRows((prev) => [...prev, { kind: next.kind, value: '' }])
-                    }}
+                    disabled={safePage <= 1}
+                    onClick={() => setPage(safePage - 1)}
                   >
-                    <Plus size={14} className="mr-1" />
-                    {t('payees.addTaxId', 'Add')}
+                    {t('common.previous')}
                   </Button>
-                )}
+                  <span className="text-sm text-muted-foreground tabular-nums">
+                    {safePage} / {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={safePage >= totalPages}
+                    onClick={() => setPage(safePage + 1)}
+                  >
+                    {t('common.next')}
+                  </Button>
+                </div>
+              ) : (
+                <div className="hidden sm:block" />
+              )}
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">{t('common.rowsPerPage')}</span>
+                <Select
+                  value={String(pageSize)}
+                  onValueChange={(value) => {
+                    setPageSize(Number(value))
+                    setPage(1)
+                    try {
+                      localStorage.setItem('securo.payees.pageSize', value)
+                    } catch {
+                      // ignored
+                    }
+                  }}
+                >
+                  <SelectTrigger className="w-[70px] h-8 text-xs">
+                    <SelectValue placeholder={pageSize} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {['10', '20', '50', '100'].map((value) => (
+                      <SelectItem key={value} value={value}>{value}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            )}
-          </div>
-          <DialogFooter className={editingPayee ? 'flex justify-between sm:justify-between' : ''}>
-            {editingPayee && (
-              <Button
-                variant="destructive"
-                onClick={() => deleteMutation.mutate(editingPayee.id)}
-                disabled={deleteMutation.isPending}
-              >
-                <Trash2 size={14} className="mr-1" />
-                {t('common.delete')}
-              </Button>
-            )}
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setDialogOpen(false)}>
-                {t('common.cancel')}
-              </Button>
-              <Button
-                onClick={handleSave}
-                disabled={!formName.trim() || createMutation.isPending || updateMutation.isPending}
-              >
-                {t('common.save')}
-              </Button>
             </div>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          )}
+          </>
+        )}
+      </div>
+
+      {/* Payee detail. Edit and Delete open on top of it rather than replacing
+          it, so cancelling either lands back on the payee instead of the
+          bare table. */}
+      <PayeeDetailDialog
+        payee={detailPayee}
+        canWrite={canWrite}
+        onOpenChange={(open) => { if (!open) setSummaryPayee(null) }}
+        onEdit={openEdit}
+        onDelete={(payee) => {
+          setPayeesToDelete([payee.id])
+          setDeleteDialogOpen(true)
+        }}
+      />
+
+      <PayeeFormDialog
+        open={dialogOpen}
+        onOpenChange={(open) => {
+          setDialogOpen(open)
+          // The update mutation used to clear this on success. The dialog
+          // owns its own closing now, so the page clears on the way out.
+          if (!open) setEditingPayee(null)
+        }}
+        payee={editingPayee}
+        onRequestDelete={(payee) => deleteMutation.mutate(payee.id)}
+        deletePending={deleteMutation.isPending}
+      />
 
       {/* Merge Dialog */}
       <Dialog open={mergeDialogOpen} onOpenChange={setMergeDialogOpen}>
