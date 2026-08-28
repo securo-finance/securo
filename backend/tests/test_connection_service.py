@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -206,6 +207,52 @@ async def test_get_connection_found(session: AsyncSession, test_user, test_works
     result = await get_connection(session, conn.id, test_workspace.id)
     assert result is not None
     assert result.institution_name == "Specific Bank"
+
+
+@pytest.mark.asyncio
+async def test_get_connection_can_lock_the_connection_row(
+    session: AsyncSession, test_user, test_workspace, monkeypatch
+):
+    """Production syncs must be able to serialize on their connection row."""
+    conn = await _make_connection(session, test_user.id, "Locked Bank")
+    statements = []
+    real_execute = session.execute
+
+    async def recording_execute(statement, *args, **kwargs):
+        statements.append(statement)
+        return await real_execute(statement, *args, **kwargs)
+
+    monkeypatch.setattr(session, "execute", recording_execute)
+    result = await get_connection(session, conn.id, test_workspace.id, for_update=True)
+
+    assert result is not None
+    sql = str(statements[0].compile(dialect=postgresql.dialect()))
+    assert "FOR UPDATE" in sql
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_requests_the_connection_row_lock(
+    session: AsyncSession, test_user, test_workspace, monkeypatch
+):
+    """Manual and scheduled syncs must not race asset or settlement inserts."""
+    lock_requested = False
+
+    async def missing_connection(
+        _session, _connection_id, _workspace_id, *, for_update=False
+    ):
+        nonlocal lock_requested
+        lock_requested = for_update
+        return None
+
+    monkeypatch.setattr(
+        "app.services.connection_service.get_connection", missing_connection
+    )
+    with pytest.raises(ValueError, match="Connection not found"):
+        await sync_connection(
+            session, uuid.uuid4(), test_workspace.id, test_user.id
+        )
+
+    assert lock_requested is True
 
 
 @pytest.mark.asyncio

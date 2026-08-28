@@ -1037,13 +1037,20 @@ async def get_connections(session: AsyncSession, workspace_id: uuid.UUID) -> lis
 
 
 async def get_connection(
-    session: AsyncSession, connection_id: uuid.UUID, workspace_id: uuid.UUID
+    session: AsyncSession,
+    connection_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    *,
+    for_update: bool = False,
 ) -> Optional[BankConnection]:
-    result = await session.execute(
+    statement = (
         select(BankConnection)
         .where(BankConnection.id == connection_id, BankConnection.workspace_id == workspace_id)
         .options(selectinload(BankConnection.accounts))
     )
+    if for_update:
+        statement = statement.with_for_update()
+    result = await session.execute(statement)
     return result.scalar_one_or_none()
 
 
@@ -1827,7 +1834,12 @@ async def sync_connection(
     user_id: uuid.UUID,
     trigger_provider_refresh: bool = False,
 ) -> tuple[BankConnection, int]:
-    connection = await get_connection(session, connection_id, workspace_id)
+    # PostgreSQL holds this row lock until the sync commits or rolls back. It
+    # serializes manual and scheduled syncs for one connection, preventing both
+    # workers from observing a missing asset/settlement and inserting duplicates.
+    connection = await get_connection(
+        session, connection_id, workspace_id, for_update=True
+    )
     if not connection:
         raise ValueError("Connection not found")
     if not connection.credentials:
@@ -1850,6 +1862,12 @@ async def sync_connection(
             "worker service is likely not loading the environment (.env) that "
             "enables this provider."
         ) from exc
+    if connection.provider == "trading212" and not callable(
+        getattr(provider, "get_account_summary", None)
+    ):
+        raise ProviderNotConfiguredError(
+            "Provider 'trading212' does not implement account summary lookup"
+        )
 
     try:
         # Refresh credentials if needed

@@ -16,7 +16,7 @@ from app.models.asset_transaction import AssetTransaction
 from app.models.bank_connection import BankConnection
 from app.models.transaction import Transaction
 from app.models.user import User
-from app.providers.base import AccountData, HoldingData
+from app.providers.base import AccountData, HoldingData, ProviderNotConfiguredError
 from app.providers.trading212 import Trading212Provider
 from app.services.connection_service import (
     _sync_holdings,
@@ -318,6 +318,46 @@ async def test_t212_reconnect_rejects_credentials_for_a_different_broker_account
 
     await session.refresh(connection)
     assert connection.external_id == "live-account"
+
+
+@pytest.mark.asyncio
+async def test_t212_sync_rejects_provider_without_account_summary(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """A bad registry entry must fail clearly before deriving broker identity."""
+    connection = BankConnection(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        provider="trading212",
+        kind="brokerage",
+        external_id="account-123",
+        institution_name="Trading 212",
+        credentials={"api_key_enc": "opaque", "api_secret_enc": "opaque"},
+        status="active",
+    )
+    session.add(connection)
+    await session.commit()
+
+    class IncompleteProvider:
+        async def refresh_credentials(self, credentials):
+            return dict(credentials)
+
+    with (
+        patch(
+            "app.services.connection_service.get_provider",
+            return_value=IncompleteProvider(),
+        ),
+        pytest.raises(
+            ProviderNotConfiguredError,
+            match="does not implement account summary lookup",
+        ),
+    ):
+        await sync_connection(
+            session, connection.id, test_workspace.id, test_user.id
+        )
+
+    await session.refresh(connection)
+    assert connection.status == "active"
 
 
 @pytest.mark.asyncio
