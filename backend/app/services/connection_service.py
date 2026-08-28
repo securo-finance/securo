@@ -691,9 +691,6 @@ async def handle_oauth_callback(
             session.add(transaction)
             await session.flush()
             new_tx_ids.append(transaction.id)
-            # A rule matching the description is more specific than the
-            # provider's generic category, so it gets first claim; the
-            # provider category is only a fallback for what no rule covers.
             await apply_rules_to_transaction(session, user_id, transaction)
             if transaction.category_id is None:
                 transaction.category_id = category_id
@@ -1487,10 +1484,6 @@ async def sync_connection(
                     account,
                     bill_due_date=bill.due_date if bill else None,
                 )
-                # A rule matching the description is more specific than the
-                # provider's generic category, so it gets first claim; the
-                # provider category (`category_id`) is only a fallback below
-                # for what no rule covers.
                 preview = await preview_rules_for_transaction(
                     session, user_id, transaction
                 )
