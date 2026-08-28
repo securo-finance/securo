@@ -16,7 +16,12 @@ from app.models.asset_transaction import AssetTransaction
 from app.models.bank_connection import BankConnection
 from app.models.transaction import Transaction
 from app.models.user import User
-from app.providers.base import AccountData, HoldingData, ProviderNotConfiguredError
+from app.providers.base import (
+    AccountData,
+    ConnectionData,
+    HoldingData,
+    ProviderNotConfiguredError,
+)
 from app.providers.trading212 import Trading212Provider
 from app.services.connection_service import (
     _sync_holdings,
@@ -296,7 +301,7 @@ async def test_t212_reconnect_rejects_credentials_for_a_different_broker_account
     session: AsyncSession, test_user: User, test_workspace
 ):
     connection = BankConnection(
-        id=uuid.uuid4(), workspace_id=test_workspace.id, user_id=test_user.id,
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
         provider="trading212", kind="brokerage", external_id="live-account",
         institution_name="Trading 212", credentials={}, status="active",
     )
@@ -318,6 +323,115 @@ async def test_t212_reconnect_rejects_credentials_for_a_different_broker_account
 
     await session.refresh(connection)
     assert connection.external_id == "live-account"
+
+
+@pytest.mark.asyncio
+async def test_t212_duplicate_connection_retry_requires_explicit_reconnect(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """A repeated token submission must not import one broker account twice."""
+    existing = BankConnection(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        provider="trading212",
+        kind="brokerage",
+        external_id="account-123",
+        institution_name="Trading 212",
+        credentials={"api_key_enc": "opaque", "api_secret_enc": "opaque"},
+        status="active",
+    )
+    session.add(existing)
+    await session.commit()
+
+    provider = AsyncMock()
+    provider.kind = "brokerage"
+    provider.handle_oauth_callback.return_value = ConnectionData(
+        external_id="account-123",
+        institution_name="Trading 212",
+        credentials={"api_key_enc": "new", "api_secret_enc": "new"},
+        accounts=[],
+    )
+
+    with (
+        patch("app.services.connection_service.get_provider", return_value=provider),
+        pytest.raises(ValueError, match="already connected.*reconnect"),
+    ):
+        await handle_oauth_callback(
+            session,
+            test_workspace.id,
+            test_user.id,
+            "new:key",
+            provider_name="trading212",
+        )
+
+    connections = (
+        await session.execute(
+            select(BankConnection).where(
+                BankConnection.workspace_id == test_workspace.id,
+                BankConnection.provider == "trading212",
+                BankConnection.external_id == "account-123",
+            )
+        )
+    ).scalars().all()
+    assert [connection.id for connection in connections] == [existing.id]
+
+
+@pytest.mark.asyncio
+async def test_t212_duplicate_connection_race_is_stopped_by_database_identity(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """The unique index closes the gap between an absent lookup and insert."""
+    existing = BankConnection(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        provider="trading212",
+        kind="brokerage",
+        external_id="account-race",
+        institution_name="Trading 212",
+        credentials={"api_key_enc": "opaque", "api_secret_enc": "opaque"},
+        status="active",
+    )
+    session.add(existing)
+    await session.commit()
+    existing_id = existing.id
+    workspace_id = test_workspace.id
+
+    provider = AsyncMock()
+    provider.kind = "brokerage"
+    provider.handle_oauth_callback.return_value = ConnectionData(
+        external_id="account-race",
+        institution_name="Trading 212",
+        credentials={"api_key_enc": "new", "api_secret_enc": "new"},
+        accounts=[],
+    )
+
+    with (
+        patch("app.services.connection_service.get_provider", return_value=provider),
+        patch(
+            "app.services.connection_service._t212_connection_exists",
+            new_callable=AsyncMock,
+            return_value=False,
+        ),
+        pytest.raises(ValueError, match="already connected.*reconnect"),
+    ):
+        await handle_oauth_callback(
+            session,
+            workspace_id,
+            test_user.id,
+            "new:key",
+            provider_name="trading212",
+        )
+
+    connections = (
+        await session.execute(
+            select(BankConnection).where(
+                BankConnection.workspace_id == workspace_id,
+                BankConnection.provider == "trading212",
+                BankConnection.external_id == "account-race",
+            )
+        )
+    ).scalars().all()
+    assert [connection.id for connection in connections] == [existing_id]
 
 
 @pytest.mark.asyncio

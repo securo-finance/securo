@@ -16,7 +16,7 @@ from app.models.asset import Asset
 from app.models.asset_transaction import AssetTransaction
 from app.models.asset_group import AssetGroup
 from app.models.asset_value import AssetValue
-from app.models.bank_connection import BankConnection
+from app.models.bank_connection import BankConnection, T212_CONNECTION_IDENTITY_INDEX
 from app.models.account import Account
 from app.models.category import Category
 from app.models.institution import Institution
@@ -61,6 +61,45 @@ settings = get_settings()
 
 class _Trading212AccountSummaryProvider(Protocol):
     async def get_account_summary(self, credentials: dict) -> dict: ...
+
+
+_T212_ALREADY_CONNECTED = (
+    "Trading 212 account is already connected in this workspace; "
+    "reconnect the existing connection instead"
+)
+
+
+async def _t212_connection_exists(
+    session: AsyncSession, workspace_id: uuid.UUID, external_id: str
+) -> bool:
+    connection_id = await session.scalar(
+        select(BankConnection.id)
+        .where(
+            BankConnection.workspace_id == workspace_id,
+            BankConnection.provider == "trading212",
+            BankConnection.external_id == external_id,
+        )
+        .limit(1)
+    )
+    return connection_id is not None
+
+
+def _is_t212_connection_identity_conflict(exc: IntegrityError) -> bool:
+    """Recognize the partial unique index on PostgreSQL and test/dev SQLite."""
+    original = exc.orig
+    constraint_name = getattr(original, "constraint_name", None)
+    if constraint_name is None:
+        constraint_name = getattr(getattr(original, "diag", None), "constraint_name", None)
+    if constraint_name == T212_CONNECTION_IDENTITY_INDEX:
+        return True
+
+    message = str(original).lower()
+    return T212_CONNECTION_IDENTITY_INDEX in message or (
+        "unique constraint failed" in message
+        and "bank_connections.workspace_id" in message
+        and "bank_connections.provider" in message
+        and "bank_connections.external_id" in message
+    )
 
 
 def _clean_logo_url(value: object) -> Optional[str]:
@@ -1228,6 +1267,11 @@ async def handle_oauth_callback(
         await session.refresh(existing_reconnect)
         return existing_reconnect
 
+    if provider_name == "trading212" and await _t212_connection_exists(
+        session, workspace_id, connection_data.external_id
+    ):
+        raise ValueError(_T212_ALREADY_CONNECTED)
+
     flow_params = dict(state_payload.get("flow_params") or {})
     flow_sync_assets = flow_params.pop("sync_assets", None)
     initial_settings: dict[str, object] = {"flow_params": flow_params}
@@ -1249,7 +1293,13 @@ async def handle_oauth_callback(
         status="active",
     )
     session.add(connection)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        if provider_name != "trading212" or not _is_t212_connection_identity_conflict(exc):
+            raise
+        await session.rollback()
+        raise ValueError(_T212_ALREADY_CONNECTED) from exc
 
     user = await session.get(User, user_id)
     user_currency = user.primary_currency if user else get_settings().default_currency
