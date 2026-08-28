@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { TFunction } from 'i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -51,18 +50,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import type { Payee } from '@/types'
 import { formatCurrency } from '@/lib/format'
-
-
-/** Turn the server's machine-readable document error into something a person
- *  can act on. It arrives as `invalid_tax_id:<kind>:<reason>`; the reason is
- *  useful in logs, the document name is what the user needs to look at. */
-function taxIdErrorMessage(error: unknown, t: TFunction): string | null {
-  const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-  if (typeof detail !== 'string' || !detail.startsWith('invalid_tax_id:')) return null
-  const kind = detail.split(':')[1] ?? ''
-  const name = t(`fiscal.kind.${kind}`, kind.toUpperCase())
-  return `${name}: ${t('payees.invalidTaxId')}`
-}
+import { payeeErrorMessage } from '@/lib/payee-error-message'
 
 export default function PayeesPage() {
   const { t } = useTranslation()
@@ -204,7 +192,7 @@ export default function PayeesPage() {
       setDialogOpen(false)
       toast.success(t('payees.created'))
     },
-    onError: (e: unknown) => toast.error(taxIdErrorMessage(e, t) ?? t('common.error')),
+    onError: (e: unknown) => toast.error(payeeErrorMessage(e, t) ?? t('common.error')),
   })
 
   const updateMutation = useMutation({
@@ -215,7 +203,7 @@ export default function PayeesPage() {
       setEditingPayee(null)
       toast.success(t('payees.updated'))
     },
-    onError: (e: unknown) => toast.error(taxIdErrorMessage(e, t) ?? t('common.error')),
+    onError: (e: unknown) => toast.error(payeeErrorMessage(e, t) ?? t('common.error')),
   })
 
   const deleteMutation = useMutation({

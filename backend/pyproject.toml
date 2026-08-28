@@ -1,6 +1,6 @@
 [project]
 name = "securo-backend"
-version = "0.14.4"
+version = "0.14.5"
 description = "Securo API - Personal Finance Manager"
 requires-python = ">=3.11"
 # These ranges express intent; the resolved versions live in uv.lock, which is
@@ -53,12 +53,12 @@ dev = [
     # Upper-bounded so CI lint stays deterministic: ruff 0.16 reformats the
     # historical alembic/ migration import blocks. Bump deliberately (with the
     # accompanying reformat) rather than letting CI float to a newer release.
-    "ruff>=0.1.0,<0.16",
+    "ruff>=0.16.4,<0.17",
     # Pinned exactly, for the same reason as ruff above: ty is pre-1.0 and each
     # 0.0.x release can add new checks, so letting it float would turn a green
     # CI red on an unrelated PR. Bump deliberately, together with whatever
     # annotations the new release asks for.
-    "ty==0.0.66",
+    "ty==0.0.74",
 ]
 
 [tool.setuptools.packages.find]
@@ -95,4 +95,8 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
+# Ruff 0.16 widened its default rule set, so leaving the selection implicit
+# means a ruff bump silently changes what CI enforces. Pin the set we lint
+# against (ruff's pre-0.16 default) and change it deliberately, not by upgrade.
+select = ["E4", "E7", "E9", "F"]
 ignore = ["E711", "E712"]

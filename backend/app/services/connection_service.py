@@ -1,10 +1,13 @@
+import hashlib
 import logging
+import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 
-from sqlalchemy import delete, exists, or_, select, update
+from sqlalchemy import delete, exists, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -15,12 +18,16 @@ from app.models.asset_value import AssetValue
 from app.models.bank_connection import BankConnection
 from app.models.account import Account
 from app.models.category import Category
+from app.models.institution import Institution
+from app.models.goal import Goal
+from app.models.collection import collection_asset_groups
 from app.models.credit_card_bill import CreditCardBill
 from app.models.payee import Payee, PayeeMapping
 from app.models.transaction import Transaction
 from app.models.user import User
 from app.providers import get_provider
 from app.providers.base import (
+    AccountData,
     HoldingData,
     ProviderNotConfiguredError,
     ProviderRateLimited,
@@ -34,7 +41,10 @@ from app.services.account_service import (
     _simplefin_to_internal_balance,
     sync_opening_balance_for_connected_account,
 )
-from app.services.asset_group_service import ensure_group_for_connection
+from app.services.asset_group_service import (
+    _unique_default_name,
+    ensure_group_for_connection,
+)
 from app.services.credit_card_service import apply_effective_date
 from app.services.rule_engine import merge_notes
 from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
@@ -51,10 +61,146 @@ def _clean_logo_url(value: object) -> Optional[str]:
     """Normalize a provider-supplied logo to a non-empty string or None.
 
     Guards the DB column against anything a provider hands back that isn't a
-    usable URL (None, empty string, or a non-string), so a misbehaving
-    integration can never write junk into ``bank_connections.logo_url``.
+    usable URL (None, empty string, a non-string, or one longer than the
+    column — truncating would store a broken URL, so it's dropped), so a
+    misbehaving integration can never write junk into a ``logo_url`` column
+    or abort a sync with a DataError.
     """
-    return value if isinstance(value, str) and value.strip() else None
+    if isinstance(value, str) and value.strip() and len(value) <= 500:
+        return value
+    return None
+
+
+def _clean_institution_name(value: object) -> Optional[str]:
+    """Same guard as _clean_logo_url, for the 255-char institution columns."""
+    return value[:255] if isinstance(value, str) and value.strip() else None
+
+
+def _wallet_external_id(connection_external_id: str, account_key: Optional[str]) -> str:
+    """The per-account wallet key, squeezed into the 255-char column.
+
+    Truncation alone could collide two accounts; over-long composites keep a
+    deterministic digest suffix instead.
+    """
+    if not account_key:
+        return connection_external_id
+    key = f"{connection_external_id}::{account_key}"
+    if len(key) <= 255:
+        return key
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
+    return f"{key[:214]}::{digest[:39]}"
+
+
+def _is_auto_wallet_name(name: str, institution_name: str) -> bool:
+    """True while a wallet still carries its creation-time auto-name — the
+    institution label, possibly with _unique_default_name's " N" suffix."""
+    if name == institution_name:
+        return True
+    return bool(re.fullmatch(re.escape(institution_name) + r" \d+", name))
+
+
+async def _resolve_institution(
+    session: AsyncSession,
+    connection_id: uuid.UUID,
+    cache: dict[str, Institution],
+    acc_data: AccountData,
+) -> Optional[Institution]:
+    """Get-or-create the Institution row an account's provider hint names.
+
+    Matched by the provider's stable org id when it sends one, so a bank
+    renamed on the provider side updates its row in place instead of minting
+    a new one (review on #654); name identity is the fallback for servers
+    that only send a name. Providers without per-account hints
+    (Pluggy/Enable — one institution per connection) return None, and
+    serialization falls back to the connection's own fields.
+    """
+    name = _clean_institution_name(acc_data.institution_name)
+    if not name:
+        return None
+    ext = _clean_institution_name(acc_data.institution_external_id)
+    key = f"id:{ext}" if ext else f"name:{name}"
+    if key in cache:
+        return cache[key]
+
+    inst: Optional[Institution] = None
+    if ext:
+        inst = (
+            await session.execute(
+                select(Institution).where(
+                    Institution.connection_id == connection_id,
+                    Institution.external_id == ext,
+                )
+            )
+        ).scalar_one_or_none()
+        if inst is None:
+            # Adopt a row created before the server sent org ids, so the
+            # accounts pointing at it don't get orphaned onto a new row.
+            inst = (
+                await session.execute(
+                    select(Institution).where(
+                        Institution.connection_id == connection_id,
+                        Institution.external_id.is_(None),
+                        Institution.name == name,
+                    )
+                )
+            ).scalar_one_or_none()
+            if inst is not None:
+                inst.external_id = ext
+    else:
+        # Name-only hint. Match any row with this name — id-keyed rows
+        # included, so a payload that intermittently drops org ids doesn't
+        # spawn duplicates. NULLS FIRST keeps the pick deterministic.
+        inst = (
+            await session.execute(
+                select(Institution)
+                .where(
+                    Institution.connection_id == connection_id,
+                    Institution.name == name,
+                )
+                .order_by(Institution.external_id.asc().nulls_first())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+
+    if inst is None:
+        inst = Institution(
+            connection_id=connection_id,
+            external_id=ext,
+            name=name,
+            logo_url=_clean_logo_url(acc_data.institution_logo_url),
+        )
+        try:
+            # Savepoint: a concurrent sync (scheduled + manual) can insert
+            # the same identity between our SELECT and this flush. The
+            # partial unique index rejects the loser — reuse the winner's
+            # row instead of failing the whole sync.
+            async with session.begin_nested():
+                session.add(inst)
+                await session.flush()
+        except IntegrityError:
+            inst = (
+                await session.execute(
+                    select(Institution)
+                    .where(
+                        Institution.connection_id == connection_id,
+                        Institution.external_id == ext
+                        if ext
+                        else Institution.name == name,
+                    )
+                    .limit(1)
+                )
+            ).scalar_one()
+    else:
+        if inst.name != name:
+            inst.name = name  # provider-side rename
+        # The logo is favicon-derived from the org's website, never user-set,
+        # so it follows the provider too — a rename that moves domains would
+        # otherwise keep the old bank's icon forever.
+        new_logo = _clean_logo_url(acc_data.institution_logo_url)
+        if new_logo is not None and inst.logo_url != new_logo:
+            inst.logo_url = new_logo
+    cache[key] = inst
+    return inst
 
 PLUGGY_CATEGORY_MAP = {
     "Eating out": "Alimentação",
@@ -134,19 +280,245 @@ async def _sync_holdings(
     source = connection.provider
     today = date.today()
 
-    # Find-or-create the wallet that will own this connection's holdings.
-    # Name defaults to the institution; users can rename freely without
+    # Find-or-create the wallet(s) that own this connection's holdings. A
+    # holding carrying its owning account (SimpleFIN — issue #345) gets one
+    # wallet per investment account, named after it; the rest share the
+    # connection-named wallet. Users can rename wallets freely without
     # breaking future syncs (matching is by external_id).
-    group: Optional[AssetGroup] = None
-    if holdings:
-        group = await ensure_group_for_connection(
-            session,
-            user_id=user_id,
-            connection_id=connection.id,
-            source=source,
-            external_id=connection.external_id,
-            default_name=connection.institution_name,
+    groups_by_key: dict[Optional[str], AssetGroup] = {}
+    holding_ids = {h.external_id for h in holdings if h.external_id}
+    # Snapshots before any bucket runs, so payload order can't change them.
+    # Once per-account wallets exist under the current connection key, the
+    # plain-keyed wallet is the live connection-default, not a legacy row
+    # awaiting its first split — adopting it would hijack it. A keyed
+    # bucket applies the stricter test: any split wallet in scope (old
+    # prefixes included) means past the legacy era, so a genuinely new
+    # account must mint even right after a reconnect rotated the prefix —
+    # only the keyless bucket may still adopt the stale default then.
+    has_split_wallets = bool(
+        await session.scalar(
+            select(
+                exists().where(
+                    AssetGroup.user_id == user_id,
+                    AssetGroup.workspace_id == connection.workspace_id,
+                    AssetGroup.source == source,
+                    AssetGroup.external_id.startswith(
+                        f"{connection.external_id}::", autoescape=True
+                    ),
+                )
+            )
         )
+    )
+    has_any_split_wallets = has_split_wallets or bool(
+        await session.scalar(
+            select(
+                exists().where(
+                    AssetGroup.user_id == user_id,
+                    AssetGroup.workspace_id == connection.workspace_id,
+                    AssetGroup.source == source,
+                    or_(
+                        AssetGroup.connection_id == connection.id,
+                        AssetGroup.connection_id.is_(None),
+                    ),
+                    AssetGroup.external_id.contains("::"),
+                )
+            )
+        )
+    )
+
+    async def _holds_synced_asset(group_id: uuid.UUID) -> bool:
+        """Does this wallet already hold an asset this payload re-syncs?"""
+        if not holding_ids:
+            return False
+        return bool(
+            await session.scalar(
+                select(
+                    exists().where(
+                        Asset.group_id == group_id,
+                        Asset.external_id.in_(holding_ids),
+                    )
+                )
+            )
+        )
+
+    async def _wallet_for(holding: HoldingData) -> AssetGroup:
+        key = holding.account_external_id
+        if key not in groups_by_key:
+            # The owning account's institution backs the wallet's
+            # "Synced from …" subtitle (issue #345).
+            institution_id = (
+                await session.scalar(
+                    select(Account.institution_id).where(
+                        Account.connection_id == connection.id,
+                        Account.external_id == key,
+                    )
+                )
+                if key
+                else None
+            )
+            wallet_key = _wallet_external_id(connection.external_id, key)
+            default_name = (
+                _clean_institution_name(holding.account_name)
+                or connection.institution_name
+            )
+            # The first claim on a wallet key adopts the wallet these
+            # holdings lived in before — the legacy connection-keyed one, or
+            # one left on a stale key by a reconnect (plain or per-account:
+            # a "…::{account}" suffix match is this very account's wallet
+            # under an older connection key) — instead of minting a new
+            # row, so an existing user's rename/icon/color/position
+            # survive. Only an untouched auto-name is refreshed. Guards, in
+            # order: never adopt when a wallet already owns the key
+            # (re-keying a twin next to it would trip the unique
+            # (user, source, external_id) index and fail every sync); never
+            # adopt a wallet another bucket of this run claimed; never
+            # reach into another workspace; a plain candidate only counts
+            # before the first split — afterwards it is the live
+            # connection-default wallet, not a legacy awaiting adoption; a
+            # stale-keyed candidate must be provably this bank's — still
+            # linked to this connection, or an orphan holding assets this
+            # payload re-syncs (a deleted sibling connection's orphan is
+            # neither); ambiguity means minting, not guessing.
+            existing = await session.scalar(
+                select(AssetGroup.id).where(
+                    AssetGroup.user_id == user_id,
+                    AssetGroup.source == source,
+                    AssetGroup.external_id == wallet_key,
+                )
+            )
+            legacy: Optional[AssetGroup] = None
+            if existing is None:
+                claimed = {g.id for g in groups_by_key.values()}
+                key_shape = ~AssetGroup.external_id.contains("::")
+                if key:
+                    key_shape = or_(
+                        key_shape,
+                        AssetGroup.external_id.endswith(
+                            f"::{key}", autoescape=True
+                        ),
+                    )
+                candidates = [
+                    g
+                    for g in (
+                        await session.execute(
+                            select(AssetGroup).where(
+                                AssetGroup.user_id == user_id,
+                                AssetGroup.workspace_id == connection.workspace_id,
+                                AssetGroup.source == source,
+                                or_(
+                                    AssetGroup.connection_id == connection.id,
+                                    AssetGroup.connection_id.is_(None),
+                                ),
+                                AssetGroup.external_id.isnot(None),
+                                # Wallets keyed under the live prefix belong
+                                # to their own accounts, never to this one.
+                                ~AssetGroup.external_id.startswith(
+                                    f"{connection.external_id}::",
+                                    autoescape=True,
+                                ),
+                                key_shape,
+                            )
+                        )
+                    ).scalars().all()
+                    if g.id not in claimed
+                ]
+                # A stale key parses as exactly "{old prefix}::{key}"; a
+                # leftover "::" in the remainder means the tail straddles
+                # another account's key (ids may themselves contain "::").
+                tail = f"::{key}" if key else None
+                suffixed = [
+                    g
+                    for g in candidates
+                    if tail
+                    and g.external_id
+                    and g.external_id.endswith(tail)
+                    and g.external_id[: -len(tail)]
+                    and "::" not in g.external_id[: -len(tail)]
+                ]
+                plain = [
+                    g
+                    for g in candidates
+                    if g.external_id and "::" not in g.external_id
+                ]
+                pool = suffixed or (
+                    []
+                    if (has_any_split_wallets if key else has_split_wallets)
+                    else plain
+                )
+                exact = [
+                    g for g in pool if g.external_id == connection.external_id
+                ]
+                if exact:
+                    legacy = exact[0]
+                else:
+                    ours = [g for g in pool if g.connection_id == connection.id]
+                    if not ours:
+                        ours = [
+                            g for g in pool if await _holds_synced_asset(g.id)
+                        ]
+                    if len(ours) == 1:
+                        legacy = ours[0]
+            if legacy is not None:
+                # A concurrent sync can win the key between the guard above
+                # and this flush; fall through to the mint path, which
+                # re-selects the winner's row.
+                try:
+                    async with session.begin_nested():
+                        legacy.external_id = wallet_key
+                        legacy.connection_id = connection.id
+                        if _is_auto_wallet_name(
+                            legacy.name, connection.institution_name
+                        ):
+                            legacy.name = await _unique_default_name(
+                                session,
+                                user_id,
+                                default_name[:95],
+                                exclude_group_id=legacy.id,
+                            )
+                        if institution_id is not None:
+                            legacy.institution_id = institution_id
+                        await session.flush()
+                except IntegrityError:
+                    await session.refresh(legacy)
+                else:
+                    groups_by_key[key] = legacy
+                    return legacy
+            groups_by_key[key] = await ensure_group_for_connection(
+                session,
+                user_id=user_id,
+                connection_id=connection.id,
+                source=source,
+                external_id=wallet_key,
+                default_name=default_name,
+                institution_id=institution_id,
+                workspace_id=connection.workspace_id,
+            )
+        return groups_by_key[key]
+
+    # Wallets this sync owns: this connection's, plus orphans a prior
+    # disconnect left behind (connection_id went NULL via SET NULL) — their
+    # re-adopted assets must still split into per-account wallets instead of
+    # staying stranded. An asset sitting in one may be re-attributed below;
+    # a user's custom wallet (source "manual") and other workspaces' wallets
+    # are never touched.
+    sync_owned_rows = await session.execute(
+        select(AssetGroup.id, AssetGroup.external_id).where(
+            AssetGroup.user_id == user_id,
+            AssetGroup.workspace_id == connection.workspace_id,
+            AssetGroup.source == source,
+            or_(
+                AssetGroup.connection_id == connection.id,
+                AssetGroup.connection_id.is_(None),
+            ),
+        )
+    )
+    sync_owned = sync_owned_rows.all()
+    sync_owned_group_ids = {row[0] for row in sync_owned}
+    # Per-account wallets, by their "…::…" keys. A holding that lost its
+    # account hint must not drain one of these into the default bucket — a
+    # single degraded payload would empty them and the reap would delete
+    # the user's customization with them.
+    split_group_ids = {row[0] for row in sync_owned if row[1] and "::" in row[1]}
 
     # Also pull orphans (connection_id IS NULL) with the same source —
     # those are assets archived by a prior disconnect. Re-matching on
@@ -190,12 +562,24 @@ async def _sync_holdings(
 
         asset = await _upsert_asset_from_holding(
             session, existing, holding, user_id, connection.id, source,
+            workspace_id=connection.workspace_id,
         )
-        # Attach to the connection's wallet. We only set group_id when
-        # it's currently null so a user who moved this holding to a
-        # custom wallet ("US Stocks") doesn't get overridden back on
-        # every sync.
-        if group is not None and asset.group_id is None:
+        # Attach to its institution's wallet. NOTE this deliberately moves
+        # holdings between sync-owned wallets, not just out of a null group
+        # like it used to: re-attribution corrects the sync's own earlier
+        # bucketing (one-wallet-per-connection → per-account). A wallet the
+        # user made themselves ("US Stocks", source "manual") is never
+        # touched.
+        group = await _wallet_for(holding)
+        hint_lost = (
+            holding.account_external_id is None
+            and asset.group_id in split_group_ids
+        )
+        if (
+            not hint_lost
+            and (asset.group_id is None or asset.group_id in sync_owned_group_ids)
+            and asset.group_id != group.id
+        ):
             asset.group_id = group.id
         # Seed a historical value at purchase_date so users get a real
         # evolution curve from day one — not just today's snapshot.
@@ -215,6 +599,35 @@ async def _sync_holdings(
         if ext_id not in seen and not asset.is_archived:
             asset.is_archived = True
 
+    # Sync owns its wallets: drop any it emptied by re-attribution above
+    # (e.g. the single connection-named wallet that predates per-institution
+    # ones). Wallets still holding assets — or used this run — are kept, and
+    # so is anything a goal tracks or a collection contains: deleting those
+    # would SET NULL the goal's target and CASCADE the membership away,
+    # silently breaking things the user built on the wallet.
+    if holdings:
+        await session.flush()
+        used_ids = {g.id for g in groups_by_key.values()}
+        for gid in sync_owned_group_ids - used_ids:
+            has_assets = await session.scalar(
+                select(func.count()).select_from(Asset).where(Asset.group_id == gid)
+            )
+            if has_assets:
+                continue
+            referenced = await session.scalar(
+                select(
+                    exists().where(Goal.asset_group_id == gid)
+                    | exists()
+                    .select_from(collection_asset_groups)
+                    .where(collection_asset_groups.c.asset_group_id == gid)
+                )
+            )
+            if referenced:
+                continue
+            emptied = await session.get(AssetGroup, gid)
+            if emptied is not None:
+                await session.delete(emptied)
+
 
 async def _upsert_asset_from_holding(
     session: AsyncSession,
@@ -223,6 +636,7 @@ async def _upsert_asset_from_holding(
     user_id: uuid.UUID,
     connection_id: uuid.UUID,
     source: str,
+    workspace_id: Optional[uuid.UUID] = None,
 ) -> Asset:
     """Create or update an Asset from a HoldingData payload.
 
@@ -265,6 +679,12 @@ async def _upsert_asset_from_holding(
     # (e.g. unlink + reconnect). This avoids overriding user-archived assets.
     if asset.is_archived and previous_connection_id != connection_id:
         asset.is_archived = False
+    # Re-adopted across workspaces (bank deleted in one, re-added in the
+    # other): the asset follows its connection; its old wallet stays behind
+    # in the old workspace, so placement is redone by the caller.
+    if workspace_id is not None and asset.workspace_id != workspace_id:
+        asset.workspace_id = workspace_id
+        asset.group_id = None
 
     # Sparse fields — merge, don't clobber. Pluggy sometimes returns
     # these on first sync and null on later ones (e.g. amountOriginal
@@ -587,8 +1007,12 @@ async def handle_oauth_callback(
 
     use_provider_cats = await admin_service.use_provider_categories(session)
 
+    institution_cache: dict[str, Institution] = {}
     for acc_data in connection_data.accounts:
         is_cc = acc_data.type == "credit_card"
+        institution = await _resolve_institution(
+            session, connection.id, institution_cache, acc_data
+        )
         account = Account(
             user_id=user_id,
             workspace_id=workspace_id,
@@ -609,6 +1033,7 @@ async def handle_oauth_callback(
                 f"{connection.id}:{acc_data.shared_balance_group}"
                 if acc_data.shared_balance_group else None
             ),
+            institution_id=institution.id if institution else None,
         )
         session.add(account)
         await session.flush()
@@ -1226,6 +1651,7 @@ async def sync_connection(
         new_tx_ids: list[uuid.UUID] = []
         merged_count = 0
         accounts_data = await provider.get_accounts(credentials)
+        institution_cache: dict[str, Institution] = {}
         for acc_data in accounts_data:
             result = await session.execute(
                 select(Account).where(
@@ -1235,12 +1661,21 @@ async def sync_connection(
             )
             account = result.scalar_one_or_none()
 
+            institution = await _resolve_institution(
+                session, connection.id, institution_cache, acc_data
+            )
+
             # Honor user intent: a closed connected account stays closed and is
             # not touched by sync. The row is left alone (no balance/name
             # rewrite, no new transactions) but the connection link is kept so
             # the next sync still finds it here instead of creating a duplicate
-            # active account (issue #90).
+            # active account (issue #90). Its institution pointer still follows
+            # the provider, though — otherwise a renamed org's abandoned row
+            # would stay pinned forever and keep a single-bank link presenting
+            # as multi-institution.
             if account and account.is_closed:
+                if institution is not None and account.institution_id != institution.id:
+                    account.institution_id = institution.id
                 continue
 
             if account:
@@ -1259,12 +1694,9 @@ async def sync_connection(
                 # that intermittently omits it can't blank out a known mask.
                 if acc_data.masked_number is not None:
                     account.masked_number = acc_data.masked_number
-                # Only fills a blank display_name — never overrides a name the
-                # user already set. Populated by providers that detect an
-                # account belongs to a different legal institution than its
-                # connection's nominal one (see AccountData.institution_name).
-                if account.display_name is None and acc_data.institution_name:
-                    account.display_name = acc_data.institution_name
+                # Backfills existing accounts on next sync (issue #345).
+                if institution is not None:
+                    account.institution_id = institution.id
                 if acc_data.type == "credit_card":
                     # Preserve existing CC metadata when the provider doesn't
                     # expose it. Pluggy's creditData fields (limit, close/due
@@ -1307,10 +1739,11 @@ async def sync_connection(
                     minimum_payment=acc_data.minimum_payment if is_cc else None,
                     card_brand=acc_data.card_brand if is_cc else None,
                     card_level=acc_data.card_level if is_cc else None,
-                    shared_balance_group=(
-                        f"{connection.id}:{acc_data.shared_balance_group}"
-                        if acc_data.shared_balance_group else None
-                    ),
+            shared_balance_group=(
+                f"{connection.id}:{acc_data.shared_balance_group}"
+                if acc_data.shared_balance_group else None
+            ),
+            institution_id=institution.id if institution else None,
                 )
                 session.add(account)
                 await session.flush()
@@ -1589,6 +2022,24 @@ async def sync_connection(
         # /investments shouldn't block the transaction sync that just succeeded.
         if _sync_assets_enabled(conn_settings):
             await _sync_holdings(session, user_id, connection, credentials)
+
+        # Reap institution rows referenced by nothing. Id-carrying servers
+        # never orphan a row (renames update in place), but a name-only
+        # server that renames its bank mints a fresh row and repoints the
+        # accounts — the abandoned row would otherwise keep a single-bank
+        # link presenting as multi-institution forever. Requiring zero
+        # account AND zero wallet references means a wallet's "Synced from"
+        # label can never be taken away. Runs after the holdings sync so a
+        # wallet repointed away from the old row frees it this sync, not next.
+        orphaned_institutions = await session.execute(
+            select(Institution).where(
+                Institution.connection_id == connection.id,
+                ~exists().where(Account.institution_id == Institution.id),
+                ~exists().where(AssetGroup.institution_id == Institution.id),
+            )
+        )
+        for orphan in orphaned_institutions.scalars().all():
+            await session.delete(orphan)
 
         connection.last_sync_at = datetime.now(timezone.utc)
         connection.status = "active"

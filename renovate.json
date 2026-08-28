@@ -12,6 +12,11 @@
   },
   "packageRules": [
     {
+      "description": "Cooldown before we pick up a new release, so a compromised publish has time to be caught and unpublished. Mirrors `min-release-age` in frontend/.npmrc, which only covers a dependency added by hand.",
+      "matchManagers": ["npm"],
+      "minimumReleaseAge": "7 days"
+    },
+    {
       "matchManagers": ["github-actions"],
       "matchUpdateTypes": ["minor", "patch"],
       "groupName": "GitHub Actions (non-major)"

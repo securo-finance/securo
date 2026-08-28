@@ -44,7 +44,7 @@ async def list_accounts(
             "balance": num(r.get("balance")),
             "balance_primary": num(r.get("balance_primary")),
             "is_closed": bool(r.get("is_closed", False)),
-            "institution": r.get("institution"),
+            "institution": r.get("institution_name"),
         })
     return {"items": items, "total": len(items)}
 
