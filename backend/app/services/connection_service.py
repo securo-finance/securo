@@ -4,7 +4,7 @@ import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Optional
+from typing import Optional, Protocol, cast
 
 from sqlalchemy import delete, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
@@ -57,6 +57,10 @@ from app.services.payee_service import get_or_create_payee
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
+
+
+class _Trading212AccountSummaryProvider(Protocol):
+    async def get_account_summary(self, credentials: dict) -> dict: ...
 
 
 def _clean_logo_url(value: object) -> Optional[str]:
@@ -750,9 +754,12 @@ async def _sync_trading212_orders(
     for item in orders:
         if not isinstance(item, dict):
             continue
-        order = item.get("order") if isinstance(item.get("order"), dict) else {}
-        fill = item.get("fill") if isinstance(item.get("fill"), dict) else {}
-        instrument = order.get("instrument") if isinstance(order.get("instrument"), dict) else {}
+        order_data = item.get("order")
+        order = order_data if isinstance(order_data, dict) else {}
+        fill_data = item.get("fill")
+        fill = fill_data if isinstance(fill_data, dict) else {}
+        instrument_data = order.get("instrument")
+        instrument = instrument_data if isinstance(instrument_data, dict) else {}
         fill_id = fill.get("id")
         ticker = order.get("ticker") or instrument.get("ticker")
         side = str(order.get("side") or "").upper()
@@ -803,13 +810,22 @@ async def _sync_trading212_orders(
                 )
             )
         ).scalars().first()
-        wallet = fill.get("walletImpact") if isinstance(fill.get("walletImpact"), dict) else {}
-        taxes = wallet.get("taxes") if isinstance(wallet.get("taxes"), list) else []
+        wallet_data = fill.get("walletImpact")
+        wallet = wallet_data if isinstance(wallet_data, dict) else {}
+        taxes_data = wallet.get("taxes")
+        taxes = taxes_data if isinstance(taxes_data, list) else []
         values = {
             "kind": "buy" if side == "BUY" else "sell",
             "quantity": abs(Decimal(str(fill.get("quantity") or 0))),
             "price": abs(Decimal(str(fill.get("price") or 0))),
-            "fee": sum((abs(Decimal(str(t.get("quantity") or 0))) for t in taxes if isinstance(t, dict)), Decimal("0")),
+            "fee": sum(
+                (
+                    abs(Decimal(str(t.get("quantity") or 0)))
+                    for t in taxes
+                    if isinstance(t, dict)
+                ),
+                Decimal("0"),
+            ),
             "date": ledger_date,
             "source": "trading212",
             "raw_data": {"order": order, "fill": fill},
@@ -1846,7 +1862,8 @@ async def sync_connection(
         # Never rewrite connection.external_id here: a mismatch means these
         # credentials belong to another broker account and must be reconnected.
         if connection.provider == "trading212":
-            summary = await provider.get_account_summary(credentials)
+            summary_provider = cast(_Trading212AccountSummaryProvider, provider)
+            summary = await summary_provider.get_account_summary(credentials)
             account_id = str(summary.get("id") or "").strip() if isinstance(summary, dict) else ""
             if not account_id:
                 raise ValueError("Trading 212 account summary did not include an account id")

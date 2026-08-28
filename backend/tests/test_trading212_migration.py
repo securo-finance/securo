@@ -43,7 +43,9 @@ def test_t212_metadata_migration_extends_076_with_only_additive_columns():
 
 def test_t212_metadata_migration_declares_a_unique_broker_fill_identity():
     """A broker fill has one stable identity within its asset ledger."""
-    indexes = AssetTransaction.__table__.indexes
+    table = AssetTransaction.__table__
+    assert isinstance(table, sa.Table)
+    indexes = table.indexes
     assert any(
         index.unique and {column.name for column in index.columns} == {"asset_id", "external_id"}
         for index in indexes
@@ -90,7 +92,7 @@ def test_t212_metadata_migration_skips_columns_already_created_by_a_legacy_insta
 
 
 def test_t212_metadata_migration_adds_and_retains_columns_in_a_real_legacy_schema():
-    """The bookkeeping-only downgrade must not drop legacy-compatible columns."""
+    """A failed downgrade must not drop legacy-compatible columns."""
     migration = _migration_module()
     engine = sa.create_engine("sqlite://")
 

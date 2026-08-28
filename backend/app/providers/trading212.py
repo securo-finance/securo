@@ -385,8 +385,10 @@ class Trading212Provider(BankProvider):
     async def get_holdings(self, credentials: dict) -> list[HoldingData]:
         holdings: list[HoldingData] = []
         for position in await self.get_positions(credentials):
-            instrument = position.get("instrument") if isinstance(position.get("instrument"), dict) else {}
-            wallet = position.get("walletImpact") if isinstance(position.get("walletImpact"), dict) else {}
+            instrument_data = position.get("instrument")
+            instrument = instrument_data if isinstance(instrument_data, dict) else {}
+            wallet_data = position.get("walletImpact")
+            wallet = wallet_data if isinstance(wallet_data, dict) else {}
             ticker = position.get("ticker") or instrument.get("ticker")
             if not ticker:
                 continue

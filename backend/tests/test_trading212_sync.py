@@ -395,6 +395,8 @@ async def test_legacy_t212_sync_backfills_account_id_before_holdings_and_orders(
             select(Asset).where(Asset.connection_id == connection.id).order_by(Asset.external_id)
         )
     ).scalars().all()
-    assert connection.credentials["account_id"] == "account-123"
+    credentials = connection.credentials
+    assert credentials is not None
+    assert credentials["account_id"] == "account-123"
     assert [asset.external_id for asset in assets] == ["trading212:position:account-123:AAPL_US_EQ"]
     assert (await session.execute(select(AssetTransaction))).scalars().one().asset_id == assets[0].id

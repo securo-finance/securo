@@ -113,14 +113,18 @@ async def test_account_and_position_reads_normalize_balances_and_preserve_provid
     assert len(accounts) == 1
     assert accounts[0].external_id == "trading212:123456789:cash"
     assert accounts[0].balance == 130
-    assert accounts[0].metadata["trading212"]["cash"]["inPies"] == "25.4"
-    assert accounts[0].metadata["trading212"]["totalValue"] == "1130.0"
+    account_metadata = accounts[0].metadata
+    assert account_metadata is not None
+    assert account_metadata["trading212"]["cash"]["inPies"] == "25.4"
+    assert account_metadata["trading212"]["totalValue"] == "1130.0"
     assert len(holdings) == 1
     assert holdings[0].external_id == "trading212:position:AAPL_US_EQ"
     assert holdings[0].current_value == 501
     assert holdings[0].purchase_price == 450
     assert holdings[0].ticker == "AAPL_US_EQ"
-    assert holdings[0].metadata["trading212"]["quantityInPies"] == "0.5"
+    holding_metadata = holdings[0].metadata
+    assert holding_metadata is not None
+    assert holding_metadata["trading212"]["quantityInPies"] == "0.5"
 
 
 @pytest.mark.asyncio
