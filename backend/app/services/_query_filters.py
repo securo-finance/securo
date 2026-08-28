@@ -145,15 +145,31 @@ def counts_toward_bill():
     for it — the invoice amount can't shrink because of how the user tagged
     the row afterwards. So this keeps the same paired-transfer and
     settlement-debit exclusions as `counts_as_pnl` (those really are the
-    same money moving, not new debt), but does NOT drop rows just because
-    their *category* is flagged `treat_as_transfer`/`is_ignored` — only an
-    explicit transaction-level `is_ignored` (the user saying "don't count
-    this specific row") should shrink the bill.
+    same money moving, not new debt), and still drops category-level
+    `is_ignored` rows (an explicit "don't count this" from the user, which
+    also hides the row behind an ignored badge elsewhere in the UI).
+
+    What it does NOT do is drop *debits* just because their category is
+    flagged `treat_as_transfer` — a charge doesn't stop being owed to the
+    bank because of how it was tagged afterwards. `treat_as_transfer` still
+    excludes *credits*, though: an unpaired card payment (the payer's
+    account isn't connected, the amount doesn't match exactly, or it was a
+    partial payment) is normally filed under a transfer-like category, and
+    letting it through here would net it against new debt instead of being
+    a repayment of it.
     """
+    ignored_category = Transaction.category_id.in_(
+        select(Category.id).where(Category.is_ignored.is_(True))
+    )
+    transfer_category = Transaction.category_id.in_(
+        select(Category.id).where(Category.treat_as_transfer.is_(True))
+    )
     return and_(
         Transaction.transfer_pair_id.is_(None),
         Transaction.is_ignored.is_(False),
         ~and_(Transaction.source == "settlement", Transaction.type == "debit"),
+        or_(Transaction.category_id.is_(None), ~ignored_category),
+        or_(Transaction.type == "debit", Transaction.category_id.is_(None), ~transfer_category),
     )
 
 

@@ -853,7 +853,7 @@ async def get_account_summary(
                 Transaction.account_id == account_id,
                 Transaction.source != "opening_balance",
                 forecast_condition,
-                counts_as_pnl(),
+                counts_toward_bill(),
             ))
         )
     else:
