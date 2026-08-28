@@ -450,7 +450,7 @@ Atualizar sempre que um PR upstream mudar de estado ou um novo for aberto.
 | ⚫ Backlog upstream, sem trabalho no fork | Mostrar estado de liquidação (paga/parcial) de faturas de cartão Pluggy | — | [#681](https://github.com/securo-finance/securo/issues/681) | — |
 | ⚫ Backlog upstream, sem trabalho no fork | Falso positivo no pareamento automático quando um reembolso de terceiro coincide em valor com uma compra | — | [#648](https://github.com/securo-finance/securo/issues/648) | — |
 | ⬜ Só nossa operação (N/A upstream) | Infra de deploy na VPS (CI/CD, health check) | [fork #1](https://github.com/vhsantos26/securo/pull/1), [fork #2](https://github.com/vhsantos26/securo/pull/2), [fork #4](https://github.com/vhsantos26/securo/pull/4) | — | — |
-| ⬜ Só nossa operação (N/A upstream) | Sync de `deploy` com a v0.14.4 do upstream | [fork #5](https://github.com/vhsantos26/securo/pull/5) | — | — |
+| ⬜ Só nossa operação (N/A upstream) | Sync de `deploy` com a v0.14.5 do upstream, preservando os ajustes locais e encadeando as migrations novas como 077/078 após a 076 já aplicada | [fork #5](https://github.com/vhsantos26/securo/pull/5), [fork #32](https://github.com/vhsantos26/securo/pull/32) | — | — |
 | ⬜ Só nossa operação (N/A upstream) | Resolução de revisão duplicada do Alembic (conflito de numeração só no fork) | [fork #14](https://github.com/vhsantos26/securo/pull/14) | — | — |
 | ⬜ Só nossa operação (N/A upstream) | Registro de investigação no STATUS.md (seções 4.2 e 4.3), ainda sem código | [fork #17](https://github.com/vhsantos26/securo/pull/17), [fork #18](https://github.com/vhsantos26/securo/pull/18) | — | — |
 
