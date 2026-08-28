@@ -17,6 +17,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.category import Category
 from app.models.goal import Goal
 from app.models.import_log import ImportLog
 from app.models.recurring_transaction import RecurringTransaction
@@ -96,8 +97,7 @@ async def _add_txn(
 async def _make_category(
     session: AsyncSession, user_id: uuid.UUID,
     treat_as_transfer: bool = False, is_ignored: bool = False,
-) -> "Category":
-    from app.models.category import Category
+) -> Category:
     category = Category(
         id=uuid.uuid4(),
         user_id=user_id,
