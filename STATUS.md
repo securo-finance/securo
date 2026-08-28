@@ -171,29 +171,22 @@ a flag, então o débito da fatura na conta corrente contava como Saída do mês
       fundos/juros de NTN-B/IOF na outra). Bradesco, Inter e Santander não
       têm esse problema: cada um tem só corrente + poupança, com o mesmo
       código de banco nas duas (o `subtype` já resolve, mecanismo existente).
-      Fix implementado neste fork (PR #24, mergeado e já rodando em produção):
-      `_annotate_institution_names` em `pluggy.py` detecta quando duas contas
-      do mesmo `subtype` numa conexão têm código de banco diferente, resolve
-      o nome da instituição via BrasilAPI (pública, sem chave, com cache
-      Redis) e popula `Account.display_name` — só quando vazio, nunca
-      sobrescrevendo customização do usuário. Validado com sync real na
-      conexão XP: as duas contas passaram a mostrar `BCO XP S.A.` e
+      O primeiro fix deste fork (PR #24) usava
+      `_annotate_institution_names` em `pluggy.py`: detectava códigos de
+      banco diferentes e preenchia `Account.display_name` apenas quando vazio.
+      Ele foi validado em sync real — `BCO XP S.A.` e
       `XP INVESTIMENTOS CCTVM S/A`.
 
-      **Achado só depois de já ter implementado o fix acima:** o upstream
-      (`securo-finance/securo:main`) já tem um mecanismo pronto pra exatamente
-      esse formato de problema — o modelo `Institution`
-      (`app/models/institution.py`, issue #345, construído para o SimpleFIN)
-      e os campos `AccountData.institution_name`/`institution_external_id`/
-      `institution_logo_url`, com `_resolve_institution` fazendo
-      get-or-create automático. Nosso fork ainda não tem esse modelo (ainda
-      não sincronizamos essa parte do upstream). PR upstream aberto usando
-      esse mecanismo em vez do `display_name`:
-      securo-finance/securo#724 (fixes #723). Enquanto o fork não sincronizar
-      com o `Institution` model do upstream, as duas implementações convivem
-      divergentes — a nossa em produção usa `display_name`; quando
-      sincronizarmos, vale revisitar e migrar para `Institution` por
-      consistência.
+      A sincronização com a v0.14.5 passa a usar o mecanismo oficial do
+      upstream: modelo `Institution` e os campos
+      `AccountData.institution_name`/`institution_external_id`/
+      `institution_logo_url`, com get-or-create automático. A adaptação para
+      a Pluggy está no PR upstream [#724](https://github.com/securo-finance/securo/pull/724)
+      (fecha [#723](https://github.com/securo-finance/securo/issues/723)) e
+      integra esta atualização do fork. Em cada próximo sync normal, as contas
+      XP receberão sua instituição individual; `display_name` já existente não
+      é apagado, preservando qualquer rótulo personalizado. Não forçar sync:
+      validar junto de uma próxima transação real.
 
 ### 4.3 Titularidade de cartão: adicional vs. conta conjunta (investigado em 25/08/2026)
 
@@ -452,6 +445,7 @@ Atualizar sempre que um PR upstream mudar de estado ou um novo for aberto.
 | 🟠 Issue aberta, sem PR | Redesenho do card principal (saldo disponível vs patrimônio líquido) | [fork #11](https://github.com/vhsantos26/securo/pull/11) | [#691](https://github.com/securo-finance/securo/issues/691) — validar se vale propor upstream; é decisão de design mais opinativa | — |
 | ⚪ Sem issue nem PR | Deduplicar saldo de crédito compartilhado no card principal do dashboard | [fork #12](https://github.com/vhsantos26/securo/pull/12) | — *(relacionado à mesma causa raiz de [#680](https://github.com/securo-finance/securo/issues/680))* | — |
 | ⚪ Sem issue nem PR | Reconhecer categorias Pluggy "pagamento de fatura" e "self-transfer" | [fork #16](https://github.com/vhsantos26/securo/pull/16) | — *(fecha apenas issue interna do fork [#15](https://github.com/vhsantos26/securo/issues/15))* | — |
+| 🟡 PR upstream aberto | Distinguir banco e corretora dentro de uma mesma conexão Pluggy (XP) | [fork #24](https://github.com/vhsantos26/securo/pull/24) | [#723](https://github.com/securo-finance/securo/issues/723) | [#724](https://github.com/securo-finance/securo/pull/724) |
 | 🟡 PR upstream aberto | Regra de categorização vence a categoria genérica do provedor (Pluggy) quando é mais específica | [fork #29](https://github.com/vhsantos26/securo/pull/29), [fork #30](https://github.com/vhsantos26/securo/pull/30) | [#730](https://github.com/securo-finance/securo/issues/730) | [#735](https://github.com/securo-finance/securo/pull/735) |
 | ⚫ Backlog upstream, sem trabalho no fork | Mostrar estado de liquidação (paga/parcial) de faturas de cartão Pluggy | — | [#681](https://github.com/securo-finance/securo/issues/681) | — |
 | ⚫ Backlog upstream, sem trabalho no fork | Falso positivo no pareamento automático quando um reembolso de terceiro coincide em valor com uma compra | — | [#648](https://github.com/securo-finance/securo/issues/648) | — |
