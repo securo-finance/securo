@@ -1,6 +1,6 @@
 # Status operacional — Securo
 
-Atualizado em 27/08/2026. Este arquivo é o checklist de operação da instância
+Atualizado em 28/08/2026. Este arquivo é o checklist de operação da instância
 produtiva. Marque um item como concluído somente após registrar a evidência
 correspondente.
 
@@ -11,10 +11,10 @@ correspondente.
 | Securo na VPS | Concluído | API saudável; frontend, backend, banco, Redis e workers em execução. |
 | Exposição pública | Concluído | Caddy é o único serviço nas portas 80/443; Securo atende apenas em `127.0.0.1`. |
 | Acesso à aplicação | Concluído | Login e autenticação de dois fatores configurados pelo administrador. |
-| Backup gerenciado da VPS | Configurado | Cronograma semanal gratuito selecionado na Hostinger; o primeiro ponto de restauração será gerado automaticamente. |
+| Backup gerenciado da VPS | Concluído (semanal) | Backup semanal de aproximadamente 2 GB confirmado em 28/08/2026 na Hostinger. |
 | Pluggy | Piloto conectado | Credenciais carregadas; primeira conexão importada e em reconciliação antes de novas contas. |
 | MCP e agentes internos | Desligado | Permanecerá desligado até os dados importados e as regras estarem validados. |
-| Deploy contínuo | Em correção | O workflow está habilitado, mas será ajustado para construir o commit do fork na VPS em vez de usar a imagem upstream. |
+| Deploy contínuo | Validado | PRs do fork #29 e #30 mergeados; VPS saudável e rodando a precedência regra antes da categoria do provedor. |
 
 ## Regras de segurança
 
@@ -31,8 +31,8 @@ correspondente.
 ### 1.1 Backup semanal da Hostinger
 
 - [x] Selecionar o cronograma semanal gratuito no hPanel.
-- [ ] Confirmar que o primeiro backup automático aparece em **VPS → Snapshots e Backups** quando a Hostinger o gerar.
-- [ ] Registrar a data/hora do primeiro ponto de restauração neste arquivo.
+- [x] Confirmar que o primeiro backup automático aparece em **VPS → Snapshots e Backups** quando a Hostinger o gerar.
+- [x] Registrar o primeiro ponto de restauração: 28/08/2026, backup semanal de aproximadamente 2 GB confirmado pelo administrador.
 - [ ] Fazer um snapshot manual imediatamente antes da primeira mudança de
       infraestrutura ou migração relevante.
 - [ ] Documentar um procedimento de recuperação: restaurar a VPS substitui todo
@@ -54,9 +54,11 @@ provedor. Para fechar esta fase, implementar:
       pode ser lido.
 - [ ] Teste de restauração em local isolado, sem sobrescrever a produção.
 
-**Decisão registrada:** backup granular externo foi adiado. O backup semanal da
-Hostinger é a proteção vigente da VPS; esta decisão deve ser revisada antes de
-conectar todas as instituições ou de guardar um histórico financeiro crítico.
+**Decisão registrada:** backup granular externo permanece adiado por decisão
+explícita do administrador após confirmar o backup semanal da Hostinger em
+28/08/2026. A proteção vigente é recuperação semanal da VPS inteira, não
+backup diário/restauração granular; revisar esta decisão se a tolerância à
+perda de até uma semana de dados mudar.
 
 ## Fase 2 — pré-configuração Pluggy
 
@@ -273,8 +275,27 @@ com contas da casa.
       cobre Banco Bradesco S.A. também por descrição ou beneficiário. Elas
       passam a prevalecer sobre a categoria genérica do provedor depois do
       deploy deste fix.
-- [ ] Mudança feita neste branch; aguarda commit, PR, merge e deploy antes de
-      validar uma nova transação sincronizada.
+- [x] Fix commitado e mergeado no fork: PRs [#29](https://github.com/vhsantos26/securo/pull/29)
+      e [#30](https://github.com/vhsantos26/securo/pull/30). Confirmado em
+      28/08/2026 que a VPS está saudável e já roda regra antes do fallback do
+      provedor. PR upstream aberto: [securo-finance/securo#735](https://github.com/securo-finance/securo/pull/735).
+- [ ] Validar com a próxima transação real sincronizada de Porto ou Bradesco;
+      não forçar sync nem criar transação artificial para esta confirmação.
+
+### 4.7 Orçamentos e metas familiares configurados (28/08/2026)
+
+- [x] Criados 14 orçamentos recorrentes em BRL, vigentes a partir de
+      01/09/2026. Limites deliberadamente mais restritivos para Família & Bebê
+      (R$ 2.000), Transporte (R$ 2.000), Alimentação (R$ 2.500) e Compras
+      (R$ 2.500); "Patrimônio / Consórcios" (R$ 4.550) funciona como gate
+      explícito para qualquer nova cota.
+- [x] Meta manual "Reserva de Emergência Familiar": alvo e valor atual de
+      R$ 150.000, liquidez D+0/D+1, mantida ativa em 100% para visibilidade.
+- [x] Meta manual "Lance do Consórcio Imóvel": alvo R$ 310.700, saldo inicial
+      R$ 50.000, sem prazo até confirmação do calendário de lance. O alvo foi
+      informado pelo assessor e inclui encargos do consórcio.
+- [ ] Revisar os orçamentos em meados e no fechamento de setembro; usar
+      override mensal para exceções em vez de alterar o limite recorrente.
 
 ### 4.5 Próximo passo planejado: meta e ativo rastreados por categoria
 
@@ -431,7 +452,7 @@ Atualizar sempre que um PR upstream mudar de estado ou um novo for aberto.
 | 🟠 Issue aberta, sem PR | Redesenho do card principal (saldo disponível vs patrimônio líquido) | [fork #11](https://github.com/vhsantos26/securo/pull/11) | [#691](https://github.com/securo-finance/securo/issues/691) — validar se vale propor upstream; é decisão de design mais opinativa | — |
 | ⚪ Sem issue nem PR | Deduplicar saldo de crédito compartilhado no card principal do dashboard | [fork #12](https://github.com/vhsantos26/securo/pull/12) | — *(relacionado à mesma causa raiz de [#680](https://github.com/securo-finance/securo/issues/680))* | — |
 | ⚪ Sem issue nem PR | Reconhecer categorias Pluggy "pagamento de fatura" e "self-transfer" | [fork #16](https://github.com/vhsantos26/securo/pull/16) | — *(fecha apenas issue interna do fork [#15](https://github.com/vhsantos26/securo/issues/15))* | — |
-| 🟠 Issue aberta, sem PR | Regra de categorização não vencia a categoria genérica do provedor (Pluggy) mesmo sendo mais específica | *(feito direto neste branch, sem PR próprio no fork ainda)* | [#730](https://github.com/securo-finance/securo/issues/730) | — |
+| 🟡 PR upstream aberto | Regra de categorização vence a categoria genérica do provedor (Pluggy) quando é mais específica | [fork #29](https://github.com/vhsantos26/securo/pull/29), [fork #30](https://github.com/vhsantos26/securo/pull/30) | [#730](https://github.com/securo-finance/securo/issues/730) | [#735](https://github.com/securo-finance/securo/pull/735) |
 | ⚫ Backlog upstream, sem trabalho no fork | Mostrar estado de liquidação (paga/parcial) de faturas de cartão Pluggy | — | [#681](https://github.com/securo-finance/securo/issues/681) | — |
 | ⚫ Backlog upstream, sem trabalho no fork | Falso positivo no pareamento automático quando um reembolso de terceiro coincide em valor com uma compra | — | [#648](https://github.com/securo-finance/securo/issues/648) | — |
 | ⬜ Só nossa operação (N/A upstream) | Infra de deploy na VPS (CI/CD, health check) | [fork #1](https://github.com/vhsantos26/securo/pull/1), [fork #2](https://github.com/vhsantos26/securo/pull/2), [fork #4](https://github.com/vhsantos26/securo/pull/4) | — | — |
@@ -454,3 +475,4 @@ Atualizar sempre que um PR upstream mudar de estado ou um novo for aberto.
 | 2026-08-25 | Titularidade de cartão | Validado contra payload real da conexão Santander: `holderType`/`taxNumber` vazios em crédito, `additionalCards` e `creditCardMetadata.cardNumber` preenchidos e suficientes para classificar transação por cartão físico, sem CPF/nome do portador. Ver seção 4.3. | Claude |
 | 2026-08-27 | Categorização de consórcio/financiamento + precedência de regras | Recategorizado histórico de consórcio imóvel, consórcio veículo e financiamento imobiliário; corrigida em `connection_service.py` a precedência regra-vs-categoria-do-provedor (regra específica agora vence). Dois testes novos adicionados (import inicial + sync incremental), ambos confirmados como testes de regressão reais; suíte completa verde (246 testes). Ver seção 4.4. Planos registrados para meta por categoria (4.5) e agente financeiro no Hermes-Agent (5.1). Issue aberta no projeto principal: [#730](https://github.com/securo-finance/securo/issues/730). | Claude |
 | 2026-08-27 | Auditoria retroativa das 24 regras ativas | Script somente-leitura comparou as 24 regras contra as 3.161 transações do workspace; achou 11 regras com transações represadas pelo mesmo bug de precedência. Revisado um a um com o administrador: ~R$110 mil recategorizados corretamente (destaque: R$102.415,58 de aportes em fundos presos em "Transferências"), 3 regras com falso positivo corrigidas (Impostos e taxas, Educação, Compras), risco de empate de prioridade entre regras corrigido (Saúde e Assinaturas recorrentes para prioridade 9). 2 pendências abertas. Ver seção 4.6. | Claude |
+| 2026-08-28 | Backup, deploy e configuração familiar | Backup semanal da Hostinger de aproximadamente 2 GB confirmado; decisão explícita de manter backup granular diário adiado. VPS saudável após merge dos PRs #29/#30 e confirmada com regra antes do fallback do provedor. Orçamentos recorrentes, reserva de emergência e meta de lance do consórcio configurados. Ver seções 1.1, 4.4 e 4.7. | Codex |
