@@ -231,6 +231,143 @@ automaticamente com o dado atual do Pluggy/Santander — `owner`/`taxNumber` no
 payload são sempre do titular principal da conexão; nenhum segundo CPF é
 reportado pelo conector nas contas testadas.
 
+### 4.4 Consórcio e financiamento invisíveis no orçamento + regra nunca vencia o provedor (27/08/2026)
+
+Achado: os três compromissos de dívida estruturada da família estavam
+espalhados em categorias que escondiam o comprometimento de renda real —
+"PORTO CONSORCIO" (consórcio imóvel) e "BANCO BRADESCO S.A." caíam em
+"Transferências" (`treat_as_transfer`, fluxo neutro), as 4 cotas mensais do
+consórcio de veículo ("BRADESCO ADMINISTRADORA...") caíam em "Transporte"
+misturadas com gasto de combustível/app, e o financiamento imobiliário
+("OPERACOES CREDITO IMOBILIARIO", Santander) estava em "Moradia" misturado
+com contas da casa.
+
+- [x] As categorias corretas já existiam no workspace, criadas antes mas
+      subutilizadas: "Patrimônio / Consórcios" (grupo Poupança & Patrimônio)
+      e "Dívidas" (grupo Necessidades, estava vazia). Histórico
+      recategorizado pelo administrador: financiamento imobiliário →
+      Dívidas; consórcio imóvel (Porto) e consórcio veículo (Bradesco
+      Administradora) → Patrimônio / Consórcios.
+- [x] **Causa raiz de a categorização não se manter nos próximos syncs:**
+      em `connection_service.py`, a transação nascia já com a categoria do
+      Pluggy (`_match_pluggy_category`) preenchida, e só depois rodavam as
+      regras (`apply_rules_to_transaction`). Como `apply_rule_actions` nunca
+      sobrescreve uma categoria já preenchida, uma regra de descrição
+      específica ("contém PORTO CONSORCIO") nunca vencia a categoria
+      genérica do provedor — na prática, regras de categorização eram
+      inúteis sempre que o Pluggy já opinava sobre a transação. Corrigido:
+      a transação agora nasce com `category_id=None`, as regras rodam
+      primeiro e reivindicam a categoria quando alguma bate, e a categoria
+      do Pluggy só é aplicada depois, como fallback para o que nenhuma
+      regra cobriu. Ajustado nos dois pontos de sync (import inicial e
+      incremental, incluindo o merge com placeholder de recorrência).
+      Dois testes novos em `test_connection_service.py`
+      (`test_sync_rule_category_wins_over_provider_category` para o import
+      inicial, `test_incremental_sync_rule_category_wins_over_provider_category`
+      para o sync incremental) — confirmado manualmente que os dois falham
+      sem o fix (`git stash` do arquivo alterado) e passam com ele. Suíte
+      completa verde (246 testes).
+- [x] Regras de produção revisadas e ampliadas para manter a classificação:
+      "Patrimônio e consórcios" cobre `CONSORC` (Porto) e Bradesco
+      Administradora por descrição ou beneficiário; "Pagamentos de fatura"
+      cobre Banco Bradesco S.A. também por descrição ou beneficiário. Elas
+      passam a prevalecer sobre a categoria genérica do provedor depois do
+      deploy deste fix.
+- [ ] Mudança feita neste branch; aguarda commit, PR, merge e deploy antes de
+      validar uma nova transação sincronizada.
+
+### 4.5 Próximo passo planejado: meta e ativo rastreados por categoria
+
+Objetivo do administrador: uma meta que acompanhe "quanto já paguei do
+consórcio X" automaticamente, sem atualização manual, somando os
+lançamentos já corretamente categorizados na seção 4.4. Ampliado em
+27/08/2026: o mesmo mecanismo também deveria valer para um `Asset` — por
+exemplo, a Previdência XP crescendo automaticamente pela soma dos
+lançamentos "XP PREV CERT" categorizados como Previdência, em vez de exigir
+atualização manual ou uma `growth_rule` de percentual fixo.
+
+- [ ] Hoje `Goal` (`models/goal.py`) só rastreia progresso por 4 vias:
+      manual, saldo de conta, valor de ativo, patrimônio líquido
+      (`tracking_type`) — nenhuma soma lançamentos de uma categoria.
+- [ ] Hoje `Asset` (`models/asset.py`) só atualiza por 2 vias: manual ou
+      `growth_rule` (percentual fixo por período) — nenhuma soma
+      lançamentos de uma categoria.
+- [ ] Adicionar um mecanismo novo (ex. `tracking_type`/`valuation_method`
+      "category") que soma os lançamentos da categoria vinculada desde uma
+      data de início, tanto para `Goal` quanto para `Asset`. Mesmo desenho
+      por baixo, dois pontos de uso.
+- [ ] **Ressalva de correção:** aporte somado não é o mesmo que valor real.
+      Um fundo de previdência rende ou perde por conta própria, então um
+      ativo alimentado só por soma de aportes diverge do saldo real da XP
+      com o tempo. Tratar o valor resultante como "aporte acumulado", não
+      como "saldo real", e prever reconciliação periódica manual contra o
+      extrato (ou aguardar a Pluggy sincronizar esse saldo diretamente,
+      hoje ela não sincroniza investimentos XP por completo).
+- [ ] Ainda não iniciado — planejado para depois que a categorização e as
+      regras da seção 4.4 estiverem validadas por pelo menos um ciclo de
+      sync real.
+
+### 4.6 Auditoria retroativa das 24 regras ativas (27/08/2026)
+
+Com a precedência corrigida (4.4), rodamos um script somente-leitura dentro
+do container do backend (usa `evaluate_conditions` real do rule engine,
+não SQL equivalente) comparando as 24 regras ativas contra as 3.161
+transações do workspace: para cada regra com `set_category`, lista
+transações que baralham mas têm hoje uma categoria diferente da que a
+regra atribuiria. Achado: 11 das 24 regras tinham transações represadas
+pelo mesmo bug de precedência, não só os 3 casos da seção 4.4.
+
+**Dados corrigidos (revisados um a um com o administrador, não em lote):**
+- Investimentos: 10 transações, R$ 102.415,58 (TEDs "APLICAÇÃO FUNDOS" presas em Transferências — maior achado da auditoria)
+- Previdência: 12 transações, R$ 3.011,60 ("XP PREV CERT", presas em Investimentos)
+- Empresa serviços e licitações: 6 transações, R$ 1.039,00 (assinatura "IG*LICITACOESPU" + 1 PIX enviado)
+- Alimentação: 6 transações (mercado/confeitaria/padaria via gateway iFood)
+- Assinaturas: 1 transação (IFood Club) + 5 transações "MP*MELIMAIS" (Meli+)
+- Pagamento de Fatura: 4 transações de R$250 (fatura de cartão XP, ver contexto abaixo)
+- Dívidas: 1 transação, R$ 2.730,21 (parcela do financiamento imobiliário com descrição genérica de boleto Santander, não é fatura)
+- Pets: 1 transação, R$ 611,80 ("Matilha Equilibrada")
+- Transporte: 2 transações, R$ 168,36 (postos de gasolina)
+
+**Contexto relevante levantado durante a revisão:** a previdência privada é
+debitada num cartão de crédito da XP; antes a fatura desse cartão era paga
+direto pro Santander, hoje o administrador transfere R$250/mês pra XP e
+paga a fatura por lá — por isso os 4 lançamentos "PAGAMENTO DE FATURA" de
+R$250 são fatura (categoria correta), não confundir com a parcela do
+financiamento imobiliário que às vezes aparece com uma descrição genérica
+de boleto Santander parecida.
+
+**Falsos positivos encontrados e regras corrigidas (nenhuma transação
+alterada, só a condição da regra):**
+- "Impostos e taxas": `contains "IOF"` pegava "MP\*BIOFORMULA" por acidente
+  de grafia (bio**IOF**rmula) e `contains "JUROS"` pegava rendimento de
+  juros (crédito, não taxa). Corrigido para `regex "\bIOF\b"` (word
+  boundary) e exigência de `type = debit` no grupo de condições.
+- "Educação": tinha "VALSONET" na lista de condições, mas o administrador
+  não soube identificar o que é esse serviço. Condição removida; as 11
+  transações relacionadas foram para "Outros" até identificar.
+- "Compras": tinha "MERCADOLIVRE\*MERCADOLIVRE" na lista de condições —
+  mesmo problema de generalização de marketplace que o iFood (produto real
+  varia por trás do gateway, às vezes é item de bebê). Condição removida;
+  Mercado Livre passa a ser categorizado manualmente, caso a caso.
+
+**Risco de ordem entre regras de mesma prioridade corrigido:** "Saúde"
+(farmácia via iFood) e "Assinaturas recorrentes" (IFood Club, Meli+)
+tinham prioridade igual à regra ampla "Alimentação" (`starts_with "IFD*"`)
+— com prioridades empatadas o desempate é por UUID da regra, arbitrário.
+Baixamos "Saúde" e "Assinaturas recorrentes" para prioridade 9 (na frente
+de "Alimentação", que ficou em 10), garantindo que a regra mais específica
+sempre vença daqui pra frente, não só por sorte de UUID.
+
+**Pendências em aberto, não resolvidas:**
+- [ ] PIX recebido de "Bruno Santana dos Santos" (R$ 65,00, 23/12/2025):
+      administrador não tem certeza se é reembolso pessoal ou PIX pessoal
+      — precisa checar a saída correspondente antes de categorizar.
+- [ ] Revisar identidade do serviço "VALSONET" (ver acima) antes de
+      recategorizar as 11 transações que foram para "Outros".
+- [ ] Regra "Pagamentos de fatura" ainda casa (mas não sobrescreve, por
+      decisão do administrador) a transação de R$ 2.730,21 do
+      financiamento — divergência aceita e documentada, não é bug.
+
 ## Fase 5 — MCP e agentes internos
 
 - [ ] Ativar o perfil de agentes somente depois da Fase 3.
@@ -242,6 +379,29 @@ reportado pelo conector nas contas testadas.
 - [ ] Testar revogação/rotação do token.
 - [ ] Exigir aprovação humana para ferramentas de escrita, exclusão, importação
       ou ações financeiras.
+
+### 5.1 Plano: agente de controle financeiro no Hermes-Agent (27/08/2026)
+
+Direção definida com o administrador: configurar, no Hermes-Agent
+(`hermes-vps`, já rodando na mesma VPS do Securo), um agente dedicado a
+controle financeiro, consumindo o MCP server do Securo
+(`backend/mcp_server/` — já expõe leitura de contas, transações, orçamento
+vs. real, patrimônio, fluxo de caixa, metas, grupos, e propostas de escrita
+com confirmação humana). Funções esperadas:
+
+- Execução agendada (semanal/diária) puxando o que aconteceu no período e
+  preparando um resumo pro início da semana, com base em recorrência,
+  gastos e histórico.
+- Consulta ad-hoc do administrador ("o que está acontecendo hoje na minha
+  conta").
+- Avisos de saúde financeira com base nos orçamentos/buckets definidos nas
+  seções 4.4/4.5.
+
+Pré-requisito explícito do administrador: só ativar depois que a
+categorização e as regras (seção 4.4) estiverem validadas — consistente
+com o estado atual "MCP e agentes internos: Desligado" na tabela do topo.
+Escopo de código maior que os itens anteriores; tratar como etapa própria
+quando chegar a vez, não em paralelo com a Fase 4.
 
 ## Fase 6 — operação contínua
 
@@ -271,6 +431,7 @@ Atualizar sempre que um PR upstream mudar de estado ou um novo for aberto.
 | 🟠 Issue aberta, sem PR | Redesenho do card principal (saldo disponível vs patrimônio líquido) | [fork #11](https://github.com/vhsantos26/securo/pull/11) | [#691](https://github.com/securo-finance/securo/issues/691) — validar se vale propor upstream; é decisão de design mais opinativa | — |
 | ⚪ Sem issue nem PR | Deduplicar saldo de crédito compartilhado no card principal do dashboard | [fork #12](https://github.com/vhsantos26/securo/pull/12) | — *(relacionado à mesma causa raiz de [#680](https://github.com/securo-finance/securo/issues/680))* | — |
 | ⚪ Sem issue nem PR | Reconhecer categorias Pluggy "pagamento de fatura" e "self-transfer" | [fork #16](https://github.com/vhsantos26/securo/pull/16) | — *(fecha apenas issue interna do fork [#15](https://github.com/vhsantos26/securo/issues/15))* | — |
+| 🟠 Issue aberta, sem PR | Regra de categorização não vencia a categoria genérica do provedor (Pluggy) mesmo sendo mais específica | *(feito direto neste branch, sem PR próprio no fork ainda)* | [#730](https://github.com/securo-finance/securo/issues/730) | — |
 | ⚫ Backlog upstream, sem trabalho no fork | Mostrar estado de liquidação (paga/parcial) de faturas de cartão Pluggy | — | [#681](https://github.com/securo-finance/securo/issues/681) | — |
 | ⚫ Backlog upstream, sem trabalho no fork | Falso positivo no pareamento automático quando um reembolso de terceiro coincide em valor com uma compra | — | [#648](https://github.com/securo-finance/securo/issues/648) | — |
 | ⬜ Só nossa operação (N/A upstream) | Infra de deploy na VPS (CI/CD, health check) | [fork #1](https://github.com/vhsantos26/securo/pull/1), [fork #2](https://github.com/vhsantos26/securo/pull/2), [fork #4](https://github.com/vhsantos26/securo/pull/4) | — | — |
@@ -291,3 +452,5 @@ Atualizar sempre que um PR upstream mudar de estado ou um novo for aberto.
 | 2026-08-21 | Reconciliação piloto | Faturas do cartão conferidas contra o Organizze; valores compatíveis. Identificado ajuste de subtipo de poupança no provider Pluggy. | Codex |
 | 2026-08-25 | Diagnóstico Fase 4 | Entradas/Saídas do mês incluíam pagamento de fatura de cartão sem exclusão automática (categoria sem `treat_as_transfer`). Ver seção 4.1. | Claude |
 | 2026-08-25 | Titularidade de cartão | Validado contra payload real da conexão Santander: `holderType`/`taxNumber` vazios em crédito, `additionalCards` e `creditCardMetadata.cardNumber` preenchidos e suficientes para classificar transação por cartão físico, sem CPF/nome do portador. Ver seção 4.3. | Claude |
+| 2026-08-27 | Categorização de consórcio/financiamento + precedência de regras | Recategorizado histórico de consórcio imóvel, consórcio veículo e financiamento imobiliário; corrigida em `connection_service.py` a precedência regra-vs-categoria-do-provedor (regra específica agora vence). Dois testes novos adicionados (import inicial + sync incremental), ambos confirmados como testes de regressão reais; suíte completa verde (246 testes). Ver seção 4.4. Planos registrados para meta por categoria (4.5) e agente financeiro no Hermes-Agent (5.1). Issue aberta no projeto principal: [#730](https://github.com/securo-finance/securo/issues/730). | Claude |
+| 2026-08-27 | Auditoria retroativa das 24 regras ativas | Script somente-leitura comparou as 24 regras contra as 3.161 transações do workspace; achou 11 regras com transações represadas pelo mesmo bug de precedência. Revisado um a um com o administrador: ~R$110 mil recategorizados corretamente (destaque: R$102.415,58 de aportes em fundos presos em "Transferências"), 3 regras com falso positivo corrigidas (Impostos e taxas, Educação, Compras), risco de empate de prioridade entre regras corrigido (Saúde e Assinaturas recorrentes para prioridade 9). 2 pendências abertas. Ver seção 4.6. | Claude |

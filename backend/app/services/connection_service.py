@@ -678,7 +678,7 @@ async def handle_oauth_callback(
                 payee=txn_data.payee,
                 payee_id=payee_id,
                 raw_data=txn_data.raw_data,
-                category_id=category_id,
+                category_id=None,
                 installment_number=txn_data.installment_number,
                 total_installments=txn_data.total_installments,
                 installment_total_amount=txn_data.installment_total_amount,
@@ -691,7 +691,12 @@ async def handle_oauth_callback(
             session.add(transaction)
             await session.flush()
             new_tx_ids.append(transaction.id)
+            # A rule matching the description is more specific than the
+            # provider's generic category, so it gets first claim; the
+            # provider category is only a fallback for what no rule covers.
             await apply_rules_to_transaction(session, user_id, transaction)
+            if transaction.category_id is None:
+                transaction.category_id = category_id
 
             # Prefer bank-provided conversion for international transactions
             acct_currency = acc_data.currency or user_currency
@@ -1470,7 +1475,7 @@ async def sync_connection(
                     payee=txn_data.payee,
                     payee_id=sync_payee_id,
                     raw_data=txn_data.raw_data,
-                    category_id=category_id,
+                    category_id=None,
                     installment_number=txn_data.installment_number,
                     total_installments=txn_data.total_installments,
                     installment_total_amount=txn_data.installment_total_amount,
@@ -1482,6 +1487,10 @@ async def sync_connection(
                     account,
                     bill_due_date=bill.due_date if bill else None,
                 )
+                # A rule matching the description is more specific than the
+                # provider's generic category, so it gets first claim; the
+                # provider category (`category_id`) is only a fallback below
+                # for what no rule covers.
                 preview = await preview_rules_for_transaction(
                     session, user_id, transaction
                 )
@@ -1516,7 +1525,7 @@ async def sync_connection(
                     # provenance is recorded outright.
                     placeholder.original_description = txn_data.description
                     if placeholder.category_id is None:
-                        placeholder.category_id = preview.category_id
+                        placeholder.category_id = preview.category_id or category_id
                     if txn_data.payee and not placeholder.payee:
                         placeholder.payee = txn_data.payee
                     if placeholder.payee_id is None:
@@ -1552,6 +1561,8 @@ async def sync_connection(
                     )
                 new_tx_ids.append(transaction.id)
                 await apply_rules_to_transaction(session, user_id, transaction)
+                if transaction.category_id is None:
+                    transaction.category_id = category_id
 
                 # Prefer bank-provided conversion for international transactions
                 acct_currency = acc_data.currency or user_currency
