@@ -14,7 +14,7 @@ correspondente.
 | Backup gerenciado da VPS | Concluído (semanal) | Backup semanal de aproximadamente 2 GB confirmado em 28/08/2026 na Hostinger. |
 | Pluggy | Piloto conectado | Credenciais carregadas; primeira conexão importada e em reconciliação antes de novas contas. |
 | MCP e agentes internos | Desligado | Permanecerá desligado até os dados importados e as regras estarem validados. |
-| Deploy contínuo | Validado | PRs do fork #29 e #30 mergeados; VPS saudável e rodando a precedência regra antes da categoria do provedor. |
+| Deploy contínuo | Validado | Integração upstream v0.14.5 concluída nos PRs do fork #32 e #33; CI completa aprovada, VPS saudável e banco na revisão Alembic 078. A precedência de regra continua ativa antes do fallback da categoria do provedor. |
 
 ## Regras de segurança
 
@@ -287,8 +287,9 @@ com contas da casa.
 - [x] Meta manual "Lance do Consórcio Imóvel": alvo R$ 310.700, saldo inicial
       R$ 50.000, sem prazo até confirmação do calendário de lance. O alvo foi
       informado pelo assessor e inclui encargos do consórcio.
-- [ ] Revisar os orçamentos em meados e no fechamento de setembro; usar
-      override mensal para exceções em vez de alterar o limite recorrente.
+- [ ] Revisar os orçamentos em **15/09/2026** e no fechamento de
+      **30/09/2026**; comparar orçado x realizado e usar override mensal
+      para exceções em vez de alterar o limite recorrente.
 
 ### 4.5 Próximo passo planejado: meta e ativo rastreados por categoria
 
@@ -419,9 +420,16 @@ quando chegar a vez, não em paralelo com a Fase 4.
 
 ## Fase 6 — operação contínua
 
-- [ ] Validar o fluxo de deploy que constrói o commit do fork na VPS.
-- [ ] Registrar o tempo e o resultado do primeiro deploy com build local.
-- [ ] Conferir logs e health check após cada deploy.
+- [x] Validar o fluxo de deploy que constrói o commit do fork na VPS:
+      integração v0.14.5 pelo PR #32 passou pela CI completa e foi entregue
+      pela workflow `deploy-vps`.
+- [x] Registrar o tempo e o resultado do primeiro deploy com build local:
+      o deploy de código v0.14.5 concluiu em 1m34s; o redeploy documental
+      posterior teve um timeout transitório de SSH no runner e a repetição
+      manual do mesmo commit concluiu em 6s.
+- [x] Conferir logs e health check dos deploys v0.14.5: endpoint
+      `/api/health` respondeu `healthy` e PostgreSQL ficou na revisão 078.
+      Repetir esta checagem a cada deploy futuro.
 - [ ] Revisar acessos SSH, chaves, tokens e 2FA a cada trimestre.
 - [ ] Revisar retenção e testar restauração de backup a cada trimestre.
 
