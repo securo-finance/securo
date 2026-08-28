@@ -691,7 +691,7 @@
         "reconnectTitle": "Trading 212 opnieuw verbinden",
         "reconnectDescription": "Plak de huidige alleen-lezen API-sleutel en het API-geheim om deze verbinding bij te werken. Bestaande rekeningen, transacties, activa en instellingen blijven behouden.",
         "tokenLabel": "API-sleutel en geheim",
-        "tokenPlaceholder": "api-key:*** (of demo:api-key:***",
+        "tokenPlaceholder": "api-key:*** (of demo:api-key:***)",
         "tokenHelp": "Gebruik een alleen-lezen Trading 212 API-sleutel. Securo versleutelt de sleutel en het geheim voordat ze worden opgeslagen; deel ze nooit."
       },
       "reconnectTitle": "Maak opnieuw verbinding met een nieuw token",
