@@ -1180,3 +1180,207 @@ async def test_update_simplefin_type_change_not_crossing_card_keeps_balance(
     assert updated is not None
     assert updated.type == "savings"
     assert updated.balance == Decimal("1500.00")
+
+
+# ----- per-account institution resolution (issue #345) ------------------------
+
+
+def _mem_connection(**overrides):
+    from app.models.bank_connection import BankConnection
+
+    defaults = dict(
+        provider="simplefin",
+        external_id="CON-1",
+        institution_name="First Bank",
+        logo_url="https://logos.example/first.png",
+    )
+    defaults.update(overrides)
+    return BankConnection(**defaults)
+
+
+def _mem_institution(name="Second Brokerage", logo_url="https://logos.example/second.png"):
+    from app.models.institution import Institution
+
+    return Institution(name=name, logo_url=logo_url)
+
+
+def _mem_multi_connection(**overrides):
+    """A connection spanning two institutions (multi-institution link)."""
+    return _mem_connection(
+        institutions=[_mem_institution("First Bank", None), _mem_institution()],
+        **overrides,
+    )
+
+
+def test_institution_falls_back_to_connection_when_account_has_none():
+    """Pluggy/Enable accounts have no institution row — connection wins."""
+    from app.services.account_service import _institution
+
+    acc = Account(name="Checking", type="checking")
+    name, logo = _institution(acc, _mem_connection())
+    assert name == "First Bank"
+    assert logo == "https://logos.example/first.png"
+
+
+def test_institution_prefers_the_accounts_own_on_multi_links():
+    """On a link spanning several institutions, each account shows its own."""
+    from app.services.account_service import _institution
+
+    acc = Account(name="Brokerage", type="investment")
+    acc.institution = _mem_institution()
+    name, logo = _institution(acc, _mem_multi_connection())
+    assert name == "Second Brokerage"
+    assert logo == "https://logos.example/second.png"
+
+
+def test_institution_never_mixes_name_and_logo_on_multi_links():
+    """On a multi-institution link, an account whose institution has no logo
+    must not borrow the connection's — that would pair one bank's name with
+    another bank's icon."""
+    from app.services.account_service import _institution
+
+    acc = Account(name="Brokerage", type="investment")
+    acc.institution = _mem_institution(logo_url=None)
+    name, logo = _institution(acc, _mem_multi_connection())
+    assert name == "Second Brokerage"
+    assert logo is None
+
+
+def test_institution_single_link_falls_back_to_connection_logo():
+    """On a single-institution link the connection's logo is the same bank's,
+    so it fills in when the institution row has none (review on #654)."""
+    from app.services.account_service import _institution
+
+    acc = Account(name="Checking", type="checking")
+    acc.institution = _mem_institution("First Bank", logo_url=None)
+    conn = _mem_connection(institutions=[acc.institution])
+    name, logo = _institution(acc, conn)
+    assert name == "First Bank"
+    assert logo == "https://logos.example/first.png"
+
+
+def test_institution_rename_wins_on_single_links_but_not_multi():
+    """Renaming a single-bank link relabels its accounts (review on #654);
+    renaming a multi-institution link labels the link, not the banks."""
+    from app.services.account_service import _institution
+
+    single = _mem_connection(display_name="My Bank")
+    with_own = Account(name="Checking", type="checking")
+    with_own.institution = _mem_institution("First Bank")
+    single.institutions = [with_own.institution]
+    assert _institution(with_own, single)[0] == "My Bank"
+
+    multi = _mem_multi_connection(display_name="My Bank Link")
+    at_second = Account(name="Brokerage", type="investment")
+    at_second.institution = multi.institutions[1]
+    assert _institution(at_second, multi)[0] == "Second Brokerage"
+
+    hint_less = Account(name="Other", type="checking")
+    assert _institution(hint_less, multi)[0] == "My Bank Link"
+
+
+def test_institution_manual_account_has_none():
+    from app.services.account_service import _institution
+
+    assert _institution(Account(name="Wallet", type="checking"), None) == (None, None)
+
+
+def _hint(name, logo=None, ext=None):
+    from app.providers.base import AccountData
+
+    return AccountData(
+        external_id="x", name="A", type="checking",
+        balance=Decimal("0"), currency="USD",
+        institution_external_id=ext, institution_name=name, institution_logo_url=logo,
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolve_institution_matches_by_org_id_across_renames(
+    session: AsyncSession, test_user,
+):
+    """A bank renamed on the provider side updates its row in place — same id,
+    new name — instead of minting a new row (review on #654)."""
+    from app.services.connection_service import _resolve_institution
+
+    conn_id = await _make_provider_connection(session, test_user.id, "simplefin")
+
+    first = await _resolve_institution(
+        session, conn_id, {}, _hint("Chase Bank", "https://logos.example/old.png", ext="CON-1")
+    )
+    assert first is not None
+    renamed = await _resolve_institution(
+        session, conn_id, {}, _hint("Chase", "https://logos.example/new.png", ext="CON-1")
+    )
+    assert renamed is not None
+    assert renamed.id == first.id
+    assert renamed.name == "Chase"
+    # The favicon-derived logo follows the provider too — a rename that
+    # moves domains must not keep the old bank's icon.
+    assert renamed.logo_url == "https://logos.example/new.png"
+
+
+@pytest.mark.asyncio
+async def test_resolve_institution_adopts_legacy_name_row(
+    session: AsyncSession, test_user,
+):
+    """A row created before the server sent org ids is adopted by the first
+    id-carrying hint with the same name, keeping its accounts attached."""
+    from app.services.connection_service import _resolve_institution
+
+    conn_id = await _make_provider_connection(session, test_user.id, "simplefin")
+
+    legacy = await _resolve_institution(session, conn_id, {}, _hint("Chase Bank"))
+    assert legacy is not None and legacy.external_id is None
+    adopted = await _resolve_institution(session, conn_id, {}, _hint("Chase Bank", ext="CON-1"))
+    assert adopted is not None
+    assert adopted.id == legacy.id
+    assert adopted.external_id == "CON-1"
+
+
+@pytest.mark.asyncio
+async def test_resolve_institution_same_name_different_orgs_stay_distinct(
+    session: AsyncSession, test_user,
+):
+    """Two logins at the same bank (same display name, different org ids)
+    must not collapse into one row."""
+    from app.services.connection_service import _resolve_institution
+
+    conn_id = await _make_provider_connection(session, test_user.id, "simplefin")
+
+    one = await _resolve_institution(session, conn_id, {}, _hint("Fidelity", ext="CON-1"))
+    two = await _resolve_institution(session, conn_id, {}, _hint("Fidelity", ext="CON-2"))
+    assert one is not None and two is not None
+    assert one.id != two.id
+
+
+@pytest.mark.asyncio
+async def test_resolve_institution_upserts_and_reuses(session: AsyncSession, test_user):
+    """One row per identity; first sighting wins the logo, later sightings
+    backfill a missing one; no hint → no row."""
+    from app.services.connection_service import _resolve_institution
+
+    conn_id = await _make_provider_connection(session, test_user.id, "simplefin")
+
+    cache = {}
+    first = await _resolve_institution(session, conn_id, cache, _hint("Chase Bank"))
+    assert first is not None and first.logo_url is None
+    again = await _resolve_institution(
+        session, conn_id, {}, _hint("Chase Bank", "https://logos.example/chase.png")
+    )
+    assert again is not None
+    assert again.id == first.id  # reused across cache misses
+    assert again.logo_url == "https://logos.example/chase.png"  # backfilled
+    assert await _resolve_institution(session, conn_id, cache, _hint(None)) is None
+    assert await _resolve_institution(session, conn_id, cache, _hint("   ")) is None
+
+
+def test_clean_logo_url_drops_overlong_urls():
+    """A URL longer than the column is dropped, not truncated — a truncated
+    URL is a broken URL (review on #654)."""
+    from app.services.connection_service import _clean_logo_url
+
+    assert _clean_logo_url("https://ok.example/logo.png") == "https://ok.example/logo.png"
+    assert _clean_logo_url("https://long.example/" + "a" * 500) is None
+    assert _clean_logo_url("   ") is None
+    assert _clean_logo_url(None) is None

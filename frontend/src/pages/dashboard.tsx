@@ -47,6 +47,8 @@ import { AccountIcon } from '@/components/account-icon'
 import { TransactionDrillDown, type DrillDownFilter } from '@/components/transaction-drill-down'
 import { TransactionDialog, type TransactionSavePayload } from '@/components/transaction-dialog'
 import { extractApiError } from '@/lib/api-errors'
+import { TransactionCalendarView } from '@/components/transaction-calendar-view'
+import { TransactionsViewSwitcher, type TransactionsViewMode } from '@/components/transactions-view-switcher'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useIsMobile } from '@/hooks/use-mobile'
@@ -110,6 +112,12 @@ export default function DashboardPage() {
     return parseMonthFromParams(searchParams) ?? currentMonth()
   })
   const [drillDown, setDrillDown] = useState<DrillDownFilter | null>(null)
+  // Transactions section view, mirroring the transactions page: the choice
+  // lives in the URL so the section can be refreshed, bookmarked or shared.
+  const [txViewMode, setTxViewMode] = useState<TransactionsViewMode>(() => (
+    searchParams.get('view') === 'calendar' ? 'calendar' : 'list'
+  ))
+  const [calendarSelectedDate, setCalendarSelectedDate] = useState<string>(() => searchParams.get('day') ?? '')
 
   const prevSearchRef = useRef<string | null>(null)
 
@@ -126,9 +134,11 @@ export default function DashboardPage() {
     } else if (!isInitial) {
       setSelectedMonth(currentMonth())
     }
+    setTxViewMode(searchParams.get('view') === 'calendar' ? 'calendar' : 'list')
+    setCalendarSelectedDate(searchParams.get('day') ?? '')
   }, [searchParams])
 
-  // Sync selectedMonth back to URL
+  // Sync selectedMonth and the transactions view back to URL
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (selectedMonth) {
@@ -139,8 +149,17 @@ export default function DashboardPage() {
       params.delete('month')
     }
 
+    if (txViewMode === 'calendar') {
+      params.set('view', 'calendar')
+      if (calendarSelectedDate) params.set('day', calendarSelectedDate)
+      else params.delete('day')
+    } else {
+      params.delete('view')
+      params.delete('day')
+    }
+
     setSearchParams(params, { replace: true })
-  }, [selectedMonth, setSearchParams])
+  }, [selectedMonth, txViewMode, calendarSelectedDate, setSearchParams])
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [createRuleOpen, setCreateRuleOpen] = useState(false)
@@ -197,6 +216,18 @@ export default function DashboardPage() {
       account_ids: acctIds,
     }),
     enabled: !noAccounts,
+  })
+
+  // Same month grid the transactions page renders, scoped to the active
+  // collection's accounts. Only fetched while the calendar is on screen.
+  const calendarAccountIds = acctIds && acctIds.length > 0 ? acctIds : undefined
+  const { data: calendarData, isLoading: calendarLoading } = useQuery({
+    queryKey: ['transactions', 'calendar', selectedMonth, activeAccountIds],
+    enabled: txViewMode === 'calendar' && !noAccounts,
+    queryFn: () => transactions.calendar({
+      month: monthStart,
+      account_ids: calendarAccountIds,
+    }),
   })
 
   // Resolve group_id → name for the badge on split transactions.
@@ -315,6 +346,18 @@ export default function DashboardPage() {
     }
     setCreateRuleInitialData({ conditions, actions })
     setCreateRuleOpen(true)
+  }
+
+  // Calendar rows carry only an id, so the full transaction is fetched before
+  // the edit dialog opens (same as the transactions page).
+  const handleOpenCalendarTransaction = async (id: string) => {
+    try {
+      const tx = await transactions.get(id)
+      setEditingTx(tx)
+      setDialogOpen(true)
+    } catch {
+      toast.error(t('common.error'))
+    }
   }
 
 
@@ -1138,17 +1181,45 @@ export default function DashboardPage() {
 
       {/* Period Transactions */}
       <div>
-        <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-            <p className="text-sm font-semibold text-foreground">{t('dashboard.periodTransactions')}</p>
-            <button
-              onClick={() => { setTxSortDesc(v => !v); setTxPage(1) }}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            >
-              <ArrowUpDown size={13} />
-              {txSortDesc ? t('dashboard.sortNewest') : t('dashboard.sortOldest')}
-            </button>
+        {/* One control bar for both views, so the switch never moves between them. */}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-foreground">{t('dashboard.periodTransactions')}</p>
+          <div className="flex items-center gap-3">
+            <TransactionsViewSwitcher
+              value={txViewMode}
+              onChange={setTxViewMode}
+              listLabel={t('transactions.listView')}
+              calendarLabel={t('transactions.calendarView')}
+            />
+            {txViewMode === 'list' && (
+              <button
+                onClick={() => { setTxSortDesc(v => !v); setTxPage(1) }}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              >
+                <ArrowUpDown size={13} />
+                {txSortDesc ? t('dashboard.sortNewest') : t('dashboard.sortOldest')}
+              </button>
+            )}
           </div>
+        </div>
+
+        {txViewMode === 'calendar' && (
+          <TransactionCalendarView
+            calendar={calendarData}
+            isLoading={calendarLoading}
+            locale={locale}
+            dateLocale={dateLocale}
+            mask={mask}
+            selectedDate={calendarSelectedDate}
+            onSelectedDateChange={setCalendarSelectedDate}
+            onOpenTransaction={handleOpenCalendarTransaction}
+            accounts={accountsList}
+            userCurrency={userCurrency}
+          />
+        )}
+
+        {txViewMode === 'list' && (
+        <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
           {txListLoading ? (
             <div className="p-5 space-y-3">
               {Array.from({ length: 5 }).map((_, i) => (
@@ -1442,6 +1513,7 @@ export default function DashboardPage() {
             <p className="text-muted-foreground text-sm text-center py-8">{t('dashboard.noTransactions')}</p>
           )}
         </div>
+        )}
       </div>
 
       <TransactionDrillDown

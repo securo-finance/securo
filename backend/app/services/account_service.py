@@ -134,10 +134,26 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
         ]
 
 
-def _institution_name(connection: Optional[BankConnection]) -> Optional[str]:
-    if not connection:
-        return None
-    return connection.display_name or connection.institution_name
+def _institution(
+    acc: Account, connection: Optional[BankConnection]
+) -> tuple[Optional[str], Optional[str]]:
+    # (name, logo) resolved as a pair so both always describe the same
+    # institution. The account's own institution (SimpleFIN — issue #345)
+    # only outranks a connection rename when the link actually spans several
+    # institutions — on a single-bank link the rename keeps working. The logo
+    # falls back to the connection's only on single-institution links, where
+    # it belongs to the same bank; on multi links a missing favicon beats
+    # another bank's.
+    if acc.institution is None:
+        if not connection:
+            return None, None
+        return connection.display_name or connection.institution_name, connection.logo_url
+    if connection is None:
+        return acc.institution.name, acc.institution.logo_url
+    if len(connection.institutions) > 1:
+        return acc.institution.name, acc.institution.logo_url
+    name = connection.display_name or acc.institution.name
+    return name, acc.institution.logo_url or connection.logo_url
 
 
 def serialize_account(
@@ -153,6 +169,7 @@ def serialize_account(
     else:
         resolved_balance = float(current_balance or 0)
 
+    institution_name, institution_logo_url = _institution(acc, connection)
     payload = {
         "id": acc.id,
         "user_id": acc.user_id,
@@ -175,8 +192,8 @@ def serialize_account(
         "card_brand": acc.card_brand,
         "card_level": acc.card_level,
         "shared_balance_group": acc.shared_balance_group,
-        "institution_name": _institution_name(connection),
-        "institution_logo_url": connection.logo_url if connection else None,
+        "institution_name": institution_name,
+        "institution_logo_url": institution_logo_url,
         "available_credit": None,
         "next_close_date": None,
         "next_due_date": None,
