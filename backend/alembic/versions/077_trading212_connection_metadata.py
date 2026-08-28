@@ -1,13 +1,13 @@
 """add additive Trading 212 connection and provider metadata
 
-Revision ID: 066
-Revises: 065
+Revision ID: 077
+Revises: 076
 Create Date: 2026-08-03
 
 The columns are generic provider metadata rather than Trading 212-specific
 schema.  Some local installations previously carried equivalent columns from an
 unreleased connector branch.  Each addition is therefore inspected first and
-skipped when present: upgrading from an ordinary 065 database and upgrading a
+skipped when present: upgrading from an ordinary 076 database and upgrading a
 legacy local database are both non-destructive.  No data is renamed, rewritten,
 or dropped.  A partial unique index gives provider fills a database-enforced
 identity; any duplicate legacy fills are removed deterministically before it
@@ -18,8 +18,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "066"
-down_revision: Union[str, None] = "065"
+revision: str = "077"
+down_revision: Union[str, None] = "076"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -79,9 +79,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # We cannot distinguish this revision's columns/index from identical
-    # unreleased local connector work.  A no-op would let Alembic stamp 065
-    # while keeping 066 schema, which is worse than a clear failed rollback.
+    # unreleased local connector work.  A no-op would let Alembic stamp 076
+    # while keeping 077 schema, which is worse than a clear failed rollback.
     raise RuntimeError(
         "cannot safely downgrade Trading 212 metadata migration: schema ownership is ambiguous; "
-        "restore a backup or keep revision 066"
+        "restore a backup or keep revision 077"
     )

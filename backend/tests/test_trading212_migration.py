@@ -19,7 +19,7 @@ MIGRATION_PATH = (
     Path(__file__).resolve().parents[1]
     / "alembic"
     / "versions"
-    / "066_trading212_connection_metadata.py"
+    / "077_trading212_connection_metadata.py"
 )
 
 
@@ -31,11 +31,11 @@ def _migration_module():
     return module
 
 
-def test_t212_metadata_migration_extends_065_with_only_additive_nullable_columns():
+def test_t212_metadata_migration_extends_076_with_only_additive_columns():
     migration = _migration_module()
 
-    assert migration.revision == "066"
-    assert migration.down_revision == "065"
+    assert migration.revision == "077"
+    assert migration.down_revision == "076"
     assert BankConnection.kind.property.columns[0].nullable is False
     assert Account.external_metadata.property.columns[0].nullable is True
     assert AssetTransaction.raw_data.property.columns[0].nullable is True
@@ -51,7 +51,7 @@ def test_t212_metadata_migration_declares_a_unique_broker_fill_identity():
 
 
 def test_t212_metadata_migration_refuses_a_lossy_downgrade():
-    """Retaining columns while stamping 065 would leave Alembic lying about schema."""
+    """Retaining columns while stamping 076 would leave Alembic lying about schema."""
     migration = _migration_module()
     with __import__("pytest").raises(RuntimeError, match="cannot safely downgrade"):
         migration.downgrade()

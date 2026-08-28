@@ -46,7 +46,7 @@ recovered from the last returned transaction only for its documented HTTP 404
 
 ## Migration safety
 
-Alembic revision `066` extends upstream head `065` and is the only migration
+Alembic revision `077` extends upstream head `076` and is the only migration
 head. It adds generic provider columns (`bank_connections.kind`,
 `accounts.external_metadata`, and `asset_transactions.raw_data`). Before each
 addition it inspects the target table. This deliberately supports installations
@@ -58,11 +58,9 @@ legacy fork migration chain alongside this revision.
 
 ### Intentional downgrade behavior
 
-Revision `066` is intentionally non-reversible. Its Alembic `downgrade()` is a
-no-op: it permits revision bookkeeping to move back to `065` while retaining
-`kind`, `external_metadata`, and `raw_data` in the database. Retaining those
-legacy-compatible columns is deliberate because `066` cannot safely tell
-whether a column was added by this revision or already existed in a local
-legacy schema. Do not manually drop those columns as part of a downgrade; that
-would make a rollback destructive for affected installations. Revision `065`
-ignores the retained columns, so this bookkeeping-only downgrade is safe.
+Revision `077` is intentionally non-reversible. Its Alembic `downgrade()` raises
+a clear error instead of stamping the database back to `076` while retaining
+`kind`, `external_metadata`, `raw_data`, and the broker-fill identity index.
+Revision `077` cannot safely tell whether that schema was added by this revision
+or already existed in a local legacy installation. Restore a backup or remain
+on `077`; do not manually drop those columns or the index as part of a rollback.
