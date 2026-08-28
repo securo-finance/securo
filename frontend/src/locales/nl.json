@@ -685,6 +685,15 @@
         "title": "Maak verbinding via SimpleFIN",
         "description": "SimpleFIN is een alleen-lezen bankgegevensprotocol. Ga naar de SimpleFIN Bridge, kies uw bank en kopieer het installatietoken hierheen."
       },
+      "trading212": {
+        "title": "Trading 212 verbinden",
+        "description": "Plak een alleen-lezen Trading 212 API-sleutel en API-geheim om uw beleggingsrekening te koppelen.",
+        "reconnectTitle": "Trading 212 opnieuw verbinden",
+        "reconnectDescription": "Plak de huidige alleen-lezen API-sleutel en het API-geheim om deze verbinding bij te werken. Bestaande rekeningen, transacties, activa en instellingen blijven behouden.",
+        "tokenLabel": "API-sleutel en geheim",
+        "tokenPlaceholder": "api-key:*** (of demo:api-key:***",
+        "tokenHelp": "Gebruik een alleen-lezen Trading 212 API-sleutel. Securo versleutelt de sleutel en het geheim voordat ze worden opgeslagen; deel ze nooit."
+      },
       "reconnectTitle": "Maak opnieuw verbinding met een nieuw token",
       "reconnectDescription": "Plak een nieuw installatietoken om deze verbinding te vernieuwen. Bestaande rekeningen, transacties, categorieën en regels blijven behouden.",
       "reconnect": "Maak opnieuw verbinding"
