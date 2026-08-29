@@ -222,7 +222,7 @@ export default function CategoriesPage() {
           >
             <Pencil size={13} />
           </button>
-          {cat.is_system ? (
+          {cat.is_system && (
             <button
               className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
               onClick={() => handleToggleHidden(cat)}
@@ -231,16 +231,15 @@ export default function CategoriesPage() {
             >
               {cat.is_hidden ? <Eye size={13} /> : <EyeOff size={13} />}
             </button>
-          ) : (
-            <button
-              className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
-              onClick={() => setDeletingCategory(cat)}
-              disabled={deleteCatMutation.isPending}
-              title={t('common.delete')}
-            >
-              <Trash2 size={13} />
-            </button>
           )}
+          <button
+            className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
+            onClick={() => setDeletingCategory(cat)}
+            disabled={deleteCatMutation.isPending}
+            title={t('common.delete')}
+          >
+            <Trash2 size={13} />
+          </button>
         </div>
       )}
     </div>
@@ -312,7 +311,7 @@ export default function CategoriesPage() {
                       >
                         <Pencil size={13} />
                       </button>
-                      {group.is_system ? (
+                      {group.is_system && (
                         <button
                           className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
                           onClick={() => updateGroupMutation.mutate({ id: group.id, is_hidden: !group.is_hidden })}
@@ -321,16 +320,15 @@ export default function CategoriesPage() {
                         >
                           {group.is_hidden ? <Eye size={13} /> : <EyeOff size={13} />}
                         </button>
-                      ) : (
-                        <button
-                          className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
-                          onClick={() => setDeletingGroup(group)}
-                          disabled={deleteGroupMutation.isPending}
-                          title={t('common.delete')}
-                        >
-                          <Trash2 size={13} />
-                        </button>
                       )}
+                      <button
+                        className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
+                        onClick={() => setDeletingGroup(group)}
+                        disabled={deleteGroupMutation.isPending}
+                        title={t('common.delete')}
+                      >
+                        <Trash2 size={13} />
+                      </button>
                     </div>
                   )}
                 </div>
