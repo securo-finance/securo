@@ -183,7 +183,6 @@ async def test_fresh_t212_callback_creates_cash_account_and_initial_order_settle
             },
         }
     ]
-
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/account/summary"):
             return httpx.Response(200, json=summary)
@@ -472,6 +471,63 @@ async def test_t212_sync_rejects_provider_without_account_summary(
 
     await session.refresh(connection)
     assert connection.status == "active"
+
+
+@pytest.mark.asyncio
+async def test_existing_t212_sync_reuses_validated_account_summary(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    """One sync must not spend two rate-limited requests on the same summary."""
+    connection = BankConnection(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        provider="trading212",
+        kind="brokerage",
+        external_id="account-123",
+        institution_name="Trading 212",
+        credentials={"api_key": "key", "api_secret": "secret"},
+        settings={"sync_assets": False},
+        status="active",
+    )
+    session.add(connection)
+    await session.commit()
+
+    summary_requests = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal summary_requests
+        if request.url.path.endswith("/account/summary"):
+            summary_requests += 1
+            return httpx.Response(
+                200,
+                json={
+                    "id": "account-123",
+                    "currency": "USD",
+                    "cash": {
+                        "availableToTrade": 10,
+                        "inPies": 0,
+                        "reservedForOrders": 0,
+                    },
+                },
+            )
+        if request.url.path.endswith("/history/transactions") or request.url.path.endswith(
+            "/history/dividends"
+        ):
+            return httpx.Response(200, json=[])
+        raise AssertionError(f"unexpected endpoint: {request.url.path}")
+
+    async def fake_client(self, credentials=None):  # noqa: ANN001
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+    provider = Trading212Provider()
+    with (
+        patch.object(Trading212Provider, "_client", fake_client),
+        patch("app.services.connection_service.get_provider", return_value=provider),
+        patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock),
+    ):
+        await sync_connection(session, connection.id, test_workspace.id, test_user.id)
+
+    assert summary_requests == 1
 
 
 @pytest.mark.asyncio

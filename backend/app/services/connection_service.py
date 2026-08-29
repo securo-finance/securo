@@ -1919,6 +1919,7 @@ async def sync_connection(
             "Provider 'trading212' does not implement account summary lookup"
         )
 
+    validated_t212_summary: dict | None = None
     try:
         # Refresh credentials if needed
         credentials = await provider.refresh_credentials(connection.credentials)
@@ -1940,6 +1941,7 @@ async def sync_connection(
             credentials = dict(credentials or {})
             credentials["account_id"] = account_id
             connection.credentials = credentials
+            validated_t212_summary = summary
 
         # Backfill the institution logo for connections linked before logo
         # capture existed. Best-effort: a failure here must never break sync.
@@ -1977,7 +1979,14 @@ async def sync_connection(
         user_currency = user.primary_currency if user else get_settings().default_currency
         new_tx_ids: list[uuid.UUID] = []
         merged_count = 0
-        accounts_data = await provider.get_accounts(credentials)
+        summary_account_builder = getattr(provider, "accounts_from_summary", None)
+        if validated_t212_summary is not None and callable(summary_account_builder):
+            # Account identity validation already fetched this rate-limited
+            # endpoint. Reuse that response rather than immediately issuing an
+            # identical request that Trading 212 may throttle with HTTP 429.
+            accounts_data = summary_account_builder(validated_t212_summary)
+        else:
+            accounts_data = await provider.get_accounts(credentials)
         institution_cache: dict[str, Institution] = {}
         for acc_data in accounts_data:
             result = await session.execute(

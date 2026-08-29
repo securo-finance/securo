@@ -322,8 +322,13 @@ class Trading212Provider(BankProvider):
             )
         ]
 
+    @classmethod
+    def accounts_from_summary(cls, summary: dict) -> list[AccountData]:
+        """Build account rows from a summary already fetched for validation."""
+        return cls._accounts_from_summary(summary)
+
     async def get_accounts(self, credentials: dict) -> list[AccountData]:
-        return self._accounts_from_summary(await self.get_account_summary(credentials))
+        return self.accounts_from_summary(await self.get_account_summary(credentials))
 
     async def get_transactions(
         self,
