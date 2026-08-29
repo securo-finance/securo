@@ -348,8 +348,12 @@ class Trading212Provider(BankProvider):
         kind = str(item.get("type") or "").upper()
         direction = {
             "DEPOSIT": "credit",
+            "WITHDRAW": "debit",
+            # Retain the legacy spelling for older payloads/fixtures.
             "WITHDRAWAL": "debit",
             "FEE": "debit",
+            "INTEREST_ON_FREE_CASH": "credit",
+            "LENDING_INTEREST": "credit",
         }
         amount_raw = _required_decimal(item.get("amount"), "transaction amount")
         if kind == "TRANSFER":

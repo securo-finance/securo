@@ -225,8 +225,11 @@ async def test_history_transactions_and_dividends_become_idempotent_cash_transac
     ("kind", "amount", "expected_type", "ignored"),
     [
         ("DEPOSIT", "10", "credit", False),
+        ("WITHDRAW", "10", "debit", False),
         ("WITHDRAWAL", "10", "debit", False),
         ("FEE", "10", "debit", False),
+        ("INTEREST_ON_FREE_CASH", "10", "credit", False),
+        ("LENDING_INTEREST", "10", "credit", False),
         ("TRANSFER", "10", "credit", True),
         ("TRANSFER", "-10", "debit", True),
     ],
