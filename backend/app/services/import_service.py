@@ -85,6 +85,40 @@ def _patch_empty_fitids(text: str) -> str:
     )
 
 
+_OFX_SGML_ENCODING_RE = re.compile(
+    r"(^|\r?\n)\s*ENCODING\s*:\s*([^\r\n]*)", re.IGNORECASE
+)
+
+_OFX_VALID_ENCODINGS = {"USASCII", "UNICODE", "UTF-8"}
+
+
+def _normalize_ofx_encoding(text: str, encoding: str) -> str:
+    """Fix SGML headers with ENCODING values that crash ofxparse.
+
+    ofxparse 0.21 only handles USASCII, UNICODE and UTF-8. Any other value
+    (e.g. ISO-8859-1, WINDOWS-1252, or a misspelling) leaves its local
+    ``encoding`` variable unbound, raising ``UnboundLocalError`` inside
+    ``handle_encoding()``. We normalise the header so the value is always
+    one that ofxparse understands, while keeping the CHARSET line so the
+    actual decoding still works downstream.
+    """
+    def _replace_encoding(match: re.Match) -> str:
+        prefix = match.group(1)
+        raw_value = match.group(2).strip()
+        if raw_value.upper().replace("-", "").replace(" ", "") in (
+            "USASCII", "ISO88591", "ISO885915", "CP1252", "WINDOWS1252",
+        ):
+            return f"{prefix}ENCODING:USASCII"
+        if raw_value.upper().replace("-", "").replace(" ", "") in (
+            "UNICODE", "UTF8",
+        ):
+            return f"{prefix}ENCODING:UTF-8"
+        # Unknown encoding — default to UTF-8 which is safest.
+        return f"{prefix}ENCODING:UTF-8"
+
+    return _OFX_SGML_ENCODING_RE.sub(_replace_encoding, text)
+
+
 def _ensure_ofx_sgml_header(text: str, encoding: str) -> str:
     """Prepend a legacy OFX 1.x SGML header for OFX 2.x files that omit it.
 
@@ -108,8 +142,13 @@ def _ensure_ofx_sgml_header(text: str, encoding: str) -> str:
     so the declared header and the actual bytes stay consistent.
     """
     preamble, first_tag, _ = text.lstrip("\ufeff \t\r\n").partition("<")
-    if not first_tag or preamble.strip():
+    if not first_tag:
         return text
+    if preamble.strip():
+        # File already has a header — normalise the ENCODING value so
+        # ofxparse doesn't crash on values it doesn't handle (e.g.
+        # ISO-8859-1, WINDOWS-1252).
+        return _normalize_ofx_encoding(text, encoding)
     if encoding == "latin-1":
         enc_lines = "ENCODING:USASCII\r\nCHARSET:8859-1\r\n"
     else:
