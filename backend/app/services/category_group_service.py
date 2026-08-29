@@ -148,7 +148,9 @@ async def delete_group(session: AsyncSession, group_id: uuid.UUID, workspace_id:
 
     # Unlink children before deleting
     await session.execute(
-        update(Category).where(Category.group_id == group_id).values(group_id=None)
+        update(Category)
+        .where(Category.workspace_id == workspace_id, Category.group_id == group_id)
+        .values(group_id=None)
     )
 
     await session.delete(group)

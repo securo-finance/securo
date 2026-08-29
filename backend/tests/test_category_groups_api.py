@@ -189,7 +189,8 @@ async def test_delete_system_group(
     await create_default_categories(session, test_user.id, "pt-BR")
     groups_response = await client.get("/api/category-groups", headers=auth_headers)
     assert groups_response.status_code == 200
-    group_id = groups_response.json()[0]["id"]
+    system_group = next(group for group in groups_response.json() if group["is_system"])
+    group_id = system_group["id"]
 
     delete_resp = await client.delete(f"/api/category-groups/{group_id}", headers=auth_headers)
     assert delete_resp.status_code == 204
