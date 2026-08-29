@@ -12,6 +12,7 @@ import {
   Target,
   Upload,
   Users,
+  ClipboardCheck,
 } from 'lucide-react'
 // Relative, not aliased: this file is pulled into the test project,
 // which compiles without the `@/*` path mapping (see tsconfig.node.json).
@@ -37,6 +38,7 @@ export const navItems: NavItem[] = [
   { type: 'separator', labelKey: 'nav.groupAccounts' },
   { type: 'link', key: 'transactions', path: '/transactions', icon: ArrowLeftRight, module: 'transactions' },
   { type: 'link', key: 'invoices', path: '/invoices', icon: Receipt, module: 'invoices' },
+  { type: 'link', key: 'reconciliation', path: '/reconciliation', icon: ClipboardCheck, module: 'reconciliation' },
   { type: 'link', key: 'accounts', path: '/accounts', icon: Building2, module: 'accounts' },
   { type: 'link', key: 'import', path: '/import', icon: Upload, module: 'import' },
   { type: 'separator', labelKey: 'nav.groupAnalysis' },

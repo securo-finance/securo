@@ -20,6 +20,7 @@ export const MODULE_IDS = [
   'split_groups',
   'rules',
   'invoices',
+  'reconciliation',
 ] as const
 
 export type ModuleId = (typeof MODULE_IDS)[number]

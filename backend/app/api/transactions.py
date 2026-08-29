@@ -99,6 +99,7 @@ async def list_transactions(
     exclude_transfers: bool = Query(False),
     user_pnl_only: bool = Query(False, description="Return only rows that count toward dashboard/user income/expense totals"),
     exclude_ignored: bool = Query(False, description="Drop rows the user marked ignored, or whose category is ignored"),
+    include_projected: bool = Query(False, description="Include virtual future occurrences of active recurring transactions"),
     tags: Optional[List[str]] = Query(None),
     min_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount >= this value (primary currency)."),
     max_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount <= this value (primary currency)."),
@@ -128,6 +129,7 @@ async def list_transactions(
         min_amount=min_amount,
         max_amount=max_amount,
         include_summary=True,
+        include_projected=include_projected,
     )
     primary_currency = ctx.user.primary_currency
     items = [_tag_fx_fallback(TransactionRead.model_validate(tx, from_attributes=True), primary_currency) for tx in transactions]

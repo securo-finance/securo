@@ -106,6 +106,7 @@
   "nav": {
     "dashboard": "Dashboard",
     "transactions": "Transactions",
+    "reconciliation": "Reconciliation",
     "invoices": "Invoices",
     "accounts": "Accounts",
     "collections": "Collections",

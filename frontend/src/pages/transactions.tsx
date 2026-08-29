@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, Fragment } from 'react'
 import { useRegisterPageChatContext } from '@/lib/page-chat-context'
 import { getAccountName } from '@/lib/account-utils'
 import { AccountIcon } from '@/components/account-icon'
@@ -378,8 +378,10 @@ export default function TransactionsPage() {
   const noAccounts = filterAccountIds.length === 0
     && activeAccountIds !== null && activeAccountIds.length === 0
 
+  const includeProjected = steppedMonth >= currentMonth()
+
   const { data, isLoading } = useQuery({
-    queryKey: ['transactions', page, limit, effectiveAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
+    queryKey: ['transactions', page, limit, effectiveAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir, includeProjected],
     enabled: !noAccounts,
     queryFn: () =>
       transactions.list({
@@ -399,6 +401,7 @@ export default function TransactionsPage() {
         q: searchQuery || undefined,
         tags: tagFilters.length > 0 ? tagFilters : undefined,
         exclude_ignored: hideIgnored ? true : undefined,
+        include_projected: includeProjected ? true : undefined,
         // Mobile has no column headers to change sort; force date-desc so
         // the date grouping always works correctly.
         ...(isMobile ? { sort_by: 'date', sort_dir: 'desc' as const } : grid.apiSort),
@@ -1204,7 +1207,9 @@ export default function TransactionsPage() {
       case 'category':
         return (
           <TableCell key={col.id} style={widthStyle} className={baseClass}>
-            {tx.category ? (
+            {tx.is_split_parent ? (
+              <span className="text-sm font-medium text-muted-foreground italic">{t('transactions.splitCategory', 'Split')}</span>
+            ) : tx.category ? (
               <span className="text-sm text-muted-foreground">{tx.category.name}</span>
             ) : (
               <span className="text-xs text-muted-foreground italic">{t('transactions.noCategory')}</span>
@@ -1287,6 +1292,15 @@ export default function TransactionsPage() {
           </TableCell>
         )
       case 'status':
+        if (tx.kind === 'projected') {
+          return (
+            <TableCell key={col.id} style={widthStyle} className={`${baseClass} text-sm font-medium text-muted-foreground capitalize`}>
+              <span className="inline-block px-1.5 py-0.5 rounded-sm bg-primary/10 text-primary text-[11px] leading-tight font-semibold border border-primary/20">
+                {t('transactions.statusProjected', 'Expected')}
+              </span>
+            </TableCell>
+          )
+        }
         return (
           <TableCell key={col.id} style={widthStyle} className={`${baseClass} text-sm text-muted-foreground capitalize`}>
             {tx.status === 'pending'
@@ -1539,13 +1553,19 @@ export default function TransactionsPage() {
             </TableHeader>
             <TableBody>
               {filteredItems.map((tx) => (
+                <Fragment key={tx.id}>
                 <TableRow
-                  key={tx.id}
                   ref={tx.id === highlightId ? highlightedRowRef : undefined}
                   className={`hover:bg-muted border-b border-border last:border-0 ${
                     selectedIds.has(tx.id) ? 'bg-primary/5' : ''
-                  } ${tx.is_shared || !canWrite ? 'cursor-default' : 'cursor-pointer'}`}
+                  } ${
+                    tx.kind === 'projected' ? 'opacity-80 border-dashed bg-muted/20' : ''
+                  } ${tx.is_shared || !canWrite || tx.kind === 'projected' ? 'cursor-default' : 'cursor-pointer'}`}
                   onClick={() => {
+                    if (tx.kind === 'projected') {
+                      navigate('/recurring')
+                      return
+                    }
                     if (tx.is_shared) {
                       // Owned by another user — view in the group context instead.
                       if (tx.group_id) navigate(`/groups/${tx.group_id}`)
@@ -1559,8 +1579,8 @@ export default function TransactionsPage() {
                   <TableCell style={{ width: 40, minWidth: 40 }} className="py-2.5 pl-4 pr-0">
                     {/* Bulk operations are scoped to user.id so they
                         silently skip shared rows — hide the checkbox
-                        on those to avoid the dead-end UX. */}
-                    {canWrite && !tx.is_shared && (
+                        on those to avoid the dead-end UX. Also hide for projected. */}
+                    {canWrite && !tx.is_shared && tx.kind !== 'projected' && (
                       <input
                         type="checkbox"
                         checked={selectedIds.has(tx.id)}
@@ -1575,6 +1595,31 @@ export default function TransactionsPage() {
                   </TableCell>
                   {grid.visibleColumns.map(col => renderBodyCell(col, tx))}
                 </TableRow>
+                {tx.sub_transactions?.map((subTx) => (
+                  <TableRow
+                    key={subTx.id}
+                    className="hover:bg-muted border-b border-border last:border-0 bg-muted/10 cursor-pointer"
+                    onClick={() => {
+                      if (!canWrite) return
+                      setEditingTx(subTx)
+                      setDialogOpen(true)
+                    }}
+                  >
+                    <TableCell style={{ width: 40, minWidth: 40 }} className="py-2.5 pl-4 pr-0 border-l-4 border-l-primary/30" />
+                    {grid.visibleColumns.map(col => {
+                      // Adjust description cell to be indented
+                      if (col.id === 'description') {
+                        return (
+                          <TableCell key={col.id} style={{ width: grid.widthOf(col.id), minWidth: grid.widthOf(col.id) }} className="py-2.5 pl-6 max-w-0">
+                            {renderDescriptionCell(subTx)}
+                          </TableCell>
+                        )
+                      }
+                      return renderBodyCell(col, subTx)
+                    })}
+                  </TableRow>
+                ))}
+                </Fragment>
               ))}
               {filteredItems.length === 0 && (
                 <TableRow>

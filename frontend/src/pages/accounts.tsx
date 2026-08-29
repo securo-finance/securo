@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
-import { accounts, connections, currencies } from '@/lib/api'
+import { accounts, connections, currencies, assets } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
@@ -46,6 +46,7 @@ const ACCOUNT_TYPE_OPTIONS = [
   { value: 'checking', labelKey: 'accounts.typeChecking' },
   { value: 'savings', labelKey: 'accounts.typeSavings' },
   { value: 'credit_card', labelKey: 'accounts.typeCreditCard' },
+  { value: 'loan', labelKey: 'accounts.typeLoan' },
   { value: 'investment', labelKey: 'accounts.typeInvestment' },
   { value: 'wallet', labelKey: 'accounts.typeWallet' },
 ] as const
@@ -672,6 +673,7 @@ function AccountDialog({
     credit_limit?: number | null
     statement_close_day?: number | null
     payment_due_day?: number | null
+    linked_asset_id?: string | null
   }) => void
   loading: boolean
 }) {
@@ -683,6 +685,10 @@ function AccountDialog({
     queryFn: currencies.list,
     staleTime: Infinity,
   })
+  const { data: assetsList } = useQuery({
+    queryKey: ['assets'],
+    queryFn: assets.list,
+  })
   const [name, setName] = useState(account?.name ?? '')
   const [displayName, setDisplayName] = useState(account?.display_name ?? '')
   const [type, setType] = useState(account?.type ?? 'checking')
@@ -692,6 +698,7 @@ function AccountDialog({
   const [creditLimit, setCreditLimit] = useState(account?.credit_limit?.toString() ?? '')
   const [statementCloseDay, setStatementCloseDay] = useState(account?.statement_close_day?.toString() ?? '')
   const [paymentDueDay, setPaymentDueDay] = useState(account?.payment_due_day?.toString() ?? '')
+  const [linkedAssetId, setLinkedAssetId] = useState<string | null>(account?.linked_asset_id ?? null)
 
   useEffect(() => {
     setName(account?.name ?? '')
@@ -703,6 +710,7 @@ function AccountDialog({
     setCreditLimit(account?.credit_limit?.toString() ?? '')
     setStatementCloseDay(account?.statement_close_day?.toString() ?? '')
     setPaymentDueDay(account?.payment_due_day?.toString() ?? '')
+    setLinkedAssetId(account?.linked_asset_id ?? null)
   }, [account])
 
   return (
@@ -732,6 +740,7 @@ function AccountDialog({
                 statement_close_day: parseDay(statementCloseDay),
                 payment_due_day: parseDay(paymentDueDay),
               }),
+              linked_asset_id: linkedAssetId,
             })
           }}
           className="space-y-4"
@@ -862,6 +871,22 @@ function AccountDialog({
                   />
                 </div>
               </div>
+            </div>
+          )}
+          {(type === 'credit_card' || type === 'loan') && (
+            <div className="space-y-2">
+              <Label>{t('accounts.linkedAsset')}</Label>
+              <select
+                className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                value={linkedAssetId ?? ''}
+                onChange={(e) => setLinkedAssetId(e.target.value || null)}
+              >
+                <option value="">{t('common.none')}</option>
+                {assetsList?.filter(a => !a.is_archived && !a.sell_date).map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">{t('accounts.linkedAssetHint')}</p>
             </div>
           )}
           <DialogFooter>

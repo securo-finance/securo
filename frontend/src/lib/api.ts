@@ -65,6 +65,11 @@ import type {
   TransactionEditPayload,
   InstallmentSeriesInput,
   TransactionApplyScope,
+  InvoiceRead,
+  InvoiceCreate,
+  InvoiceUpdate,
+  PaginatedInvoices,
+  ReconciliationSuggestion,
 } from '@/types'
 
 const api = axios.create({
@@ -484,6 +489,7 @@ export const transactions = {
     exclude_transfers?: boolean
     user_pnl_only?: boolean
     exclude_ignored?: boolean
+    include_projected?: boolean
     tags?: string[]
     min_amount?: number
     max_amount?: number
@@ -1119,6 +1125,10 @@ export const assets = {
   delete: async (id: string): Promise<void> => {
     await api.delete(`/assets/${id}`)
   },
+  cancel: async (id: string): Promise<AssetOrderImport> => {
+    const { data } = await api.post(`/assets/import/orders/${id}/cancel`)
+    return data
+  },
   values: async (id: string): Promise<AssetValue[]> => {
     const { data } = await api.get(`/assets/${id}/values`)
     return data
@@ -1673,6 +1683,79 @@ export const agents = {
       const { data } = await api.post(`/agents/connections/${id}/test`)
       return data
     },
+  },
+}
+
+export const invoices = {
+  list: async (params?: {
+    payee_id?: string
+    status?: string
+    from?: string
+    to?: string
+    page?: number
+    limit?: number
+  }): Promise<PaginatedInvoices> => {
+    const { data } = await api.get('/invoices', { params })
+    return data
+  },
+
+  get: async (id: string): Promise<InvoiceRead> => {
+    const { data } = await api.get(`/invoices/${id}`)
+    return data
+  },
+
+  create: async (invoice: InvoiceCreate): Promise<InvoiceRead> => {
+    const { data } = await api.post('/invoices', invoice)
+    return data
+  },
+
+  update: async (id: string, invoice: InvoiceUpdate): Promise<InvoiceRead> => {
+    const { data } = await api.patch(`/invoices/${id}`, invoice)
+    return data
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/invoices/${id}`)
+  },
+
+  recordPayment: async (id: string, payment: {
+    amount: number
+    date: string
+    notes?: string
+    transaction_id?: string
+  }): Promise<InvoiceRead> => {
+    const { data } = await api.post(`/invoices/${id}/payments`, payment)
+    return data
+  },
+
+  send: async (id: string): Promise<InvoiceRead> => {
+    const { data } = await api.post(`/invoices/${id}/send`)
+    return data
+  },
+
+  cancel: async (id: string): Promise<InvoiceRead> => {
+    const { data } = await api.post(`/invoices/${id}/cancel`)
+    return data
+  },
+}
+
+export const reconciliation = {
+  suggestions: async (params?: {
+    account_ids?: string[]
+    from?: string
+    to?: string
+  }): Promise<ReconciliationSuggestion[]> => {
+    const { data } = await api.get('/reconciliation/suggestions', { params })
+    return data
+  },
+
+  apply: async (payload: {
+    transaction_id: string
+    match_type: string
+    expected_id: string
+  }): Promise<Transaction> => {
+    const { data } = await api.post('/reconciliation/apply', payload)
+    return data
   },
 }
 

@@ -20,6 +20,7 @@ from app.schemas.transaction import (
     TransactionCreate,
     TransactionUpdate,
     TransferCreate,
+    CategorySplitInput,
 )
 from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
 from app.services import split_service
@@ -32,7 +33,9 @@ from app.services._query_filters import (
     is_not_ignored,
     reporting_date_col,
 )
-from app.services.recurring_transaction_service import _advance_date
+from app.services.recurring_transaction_service import _advance_date, get_occurrences_in_range
+from app.services.dashboard_service import _materialized_recurring_occurrences
+from app.models.recurring_transaction import RecurringTransaction
 
 
 async def _ensure_category_in_workspace(
@@ -130,6 +133,7 @@ async def get_transactions(
     include_summary: bool = False,
     user_pnl_only: bool = False,
     exclude_ignored: bool = False,
+    include_projected: bool = False,
 ) -> tuple[list[Transaction], int, Optional[dict]]:
     """List transactions for a workspace.
 
@@ -186,10 +190,14 @@ async def get_transactions(
             selectinload(Transaction.account),
             selectinload(Transaction.payee_entity),
             selectinload(Transaction.splits),
+            selectinload(Transaction.sub_transactions).selectinload(Transaction.category),
         )
     )
     if transaction_ids:
         base_query = base_query.where(Transaction.id.in_(transaction_ids))
+    else:
+        base_query = base_query.where(Transaction.parent_transaction_id.is_(None))
+        
     if use_group_scope:
         from app.models.group import GroupMember
         from app.models.transaction_split import TransactionSplit
@@ -524,7 +532,135 @@ async def get_transactions(
         # and the frontend needs `is_shared` to lock them from edits.
         await _tag_shared_view(session, transactions, user_id)
 
+    if include_projected and from_date and to_date:
+        projected = await get_projected_recurring_for_range(
+            session=session,
+            workspace_id=workspace_id,
+            start=from_date,
+            end=to_date,
+            account_ids=account_ids if account_ids else ([account_id] if account_id else None),
+            category_id=category_id,
+        )
+        # If we have summary requested, we optionally add projected items? 
+        # The prompt says: "Update the period totals to optionally include projected recurring amounts."
+        # We can do this in the dashboard_service or here if include_projected is True.
+        if summary and projected:
+            for p_tx in projected:
+                # We can update summary if needed, but summary usually relies on counts_as_pnl.
+                # Just appending for now to transactions.
+                if not p_tx.is_ignored:
+                    if p_tx.type == "credit":
+                        summary["income"] += Decimal(str(p_tx.amount_primary or p_tx.amount))
+                    else:
+                        summary["expense"] += Decimal(str(p_tx.amount_primary or p_tx.amount))
+            summary["net"] = summary["income"] - summary["expense"]
+            
+        transactions.extend(projected)
+        
+        # Sort in memory since we appended
+        if chosen_col is None:
+            # default: date desc, created_at desc
+            transactions.sort(key=lambda x: (x.date, x.created_at or date.min), reverse=True)
+        else:
+            # simplify sorting for the common case (date)
+            reverse = sort_dir == "desc"
+            transactions.sort(key=lambda x: (x.date, x.created_at or date.min), reverse=reverse)
+
     return transactions, total or 0, summary
+
+
+async def get_projected_recurring_for_range(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    start: date,
+    end: date,
+    account_ids: Optional[list[uuid.UUID]] = None,
+    category_id: Optional[uuid.UUID] = None,
+) -> list[Transaction]:
+    """Helper to generate virtual recurring rows for the transaction list."""
+    if account_ids is not None and len(account_ids) == 0:
+        return []
+
+    filters = [
+        RecurringTransaction.workspace_id == workspace_id,
+        RecurringTransaction.is_active == True,
+        RecurringTransaction.start_date <= end,
+    ]
+    if account_ids:
+        filters.append(RecurringTransaction.account_id.in_(account_ids))
+    if category_id:
+        filters.append(RecurringTransaction.category_id == category_id)
+
+    stmt = select(RecurringTransaction).options(
+        selectinload(RecurringTransaction.category),
+        selectinload(RecurringTransaction.account)
+    ).where(*filters)
+    result = await session.execute(stmt)
+    recurring_list = list(result.scalars().all())
+
+    if not recurring_list:
+        return []
+
+    materialized_occurrences = await _materialized_recurring_occurrences(
+        session,
+        workspace_id,
+        {rec.id for rec in recurring_list},
+        start,
+        end,
+    )
+
+    projected = []
+    for rec in recurring_list:
+        occurrences = get_occurrences_in_range(
+            start=rec.next_occurrence,
+            frequency=rec.frequency,
+            end_date=rec.end_date,
+            range_start=start,
+            range_end=end,
+            intended_day=rec.day_of_month or rec.start_date.day,
+            weekend_adjustment=rec.weekend_adjustment,
+        )
+        for occ_date in occurrences:
+            if (rec.id, occ_date) in materialized_occurrences:
+                continue
+            
+            # Create transient Transaction object
+            t = Transaction(
+                id=uuid.uuid4(), # Transient ID
+                workspace_id=workspace_id,
+                user_id=rec.user_id,
+                account_id=rec.account_id,
+                category_id=rec.category_id,
+                description=rec.description,
+                amount=rec.amount,
+                currency=rec.currency,
+                type=rec.type,
+                date=occ_date,
+                effective_date=occ_date,
+                status="projected", # Use status as indicator? Schema has `kind`
+                source="recurring",
+            )
+            # We set attributes directly that Schema expects
+            t.kind = "projected"
+            t.recurring_id = rec.id
+            t.amount_primary = rec.amount_primary
+            t.fx_rate_used = rec.fx_rate_used
+            
+            # Setup relationships manually for the serializer
+            t.category = rec.category
+            t.account = rec.account
+            t.payee_entity = None
+            t.splits = []
+            t.is_ignored = bool(rec.category and rec.category.is_ignored)
+            t.attachment_count = 0
+            t.is_shared = False
+            t.parent_owner_name = None
+            t.group_id = None
+            t.viewer_share = None
+            
+            projected.append(t)
+
+    return projected
 
 
 async def _tag_shared_view(
@@ -667,6 +803,7 @@ async def get_transaction(
             selectinload(Transaction.category),
             selectinload(Transaction.payee_entity),
             selectinload(Transaction.splits),
+            selectinload(Transaction.sub_transactions).selectinload(Transaction.category),
         )
     )
     transaction = result.scalar_one_or_none()
@@ -751,8 +888,11 @@ async def create_transaction(
     if data.splits is not None:
         await split_service.replace_splits(session, transaction, data.splits, user_id)
 
+    if data.category_splits is not None:
+        await _replace_category_splits(session, workspace_id, user_id, transaction, data.category_splits)
+
     await session.commit()
-    await session.refresh(transaction, ["category", "splits"])
+    await session.refresh(transaction, ["category", "splits", "sub_transactions"])
     return transaction
 
 
@@ -1371,6 +1511,7 @@ async def _apply_update_to_row(
     update_data: dict,
     apply_to_transfer_pair: bool,
     splits_payload: Optional[TransactionSplitsInput],
+    category_splits_payload: Optional[list[CategorySplitInput]],
 ) -> None:
     """Apply a parsed TransactionUpdate payload to a single row.
 
@@ -1478,6 +1619,82 @@ async def _apply_update_to_row(
     if splits_payload is not None:
         await split_service.replace_splits(session, tx, splits_payload, user_id)
 
+    if category_splits_payload is not None:
+        await _replace_category_splits(session, tx.workspace_id, user_id, tx, category_splits_payload)
+
+
+async def _replace_category_splits(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    parent: Transaction,
+    splits: list[CategorySplitInput]
+) -> None:
+    total_split_amount = sum(s.amount for s in splits)
+    if splits and total_split_amount != parent.amount:
+        raise ValueError("Sum of split amounts must equal the transaction amount")
+
+    existing_children = await session.execute(
+        select(Transaction).where(Transaction.parent_transaction_id == parent.id)
+    )
+    for child in existing_children.scalars().all():
+        if child.transfer_pair_id:
+            counterpart = await session.execute(
+                select(Transaction).where(
+                    Transaction.transfer_pair_id == child.transfer_pair_id,
+                    Transaction.id != child.id
+                )
+            )
+            cp = counterpart.scalar_one_or_none()
+            if cp:
+                await session.delete(cp)
+        await session.delete(child)
+        
+    await session.flush()
+    
+    if not splits:
+        parent.is_split_parent = False
+        return
+
+    parent.is_split_parent = True
+    
+    remaining_primary = parent.amount_primary
+    for i, split in enumerate(splits):
+        if split.category_id:
+            await _ensure_category_in_workspace(session, workspace_id, split.category_id)
+            
+        child = Transaction(
+            user_id=user_id,
+            workspace_id=workspace_id,
+            account_id=parent.account_id,
+            category_id=split.category_id,
+            description=parent.description,
+            amount=split.amount,
+            currency=parent.currency,
+            date=parent.date,
+            type=parent.type,
+            source=parent.source,
+            status=parent.status,
+            notes=split.notes,
+            parent_transaction_id=parent.id,
+            is_split_parent=False
+        )
+        if parent.amount_primary is not None and parent.fx_rate_used is not None:
+            child.fx_rate_used = parent.fx_rate_used
+            if i == len(splits) - 1:
+                child.amount_primary = remaining_primary
+            else:
+                from decimal import ROUND_HALF_UP, Decimal
+                child.amount_primary = (split.amount * parent.fx_rate_used).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                remaining_primary -= child.amount_primary
+
+        apply_effective_date(child, await session.get(Account, parent.account_id))
+        session.add(child)
+        await session.flush()
+        
+        if split.transfer_account_id:
+            await create_transfer_counterpart(session, workspace_id, user_id, child.id, split.transfer_account_id)
+
 
 async def update_transaction(
     session: AsyncSession,
@@ -1498,6 +1715,9 @@ async def update_transaction(
     # service can validate against the new amount.
     splits_payload = data.splits if "splits" in update_data else None
     update_data.pop("splits", None)
+
+    category_splits_payload = data.category_splits if "category_splits" in update_data else None
+    update_data.pop("category_splits", None)
 
     # Verify the new account belongs to the workspace before touching the
     # row. When changing the account on one side of a transfer pair,
@@ -1575,12 +1795,14 @@ async def update_transaction(
         if is_anchor:
             row_update = update_data
             row_splits = splits_payload
+            row_cat_splits = category_splits_payload
         else:
             # Non-anchor rows only exist in the scoped branch above, where
             # scoped_update is always built.
             assert scoped_update is not None
             row_update = scoped_update
             row_splits = None
+            row_cat_splits = None
         await _apply_update_to_row(
             session,
             user_id,
@@ -1588,6 +1810,7 @@ async def update_transaction(
             row_update,
             apply_to_transfer_pair,
             row_splits,
+            row_cat_splits,
         )
 
     # A changed parcel amount makes the stored series total stale, whatever
@@ -1598,7 +1821,7 @@ async def update_transaction(
         await _resync_installment_series_total(session, workspace_id, transaction)
 
     await session.commit()
-    await session.refresh(transaction, ["category", "payee_entity", "splits"])
+    await session.refresh(transaction, ["category", "payee_entity", "splits", "sub_transactions"])
     return transaction
 
 
