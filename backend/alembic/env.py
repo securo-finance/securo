@@ -40,10 +40,13 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    reject_ambiguous_legacy_063(connection)
     context.configure(connection=connection, target_metadata=target_metadata)
 
     with context.begin_transaction():
+        # Keep the safety SELECT inside Alembic's managed transaction. Running
+        # it first triggers SQLAlchemy autobegin, causing the later migration
+        # transaction to be rolled back when the async connection closes.
+        reject_ambiguous_legacy_063(connection)
         context.run_migrations()
 
 

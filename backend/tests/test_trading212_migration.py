@@ -22,6 +22,7 @@ MIGRATION_PATH = (
     / "versions"
     / "077_trading212_connection_metadata.py"
 )
+ALEMBIC_ENV_PATH = Path(__file__).resolve().parents[1] / "alembic" / "env.py"
 
 
 def _migration_module():
@@ -86,6 +87,20 @@ def test_legacy_063_stamp_without_upstream_goal_column_fails_preflight():
         connection.execute(sa.text("CREATE TABLE goals (id INTEGER PRIMARY KEY)"))
         with pytest.raises(RuntimeError, match="ambiguous legacy Alembic revision 063"):
             reject_ambiguous_legacy_063(connection)
+
+
+def test_migration_safety_preflight_runs_inside_alembic_transaction():
+    """A safety SELECT before begin_transaction makes async Alembic roll upgrades back."""
+    source = ALEMBIC_ENV_PATH.read_text()
+    migration_runner = source.split("def do_run_migrations", 1)[1].split(
+        "async def run_async_migrations", 1
+    )[0]
+
+    transaction_start = migration_runner.index("with context.begin_transaction()")
+    safety_check = migration_runner.index("reject_ambiguous_legacy_063(connection)")
+    migration_run = migration_runner.index("context.run_migrations()")
+
+    assert transaction_start < safety_check < migration_run
 
 
 def test_t212_metadata_migration_skips_columns_already_created_by_a_legacy_installation():
