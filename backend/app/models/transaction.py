@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from app.models.category import Category
     from app.models.credit_card_bill import CreditCardBill
     from app.models.import_log import ImportLog
+    from app.models.invoice import Invoice
     from app.models.payee import Payee
     from app.models.recurring_transaction import RecurringTransaction
     from app.models.transaction_attachment import TransactionAttachment
@@ -97,6 +98,13 @@ class Transaction(Base):
     # Flag to exclude this transaction from reports and dashboard aggregations.
     # When set to True, the transaction is ignored for income/expense calculations.
     is_ignored: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    is_split_parent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    parent_transaction_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("transactions.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     # Link to the recurring bill this transaction fulfills (issue #116). Set when
     # a synced/imported/manual charge is matched to a recurring bill, or stamped
     # onto the placeholder generate_pending materializes. ON DELETE SET NULL: if
@@ -107,11 +115,18 @@ class Transaction(Base):
         nullable=True,
         index=True,
     )
+    invoice_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("invoices.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     account: Mapped["Account"] = relationship(back_populates="transactions")
     category: Mapped[Optional["Category"]] = relationship()
     bill: Mapped[Optional["CreditCardBill"]] = relationship()
+    invoice: Mapped[Optional["Invoice"]] = relationship()
     payee_entity: Mapped[Optional["Payee"]] = relationship(back_populates="transactions")
     recurring_transaction: Mapped[Optional["RecurringTransaction"]] = relationship(
         back_populates="transactions"
@@ -122,6 +137,12 @@ class Transaction(Base):
     )
     splits: Mapped[list["TransactionSplit"]] = relationship(
         back_populates="transaction", cascade="all, delete-orphan"
+    )
+    parent_transaction: Mapped[Optional["Transaction"]] = relationship(
+        "Transaction", remote_side="[Transaction.id]", back_populates="sub_transactions"
+    )
+    sub_transactions: Mapped[list["Transaction"]] = relationship(
+        "Transaction", back_populates="parent_transaction", cascade="all, delete-orphan"
     )
 
     # Populated dynamically by the service (not DB columns).

@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from app.models.bank_connection import BankConnection
     from app.models.institution import Institution
     from app.models.transaction import Transaction
+    from app.models.asset import Asset
 
 
 class Account(Base):
@@ -51,9 +52,13 @@ class Account(Base):
     )
     is_closed: Mapped[bool] = mapped_column(Boolean, default=False)
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    linked_asset_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assets.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     connection: Mapped[Optional["BankConnection"]] = relationship(back_populates="accounts")
     institution: Mapped[Optional["Institution"]] = relationship(
         back_populates="accounts", lazy="selectin"
     )
+    linked_asset: Mapped[Optional["Asset"]] = relationship()
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="account", cascade="all, delete-orphan")

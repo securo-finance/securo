@@ -25,6 +25,7 @@ class AccountCreate(BaseModel):
     minimum_payment: Optional[Decimal] = None
     card_brand: Optional[str] = None
     card_level: Optional[str] = None
+    linked_asset_id: Optional[uuid.UUID] = None
 
 
 class AccountUpdate(BaseModel):
@@ -39,6 +40,7 @@ class AccountUpdate(BaseModel):
     minimum_payment: Optional[Decimal] = None
     card_brand: Optional[str] = None
     card_level: Optional[str] = None
+    linked_asset_id: Optional[uuid.UUID] = None
 
 
 class AccountRead(AccountBase):
@@ -69,6 +71,7 @@ class AccountRead(AccountBase):
     card_level: Optional[str] = None
     is_closed: bool = False
     closed_at: Optional[datetime] = None
+    linked_asset_id: Optional[uuid.UUID] = None
 
     model_config = ConfigDict(from_attributes=True)
 

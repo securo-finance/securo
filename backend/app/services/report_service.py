@@ -130,6 +130,8 @@ async def _net_worth_at(
     accounts_total = 0.0
     liabilities_total = 0.0
     composition: list[ReportCompositionItem] = []
+    
+    linked_loans: dict[str, list[tuple[Account, float]]] = {}
 
     for account in accounts:
         bal = await _account_balance_at(session, account, cutoff)
@@ -137,7 +139,14 @@ async def _net_worth_at(
             session, Decimal(str(abs(bal))), account.currency, primary_currency, cutoff
         )
         converted_val = float(converted)
-        if account.type == "credit_card" or bal < 0:
+        
+        is_liability = account.type == "credit_card" or account.type == "loan" or bal < 0
+        if getattr(account, "linked_asset_id", None) and is_liability:
+            linked_asset_id_str = str(account.linked_asset_id)
+            linked_loans.setdefault(linked_asset_id_str, []).append((account, converted_val))
+            continue
+
+        if is_liability:
             liabilities_total += converted_val
             if converted_val > 0:
                 composition.append(ReportCompositionItem(
@@ -185,19 +194,43 @@ async def _net_worth_at(
             amount = float(asset.purchase_price)
         else:
             amount = 0.0
-        if amount > 0:
-            converted, _ = await convert(
-                session, Decimal(str(amount)), asset.currency, primary_currency, cutoff
-            )
-            converted_val = round(float(converted), 2)
-            assets_total += converted_val
+            
+        asset_debt = 0.0
+        if str(asset.id) in linked_loans:
+            for acc, debt_val in linked_loans.pop(str(asset.id)):
+                asset_debt += debt_val
+
+        if amount > 0 or asset_debt > 0:
+            if amount > 0:
+                converted, _ = await convert(
+                    session, Decimal(str(amount)), asset.currency, primary_currency, cutoff
+                )
+                converted_val = float(converted)
+            else:
+                converted_val = 0.0
+                
+            net_val = round(converted_val - asset_debt, 2)
+            assets_total += net_val
             composition.append(ReportCompositionItem(
                 key=str(asset.id),
                 label=asset.name,
-                value=converted_val,
+                value=net_val,
                 color=_ASSET_TYPE_COLORS.get(asset.type, "#6B7280"),
                 group="assets",
             ))
+
+    # Any linked loans for assets that weren't included (e.g. archived) fall back to liabilities
+    for asset_id, loans in linked_loans.items():
+        for acc, debt_val in loans:
+            liabilities_total += debt_val
+            if debt_val > 0:
+                composition.append(ReportCompositionItem(
+                    key=str(acc.id),
+                    label=get_account_name(acc),
+                    value=round(debt_val, 2),
+                    color=_ACCOUNT_TYPE_COLORS.get(acc.type, "#6B7280"),
+                    group="liabilities",
+                ))
 
     net_worth = accounts_total + assets_total - liabilities_total
 

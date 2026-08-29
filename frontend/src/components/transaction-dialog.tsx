@@ -43,10 +43,11 @@ import {
 import { CategorySelect } from '@/components/category-select'
 import { TransactionAttachments } from '@/components/transaction-attachments'
 import type { AttachmentPreview } from '@/components/transaction-attachments'
+import { CategorySplitsSection } from '@/components/category-splits-section'
 import { TransactionSplitsSection } from '@/components/transaction-splits-section'
 import { buildInstallmentSeriesInput, hasNonStatusChange, isManualInstallmentSeriesRow } from '@/lib/installment-series'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
-import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, Rule, RuleCondition } from '@/types'
+import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, Rule, RuleCondition, CategorySplitInput } from '@/types'
 import { toast } from 'sonner'
 
 export type SaveAction = 'save' | 'saveAndNew' | 'saveAndDuplicate'
@@ -337,6 +338,14 @@ export function TransactionDialog({
         </p>
         <DialogFooter className="flex-col sm:flex-row sm:justify-end gap-2">
           <Button
+            type="submit"
+            onClick={() => triggerSubmit('save')}
+            disabled={!description || !amount || !date || !splitsValid || !categorySplitsValid || !accountId || loading || (isCreating && isInstallment && !installmentCount)}
+            className="flex-1 min-w-0"
+          >
+            {loading ? t('common.saving') : t('common.save')}
+          </Button>
+          <Button
             autoFocus
             onClick={() => submitInstallmentEdit('this')}
             disabled={loading}
@@ -480,6 +489,23 @@ function TransactionForm({
     const existing = (seed as Transaction | null | undefined)?.splits
     return !!(existing && existing.length > 0)
   })
+
+  const [categorySplitsValid, setCategorySplitsValid] = useState(true)
+  const [categorySplits, setCategorySplits] = useState<CategorySplitInput[] | null>(() => {
+    const existing = (seed as Transaction | null | undefined)?.sub_transactions
+    if (!existing || existing.length === 0) return null
+    return existing.map(tx => ({
+      amount: Math.abs(tx.amount),
+      category_id: tx.category_id,
+      notes: tx.notes ?? null,
+      transfer_account_id: tx.transfer_pair_id ? 'transfer' : null, // NOTE: this is incomplete since we don't eager-load the pair's account id, but it handles form seeding minimally
+    }))
+  })
+  const [hadInitialCategorySplits] = useState<boolean>(() => {
+    const existing = (seed as Transaction | null | undefined)?.sub_transactions
+    return !!(existing && existing.length > 0)
+  })
+
   const isCreating = !transaction
   const showConversion = currency !== userCurrency && !isSynced
   // Privacy mode hides monetary values across the app, but the edit modal
@@ -729,6 +755,13 @@ function TransactionForm({
           : hadInitialSplits
             ? { splits: { share_type: 'equal', splits: [] } }
             : {}
+            
+        const categorySplitsPayload: { category_splits?: CategorySplitInput[] } = categorySplits
+          ? { category_splits: categorySplits }
+          : hadInitialCategorySplits
+            ? { category_splits: [] }
+            : {}
+
         const txData = isSynced
           ? {
               category_id: categoryId || null,
@@ -737,6 +770,7 @@ function TransactionForm({
               is_ignored: isIgnored,
               ...overridePayload,
               ...splitsPayload,
+              ...categorySplitsPayload,
             } as TransactionEditPayload
           : {
               description,
@@ -755,6 +789,7 @@ function TransactionForm({
               ...fxFields,
               ...overridePayload,
               ...splitsPayload,
+              ...categorySplitsPayload,
             } as TransactionEditPayload
         const recurringData = isCreating && isRecurring
           ? { frequency, end_date: endDate || undefined }
@@ -1130,13 +1165,26 @@ function TransactionForm({
           (the share would settle a debt that this debit is already
           settling). Hide the section entirely in that case. */}
       {transaction?.source !== 'settlement' && (
-        <TransactionSplitsSection
-          amount={parseFloat(amount) || 0}
-          currency={currency}
-          value={splits}
-          onChange={setSplits}
-          onValidityChange={setSplitsValid}
-        />
+        <>
+          <TransactionSplitsSection
+            amount={type === 'credit' ? parseFloat(amount) || 0 : -(parseFloat(amount) || 0)}
+            currency={currency}
+            value={splits}
+            onChange={setSplits}
+            onValidityChange={setSplitsValid}
+          />
+          
+          <CategorySplitsSection
+            amount={type === 'credit' ? parseFloat(amount) || 0 : -(parseFloat(amount) || 0)}
+            currency={currency}
+            value={categorySplits}
+            onChange={setCategorySplits}
+            onValidityChange={setCategorySplitsValid}
+            categories={categories}
+            categoryGroups={categoryGroups}
+            accounts={accounts}
+          />
+        </>
       )}
 
       {!isCreating && transaction ? (

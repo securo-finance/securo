@@ -31,6 +31,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.asset_tasks.apply_asset_growth_rules",
         "schedule": 60 * 60,  # every hour; idempotent (checks last value date)
     },
+    "check-overdue-invoices": {
+        "task": "app.tasks.invoice_tasks.check_overdue_invoices",
+        "schedule": 60 * 60,  # every hour; idempotent status check
+    },
     "refresh-market-prices-daily": {
         "task": "app.tasks.asset_tasks.refresh_market_prices",
         # Once a day is enough for personal portfolio tracking — keeps us
@@ -60,6 +64,7 @@ celery_app.conf.include = [
     "app.tasks.recurring_tasks",
     "app.tasks.asset_tasks",
     "app.tasks.fx_rate_tasks",
+    "app.tasks.invoice_tasks",
     # Optional agents module — registering the import is harmless when
     # AGENTS_ENABLED=false (the task just won't be dispatched).
     "app.agents.tasks.ingest",

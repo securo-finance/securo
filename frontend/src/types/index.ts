@@ -176,6 +176,7 @@ export interface Account {
   card_level: string | null
   is_closed: boolean
   closed_at: string | null
+  linked_asset_id: string | null
 }
 
 export interface CreditCardBill {
@@ -255,6 +256,8 @@ export interface Transaction {
   // The recurring bill this transaction fulfills, if any (issue #116).
   recurring_transaction_id?: string | null
   splits: TransactionSplit[]
+  sub_transactions?: Transaction[]
+  is_split_parent?: boolean
   // Shared-transaction view fields. Set per-request when the viewer
   // is a linked split member but not the owner. Render `viewer_share`
   // as the amount and treat the row as read-only — editing belongs
@@ -295,6 +298,7 @@ export interface InstallmentSeriesInput {
     fx_rate_used?: number | null
     effective_bill_date?: string | null
     splits?: TransactionSplitsInput | null
+    category_splits?: CategorySplitInput[] | null
   }
   installments: number
   first_installment_status?: 'posted' | 'pending'
@@ -326,12 +330,20 @@ export interface TransactionSplitsInput {
   splits: TransactionSplitInput[]
 }
 
+export interface CategorySplitInput {
+  amount: number
+  category_id: string | null
+  transfer_account_id?: string | null
+  notes?: string | null
+}
+
 // Payload the transaction dialog sends on save. `splits` is the normalized
 // TransactionSplitsInput the split section produces, not the
 // TransactionSplit[] rows the API returns, so the edit payload type reflects
 // the form's actual shape.
-export type TransactionEditPayload = Omit<Partial<Transaction>, 'splits'> & {
+export type TransactionEditPayload = Omit<Partial<Transaction>, 'splits' | 'sub_transactions'> & {
   splits?: TransactionSplitsInput | null
+  category_splits?: CategorySplitInput[] | null
 }
 
 export type GroupKind = 'social' | 'cost_center' | 'project' | 'client' | 'other'

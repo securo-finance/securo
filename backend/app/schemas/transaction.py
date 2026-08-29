@@ -12,6 +12,13 @@ from app.schemas.transaction_split import (
     TransactionSplitsInput,
 )
 
+class CategorySplitInput(BaseModel):
+    amount: Decimal
+    category_id: Optional[uuid.UUID] = None
+    transfer_account_id: Optional[uuid.UUID] = None
+    notes: Optional[str] = None
+
+
 
 class TransactionBase(BaseModel):
     description: str
@@ -34,6 +41,7 @@ class TransactionCreate(TransactionBase):
     fx_rate_used: Optional[Decimal] = None
     effective_bill_date: Optional[_Date] = None
     splits: Optional[TransactionSplitsInput] = None
+    category_splits: Optional[list[CategorySplitInput]] = None
     # Manual status override. When omitted the transaction is created as
     # "posted" (settled), matching the model default. Pass "pending"
     # (not yet settled) to record an entry that isn't settled yet. Only
@@ -111,6 +119,8 @@ class TransactionUpdate(BaseModel):
     # When provided, replaces the transaction's splits wholesale. Pass
     # an object with an empty `splits` list to clear them.
     splits: Optional[TransactionSplitsInput] = None
+    # Category and transfer splits
+    category_splits: Optional[list[CategorySplitInput]] = None
     # Installment-series scope for edits. "this" (default) only touches the
     # target row; "future" touches it plus all later installments of the
     # same series; "all" touches every row in the series. Ignored when the
@@ -165,6 +175,8 @@ class TransactionRead(TransactionBase):
     bill_id: Optional[uuid.UUID] = None
     effective_bill_date: Optional[_Date] = None
     recurring_transaction_id: Optional[uuid.UUID] = None
+    kind: Literal["actual", "projected"] = "actual"
+    recurring_id: Optional[uuid.UUID] = None
     splits: list[TransactionSplitRead] = []
     # Shared-transaction view fields. Set per-request when the viewer
     # is a linked member of one of this transaction's splits but not
@@ -178,6 +190,9 @@ class TransactionRead(TransactionBase):
     # instead of a generic "shared" badge.
     parent_owner_name: Optional[str] = None
     is_ignored: bool = False
+    is_split_parent: bool = False
+    parent_transaction_id: Optional[uuid.UUID] = None
+    sub_transactions: list["TransactionRead"] = []
 
     @model_validator(mode="after")
     def reflect_ignored_category(self):
@@ -278,3 +293,5 @@ class TransactionImportRequest(BaseModel):
     filename: str = ""
     detected_format: str = ""
     detect_duplicates: bool = True
+
+TransactionRead.model_rebuild()
