@@ -314,6 +314,7 @@
     "date": "Data",
     "category": "Categoria",
     "account": "Conto",
+    "card": "Carta",
     "noCategory": "Nessuna categoria",
     "searchCategory": "Cerca categoria...",
     "noCategoryFound": "Nessuna categoria trovata.",

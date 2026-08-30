@@ -1044,6 +1044,17 @@ function TransactionForm({
           />
         </div>
       </div>
+      {transaction?.card_masked_number && (
+        <div className="space-y-2">
+          <Label>{t('transactions.card')}</Label>
+          <Input
+            value={`•••• ${transaction.card_masked_number}`}
+            readOnly
+            tabIndex={-1}
+            className="bg-muted/40 text-muted-foreground cursor-default select-none"
+          />
+        </div>
+      )}
       <div className={cn("grid gap-4", isSynced ? "grid-cols-1" : "grid-cols-2")}>
         <div className="space-y-2">
           <Label>{t('payees.payee')}</Label>

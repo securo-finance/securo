@@ -314,6 +314,7 @@
     "date": "Datum",
     "category": "Categorie",
     "account": "Rekening",
+    "card": "Kaart",
     "noCategory": "Geen categorie",
     "searchCategory": "Categorie zoeken...",
     "noCategoryFound": "Geen categorie gevonden.",
