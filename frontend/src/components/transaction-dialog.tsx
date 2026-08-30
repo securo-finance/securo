@@ -1049,9 +1049,8 @@ function TransactionForm({
           <Label>{t('transactions.card')}</Label>
           <Input
             value={`•••• ${transaction.card_masked_number}`}
-            readOnly
-            tabIndex={-1}
-            className="bg-muted/40 text-muted-foreground cursor-default select-none"
+            disabled
+            className="bg-muted/40"
           />
         </div>
       )}
