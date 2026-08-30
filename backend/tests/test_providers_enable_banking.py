@@ -449,3 +449,75 @@ def test_mask_last4_returns_none_when_unusable():
 
 def test_mask_last4_handles_exactly_four():
     assert mask_last4("1234") == "1234"
+
+
+# ----- counterparty fallback / transaction_date (issue #734, #753) -----
+
+
+def test_build_transaction_description_falls_back_to_creditor_for_debit():
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "12.34", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-20",
+        "remittance_information": [],
+        "creditor": {"name": "Example Merchant"},
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.description == "Example Merchant"
+
+
+def test_build_transaction_description_falls_back_to_debtor_for_credit():
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "100.00", "currency": "EUR"},
+        "credit_debit_indicator": "CRDT",
+        "booking_date": "2026-08-20",
+        "remittance_information": [],
+        "debtor": {"name": "Employer Inc"},
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.description == "Employer Inc"
+
+
+def test_build_transaction_description_prefers_remittance_over_counterparty():
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "15.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-20",
+        "remittance_information": ["Order #12345"],
+        "creditor": {"name": "Example Merchant"},
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.description == "Order #12345"
+
+
+def test_build_transaction_description_falls_back_to_generic_transaction():
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "15.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-20",
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.description == "Transaction"
+
+
+def test_build_transaction_falls_back_to_transaction_date():
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "20.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": "2026-08-29",
+        "creditor": {"name": "Coffee Shop"},
+    }
+    tx = provider._build_transaction("acc-1", raw, "pending", "auto")
+    assert tx is not None
+    assert tx.date == date(2026, 8, 29)
+    assert tx.description == "Coffee Shop"
+

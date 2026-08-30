@@ -599,12 +599,19 @@ class EnableBankingProvider(BankProvider):
         currency = amount_obj.get("currency") or "EUR"
         booking = _parse_iso_date(raw.get("booking_date"))
         value = _parse_iso_date(raw.get("value_date"))
-        txn_date = booking or value
+        txn_date = booking or value or _parse_iso_date(raw.get("transaction_date"))
         if not txn_date:
             return None
         description = _join_remittance(raw.get("remittance_information")) or (
             raw.get("additional_information") or ""
         )
+        if not description:
+            creditor = (raw.get("creditor") or {}).get("name") or raw.get("creditor_name")
+            debtor = (raw.get("debtor") or {}).get("name") or raw.get("debtor_name")
+            if indicator == "DBIT":
+                description = creditor or debtor or ""
+            else:
+                description = debtor or creditor or ""
         description = description.strip()[:500] or "Transaction"
         external_id = (raw.get("entry_reference") or "").strip() or _txn_fingerprint(
             account_uid, raw
