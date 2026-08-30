@@ -129,6 +129,14 @@ export function MobileTransactionRow({
               {tx.installment_number}/{tx.total_installments}
             </span>
           )}
+          {tx.card_masked_number && (
+            <span
+              className="text-[9px] font-bold tabular-nums text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 px-1 py-0.5 rounded-full shrink-0"
+              title={`Cartão •${tx.card_masked_number}`}
+            >
+              •{tx.card_masked_number}
+            </span>
+          )}
           {shouldShowPendingBadge(tx) && (
             <span
               title={t('transactions.pending')}

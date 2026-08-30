@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Protótipo — cartão nas transações</title>
+  <style>
+    :root { --bg:#f6f8fb; --card:#fff; --ink:#172033; --muted:#667085; --line:#e5eaf0; --blue:#2e71b8; --teal:#167a75; --amber:#a56810; }
+    * { box-sizing:border-box } body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 Inter,ui-sans-serif,system-ui,sans-serif; }
+    .app { max-width:920px; margin:auto; padding:28px 20px 42px; } .notice { padding:9px 12px; border:1px solid #efdaa2; border-radius:9px; background:#fff8e9; color:#765715; font-size:12px; }
+    header { display:flex; justify-content:space-between; gap:16px; align-items:end; margin:28px 0 18px; } .eyebrow { color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.05em; font-size:11px; } h1 { margin:4px 0 0; font-size:30px; letter-spacing:-.035em; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:13px; box-shadow:0 8px 22px rgba(31,47,72,.06); overflow:hidden; } .head { padding:16px 18px; border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:center; justify-content:space-between; } h2 { font-size:15px; margin:0; } .sub { color:var(--muted); font-size:12px; }
+    button, select { font:inherit; } select, .btn { border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:8px; padding:8px 10px; font-size:12px; } .btn { cursor:pointer; font-weight:700; } .btn.primary { border-color:var(--teal); background:var(--teal); color:#fff; }
+    .filters { display:flex; gap:9px; padding:14px 18px; border-bottom:1px solid var(--line); flex-wrap:wrap; } .filters label { color:var(--muted); font-size:12px; display:flex; align-items:center; gap:6px; }
+    .transaction { display:grid; grid-template-columns:1fr auto; gap:12px; padding:15px 18px; border-bottom:1px solid var(--line); } .transaction:last-child { border:0; } .name { font-weight:700; } .meta { margin-top:3px; color:var(--muted); font-size:12px; } .amount { font-weight:750; font-variant-numeric:tabular-nums; align-self:center; } .badge { display:inline-flex; align-items:center; gap:6px; margin-left:7px; border:1px solid #d9e4f0; background:#f3f8fc; border-radius:999px; padding:2px 7px; color:#345773; font-size:11px; font-weight:700; } .badge .tail { color:var(--blue); } .hidden { display:none; }
+    .section { margin-top:18px; } .cards { display:grid; grid-template-columns:1fr 1fr; gap:18px; } .identifier { padding:14px 16px; border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:center; justify-content:space-between; } .identifier:last-child { border:0; } .tail-big { width:48px; height:36px; display:grid; place-items:center; background:#edf4fa; color:var(--blue); border-radius:8px; font-weight:800; } .right { display:flex; gap:8px; align-items:center; } .empty { padding:17px 18px; color:var(--muted); font-size:12px; }
+    .hint { padding:13px 16px; margin-top:18px; border-left:3px solid var(--amber); background:#fffaf0; color:#72571c; border-radius:0 9px 9px 0; font-size:12px; } dialog { max-width:380px; width:calc(100% - 32px); border:0; border-radius:13px; box-shadow:0 18px 45px rgba(20,35,58,.24); padding:0; } dialog::backdrop { background:rgba(20,32,48,.35); } dialog form { padding:19px; } dialog h3 { margin:0 0 5px; } dialog input { width:100%; border:1px solid var(--line); border-radius:8px; padding:9px; margin:15px 0; } .dialog-actions { display:flex; justify-content:end; gap:8px; }
+    @media (max-width:600px) { header { align-items:start; flex-direction:column; } .cards { grid-template-columns:1fr; } .transaction { padding:14px; } .head,.filters,.identifier { padding-left:14px; padding-right:14px; } }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <div class="notice">Protótipo estático com lançamentos fictícios. Não consulta API nem altera dados.</div>
+    <header><div><div class="eyebrow">Conta de crédito compartilhada</div><h1>Transações</h1></div><button class="btn">Setembro de 2026 ▾</button></header>
+    <section class="card">
+      <div class="head"><div><h2>Cartão Visa Infinite</h2><div class="sub">O final identifica o cartão usado; não define titularidade.</div></div><button class="btn" onclick="document.querySelector('#manage').scrollIntoView({behavior:'smooth'})">Gerenciar cartões</button></div>
+      <div class="filters"><label>Cartão <select id="filter"><option value="all">Todos os cartões</option><option value="8172">•8172 — Cartão principal</option><option value="2338">•2338 — Cartão da Maria</option><option value="none">Final não informado</option></select></label><span class="sub">O filtro só aparece quando há mais de um final.</span></div>
+      <article class="transaction" data-card="8172"><div><div class="name">Mercado Exemplo <span class="badge"><span class="tail">•8172</span> Cartão principal</span></div><div class="meta">03 set · Mercado · lançamento fictício</div></div><div class="amount">R$ 420,00</div></article>
+      <article class="transaction" data-card="2338"><div><div class="name">Streaming Exemplo <span class="badge"><span class="tail">•2338</span> Cartão da Maria</span></div><div class="meta">04 set · Assinaturas · lançamento fictício</div></div><div class="amount">R$ 29,90</div></article>
+      <article class="transaction" data-card="8172"><div><div class="name">Farmácia Exemplo <span class="badge"><span class="tail">•8172</span> Cartão principal</span></div><div class="meta">05 set · Saúde · lançamento fictício</div></div><div class="amount">R$ 86,40</div></article>
+      <article class="transaction" data-card="none"><div><div class="name">Compra com final não informado</div><div class="meta">06 set · Compras · conector não enviou cardNumber</div></div><div class="amount">R$ 74,00</div></article>
+    </section>
+    <div class="hint"><strong>Estado sem dado:</strong> quando o conector não informa <code>cardNumber</code>, a linha permanece normal. O sistema não substitui o valor pelo final da conta nem tenta deduzir o portador.</div>
+    <section id="manage" class="section cards">
+      <section class="card"><div class="head"><div><h2>Cartões identificados</h2><div class="sub">Apelidos são locais a esta conta.</div></div></div>
+        <div class="identifier"><div class="right"><div class="tail-big">•8172</div><div><div class="name">Cartão principal</div><div class="sub">12 transações no período fictício</div></div></div><button class="btn" data-tail="8172" data-name="Cartão principal">Editar</button></div>
+        <div class="identifier"><div class="right"><div class="tail-big">•2338</div><div><div class="name">Cartão da Maria</div><div class="sub">8 transações no período fictício</div></div></div><button class="btn" data-tail="2338" data-name="Cartão da Maria">Editar</button></div>
+      </section>
+      <section class="card"><div class="head"><h2>Final descoberto</h2><span class="sub">opcional</span></div><div class="empty">Há transações com <strong>•5062</strong> sem apelido. Criar um nome ajuda a leitura, mas não declara quem é o titular.</div><div style="padding:0 16px 16px"><button class="btn primary" data-tail="5062" data-name="">Identificar •5062</button></div></section>
+    </section>
+  </main>
+  <dialog id="dialog"><form method="dialog"><h3 id="dialog-title">Identificar cartão</h3><div class="sub">O apelido é local ao Securo e não confirma titularidade.</div><input id="nickname" maxlength="100" placeholder="Ex.: Cartão virtual de assinaturas" /><div class="dialog-actions"><button class="btn" value="cancel">Cancelar</button><button class="btn primary" value="default">Salvar apelido</button></div></form></dialog>
+  <script>
+    const filter = document.querySelector('#filter');
+    filter.addEventListener('change', () => document.querySelectorAll('.transaction').forEach((item) => item.classList.toggle('hidden', filter.value !== 'all' && item.dataset.card !== filter.value)));
+    const dialog = document.querySelector('#dialog'); const input = document.querySelector('#nickname'); const title = document.querySelector('#dialog-title');
+    document.querySelectorAll('[data-tail]').forEach((button) => button.addEventListener('click', () => { title.textContent = `Identificar •${button.dataset.tail}`; input.value = button.dataset.name; dialog.showModal(); }));
+  </script>
+</body>
+</html>
