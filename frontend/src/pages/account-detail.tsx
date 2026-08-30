@@ -681,6 +681,7 @@ export default function AccountDetailPage() {
       installment_total_amount: null,
       installment_purchase_date: null,
       bill_id: null,
+      card_masked_number: null,
       effective_bill_date: null,
       recurring_transaction_id: p.recurring_id,
       splits: [],
@@ -1646,6 +1647,14 @@ export default function AccountDetailPage() {
                                   : undefined}
                               >
                                 {tx.installment_number}/{tx.total_installments}
+                              </span>
+                            )}
+                            {tx.card_masked_number && (
+                              <span
+                                className="ml-2 inline-flex items-center text-[10px] font-bold tabular-nums text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/30 px-1.5 py-0.5 rounded-full"
+                                title={`Cartão •${tx.card_masked_number}`}
+                              >
+                                •{tx.card_masked_number}
                               </span>
                             )}
                             {shouldShowPendingBadge(tx) && (

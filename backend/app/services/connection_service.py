@@ -1057,6 +1057,8 @@ async def handle_oauth_callback(
             if synced_dup:
                 if synced_dup.original_description is None:
                     synced_dup.original_description = txn_data.description
+                if txn_data.card_masked_number is not None:
+                    synced_dup.card_masked_number = txn_data.card_masked_number
                 if synced_dup.status == "pending" and txn_data.status == "posted":
                     synced_dup.status = "posted"
                     synced_dup.external_id = txn_data.external_id
@@ -1111,6 +1113,7 @@ async def handle_oauth_callback(
                 installment_total_amount=txn_data.installment_total_amount,
                 installment_purchase_date=txn_data.installment_purchase_date,
                 bill_id=bill.id if bill else None,
+                card_masked_number=txn_data.card_masked_number,
             )
             apply_effective_date(
                 transaction, account, bill_due_date=bill.due_date if bill else None
@@ -1798,6 +1801,8 @@ async def sync_connection(
                         continue
                     if existing_tx.original_description is None:
                         existing_tx.original_description = txn_data.description
+                    if txn_data.card_masked_number is not None:
+                        existing_tx.card_masked_number = txn_data.card_masked_number
                     if existing_tx.status == "pending" and txn_data.status == "posted":
                         existing_tx.status = "posted"
                     # Self-heal bill linkage: a tx that pre-dates the bills
@@ -1832,6 +1837,8 @@ async def sync_connection(
                     fuzzy_match.raw_data = txn_data.raw_data
                     if fuzzy_match.original_description is None:
                         fuzzy_match.original_description = txn_data.description
+                    if txn_data.card_masked_number is not None:
+                        fuzzy_match.card_masked_number = txn_data.card_masked_number
                     if not fuzzy_match.payee and txn_data.payee:
                         fuzzy_match.payee = txn_data.payee
                     merged_count += 1
@@ -1848,6 +1855,8 @@ async def sync_connection(
                 if synced_dup:
                     if synced_dup.original_description is None:
                         synced_dup.original_description = txn_data.description
+                    if txn_data.card_masked_number is not None:
+                        synced_dup.card_masked_number = txn_data.card_masked_number
                     if synced_dup.status == "pending" and txn_data.status == "posted":
                         # Posted truth wins: swap in the new id so subsequent
                         # syncs match by external_id and update raw_data.
@@ -1913,6 +1922,7 @@ async def sync_connection(
                     installment_total_amount=txn_data.installment_total_amount,
                     installment_purchase_date=txn_data.installment_purchase_date,
                     bill_id=bill.id if bill else None,
+                    card_masked_number=txn_data.card_masked_number,
                 )
                 apply_effective_date(
                     transaction,
@@ -1945,6 +1955,8 @@ async def sync_connection(
                     placeholder.source = "sync"
                     placeholder.status = txn_data.status
                     placeholder.raw_data = txn_data.raw_data
+                    if txn_data.card_masked_number is not None:
+                        placeholder.card_masked_number = txn_data.card_masked_number
                     # Same shape as the import path: fold in the `preview` the
                     # rules already produced from the incoming charge instead of
                     # re-running them against the placeholder, whose description

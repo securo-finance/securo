@@ -101,6 +101,10 @@ class TransactionData:
     # Provider-side identifier of the bill this transaction belongs to.
     # Resolved to a credit_card_bills.id FK at sync time (issue #92).
     bill_external_id: Optional[str] = None
+    # Last four characters of the physical/virtual card used for this charge.
+    # This belongs to the transaction rather than the account because a single
+    # credit-card account can have additional or virtual cards. Never the PAN.
+    card_masked_number: Optional[str] = None
 
 
 @dataclass

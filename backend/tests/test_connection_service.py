@@ -729,6 +729,7 @@ async def test_sync_connection_new_transactions(session: AsyncSession, test_user
         TransactionData(
             external_id="sync-tx-1", description="GROCERY",
             amount=Decimal("80"), date=date.today(), type="debit", currency="BRL",
+            card_masked_number="8172",
         ),
     ])
 
@@ -745,6 +746,7 @@ async def test_sync_connection_new_transactions(session: AsyncSession, test_user
     )
     assert transaction is not None
     assert transaction.original_description == "GROCERY"
+    assert transaction.card_masked_number == "8172"
 
 
 @pytest.mark.asyncio
@@ -2343,7 +2345,7 @@ async def test_sync_upgrades_pending_to_posted_when_twin_arrives(
         external_id="provider-pending",
         description="PIX AGENDADO - DOCTO: 11111",
         amount=Decimal("100.00"), date=date(2026, 4, 20),
-        type="debit", currency="BRL", status="pending",
+        type="debit", currency="BRL", status="pending", card_masked_number="8172",
     )
     mock_provider.get_transactions = AsyncMock(return_value=[pending])
 
@@ -2360,7 +2362,7 @@ async def test_sync_upgrades_pending_to_posted_when_twin_arrives(
         external_id="provider-posted",
         description="PIX AGENDADO - DOCTO: 22222",
         amount=Decimal("100.00"), date=date(2026, 4, 20),
-        type="debit", currency="BRL", status="posted",
+        type="debit", currency="BRL", status="posted", card_masked_number="2338",
     )
     mock_provider.get_transactions = AsyncMock(return_value=[pending, posted])
 
@@ -2381,6 +2383,7 @@ async def test_sync_upgrades_pending_to_posted_when_twin_arrives(
     # so subsequent syncs match by id.
     assert rows[0].status == "posted"
     assert rows[0].external_id == "provider-posted"
+    assert rows[0].card_masked_number == "2338"
 
 
 @pytest.mark.asyncio
