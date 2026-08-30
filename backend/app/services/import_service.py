@@ -89,7 +89,18 @@ _OFX_SGML_ENCODING_RE = re.compile(
     r"(^|\r?\n)\s*ENCODING\s*:\s*([^\r\n]*)", re.IGNORECASE
 )
 
-_OFX_VALID_ENCODINGS = {"USASCII", "UNICODE", "UTF-8"}
+_OFX_SGML_CHARSET_RE = re.compile(
+    r"(^|\r?\n)\s*CHARSET\s*:\s*([^\r\n]*)", re.IGNORECASE
+)
+
+# Values of ENCODING that ofxparse 0.21 handles without crashing.
+_OFX_USASCII_VARIANTS = frozenset({
+    "USASCII", "ISO88591", "ISO8859-1", "ISO885915", "ISO8859-15",
+    "CP1252", "WINDOWS-1252", "WINDOWS1252",
+})
+_OFX_UTF8_VARIANTS = frozenset({
+    "UNICODE", "UTF8", "UTF-8",
+})
 
 
 def _normalize_ofx_encoding(text: str, encoding: str) -> str:
@@ -98,25 +109,46 @@ def _normalize_ofx_encoding(text: str, encoding: str) -> str:
     ofxparse 0.21 only handles USASCII, UNICODE and UTF-8. Any other value
     (e.g. ISO-8859-1, WINDOWS-1252, or a misspelling) leaves its local
     ``encoding`` variable unbound, raising ``UnboundLocalError`` inside
-    ``handle_encoding()``. We normalise the header so the value is always
-    one that ofxparse understands, while keeping the CHARSET line so the
-    actual decoding still works downstream.
-    """
-    def _replace_encoding(match: re.Match) -> str:
-        prefix = match.group(1)
-        raw_value = match.group(2).strip()
-        if raw_value.upper().replace("-", "").replace(" ", "") in (
-            "USASCII", "ISO88591", "ISO885915", "CP1252", "WINDOWS1252",
-        ):
-            return f"{prefix}ENCODING:USASCII"
-        if raw_value.upper().replace("-", "").replace(" ", "") in (
-            "UNICODE", "UTF8",
-        ):
-            return f"{prefix}ENCODING:UTF-8"
-        # Unknown encoding — default to UTF-8 which is safest.
-        return f"{prefix}ENCODING:UTF-8"
+    ``handle_encoding()``.
 
-    return _OFX_SGML_ENCODING_RE.sub(_replace_encoding, text)
+    This function normalises **only the preamble** (everything before the
+    first ``<``) so transaction memo content is never modified.  The
+    replacement value is chosen to match the actual byte encoding of the
+    body: Latin-1 files get ``ENCODING:USASCII`` with ``CHARSET:8859-1``,
+    UTF-8 files get ``ENCODING:UTF-8`` with ``CHARSET:NONE``.
+    """
+    preamble, first_tag, body = text.lstrip("\ufeff \t\r\n").partition("<")
+    if not first_tag or not preamble.strip():
+        return text
+
+    raw_match = _OFX_SGML_ENCODING_RE.search(preamble)
+    if not raw_match:
+        return text
+
+    raw_value = raw_match.group(2).strip().upper().replace("-", "").replace(" ", "")
+
+    # Only the three exact values that ofxparse 0.21 handles are left alone.
+    # Everything else — including valid IANA names like ISO-8859-1 — must be
+    # rewritten so ofxparse doesn't crash on the UnboundLocalError.
+    if raw_value in ("USASCII", "UNICODE", "UTF8"):
+        return text
+
+    # Unknown or unsupported encoding — rewrite to match the actual byte
+    # encoding so ofxparse decodes consistently.
+    if encoding == "latin-1":
+        new_encoding = "USASCII"
+        new_charset = "8859-1"
+    else:
+        new_encoding = "UTF-8"
+        new_charset = "NONE"
+
+    new_preamble = _OFX_SGML_ENCODING_RE.sub(
+        lambda m: f"{m.group(1)}ENCODING:{new_encoding}", preamble, count=1,
+    )
+    new_preamble = _OFX_SGML_CHARSET_RE.sub(
+        lambda m: f"{m.group(1)}CHARSET:{new_charset}", new_preamble, count=1,
+    )
+    return new_preamble + first_tag + body
 
 
 def _ensure_ofx_sgml_header(text: str, encoding: str) -> str:
@@ -147,7 +179,8 @@ def _ensure_ofx_sgml_header(text: str, encoding: str) -> str:
     if preamble.strip():
         # File already has a header — normalise the ENCODING value so
         # ofxparse doesn't crash on values it doesn't handle (e.g.
-        # ISO-8859-1, WINDOWS-1252).
+        # ISO-8859-1, WINDOWS-1252). Only the preamble is touched;
+        # transaction body content is preserved verbatim.
         return _normalize_ofx_encoding(text, encoding)
     if encoding == "latin-1":
         enc_lines = "ENCODING:USASCII\r\nCHARSET:8859-1\r\n"
