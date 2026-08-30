@@ -4,6 +4,7 @@ The Akahu API is fully fakeable via ``httpx.MockTransport`` — no Akahu
 credentials needed, no network. Each test stands up the smallest payload
 required and asserts the parse / dispatch behavior we care about.
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -63,6 +64,10 @@ def test_parse_tokens_rejects_empty():
 
 def test_iso_to_date():
     assert _iso_to_date("2026-08-20T02:15:00Z") == date(2026, 8, 20)
+    assert _iso_to_date("2026-08-27T12:00:00Z") == date(2026, 8, 28)
+    assert _iso_to_date("2026-08-29T06:22:00Z") == date(2026, 8, 29)
+    assert _iso_to_date("2026-08-29T12:00:00Z") == date(2026, 8, 30)
+    assert _iso_to_date("2026-08-30") == date(2026, 8, 30)
     assert _iso_to_date(None) is None
     assert _iso_to_date("nope") is None
 
@@ -201,7 +206,9 @@ async def test_get_transactions_paginates_and_maps():
         {"success": True, "items": [_txn_item()], "cursor": {"next": "page2"}},
         {
             "success": True,
-            "items": [_txn_item(_id="trans_2", amount=4474.90, description="Payroll", merchant=None)],
+            "items": [
+                _txn_item(_id="trans_2", amount=4474.90, description="Payroll", merchant=None)
+            ],
             "cursor": {"next": None},
         },
     ]
