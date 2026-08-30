@@ -31,12 +31,14 @@ returns items without ``_id``, and the sync layer requires a stable
 Personal apps can read transactions up to 365 days before the moment the app
 was created (``access_granted_at``); history accrues indefinitely afterwards.
 """
+
 from __future__ import annotations
 
 import logging
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -58,6 +60,9 @@ logger = logging.getLogger(__name__)
 AKAHU_HTTP_TIMEOUT = 60.0
 # Personal apps are granted 365 days of history at most; used for initial sync.
 AKAHU_INITIAL_HISTORY_DAYS = 365
+# Akahu returns New Zealand ledger timestamps in UTC. Convert them to the
+# source ledger's civil date before Securo drops the time component.
+AKAHU_LEDGER_TIMEZONE = ZoneInfo("Pacific/Auckland")
 
 _HELP_URL = "https://my.akahu.nz/developers"
 
@@ -108,9 +113,12 @@ def _iso_to_date(value: Any) -> Optional[date]:
     if not value:
         return None
     try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).date()
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
+    if parsed.tzinfo is None:
+        return parsed.date()
+    return parsed.astimezone(AKAHU_LEDGER_TIMEZONE).date()
 
 
 class AkahuProvider(BankProvider):
