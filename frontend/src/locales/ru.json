@@ -314,6 +314,7 @@
     "date": "Дата",
     "category": "Категория",
     "account": "Счёт",
+    "card": "Карта",
     "noCategory": "Без категории",
     "searchCategory": "Поиск категории...",
     "noCategoryFound": "Категория не найдена.",
