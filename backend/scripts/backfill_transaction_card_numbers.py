@@ -18,9 +18,11 @@ import asyncio
 from collections import Counter, defaultdict
 from pathlib import Path
 import sys
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy import inspect, select, update
+from sqlalchemy.engine import CursorResult
 
 # This script is called directly from ``backend/scripts``. Make the backend
 # package importable without requiring callers to configure PYTHONPATH.
@@ -39,7 +41,8 @@ def _tail_from_raw_data(raw_data: object) -> str | None:
     metadata = raw_data.get("creditCardMetadata")
     if not isinstance(metadata, dict):
         return None
-    return mask_last4(metadata.get("cardNumber"))
+    card_number = metadata.get("cardNumber")
+    return mask_last4(str(card_number)) if card_number else None
 
 
 async def _has_target_column() -> bool:
@@ -57,19 +60,20 @@ async def main(apply: bool, workspace_id: UUID | None) -> int:
         return 2
 
     async with async_session_maker() as session:
-        account_rows = await session.execute(
-            select(Account.id, Account.name).where(
-                Account.workspace_id == workspace_id if workspace_id else True
-            )
-        )
-        account_names = dict(account_rows.all())
+        account_query = select(Account.id, Account.name)
+        if workspace_id:
+            account_query = account_query.where(Account.workspace_id == workspace_id)
+        account_rows = await session.execute(account_query)
+        account_names: dict[UUID, str] = {
+            account_id: account_name for account_id, account_name in account_rows.all()
+        }
 
         columns = [Transaction.id, Transaction.account_id, Transaction.raw_data]
         if has_target_column:
             columns.append(Transaction.card_masked_number)
-        query = select(*columns).where(
-            Transaction.workspace_id == workspace_id if workspace_id else True
-        )
+        query = select(*columns)
+        if workspace_id:
+            query = query.where(Transaction.workspace_id == workspace_id)
         rows = (await session.execute(query)).all()
 
         candidate_ids_by_tail: dict[str, list[UUID]] = defaultdict(list)
@@ -128,7 +132,7 @@ async def main(apply: bool, workspace_id: UUID | None) -> int:
                 )
                 .values(card_masked_number=tail)
             )
-            updated += result.rowcount or 0
+            updated += cast(CursorResult, result).rowcount or 0
         await session.commit()
         print(f"updated: {updated}")
         return 0
