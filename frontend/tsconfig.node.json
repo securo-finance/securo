@@ -14,15 +14,6 @@
     "moduleDetection": "force",
     "noEmit": true,
 
-    /* Test files live in this project and import source through the same
-       `@/` alias the app uses, so the mapping has to exist here too — a
-       test that imports `@/types` otherwise fails to resolve it, and
-       drags every module it touches down with it. */
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["./src/*"]
-    },
-
     /* Linting */
     "strict": true,
     "noUnusedLocals": true,

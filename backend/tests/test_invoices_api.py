@@ -931,11 +931,20 @@ async def test_an_unlinked_transaction_carries_nothing(
 
 @pytest.mark.asyncio
 async def test_a_personal_workspace_never_pays_for_the_badge(
-    client: AsyncClient, auth_headers, personal_ws, session: AsyncSession, test_user
+    client: AsyncClient,
+    auth_headers,
+    personal_ws,
+    session: AsyncSession,
+    test_user,
+    monkeypatch,
 ):
-    """The field is absent, and more importantly the query behind it never
-    runs: a workspace without the module pays nothing for a feature it
-    does not have."""
+    """The query behind the badge never runs: a workspace without the
+    module pays nothing for a feature it does not have.
+
+    Asserted by watching the call rather than by reading the response.
+    The field comes back as `[]` either way — that is its default — so an
+    assertion on the value cannot tell a skipped query from one that ran
+    and found nothing, which is the only thing this test is about."""
     account = Account(
         id=uuid.uuid4(), user_id=test_user.id, workspace_id=personal_ws.id,
         name="Pessoal", type="checking", currency="USD", balance=Decimal("0"),
@@ -952,8 +961,23 @@ async def test_a_personal_workspace_never_pays_for_the_badge(
     await session.commit()
 
     headers = {**auth_headers, "X-Workspace-Id": str(personal_ws.id)}
+
+    from app.services import invoice_service
+
+    calls: list[uuid.UUID] = []
+    real = invoice_service.invoice_links_for_transactions
+
+    async def counting(
+        session: AsyncSession, workspace_id: uuid.UUID, transaction_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, list[dict]]:
+        calls.append(workspace_id)
+        return await real(session, workspace_id, transaction_ids)
+
+    monkeypatch.setattr(invoice_service, "invoice_links_for_transactions", counting)
     listed = await client.get("/api/transactions?limit=50", headers=headers)
+
     assert listed.status_code == 200
+    assert calls == [], "the badge query ran in a workspace without the module"
     assert all(item["invoice_links"] == [] for item in listed.json()["items"])
 
 
@@ -1369,12 +1393,14 @@ async def test_an_issued_invoice_keeps_the_tax_id_it_was_issued_under(
     after = (await client.get(doc, headers=biz_headers)).json()["issuer"]["tax_ids"]
     assert after == before
 
-    # A document issued from now on carries the corrected one.
+    # A document issued from now on carries the corrected one. Asserted by
+    # value: `fresh != before` also passes when a new snapshot loses every
+    # tax id, which is the regression most worth catching here.
     later = await _create(client, biz_headers, total="100.00")
     fresh = (
         await client.get(f"/api/invoices/{later['id']}/document", headers=biz_headers)
     ).json()["issuer"]["tax_ids"]
-    assert fresh != before
+    assert [t["value"] for t in fresh] == ["45.997.418/0001-53"]
 
 
 @pytest.mark.asyncio
