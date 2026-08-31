@@ -44,7 +44,7 @@ import {
 import { InvoiceDocumentView } from '@/components/invoice-document'
 import { InvoiceDocumentBrowser } from '@/components/invoice-documents'
 import { InvoiceLineEditor } from '@/components/invoice-line-editor'
-import type { Invoice, InvoiceLineInput } from '@/types'
+import type { Invoice, InvoiceDirection, InvoiceLineInput } from '@/types'
 import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/format'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
@@ -633,6 +633,7 @@ export default function InvoiceDetailPage() {
         open={linkOpen}
         onOpenChange={setLinkOpen}
         invoiceId={id}
+        direction={invoice.direction}
         balance={invoice.balance}
         currency={currency}
         onLinked={refresh}
@@ -645,6 +646,7 @@ function LinkPaymentDialog({
   open,
   onOpenChange,
   invoiceId,
+  direction,
   balance,
   currency,
   onLinked,
@@ -652,6 +654,7 @@ function LinkPaymentDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
   invoiceId: string
+  direction: InvoiceDirection
   balance: string
   currency: string
   onLinked: () => void
@@ -660,11 +663,15 @@ function LinkPaymentDialog({
   const [selected, setSelected] = useState<string>('')
   const [amount, setAmount] = useState('')
 
-  // Credits only, newest first: an invoice is settled by money coming
-  // in, and offering debits would be offering a mistake.
+  // Money moving the way this invoice is settled: a receivable by money
+  // coming in, a payable by money going out. Asking for credits either
+  // way — which this did — means the payment that actually settled a
+  // supplier's bill is never in the list, and the bill stays open
+  // forever with no way to close it.
+  const settlingType = direction === 'payable' ? 'debit' : 'credit'
   const { data } = useQuery({
-    queryKey: ['transactions', 'for-invoice'],
-    queryFn: () => transactionsApi.list({ type: 'credit', limit: 50 }),
+    queryKey: ['transactions', 'for-invoice', settlingType],
+    queryFn: () => transactionsApi.list({ type: settlingType, limit: 50 }),
     enabled: open,
   })
 
@@ -815,7 +822,16 @@ function EditDraftDialog({
         notes: notes || null,
         // Lines are the source of truth once they exist: the server
         // recomputes the total from them and ignores what was typed.
-        ...(lines.length ? { lines } : { total }),
+        //
+        // An empty list is sent when the draft had lines and no longer
+        // does, because omitting the key means "leave them alone" — so
+        // deleting every row used to save successfully and change
+        // nothing, and the rows came back on the next read.
+        ...(lines.length
+          ? { lines }
+          : invoice.lines.length
+            ? { lines: [], total }
+            : { total }),
       }),
     onSuccess: () => {
       toast.success(t('invoices.updated'))

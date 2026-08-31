@@ -48,9 +48,9 @@ async def _attach_invoice_links(session, ctx, items: list) -> None:
         session, ctx.workspace.id, [item.id for item in items]
     )
     for item in items:
-        link = links.get(item.id)
-        if link:
-            item.invoice_link = TransactionInvoiceLink(**link)
+        item.invoice_links = [
+            TransactionInvoiceLink(**link) for link in links.get(item.id, [])
+        ]
 
 
 def _tag_fx_fallback(tx: TransactionRead, primary_currency: str) -> TransactionRead:

@@ -479,7 +479,14 @@ export default function InvoicesPage() {
         direction={direction}
         onCreated={(invoice) => navigate(`/invoices/${invoice.id}`)}
       />
-      <InvoiceSettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      {/* Keyed on `open`: the dialog is mounted either way, so without
+          this its draft state outlives a Cancel — reopening showed the
+          edits back, and Save wrote the change the user had rejected. */}
+      <InvoiceSettingsDialog
+        key={settingsOpen ? 'open' : 'closed'}
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+      />
     </div>
   )
 }

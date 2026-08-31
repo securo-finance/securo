@@ -526,7 +526,17 @@ def _recompute_totals(invoice: Invoice) -> None:
     )
     invoice.subtotal = subtotal
     invoice.tax_total = tax_total
-    invoice.total = subtotal - (invoice.discount or ZERO) + tax_total
+    total = subtotal - (invoice.discount or ZERO) + tax_total
+    # Refused here rather than left to the CHECK. A discount larger than
+    # what is being billed is a typo, and the database answering it with
+    # an IntegrityError turns a correctable mistake into a 500 the client
+    # cannot branch on.
+    if total < ZERO:
+        raise InvoiceError(
+            "discount_exceeds_total",
+            "The discount is larger than the amount being billed",
+        )
+    invoice.total = total
 
 
 async def _assert_payee(
@@ -662,7 +672,7 @@ async def create_invoice(
             raise InvoiceError("empty_total", "An invoice with no value cannot be issued")
         locked = await _settings_for_update(session, workspace_id)
         workspace = await session.get(Workspace, workspace_id)
-        _issue(invoice, locked, workspace)
+        _issue(invoice, locked, workspace, await _snapshot_tax_ids(session, workspace_id))
 
     await session.flush()
     return invoice
@@ -720,8 +730,26 @@ async def update_invoice(session: AsyncSession, invoice: Invoice, data: dict[str
     return invoice
 
 
+async def _snapshot_tax_ids(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> list[dict[str, str]]:
+    """The issuer's tax documents, in the shape the snapshot stores.
+
+    Read at issuance and frozen, for the same reason as the rest of the
+    issuer block: correcting a CNPJ next month must not rewrite the CNPJ
+    on an invoice a client received last month.
+    """
+    return [
+        {"kind": row.kind, "value": row.value}
+        for row in await get_issuer_tax_ids(session, workspace_id)
+    ]
+
+
 def _build_snapshot(
-    invoice: Invoice, settings: InvoiceSettings, workspace: Optional[Workspace] = None
+    invoice: Invoice,
+    settings: InvoiceSettings,
+    workspace: Optional[Workspace] = None,
+    issuer_tax_ids: Optional[list[dict[str, str]]] = None,
 ) -> dict[str, Any]:
     """Freeze what the document said about itself.
 
@@ -735,6 +763,7 @@ def _build_snapshot(
             "display_name": settings.issuer_display_name,
             "legal_name": workspace.legal_name if workspace else None,
             "address": workspace.address if workspace else None,
+            "tax_ids": issuer_tax_ids or [],
             "logo_id": str(settings.logo_id) if settings.logo_id else None,
             "footer_note": settings.footer_note,
             "payment_details": settings.payment_details,
@@ -762,7 +791,10 @@ def _build_snapshot(
 
 
 def _issue(
-    invoice: Invoice, settings: InvoiceSettings, workspace: Optional[Workspace] = None
+    invoice: Invoice,
+    settings: InvoiceSettings,
+    workspace: Optional[Workspace] = None,
+    issuer_tax_ids: Optional[list[dict[str, str]]] = None,
 ) -> None:
     """Open the invoice, numbering and freezing it only if it is ours.
 
@@ -789,7 +821,7 @@ def _issue(
         invoice.number = settings.next_number
         invoice.series = settings.series
         settings.next_number += 1
-        invoice.snapshot = _build_snapshot(invoice, settings, workspace)
+        invoice.snapshot = _build_snapshot(invoice, settings, workspace, issuer_tax_ids)
     invoice.status = "open"
 
 
@@ -803,7 +835,9 @@ async def issue_invoice(session: AsyncSession, invoice: Invoice) -> Invoice:
         raise InvoiceError("empty_total", "An invoice with no value cannot be issued")
     locked = await _settings_for_update(session, invoice.workspace_id)
     workspace = await session.get(Workspace, invoice.workspace_id)
-    _issue(invoice, locked, workspace)
+    _issue(
+        invoice, locked, workspace, await _snapshot_tax_ids(session, invoice.workspace_id)
+    )
     await session.flush()
     return invoice
 
@@ -1019,8 +1053,14 @@ async def get_invoice_by_share_token(session: AsyncSession, token: str) -> Optio
 
 async def invoice_links_for_transactions(
     session: AsyncSession, workspace_id: uuid.UUID, transaction_ids: list[uuid.UUID]
-) -> dict[uuid.UUID, dict[str, Any]]:
-    """Which of these transactions settle an invoice, for the list badge.
+) -> dict[uuid.UUID, list[dict[str, Any]]]:
+    """Which invoices each of these transactions settles, for the badge.
+
+    A **list** per transaction, because one is the whole point of the
+    N:N: a gateway payout settles a dozen invoices at once, net of fees.
+    Keying a single link by transaction id let the second allocation
+    overwrite the first, so a transaction that paid three invoices
+    advertised one and the ledger and the list disagreed.
 
     One query for a page of transactions rather than one per row: the
     transaction list is the hottest screen in the product and this must
@@ -1036,12 +1076,17 @@ async def invoice_links_for_transactions(
             InvoiceAllocation.transaction_id.in_(transaction_ids),
         )
     )
-    links: dict[uuid.UUID, dict[str, Any]] = {}
+    links: dict[uuid.UUID, list[dict[str, Any]]] = {}
     for allocation, invoice in result.all():
-        links[allocation.transaction_id] = {
-            "invoice_id": invoice.id,
-            "number": invoice.number,
-            "series": invoice.series,
-            "amount": allocation.amount,
-        }
+        links.setdefault(allocation.transaction_id, []).append(
+            {
+                "invoice_id": invoice.id,
+                "number": invoice.number,
+                "series": invoice.series,
+                # An imported invoice is named by the source, and without
+                # this the badge for one would have nothing to show.
+                "external_number": invoice.external_number,
+                "amount": allocation.amount,
+            }
+        )
     return links

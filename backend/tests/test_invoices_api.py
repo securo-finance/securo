@@ -915,9 +915,9 @@ async def test_a_settling_transaction_carries_its_invoice(
     listed = await client.get("/api/transactions?limit=50", headers=biz_headers)
     assert listed.status_code == 200, listed.text
     row = next(i for i in listed.json()["items"] if i["id"] == str(inflow.id))
-    assert row["invoice_link"]["invoice_id"] == invoice["id"]
-    assert row["invoice_link"]["number"] == invoice["number"]
-    assert row["invoice_link"]["amount"] == "1000.00"
+    assert [link["invoice_id"] for link in row["invoice_links"]] == [invoice["id"]]
+    assert row["invoice_links"][0]["number"] == invoice["number"]
+    assert row["invoice_links"][0]["amount"] == "1000.00"
 
 
 @pytest.mark.asyncio
@@ -926,7 +926,7 @@ async def test_an_unlinked_transaction_carries_nothing(
 ):
     listed = await client.get("/api/transactions?limit=50", headers=biz_headers)
     row = next(i for i in listed.json()["items"] if i["id"] == str(inflow.id))
-    assert row["invoice_link"] is None
+    assert row["invoice_links"] == []
 
 
 @pytest.mark.asyncio
@@ -954,7 +954,7 @@ async def test_a_personal_workspace_never_pays_for_the_badge(
     headers = {**auth_headers, "X-Workspace-Id": str(personal_ws.id)}
     listed = await client.get("/api/transactions?limit=50", headers=headers)
     assert listed.status_code == 200
-    assert all(item["invoice_link"] is None for item in listed.json()["items"])
+    assert all(item["invoice_links"] == [] for item in listed.json()["items"])
 
 
 # ---------------------------------------------------------------------------
@@ -1295,3 +1295,110 @@ async def test_an_import_is_never_a_draft(client: AsyncClient, biz_headers):
         external_source="erp", external_id="d-1",
     )
     assert imported["status"] == "open"
+
+
+# ---------------------------------------------------------------------------
+# Things review caught
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_a_discount_bigger_than_the_bill_is_refused_not_a_500(
+    client: AsyncClient, biz_headers
+):
+    """The CHECK would answer this with an IntegrityError, which reaches
+    the client as a 500 it cannot branch on. It is a typo, and a typo
+    deserves a message."""
+    resp = await client.post(
+        "/api/invoices",
+        headers=biz_headers,
+        json={
+            "as_draft": True,
+            "due_date": str(date.today() + timedelta(days=10)),
+            "discount": "500.00",
+            "lines": [{"description": "Item", "quantity": "1", "unit_price": "100.00"}],
+        },
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["code"] == "discount_exceeds_total"
+
+
+@pytest.mark.asyncio
+async def test_clearing_every_line_clears_them(client: AsyncClient, biz_headers):
+    """Omitting the key means "leave them alone", so deleting every row
+    used to save successfully and change nothing."""
+    draft = await _create(
+        client, biz_headers, as_draft=True, total="300.00",
+        lines=[
+            {"description": "A", "quantity": "1", "unit_price": "100.00"},
+            {"description": "B", "quantity": "1", "unit_price": "200.00"},
+        ],
+    )
+    assert len(draft["lines"]) == 2
+
+    resp = await client.patch(
+        f"/api/invoices/{draft['id']}",
+        headers=biz_headers,
+        json={"lines": [], "total": "150.00"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["lines"] == []
+    # With no lines the caller's total stands again.
+    assert resp.json()["total"] == "150.00"
+
+
+@pytest.mark.asyncio
+async def test_an_issued_invoice_keeps_the_tax_id_it_was_issued_under(
+    client: AsyncClient, biz_headers
+):
+    """The snapshot froze the issuer's name, address and logo, and read
+    the tax ids live — so correcting a CNPJ rewrote a document a client
+    was already holding."""
+    await client.patch(
+        "/api/invoices/issuer",
+        headers=biz_headers,
+        json={"tax_ids": [{"kind": "cnpj", "value": "11.222.333/0001-81"}]},
+    )
+    invoice = await _create(client, biz_headers, total="100.00")
+    doc = f"/api/invoices/{invoice['id']}/document"
+    before = (await client.get(doc, headers=biz_headers)).json()["issuer"]["tax_ids"]
+
+    await client.patch(
+        "/api/invoices/issuer",
+        headers=biz_headers,
+        json={"tax_ids": [{"kind": "cnpj", "value": "45.997.418/0001-53"}]},
+    )
+    after = (await client.get(doc, headers=biz_headers)).json()["issuer"]["tax_ids"]
+    assert after == before
+
+    # A document issued from now on carries the corrected one.
+    later = await _create(client, biz_headers, total="100.00")
+    fresh = (
+        await client.get(f"/api/invoices/{later['id']}/document", headers=biz_headers)
+    ).json()["issuer"]["tax_ids"]
+    assert fresh != before
+
+
+@pytest.mark.asyncio
+async def test_one_payment_advertises_every_invoice_it_settled(
+    client: AsyncClient, biz_headers, inflow: Transaction
+):
+    """The N:N read back. A gateway payout settles a dozen invoices net of
+    fees, and keying one link per transaction let the second overwrite the
+    first — so the row advertised one and the ledger disagreed with the
+    list about what had been paid."""
+    first = await _create(client, biz_headers, total="300.00")
+    second = await _create(client, biz_headers, total="700.00")
+
+    for invoice, amount in ((first, "300.00"), (second, "700.00")):
+        resp = await client.post(
+            f"/api/invoices/{invoice['id']}/allocations",
+            headers=biz_headers,
+            json={"transaction_id": str(inflow.id), "amount": amount},
+        )
+        assert resp.status_code == 201, resp.text
+
+    listed = await client.get("/api/transactions", headers=biz_headers)
+    row = next(item for item in listed.json()["items"] if item["id"] == str(inflow.id))
+    assert {link["invoice_id"] for link in row["invoice_links"]} == {
+        first["id"], second["id"],
+    }
+    assert sum(Decimal(link["amount"]) for link in row["invoice_links"]) == Decimal("1000.00")

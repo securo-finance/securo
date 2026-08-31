@@ -32,6 +32,11 @@ from app.providers import get_storage_provider
 #: two device pixels per CSS pixel still has real detail to show.
 MAX_EDGE = 600
 
+#: What a logo may cost to decode. Generous for a mark — a 6000 × 4000
+#: photograph fits — and far below the point where one request can starve
+#: the others.
+MAX_PIXELS = 25_000_000
+
 #: The formats a browser will render and Pillow will open. Anything else
 #: is refused by name rather than failing later inside a decoder.
 ACCEPTED = {"image/png", "image/jpeg", "image/webp", "image/gif"}
@@ -55,6 +60,21 @@ def normalise(data: bytes, content_type: str) -> bytes:
         )
     try:
         image = Image.open(io.BytesIO(data))
+    except (UnidentifiedImageError, OSError) as exc:
+        raise ValueError("That file could not be read as an image.") from exc
+
+    # Checked before `load`, which is what actually decodes. A 10,000 ×
+    # 10,000 PNG of flat colour compresses to a few kilobytes and passes
+    # every size limit above, then asks for hundreds of megabytes here —
+    # and `thumbnail` only shrinks it afterwards, far too late.
+    width, height = image.size
+    if width * height > MAX_PIXELS:
+        raise ValueError(
+            f"That image is {width}×{height}. A logo may be at most "
+            f"{MAX_PIXELS // 1_000_000} megapixels."
+        )
+
+    try:
         image.load()
     except (UnidentifiedImageError, OSError) as exc:
         raise ValueError("That file could not be read as an image.") from exc

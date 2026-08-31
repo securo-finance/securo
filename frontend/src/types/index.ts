@@ -223,11 +223,16 @@ export interface TransactionInvoiceLink {
   invoice_id: string
   number: number | null
   series: string | null
+  /** The name an imported invoice arrived with; it carries no number of
+   *  ours, so the badge reads this instead. */
+  external_number: string | null
   amount: string
 }
 
 export interface Transaction {
-  invoice_link?: TransactionInvoiceLink | null
+  /** Every invoice this transaction settles — a payout net of fees
+   *  settles several. Absent in a workspace without the module. */
+  invoice_links?: TransactionInvoiceLink[] | null
   id: string
   user_id: string
   account_id: string | null

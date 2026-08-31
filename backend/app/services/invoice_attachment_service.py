@@ -10,6 +10,7 @@ from datetime import date as _date
 from typing import Optional
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -117,6 +118,16 @@ async def upload(
     prefix = uuid.uuid4().hex[:8]
     storage_key = f"{workspace_id}/invoices/{invoice_id}/{prefix}_{filename}"
 
+    # Checked before the bytes are written. `source` + `external_id` is
+    # unique per workspace, so a second sync of the same file is rejected
+    # by the index — and if that happened after the upload, the blob it
+    # had just written would stay in storage with no row pointing at it
+    # and nothing to find it by.
+    if source and external_id:
+        existing = await find_by_external_id(session, workspace_id, source, external_id)
+        if existing is not None:
+            return existing
+
     storage = get_storage_provider()
     stored = await storage.upload(storage_key, data, content_type)
 
@@ -139,7 +150,25 @@ async def upload(
         size=stored.size,
     )
     session.add(attachment)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        # Lost a race with a concurrent sync of the same file. The row is
+        # not ours, so neither is the blob: leaving it would be an orphan
+        # nothing can reach.
+        await session.rollback()
+        try:
+            await storage.delete(stored.storage_key)
+        except Exception:
+            pass
+        existing = (
+            await find_by_external_id(session, workspace_id, source, external_id)
+            if source and external_id
+            else None
+        )
+        if existing is not None:
+            return existing
+        raise
     await session.refresh(attachment)
     return attachment
 

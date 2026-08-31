@@ -1114,19 +1114,25 @@ export default function TransactionsPage() {
                 and transfer markers beside it, and absent entirely in a
                 workspace without the invoicing module — the server does
                 not send the field there. */}
-            {tx.invoice_link && (
+            {/* One badge per invoice this row settles: a payout net of
+                fees settles several, and showing only the last one read
+                as if the others had never been paid. */}
+            {(tx.invoice_links ?? []).map((link) => (
               <Link
-                to={`/invoices/${tx.invoice_link.invoice_id}`}
+                key={link.invoice_id}
+                to={`/invoices/${link.invoice_id}`}
                 onClick={(e) => e.stopPropagation()}
                 title={t('transactions.invoiceBadgeTooltip')}
                 className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900 px-1.5 py-0.5 rounded-full hover:bg-emerald-100 dark:hover:bg-emerald-950/70 transition-colors"
               >
                 <Receipt className="h-3 w-3" />
-                {tx.invoice_link.number != null
-                  ? t('transactions.invoiceBadge', { number: tx.invoice_link.number })
-                  : t('transactions.invoiceBadgeNoNumber')}
+                {link.external_number
+                  ? t('transactions.invoiceBadge', { number: link.external_number })
+                  : link.number != null
+                    ? t('transactions.invoiceBadge', { number: link.number })
+                    : t('transactions.invoiceBadgeNoNumber')}
               </Link>
-            )}
+            ))}
             {!!tx.transfer_pair_id && (
               <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
                 <ArrowLeftRight className="h-3 w-3" />

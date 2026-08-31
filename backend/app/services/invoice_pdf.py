@@ -36,6 +36,7 @@ drawing line items off the bottom edge where nobody ever sees them.
 import io
 from decimal import Decimal
 from typing import Optional
+from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_RIGHT
@@ -100,7 +101,16 @@ def _para(
         textColor=color,
         alignment=align,
     )
-    return Paragraph(text.replace("\n", "<br/>"), style)
+    # Escaped, because everything reaching this function is somebody's
+    # data — a client called "Alpha & Beta <Ltda>", a line reading
+    # "R&D <phase 1>". ReportLab reads its argument as markup, so
+    # unescaped text is not merely a crash risk: `<Ltda>` is silently
+    # swallowed as an unknown tag and the client's name goes out on the
+    # document truncated, with nothing to notice it by.
+    #
+    # The line break is applied after escaping, since it is the one piece
+    # of markup this function means.
+    return Paragraph(escape(text).replace("\n", "<br/>"), style)
 
 
 def _label(text: str) -> Paragraph:

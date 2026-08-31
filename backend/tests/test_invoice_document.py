@@ -976,3 +976,53 @@ async def test_a_line_without_a_unit_reads_as_it_always_did(
         await client.get(f"/api/invoices/{invoice['id']}/document", headers=biz_headers)
     ).json()
     assert doc["lines"][0]["unit"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_client_name_with_markup_survives_the_pdf(
+    client: AsyncClient, biz_headers, session: AsyncSession, business_ws, test_user
+):
+    """ReportLab reads its argument as markup, so an unescaped `<Ltda>`
+    was swallowed as an unknown tag: the client's name went out on the
+    document truncated, with nothing to notice it by."""
+    payee = Payee(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=uuid.UUID(business_ws["id"]),
+        name="Alpha & Beta <Ltda>",
+    )
+    session.add(payee)
+    await session.commit()
+
+    invoice = await make_invoice(
+        client, biz_headers, payee_id=str(payee.id),
+        lines=[{"description": "R&D <phase 1>", "quantity": "1", "unit_price": "100.00"}],
+    )
+    pdf = await client.get(f"/api/invoices/{invoice['id']}/pdf", headers=biz_headers)
+    assert pdf.status_code == 200
+
+    import io as _io
+
+    import pypdf as _pypdf
+
+    text = _pypdf.PdfReader(_io.BytesIO(pdf.content)).pages[0].extract_text()
+    assert "Alpha & Beta <Ltda>" in text
+    assert "R&D <phase 1>" in text
+
+
+def test_an_oversized_raster_is_refused_before_it_is_decoded():
+    """A 10,000 x 10,000 PNG of flat colour is a few hundred kilobytes and
+    asks for hundreds of megabytes to decode. Every size limit above lets
+    it through, and `thumbnail` only shrinks it long afterwards."""
+    import io as _io
+
+    from PIL import Image as _Image
+
+    from app.services import invoice_logo_service
+
+    buf = _io.BytesIO()
+    _Image.new("RGB", (10000, 10000), (255, 0, 0)).save(buf, format="PNG")
+    assert len(buf.getvalue()) < 1_000_000, "the point is that it is small"
+
+    with pytest.raises(ValueError, match="megapixels"):
+        invoice_logo_service.normalise(buf.getvalue(), "image/png")

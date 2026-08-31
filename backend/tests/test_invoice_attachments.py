@@ -333,3 +333,28 @@ async def test_a_source_can_be_corrected(client: AsyncClient, biz_headers):
         json={"source": "email"},
     )
     assert resp.json()["source"] == "email"
+
+
+@pytest.mark.asyncio
+async def test_a_resync_of_the_same_file_lands_on_the_row_it_wrote(
+    client: AsyncClient, biz_headers
+):
+    """`source` + `external_id` is unique per workspace, so the second
+    sync used to be rejected by the index *after* its bytes were written,
+    leaving a blob nothing could reach."""
+    invoice = await make_invoice(client, biz_headers)
+    first = await upload(
+        client, biz_headers, invoice["id"], filename="nfe.pdf",
+        kind="fiscal", source="nfe-provider", external_id="35260812345678",
+    )
+    again = await upload(
+        client, biz_headers, invoice["id"], filename="nfe.pdf",
+        kind="fiscal", source="nfe-provider", external_id="35260812345678",
+    )
+    assert again.status_code == 201
+    assert again.json()["id"] == first.json()["id"]
+
+    listing = await client.get(
+        f"/api/invoices/{invoice['id']}/attachments", headers=biz_headers
+    )
+    assert len(listing.json()) == 1

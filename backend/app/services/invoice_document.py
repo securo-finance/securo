@@ -340,10 +340,29 @@ async def build_document(
             return snap_issuer.get(key)
         return live
 
-    tax_rows = await session.execute(
-        select(WorkspaceTaxId).where(WorkspaceTaxId.workspace_id == workspace.id)
-    )
-    issuer_tax_ids = [_format_tax_id(row.kind, row.value) for row in tax_rows.scalars().all()]
+    # The issuer's documents, frozen like the rest of the issuer's
+    # identity. Reading the live rows here was the one thing the snapshot
+    # did not cover, so correcting a CNPJ next month silently rewrote the
+    # CNPJ on an invoice a client received last month — the exact thing
+    # freezing exists to prevent.
+    #
+    # Live rows still answer for a draft, and for a snapshot written
+    # before this field existed, where the alternative is a document with
+    # no tax id at all.
+    snap_tax_ids = snap_issuer.get("tax_ids") if snapshot else None
+    if snap_tax_ids is not None:
+        issuer_tax_ids = [
+            _format_tax_id(t["kind"], t["value"])
+            for t in snap_tax_ids
+            if isinstance(t, dict) and t.get("kind") and t.get("value")
+        ]
+    else:
+        tax_rows = await session.execute(
+            select(WorkspaceTaxId).where(WorkspaceTaxId.workspace_id == workspace.id)
+        )
+        issuer_tax_ids = [
+            _format_tax_id(row.kind, row.value) for row in tax_rows.scalars().all()
+        ]
 
     workspace_party = DocumentParty(
         name=issued_or_live("display_name", settings.issuer_display_name) or workspace.name,

@@ -95,6 +95,19 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Gives back what `upgrade` took, as far as it can be given back.
+
+    `upgrade` folded `series || number` into one text column and cleared
+    both. Splitting that back apart is guesswork in general — a source
+    that numbered a document `2026/A/0031` leaves nothing to say where
+    the series ended — so only the unambiguous case is restored: a value
+    that is digits and nothing else goes back into `number`.
+
+    Anything else stays in `external_number` until the column is dropped
+    on the next statement, and is then gone. On a self-hosted install
+    that is the only copy of the name the source gave the document, which
+    is why it is said here rather than discovered afterwards.
+    """
     op.drop_index("uq_invoice_attachments_primary", table_name="invoice_attachments")
     op.drop_index("ix_invoice_attachments_workspace_id", table_name="invoice_attachments")
     op.drop_index("ix_invoice_attachments_invoice", table_name="invoice_attachments")
@@ -107,5 +120,16 @@ def downgrade() -> None:
         "(status = 'draft' AND number IS NULL)"
         " OR (status <> 'draft' AND origin = 'local' AND number IS NOT NULL)"
         " OR origin = 'imported'",
+    )
+
+    # The reversible half: a purely numeric name is the same value the
+    # column held before, so it goes home.
+    op.execute(
+        """
+        UPDATE invoices
+           SET number = external_number::integer
+         WHERE origin = 'imported'
+           AND external_number ~ '^[0-9]+$'
+        """
     )
     op.drop_column("invoices", "external_number")
