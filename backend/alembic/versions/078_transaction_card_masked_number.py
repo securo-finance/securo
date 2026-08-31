@@ -1,7 +1,7 @@
 """store the masked card number on credit-card transactions
 
-Revision ID: 077
-Revises: 076
+Revision ID: 078
+Revises: 077
 Create Date: 2026-08-30
 
 Only the provider-normalized final four characters are persisted. A card
@@ -14,8 +14,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "077"
-down_revision: Union[str, None] = "076"
+revision: str = "078"
+down_revision: Union[str, None] = "077"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

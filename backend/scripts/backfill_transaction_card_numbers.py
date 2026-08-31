@@ -9,8 +9,8 @@ Usage:
     uv run python scripts/backfill_transaction_card_numbers.py
     uv run python scripts/backfill_transaction_card_numbers.py --apply
 
-`--apply` is intentionally separate and only works after migrations 077 and
-078 have created the transaction field and linked-card table.
+`--apply` is intentionally separate and only works after migrations 078 and
+079 have created the transaction field and linked-card table.
 """
 
 import argparse
@@ -67,7 +67,7 @@ async def main(apply: bool, workspace_id: UUID | None) -> int:
     has_target_column = await _has_target_column()
     has_linked_cards_table = await _has_linked_cards_table()
     if apply and (not has_target_column or not has_linked_cards_table):
-        print("Refusing --apply: migrations 077 and 078 have not been applied.")
+        print("Refusing --apply: migrations 078 and 079 have not been applied.")
         return 2
 
     async with async_session_maker() as session:
@@ -124,7 +124,7 @@ async def main(apply: bool, workspace_id: UUID | None) -> int:
         if has_target_column:
             print(f"already backfilled: {totals['already_backfilled']}")
         else:
-            print("migration 077: not applied (preview is still read-only and valid)")
+            print("migration 078: not applied (preview is still read-only and valid)")
         print(f"would backfill: {totals['would_backfill']}")
 
         if candidates_by_account:
@@ -180,7 +180,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--apply",
         action="store_true",
-        help="write masked tails after migrations 077 and 078; omit for a read-only preview",
+        help="write masked tails after migrations 078 and 079; omit for a read-only preview",
     )
     parser.add_argument(
         "--workspace-id",
