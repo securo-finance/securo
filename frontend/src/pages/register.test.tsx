@@ -71,7 +71,9 @@ describe('RegisterPage', () => {
     await fill(user)
     await user.click(screen.getByRole('button', { name: t('auth.register') }))
 
-    await waitFor(() => expect(authContext.register).toHaveBeenCalled())
+    // Exactly once: reading calls[0] alone would wave through a double
+    // submit, which on this endpoint means a second account attempt.
+    await waitFor(() => expect(authContext.register).toHaveBeenCalledTimes(1))
     // Assert the whole payload: sending the confirm field as the password, or
     // dropping the currency, is exactly the kind of slip a looser assertion
     // on the email alone would wave through.
