@@ -8,6 +8,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.account_card import AccountCard
 from app.models.transaction import Transaction
 from app.models.category import Category
 from app.models.payee import Payee
@@ -52,6 +53,77 @@ async def test_list_transactions_filter_by_account(
     assert response.status_code == 200
     data = response.json()
     assert data["total"] == 5  # all belong to same account
+
+
+@pytest.mark.asyncio
+async def test_list_transactions_filter_by_linked_card(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Cartão",
+        type="credit_card",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+    personal_card = AccountCard(
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        masked_number="5062",
+        label="Pessoal",
+    )
+    virtual_card = AccountCard(
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        masked_number="7266",
+    )
+    session.add_all([personal_card, virtual_card])
+    session.add_all([
+        Transaction(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            description="Personal purchase",
+            amount=Decimal("10"),
+            currency="BRL",
+            date=date.today(),
+            type="debit",
+            source="sync",
+            card_masked_number="5062",
+        ),
+        Transaction(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=account.id,
+            description="Virtual purchase",
+            amount=Decimal("20"),
+            currency="BRL",
+            date=date.today(),
+            type="debit",
+            source="sync",
+            card_masked_number="7266",
+        ),
+    ])
+    await session.commit()
+
+    response = await client.get(
+        f"/api/transactions?linked_card_ids={personal_card.id}",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+    assert response.json()["items"][0]["description"] == "Personal purchase"
+
+    exported = await client.get(
+        f"/api/transactions/export?linked_card_ids={personal_card.id}",
+        headers=auth_headers,
+    )
+    assert exported.status_code == 200
+    assert "Personal purchase" in exported.text
+    assert "Virtual purchase" not in exported.text
 
 
 @pytest.mark.asyncio

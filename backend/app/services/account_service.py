@@ -45,6 +45,23 @@ async def get_linked_cards(
     return list(result.scalars())
 
 
+async def get_workspace_linked_cards(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> list[AccountCard]:
+    """Return every provider-discovered card available in a workspace."""
+    result = await session.execute(
+        select(AccountCard)
+        .join(Account, Account.id == AccountCard.account_id)
+        .where(
+            AccountCard.workspace_id == workspace_id,
+            Account.type == "credit_card",
+            Account.is_closed == False,
+        )
+        .order_by(AccountCard.account_id, AccountCard.masked_number)
+    )
+    return list(result.scalars())
+
+
 async def update_linked_card_labels(
     session: AsyncSession,
     account_id: uuid.UUID,

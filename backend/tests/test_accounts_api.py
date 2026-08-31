@@ -91,6 +91,10 @@ async def test_linked_cards_can_be_labeled(
     assert updated.status_code == 200
     assert updated.json()[0]["label"] == "Cartão pessoal"
 
+    workspace_cards = await client.get("/api/accounts/linked-cards", headers=auth_headers)
+    assert workspace_cards.status_code == 200
+    assert workspace_cards.json()[0]["id"] == str(linked_card.id)
+
 
 @pytest.mark.asyncio
 async def test_create_manual_account(client: AsyncClient, auth_headers):

@@ -612,6 +612,7 @@ export default function AccountDetailPage() {
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
       queryClient.invalidateQueries({ queryKey: ['accounts', id, 'linked-cards'] })
+      queryClient.invalidateQueries({ queryKey: ['accounts', 'linked-cards'] })
       setCcSettingsOpen(false)
       toast.success(t('accounts.updated'))
     },
