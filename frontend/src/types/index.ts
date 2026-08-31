@@ -940,6 +940,41 @@ export interface PaginatedTransactions extends PaginatedResponse<Transaction> {
   summary?: TransactionsSummary
 }
 
+export interface SimilarTransactionGroup {
+  kind: 'group'
+  key: string
+  transactions: Transaction[]
+  description: string
+  type: Transaction['type']
+  currency: string
+  total_amount: number
+  amount_primary: number | null
+  parent_total: number | null
+  owner_share: number | null
+  earliest_date: string
+  latest_date: string
+  account_id: string | null
+  category_id: string | null
+  category: Category | null
+  has_multiple_categories: boolean
+  common_notes: string | null
+  has_notes: boolean
+  has_multiple_notes: boolean
+  attachment_count: number
+  status: Transaction['status']
+  is_ignored: boolean
+  is_transfer: boolean
+  is_shared: boolean
+  group_id: string | null
+  parent_owner_name: string | null
+  has_pending_badge: boolean
+  has_fx_fallback: boolean
+}
+
+export type TransactionDisplayItem =
+  | { kind: 'transaction'; transaction: Transaction }
+  | SimilarTransactionGroup
+
 // Reports (universal schema for all report types)
 export interface ReportBreakdown {
   key: string

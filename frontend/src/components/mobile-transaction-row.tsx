@@ -28,6 +28,9 @@ interface MobileTransactionRowProps {
   onClick: (tx: Transaction) => void
   /** Show the payee instead of the account name in an account-scoped view. */
   showPayee?: boolean
+  /** Keep the exact date visible when the surrounding list has no date header. */
+  showDate?: boolean
+  dateLocale?: string
 }
 
 export function MobileTransactionRow({
@@ -44,6 +47,8 @@ export function MobileTransactionRow({
   onSelect,
   onClick,
   showPayee = false,
+  showDate = false,
+  dateLocale = locale,
 }: MobileTransactionRowProps) {
   const { mask } = usePrivacyMode()
   const { t } = useTranslation()
@@ -59,6 +64,10 @@ export function MobileTransactionRow({
       : 'text-rose-500'
 
   const virtual = tx.virtual === true
+  const payeeText = showPayee && (tx.payee_name || tx.payee) !== tx.description
+    ? tx.payee_name || tx.payee
+    : null
+  const accountText = !showPayee && account ? getAccountName(account) : null
 
   return (
     <div
@@ -142,22 +151,22 @@ export function MobileTransactionRow({
           )}
         </div>
 
-        {/* Account row or payee row */}
-        {showPayee ? (
-          (tx.payee_name || tx.payee) && (tx.payee_name || tx.payee) !== tx.description ? (
-            <p className="text-xs text-muted-foreground mt-0.5 truncate">
-              {tx.payee_name || tx.payee}
-            </p>
-          ) : null
-        ) : (
-          account && (
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <AccountIcon account={account} size="xs" />
-              <span className="text-xs text-muted-foreground truncate">
-                {getAccountName(account)}
+        {/* Account/payee context plus an exact date when no date header exists. */}
+        {(payeeText || accountText || showDate) && (
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+            {payeeText && <span className="truncate">{payeeText}</span>}
+            {accountText && account && (
+              <>
+                <AccountIcon account={account} size="xs" />
+                <span className="truncate">{accountText}</span>
+              </>
+            )}
+            {showDate && (
+              <span className="ml-auto shrink-0 tabular-nums">
+                {new Date(`${tx.date}T00:00:00`).toLocaleDateString(dateLocale)}
               </span>
-            </div>
-          )
+            )}
+          </div>
         )}
       </div>
 

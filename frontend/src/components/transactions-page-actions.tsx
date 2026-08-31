@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react'
-import { ArrowLeftRight, CalendarDays, Copy, Download, List, MoreHorizontal } from 'lucide-react'
+import { ArrowLeftRight, CalendarDays, Copy, Download, List, MoreHorizontal, Rows3 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { MonthStepper } from '@/components/month-stepper'
 import { TransactionsViewSwitcher, type TransactionsViewSwitcherProps } from '@/components/transactions-view-switcher'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuRadioGroup,
@@ -24,9 +25,16 @@ type MonthStepperConfig = {
 
 type ViewSwitcherConfig = TransactionsViewSwitcherProps
 
+type SimilarGroupingConfig = {
+  enabled: boolean
+  onChange: (enabled: boolean) => void
+  label: string
+}
+
 export type TransactionsPageActionsProps = {
   month: MonthStepperConfig
   view: ViewSwitcherConfig
+  grouping?: SimilarGroupingConfig
   columnPicker: ReactNode
   exportLabel: string
   exporting: boolean
@@ -47,9 +55,19 @@ function HeaderMonthStepper({ month }: { month: MonthStepperConfig }) {
 
 function DesktopSecondaryActions(props: TransactionsPageActionsProps) {
   const { t } = useTranslation()
+  const grouping = props.grouping
   return (
     <div className="hidden sm:contents">
       <TransactionsViewSwitcher {...props.view} />
+      {grouping && (
+        <Button
+          variant={grouping.enabled ? 'secondary' : 'outline'}
+          aria-pressed={grouping.enabled}
+          onClick={() => grouping.onChange(!grouping.enabled)}
+        >
+          <Rows3 size={16} className="mr-1.5" />{grouping.label}
+        </Button>
+      )}
       {props.columnPicker}
       <Button variant="outline" disabled={props.exporting} onClick={props.onExport}>
         <Download size={16} className="mr-1.5" />{props.exportLabel}
@@ -73,6 +91,7 @@ function PrimaryAddAction({ onAdd }: { onAdd?: () => void }) {
 
 function MobileSecondaryMenu(props: TransactionsPageActionsProps) {
   const { t } = useTranslation()
+  const grouping = props.grouping
   const changeView = (value: string) => {
     if (value === 'list' || value === 'calendar') props.view.onChange(value)
   }
@@ -88,6 +107,14 @@ function MobileSecondaryMenu(props: TransactionsPageActionsProps) {
           <DropdownMenuRadioItem value="list"><List />{props.view.listLabel}</DropdownMenuRadioItem>
           <DropdownMenuRadioItem value="calendar"><CalendarDays />{props.view.calendarLabel}</DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
+        {grouping && (
+          <DropdownMenuCheckboxItem
+            checked={grouping.enabled}
+            onCheckedChange={checked => grouping.onChange(checked === true)}
+          >
+            <Rows3 />{grouping.label}
+          </DropdownMenuCheckboxItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem disabled={props.exporting} onClick={props.onExport}><Download size={16} className="mr-2" />{props.exportLabel}</DropdownMenuItem>
         {props.onDuplicate && <DropdownMenuItem onClick={props.onDuplicate}><Copy size={16} className="mr-2" />{t('transactions.duplicate')}</DropdownMenuItem>}

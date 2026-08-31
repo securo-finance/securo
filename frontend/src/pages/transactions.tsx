@@ -35,8 +35,8 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Clock, HelpCircle, Info, Paperclip, Trash2, Users, X, EyeClosed, SlidersHorizontal } from 'lucide-react'
-import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload } from '@/types'
+import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, ChevronRight, Clock, HelpCircle, Info, Paperclip, Trash2, Users, X, EyeClosed, SlidersHorizontal } from 'lucide-react'
+import type { SimilarTransactionGroup, Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload } from '@/types'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { PageHeader } from '@/components/page-header'
 import { calculateRangeSelection } from '@/lib/selection-utils'
@@ -62,6 +62,19 @@ import { useWorkspace } from '@/contexts/workspace-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { formatCurrency } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
+import {
+  flattenTransactionDisplayItems,
+  formatSimilarTransactionDateRange,
+  groupSimilarTransactions,
+  similarGroupSelectionState,
+  visibleTransactionRows,
+} from '@/lib/transaction-grouping'
+import { useSimilarGroupExpansion, useSimilarTransactionGrouping } from '@/hooks/use-similar-transaction-grouping'
+import {
+  SimilarTransactionDisclosure,
+  SimilarTransactionGroupIcon,
+  SimilarTransactionGroupSummary,
+} from '@/components/similar-transaction-group'
 
 type TransactionUpdatePayload = TransactionEditPayload & {
   apply_to_transfer_pair?: boolean
@@ -165,6 +178,13 @@ export default function TransactionsPage() {
       return false
     }
   })
+  const { enabled: groupSimilar, setEnabled: setGroupSimilar } = useSimilarTransactionGrouping()
+  const {
+    expandedKeys: expandedSimilarGroups,
+    toggle: toggleSimilarGroup,
+    expand: expandSimilarGroup,
+    clear: clearSimilarGroups,
+  } = useSimilarGroupExpansion()
   const [filterMinAmount, setFilterMinAmount] = useState<string>(searchParams.get('min_amount') ?? '')
   const [filterMaxAmount, setFilterMaxAmount] = useState<string>(searchParams.get('max_amount') ?? '')
   const [tagFilters, setTagFilters] = useState<string[]>([])
@@ -329,7 +349,7 @@ export default function TransactionsPage() {
     setSelectedIds(new Set())
     setLastSelectedId(null)
     setBulkCategory('')
-  }, [page, filterAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery])
+  }, [page, limit, filterAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, searchQuery, tagFilters, groupSimilar])
 
   useEffect(() => {
     if (viewMode === 'calendar') {
@@ -364,7 +384,7 @@ export default function TransactionsPage() {
       clearTimeout(timer)
       el.classList.remove('securo-highlight-flash')
     }
-  }, [highlightId, searchQuery, filterPayee, filterCategoryIds, page])
+  }, [highlightId, searchQuery, filterPayee, filterCategoryIds, page, expandedSimilarGroups])
 
   // Merge the global active-collection filter with the page's own account
   // filter (issue #105): an explicit on-page account selection wins; otherwise
@@ -383,8 +403,6 @@ export default function TransactionsPage() {
     enabled: !noAccounts,
     queryFn: () =>
       transactions.list({
-        page,
-        limit,
         account_ids: effectiveAccountIds.length > 0 ? effectiveAccountIds : undefined,
         category_ids: filterCategoryIds.length > 0 ? filterCategoryIds : undefined,
         payee_id: filterPayee || undefined,
@@ -399,6 +417,8 @@ export default function TransactionsPage() {
         q: searchQuery || undefined,
         tags: tagFilters.length > 0 ? tagFilters : undefined,
         exclude_ignored: hideIgnored ? true : undefined,
+        page,
+        limit,
         // Mobile has no column headers to change sort; force date-desc so
         // the date grouping always works correctly.
         ...(isMobile ? { sort_by: 'date', sort_dir: 'desc' as const } : grid.apiSort),
@@ -445,7 +465,7 @@ export default function TransactionsPage() {
       path: '/transactions',
       label: 'Transactions',
       summary: data?.total != null
-        ? `${data.total} transaction(s) match the active filters (showing page ${page}, ${limit} per page).`
+        ? `${data.total} transaction(s) match the active filters (showing page ${page}, ${limit} transactions per page).`
         : 'Transactions list with active filters.',
       filters: ctxFilters,
     },
@@ -761,15 +781,41 @@ export default function TransactionsPage() {
 
   const toggleSelect = (id: string, isShiftKey: boolean = false) => {
     setSelectedIds(prev =>
-      calculateRangeSelection(prev, lastSelectedId, id, filteredItems, isShiftKey, tx => !tx.is_shared)
+      calculateRangeSelection(prev, lastSelectedId, id, visibleSelectionItems, isShiftKey, tx => !tx.is_shared)
     )
     setLastSelectedId(id)
   }
 
-  // Tag filtering is now applied server-side, so the visible list and the
-  // page count both reflect the same filtered total — issue #88.
-  const filteredItems = data?.items ?? []
+  // Group only the transactions already loaded for the current server page.
+  const displayItems = useMemo(
+    () => groupSimilarTransactions(
+      data?.items ?? [],
+      groupSimilar,
+      isMobile ? 'date' : grid.sortBy,
+      isMobile ? 'desc' : grid.sortDir,
+    ),
+    [data?.items, grid.sortBy, grid.sortDir, groupSimilar, isMobile],
+  )
+  const filteredItems = useMemo(
+    () => flattenTransactionDisplayItems(displayItems),
+    [displayItems],
+  )
+  const visibleSelectionItems = useMemo(
+    () => visibleTransactionRows(displayItems, expandedSimilarGroups),
+    [displayItems, expandedSimilarGroups],
+  )
   const selectableItems = filteredItems.filter(tx => !tx.is_shared)
+
+  // A direct transaction link must reveal its row even when it belongs to a
+  // currently collapsed group.
+  useEffect(() => {
+    if (!groupSimilar || !highlightId) return
+    const containingGroup = displayItems.find(item =>
+      item.kind === 'group' && item.transactions.some(tx => tx.id === highlightId),
+    )
+    if (containingGroup?.kind !== 'group') return
+    expandSimilarGroup(containingGroup.key)
+  }, [displayItems, expandSimilarGroup, groupSimilar, highlightId])
 
   // Group transactions by date for the mobile card view
   const groupedByDate = useMemo(() => {
@@ -820,20 +866,20 @@ export default function TransactionsPage() {
   // primary-currency amount; credits add, debits subtract.
   const selectedNet = useMemo(() => {
     let net = 0
-    for (const tx of data?.items ?? []) {
+    for (const tx of filteredItems) {
       if (!selectedIds.has(tx.id)) continue
       const base = Math.abs(Number(tx.amount_primary ?? tx.amount))
       net += tx.type === 'credit' ? base : -base
     }
     return net
-  }, [data?.items, selectedIds])
+  }, [filteredItems, selectedIds])
 
   // Resolve the currently-selected transactions into a valid debit/credit pair
   // for the "Link as transfer" action. Returns null if the pair is invalid
   // (wrong count, same account, same type, or already linked).
   const linkablePair = useMemo(() => {
     if (selectedIds.size !== 2) return null
-    const selected = (data?.items ?? []).filter(tx => selectedIds.has(tx.id))
+    const selected = filteredItems.filter(tx => selectedIds.has(tx.id))
     if (selected.length !== 2) return null
     if (selected.some(tx => tx.transfer_pair_id)) return null
     if (selected[0].account_id === selected[1].account_id) return null
@@ -841,17 +887,17 @@ export default function TransactionsPage() {
     const credit = selected.find(tx => tx.type === 'credit')
     if (!debit || !credit) return null
     return { debit, credit }
-  }, [selectedIds, data?.items])
+  }, [filteredItems, selectedIds])
 
   // Single-selection picker mode: when exactly one unlinked transaction is
   // selected, the user can search for its counterpart across all accounts.
   const linkAnchor = useMemo(() => {
     if (selectedIds.size !== 1) return null
-    const selected = (data?.items ?? []).find(tx => selectedIds.has(tx.id))
+    const selected = filteredItems.find(tx => selectedIds.has(tx.id))
     if (!selected) return null
     if (selected.transfer_pair_id) return null
     return selected
-  }, [selectedIds, data?.items])
+  }, [filteredItems, selectedIds])
 
   const canOpenLinkDialog = !!linkablePair || !!linkAnchor
   const linkDisabledTooltip =
@@ -859,7 +905,7 @@ export default function TransactionsPage() {
       ? t('transactions.linkTransferInvalidPair')
       : undefined
 
-  const totalPages = data ? Math.ceil(data.total / limit) : 0
+  const totalPages = Math.ceil((data?.total ?? 0) / limit)
 
   const isTransferCategoryPromptOpen = !!pendingTransferCategoryUpdate
 
@@ -949,6 +995,12 @@ export default function TransactionsPage() {
     } catch {
       // Private mode or a full quota: the filter still applies for this visit.
     }
+  }
+
+  const handleGroupSimilarChange = (next: boolean) => {
+    if (!next) clearSimilarGroups()
+    setGroupSimilar(next)
+    setPage(1)
   }
 
   const handleExport = async () => {
@@ -1297,6 +1349,318 @@ export default function TransactionsPage() {
     }
   }
 
+  const groupDateLabel = (group: SimilarTransactionGroup) => {
+    return formatSimilarTransactionDateRange(group, dateLocale)
+  }
+
+  const renderMobileTransactionRow = (tx: Transaction, showDate = false) => (
+    <MobileTransactionRow
+      key={tx.id}
+      tx={tx}
+      account={tx.account_id ? accountById.get(tx.account_id) : undefined}
+      groupName={tx.group_id ? groupNameById.get(tx.group_id) : undefined}
+      selected={selectedIds.has(tx.id)}
+      selectable={canWrite && !tx.is_shared}
+      canWrite={canWrite}
+      highlighted={tx.id === highlightId}
+      highlightedRowRef={tx.id === highlightId ? highlightedRowRef : undefined}
+      locale={locale}
+      userCurrency={userCurrency}
+      showDate={showDate}
+      dateLocale={dateLocale}
+      onSelect={toggleSelect}
+      onClick={(transaction) => {
+        if (transaction.is_shared) {
+          if (transaction.group_id) navigate(`/groups/${transaction.group_id}`)
+          return
+        }
+        setEditingTx(transaction)
+        setDialogOpen(true)
+      }}
+    />
+  )
+
+  const renderGroupBodyCell = (col: ColumnDef, group: SimilarTransactionGroup) => {
+    const first = group.transactions[0]
+    const widthStyle = { width: grid.widthOf(col.id), minWidth: grid.widthOf(col.id) }
+    const alignClass = col.align === 'right' ? 'text-right' : ''
+    const baseClass = `py-2.5 ${alignClass}`
+
+    switch (col.id) {
+      case 'date': {
+        const dateRange = groupDateLabel(group)
+        return (
+          <TableCell
+            key={col.id}
+            style={widthStyle}
+            title={dateRange}
+            className={`${baseClass} overflow-hidden text-xs font-medium text-muted-foreground tabular-nums`}
+          >
+            <span className="block truncate whitespace-nowrap">{dateRange}</span>
+          </TableCell>
+        )
+      }
+      case 'description':
+        return (
+          <TableCell key={col.id} style={widthStyle} className={`${baseClass} pl-2 max-w-0`}>
+            <div className="flex min-w-0 items-center gap-3">
+              <SimilarTransactionGroupIcon />
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <p className="truncate text-sm font-semibold text-foreground">{group.description}</p>
+                  {group.group_id && (
+                    <span className="shrink-0 rounded-full border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700 dark:border-violet-900 dark:bg-violet-950/40 dark:text-violet-300">
+                      {group.is_shared && group.parent_owner_name
+                        ? t('splitGroups.sharedRowBadgeAuthor', {
+                            author: group.parent_owner_name,
+                            group: groupNameById.get(group.group_id) ?? '',
+                          })
+                        : t('splitGroups.ownerRowBadge', {
+                            group: groupNameById.get(group.group_id) ?? '',
+                          })}
+                    </span>
+                  )}
+                  {group.is_transfer && (
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-600">
+                      <ArrowLeftRight className="h-3 w-3" />
+                      {t('transactions.transfer')}
+                    </span>
+                  )}
+                  {group.is_ignored && (
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded border border-gray-200 bg-gray-100 px-1.5 py-0.5 text-xs font-normal text-gray-600">
+                      <EyeClosed className="h-3 w-3" />
+                      {t('transactions.ignored')}
+                    </span>
+                  )}
+                  {group.has_pending_badge && (
+                    <span
+                      title={t('transactions.pending')}
+                      className="inline-flex shrink-0 items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10"
+                    >
+                      <Clock size={12} className="text-amber-500" />
+                    </span>
+                  )}
+                  {group.attachment_count > 0 && <Paperclip size={12} className="shrink-0 text-muted-foreground" />}
+                </div>
+                <SimilarTransactionGroupSummary
+                  group={group}
+                  locale={dateLocale}
+                  showDate={!grid.isVisible('date')}
+                  className="block truncate text-xs text-muted-foreground"
+                />
+              </div>
+            </div>
+          </TableCell>
+        )
+      case 'category':
+        return (
+          <TableCell key={col.id} style={widthStyle} className={`${baseClass} text-sm text-muted-foreground`}>
+            {group.has_multiple_categories
+              ? t('transactions.groupMultipleValues')
+              : (group.category?.name ?? t('transactions.noCategory'))}
+          </TableCell>
+        )
+      case 'account': {
+        const account = group.account_id ? accountById.get(group.account_id) : undefined
+        return (
+          <TableCell key={col.id} style={widthStyle} className={`${baseClass} text-sm text-muted-foreground`}>
+            {account ? (
+              <span className="flex min-w-0 items-center gap-2">
+                <AccountIcon account={account} size="sm" />
+                <span className="truncate">{getAccountName(account)}</span>
+              </span>
+            ) : '—'}
+          </TableCell>
+        )
+      }
+      case 'amount':
+        return (
+          <TableCell key={col.id} style={widthStyle} className={`${baseClass} pr-5`}>
+            <span className={`text-sm font-bold tabular-nums ${
+              group.is_ignored ? 'text-gray-500' : group.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'
+            }`}>
+              {mask(`${group.is_ignored ? ' ' : group.type === 'credit' ? '+' : '−'}${formatCurrency(
+                Math.abs(group.total_amount),
+                group.currency,
+                locale,
+              )}`)}
+            </span>
+            {group.is_shared && group.parent_total != null && (
+              <p className="text-[10px] text-muted-foreground tabular-nums">
+                {t('splitGroups.sharedRowParent', {
+                  total: formatCurrency(Math.abs(group.parent_total), group.currency, locale),
+                })}
+              </p>
+            )}
+            {!group.is_shared && group.owner_share != null && (
+              <p className="text-[10px] text-muted-foreground tabular-nums">
+                {t('splitGroups.ownerRowYourShare', {
+                  share: formatCurrency(Math.abs(group.owner_share), group.currency, locale),
+                })}
+              </p>
+            )}
+            {group.amount_primary != null && group.currency !== userCurrency && (
+              <div className="flex items-center justify-end gap-1">
+                {group.has_fx_fallback && (
+                  <span title={t('transactions.fxFallbackTooltip')}>
+                    <AlertTriangle size={11} className="shrink-0 text-amber-500" />
+                  </span>
+                )}
+                <span className="text-[10px] text-muted-foreground tabular-nums">
+                  {mask(formatCurrency(Math.abs(group.amount_primary), userCurrency, locale))}
+                </span>
+              </div>
+            )}
+          </TableCell>
+        )
+      case 'payee':
+        return (
+          <TableCell key={col.id} style={widthStyle} className={`${baseClass} text-sm text-muted-foreground`}>
+            {first.payee_name ?? first.payee ?? '—'}
+          </TableCell>
+        )
+      case 'notes': {
+        const note = group.common_notes ? stripHashtags(group.common_notes) : ''
+        return (
+          <TableCell key={col.id} style={widthStyle} className={`${baseClass} max-w-0 truncate text-xs italic text-muted-foreground`}>
+            {group.has_multiple_notes ? t('transactions.groupMultipleValues') : note || <span className="not-italic">—</span>}
+          </TableCell>
+        )
+      }
+      case 'tags': {
+        const tags = group.common_notes ? parseHashtags(group.common_notes) : []
+        return (
+          <TableCell key={col.id} style={widthStyle} className={baseClass}>
+            {group.has_multiple_notes ? t('transactions.groupMultipleValues') : tags.length > 0 ? (
+              <div className="flex flex-wrap gap-1">
+                {tags.map(tag => (
+                  <span
+                    key={tag}
+                    className="inline-block cursor-pointer rounded-full border border-primary/10 bg-primary/5 px-1.5 py-0 text-[11px] font-medium leading-5 text-primary hover:bg-primary/10"
+                    onClick={event => { event.stopPropagation(); addTagFilter(tag) }}
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            ) : <span className="text-muted-foreground">—</span>}
+          </TableCell>
+        )
+      }
+      case 'attachments': {
+        return (
+          <TableCell key={col.id} style={widthStyle} className={`${baseClass} pr-5 text-sm text-muted-foreground tabular-nums`}>
+            {group.attachment_count > 0 ? (
+              <span className="inline-flex w-full items-center justify-end gap-1"><Paperclip size={12} />{group.attachment_count}</span>
+            ) : '—'}
+          </TableCell>
+        )
+      }
+      case 'type':
+        return (
+          <TableCell key={col.id} style={widthStyle} className={`${baseClass} text-sm`}>
+            <span className={group.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}>
+              {group.type === 'credit' ? t('transactions.typeIncome') : t('transactions.typeExpense')}
+            </span>
+          </TableCell>
+        )
+      case 'status':
+        return (
+          <TableCell key={col.id} style={widthStyle} className={`${baseClass} text-sm text-muted-foreground`}>
+            {group.status === 'pending' ? t('transactions.statusPending') : t('transactions.statusPosted')}
+          </TableCell>
+        )
+    }
+  }
+
+  const toggleSimilarGroupSelection = (group: SimilarTransactionGroup) => {
+    const selectableIds = group.transactions
+      .filter(transaction => !transaction.is_shared)
+      .map(transaction => transaction.id)
+    if (selectableIds.length === 0) return
+    setSelectedIds(previous => {
+      const next = new Set(previous)
+      const allSelectedInGroup = selectableIds.every(id => previous.has(id))
+      selectableIds.forEach(id => {
+        if (allSelectedInGroup) next.delete(id)
+        else next.add(id)
+      })
+      return next
+    })
+    setLastSelectedId(null)
+  }
+
+  const renderDesktopTransactionRow = (tx: Transaction, nested = false) => (
+    <TableRow
+      key={tx.id}
+      ref={tx.id === highlightId ? highlightedRowRef : undefined}
+      className={`hover:bg-muted border-b border-border last:border-0 ${
+        selectedIds.has(tx.id) ? 'bg-primary/5' : nested ? 'bg-muted/20' : ''
+      } ${nested ? 'border-l-2 border-l-primary/30' : ''} ${
+        tx.is_shared || !canWrite ? 'cursor-default' : 'cursor-pointer'
+      }`}
+      onClick={() => {
+        if (tx.is_shared) {
+          if (tx.group_id) navigate(`/groups/${tx.group_id}`)
+          return
+        }
+        if (!canWrite) return
+        setEditingTx(tx)
+        setDialogOpen(true)
+      }}
+    >
+      <TableCell style={{ width: 72, minWidth: 72 }} className="py-2.5 pl-4 pr-0">
+        {canWrite && !tx.is_shared && (
+          <input
+            type="checkbox"
+            checked={selectedIds.has(tx.id)}
+            onChange={() => {}}
+            onClick={(event) => {
+              event.stopPropagation()
+              toggleSelect(tx.id, event.shiftKey)
+            }}
+            className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
+          />
+        )}
+      </TableCell>
+      {grid.visibleColumns.map(col => renderBodyCell(col, tx))}
+    </TableRow>
+  )
+
+  const renderDesktopGroupRow = (group: SimilarTransactionGroup) => {
+    const expanded = expandedSimilarGroups.has(group.key)
+    const selectionState = similarGroupSelectionState(group, selectedIds)
+    return (
+      <TableRow
+        key={`group-${group.key}`}
+        className="cursor-pointer border-b border-border bg-muted/30 hover:bg-muted/60"
+        onClick={() => toggleSimilarGroup(group.key)}
+      >
+        <TableCell style={{ width: 72, minWidth: 72 }} className="py-2.5 pl-3 pr-0">
+          <div className="flex items-center gap-1">
+            {canWrite && group.transactions.some(transaction => !transaction.is_shared) && (
+              <input
+                type="checkbox"
+                checked={selectionState === 'all'}
+                ref={element => { if (element) element.indeterminate = selectionState === 'some' }}
+                aria-label={`${group.description}: ${t('transactions.groupCount', { count: group.transactions.length })}`}
+                onChange={() => toggleSimilarGroupSelection(group)}
+                onClick={event => event.stopPropagation()}
+                className="h-4 w-4 cursor-pointer rounded border-border accent-primary"
+              />
+            )}
+            <SimilarTransactionDisclosure
+              group={group}
+              expanded={expanded}
+              onToggle={() => toggleSimilarGroup(group.key)}
+            />
+          </div>
+        </TableCell>
+        {grid.visibleColumns.map(col => renderGroupBodyCell(col, group))}
+      </TableRow>
+    )
+  }
+
   // A single non-shared, non-transfer row selected can be duplicated; shared
   // and transfer rows can't (issue #158). Computed once for both the desktop
   // button and the mobile overflow menu.
@@ -1335,6 +1699,11 @@ export default function TransactionsPage() {
               listLabel: t('transactions.listView'),
               calendarLabel: t('transactions.calendarView'),
             }}
+            grouping={viewMode === 'list' ? {
+              enabled: groupSimilar,
+              onChange: handleGroupSimilarChange,
+              label: t('transactions.groupSimilar'),
+            } : undefined}
             columnPicker={viewMode === 'list' ? <TransactionsColumnPicker state={grid} /> : null}
             exportLabel={exportLabel}
             exporting={exporting}
@@ -1478,37 +1847,88 @@ export default function TransactionsPage() {
         ) : isMobile ? (
           /* ── Mobile card view: grouped by date ── */
           <div>
-            {groupedByDate.map((group) => (
+            {groupSimilar
+              ? displayItems.map(item => {
+                  if (item.kind === 'transaction') {
+                    return renderMobileTransactionRow(item.transaction, true)
+                  }
+
+                  const expanded = expandedSimilarGroups.has(item.key)
+                  const first = item.transactions[0]
+                  const selectionState = similarGroupSelectionState(item, selectedIds)
+                  const hasSelectableChildren = item.transactions.some(transaction => !transaction.is_shared)
+                  return (
+                    <div key={`mobile-group-${item.key}`} className="border-b border-border last:border-0">
+                      <div className="flex items-center bg-muted/30 px-3 py-3 transition-colors hover:bg-muted/60">
+                        {canWrite && hasSelectableChildren && (
+                          <input
+                            type="checkbox"
+                            checked={selectionState === 'all'}
+                            ref={element => { if (element) element.indeterminate = selectionState === 'some' }}
+                            aria-label={`${item.description}: ${t('transactions.groupCount', { count: item.transactions.length })}`}
+                            onChange={() => toggleSimilarGroupSelection(item)}
+                            className="mr-2 h-4 w-4 shrink-0 cursor-pointer rounded border-border accent-primary"
+                          />
+                        )}
+                        <button
+                          type="button"
+                          aria-expanded={expanded}
+                          onClick={() => toggleSimilarGroup(item.key)}
+                          className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                        >
+                          <ChevronRight
+                            size={16}
+                            className={`shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-90' : ''}`}
+                          />
+                          <SimilarTransactionGroupIcon />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              <span className="min-w-0 break-words text-sm font-semibold leading-snug text-foreground">{item.description}</span>
+                              {item.group_id && <Users size={12} className="shrink-0 text-violet-600" />}
+                              {item.is_transfer && <ArrowLeftRight size={12} className="shrink-0 text-blue-600" />}
+                              {item.is_ignored && <EyeClosed size={12} className="shrink-0 text-gray-500" />}
+                              {item.has_pending_badge && <Clock size={12} className="shrink-0 text-amber-500" />}
+                              {item.attachment_count > 0 && <Paperclip size={11} className="shrink-0 text-muted-foreground" />}
+                            </span>
+                            <SimilarTransactionGroupSummary
+                              group={item}
+                              locale={dateLocale}
+                              showDate
+                              className="block whitespace-normal text-xs leading-snug text-muted-foreground"
+                            />
+                            <span className="block truncate text-[11px] text-muted-foreground">
+                              {first.payee_name ?? first.payee ?? (first.account_id
+                                ? getAccountName(accountById.get(first.account_id) ?? { name: '', display_name: null })
+                                : '')}
+                            </span>
+                          </span>
+                          <span className={`shrink-0 text-sm font-bold tabular-nums ${
+                            item.is_ignored ? 'text-gray-500' : item.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'
+                          }`}>
+                            {mask(`${item.is_ignored ? ' ' : item.type === 'credit' ? '+' : '−'}${formatCurrency(
+                              Math.abs(item.total_amount),
+                              item.currency,
+                              locale,
+                            )}`)}
+                          </span>
+                        </button>
+                      </div>
+                      {expanded && item.transactions.map(tx => (
+                        <div key={tx.id} className="border-l-2 border-l-primary/30">
+                          {renderMobileTransactionRow(tx, true)}
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })
+              : groupedByDate.map((group) => (
               <div key={group.date}>
                 <div className="bg-muted/80 px-4 py-1.5 border-b border-border">
                   <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     {group.label}
                   </span>
                 </div>
-                {group.items.map((tx) => (
-                  <MobileTransactionRow
-                    key={tx.id}
-                    tx={tx}
-                    account={tx.account_id ? accountById.get(tx.account_id) : undefined}
-                    groupName={tx.group_id ? groupNameById.get(tx.group_id) : undefined}
-                    selected={selectedIds.has(tx.id)}
-                    selectable={canWrite && !tx.is_shared}
-                    canWrite={canWrite}
-                    highlighted={tx.id === highlightId}
-                    highlightedRowRef={tx.id === highlightId ? highlightedRowRef : undefined}
-                    locale={locale}
-                    userCurrency={userCurrency}
-                    onSelect={toggleSelect}
-                    onClick={(t) => {
-                      if (t.is_shared) {
-                        if (t.group_id) navigate(`/groups/${t.group_id}`)
-                        return
-                      }
-                      setEditingTx(t)
-                      setDialogOpen(true)
-                    }}
-                  />
-                ))}
+                {group.items.map(tx => renderMobileTransactionRow(tx))}
               </div>
             ))}
             {filteredItems.length === 0 && (
@@ -1523,7 +1943,7 @@ export default function TransactionsPage() {
           <Table style={{ tableLayout: 'fixed' }}>
             <TableHeader>
               <TableRow className="border-b border-border hover:bg-transparent">
-                <TableHead style={{ width: 40, minWidth: 40 }} className="py-3 pl-4 pr-0">
+                <TableHead style={{ width: 72, minWidth: 72 }} className="py-3 pl-4 pr-0">
                   {canWrite && (
                     <input
                       type="checkbox"
@@ -1538,44 +1958,16 @@ export default function TransactionsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredItems.map((tx) => (
-                <TableRow
-                  key={tx.id}
-                  ref={tx.id === highlightId ? highlightedRowRef : undefined}
-                  className={`hover:bg-muted border-b border-border last:border-0 ${
-                    selectedIds.has(tx.id) ? 'bg-primary/5' : ''
-                  } ${tx.is_shared || !canWrite ? 'cursor-default' : 'cursor-pointer'}`}
-                  onClick={() => {
-                    if (tx.is_shared) {
-                      // Owned by another user — view in the group context instead.
-                      if (tx.group_id) navigate(`/groups/${tx.group_id}`)
-                      return
-                    }
-                    if (!canWrite) return
-                    setEditingTx(tx)
-                    setDialogOpen(true)
-                  }}
-                >
-                  <TableCell style={{ width: 40, minWidth: 40 }} className="py-2.5 pl-4 pr-0">
-                    {/* Bulk operations are scoped to user.id so they
-                        silently skip shared rows — hide the checkbox
-                        on those to avoid the dead-end UX. */}
-                    {canWrite && !tx.is_shared && (
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(tx.id)}
-                        onChange={() => {}}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          toggleSelect(tx.id, e.shiftKey)
-                        }}
-                        className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
-                      />
-                    )}
-                  </TableCell>
-                  {grid.visibleColumns.map(col => renderBodyCell(col, tx))}
-                </TableRow>
-              ))}
+              {displayItems.map(item => {
+                if (item.kind === 'transaction') {
+                  return renderDesktopTransactionRow(item.transaction)
+                }
+                const rows = [renderDesktopGroupRow(item)]
+                if (expandedSimilarGroups.has(item.key)) {
+                  rows.push(...item.transactions.map(tx => renderDesktopTransactionRow(tx, true)))
+                }
+                return rows
+              })}
               {filteredItems.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={grid.visibleColumns.length + 1} className="text-center py-16 text-muted-foreground">

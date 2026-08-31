@@ -37,7 +37,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts'
-import { CheckCircle2, CalendarIcon, Clock, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, CalendarIcon, Clock, Paperclip, Rows3, Target, ArrowUpDown, HelpCircle, EyeClosed } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ICON_MAP } from '@/lib/category-icons'
 import { PageHeader } from '@/components/page-header'
@@ -56,7 +56,18 @@ import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import type { Rule, Transaction } from '@/types'
 import { formatCurrency } from '@/lib/format'
-import { shouldShowPendingBadge } from '@/lib/transaction-status'
+import { formatSimilarTransactionDateRange, groupSimilarTransactions } from '@/lib/transaction-grouping'
+import { useSimilarGroupExpansion, useSimilarTransactionGrouping } from '@/hooks/use-similar-transaction-grouping'
+import {
+  SimilarTransactionDisclosure,
+  SimilarTransactionGroupIcon,
+  SimilarTransactionGroupSummary,
+} from '@/components/similar-transaction-group'
+import {
+  buildDashboardTransactionRows,
+  expandDashboardRows,
+  type DashboardDisplayRow,
+} from '@/lib/dashboard-transaction-rows'
 
 function formatDate(dateStr: string, locale = 'pt-BR') {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString(locale)
@@ -110,6 +121,12 @@ export default function DashboardPage() {
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     return parseMonthFromParams(searchParams) ?? currentMonth()
   })
+  const { enabled: groupSimilar, setEnabled: setGroupSimilar } = useSimilarTransactionGrouping()
+  const {
+    expandedKeys: expandedSimilarGroups,
+    toggle: toggleSimilarGroup,
+    clear: clearSimilarGroups,
+  } = useSimilarGroupExpansion()
   const [drillDown, setDrillDown] = useState<DrillDownFilter | null>(null)
   // Transactions section view, mirroring the transactions page: the choice
   // lives in the URL so the section can be refreshed, bookmarked or shared.
@@ -213,6 +230,8 @@ export default function DashboardPage() {
       limit: 500,
       exclude_transfers: true,
       account_ids: acctIds,
+      sort_by: 'date',
+      sort_dir: 'desc',
     }),
     enabled: !noAccounts,
   })
@@ -448,36 +467,7 @@ export default function DashboardPage() {
 
   const [txPage, setTxPage] = useState(1)
   const [txSortDesc, setTxSortDesc] = useState(true)
-  useEffect(() => setTxPage(1), [selectedMonth])
-
-  type DisplayRow = {
-    key: string
-    description: string
-    date: string
-    type: 'debit' | 'credit'
-    amount: number
-    amountPrimary: number | null
-    currency: string
-    categoryIcon: string | null
-    categoryName: string | null
-    categoryColor: string | null
-    accountId: string | null
-    isProjected: boolean
-    attachmentCount: number
-    isShared: boolean
-    parentTotal: number | null
-    // Owner-side: this user's share of a split they own. Null when
-    // they're not in the split, or when share == amount (would be a
-    // redundant secondary line).
-    ownerShare: number | null
-    groupId: string | null
-    parentOwnerName: string | null
-    groupName: string | null
-    isIgnored: boolean
-    installmentNumber: number | null
-    totalInstallments: number | null
-    showPendingBadge: boolean
-  }
+  useEffect(() => setTxPage(1), [selectedMonth, groupSimilar])
 
   const [txPerPage, setTxPerPage] = useState<number>(() => {
     try {
@@ -487,82 +477,49 @@ export default function DashboardPage() {
       return 10
     }
   })
+  const transactionDisplayItems = useMemo(
+    () => groupSimilarTransactions(
+      currentMonthTxs?.items ?? [],
+      groupSimilar,
+      'date',
+      txSortDesc ? 'desc' : 'asc',
+    ),
+    [currentMonthTxs?.items, groupSimilar, txSortDesc],
+  )
   const allDisplayRows = useMemo(() => {
-    const rows: DisplayRow[] = []
-    for (const tx of currentMonthTxs?.items ?? []) {
-      const isShared = !!tx.is_shared
-      const displayAmount =
-        isShared && tx.viewer_share != null ? Number(tx.viewer_share) : Number(tx.amount)
-      const groupId = tx.group_id ?? null
-      // Owner-side share: backend populates viewer_share for owners
-      // who participate in their own split. Suppress when it equals
-      // the parent amount (sole-member case = no useful info).
-      const ownerShareRaw =
-        !isShared && tx.viewer_share != null ? Number(tx.viewer_share) : null
-      const ownerShare =
-        ownerShareRaw != null && Math.abs(ownerShareRaw) !== Math.abs(Number(tx.amount))
-          ? ownerShareRaw
-          : null
-      rows.push({
-        key: tx.id,
-        description: tx.description,
-        date: tx.date,
-        type: tx.type,
-        amount: displayAmount,
-        amountPrimary: tx.amount_primary != null ? Number(tx.amount_primary) : null,
-        currency: tx.currency,
-        categoryIcon: tx.category?.icon ?? null,
-        categoryName: tx.category?.name ?? null,
-        categoryColor: tx.category?.color ?? null,
-        accountId: tx.account_id ?? null,
-        isProjected: false,
-        attachmentCount: tx.attachment_count ?? 0,
-        isShared,
-        parentTotal: isShared ? Number(tx.amount) : null,
-        ownerShare,
-        groupId,
-        parentOwnerName: isShared ? tx.parent_owner_name ?? null : null,
-        groupName: groupId ? groupNameById.get(groupId) ?? null : null,
-        isIgnored: tx.is_ignored,
-        installmentNumber: tx.installment_number,
-        totalInstallments: tx.total_installments,
-        showPendingBadge: shouldShowPendingBadge(tx),
-      })
-    }
-    for (const pt of projectedTxs ?? []) {
-      rows.push({
-        key: `proj-${pt.recurring_id}-${pt.date}`,
-        description: pt.description,
-        date: pt.date,
-        type: pt.type,
-        amount: pt.amount,
-        amountPrimary: pt.amount_primary ?? null,
-        currency: pt.currency,
-        categoryIcon: pt.category_icon,
-        categoryName: pt.category_name,
-        categoryColor: pt.category_color ?? null,
-        accountId: pt.account_id,
-        isProjected: true,
-        attachmentCount: 0,
-        isShared: false,
-        parentTotal: null,
-        ownerShare: null,
-        groupId: null,
-        parentOwnerName: null,
-        groupName: null,
-        isIgnored: false,
-        installmentNumber: null,
-        totalInstallments: null,
-        showPendingBadge: false,
-      })
-    }
-    rows.sort((a, b) => txSortDesc ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date))
-    return rows
-  }, [currentMonthTxs, projectedTxs, txSortDesc, groupNameById])
+    return buildDashboardTransactionRows(
+      transactionDisplayItems,
+      projectedTxs ?? [],
+      txSortDesc,
+      groupNameById,
+    )
+  }, [transactionDisplayItems, projectedTxs, txSortDesc, groupNameById])
 
   const txTotalPages = Math.ceil(allDisplayRows.length / txPerPage)
   const pagedRows = allDisplayRows.slice((txPage - 1) * txPerPage, txPage * txPerPage)
+  const renderedRows = expandDashboardRows(pagedRows, expandedSimilarGroups)
   const txListLoading = currentTxLoading || projectedTxLoading
+
+  const handleGroupSimilarChange = () => {
+    const next = !groupSimilar
+    if (!next) clearSimilarGroups()
+    setGroupSimilar(next)
+    setTxPage(1)
+  }
+
+  const activateDashboardRow = (row: DashboardDisplayRow) => {
+    if (row.kind === 'group') {
+      toggleSimilarGroup(row.group.key)
+      return
+    }
+    if (row.kind === 'projected') return
+    if (row.isShared) {
+      if (row.groupId) navigate(`/groups/${row.groupId}`)
+      return
+    }
+    setEditingTx(row.transaction)
+    setDialogOpen(true)
+  }
 
   // Savings rate display
   const savingsRateColor = income === 0 && expenses > 0
@@ -1134,13 +1091,30 @@ export default function DashboardPage() {
               calendarLabel={t('transactions.calendarView')}
             />
             {txViewMode === 'list' && (
-              <button
-                onClick={() => { setTxSortDesc(v => !v); setTxPage(1) }}
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-              >
-                <ArrowUpDown size={13} />
-                {txSortDesc ? t('dashboard.sortNewest') : t('dashboard.sortOldest')}
-              </button>
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={groupSimilar ? 'secondary' : 'outline'}
+                  aria-pressed={groupSimilar}
+                  onClick={handleGroupSimilarChange}
+                  className="h-8 gap-1.5 px-2.5"
+                >
+                  <Rows3 size={13} />
+                  <span>{t('transactions.groupSimilar')}</span>
+                </Button>
+                <button
+                  type="button"
+                  aria-label={txSortDesc ? t('dashboard.sortNewest') : t('dashboard.sortOldest')}
+                  onClick={() => { setTxSortDesc(v => !v); setTxPage(1) }}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                >
+                  <ArrowUpDown size={13} />
+                  <span className="hidden sm:inline">
+                    {txSortDesc ? t('dashboard.sortNewest') : t('dashboard.sortOldest')}
+                  </span>
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -1161,7 +1135,7 @@ export default function DashboardPage() {
         )}
 
         {txViewMode === 'list' && (
-        <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
           {txListLoading ? (
             <div className="p-5 space-y-3">
               {Array.from({ length: 5 }).map((_, i) => (
@@ -1172,25 +1146,30 @@ export default function DashboardPage() {
             <>
               {isMobile ? (
                 <div>
-                  {pagedRows.map((row) => (
+                  {renderedRows.map(({ row, nested }) => (
                     <div
                       key={row.key}
-                      className={`flex items-center gap-3 pl-3 pr-3 py-3 border-b border-border last:border-0 bg-card ${
-                        row.isProjected ? '' : 'cursor-pointer active:bg-muted/60'
+                      className={`flex items-center gap-3 pl-3 pr-3 py-3 border-b border-border last:border-0 ${
+                        row.kind === 'group' ? 'bg-muted/30' : 'bg-card'
+                      } ${nested ? 'border-l-2 border-l-primary/30' : ''} ${
+                        row.kind === 'projected' ? '' : 'cursor-pointer active:bg-muted/60'
                       }`}
-                      onClick={() => {
-                        if (row.isProjected) return
-                        if (row.isShared) {
-                          if (row.groupId) navigate(`/groups/${row.groupId}`)
-                          return
-                        }
-                        const tx = currentMonthTxs?.items.find((t) => t.id === row.key)
-                        if (tx) { setEditingTx(tx); setDialogOpen(true) }
-                      }}
+                      onClick={() => activateDashboardRow(row)}
                     >
                       {/* Category Icon */}
+                      {row.kind === 'group' && (
+                        <SimilarTransactionDisclosure
+                          group={row.group}
+                          expanded={expandedSimilarGroups.has(row.group.key)}
+                          onToggle={() => toggleSimilarGroup(row.group.key)}
+                        />
+                      )}
                       <div className="shrink-0">
-                        <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="md" />
+                        {row.kind === 'group' ? (
+                          <SimilarTransactionGroupIcon />
+                        ) : (
+                          <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="md" />
+                        )}
                       </div>
 
                       {/* Content */}
@@ -1204,7 +1183,7 @@ export default function DashboardPage() {
                                 : row.groupName ?? t('splitGroups.sharedShortBadge')}
                             </span>
                           )}
-                          {row.isProjected && (
+                          {row.kind === 'projected' && (
                             <ProjectedTransactionBadge />
                           )}
                           {row.installmentNumber != null && row.totalInstallments != null && (
@@ -1227,17 +1206,26 @@ export default function DashboardPage() {
                             <Paperclip size={11} className="text-muted-foreground shrink-0" />
                           )}
                         </div>
-                        {row.accountId && (() => {
+                        {row.kind === 'group' && (
+                          <SimilarTransactionGroupSummary
+                            group={row.group}
+                            locale={dateLocale}
+                            showDate
+                            className="mt-0.5 block whitespace-normal text-xs leading-snug text-muted-foreground"
+                          />
+                        )}
+                        {row.kind !== 'group' && row.accountId && (() => {
                           const acc = accountsList?.find((a) => a.id === row.accountId)
-                          if (!acc) return null
+                          if (!acc) return <p className="mt-0.5 text-xs text-muted-foreground">{formatDate(row.date, dateLocale)}</p>
                           return (
-                            <div className="flex items-center gap-1.5 mt-0.5">
+                            <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
                               <AccountIcon account={acc} size="xs" />
                               <span className="text-xs text-muted-foreground truncate">{getAccountName(acc)}</span>
+                              <span className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground">{formatDate(row.date, dateLocale)}</span>
                             </div>
                           )
                         })()}
-                        {!row.accountId && (
+                        {row.kind !== 'group' && !row.accountId && (
                           <p className="text-xs text-muted-foreground mt-0.5">{formatDate(row.date, dateLocale)}</p>
                         )}
                       </div>
@@ -1262,7 +1250,8 @@ export default function DashboardPage() {
                           </div>
                         )}
                         {!row.isShared && row.currency !== userCurrency && row.amountPrimary != null && (
-                          <div className="text-[10px] text-muted-foreground tabular-nums mt-0.5">
+                          <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-muted-foreground tabular-nums">
+                            {row.hasFxFallback && <AlertTriangle size={10} className="shrink-0 text-amber-500" />}
                             {mask(formatCurrency(Math.abs(row.amountPrimary), userCurrency, locale))}
                           </div>
                         )}
@@ -1281,34 +1270,35 @@ export default function DashboardPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {pagedRows.map((row) => (
+                  {renderedRows.map(({ row, nested }) => (
                     <TableRow
                       key={row.key}
                       className={`border-b border-border last:border-0 ${
-                        row.isProjected
-                          ? ''
-                          : row.isShared
-                            ? 'cursor-pointer hover:bg-muted'
-                            : 'cursor-pointer hover:bg-muted'
+                        row.kind === 'group' ? 'bg-muted/30' : ''
+                      } ${nested ? 'border-l-2 border-l-primary/30' : ''} ${
+                        row.kind === 'projected' ? '' : 'cursor-pointer hover:bg-muted'
                       }`}
-                      onClick={() => {
-                        if (row.isProjected) return
-                        if (row.isShared) {
-                          // Shared rows belong to another user — open the
-                          // group instead of the (locked) edit dialog.
-                          if (row.groupId) navigate(`/groups/${row.groupId}`)
-                          return
-                        }
-                        const tx = currentMonthTxs?.items.find((t) => t.id === row.key)
-                        if (tx) { setEditingTx(tx); setDialogOpen(true) }
-                      }}
+                      onClick={() => activateDashboardRow(row)}
                     >
                       <TableCell className="py-2.5 pl-5 text-sm text-muted-foreground tabular-nums whitespace-nowrap hidden sm:table-cell">
-                        {formatDate(row.date, dateLocale)}
+                        {row.kind === 'group'
+                          ? formatSimilarTransactionDateRange(row.group, dateLocale)
+                          : formatDate(row.date, dateLocale)}
                       </TableCell>
                       <TableCell className="py-2.5 pl-5 sm:pl-0">
                         <div className="flex items-center gap-3">
-                          <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="lg" />
+                          {row.kind === 'group' && (
+                            <SimilarTransactionDisclosure
+                              group={row.group}
+                              expanded={expandedSimilarGroups.has(row.group.key)}
+                              onToggle={() => toggleSimilarGroup(row.group.key)}
+                            />
+                          )}
+                          {row.kind === 'group' ? (
+                            <SimilarTransactionGroupIcon />
+                          ) : (
+                            <CategoryIcon icon={row.categoryIcon} color={row.categoryColor} size="lg" />
+                          )}
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
                               <p className="text-sm font-semibold text-foreground truncate">{row.description}</p>
@@ -1319,7 +1309,7 @@ export default function DashboardPage() {
                                     : row.groupName ?? t('splitGroups.sharedShortBadge')}
                                 </span>
                               )}
-                              {row.isProjected && (
+                              {row.kind === 'projected' && (
                                 <ProjectedTransactionBadge />
                               )}
                               {row.installmentNumber != null && row.totalInstallments != null && (
@@ -1346,7 +1336,16 @@ export default function DashboardPage() {
                                 <Paperclip size={12} className="text-muted-foreground shrink-0" />
                               )}
                             </div>
-                            <p className="text-xs text-muted-foreground sm:hidden">{formatDate(row.date, dateLocale)}</p>
+                            {row.kind === 'group' ? (
+                              <SimilarTransactionGroupSummary
+                                group={row.group}
+                                locale={dateLocale}
+                                showDate={false}
+                                className="block truncate text-xs text-muted-foreground"
+                              />
+                            ) : (
+                              <p className="text-xs text-muted-foreground sm:hidden">{formatDate(row.date, dateLocale)}</p>
+                            )}
                           </div>
                         </div>
                       </TableCell>
@@ -1383,7 +1382,8 @@ export default function DashboardPage() {
                           </span>
                         )}
                         {!row.isShared && row.currency !== userCurrency && row.amountPrimary != null && (
-                          <span className="block text-[10px] text-muted-foreground tabular-nums">
+                          <span className="flex items-center justify-end gap-1 text-[10px] text-muted-foreground tabular-nums">
+                            {row.hasFxFallback && <AlertTriangle size={10} className="shrink-0 text-amber-500" />}
                             {mask(formatCurrency(Math.abs(row.amountPrimary), userCurrency, locale))}
                           </span>
                         )}

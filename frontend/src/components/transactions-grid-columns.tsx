@@ -32,7 +32,7 @@ export interface ColumnDef {
 // list in registry order; visible columns render in the order the user has
 // chosen (persisted in localStorage), which defaults to registry order.
 export const COLUMN_REGISTRY: ColumnDef[] = [
-  { id: 'date',        labelKey: 'transactions.colDate',        defaultVisible: true,  sortable: true,  defaultWidth: 110, align: 'left' },
+  { id: 'date',        labelKey: 'transactions.colDate',        defaultVisible: true,  sortable: true,  defaultWidth: 140, align: 'left' },
   { id: 'description', labelKey: 'transactions.colDescription', alwaysOn: true, defaultVisible: true, sortable: true, defaultWidth: 320, align: 'left' },
   { id: 'category',    labelKey: 'transactions.colCategory',    defaultVisible: true,  sortable: true,  defaultWidth: 180, align: 'left' },
   { id: 'account',     labelKey: 'transactions.colAccount',     defaultVisible: true,  sortable: true,  defaultWidth: 160, align: 'left' },
