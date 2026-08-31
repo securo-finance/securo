@@ -262,7 +262,7 @@ export default function DashboardPage() {
     queryFn: categoryGroupsApi.list,
   })
 
-  const { data: accountsList } = useQuery({
+  const { data: accountsList, isLoading: accountsLoading } = useQuery({
     queryKey: ['accounts'],
     queryFn: () => accountsApi.list(),
   })
@@ -407,6 +407,12 @@ export default function DashboardPage() {
   )
   const creditCardBalance = (accountsList ?? [])
     .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type === 'credit_card')
+    .reduce((sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0)
+  // Net worth's "Available balance" breakdown row: every non-card account
+  // (unlike the headline `availableBalance`, which is checking/savings only),
+  // so it reconciles with `totalBalance` — which sums all account types.
+  const nonCardAccountsBalance = (accountsList ?? [])
+    .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type !== 'credit_card')
     .reduce((sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0)
 
   // Savings rate & projection
@@ -645,7 +651,7 @@ export default function DashboardPage() {
         {/* Available balance in checking/savings accounts */}
         <div className="pb-4 mb-4 border-b border-border">
           <p className="text-xs font-semibold text-muted-foreground mb-1">{t('dashboard.availableBalance')}</p>
-          {summaryLoading ? (
+          {summaryLoading || accountsLoading ? (
             <Skeleton className="h-11 w-40" />
           ) : (
             <>
@@ -656,11 +662,12 @@ export default function DashboardPage() {
                 <div className="flex flex-wrap gap-2 mt-2.5">
                   {availableBalanceAccounts.map((acc) => {
                     const bal = Number(acc.balance_primary ?? acc.current_balance)
+                    const balCurrency = acc.balance_primary != null ? primaryCurrency : acc.currency
                     return (
                       <span key={acc.id} className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-muted text-foreground">
                         {getAccountName(acc)}
                         <span className={`font-bold tabular-nums ${bal < 0 ? 'text-rose-500' : 'text-emerald-600'}`}>
-                          {mask(`${bal >= 0 ? '+' : ''}${formatCurrency(bal, acc.currency, locale)}`)}
+                          {mask(`${bal >= 0 ? '+' : ''}${formatCurrency(bal, balCurrency, locale)}`)}
                         </span>
                       </span>
                     )
@@ -696,8 +703,9 @@ export default function DashboardPage() {
         {/* Secondary indicators */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-4">
           {/* Income */}
-          <div
-            className="min-w-0 cursor-pointer hover:opacity-70 transition-opacity"
+          <button
+            type="button"
+            className="min-w-0 text-left cursor-pointer hover:opacity-70 transition-opacity"
             onClick={() => setDrillDown({
               title: t('dashboard.drillDownIncome', { month: monthLabelStr }),
               type: 'credit',
@@ -713,11 +721,12 @@ export default function DashboardPage() {
                 +{mask(formatCurrency(income, primaryCurrency, locale))}
               </p>
             )}
-          </div>
+          </button>
 
           {/* Expenses */}
-          <div
-            className="relative min-w-0 cursor-pointer hover:opacity-70 transition-opacity before:content-[''] before:hidden sm:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border"
+          <button
+            type="button"
+            className="relative min-w-0 text-left cursor-pointer hover:opacity-70 transition-opacity before:content-[''] before:hidden sm:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border"
             onClick={() => setDrillDown({
               title: t('dashboard.drillDownExpenses', { month: monthLabelStr }),
               type: 'debit',
@@ -733,7 +742,7 @@ export default function DashboardPage() {
                 -{mask(formatCurrency(expenses, primaryCurrency, locale))}
               </p>
             )}
-          </div>
+          </button>
 
           {/* Net worth */}
           <div className="relative min-w-0 before:content-[''] before:hidden sm:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border">
@@ -753,7 +762,7 @@ export default function DashboardPage() {
                   <div className="mt-1.5 pt-1.5 border-t border-background/20 space-y-0.5">
                     <div className="flex justify-between gap-3">
                       <span>{t('dashboard.availableBalance')}</span>
-                      <span>{mask(formatCurrency(availableBalance, primaryCurrency, locale))}</span>
+                      <span>{mask(formatCurrency(nonCardAccountsBalance, primaryCurrency, locale))}</span>
                     </div>
                     {assetsValue > 0 && (
                       <div className="flex justify-between gap-3">
@@ -777,7 +786,7 @@ export default function DashboardPage() {
                 </TooltipContent>
               </Tooltip>
             </p>
-            {summaryLoading ? (
+            {summaryLoading || accountsLoading ? (
               <Skeleton className="h-7 w-24" />
             ) : (
               <p className={`text-2xl font-bold tabular-nums ${totalBalance < 0 ? 'text-rose-500' : 'text-blue-600'}`}>
@@ -813,8 +822,9 @@ export default function DashboardPage() {
       {/* Uncategorized banner */}
       {!summaryLoading && (
         uncategorizedCount > 0 ? (
-          <div
-            className="flex items-center justify-between gap-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg px-4 py-2.5 mb-5 cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors"
+          <button
+            type="button"
+            className="w-full flex items-center justify-between gap-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg px-4 py-2.5 mb-5 cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors"
             onClick={() => setDrillDown({
               title: t('dashboard.drillDownUncategorized'),
               uncategorized: true,
@@ -836,7 +846,7 @@ export default function DashboardPage() {
             <span className="shrink-0 text-sm font-semibold text-amber-600 dark:text-amber-400 hover:underline">
               {t('dashboard.categorizeNow')} &rarr;
             </span>
-          </div>
+          </button>
         ) : (
           <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg px-4 py-2.5 mb-5">
             <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />

@@ -282,7 +282,7 @@
     "drillDownClose": "Закрыть",
     "accrualNote": "Кредитные карты: транзакции группируются по дате платежа (метод начисления).",
     "savingsRate": "Норма сбережений",
-    "savingsRateCaption": "доли дохода сохранено в этом месяце",
+    "savingsRateCaption": "дохода в этом месяце сохранено",
     "spendingProjection": "Такими темпами вы потратите {{amount}} к концу месяца",
     "uncategorizedCta": "{{count}} транзакций нужно категоризировать",
     "uncategorizedTotal": "На сумму {{amount}}",

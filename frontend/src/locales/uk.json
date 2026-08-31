@@ -282,7 +282,7 @@
     "drillDownClose": "Закрити",
     "accrualNote": "Кредитні картки: транзакції групуються за датою платежу (метод нарахування).",
     "savingsRate": "Норма заощаджень",
-    "savingsRateCaption": "частки доходу заощаджено цього місяця",
+    "savingsRateCaption": "доходу заощаджено цього місяця",
     "spendingProjection": "Такими темпами ви витратите {{amount}} до кінця місяця",
     "uncategorizedCta": "{{count}} транзакцій потрібно категоризувати",
     "uncategorizedTotal": "На суму {{amount}}",
