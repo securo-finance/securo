@@ -699,6 +699,7 @@ export interface SpendingByCategory {
   category_icon: string
   category_color: string
   total: number
+  projected_total: number
   percentage: number
 }
 

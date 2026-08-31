@@ -366,15 +366,11 @@ async def test_pending_and_future_rows_are_current_vs_projected(
 ):
     """Pending and future rows affect the forecast, never a manual current balance."""
     today = date.today()
-    # The summary is scoped to one month, so a future row past the end of
-    # it is simply not in the window — which is why this asserted 900
-    # instead of 700 on the 31st. Three days out where there is room,
-    # clamped to the month, and skipped on the last day, where a future
-    # row inside the current month cannot exist at all.
-    last_day = calendar.monthrange(today.year, today.month)[1]
-    if today.day == last_day:
-        pytest.skip("no future days left in the current month")
-    future = today.replace(day=min(today.day + 3, last_day))
+    future_date = today + timedelta(days=3)
+
+    # Keep the queried month aligned with the future row at month boundaries.
+    forecast_month = future_date.replace(day=1).isoformat()
+
     acc_resp = await client.post(
         "/api/accounts",
         json={"name": "Forecast split", "type": "checking", "balance": 1000.00, "currency": "BRL"},
@@ -397,7 +393,7 @@ async def test_pending_and_future_rows_are_current_vs_projected(
             "amount": 200.00,
             "currency": "BRL",
             "type": "debit",
-            "date": future.isoformat(),
+            "date": future_date.isoformat(),
             "status": "posted",
         },
     ):
@@ -407,7 +403,7 @@ async def test_pending_and_future_rows_are_current_vs_projected(
 
     resp = await client.get(
         "/api/dashboard/summary",
-        params={"month": _current_month_str()},
+        params={"month": forecast_month},
         headers=auth_headers,
     )
     assert resp.status_code == 200

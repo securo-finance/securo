@@ -3789,13 +3789,29 @@ async def test_sync_holdings_never_touches_another_workspaces_wallets(
     )
     assert minted is not None
     assert minted.workspace_id == test_workspace.id
-    # The asset follows its connection into this workspace (leaving the
-    # other workspace's wallet behind); it never straddles the two.
-    moved = await session.scalar(select(Asset).where(Asset.external_id == "h-1"))
+    # Asset identity is per workspace, so "h-1" now names one asset in each
+    # of them. Look the pair up separately: an unscoped query matches both
+    # rows and returns whichever the database hands back first.
+    moved = await session.scalar(
+        select(Asset).where(
+            Asset.external_id == "h-1",
+            Asset.workspace_id == test_workspace.id,
+        )
+    )
     assert moved is not None
-    assert moved.workspace_id == test_workspace.id
     assert moved.group_id == minted.id
     assert moved.is_archived is False
+    # The other workspace's asset is left exactly as it was found.
+    foreign_asset = await session.scalar(
+        select(Asset).where(
+            Asset.external_id == "h-1",
+            Asset.workspace_id == other_ws.id,
+        )
+    )
+    assert foreign_asset is not None
+    assert foreign_asset.group_id == foreign_id
+    assert foreign_asset.is_archived is True
+    assert foreign_asset.connection_id is None
 
 
 @pytest.mark.asyncio

@@ -94,3 +94,16 @@ async def test_currencies_include_sgd_with_metadata(client: AsyncClient):
     assert sgd["symbol"] == "S$"
     assert sgd["name"] == "Singapore Dollar"
     assert sgd["flag"] == "🇸🇬"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_azn_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    
+    azn = next((currency for currency in data if currency["code"] == "AZN"), None)
+    
+    assert azn is not None
+    assert azn["symbol"] == "₼"
+    assert azn["name"] == "Azerbaijani Manat"
+    assert azn["flag"] == "🇦🇿"
