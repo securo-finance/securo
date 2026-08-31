@@ -17,6 +17,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.bank_connection import BankConnection
 from app.models.goal import Goal
 from app.models.import_log import ImportLog
 from app.models.recurring_transaction import RecurringTransaction
@@ -36,6 +37,27 @@ from app.services.account_service import (
     sync_opening_balance_for_connected_account,
     update_account,
 )
+
+
+@pytest.mark.asyncio
+async def test_connected_opening_balance_excludes_ignored_settlement_on_repeated_sync(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Ignored broker settlements must not make repeated opening reconciliation drift."""
+    connection = BankConnection(user_id=test_user.id, workspace_id=test_workspace.id, provider="trading212", external_id="t212", institution_name="Trading 212", credentials={}, status="active")
+    session.add(connection)
+    await session.flush()
+    account = Account(user_id=test_user.id, workspace_id=test_workspace.id, connection_id=connection.id, external_id="t212:cash", name="Cash", type="investment", balance=Decimal("100"), currency="EUR")
+    session.add(account)
+    await session.flush()
+    session.add(Transaction(user_id=test_user.id, workspace_id=test_workspace.id, account_id=account.id, description="ignored settlement", amount=Decimal("30"), currency="EUR", date=date.today(), type="debit", source="sync", is_ignored=True))
+    await sync_opening_balance_for_connected_account(session, account)
+    await session.flush()
+    opening = (await session.execute(__import__("sqlalchemy").select(Transaction).where(Transaction.source == "opening_balance"))).scalar_one()
+    assert opening.amount == Decimal("100")
+    await sync_opening_balance_for_connected_account(session, account)
+    await session.flush()
+    assert (await session.execute(__import__("sqlalchemy").select(Transaction.amount).where(Transaction.source == "opening_balance"))).scalar_one() == Decimal("100")
 
 
 # ---------------------------------------------------------------------------

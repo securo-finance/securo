@@ -685,6 +685,15 @@
         "title": "Conectar vía SimpleFIN",
         "description": "SimpleFIN es un protocolo de datos bancarios de solo lectura. Ve al SimpleFIN Bridge, elige tu banco y copia el token de configuración aquí."
       },
+      "trading212": {
+        "title": "Conectar Trading 212",
+        "description": "Pega una clave de API y un secreto de API de Trading 212 de solo lectura para conectar tu cuenta de corretaje.",
+        "reconnectTitle": "Reconectar Trading 212",
+        "reconnectDescription": "Pega la clave de API y el secreto de API de solo lectura actuales para actualizar esta conexión. Se conservan las cuentas, transacciones, activos y ajustes existentes.",
+        "tokenLabel": "Clave y secreto de API",
+        "tokenPlaceholder": "api-key:api-secret (o demo:api-key:api-secret)",
+        "tokenHelp": "Usa una clave de API de Trading 212 de solo lectura. Securo cifra la clave y el secreto antes de almacenarlos; nunca los compartas."
+      },
       "reconnectTitle": "Reconectar con un token nuevo",
       "reconnectDescription": "Pega un token de configuración nuevo para actualizar esta conexión sin reemplazarla. Se conservan cuentas, transacciones, categorías y reglas existentes.",
       "reconnect": "Reconectar"

@@ -70,6 +70,10 @@ class AccountData:
     # provider exposes one. Disambiguates accounts a bank reports under an
     # identical name (issue #408). Never the full identifier — see mask_last4.
     masked_number: Optional[str] = None
+    # Provider-owned, JSON-safe details that do not belong in generic account
+    # columns. The sync layer stores this only when supplied, so a sparse later
+    # response cannot destroy a previously captured provider snapshot.
+    metadata: Optional[dict] = None
     # Per-account institution override (SimpleFIN — issue #345). None = same
     # as connection. The external id is the provider's stable org id
     # (SimpleFIN conn_id) so a renamed bank updates its row instead of
@@ -100,6 +104,9 @@ class TransactionData:
     # Provider-side identifier of the bill this transaction belongs to.
     # Resolved to a credit_card_bills.id FK at sync time (issue #92).
     bill_external_id: Optional[str] = None
+    # Provider-created bookkeeping rows can be retained for reconciliation
+    # while staying out of budgets and manual transaction workflows.
+    is_ignored: bool = False
 
 
 @dataclass

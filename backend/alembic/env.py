@@ -9,6 +9,7 @@ from alembic import context
 
 from app.core.config import get_settings
 from app.core.database import Base
+from app.core.migration_safety import reject_ambiguous_legacy_063
 from app.models import *  # noqa: F401,F403
 # Agents module models (always loaded so migrations stay in sync; the
 # feature itself is gated at runtime by AGENTS_ENABLED).
@@ -42,6 +43,10 @@ def do_run_migrations(connection: Connection) -> None:
     context.configure(connection=connection, target_metadata=target_metadata)
 
     with context.begin_transaction():
+        # Keep the safety SELECT inside Alembic's managed transaction. Running
+        # it first triggers SQLAlchemy autobegin, causing the later migration
+        # transaction to be rolled back when the async connection closes.
+        reject_ambiguous_legacy_063(connection)
         context.run_migrations()
 
 

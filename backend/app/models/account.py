@@ -1,9 +1,9 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, SmallInteger, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, JSON, Numeric, SmallInteger, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -41,6 +41,9 @@ class Account(Base):
     minimum_payment: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
     card_brand: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     card_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # Provider-owned details that do not fit generic columns. This is separate
+    # from transaction raw_data and is updated only when a provider sends it.
+    external_metadata: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
     # The institution this account is actually at. One connection can span
     # several (SimpleFIN — issue #345); null falls back to the connection's
     # own institution_name/logo_url. Eager (selectin) because serialization

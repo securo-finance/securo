@@ -51,6 +51,12 @@ export function TokenConnectDialog({
   const bridgeUrl = PROVIDER_BRIDGE_URLS[provider]
   const i18nKey = `accounts.tokenConnect.${provider}`
   const isReconnect = Boolean(reconnectConnectionId)
+  const titleFallback = isReconnect
+    ? 'accounts.tokenConnect.reconnectTitle'
+    : 'accounts.tokenConnect.defaultTitle'
+  const descriptionFallback = isReconnect
+    ? 'accounts.tokenConnect.reconnectDescription'
+    : 'accounts.tokenConnect.defaultDescription'
 
   const handleSubmit = async () => {
     if (!token.trim()) return
@@ -86,13 +92,13 @@ export function TokenConnectDialog({
         <DialogHeader>
           <DialogTitle>
             {isReconnect
-              ? t(`${i18nKey}.reconnectTitle`, t('accounts.tokenConnect.reconnectTitle'))
-              : t(`${i18nKey}.title`, t('accounts.tokenConnect.defaultTitle'))}
+              ? t(`${i18nKey}.reconnectTitle`, t(titleFallback))
+              : t(`${i18nKey}.title`, t(titleFallback))}
           </DialogTitle>
           <p className="text-sm text-muted-foreground">
             {isReconnect
-              ? t(`${i18nKey}.reconnectDescription`, t('accounts.tokenConnect.reconnectDescription'))
-              : t(`${i18nKey}.description`, t('accounts.tokenConnect.defaultDescription'))}
+              ? t(`${i18nKey}.reconnectDescription`, t(descriptionFallback))
+              : t(`${i18nKey}.description`, t(descriptionFallback))}
           </p>
         </DialogHeader>
 
@@ -126,12 +132,12 @@ export function TokenConnectDialog({
 
         <div className="space-y-1.5">
           <label className="text-sm font-medium" htmlFor="securo-token-input">
-            {t('accounts.tokenConnect.tokenLabel')}
+            {t(`${i18nKey}.tokenLabel`, t('accounts.tokenConnect.tokenLabel'))}
           </label>
           <textarea
             id="securo-token-input"
             className="w-full min-h-[110px] rounded-md border border-input bg-card px-3 py-2 text-sm font-mono resize-y focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-0"
-            placeholder={t('accounts.tokenConnect.tokenPlaceholder')}
+            placeholder={t(`${i18nKey}.tokenPlaceholder`, t('accounts.tokenConnect.tokenPlaceholder'))}
             value={token}
             onChange={(e) => setToken(e.target.value)}
             spellCheck={false}
@@ -139,7 +145,7 @@ export function TokenConnectDialog({
             disabled={submitting}
           />
           <p className="text-xs text-muted-foreground">
-            {t('accounts.tokenConnect.tokenHelp')}
+            {t(`${i18nKey}.tokenHelp`, t('accounts.tokenConnect.tokenHelp'))}
           </p>
         </div>
 

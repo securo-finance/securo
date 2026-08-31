@@ -685,6 +685,15 @@
         "title": "Verbindung über SimpleFIN",
         "description": "SimpleFIN is a read-only bank data protocol. Go to the SimpleFIN Bridge, pick your bank, and copy the setup token back here."
       },
+      "trading212": {
+        "title": "Trading 212 verbinden",
+        "description": "Füge einen schreibgeschützten Trading-212-API-Schlüssel und ein API-Geheimnis ein, um dein Depot zu verbinden.",
+        "reconnectTitle": "Trading 212 erneut verbinden",
+        "reconnectDescription": "Füge den aktuellen schreibgeschützten API-Schlüssel und das API-Geheimnis ein, um diese Verbindung zu aktualisieren. Bestehende Konten, Transaktionen, Vermögenswerte und Einstellungen bleiben erhalten.",
+        "tokenLabel": "API-Schlüssel und -Geheimnis",
+        "tokenPlaceholder": "api-key:api-secret (oder demo:api-key:api-secret)",
+        "tokenHelp": "Verwende einen schreibgeschützten Trading-212-API-Schlüssel. Securo verschlüsselt Schlüssel und Geheimnis vor dem Speichern; teile sie niemals."
+      },
       "reconnectTitle": "Mit einem neuen Token erneut verbinden",
       "reconnectDescription": "Füge ein neues Setup-Token ein, um diese Verbindung direkt zu aktualisieren. Bestehende Konten, Transaktionen, Kategorien und Regeln bleiben erhalten.",
       "reconnect": "Erneut verbinden"

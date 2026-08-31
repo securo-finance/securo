@@ -4,7 +4,7 @@ import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
-from typing import Optional
+from typing import Optional, Protocol, cast
 
 from sqlalchemy import delete, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
@@ -13,9 +13,10 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
 from app.models.asset import Asset
+from app.models.asset_transaction import AssetTransaction
 from app.models.asset_group import AssetGroup
 from app.models.asset_value import AssetValue
-from app.models.bank_connection import BankConnection
+from app.models.bank_connection import BankConnection, T212_CONNECTION_IDENTITY_INDEX
 from app.models.account import Account
 from app.models.category import Category
 from app.models.institution import Institution
@@ -36,6 +37,7 @@ from app.providers.base import (
 )
 from app.services import oauth_state
 from app.services import admin_service
+from app.services import asset_transaction_service
 from app.services import recurring_match_service
 from app.services.account_service import (
     _simplefin_to_internal_balance,
@@ -55,6 +57,49 @@ from app.services.payee_service import get_or_create_payee
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
+
+
+class _Trading212AccountSummaryProvider(Protocol):
+    async def get_account_summary(self, credentials: dict) -> dict: ...
+
+
+_T212_ALREADY_CONNECTED = (
+    "Trading 212 account is already connected in this workspace; "
+    "reconnect the existing connection instead"
+)
+
+
+async def _t212_connection_exists(
+    session: AsyncSession, workspace_id: uuid.UUID, external_id: str
+) -> bool:
+    connection_id = await session.scalar(
+        select(BankConnection.id)
+        .where(
+            BankConnection.workspace_id == workspace_id,
+            BankConnection.provider == "trading212",
+            BankConnection.external_id == external_id,
+        )
+        .limit(1)
+    )
+    return connection_id is not None
+
+
+def _is_t212_connection_identity_conflict(exc: IntegrityError) -> bool:
+    """Recognize the partial unique index on PostgreSQL and test/dev SQLite."""
+    original = exc.orig
+    constraint_name = getattr(original, "constraint_name", None)
+    if constraint_name is None:
+        constraint_name = getattr(getattr(original, "diag", None), "constraint_name", None)
+    if constraint_name == T212_CONNECTION_IDENTITY_INDEX:
+        return True
+
+    message = str(original).lower()
+    return T212_CONNECTION_IDENTITY_INDEX in message or (
+        "unique constraint failed" in message
+        and "bank_connections.workspace_id" in message
+        and "bank_connections.provider" in message
+        and "bank_connections.external_id" in message
+    )
 
 
 def _clean_logo_url(value: object) -> Optional[str]:
@@ -201,6 +246,12 @@ async def _resolve_institution(
             inst.logo_url = new_logo
     cache[key] = inst
     return inst
+
+
+def _provider_kind(provider: object) -> str:
+    """Read an optional provider category without persisting mock/foreign values."""
+    kind = getattr(provider, "kind", "banking")
+    return kind if isinstance(kind, str) and kind else "banking"
 
 PLUGGY_CATEGORY_MAP = {
     "Eating out": "Alimentação",
@@ -550,7 +601,8 @@ async def _sync_holdings(
             # Keep descriptive fields fresh in case the provider still
             # updates them post-closure, but don't touch valuation.
             existing.name = holding.name
-            existing.external_metadata = holding.metadata
+            if holding.metadata is not None:
+                existing.external_metadata = holding.metadata
             existing.connection_id = connection.id
             continue
 
@@ -665,8 +717,10 @@ async def _upsert_asset_from_holding(
     # Fields Pluggy consistently returns — safe to overwrite each sync.
     asset.name = holding.name
     asset.currency = holding.currency
-    # external_metadata is a snapshot blob: we want the latest every time.
-    asset.external_metadata = holding.metadata
+    # Metadata is provider-owned but may be omitted on a transient response;
+    # retain the last complete snapshot rather than clobbering it with null.
+    if holding.metadata is not None:
+        asset.external_metadata = holding.metadata
     previous_connection_id = asset.connection_id
     asset.connection_id = connection_id
     # Only auto-unarchive when the holding moved to a different connection
@@ -697,6 +751,226 @@ async def _upsert_asset_from_holding(
     if holding.maturity_date:
         asset.maturity_date = holding.maturity_date
     return asset
+
+
+async def _sync_trading212_orders(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    connection: BankConnection,
+    provider,
+    credentials: dict,
+) -> None:
+    """Upsert completed read-only Trading 212 fills into the asset ledger."""
+    if connection.provider != "trading212" or not hasattr(provider, "get_historical_orders"):
+        return
+    account_id = str((credentials or {}).get("account_id") or connection.external_id).strip()
+    if not account_id or account_id != connection.external_id:
+        logger.error("Trading 212 account identity mismatch for connection %s", connection.id)
+        return
+    try:
+        orders = await provider.get_historical_orders(credentials)
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to fetch Trading 212 order history for %s", connection.id)
+        return
+    group = await ensure_group_for_connection(
+        session,
+        user_id=user_id,
+        connection_id=connection.id,
+        source=connection.provider,
+        external_id=connection.external_id,
+        default_name=connection.institution_name,
+    )
+    touched: set[uuid.UUID] = set()
+    history_currencies: dict[uuid.UUID, set[str]] = {}
+    cash_account = (
+        await session.execute(
+            select(Account).where(
+                Account.connection_id == connection.id,
+                Account.external_id.like("%:cash"),
+            )
+        )
+    ).scalars().first()
+    for item in orders:
+        if not isinstance(item, dict):
+            continue
+        order_data = item.get("order")
+        order = order_data if isinstance(order_data, dict) else {}
+        fill_data = item.get("fill")
+        fill = fill_data if isinstance(fill_data, dict) else {}
+        instrument_data = order.get("instrument")
+        instrument = instrument_data if isinstance(instrument_data, dict) else {}
+        fill_id = fill.get("id")
+        ticker = order.get("ticker") or instrument.get("ticker")
+        side = str(order.get("side") or "").upper()
+        if fill.get("type") != "TRADE" or not fill_id or not ticker or side not in {"BUY", "SELL"}:
+            continue
+        external_id = f"trading212:position:{account_id}:{ticker}"
+        asset = (
+            await session.execute(
+                select(Asset).where(
+                    Asset.user_id == user_id,
+                    Asset.source == "trading212",
+                    Asset.external_id == external_id,
+                    or_(Asset.connection_id == connection.id, Asset.connection_id.is_(None)),
+                )
+            )
+        ).scalars().first()
+        if asset is None:
+            asset = Asset(
+                user_id=user_id,
+                workspace_id=connection.workspace_id,
+                connection_id=connection.id,
+                group_id=group.id,
+                source="trading212",
+                external_id=external_id,
+                name=str(instrument.get("name") or ticker),
+                type="investment",
+                currency=str(order.get("currency") or instrument.get("currency") or "EUR"),
+                ticker=str(ticker),
+                isin=instrument.get("isin"),
+                valuation_method="manual",
+                external_metadata={"trading212": {"instrument": instrument}},
+            )
+            session.add(asset)
+            await session.flush()
+        elif asset.group_id is None:
+            asset.group_id = group.id
+        fill_date = str(fill.get("filledAt") or "")[:10]
+        try:
+            ledger_date = date.fromisoformat(fill_date)
+        except ValueError:
+            ledger_date = date.today()
+        transaction_id = f"t212:fill:{fill_id}"
+        tx = (
+            await session.execute(
+                select(AssetTransaction).where(
+                    AssetTransaction.asset_id == asset.id,
+                    AssetTransaction.external_id == transaction_id,
+                )
+            )
+        ).scalars().first()
+        wallet_data = fill.get("walletImpact")
+        wallet = wallet_data if isinstance(wallet_data, dict) else {}
+        taxes_data = wallet.get("taxes")
+        taxes = taxes_data if isinstance(taxes_data, list) else []
+        values = {
+            "kind": "buy" if side == "BUY" else "sell",
+            "quantity": abs(Decimal(str(fill.get("quantity") or 0))),
+            "price": abs(Decimal(str(fill.get("price") or 0))),
+            "fee": sum(
+                (
+                    abs(Decimal(str(t.get("quantity") or 0)))
+                    for t in taxes
+                    if isinstance(t, dict)
+                ),
+                Decimal("0"),
+            ),
+            "date": ledger_date,
+            "source": "trading212",
+            "raw_data": {"order": order, "fill": fill},
+        }
+        if tx is None:
+            # The unique partial index is the authority under parallel syncs.
+            # A savepoint lets us recover an IntegrityError without rolling back
+            # the account/holding work that precedes this fill.
+            try:
+                async with session.begin_nested():
+                    session.add(AssetTransaction(
+                        asset_id=asset.id,
+                        workspace_id=connection.workspace_id,
+                        external_id=transaction_id,
+                        **values,
+                    ))
+                    await session.flush()
+            except IntegrityError:
+                tx = (
+                    await session.execute(
+                        select(AssetTransaction).where(
+                            AssetTransaction.asset_id == asset.id,
+                            AssetTransaction.external_id == transaction_id,
+                        )
+                    )
+                ).scalar_one()
+                for key, value in values.items():
+                    setattr(tx, key, value)
+        else:
+            for key, value in values.items():
+                setattr(tx, key, value)
+        if cash_account is not None:
+            net_value = Decimal(str(wallet.get("netValue") or 0))
+            if net_value:
+                settlement_id = f"t212:settlement:{fill_id}"
+                settlement = (
+                    await session.execute(
+                        select(Transaction).where(
+                            Transaction.account_id == cash_account.id,
+                            Transaction.external_id == settlement_id,
+                        )
+                    )
+                ).scalars().first()
+                settlement_values = {
+                    "description": f"Trading 212 trade settlement {side.lower()}",
+                    "amount": abs(net_value),
+                    "currency": str(wallet.get("currency") or cash_account.currency),
+                    "date": ledger_date,
+                    "type": "debit" if side == "BUY" else "credit",
+                    "source": "sync",
+                    "status": "posted",
+                    "raw_data": {"trading212": {"source": "history/orders", "payload": item}},
+                    "is_ignored": True,
+                }
+                if settlement is None:
+                    settlement = Transaction(
+                        user_id=user_id,
+                        workspace_id=connection.workspace_id,
+                        account_id=cash_account.id,
+                        external_id=settlement_id,
+                        **settlement_values,
+                    )
+                    apply_effective_date(settlement, cash_account)
+                    session.add(settlement)
+                else:
+                    for key, value in settlement_values.items():
+                        setattr(settlement, key, value)
+        touched.add(asset.id)
+        currency = str(order.get("currency") or instrument.get("currency") or "")
+        if currency:
+            history_currencies.setdefault(asset.id, set()).add(currency)
+    await session.flush()
+    for asset_id in touched:
+        asset = await session.get(Asset, asset_id)
+        if asset is not None:
+            ledger = list((await session.execute(
+                select(AssetTransaction).where(AssetTransaction.asset_id == asset.id)
+            )).scalars())
+            position = asset_transaction_service._recompute(ledger)
+            ledger_units = position["units"]
+            currencies_match = history_currencies.get(asset.id, set()) == {asset.currency}
+            quantities_match = asset.units is not None and Decimal(str(ledger_units)) == Decimal(str(asset.units))
+            costs_match = (
+                asset.purchase_price is not None
+                and position["cost_basis"].quantize(Decimal("0.01")) == asset.purchase_price
+            )
+            # A newly-created history-only asset has no authoritative snapshot;
+            # otherwise replay only a complete, same-currency ledger.
+            if asset.units is None or (currencies_match and quantities_match and costs_match):
+                await asset_transaction_service.recompute_and_cache(session, asset)
+            else:
+                metadata = dict(asset.external_metadata or {})
+                metadata.setdefault("trading212", {})["ledger_reconciliation"] = {
+                    "status": "skipped",
+                    "reason": (
+                        "currency_mismatch" if not currencies_match
+                        else "quantity_mismatch" if not quantities_match
+                        else "cost_mismatch"
+                    ),
+                }
+                asset.external_metadata = metadata
+                logger.warning(
+                    "Skipped Trading 212 ledger recompute for asset %s: %s",
+                    asset.id,
+                    metadata["trading212"]["ledger_reconciliation"]["reason"],
+                )
 
 
 async def _ensure_historical_seed(
@@ -802,13 +1076,20 @@ async def get_connections(session: AsyncSession, workspace_id: uuid.UUID) -> lis
 
 
 async def get_connection(
-    session: AsyncSession, connection_id: uuid.UUID, workspace_id: uuid.UUID
+    session: AsyncSession,
+    connection_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    *,
+    for_update: bool = False,
 ) -> Optional[BankConnection]:
-    result = await session.execute(
+    statement = (
         select(BankConnection)
         .where(BankConnection.id == connection_id, BankConnection.workspace_id == workspace_id)
         .options(selectinload(BankConnection.accounts))
     )
+    if for_update:
+        statement = statement.with_for_update()
+    result = await session.execute(statement)
     return result.scalar_one_or_none()
 
 
@@ -960,6 +1241,19 @@ async def handle_oauth_callback(
     connection_data = await provider.handle_oauth_callback(code)
 
     if existing_reconnect:
+        # A T212 API key authenticates one brokerage account. Replacing the
+        # identity would attach its accounts, cash rows and fills to an
+        # unrelated existing connection, so relinking is deliberately explicit
+        # rather than silently mutating the connection.
+        if (
+            existing_reconnect.provider == "trading212"
+            and existing_reconnect.external_id != connection_data.external_id
+        ):
+            raise ValueError("Reconnect credentials belong to a different Trading 212 account")
+        # Other providers deliberately support relinking after the remote
+        # institution rotates its connection identifier. For Trading 212 the
+        # preceding equality check makes this a no-op while retaining the
+        # standard reconnect contract.
         existing_reconnect.external_id = connection_data.external_id
         existing_reconnect.institution_name = (
             connection_data.institution_name or existing_reconnect.institution_name
@@ -973,6 +1267,11 @@ async def handle_oauth_callback(
         await session.refresh(existing_reconnect)
         return existing_reconnect
 
+    if provider_name == "trading212" and await _t212_connection_exists(
+        session, workspace_id, connection_data.external_id
+    ):
+        raise ValueError(_T212_ALREADY_CONNECTED)
+
     flow_params = dict(state_payload.get("flow_params") or {})
     flow_sync_assets = flow_params.pop("sync_assets", None)
     initial_settings: dict[str, object] = {"flow_params": flow_params}
@@ -985,6 +1284,7 @@ async def handle_oauth_callback(
         workspace_id=workspace_id,
         user_id=user_id,
         provider=provider_name,
+        kind=_provider_kind(provider),
         external_id=connection_data.external_id,
         institution_name=connection_data.institution_name,
         logo_url=_clean_logo_url(connection_data.logo_url),
@@ -993,7 +1293,13 @@ async def handle_oauth_callback(
         status="active",
     )
     session.add(connection)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        if provider_name != "trading212" or not _is_t212_connection_identity_conflict(exc):
+            raise
+        await session.rollback()
+        raise ValueError(_T212_ALREADY_CONNECTED) from exc
 
     user = await session.get(User, user_id)
     user_currency = user.primary_currency if user else get_settings().default_currency
@@ -1023,6 +1329,7 @@ async def handle_oauth_callback(
             minimum_payment=acc_data.minimum_payment if is_cc else None,
             card_brand=acc_data.card_brand if is_cc else None,
             card_level=acc_data.card_level if is_cc else None,
+            external_metadata=acc_data.metadata,
             institution_id=institution.id if institution else None,
         )
         session.add(account)
@@ -1093,6 +1400,7 @@ async def handle_oauth_callback(
                 payee=txn_data.payee,
                 payee_id=payee_id,
                 raw_data=txn_data.raw_data,
+                is_ignored=txn_data.is_ignored,
                 category_id=category_id,
                 installment_number=txn_data.installment_number,
                 total_installments=txn_data.total_installments,
@@ -1135,6 +1443,9 @@ async def handle_oauth_callback(
     # available on the Assets page immediately after the widget closes.
     if _sync_assets_enabled(connection.settings):
         await _sync_holdings(session, user_id, connection, connection_data.credentials)
+        await _sync_trading212_orders(
+            session, user_id, connection, provider, connection_data.credentials
+        )
 
     connection.last_sync_at = datetime.now(timezone.utc)
     await session.commit()
@@ -1573,7 +1884,12 @@ async def sync_connection(
     user_id: uuid.UUID,
     trigger_provider_refresh: bool = False,
 ) -> tuple[BankConnection, int]:
-    connection = await get_connection(session, connection_id, workspace_id)
+    # PostgreSQL holds this row lock until the sync commits or rolls back. It
+    # serializes manual and scheduled syncs for one connection, preventing both
+    # workers from observing a missing asset/settlement and inserting duplicates.
+    connection = await get_connection(
+        session, connection_id, workspace_id, for_update=True
+    )
     if not connection:
         raise ValueError("Connection not found")
     if not connection.credentials:
@@ -1596,11 +1912,36 @@ async def sync_connection(
             "worker service is likely not loading the environment (.env) that "
             "enables this provider."
         ) from exc
+    if connection.provider == "trading212" and not callable(
+        getattr(provider, "get_account_summary", None)
+    ):
+        raise ProviderNotConfiguredError(
+            "Provider 'trading212' does not implement account summary lookup"
+        )
 
+    validated_t212_summary: dict | None = None
     try:
         # Refresh credentials if needed
         credentials = await provider.refresh_credentials(connection.credentials)
         connection.credentials = credentials
+
+        # Trading 212's account summary is the authority for the broker account
+        # namespace. Legacy token connections pre-date account_id in credentials;
+        # backfill it before either positions or fills derive an asset identity.
+        # Never rewrite connection.external_id here: a mismatch means these
+        # credentials belong to another broker account and must be reconnected.
+        if connection.provider == "trading212":
+            summary_provider = cast(_Trading212AccountSummaryProvider, provider)
+            summary = await summary_provider.get_account_summary(credentials)
+            account_id = str(summary.get("id") or "").strip() if isinstance(summary, dict) else ""
+            if not account_id:
+                raise ValueError("Trading 212 account summary did not include an account id")
+            if account_id != connection.external_id:
+                raise ValueError("Trading 212 credentials belong to a different account")
+            credentials = dict(credentials or {})
+            credentials["account_id"] = account_id
+            connection.credentials = credentials
+            validated_t212_summary = summary
 
         # Backfill the institution logo for connections linked before logo
         # capture existed. Best-effort: a failure here must never break sync.
@@ -1638,7 +1979,14 @@ async def sync_connection(
         user_currency = user.primary_currency if user else get_settings().default_currency
         new_tx_ids: list[uuid.UUID] = []
         merged_count = 0
-        accounts_data = await provider.get_accounts(credentials)
+        summary_account_builder = getattr(provider, "accounts_from_summary", None)
+        if validated_t212_summary is not None and callable(summary_account_builder):
+            # Account identity validation already fetched this rate-limited
+            # endpoint. Reuse that response rather than immediately issuing an
+            # identical request that Trading 212 may throttle with HTTP 429.
+            accounts_data = summary_account_builder(validated_t212_summary)
+        else:
+            accounts_data = await provider.get_accounts(credentials)
         institution_cache: dict[str, Institution] = {}
         for acc_data in accounts_data:
             result = await session.execute(
@@ -1677,6 +2025,10 @@ async def sync_connection(
                     connection.provider, account.type, acc_data.balance
                 )
                 account.name = acc_data.name
+                # Sparse provider snapshots must never erase metadata captured
+                # on an earlier successful sync.
+                if acc_data.metadata is not None:
+                    account.external_metadata = acc_data.metadata
                 # Backfills existing accounts on their next sync. Only written
                 # when the provider actually returns an identifier, so a payload
                 # that intermittently omits it can't blank out a known mask.
@@ -1722,6 +2074,7 @@ async def sync_connection(
                     minimum_payment=acc_data.minimum_payment if is_cc else None,
                     card_brand=acc_data.card_brand if is_cc else None,
                     card_level=acc_data.card_level if is_cc else None,
+                    external_metadata=acc_data.metadata,
                     institution_id=institution.id if institution else None,
                 )
                 session.add(account)
@@ -1884,6 +2237,7 @@ async def sync_connection(
                     payee=txn_data.payee,
                     payee_id=sync_payee_id,
                     raw_data=txn_data.raw_data,
+                    is_ignored=txn_data.is_ignored,
                     category_id=category_id,
                     installment_number=txn_data.installment_number,
                     total_installments=txn_data.total_installments,
@@ -1999,6 +2353,7 @@ async def sync_connection(
         # /investments shouldn't block the transaction sync that just succeeded.
         if _sync_assets_enabled(conn_settings):
             await _sync_holdings(session, user_id, connection, credentials)
+            await _sync_trading212_orders(session, user_id, connection, provider, credentials)
 
         # Reap institution rows referenced by nothing. Id-carrying servers
         # never orphan a row (renames update in place), but a name-only

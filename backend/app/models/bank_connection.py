@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import DateTime, ForeignKey, JSON, String
+from sqlalchemy import DateTime, ForeignKey, Index, JSON, String, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -14,8 +14,22 @@ if TYPE_CHECKING:
     from app.models.institution import Institution
 
 
+T212_CONNECTION_IDENTITY_INDEX = "uq_bank_connections_t212_workspace_external_id"
+
+
 class BankConnection(Base):
     __tablename__ = "bank_connections"
+    __table_args__ = (
+        Index(
+            T212_CONNECTION_IDENTITY_INDEX,
+            "workspace_id",
+            "provider",
+            "external_id",
+            unique=True,
+            postgresql_where=text("provider = 'trading212'"),
+            sqlite_where=text("provider = 'trading212'"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
@@ -23,6 +37,10 @@ class BankConnection(Base):
         UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
     )
     provider: Mapped[str] = mapped_column(String(50))  # "pluggy", "belvo", etc.
+    # UI-facing connection category. The provider remains the integration key;
+    # this lets a brokerage use account/asset sync without being presented as a
+    # regular bank connector.
+    kind: Mapped[str] = mapped_column(String(50), default="banking")
     external_id: Mapped[str] = mapped_column(String(255))  # Provider's item ID
     institution_name: Mapped[str] = mapped_column(String(255))
     display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
