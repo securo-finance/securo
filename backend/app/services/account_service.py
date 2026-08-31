@@ -8,10 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import contains_eager
 
 from app.models.account import Account
+from app.models.account_card import AccountCard
 from app.models.bank_connection import BankConnection
 from app.models.credit_card_bill import CreditCardBill
 from app.models.transaction import Transaction
-from app.schemas.account import AccountCreate, AccountUpdate
+from app.schemas.account import AccountCardLabelUpdate, AccountCreate, AccountUpdate
 from app.services._query_filters import (
     counts_as_pnl,
     counts_in_current_balance,
@@ -25,6 +26,59 @@ from app.models.category import Category
 
 def get_account_name(account: Account) -> str:
     return account.display_name or account.name
+
+
+async def get_linked_cards(
+    session: AsyncSession, account_id: uuid.UUID, workspace_id: uuid.UUID
+) -> Optional[list[AccountCard]]:
+    account = await get_account(session, account_id, workspace_id)
+    if not account:
+        return None
+    result = await session.execute(
+        select(AccountCard)
+        .where(
+            AccountCard.account_id == account_id,
+            AccountCard.workspace_id == workspace_id,
+        )
+        .order_by(AccountCard.masked_number)
+    )
+    return list(result.scalars())
+
+
+async def update_linked_card_labels(
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    cards: list[AccountCardLabelUpdate],
+) -> Optional[list[AccountCard]]:
+    """Update only user-owned labels for provider-discovered account cards."""
+    account = await get_account(session, account_id, workspace_id)
+    if not account:
+        return None
+    if account.type != "credit_card":
+        raise ValueError("Linked cards are only available for credit card accounts")
+
+    card_ids = [card.id for card in cards]
+    if len(card_ids) != len(set(card_ids)):
+        raise ValueError("Duplicate linked card")
+
+    if card_ids:
+        result = await session.execute(
+            select(AccountCard).where(
+                AccountCard.account_id == account_id,
+                AccountCard.workspace_id == workspace_id,
+                AccountCard.id.in_(card_ids),
+            )
+        )
+        by_id = {card.id: card for card in result.scalars()}
+        if len(by_id) != len(card_ids):
+            raise ValueError("Linked card not found")
+        for data in cards:
+            by_id[data.id].label = data.label.strip() or None
+        await session.commit()
+
+    refreshed = await get_linked_cards(session, account_id, workspace_id)
+    return refreshed
 
 
 def _simplefin_to_internal_balance(provider: str, account_type: str, balance: Decimal) -> Decimal:

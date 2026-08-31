@@ -188,6 +188,13 @@ export interface CreditCardBill {
   minimum_payment: number | null
 }
 
+export interface AccountCard {
+  id: string
+  account_id: string
+  masked_number: string
+  label: string | null
+}
+
 export interface Collection {
   id: string
   user_id: string
@@ -247,6 +254,9 @@ export interface Transaction {
   installment_purchase_date: string | null
   installment_series_id: string | null
   bill_id: string | null
+  // Last four characters of the physical/virtual card that made this charge.
+  // Null when the connected provider does not expose it.
+  card_masked_number: string | null
   // Manual override for which credit-card bill cycle this tx belongs to
   // (issue #92). Empty / null = use auto bucketing (Pluggy bill_id when
   // available, cycle math otherwise). Setting it forces the tx into the

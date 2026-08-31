@@ -5,7 +5,7 @@ import { useDateLocale, useDisplayLocale } from '@/hooks/use-display-locale'
 import { formatCurrency } from '@/lib/format'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
-import { currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
+import { accounts as accountsApi, currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { normalizeRuleMatchValue } from '@/lib/rule-match-utils'
@@ -423,6 +423,14 @@ function TransactionForm({
     queryKey: ['payees'],
     queryFn: payeesApi.list,
   })
+  const { data: linkedCards = [] } = useQuery({
+    queryKey: ['accounts', transaction?.account_id, 'linked-cards'],
+    queryFn: () => accountsApi.linkedCards(transaction?.account_id ?? ''),
+    enabled: !!transaction?.account_id && !!transaction.card_masked_number,
+  })
+  const linkedCardLabel = linkedCards.find(
+    (card) => card.masked_number === transaction?.card_masked_number,
+  )?.label
   const seed = transaction ?? duplicateDraft
   const [description, setDescription] = useState(seed?.description ?? '')
   const [amount, setAmount] = useState(seed?.amount?.toString() ?? '')
@@ -1044,6 +1052,18 @@ function TransactionForm({
           />
         </div>
       </div>
+      {transaction?.card_masked_number && (
+        <div className="space-y-2">
+          <Label>{t('transactions.card')}</Label>
+          <Input
+            value={linkedCardLabel
+              ? `${linkedCardLabel} · •••• ${transaction.card_masked_number}`
+              : `•••• ${transaction.card_masked_number}`}
+            disabled
+            className="bg-muted/40"
+          />
+        </div>
+      )}
       <div className={cn("grid gap-4", isSynced ? "grid-cols-1" : "grid-cols-2")}>
         <div className="space-y-2">
           <Label>{t('payees.payee')}</Label>
