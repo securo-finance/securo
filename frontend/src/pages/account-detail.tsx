@@ -346,7 +346,7 @@ export default function AccountDetailPage() {
     queryFn: () => accounts.bills(id!, 24),
     enabled: !!id && account?.type === 'credit_card',
   })
-  const { data: linkedCards = [] } = useQuery({
+  const linkedCardsQuery = useQuery({
     queryKey: ['accounts', id, 'linked-cards'],
     queryFn: () => accounts.linkedCards(id!),
     enabled: !!id && account?.type === 'credit_card',
@@ -1757,7 +1757,10 @@ export default function AccountDetailPage() {
           open={ccSettingsOpen}
           onClose={() => setCcSettingsOpen(false)}
           account={account}
-          linkedCards={linkedCards}
+          linkedCards={linkedCardsQuery.data ?? []}
+          linkedCardsLoading={linkedCardsQuery.isLoading}
+          linkedCardsError={linkedCardsQuery.isError}
+          onRetryLinkedCards={() => void linkedCardsQuery.refetch()}
           onSave={(settings, cards) => ccSettingsMutation.mutate({ settings, cards })}
           loading={ccSettingsMutation.isPending}
         />
@@ -1771,6 +1774,9 @@ function CreditCardSettingsDialog({
   onClose,
   account,
   linkedCards,
+  linkedCardsLoading,
+  linkedCardsError,
+  onRetryLinkedCards,
   onSave,
   loading,
 }: {
@@ -1778,6 +1784,9 @@ function CreditCardSettingsDialog({
   onClose: () => void
   account: { credit_limit: number | null; statement_close_day: number | null; payment_due_day: number | null }
   linkedCards: AccountCard[]
+  linkedCardsLoading: boolean
+  linkedCardsError: boolean
+  onRetryLinkedCards: () => void
   onSave: (
     settings: { credit_limit: number | null; statement_close_day: number | null; payment_due_day: number | null },
     cards: { id: string; label: string }[],
@@ -1868,7 +1877,16 @@ function CreditCardSettingsDialog({
               <Label>{t('accounts.linkedCards')}</Label>
               <p className="text-xs text-muted-foreground mt-1">{t('accounts.linkedCardsHint')}</p>
             </div>
-            {linkedCards.length === 0 ? (
+            {linkedCardsLoading ? (
+              <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+            ) : linkedCardsError ? (
+              <div className="flex items-center gap-3">
+                <p className="text-sm text-destructive">{t('common.error')}</p>
+                <Button type="button" variant="outline" size="sm" onClick={onRetryLinkedCards}>
+                  {t('common.retry')}
+                </Button>
+              </div>
+            ) : linkedCards.length === 0 ? (
               <p className="text-sm text-muted-foreground">{t('accounts.noLinkedCards')}</p>
             ) : (
               <div className="overflow-hidden rounded-lg border border-border">

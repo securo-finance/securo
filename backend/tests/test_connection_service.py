@@ -758,12 +758,16 @@ async def test_sync_connection_registers_linked_credit_cards(
          patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
          patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
         await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+        # A later sync has an empty in-memory card cache. It must reuse the
+        # card persisted by the first sync instead of failing on the unique
+        # constraint or adding a duplicate.
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
 
-    linked_card = await session.scalar(
+    linked_cards = (await session.scalars(
         select(AccountCard).where(AccountCard.masked_number == "8172")
-    )
-    assert linked_card is not None
-    assert linked_card.label is None
+    )).all()
+    assert len(linked_cards) == 1
+    assert linked_cards[0].label is None
 
 
 @pytest.mark.asyncio

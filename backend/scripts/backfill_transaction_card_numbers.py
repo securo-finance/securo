@@ -9,7 +9,7 @@ Usage:
     uv run python scripts/backfill_transaction_card_numbers.py
     uv run python scripts/backfill_transaction_card_numbers.py --apply
 
-`--apply` is intentionally separate and only works after migration 079 has
+`--apply` is intentionally separate and only works after migration 077 has
 created ``transactions.card_masked_number``.
 """
 
@@ -22,6 +22,7 @@ from typing import cast
 from uuid import UUID
 
 from sqlalchemy import inspect, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import CursorResult
 
 # This script is called directly from ``backend/scripts``. Make the backend
@@ -30,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.database import async_session_maker, engine
 from app.models.account import Account
+from app.models.account_card import AccountCard
 from app.models.transaction import Transaction
 from app.providers.base import mask_last4
 
@@ -56,7 +58,7 @@ async def _has_target_column() -> bool:
 async def main(apply: bool, workspace_id: UUID | None) -> int:
     has_target_column = await _has_target_column()
     if apply and not has_target_column:
-        print("Refusing --apply: migration 079 has not been applied.")
+        print("Refusing --apply: migration 077 has not been applied.")
         return 2
 
     async with async_session_maker() as session:
@@ -68,7 +70,12 @@ async def main(apply: bool, workspace_id: UUID | None) -> int:
             account_id: account_name for account_id, account_name in account_rows.all()
         }
 
-        columns = [Transaction.id, Transaction.account_id, Transaction.raw_data]
+        columns = [
+            Transaction.id,
+            Transaction.workspace_id,
+            Transaction.account_id,
+            Transaction.raw_data,
+        ]
         if has_target_column:
             columns.append(Transaction.card_masked_number)
         query = select(*columns)
@@ -78,14 +85,18 @@ async def main(apply: bool, workspace_id: UUID | None) -> int:
 
         candidate_ids_by_tail: dict[str, list[UUID]] = defaultdict(list)
         candidates_by_account: dict[UUID, Counter[str]] = defaultdict(Counter)
+        linked_cards: set[tuple[UUID, UUID, str]] = set()
         totals = Counter(scanned=len(rows), with_card_number=0, already_backfilled=0)
 
         for row in rows:
-            transaction_id, account_id, raw_data, *existing_value = row
+            transaction_id, transaction_workspace_id, account_id, raw_data, *existing_value = row
             tail = _tail_from_raw_data(raw_data)
             if tail is None:
                 continue
             totals["with_card_number"] += 1
+            # Older partial runs may have populated the transaction field
+            # without registering its linked card. Always repair both sides.
+            linked_cards.add((transaction_workspace_id, account_id, tail))
 
             current_tail = existing_value[0] if existing_value else None
             if current_tail is not None:
@@ -104,7 +115,7 @@ async def main(apply: bool, workspace_id: UUID | None) -> int:
         if has_target_column:
             print(f"already backfilled: {totals['already_backfilled']}")
         else:
-            print("migration 079: not applied (preview is still read-only and valid)")
+            print("migration 077: not applied (preview is still read-only and valid)")
         print(f"would backfill: {totals['would_backfill']}")
 
         if candidates_by_account:
@@ -123,6 +134,23 @@ async def main(apply: bool, workspace_id: UUID | None) -> int:
             return 0
 
         updated = 0
+        if linked_cards:
+            await session.execute(
+                insert(AccountCard)
+                .values(
+                    [
+                        {
+                            "workspace_id": workspace_id,
+                            "account_id": account_id,
+                            "masked_number": masked_number,
+                        }
+                        for workspace_id, account_id, masked_number in linked_cards
+                    ]
+                )
+                .on_conflict_do_nothing(
+                    index_elements=["account_id", "masked_number"]
+                )
+            )
         for tail, transaction_ids in candidate_ids_by_tail.items():
             result = await session.execute(
                 update(Transaction)
@@ -143,7 +171,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--apply",
         action="store_true",
-        help="write masked tails after migration 079; omit for a read-only preview",
+        help="write masked tails after migration 077; omit for a read-only preview",
     )
     parser.add_argument(
         "--workspace-id",

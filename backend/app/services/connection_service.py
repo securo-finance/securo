@@ -60,7 +60,7 @@ settings = get_settings()
 _PROVIDER_SELL_DATE_METADATA_KEY = "_securo_provider_sell_date"
 
 
-def _remember_linked_card(
+async def _remember_linked_card(
     session: AsyncSession,
     account: Account,
     masked_number: Optional[str],
@@ -72,13 +72,28 @@ def _remember_linked_card(
     account_numbers = known_numbers.setdefault(account.id, set())
     if masked_number in account_numbers:
         return
-    session.add(
-        AccountCard(
-            workspace_id=account.workspace_id,
-            account_id=account.id,
-            masked_number=masked_number,
+    try:
+        # A manual and a scheduled sync can discover the same card at once.
+        # Keep the uniqueness conflict inside a savepoint, then reuse the row
+        # written by the other sync instead of failing the outer sync.
+        async with session.begin_nested():
+            session.add(
+                AccountCard(
+                    workspace_id=account.workspace_id,
+                    account_id=account.id,
+                    masked_number=masked_number,
+                )
+            )
+            await session.flush()
+    except IntegrityError:
+        existing = await session.scalar(
+            select(AccountCard.id).where(
+                AccountCard.account_id == account.id,
+                AccountCard.masked_number == masked_number,
+            )
         )
-    )
+        if existing is None:
+            raise
     account_numbers.add(masked_number)
 
 
@@ -1111,7 +1126,7 @@ async def handle_oauth_callback(
             connection_data.credentials, acc_data.external_id, None
         )
         for txn_data in transactions_data:
-            _remember_linked_card(
+            await _remember_linked_card(
                 session, account, txn_data.card_masked_number, known_linked_card_numbers
             )
             # Pending↔posted twin (and the credit-card installment variant).
@@ -1871,7 +1886,7 @@ async def sync_connection(
                 transactions_data = [t for t in transactions_data if t.status != "pending"]
 
             for txn_data in transactions_data:
-                _remember_linked_card(
+                await _remember_linked_card(
                     session, account, txn_data.card_masked_number, known_linked_card_numbers
                 )
                 existing = await session.execute(
