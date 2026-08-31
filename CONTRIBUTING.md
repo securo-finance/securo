@@ -123,12 +123,30 @@ ty check .
 # commit uv.lock along with it (CI enforces this)
 ./scripts/lock.sh
 
+# After adding a migration: check the revision chain is still a single line
+python3 scripts/check_migration_chain.py
+
 # Frontend lint
 cd frontend && npm run lint
 
 # Frontend build check
 cd frontend && npm run build
 ```
+
+### Adding a migration
+
+Number the file after the current head and chain it there, so
+`backend/alembic/versions/` sorts in apply order:
+
+```python
+revision: str = "076"
+down_revision: Union[str, None] = "075"
+```
+
+If another migration lands on `main` while your PR is open, your number is
+taken and you have to renumber. CI catches this: the Migration Chain job runs
+against your branch merged with `main`, so a clash fails there rather than on
+someone's `alembic upgrade head` after both are merged.
 
 ## Pull Request Guidelines
 

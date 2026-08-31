@@ -496,6 +496,35 @@ export interface RuleImportResponse {
   overwritten: number
 }
 
+/** One matched transaction in a rule preview, with the category the draft rule
+ * would leave it in. `will_change` is false when the rule matches but changes
+ * nothing — usually a transaction that already has a category the draft keeps. */
+export interface RulePreviewItem {
+  id: string
+  date: string
+  description: string
+  amount: number
+  currency: string
+  type: 'debit' | 'credit'
+  current_category_id: string | null
+  current_category_name: string | null
+  new_category_id: string | null
+  new_category_name: string | null
+  will_change: boolean
+}
+
+export interface RulePreviewResponse {
+  matched: number
+  will_change: number
+  /** False when the draft's flags mean saving it changes nothing right now —
+   * an inactive rule, or one not being applied to existing transactions. */
+  will_apply: boolean
+  /** One window of the matches, newest first: `offset` through
+   * `offset + limit`. More remain while `offset + sample.length < matched`. */
+  sample: RulePreviewItem[]
+  offset: number
+}
+
 export interface ImportLog {
   id: string
   user_id: string

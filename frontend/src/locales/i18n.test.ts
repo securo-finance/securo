@@ -192,6 +192,20 @@ describe('i18n locale files', () => {
     }
   })
 
+  // Every screen that offers a language picker reads SUPPORTED_LANGS, so a
+  // translation that ships a bundle without landing in that list is offered
+  // nowhere. Read the source rather than importing it: the module initialises
+  // i18next against browser APIs this node-environment suite does not have.
+  it('offers every locale bundle in SUPPORTED_LANGS', () => {
+    const source = readFileSync(path.join(LOCALES_DIR, '..', 'lib', 'i18n.ts'), 'utf-8')
+    const block = source.match(/SUPPORTED_LANGS[^=]*=\s*\[([\s\S]*?)\]/)
+    expect(block, 'SUPPORTED_LANGS not found in lib/i18n.ts').not.toBeNull()
+
+    const offered = [...block![1].matchAll(/code:\s*'([^']+)'/g)].map((m) => m[1])
+    expect(LOCALES.filter((locale) => !offered.includes(locale)).sort()).toEqual([])
+    expect(offered.filter((code) => !LOCALES.includes(code)).sort()).toEqual([])
+  })
+
   it('contains imported-description normalization labels in every locale', () => {
     const required = [
       'transactions.originalDescription',
