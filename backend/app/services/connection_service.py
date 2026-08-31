@@ -17,6 +17,7 @@ from app.models.asset_group import AssetGroup
 from app.models.asset_value import AssetValue
 from app.models.bank_connection import BankConnection
 from app.models.account import Account
+from app.models.account_card import AccountCard
 from app.models.category import Category
 from app.models.institution import Institution
 from app.models.goal import Goal
@@ -55,6 +56,28 @@ from app.services.payee_service import get_or_create_payee
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
+
+
+def _remember_linked_card(
+    session: AsyncSession,
+    account: Account,
+    masked_number: Optional[str],
+    known_numbers: dict[uuid.UUID, set[str]],
+) -> None:
+    """Register a provider-discovered card final once per credit-card account."""
+    if account.type != "credit_card" or not masked_number:
+        return
+    account_numbers = known_numbers.setdefault(account.id, set())
+    if masked_number in account_numbers:
+        return
+    session.add(
+        AccountCard(
+            workspace_id=account.workspace_id,
+            account_id=account.id,
+            masked_number=masked_number,
+        )
+    )
+    account_numbers.add(masked_number)
 
 
 def _clean_logo_url(value: object) -> Optional[str]:
@@ -1010,6 +1033,7 @@ async def handle_oauth_callback(
     use_provider_cats = await admin_service.use_provider_categories(session)
 
     institution_cache: dict[str, Institution] = {}
+    known_linked_card_numbers: dict[uuid.UUID, set[str]] = {}
     for acc_data in connection_data.accounts:
         is_cc = acc_data.type == "credit_card"
         institution = await _resolve_institution(
@@ -1049,6 +1073,9 @@ async def handle_oauth_callback(
             connection_data.credentials, acc_data.external_id, None
         )
         for txn_data in transactions_data:
+            _remember_linked_card(
+                session, account, txn_data.card_masked_number, known_linked_card_numbers
+            )
             # Pending↔posted twin (and the credit-card installment variant).
             # When the same logical operation comes back under a new external
             # id with a different status, fingerprint match prevents the
@@ -1656,6 +1683,14 @@ async def sync_connection(
         new_tx_ids: list[uuid.UUID] = []
         merged_count = 0
         accounts_data = await provider.get_accounts(credentials)
+        existing_linked_cards = await session.execute(
+            select(AccountCard.account_id, AccountCard.masked_number)
+            .join(Account, Account.id == AccountCard.account_id)
+            .where(Account.connection_id == connection.id)
+        )
+        known_linked_card_numbers: dict[uuid.UUID, set[str]] = {}
+        for account_id, masked_number in existing_linked_cards:
+            known_linked_card_numbers.setdefault(account_id, set()).add(masked_number)
         institution_cache: dict[str, Institution] = {}
         for acc_data in accounts_data:
             result = await session.execute(
@@ -1778,6 +1813,9 @@ async def sync_connection(
                 transactions_data = [t for t in transactions_data if t.status != "pending"]
 
             for txn_data in transactions_data:
+                _remember_linked_card(
+                    session, account, txn_data.card_masked_number, known_linked_card_numbers
+                )
                 existing = await session.execute(
                     select(Transaction)
                     .where(

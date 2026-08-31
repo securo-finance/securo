@@ -13,6 +13,7 @@ import type {
   BankConnection,
   ConnectionSettings,
   Account,
+  AccountCard,
   AccountSummary,
   Collection,
   CreditCardBill,
@@ -449,6 +450,17 @@ export const accounts = {
   },
   bills: async (id: string, limit = 24): Promise<CreditCardBill[]> => {
     const { data } = await api.get(`/accounts/${id}/bills`, { params: { limit } })
+    return data
+  },
+  linkedCards: async (id: string): Promise<AccountCard[]> => {
+    const { data } = await api.get(`/accounts/${id}/linked-cards`)
+    return data
+  },
+  updateLinkedCards: async (
+    id: string,
+    cards: { id: string; label: string }[],
+  ): Promise<AccountCard[]> => {
+    const { data } = await api.patch(`/accounts/${id}/linked-cards`, { cards })
     return data
   },
   close: async (id: string): Promise<Account> => {

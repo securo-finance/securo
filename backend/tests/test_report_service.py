@@ -1,4 +1,5 @@
 import uuid
+from calendar import monthrange
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -1229,7 +1230,13 @@ async def test_cash_flow_recurring_credit_increases_balance(
     )
 
     today = date.today()
-    salary_day = date(today.year + (today.month // 12), (today.month % 12) + 1, today.day)
+    next_month_year = today.year + (today.month // 12)
+    next_month = (today.month % 12) + 1
+    salary_day = date(
+        next_month_year,
+        next_month,
+        min(today.day, monthrange(next_month_year, next_month)[1]),
+    )
     await _make_recurring(
         session, test_user.id, account.id,
         amount=3000, txn_type="credit", frequency="monthly",

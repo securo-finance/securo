@@ -1,6 +1,6 @@
 # Status operacional — Securo
 
-Atualizado em 28/08/2026. Este arquivo é o checklist de operação da instância
+Atualizado em 30/08/2026. Este arquivo é o checklist de operação da instância
 produtiva. Marque um item como concluído somente após registrar a evidência
 correspondente.
 
@@ -14,7 +14,7 @@ correspondente.
 | Backup gerenciado da VPS | Concluído (semanal) | Backup semanal de aproximadamente 2 GB confirmado em 28/08/2026 na Hostinger. |
 | Pluggy | Piloto conectado | Credenciais carregadas; primeira conexão importada e em reconciliação antes de novas contas. |
 | MCP e agentes internos | Desligado | Permanecerá desligado até os dados importados e as regras estarem validados. |
-| Deploy contínuo | Validado | Integração upstream v0.14.5 concluída nos PRs do fork #32 e #33; CI completa aprovada, VPS saudável e banco na revisão Alembic 078. A precedência de regra continua ativa antes do fallback da categoria do provedor. |
+| Deploy contínuo | Validado | Integração upstream v0.14.5 concluída nos PRs do fork #32 e #33; CI completa aprovada, VPS saudável e banco na revisão Alembic 079. Os PRs #37 e #38 preservaram o final do cartão nas transações e entregaram sua exibição somente nos detalhes. |
 
 ## Regras de segurança
 
@@ -135,16 +135,14 @@ a flag, então o débito da fatura na conta corrente contava como Saída do mês
       separada (tratar como transferência as duas pernas, sem duplicar como
       receita/despesa).
 
-### 4.2 Itens levantados em 25/08/2026, ainda em avaliação (sem fix aplicado)
+### 4.2 Itens levantados em 25/08/2026, ainda em avaliação
 
-- [x] **Final do cartão só aparece na conta, não na transação — validado.** A
-      Pluggy manda `creditCardMetadata.cardNumber` (últimos 4 dígitos) por
-      transação, mas `providers/pluggy.py` hoje só promove
-      `installmentNumber`/`totalInstallments`/`totalAmount`/`purchaseDate`/
-      `billId` para colunas de primeira classe — `cardNumber` fica só dentro
-      de `raw_data`. Confirmado contra a base real sincronizada (Santander):
-      o campo vem preenchido também em transações não parceladas, não só no
-      exemplo da documentação. Ver plano de implementação na seção 4.3.
+- [x] **Final do cartão nas transações — entregue no fork.** A migration 079
+      guarda somente os quatro últimos dígitos extraídos de
+      `creditCardMetadata.cardNumber`; o backfill de produção preencheu 1.942
+      transações e não restaram linhas elegíveis. O final é mostrado apenas no
+      detalhe de transação, em campo bloqueado para edição; os badges azuis das
+      listas foram removidos no PR #38. A rotulagem opcional fica na seção 4.3.
 - [ ] **Por que o Platinum Prime aparece com "Linha de crédito
       compartilhada".** Não é uma heurística de "número de cartão diferente
       = mesma linha". `_consolidated_credit_balance_group()` em
@@ -188,43 +186,28 @@ a flag, então o débito da fatura na conta corrente contava como Saída do mês
       é apagado, preservando qualquer rótulo personalizado. Não forçar sync:
       validar junto de uma próxima transação real.
 
-### 4.3 Titularidade de cartão: adicional vs. conta conjunta (investigado em 25/08/2026)
+### 4.3 Cartões vinculados: final e apelido local (30/08/2026)
 
-Motivação: conta Santander com cartões Visa e Mastercard, cada um podendo ter
-cartão adicional de outro CPF (conta conjunta). Objetivo: entender o que o
-Securo consegue diferenciar hoje com o dado que o Pluggy entrega.
+Motivação: uma conta de cartão pode concentrar cartões físicos e virtuais
+distintos. A pessoa deve poder reconhecer cada final nas transações sem expor
+nem cadastrar o número completo do cartão.
 
-- [x] Confirmado contra o payload real da API Pluggy (conexão Santander em
-      produção): `account.owner`/`account.taxNumber` existem no schema, mas
-      para contas de crédito o conector do Santander retorna `taxNumber` e
-      `creditData.holderType` vazios — não há como atribuir titular/adicional
-      por CPF de forma automática com o dado atual do provedor.
-- [x] `creditData.additionalCards` traz os últimos 4 dígitos dos cartões
-      adicionais por bandeira quando o conector os reporta. Validado: uma das
-      duas bandeiras da conta piloto retornou a lista populada, a outra veio
-      vazia mesmo havendo adicional físico segundo o titular — confirmar no
-      extrato oficial do banco se é atraso do conector ou adicional inativo
-      antes de estranhar o dado.
-- [x] Confirmado que `creditCardMetadata.cardNumber`, já presente em
-      transações reais sincronizadas (ver 4.2), permite — comparando com
-      `account.number` e `creditData.additionalCards` — classificar cada
-      transação como titular ou adicional, sem nome/CPF do portador.
-- [ ] Migration: nova coluna em `accounts` para os finais de cartão adicional
-      (ex. `additional_card_numbers`).
-- [ ] Migration: nova coluna em `transactions` para o final do cartão usado
-      (ex. `card_last4`), extraído de `creditCardMetadata.cardNumber` no
-      parser de transações (`providers/pluggy.py`).
-- [ ] Mapear `creditData.additionalCards` em `_build_account_data`
-      (`providers/pluggy.py`).
-- [ ] Exibir final do cartão + classificação titular/adicional na lista de
-      transações e nos detalhes do cartão. Fora de escopo nesta etapa:
-      atribuir nome/CPF ao portador do adicional (o provedor não entrega esse
-      dado) e tela de rotulagem manual de portador.
+- [x] Finais de cartão disponíveis nas transações foram confirmados na seção
+      4.2; eles são a fonte da identificação de cada cartão vinculado.
+- [x] Implementação preparada: nova tabela filha `account_cards`, única por
+      conta e final, populada pela migration 080 a partir das transações já
+      sincronizadas. Sincronizações futuras registram finais novos sem apagar
+      o apelido definido pela pessoa.
+- [x] A edição do cartão de crédito passa a listar os cartões vinculados como
+      `•••• 5062`, cada um com campo opcional de apelido inicialmente vazio.
+      O detalhe da transação mostra `apelido · •••• 5062` quando houver nome.
+- [ ] Validar em produção, após o deploy da migration 080, que os finais
+      existentes aparecem na edição do cartão e que um apelido persiste após
+      nova sincronização.
 
-**Decisão registrada:** conta conjunta com múltiplos CPFs não é resolvível
-automaticamente com o dado atual do Pluggy/Santander — `owner`/`taxNumber` no
-payload são sempre do titular principal da conexão; nenhum segundo CPF é
-reportado pelo conector nas contas testadas.
+**Decisão registrada:** não classificar nem inferir titular/adicional e não
+armazenar PAN completo, CPF ou nome do portador. O provedor informa apenas o
+final de forma confiável; o apelido é local, opcional e controlado pela pessoa.
 
 ### 4.4 Consórcio e financiamento invisíveis no orçamento + regra nunca vencia o provedor (27/08/2026)
 
@@ -478,3 +461,4 @@ Atualizar sempre que um PR upstream mudar de estado ou um novo for aberto.
 | 2026-08-27 | Categorização de consórcio/financiamento + precedência de regras | Recategorizado histórico de consórcio imóvel, consórcio veículo e financiamento imobiliário; corrigida em `connection_service.py` a precedência regra-vs-categoria-do-provedor (regra específica agora vence). Dois testes novos adicionados (import inicial + sync incremental), ambos confirmados como testes de regressão reais; suíte completa verde (246 testes). Ver seção 4.4. Planos registrados para meta por categoria (4.5) e agente financeiro no Hermes-Agent (5.1). Issue aberta no projeto principal: [#730](https://github.com/securo-finance/securo/issues/730). | Claude |
 | 2026-08-27 | Auditoria retroativa das 24 regras ativas | Script somente-leitura comparou as 24 regras contra as 3.161 transações do workspace; achou 11 regras com transações represadas pelo mesmo bug de precedência. Revisado um a um com o administrador: ~R$110 mil recategorizados corretamente (destaque: R$102.415,58 de aportes em fundos presos em "Transferências"), 3 regras com falso positivo corrigidas (Impostos e taxas, Educação, Compras), risco de empate de prioridade entre regras corrigido (Saúde e Assinaturas recorrentes para prioridade 9). 2 pendências abertas. Ver seção 4.6. | Claude |
 | 2026-08-28 | Backup, deploy e configuração familiar | Backup semanal da Hostinger de aproximadamente 2 GB confirmado; decisão explícita de manter backup granular diário adiado. VPS saudável após merge dos PRs #29/#30 e confirmada com regra antes do fallback do provedor. Orçamentos recorrentes, reserva de emergência e meta de lance do consórcio configurados. Ver seções 1.1, 4.4 e 4.7. | Codex |
+| 2026-08-30 | Finais e apelidos de cartão | Migrations 079 e 080, endpoints e UI preparados para preservar os quatro últimos dígitos da transação e permitir apelido opcional por cartão vinculado. A migration 080 é populada pelo histórico e não armazena PAN completo. Ver seções 4.2 e 4.3. | Codex |
