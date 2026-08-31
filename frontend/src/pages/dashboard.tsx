@@ -262,7 +262,7 @@ export default function DashboardPage() {
     queryFn: categoryGroupsApi.list,
   })
 
-  const { data: accountsList, isLoading: accountsLoading } = useQuery({
+  const { data: accountsList, isLoading: accountsLoading, isError: accountsError } = useQuery({
     queryKey: ['accounts'],
     queryFn: () => accountsApi.list(),
   })
@@ -405,6 +405,9 @@ export default function DashboardPage() {
   const availableBalance = availableBalanceAccounts.reduce(
     (sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0,
   )
+  // While accounts are loading or failed to load, treat their balance
+  // components as unavailable rather than silently rendering zero.
+  const accountsUnavailable = accountsLoading || accountsError
   const creditCardBalance = (accountsList ?? [])
     .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type === 'credit_card')
     .reduce((sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0)
@@ -651,7 +654,7 @@ export default function DashboardPage() {
         {/* Available balance in checking/savings accounts */}
         <div className="pb-4 mb-4 border-b border-border">
           <p className="text-xs font-semibold text-muted-foreground mb-1">{t('dashboard.availableBalance')}</p>
-          {summaryLoading || accountsLoading ? (
+          {summaryLoading || accountsUnavailable ? (
             <Skeleton className="h-11 w-40" />
           ) : (
             <>
@@ -786,7 +789,7 @@ export default function DashboardPage() {
                 </TooltipContent>
               </Tooltip>
             </p>
-            {summaryLoading || accountsLoading ? (
+            {summaryLoading || accountsUnavailable ? (
               <Skeleton className="h-7 w-24" />
             ) : (
               <p className={`text-2xl font-bold tabular-nums ${totalBalance < 0 ? 'text-rose-500' : 'text-blue-600'}`}>
