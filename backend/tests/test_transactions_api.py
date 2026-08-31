@@ -195,6 +195,7 @@ async def test_list_transactions_filter_by_linked_card(
         headers=auth_headers,
     )
     assert foreign_card_export.status_code == 200
+    assert "Personal purchase" not in foreign_card_export.text
     assert "Same ending, other workspace" not in foreign_card_export.text
 
 
