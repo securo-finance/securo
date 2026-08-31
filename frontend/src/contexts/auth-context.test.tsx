@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import { AuthProvider, useAuth } from '@/contexts/auth-context'
 import type { User } from '@/types'
@@ -203,7 +203,7 @@ describe('register', () => {
 })
 
 describe('logout', () => {
-  it('clears the token, the user and the cached queries', async () => {
+  it('clears the token and the user', async () => {
     localStorage.setItem('token', 'jwt')
     auth.me.mockResolvedValue(USER)
 
@@ -217,6 +217,39 @@ describe('logout', () => {
     expect(localStorage.getItem('token')).toBeNull()
     expect(result.current.token).toBeNull()
     expect(result.current.user).toBeNull()
+  })
+
+  it('empties the query cache, so the next account sees no stale balances', async () => {
+    // This is the privacy-relevant half of logout. Signing out on a shared
+    // machine has to drop the cached financial data, not just the token.
+    localStorage.setItem('token', 'jwt')
+    auth.me.mockResolvedValue(USER)
+
+    // Not createTestQueryClient: its gcTime of 0 collects data that has no
+    // active observer, so the fixture would vanish before logout ran and the
+    // test would pass for the wrong reason.
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    queryClient.setQueryData(['accounts'], [{ id: 'a1', balance: 4200 }])
+
+    function localWrapper({ children }: { children: ReactNode }) {
+      return (
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>{children}</AuthProvider>
+        </QueryClientProvider>
+      )
+    }
+
+    const { result } = renderHook(() => useAuth(), { wrapper: localWrapper })
+    await waitFor(() => expect(result.current.user).toEqual(USER))
+    expect(queryClient.getQueryData(['accounts'])).toBeDefined()
+
+    act(() => {
+      result.current.logout()
+    })
+
+    expect(queryClient.getQueryData(['accounts'])).toBeUndefined()
   })
 })
 

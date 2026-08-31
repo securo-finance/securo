@@ -28,11 +28,29 @@ describe('WORKSPACE_KINDS', () => {
     }
   })
 
-  it('resolves every label key in pt-BR as well', async () => {
+  it('resolves every label key in pt-BR as well', () => {
     // en and pt-BR are the two locales that must always be complete.
+    //
+    // fallbackLng:false is load-bearing. Without it i18next resolves through
+    // the English fallback, so `exists(key, { lng: 'pt-BR' })` answers true for
+    // a key pt-BR does not have and this test proves nothing.
     for (const kind of WORKSPACE_KINDS) {
       const key = WORKSPACE_KIND_LABEL_KEY[kind]
-      expect(i18n.exists(key, { lng: 'pt-BR' }), `${key} missing`).toBe(true)
+      expect(
+        i18n.exists(key, { lng: 'pt-BR', fallbackLng: false }),
+        `${key} missing from pt-BR`,
+      ).toBe(true)
     }
+  })
+
+  it('the pt-BR check would actually catch a missing key', () => {
+    // Guards the guard: accounts.multiInstitutionLink ships in en only, so a
+    // check that passes here is resolving through the fallback.
+    expect(
+      i18n.exists('accounts.multiInstitutionLink', {
+        lng: 'pt-BR',
+        fallbackLng: false,
+      }),
+    ).toBe(false)
   })
 })

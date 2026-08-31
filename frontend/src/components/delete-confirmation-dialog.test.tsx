@@ -32,17 +32,19 @@ describe('DeleteConfirmationDialog', () => {
     ).toBeInTheDocument()
   })
 
-  it('labels its actions from the translation bundle', () => {
-    // Asserting through i18n means deleting the key breaks this test rather
-    // than silently shipping a blank button.
+  it('labels its actions with the shipped copy', () => {
+    // Deliberately the literal English, not t('common.cancel'). Looking the
+    // label up through the same key the component uses makes the assertion
+    // circular: it would still pass if the key resolved to the raw key
+    // string, which is exactly how a missing translation renders.
     renderWithProviders(<DeleteConfirmationDialog {...baseProps} />)
 
-    expect(
-      screen.getByRole('button', { name: t('common.cancel') }),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: new RegExp(t('common.delete')) }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Delete/ })).toBeInTheDocument()
+
+    // And the keys really are the ones the component reads.
+    expect(t('common.cancel')).toBe('Cancel')
+    expect(t('common.delete')).toBe('Delete')
   })
 
   it('confirms through onConfirm', async () => {

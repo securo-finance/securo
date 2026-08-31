@@ -65,14 +65,19 @@ describe('AdminRoute', () => {
 
     renderGuard()
 
+    // Assert the redirect landed, not just that the page is absent: a guard
+    // that rendered nothing at all would satisfy the weaker check while the
+    // user stared at a blank /admin.
+    expect(screen.getByText('home')).toBeInTheDocument()
     expect(screen.queryByText('admin settings')).not.toBeInTheDocument()
   })
 
-  it('renders neither branch while the session resolves', () => {
+  it('shows a loading indicator while the session resolves', () => {
     useAuth.mockReturnValue({ token: 'jwt', user: null, isLoading: true })
 
-    renderGuard()
+    const { container } = renderGuard()
 
+    expect(container.querySelector('.animate-spin')).toBeInTheDocument()
     expect(screen.queryByText('admin settings')).not.toBeInTheDocument()
     expect(screen.queryByText('home')).not.toBeInTheDocument()
   })

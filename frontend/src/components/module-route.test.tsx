@@ -46,21 +46,39 @@ describe('ModuleRoute', () => {
   })
 
   it('asks about the module it was given, not a hard-coded one', () => {
+    // Deliberately mismatched: the route is /budgets but the guard is told
+    // "invoices". Asking about "budgets" here would pass if the component
+    // derived the module from the path or hard-coded it.
     const hasModule = vi.fn().mockReturnValue(true)
     useWorkspace.mockReturnValue({ hasModule, isLoading: false })
 
-    renderGuard()
+    renderWithProviders(
+      <Routes>
+        <Route path="/" element={<div>home</div>} />
+        <Route
+          path="/budgets"
+          element={
+            <ModuleRoute module="invoices">
+              <div>budgets page</div>
+            </ModuleRoute>
+          }
+        />
+      </Routes>,
+      { route: '/budgets' },
+    )
 
-    expect(hasModule).toHaveBeenCalledWith('budgets')
+    expect(hasModule).toHaveBeenCalledWith('invoices')
+    expect(hasModule).not.toHaveBeenCalledWith('budgets')
   })
 
-  it('waits while the workspace loads instead of bouncing to home', () => {
+  it('shows a loading indicator instead of bouncing to home', () => {
     // Redirecting first would make a deep link unusable on a cold load, since
     // enabled_modules has not arrived yet.
     useWorkspace.mockReturnValue({ hasModule: () => false, isLoading: true })
 
-    renderGuard()
+    const { container } = renderGuard()
 
+    expect(container.querySelector('.animate-spin')).toBeInTheDocument()
     expect(screen.queryByText('home')).not.toBeInTheDocument()
     expect(screen.queryByText('budgets page')).not.toBeInTheDocument()
   })

@@ -45,11 +45,14 @@ describe('AgentsRoute', () => {
     expect(screen.queryByText('agents page')).not.toBeInTheDocument()
   })
 
-  it('waits for the flag rather than assuming it is off', () => {
+  it('shows a loading indicator rather than assuming the flag is off', () => {
     useFeatureFlags.mockReturnValue({ agentsEnabled: false, isLoading: true })
 
-    renderGuard()
+    const { container } = renderGuard()
 
+    // Without the spinner assertion this passes on a guard that renders
+    // nothing, which is a blank screen rather than a wait.
+    expect(container.querySelector('.animate-spin')).toBeInTheDocument()
     expect(screen.queryByText('home')).not.toBeInTheDocument()
     expect(screen.queryByText('agents page')).not.toBeInTheDocument()
   })

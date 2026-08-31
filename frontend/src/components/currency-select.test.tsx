@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 
@@ -67,6 +68,24 @@ describe('CurrencySelect', () => {
     await user.click(await screen.findByRole('option', { name: /BRL/ }))
 
     expect(onChange).toHaveBeenCalledWith('BRL')
+  })
+
+  it('shows the new currency once the parent commits it', async () => {
+    // The callback firing is only half of it. A select that reports BRL and
+    // keeps displaying USD looks broken to the user, and asserting on the
+    // mock alone would not notice.
+    function Controlled() {
+      const [value, setValue] = useState('USD')
+      return <CurrencySelect value={value} onChange={setValue} />
+    }
+
+    const { user } = renderWithProviders(<Controlled />)
+    expect(screen.getByRole('combobox')).toHaveTextContent('USD')
+
+    await user.click(screen.getByRole('combobox'))
+    await user.click(await screen.findByRole('option', { name: /BRL/ }))
+
+    expect(screen.getByRole('combobox')).toHaveTextContent('BRL')
   })
 
   it('takes an id so a label can point at it', () => {

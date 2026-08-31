@@ -76,6 +76,11 @@ describe('Dialog', () => {
 
     await user.keyboard('{Escape}')
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+
+    // Count and order, not just "was called with". A dialog that fires open
+    // twice would double-submit anything the consumer does on open, and
+    // toHaveBeenCalledWith alone cannot tell.
+    expect(onOpenChange.mock.calls).toEqual([[true], [false]])
   })
 
   it('renders a close affordance by default', async () => {

@@ -72,7 +72,13 @@ describe('RegisterPage', () => {
     await user.click(screen.getByRole('button', { name: t('auth.register') }))
 
     await waitFor(() => expect(authContext.register).toHaveBeenCalled())
-    expect(authContext.register.mock.calls[0][0]).toBe('new@example.com')
+    // Assert the whole payload: sending the confirm field as the password, or
+    // dropping the currency, is exactly the kind of slip a looser assertion
+    // on the email alone would wave through.
+    const [email, password, preferences] = authContext.register.mock.calls[0]
+    expect(email).toBe('new@example.com')
+    expect(password).toBe('sufficiently-long')
+    expect(preferences).toEqual({ currency_display: 'USD', language: 'en' })
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('/'))
   })
 

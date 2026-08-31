@@ -5,12 +5,15 @@ import { CategoryIcon } from '@/components/category-icon'
 import { renderWithProviders } from '@/test/utils'
 
 describe('CategoryIcon', () => {
-  it('renders a named lucide icon', () => {
+  it('renders the icon it was asked for', () => {
+    // Asserting only that an svg exists would also pass on the fallback,
+    // which is the failure this test is here to catch. Lucide stamps the
+    // icon name into the class list, so pin that.
     const { container } = renderWithProviders(
       <CategoryIcon icon="shopping-cart" color="#22c55e" />,
     )
 
-    expect(container.querySelector('svg')).toBeInTheDocument()
+    expect(container.querySelector('svg')).toHaveClass('lucide-shopping-cart')
   })
 
   it('renders an emoji icon as text, for categories saved before the icon set', () => {
@@ -25,7 +28,11 @@ describe('CategoryIcon', () => {
       <CategoryIcon icon="not-a-real-icon" color="#22c55e" />,
     )
 
-    expect(container.querySelector('svg')).toBeInTheDocument()
+    // CircleHelp renders as circle-question-mark: lucide renamed the icon and
+    // kept the old export as an alias.
+    expect(container.querySelector('svg')).toHaveClass(
+      'lucide-circle-question-mark',
+    )
   })
 
   it('survives a category with no icon or colour at all', () => {

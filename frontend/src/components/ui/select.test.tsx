@@ -79,6 +79,12 @@ describe('Select', () => {
     await user.click(await screen.findByRole('option', { name: 'Euro' }))
 
     expect(onValueChange).toHaveBeenCalledWith('EUR')
+    // The trigger has to follow. Reporting the value while still showing the
+    // placeholder is a real Radix misconfiguration and the mock cannot see it.
+    expect(screen.getByRole('combobox', { name: 'Currency' })).toHaveTextContent(
+      'Euro',
+    )
+    expect(screen.queryByText('Pick a currency')).not.toBeInTheDocument()
   })
 
   it('does not open while disabled', async () => {

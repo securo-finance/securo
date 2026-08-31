@@ -43,13 +43,14 @@ describe('ProtectedRoute', () => {
     expect(screen.queryByText('private page')).not.toBeInTheDocument()
   })
 
-  it('waits instead of redirecting while the session is still resolving', () => {
+  it('shows a loading indicator instead of redirecting while the session resolves', () => {
     // Redirecting during the initial `auth.me()` call would bounce every
     // returning user to /login on a hard refresh.
     useAuth.mockReturnValue({ token: 'jwt', user: null, isLoading: true })
 
-    renderGuard()
+    const { container } = renderGuard()
 
+    expect(container.querySelector('.animate-spin')).toBeInTheDocument()
     expect(screen.queryByText('private page')).not.toBeInTheDocument()
     expect(screen.queryByText('login screen')).not.toBeInTheDocument()
   })

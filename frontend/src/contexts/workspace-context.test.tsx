@@ -134,6 +134,20 @@ describe('selection', () => {
 })
 
 describe('switchWorkspace', () => {
+  /** Render against a client we hold, so cache effects are observable. */
+  async function renderWithClient(queryClient = createTestQueryClient()) {
+    function localWrapper({ children }: { children: ReactNode }) {
+      return (
+        <QueryClientProvider client={queryClient}>
+          <WorkspaceProvider>{children}</WorkspaceProvider>
+        </QueryClientProvider>
+      )
+    }
+    const rendered = renderHook(() => useWorkspace(), { wrapper: localWrapper })
+    await waitFor(() => expect(rendered.result.current.isLoading).toBe(false))
+    return { ...rendered, queryClient }
+  }
+
   it('persists the new id before the refetches go out', async () => {
     // The axios interceptor reads workspace_id from localStorage, so writing
     // it after resetQueries would refetch the new workspace's screens with
@@ -153,16 +167,37 @@ describe('switchWorkspace', () => {
     expect(result.current.current?.id).toBe('ws-b')
   })
 
-  it('does nothing when switching to the workspace already active', async () => {
+  it('drops the previous workspace data from the cache', async () => {
+    // Every cached query was scoped to the workspace we just left. Leaving it
+    // in place shows one workspace's figures under another's name.
+    workspacesApi.list.mockResolvedValue([
+      makeWorkspace({ id: 'ws-a' }),
+      makeWorkspace({ id: 'ws-b' }),
+    ])
+
+    const { result, queryClient } = await renderWithClient()
+    queryClient.setQueryData(['transactions'], [{ id: 't1', amount: 100 }])
+
+    await act(async () => {
+      await result.current.switchWorkspace('ws-b')
+    })
+
+    expect(queryClient.getQueryData(['transactions'])).toBeUndefined()
+  })
+
+  it('leaves the cache alone when switching to the workspace already active', async () => {
+    // A no-op switch must not throw away data the user is looking at.
     workspacesApi.list.mockResolvedValue([makeWorkspace({ id: 'ws-a' })])
 
-    const { result } = await renderWorkspace()
+    const { result, queryClient } = await renderWithClient()
+    queryClient.setQueryData(['transactions'], [{ id: 't1', amount: 100 }])
 
     await act(async () => {
       await result.current.switchWorkspace('ws-a')
     })
 
     expect(result.current.current?.id).toBe('ws-a')
+    expect(queryClient.getQueryData(['transactions'])).toBeDefined()
   })
 })
 
