@@ -1073,6 +1073,10 @@ async def handle_oauth_callback(
             minimum_payment=acc_data.minimum_payment if is_cc else None,
             card_brand=acc_data.card_brand if is_cc else None,
             card_level=acc_data.card_level if is_cc else None,
+            shared_balance_group=(
+                f"{connection.id}:{acc_data.shared_balance_group}"
+                if acc_data.shared_balance_group else None
+            ),
             institution_id=institution.id if institution else None,
         )
         session.add(account)
@@ -1786,6 +1790,10 @@ async def sync_connection(
                         account.card_brand = acc_data.card_brand
                     if acc_data.card_level is not None:
                         account.card_level = acc_data.card_level
+                    account.shared_balance_group = (
+                        f"{connection.id}:{acc_data.shared_balance_group}"
+                        if acc_data.shared_balance_group else None
+                    )
             else:
                 is_cc = acc_data.type == "credit_card"
                 account = Account(
@@ -1803,6 +1811,10 @@ async def sync_connection(
                     minimum_payment=acc_data.minimum_payment if is_cc else None,
                     card_brand=acc_data.card_brand if is_cc else None,
                     card_level=acc_data.card_level if is_cc else None,
+                    shared_balance_group=(
+                        f"{connection.id}:{acc_data.shared_balance_group}"
+                        if acc_data.shared_balance_group else None
+                    ),
                     institution_id=institution.id if institution else None,
                 )
                 session.add(account)
