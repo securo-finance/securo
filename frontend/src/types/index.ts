@@ -189,6 +189,13 @@ export interface CreditCardBill {
   minimum_payment: number | null
 }
 
+export interface AccountCard {
+  id: string
+  account_id: string
+  masked_number: string
+  label: string | null
+}
+
 export interface Collection {
   id: string
   user_id: string

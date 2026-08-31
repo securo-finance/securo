@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.account_card import AccountCard
 from app.models.asset import Asset
 from app.models.bank_connection import BankConnection
 from app.models.category import Category
@@ -747,6 +748,40 @@ async def test_sync_connection_new_transactions(session: AsyncSession, test_user
     assert transaction is not None
     assert transaction.original_description == "GROCERY"
     assert transaction.card_masked_number == "8172"
+
+
+@pytest.mark.asyncio
+async def test_sync_connection_registers_linked_credit_cards(
+    session: AsyncSession, test_user, test_workspace
+):
+    conn = await _make_connection(session, test_user.id, "Credit card bank")
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "refreshed"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="credit-card-1", name="Cartão",
+            type="credit_card", balance=Decimal("2000"), currency="BRL",
+        ),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="credit-card-tx-1", description="Compra",
+            amount=Decimal("80"), date=date.today(), type="debit", currency="BRL",
+            card_masked_number="8172",
+        ),
+    ])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    linked_card = await session.scalar(
+        select(AccountCard).where(AccountCard.masked_number == "8172")
+    )
+    assert linked_card is not None
+    assert linked_card.label is None
 
 
 @pytest.mark.asyncio

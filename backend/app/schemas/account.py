@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AccountBase(BaseModel):
@@ -72,6 +72,26 @@ class AccountRead(AccountBase):
     closed_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AccountCardRead(BaseModel):
+    id: uuid.UUID
+    account_id: uuid.UUID
+    masked_number: str
+    label: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AccountCardLabelUpdate(BaseModel):
+    id: uuid.UUID
+    # An empty value clears the optional alias; the final four is never
+    # editable here because it is supplied by the financial institution.
+    label: str = Field(default="", max_length=80)
+
+
+class AccountCardsUpdate(BaseModel):
+    cards: list[AccountCardLabelUpdate] = Field(default_factory=list, max_length=100)
 
 
 class CreditCardBillRead(BaseModel):

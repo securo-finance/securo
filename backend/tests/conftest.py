@@ -50,6 +50,7 @@ from app.models.passkey import UserPasskey  # noqa: E402,F401
 from app.models.category import Category  # noqa: E402
 from app.models.bank_connection import BankConnection  # noqa: E402
 from app.models.account import Account  # noqa: E402
+from app.models.account_card import AccountCard  # noqa: E402,F401
 from app.models.transaction import Transaction  # noqa: E402
 from app.models.rule import Rule  # noqa: E402
 from app.models.asset import Asset  # noqa: E402,F401
