@@ -227,7 +227,8 @@
       "link": "Link payment",
       "downloadPdf": "Download PDF",
       "share": "Share link",
-      "revokeLink": "Revoke link"
+      "revokeLink": "Revoke link",
+      "saveDraft": "Opslaan als concept"
     },
     "settings": {
       "title": "Invoice settings",
@@ -365,7 +366,8 @@
       "kindLabel": "Documenttype",
       "fromSystem": "Van {{source}} · {{date}}",
       "fromUpload": "Geüpload · {{date}}"
-    }
+    },
+    "draftSaved": "Concept opgeslagen"
   },
   "collections": {
     "title": "Collecties",

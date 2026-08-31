@@ -1226,3 +1226,72 @@ async def test_a_document_we_wrote_ignores_a_source_name(client: AsyncClient, bi
     ours = await _create(client, biz_headers, total="100.00", external_number="NOT-OURS")
     assert ours["external_number"] is None
     assert ours["number"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Saving something half written
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_a_draft_can_be_saved_where_the_preset_would_open_it(
+    client: AsyncClient, biz_headers
+):
+    """The tracking preset opens everything on creation, which leaves no
+    way to put down an invoice that is not finished. `as_draft` is the
+    caller saying so."""
+    settings = await client.get("/api/invoices/settings", headers=biz_headers)
+    assert settings.json()["initial_state"] == "open"
+
+    draft = await _create(client, biz_headers, total="500.00", as_draft=True)
+    assert draft["status"] == "draft"
+    # A draft carries no number: the sequence is spent at issuance, and
+    # spending one on something that may never be sent leaves a gap.
+    assert draft["number"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_draft_stays_out_of_what_is_owed(client: AsyncClient, biz_headers):
+    """Half a thought is not a receivable. It must not move the total the
+    workspace reads as money it is waiting for."""
+    before = (await client.get("/api/invoices/summary", headers=biz_headers)).json()
+    await _create(client, biz_headers, total="9999.00", as_draft=True)
+    after = (await client.get("/api/invoices/summary", headers=biz_headers)).json()
+    assert after["outstanding"] == before["outstanding"]
+
+
+@pytest.mark.asyncio
+async def test_a_draft_is_picked_up_edited_and_issued(client: AsyncClient, biz_headers):
+    """The whole point of putting it down: coming back to it. The number
+    is assigned at that moment, not at the moment it was started."""
+    draft = await _create(client, biz_headers, total="500.00", as_draft=True)
+
+    edited = await client.patch(
+        f"/api/invoices/{draft['id']}",
+        headers=biz_headers,
+        json={
+            "lines": [
+                {"description": "Consultoria", "quantity": "10", "unit": "horas",
+                 "unit_price": "150.00"}
+            ]
+        },
+    )
+    assert edited.status_code == 200
+    assert edited.json()["total"] == "1500.00"
+    assert edited.json()["status"] == "draft"
+
+    issued = await client.post(f"/api/invoices/{draft['id']}/issue", headers=biz_headers)
+    assert issued.status_code == 200
+    body = issued.json()
+    assert body["status"] == "open"
+    assert body["number"] is not None
+    assert body["snapshot"] is not None
+
+
+@pytest.mark.asyncio
+async def test_an_import_is_never_a_draft(client: AsyncClient, biz_headers):
+    """Somebody else issued it. `draft` would claim we are still writing
+    a document we received, so the flag is ignored there."""
+    imported = await _create(
+        client, biz_headers, total="300.00", as_draft=True, origin="imported",
+        external_source="erp", external_id="d-1",
+    )
+    assert imported["status"] == "open"

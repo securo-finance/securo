@@ -94,6 +94,10 @@ class InvoiceCreate(BaseModel):
     #: Ignored on a document written here, which is numbered from this
     #: workspace's own counter.
     external_number: Optional[str] = Field(default=None, max_length=60)
+    #: Keep it a draft even where the workspace would open it. Not a
+    #: status field — the caller cannot ask for `void` here — only the
+    #: difference between "I am still writing this" and "this is owed".
+    as_draft: bool = False
     payee_id: Optional[uuid.UUID] = None
     issue_date: Optional[_Date] = None
     # Optional: falls back to the workspace's default payment terms, so

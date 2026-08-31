@@ -1693,6 +1693,10 @@ export default api
 // without the module, so these are never called from a personal one.
 export interface InvoiceWritePayload {
   direction?: InvoiceDirection
+  /** Keep it a draft even where the workspace would open it on creation.
+   *  Not a status field — only the difference between "still writing
+   *  this" and "this is owed". Ignored on update. */
+  as_draft?: boolean
   /** Provenance, for anything that did not originate here: a gateway
    *  sync, a forwarded email, a photographed supplier invoice. */
   origin?: 'local' | 'imported'

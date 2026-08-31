@@ -227,7 +227,8 @@
       "link": "Link payment",
       "downloadPdf": "Download PDF",
       "share": "Share link",
-      "revokeLink": "Revoke link"
+      "revokeLink": "Revoke link",
+      "saveDraft": "Salva bozza"
     },
     "settings": {
       "title": "Invoice settings",
@@ -365,7 +366,8 @@
       "kindLabel": "Tipo di documento",
       "fromSystem": "Da {{source}} · {{date}}",
       "fromUpload": "Caricato · {{date}}"
-    }
+    },
+    "draftSaved": "Bozza salvata"
   },
   "collections": {
     "title": "Collezioni",

@@ -227,7 +227,8 @@
       "link": "Link payment",
       "downloadPdf": "Download PDF",
       "share": "Share link",
-      "revokeLink": "Revoke link"
+      "revokeLink": "Revoke link",
+      "saveDraft": "Зберегти чернетку"
     },
     "settings": {
       "title": "Invoice settings",
@@ -365,7 +366,8 @@
       "kindLabel": "Тип документа",
       "fromSystem": "Із {{source}} · {{date}}",
       "fromUpload": "Завантажено · {{date}}"
-    }
+    },
+    "draftSaved": "Чернетку збережено"
   },
   "collections": {
     "title": "Колекції",

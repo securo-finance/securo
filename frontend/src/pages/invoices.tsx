@@ -529,9 +529,10 @@ function CreateInvoiceDialog({
   )
 
   const mutation = useMutation({
-    mutationFn: () =>
+    mutationFn: (asDraft: boolean) =>
       invoicesApi.create({
         direction,
+        as_draft: asDraft,
         payee_id: payeeId || null,
         // Lines are the source of truth once they exist: the server
         // recomputes the total from them and ignores what was typed.
@@ -542,7 +543,9 @@ function CreateInvoiceDialog({
         ...(Object.keys(custom).length ? { custom_fields: custom } : {}),
       }),
     onSuccess: (invoice) => {
-      toast.success(t('invoices.created'))
+      toast.success(
+        invoice.status === 'draft' ? t('invoices.draftSaved') : t('invoices.created'),
+      )
       // The dialog owns the mutation, so it owns the invalidation: the
       // parent navigates away and would otherwise leave a stale list
       // behind for whenever the user comes back to it.
@@ -680,17 +683,32 @@ function CreateInvoiceDialog({
           </div>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="sm:justify-between gap-2">
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
             {t('common.cancel')}
           </Button>
-          <Button
-            onClick={() => mutation.mutate()}
-            disabled={(lines.length ? linesTotal(lines) <= 0 : !total) || mutation.isPending}
-            data-testid="invoice-create-submit"
-          >
-            {t('common.create')}
-          </Button>
+          <div className="flex gap-2">
+            {/* A draft costs nothing to leave lying around: it carries no
+                number, counts in no total, and is the only state an
+                invoice can still be edited in. Under the tracking preset
+                the button is the only way to reach it, since that preset
+                opens everything on creation. */}
+            <Button
+              variant="outline"
+              onClick={() => mutation.mutate(true)}
+              disabled={mutation.isPending}
+              data-testid="invoice-save-draft"
+            >
+              {t('invoices.action.saveDraft')}
+            </Button>
+            <Button
+              onClick={() => mutation.mutate(false)}
+              disabled={(lines.length ? linesTotal(lines) <= 0 : !total) || mutation.isPending}
+              data-testid="invoice-create-submit"
+            >
+              {t('common.create')}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

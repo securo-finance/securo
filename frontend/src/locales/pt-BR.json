@@ -227,7 +227,8 @@
       "link": "Vincular pagamento",
       "downloadPdf": "Baixar PDF",
       "share": "Compartilhar",
-      "revokeLink": "Revogar link"
+      "revokeLink": "Revogar link",
+      "saveDraft": "Salvar rascunho"
     },
     "settings": {
       "title": "Configurações de cobrança",
@@ -365,7 +366,8 @@
       "kindLabel": "Tipo de documento",
       "fromSystem": "De {{source}} · {{date}}",
       "fromUpload": "Enviado · {{date}}"
-    }
+    },
+    "draftSaved": "Rascunho salvo"
   },
   "collections": {
     "title": "Coleções",

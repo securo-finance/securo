@@ -830,7 +830,15 @@ function EditDraftDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      {/* Same rule as the create dialog: the line-item table needs the
+          room, and without it the row overflows and the remove button
+          falls off the right edge. */}
+      <DialogContent
+        className={cn(
+          'flex flex-col max-h-[calc(100dvh-2rem)]',
+          lines.length ? 'sm:max-w-3xl' : 'sm:max-w-lg',
+        )}
+      >
         <DialogHeader>
           <DialogTitle>{t('invoices.editDraft')}</DialogTitle>
           <DialogDescription>{t('invoices.editDraftDescription')}</DialogDescription>

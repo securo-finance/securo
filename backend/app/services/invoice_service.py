@@ -648,9 +648,16 @@ async def create_invoice(
     # `open` on creation is the tracking preset's whole point: the money
     # is already owed, and making the user press "issue" on a note to
     # self is ceremony.
-    # An imported document is already open by definition: somebody issued
-    # it elsewhere, and a draft state would claim we are still writing it.
-    if settings.initial_state == "open" or invoice.origin == "imported":
+    #
+    # `as_draft` is the caller saying they are not finished — a document
+    # half written, to be picked up later. It overrides the preset,
+    # because the preset is a default about the common case and this is
+    # someone stating the uncommon one.
+    #
+    # An import is exempt either way: somebody issued it elsewhere, and
+    # `draft` would claim we are still writing a document we received.
+    wants_draft = bool(data.get("as_draft"))
+    if (settings.initial_state == "open" and not wants_draft) or invoice.origin == "imported":
         if (invoice.total or ZERO) <= ZERO:
             raise InvoiceError("empty_total", "An invoice with no value cannot be issued")
         locked = await _settings_for_update(session, workspace_id)

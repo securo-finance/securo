@@ -227,7 +227,8 @@
       "link": "Link payment",
       "downloadPdf": "Download PDF",
       "share": "Share link",
-      "revokeLink": "Revoke link"
+      "revokeLink": "Revoke link",
+      "saveDraft": "Enregistrer le brouillon"
     },
     "settings": {
       "title": "Invoice settings",
@@ -365,7 +366,8 @@
       "kindLabel": "Type de document",
       "fromSystem": "De {{source}} · {{date}}",
       "fromUpload": "Importé · {{date}}"
-    }
+    },
+    "draftSaved": "Brouillon enregistré"
   },
   "collections": {
     "title": "Collections",
