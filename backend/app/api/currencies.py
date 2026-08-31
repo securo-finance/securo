@@ -5,6 +5,7 @@ from app.core.config import get_settings
 router = APIRouter(prefix="/api/currencies", tags=["currencies"])
 
 CURRENCY_META = {
+    "AZN": {"symbol": "₼", "name": "Azerbaijani Manat", "flag": "\U0001F1E6\U0001F1FF"},
     "BRL": {"symbol": "R$", "name": "Real Brasileiro", "flag": "\U0001F1E7\U0001F1F7"},
     "USD": {"symbol": "$", "name": "US Dollar", "flag": "\U0001F1FA\U0001F1F8"},
     "EUR": {"symbol": "\u20ac", "name": "Euro", "flag": "\U0001F1EA\U0001F1FA"},

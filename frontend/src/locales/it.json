@@ -856,6 +856,16 @@
     "confirmDeleteDescription": "La definizione ricorrente \"{{description}}\" verrà eliminata definitivamente. Le transazioni esistenti rimarranno, ma perderanno il collegamento ricorrente. Questa azione non può essere annullata."
   },
   "rules": {
+    "preview": "Anteprima",
+    "previewMatched": "{{matched}} corrispondenze",
+    "previewSummary": "{{matched}} transazioni corrispondono · {{changed}} verrebbero modificate",
+    "previewSampleNote": "mostrando le {{shown}} più recenti",
+    "previewLoadMore": "Carica altri {{more}}",
+    "previewNoChange": "nessuna modifica",
+    "previewEmpty": "Nessuna transazione corrisponde a queste condizioni",
+    "previewInactive": "regola inattiva, per ora non cambia nulla",
+    "previewNotAppliedToExisting": "non applicata alle transazioni esistenti",
+    "previewError": "Impossibile caricare l'anteprima",
     "section": "Automazione",
     "packs": "Pacchetti di regole",
     "packRuleCount": "{{count}} regole",
@@ -1359,6 +1369,8 @@
     "taxIdKind": "Tipo di documento",
     "searchTaxIdKind": "Cerca documento o paese…",
     "invalidTaxId": "Controlla questo documento: non sembra valido.",
+    "duplicateName": "Esiste già una persona con questo nome.",
+    "duplicateTaxId": "questo documento è già su questa persona.",
     "add": "Aggiungi beneficiario",
     "edit": "Modifica beneficiario",
     "created": "Beneficiario creato",
@@ -1436,6 +1448,7 @@
       "ph_tin": "TIN",
       "vn_mst": "MST",
       "sg_uen": "UEN",
+	  "az_voen": "VÖEN",
       "uscc": "USCC"
     },
     "otherCountries": "Altri paesi",

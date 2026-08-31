@@ -856,6 +856,16 @@
     "confirmDeleteDescription": "Die wiederkehrende Transaktion \"{{description}}\" wird dauerhaft gelöscht. Vorhandene Transaktionen bleiben bestehen, verlieren jedoch ihre Verknüpfung zur wiederkehrenden Transaktion. Diese Aktion kann nicht rückgängig gemacht werden."
   },
   "rules": {
+    "preview": "Vorschau",
+    "previewMatched": "{{matched}} Treffer",
+    "previewSummary": "{{matched}} passende Transaktionen · {{changed}} würden geändert",
+    "previewSampleNote": "die {{shown}} neuesten werden angezeigt",
+    "previewLoadMore": "{{more}} weitere laden",
+    "previewNoChange": "keine Änderung",
+    "previewEmpty": "Keine Transaktion erfüllt diese Bedingungen",
+    "previewInactive": "Regel ist inaktiv, es ändert sich noch nichts",
+    "previewNotAppliedToExisting": "wird nicht auf bestehende Transaktionen angewendet",
+    "previewError": "Vorschau konnte nicht geladen werden",
     "section": "Automatisierung",
     "packs": "Regelpakete",
     "packRuleCount": "{{count}} Regeln",
@@ -1359,6 +1369,8 @@
     "taxIdKind": "Dokumentart",
     "searchTaxIdKind": "Dokument oder Land suchen…",
     "invalidTaxId": "Prüfe dieses Dokument: es sieht nicht gültig aus.",
+    "duplicateName": "Eine Person mit diesem Namen existiert bereits.",
+    "duplicateTaxId": "dieses Dokument ist bereits bei dieser Person.",
     "add": "Empfänger hinzufügen",
     "edit": "Empfänger bearbeiten",
     "created": "Zahlungsempfänger erstellt",
@@ -1436,6 +1448,7 @@
       "ph_tin": "TIN",
       "vn_mst": "MST",
       "sg_uen": "UEN",
+	  "az_voen": "VÖEN",
       "uscc": "USCC"
     },
     "otherCountries": "Andere Länder",

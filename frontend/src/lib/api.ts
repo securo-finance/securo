@@ -25,8 +25,11 @@ import type {
   Budget,
   BudgetVsActual,
   Rule,
+  RuleAction,
+  RuleConditionNode,
   RuleExportPayload,
   RuleImportResponse,
+  RulePreviewResponse,
   ImportLog,
   ImportPreviewTransaction,
   PayeeTaxId,
@@ -927,6 +930,21 @@ export const rules = {
   },
   delete: async (id: string): Promise<void> => {
     await api.delete(`/rules/${id}`)
+  },
+  preview: async (draft: {
+    conditions_op: 'and' | 'or'
+    conditions: RuleConditionNode[]
+    actions: RuleAction[]
+    is_active?: boolean
+    apply_to_existing?: boolean
+    overwrite_existing_categories?: boolean
+    /** One window of the matches: `limit` of them starting at `offset`,
+     * newest first. The counts are exact whatever the window is. */
+    limit?: number
+    offset?: number
+  }): Promise<RulePreviewResponse> => {
+    const { data } = await api.post('/rules/preview', draft)
+    return data
   },
   applyAll: async (): Promise<{ applied: number }> => {
     const { data } = await api.post('/rules/apply-all')
