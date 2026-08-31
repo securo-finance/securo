@@ -201,6 +201,12 @@ nem cadastrar o número completo do cartão.
 - [x] A edição do cartão de crédito passa a listar os cartões vinculados como
       `•••• 5062`, cada um com campo opcional de apelido inicialmente vazio.
       O detalhe da transação mostra `apelido · •••• 5062` quando houver nome.
+- [x] Filtro de transações por cartão vinculado preparado: seleciona cartões
+      pelo identificador da tabela filha (não apenas pelo final), preservando
+      o apelido e evitando colisão entre contas. A seleção múltipla aparece em
+      **Filtros → Cartão**, é compartilhável pela URL e também restringe a
+      exportação. A visão de calendário não usa esse filtro, pois seu saldo é
+      consolidado por conta e não pode ser atribuído com segurança a um cartão.
 - [ ] Validar em produção, após o deploy da migration 080, que os finais
       existentes aparecem na edição do cartão e que um apelido persiste após
       nova sincronização.
@@ -462,3 +468,4 @@ Atualizar sempre que um PR upstream mudar de estado ou um novo for aberto.
 | 2026-08-27 | Auditoria retroativa das 24 regras ativas | Script somente-leitura comparou as 24 regras contra as 3.161 transações do workspace; achou 11 regras com transações represadas pelo mesmo bug de precedência. Revisado um a um com o administrador: ~R$110 mil recategorizados corretamente (destaque: R$102.415,58 de aportes em fundos presos em "Transferências"), 3 regras com falso positivo corrigidas (Impostos e taxas, Educação, Compras), risco de empate de prioridade entre regras corrigido (Saúde e Assinaturas recorrentes para prioridade 9). 2 pendências abertas. Ver seção 4.6. | Claude |
 | 2026-08-28 | Backup, deploy e configuração familiar | Backup semanal da Hostinger de aproximadamente 2 GB confirmado; decisão explícita de manter backup granular diário adiado. VPS saudável após merge dos PRs #29/#30 e confirmada com regra antes do fallback do provedor. Orçamentos recorrentes, reserva de emergência e meta de lance do consórcio configurados. Ver seções 1.1, 4.4 e 4.7. | Codex |
 | 2026-08-30 | Finais e apelidos de cartão | Migrations 079 e 080, endpoints e UI preparados para preservar os quatro últimos dígitos da transação e permitir apelido opcional por cartão vinculado. A migration 080 é populada pelo histórico e não armazena PAN completo. Ver seções 4.2 e 4.3. | Codex |
+| 2026-08-31 | Filtro por cartão vinculado | Implementado filtro múltiplo por cartões vinculados na lista e exportação de transações. Usa o ID do cartão associado à conta, e não somente o final, para impedir colisões. Ver seção 4.3. | Codex |

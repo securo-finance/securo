@@ -81,6 +81,7 @@ def _merge_id_filters(
 async def list_transactions(
     account_id: Optional[uuid.UUID] = Query(None),
     account_ids: Optional[List[uuid.UUID]] = Query(None),
+    linked_card_ids: Optional[List[uuid.UUID]] = Query(None),
     category_id: Optional[uuid.UUID] = Query(None),
     category_ids: Optional[List[uuid.UUID]] = Query(None),
     payee_id: Optional[uuid.UUID] = Query(None),
@@ -111,6 +112,7 @@ async def list_transactions(
     transactions, total, summary = await transaction_service.get_transactions(
         session, ctx.workspace.id, ctx.user_id,
         account_ids=_merge_id_filters(account_id, account_ids),
+        linked_card_ids=linked_card_ids,
         category_ids=_merge_id_filters(category_id, category_ids),
         payee_id=payee_id, from_date=from_date, to_date=to_date, page=page, limit=limit,
         include_opening_balance=include_opening_balance, search=q, uncategorized=uncategorized,
@@ -160,6 +162,7 @@ async def transaction_calendar(
 async def export_transactions(
     account_id: Optional[uuid.UUID] = Query(None),
     account_ids: Optional[List[uuid.UUID]] = Query(None),
+    linked_card_ids: Optional[List[uuid.UUID]] = Query(None),
     category_id: Optional[uuid.UUID] = Query(None),
     category_ids: Optional[List[uuid.UUID]] = Query(None),
     payee_id: Optional[uuid.UUID] = Query(None),
@@ -189,6 +192,7 @@ async def export_transactions(
         transactions, _, _ = await transaction_service.get_transactions(
             session, ctx.workspace.id, ctx.user_id,
             account_ids=_merge_id_filters(account_id, account_ids),
+            linked_card_ids=linked_card_ids,
             category_ids=_merge_id_filters(category_id, category_ids),
             payee_id=payee_id, from_date=from_date, to_date=to_date,
             search=q, uncategorized=uncategorized, txn_type=type, status=status, skip_pagination=True,
