@@ -9,6 +9,7 @@ x-podman:
 
 x-backend-env: &backend-env
   DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/securo
+  TZ: ${TZ:-America/Sao_Paulo}
   SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-production}
   DEBUG: ${DEBUG:-false}
   FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
@@ -125,6 +126,7 @@ services:
     environment:
       BACKEND_URL: http://backend:8000
       FRONTEND_URL: http://localhost:3000
+      TZ: ${TZ:-America/Sao_Paulo}
     depends_on:
       - backend
     restart: unless-stopped
