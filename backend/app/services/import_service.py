@@ -112,10 +112,15 @@ def _normalize_ofx_encoding(text: str, encoding: str) -> str:
     ``handle_encoding()``.
 
     This function normalises **only the preamble** (everything before the
-    first ``<``) so transaction memo content is never modified.  The
-    replacement value is chosen to match the actual byte encoding of the
-    body: Latin-1 files get ``ENCODING:USASCII`` with ``CHARSET:8859-1``,
-    UTF-8 files get ``ENCODING:UTF-8`` with ``CHARSET:NONE``.
+    first ``<``) so transaction memo content is never modified. Latin-1
+    decoded files get ``ENCODING:USASCII``; the ``CHARSET`` distinguishes
+    the two byte layouts Python's ``latin-1`` codec can represent, so
+    ofxparse decodes the same bytes the same way the source declared:
+    ``CHARSET:1252`` when the file declared WINDOWS-1252/CP1252 (whose
+    0x80-0x9F range holds real typographic characters — em dash, curly
+    quotes — that ISO-8859-1 leaves as undefined control codes), and
+    ``CHARSET:8859-1`` otherwise. UTF-8 files get ``ENCODING:UTF-8`` with
+    ``CHARSET:NONE``.
     """
     preamble, first_tag, body = text.lstrip("\ufeff \t\r\n").partition("<")
     if not first_tag or not preamble.strip():
@@ -137,7 +142,7 @@ def _normalize_ofx_encoding(text: str, encoding: str) -> str:
     # encoding so ofxparse decodes consistently.
     if encoding == "latin-1":
         new_encoding = "USASCII"
-        new_charset = "8859-1"
+        new_charset = "1252" if raw_value in ("CP1252", "WINDOWS1252") else "8859-1"
     else:
         new_encoding = "UTF-8"
         new_charset = "NONE"
