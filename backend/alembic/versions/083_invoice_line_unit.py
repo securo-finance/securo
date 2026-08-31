@@ -8,14 +8,14 @@ by image, a freight company by tonne-kilometre. An enum here would be a
 guess about somebody else's trade, and a migration every time the guess
 turned out to be short.
 
-Revision ID: 082
-Revises: 081
+Revision ID: 083
+Revises: 082
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "082"
-down_revision = "081"
+revision = "083"
+down_revision = "082"
 branch_labels = None
 depends_on = None
 

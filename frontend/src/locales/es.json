@@ -287,7 +287,10 @@
       "allocation_not_found": "Payment link not found.",
       "draft_not_shareable": "Issue the invoice before sharing it.",
       "external_source_required": "An imported document must say where it came from.",
-      "payable_not_shareable": "A bill you received cannot be shared."
+      "payable_not_shareable": "A bill you received cannot be shared.",
+      "discount_exceeds_total": "El descuento es mayor que el importe facturado.",
+      "no_document_filed": "Este documento se emitió en otro lugar. Adjunta el archivo recibido.",
+      "already_imported": "Este documento ya fue importado."
     },
     "comingNext": "Cobra a tus clientes y controla lo que ya se pagó y lo que sigue pendiente. Es lo próximo que se está construyendo.",
     "document": {
@@ -1687,7 +1690,7 @@
       "ph_tin": "TIN",
       "vn_mst": "MST",
       "sg_uen": "UEN",
-	  "az_voen": "VÖEN",
+      "az_voen": "VÖEN",
       "uscc": "USCC"
     },
     "otherCountries": "Otros países",

@@ -10,15 +10,15 @@ invoice gathers paper it did not necessarily write.
     integer column, which could not hold `2026/A/0031` and quietly spent
     a number from a sequence that is supposed to be ours alone.
 
-Revision ID: 079
-Revises: 078
+Revision ID: 080
+Revises: 079
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision = "079"
-down_revision = "078"
+revision = "080"
+down_revision = "079"
 branch_labels = None
 depends_on = None
 

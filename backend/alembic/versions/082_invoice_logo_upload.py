@@ -9,15 +9,15 @@ holds the id the storage key is derived from.
 same series and has never been in a release, so nothing in the world
 holds one.
 
-Revision ID: 081
-Revises: 080
+Revision ID: 082
+Revises: 081
 """
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision = "081"
-down_revision = "080"
+revision = "082"
+down_revision = "081"
 branch_labels = None
 depends_on = None
 
