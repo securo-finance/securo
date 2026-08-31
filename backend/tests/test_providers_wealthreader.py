@@ -164,6 +164,43 @@ async def test_handle_oauth_callback_exchanges_and_maps(wr_settings):
 
 
 @pytest.mark.asyncio
+async def test_handle_oauth_callback_accepts_nonce_when_state_omitted(wr_settings):
+    provider = WealthreaderProvider()
+    url = await provider.get_oauth_url(
+        "https://app.example.com/oauth/callback",
+        "securo-state",
+        {"institution_name": "bbva"},
+    )
+    nonce = _pending_pkce["securo-state"]["nonce"]
+    assert f"nonce={nonce}" in url
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "payload": {
+                    "accounts": [
+                        {
+                            "code": "ES4914651234561234567890",
+                            "name": "Sin UUID",
+                            "currency": "EUR",
+                            "balances": {"available": 10.0},
+                            "transactions": [],
+                        }
+                    ]
+                },
+                "statistics": {"token": "tok", "code": "bbva"},
+            },
+        )
+
+    with _patch_client(provider, handler):
+        conn = await provider.handle_oauth_callback("the-code", state=nonce)
+
+    assert conn.accounts[0].external_id == "ES4914651234561234567890"
+
+
+@pytest.mark.asyncio
 async def test_get_transactions_maps_sign_and_payee(wr_settings):
     provider = WealthreaderProvider()
     fixture = {
@@ -211,6 +248,39 @@ async def test_get_transactions_maps_sign_and_payee(wr_settings):
     assert txs[1].type == "debit"
     assert txs[1].amount == Decimal("27.45")
     assert txs[1].date == date(2024, 2, 2)
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_matches_account_code_and_skips_bad_amounts(wr_settings):
+    provider = WealthreaderProvider()
+    fixture = {
+        "success": True,
+        "payload": {
+            "accounts": [
+                {
+                    "code": "ES00CODEONLY",
+                    "currency": "EUR",
+                    "transactions": [
+                        {"uuid": "ok", "operation_date": "2024-02-01", "amount": -5},
+                        {"uuid": "bad", "operation_date": "2024-02-01", "amount": "n/a"},
+                    ],
+                }
+            ]
+        },
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=fixture)
+
+    with _patch_client(provider, handler), patch(
+        "app.providers.wealthreader.decrypt", return_value="token"
+    ):
+        txs = await provider.get_transactions(
+            {"token_enc": "enc", "code": "bbva"}, "ES00CODEONLY"
+        )
+
+    assert [t.external_id for t in txs] == ["ok"]
+    assert txs[0].amount == Decimal("5")
 
 
 @pytest.mark.asyncio

@@ -101,13 +101,13 @@ def _map_subtype(value: Optional[str]) -> str:
     return SUBTYPE_MAP.get(value.lower(), "checking")
 
 
-def _decimal(value: Any) -> Decimal:
+def _decimal(value: Any) -> Optional[Decimal]:
     if value is None or value == "":
-        return Decimal("0")
+        return None
     try:
         return Decimal(str(value))
     except (InvalidOperation, TypeError):
-        return Decimal("0")
+        return None
 
 
 def _parse_iso_date(value: Optional[str]) -> Optional[date]:
@@ -119,13 +119,14 @@ def _parse_iso_date(value: Optional[str]) -> Optional[date]:
         return None
 
 
-def _account_balance(raw: dict) -> Decimal:
+def _account_balance(raw: dict) -> Optional[Decimal]:
     balances = raw.get("balances") or {}
     if isinstance(balances, dict):
         for key in ("available", "current"):
-            if balances.get(key) is not None:
-                return _decimal(balances[key])
-    return Decimal("0")
+            parsed = _decimal(balances.get(key))
+            if parsed is not None:
+                return parsed
+    return None
 
 
 async def _store_pkce(keys: list[str], payload: dict[str, str]) -> None:
@@ -345,7 +346,13 @@ class WealthreaderProvider(BankProvider):
             )
         entity_code = stats.get("code") or fallback_code
         payload = data.get("payload") or {}
-        accounts = [_account_data(raw) for raw in payload.get("accounts") or [] if isinstance(raw, dict)]
+        accounts = [
+            acc
+            for raw in payload.get("accounts") or []
+            if isinstance(raw, dict)
+            for acc in [_account_data(raw)]
+            if acc is not None
+        ]
         if not accounts:
             raise SessionExpiredError("Wealth Reader returned no accounts")
         encrypted_token = encrypt(token) or token
@@ -394,7 +401,13 @@ class WealthreaderProvider(BankProvider):
     async def get_accounts(self, credentials: dict) -> list[AccountData]:
         data = await self._fetch(credentials)
         payload = data.get("payload") or {}
-        return [_account_data(raw) for raw in payload.get("accounts") or [] if isinstance(raw, dict)]
+        return [
+            acc
+            for raw in payload.get("accounts") or []
+            if isinstance(raw, dict)
+            for acc in [_account_data(raw)]
+            if acc is not None
+        ]
 
     async def get_transactions(
         self,
@@ -408,12 +421,14 @@ class WealthreaderProvider(BankProvider):
         for raw in payload.get("accounts") or []:
             if not isinstance(raw, dict):
                 continue
-            if raw.get("uuid") != account_external_id:
+            if raw.get("uuid") != account_external_id and raw.get("code") != account_external_id:
                 continue
             return [
-                _transaction_data(item, raw.get("currency") or "EUR", payee_source)
+                tx
                 for item in raw.get("transactions") or []
                 if isinstance(item, dict)
+                for tx in [_transaction_data(item, raw.get("currency") or "EUR", payee_source)]
+                if tx is not None
             ]
         return []
 
@@ -433,19 +448,30 @@ class WealthreaderProvider(BankProvider):
         return None
 
 
-def _account_data(raw: dict) -> AccountData:
+def _account_data(raw: dict) -> Optional[AccountData]:
+    balance = _account_balance(raw)
+    if balance is None:
+        logger.warning("Skipping Wealth Reader account without a numeric balance: %s", raw.get("uuid"))
+        return None
+    external_id = raw.get("uuid") or raw.get("code") or ""
+    if not external_id:
+        logger.warning("Skipping Wealth Reader account without uuid or code")
+        return None
     return AccountData(
-        external_id=raw.get("uuid") or raw.get("code") or "",
+        external_id=external_id,
         name=raw.get("name") or "Account",
         type=_map_subtype(raw.get("subtype")),
-        balance=_account_balance(raw),
+        balance=balance,
         currency=raw.get("currency") or "EUR",
         masked_number=mask_last4(raw.get("code")),
     )
 
 
-def _transaction_data(raw: dict, fallback_currency: str, payee_source: str) -> TransactionData:
+def _transaction_data(raw: dict, fallback_currency: str, payee_source: str) -> Optional[TransactionData]:
     amount = _decimal(raw.get("amount"))
+    if amount is None:
+        logger.warning("Skipping Wealth Reader transaction without a numeric amount: %s", raw.get("uuid"))
+        return None
     txn_type = "credit" if amount >= 0 else "debit"
     description = (raw.get("description") or "").strip()
     transfer = raw.get("transfer_details") or {}
