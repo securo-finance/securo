@@ -4,6 +4,7 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { QueryClientProvider } from '@tanstack/react-query'
 
 import { AuthProvider, useAuth } from '@/contexts/auth-context'
+import type { User } from '@/types'
 import { createTestQueryClient } from '@/test/utils'
 
 const auth = vi.hoisted(() => ({
@@ -14,7 +15,15 @@ const auth = vi.hoisted(() => ({
 }))
 vi.mock('@/lib/api', () => ({ auth }))
 
-const USER = { id: '1', email: 'tassio@example.com', is_superuser: false }
+const USER: User = {
+  id: '1',
+  email: 'tassio@example.com',
+  is_active: true,
+  is_superuser: false,
+  is_verified: true,
+  is_2fa_enabled: false,
+  preferences: {},
+}
 
 function wrapper({ children }: { children: ReactNode }) {
   return (

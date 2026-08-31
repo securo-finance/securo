@@ -14,7 +14,8 @@ import {
  * regression, so collapse every kind of space to a plain one.
  */
 function normalize(value: string): string {
-  return value.replace(/[\s  ]/g, ' ')
+  // JS \s already covers U+00A0 and the narrow U+202F that Intl emits.
+  return value.replace(/\s/g, ' ')
 }
 
 describe('resolveDisplayLocale', () => {

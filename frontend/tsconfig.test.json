@@ -1,11 +1,16 @@
 {
+  /* Test files need the app's world, not the Node one: the DOM lib, JSX, the
+     `@/` alias, and the jest-dom matchers that `src/test/setup.ts` registers.
+     They used to be type-checked by tsconfig.node.json, which has none of
+     those — workable while every test covered a pure function with relative
+     imports, but not once they render components. */
   "compilerOptions": {
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
     "target": "ES2022",
     "useDefineForClassFields": true,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
-    "types": ["vite/client"],
+    "types": ["vite/client", "node"],
     "skipLibCheck": true,
 
     /* Bundler mode */
@@ -16,11 +21,12 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* Linting */
+    /* TS 7 removed baseUrl; paths resolve relative to this file. */
     "paths": {
       "@/*": ["./src/*"]
     },
 
+    /* Linting */
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
@@ -28,6 +34,5 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["src"],
-  "exclude": ["**/*.test.ts", "**/*.test.tsx", "src/test/**"]
+  "include": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test/**/*"]
 }
