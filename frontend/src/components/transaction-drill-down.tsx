@@ -328,7 +328,7 @@ export function TransactionDrillDown({
                 </div>
                 <div className="flex items-center justify-between gap-4 border-t border-border pt-2 mt-2">
                   <span className="text-xs font-medium text-muted-foreground">{t('dashboard.drillDownShownTotal')}</span>
-                  <span className="text-sm font-bold tabular-nums text-foreground">{mask(formatCurrency(absTotal, userCurrency, locale))}</span>
+                  <span className="text-sm font-bold tabular-nums text-foreground">{mask(formatCurrency(postedTotal + pendingTotal, userCurrency, locale))}</span>
                 </div>
               </div>
             ) : (
