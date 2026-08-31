@@ -600,7 +600,13 @@ function CreateInvoiceDialog({
             </Label>
             <Select value={payeeId} onValueChange={setPayeeId}>
               <SelectTrigger data-testid="invoice-client-select">
-                <SelectValue placeholder={t('invoices.field.clientPlaceholder')} />
+                <SelectValue
+                  placeholder={t(
+                    direction === 'payable'
+                      ? 'invoices.field.supplierPlaceholder'
+                      : 'invoices.field.clientPlaceholder',
+                  )}
+                />
               </SelectTrigger>
               <SelectContent>
                 {clients.map((client) => (
@@ -644,7 +650,12 @@ function CreateInvoiceDialog({
                 onChange={(e) => setDueDate(e.target.value)}
               />
               <p className="text-[11px] text-muted-foreground">
-                {t('invoices.field.dueDateHint', { days: settings?.default_payment_terms_days ?? 30 })}
+                {t(
+                  direction === 'payable'
+                    ? 'invoices.field.dueDateHintPayable'
+                    : 'invoices.field.dueDateHint',
+                  { days: settings?.default_payment_terms_days ?? 30 },
+                )}
               </p>
             </div>
           </div>
