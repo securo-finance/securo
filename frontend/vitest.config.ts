@@ -4,6 +4,12 @@ import path from 'node:path'
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    // vite.config.ts injects this from the package version at build time.
+    // Without it here, anything importing lib/build-info throws on import,
+    // which takes the whole app shell down with it.
+    __APP_VERSION__: JSON.stringify('0.0.0-test'),
+  },
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, './src'),
