@@ -33,6 +33,9 @@ from app.api.export import router as export_router
 from app.api.fx_rates import router as fx_rates_router
 from app.api.attachments import router as attachments_router
 from app.api.fiscal import router as fiscal_router
+from app.api.invoice_attachments import router as invoice_attachments_router
+from app.api.invoices import router as invoices_router
+from app.api.public_invoices import router as public_invoices_router
 from app.api.payees import router as payees_router
 from app.api.settings import router as settings_router
 from app.api.transactions import router as transactions_router
@@ -185,6 +188,9 @@ app.include_router(export_router)
 app.include_router(attachments_router)
 app.include_router(fiscal_router)
 app.include_router(payees_router)
+app.include_router(invoices_router)
+app.include_router(invoice_attachments_router)
+app.include_router(public_invoices_router)
 app.include_router(settings_router)
 app.include_router(workspaces_router)
 app.include_router(admin_router)

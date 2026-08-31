@@ -30,6 +30,12 @@ dependencies = [
     "yfinance>=1.3.0",
     "pgvector>=0.3.0",
     "pypdf>=5.0.0",
+    # Invoice PDF rendering. ReportLab rather than an HTML-to-PDF engine on
+    # purpose: WeasyPrint and its peers need pango, cairo and gdk-pixbuf in
+    # the image, and this is a self-hosted product where every megabyte and
+    # every native library is paid for by the person running it. ReportLab
+    # ships pure-Python wheels, and Pillow (already present) covers the logo.
+    "reportlab>=4.2.0",
     # Password-protected backups. The stdlib zipfile can only *read* the
     # legacy ZipCrypto scheme and cannot write an encrypted archive at all,
     # so AES-256 zips need this fork of it.
