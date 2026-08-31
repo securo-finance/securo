@@ -14,7 +14,7 @@ import { toast } from 'sonner'
 import type { AccountCard, CreditCardBill, ProjectedTransaction, Transaction } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, EyeClosed, HelpCircle, Paperclip, Pencil, X } from 'lucide-react'
+import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, CreditCard, EyeClosed, HelpCircle, Paperclip, Pencil, X } from 'lucide-react'
 import { MobileTransactionRow } from '@/components/mobile-transaction-row'
 import { CategoryIcon } from '@/components/category-icon'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
@@ -1867,23 +1867,52 @@ function CreditCardSettingsDialog({
             {linkedCards.length === 0 ? (
               <p className="text-sm text-muted-foreground">{t('accounts.noLinkedCards')}</p>
             ) : (
-              linkedCards.map((card) => (
-                <div key={card.id} className="grid grid-cols-[auto_1fr] items-end gap-3">
-                  <p className="pb-2 text-sm font-medium tabular-nums text-muted-foreground">•••• {card.masked_number}</p>
-                  <div className="space-y-2">
-                    <Label className="text-xs">{t('accounts.cardLabel')}</Label>
-                    <Input
-                      value={cardLabels[card.id] ?? ''}
-                      onChange={(event) => setCardLabels((current) => ({
-                        ...current,
-                        [card.id]: event.target.value,
-                      }))}
-                      placeholder={t('accounts.cardLabelPlaceholder')}
-                      maxLength={80}
-                    />
-                  </div>
+              <div className="overflow-hidden rounded-lg border border-border">
+                <div className="hidden grid-cols-[minmax(0,1fr)_minmax(180px,1.2fr)] gap-4 bg-muted/40 px-3 py-2 sm:grid">
+                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {t('transactions.card')}
+                  </span>
+                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {t('accounts.cardLabel')}
+                  </span>
                 </div>
-              ))
+                <div className="divide-y divide-border">
+                  {linkedCards.map((card) => {
+                    const inputId = `linked-card-label-${card.id}`
+                    return (
+                      <div
+                        key={card.id}
+                        className="grid gap-2 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(180px,1.2fr)] sm:items-center sm:gap-4"
+                      >
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                            <CreditCard className="size-4" aria-hidden="true" />
+                          </div>
+                          <span className="truncate text-sm font-medium tabular-nums">
+                            {t('accounts.cardEnding', { number: card.masked_number })}
+                          </span>
+                        </div>
+                        <div>
+                          <Label className="sr-only" htmlFor={inputId}>
+                            {t('accounts.cardLabel')} — {t('accounts.cardEnding', { number: card.masked_number })}
+                          </Label>
+                          <Input
+                            id={inputId}
+                            value={cardLabels[card.id] ?? ''}
+                            onChange={(event) => setCardLabels((current) => ({
+                              ...current,
+                              [card.id]: event.target.value,
+                            }))}
+                            placeholder={t('accounts.cardLabelPlaceholder')}
+                            maxLength={80}
+                            disabled={loading}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             )}
           </div>
           <DialogFooter>
