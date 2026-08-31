@@ -75,7 +75,7 @@ async def test_create_payee_with_notes(session: AsyncSession, test_user, test_wo
 @pytest.mark.asyncio
 async def test_create_payee_duplicate_name_rejected(session: AsyncSession, test_user, test_workspace):
     await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="Starbucks"))
-    with pytest.raises(ValueError, match="already exists"):
+    with pytest.raises(ValueError, match="duplicate_payee_name"):
         await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="starbucks"))  # case-insensitive
 
 
@@ -364,7 +364,7 @@ async def test_update_payee_duplicate_name_rejected(session: AsyncSession, test_
     await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="A"))
     b = await create_payee(session, test_workspace.id, test_user.id, PayeeCreate(name="B"))
 
-    with pytest.raises(ValueError, match="already exists"):
+    with pytest.raises(ValueError, match="duplicate_payee_name"):
         await update_payee(session, b.id, test_workspace.id, PayeeUpdate(name="A"))
 
 

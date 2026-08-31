@@ -191,7 +191,8 @@ async def create_payee(
     if not name:
         raise ValueError("Payee name cannot be empty")
 
-    # Check uniqueness
+    # Raised as a code, like the tax-id errors above: the client turns it into
+    # a translated sentence, which prose in English here could never be.
     existing = await session.execute(
         select(Payee).where(
             Payee.workspace_id == workspace_id,
@@ -199,7 +200,7 @@ async def create_payee(
         )
     )
     if existing.scalar_one_or_none():
-        raise ValueError("A payee with this name already exists")
+        raise ValueError("duplicate_payee_name")
 
     fields = data.model_dump(exclude={"tax_ids"})
     fields["name"] = name
@@ -246,7 +247,7 @@ async def update_payee(
             )
         )
         if existing.scalar_one_or_none():
-            raise ValueError("A payee with this name already exists")
+            raise ValueError("duplicate_payee_name")
 
     for key, value in update_data.items():
         setattr(payee, key, value)
