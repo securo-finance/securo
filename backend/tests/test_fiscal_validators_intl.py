@@ -103,6 +103,7 @@ SHAPE_ONLY = [
     ("ua_edrpou", "00032129", "0003212", "the rule differs by registration range"),
     ("hu_adoszam", "12345678142", "1234567814", "the published rule covers some years"),
     ("id_npwp", "012345678901234", "01234567890123", "15 and 16 both circulate"),
+    ("az_voen", "1234567890", "123456789", "the VÖEN check rule is not published"),
 ]
 
 
