@@ -1086,7 +1086,16 @@ async def handle_oauth_callback(
         transactions_data = await provider.get_transactions(
             connection_data.credentials, acc_data.external_id, None
         )
+        seen_external_ids: set[str] = set()
         for txn_data in transactions_data:
+            # Providers should return each external transaction once, but an
+            # upstream pagination bug can repeat a page. This account was just
+            # created, so batch-local tracking avoids both duplicate inserts
+            # and an unnecessary SELECT for every imported transaction.
+            if txn_data.external_id in seen_external_ids:
+                continue
+            seen_external_ids.add(txn_data.external_id)
+
             # Pending↔posted twin (and the credit-card installment variant).
             # When the same logical operation comes back under a new external
             # id with a different status, fingerprint match prevents the

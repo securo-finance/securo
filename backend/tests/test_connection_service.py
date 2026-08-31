@@ -661,6 +661,41 @@ async def test_handle_oauth_callback_creates_connection(session: AsyncSession, t
 
 
 @pytest.mark.asyncio
+async def test_handle_oauth_callback_deduplicates_initial_transactions(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Repeated provider pages cannot create duplicate external ids on setup."""
+    mock_provider = AsyncMock()
+    mock_provider.handle_oauth_callback = AsyncMock(return_value=ConnectionData(
+        external_id="ext-oauth-duplicate",
+        institution_name="Test Bank",
+        credentials={"token": "abc"},
+        accounts=[AccountData(
+            external_id="acc-duplicate", name="Checking",
+            type="checking", balance=Decimal("1000"), currency="BRL",
+        )],
+    ))
+    duplicate = TransactionData(
+        external_id="tx-duplicate", description="UBER", amount=Decimal("25"),
+        date=date.today(), type="debit", currency="BRL",
+    )
+    mock_provider.get_transactions = AsyncMock(return_value=[duplicate, duplicate])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await handle_oauth_callback(
+            session, test_workspace.id, test_user.id, "auth-code", "enable_banking"
+        )
+
+    rows = (await session.execute(
+        select(Transaction).where(Transaction.external_id == "tx-duplicate")
+    )).scalars().all()
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
 async def test_handle_oauth_callback_with_payee(session: AsyncSession, test_user, test_workspace):
     mock_provider = AsyncMock()
     mock_provider.handle_oauth_callback = AsyncMock(return_value=ConnectionData(

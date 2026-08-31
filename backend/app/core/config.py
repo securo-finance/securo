@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     storage_max_file_size_mb: int = 10
     storage_allowed_extensions: str = "jpg,jpeg,png,webp,gif,heic,pdf"
     storage_max_attachments_per_transaction: int = 10
+    # An invoice gathers more paper than a transaction does: the bill, the
+    # fiscal document, a receipt, the contract behind it, and a correction
+    # of any of them.
+    storage_max_attachments_per_invoice: int = 20
 
     # S3 Storage (for future use)
     storage_s3_bucket: str = ""

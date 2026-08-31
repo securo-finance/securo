@@ -138,12 +138,33 @@ class InstallmentSeriesCreate(BaseModel):
         return self
 
 
+class TransactionInvoiceLink(BaseModel):
+    """The invoice this transaction settles, when it settles one.
+
+    Present only for workspaces with the invoicing module, and only on
+    rows that carry an allocation — a personal workspace never sees this
+    field at all, because the query that fills it is not run there.
+    """
+
+    invoice_id: uuid.UUID
+    number: Optional[int] = None
+    series: Optional[str] = None
+    #: The name an imported invoice arrived with. Without it the badge for
+    #: one has nothing to show, since it carries no number of ours.
+    external_number: Optional[str] = None
+    amount: Decimal
+
+
 class TransactionRead(TransactionBase):
     id: uuid.UUID
     user_id: uuid.UUID
     account_id: Optional[uuid.UUID] = None
     category_id: Optional[uuid.UUID] = None
     category: Optional[CategoryRead] = None
+    #: Every invoice this transaction settles. A list because one
+    #: payment can settle several — a payout net of fees is the
+    #: ordinary case, not the exotic one.
+    invoice_links: list[TransactionInvoiceLink] = []
     currency: str = "USD"
     source: str
     status: str = "posted"
