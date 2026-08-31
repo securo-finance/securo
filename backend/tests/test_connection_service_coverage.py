@@ -19,8 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
 from app.models.asset import Asset
+from app.models.asset_group import AssetGroup
 from app.models.bank_connection import BankConnection
+from app.models.credit_card_bill import CreditCardBill
 from app.models.transaction import Transaction
+from app.models.user import User
+from app.models.workspace import WorkspaceMember
 from app.providers.base import (
     AccountData,
     ConnectionData,
@@ -65,6 +69,107 @@ def _patch_helpers():
         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock),
         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock),
     )
+
+
+@pytest.mark.asyncio
+async def test_shared_workspace_sync_imports_as_connection_owner(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A workspace member may trigger sync without owning imported rows."""
+    requester = User(
+        id=uuid.uuid4(),
+        email="requester@example.com",
+        hashed_password="not-used",
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+        preferences={"currency_display": "BRL"},
+    )
+    session.add(requester)
+    await session.flush()
+
+    conn = await _make_connection(session, test_user.id, "Shared Broker")
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="shared-account",
+            name="Brokerage",
+            type="checking",
+            balance=Decimal("100"),
+            currency="BRL",
+        ),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="shared-tx",
+            description="DIVIDEND",
+            amount=Decimal("10"),
+            date=date.today(),
+            type="credit",
+            currency="BRL",
+        ),
+    ])
+    mock_provider.get_holdings = AsyncMock(return_value=[
+        HoldingData(
+            external_id="shared-holding",
+            name="Shared Fund",
+            currency="BRL",
+            current_value=Decimal("500"),
+        ),
+    ])
+
+    p1, p2, p3 = _patch_helpers()
+    q1, q2, q3 = _patch_helpers()
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         q1, q2, q3:
+        await sync_connection(session, conn.id, test_workspace.id, requester.id)
+
+    account = await session.scalar(select(Account).where(Account.external_id == "shared-account"))
+    transaction = await session.scalar(
+        select(Transaction).where(Transaction.external_id == "shared-tx")
+    )
+    asset = await session.scalar(select(Asset).where(Asset.external_id == "shared-holding"))
+    assert asset is not None
+    wallet = await session.get(AssetGroup, asset.group_id)
+
+    assert account is not None and account.user_id == test_user.id
+    assert transaction is not None and transaction.user_id == test_user.id
+    assert asset.user_id == test_user.id
+    assert wallet is not None and wallet.user_id == test_user.id
+
+    account.user_id = requester.id
+    transaction.user_id = requester.id
+    asset.user_id = requester.id
+    wallet.user_id = requester.id
+    bill = CreditCardBill(
+        id=uuid.uuid4(),
+        user_id=requester.id,
+        workspace_id=test_workspace.id,
+        account_id=account.id,
+        external_id="legacy-bill",
+        due_date=date.today(),
+        total_amount=Decimal("100"),
+        currency="BRL",
+    )
+    session.add(bill)
+    await session.commit()
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         p1, p2, p3:
+        await sync_connection(session, conn.id, test_workspace.id, requester.id)
+
+    await session.refresh(account)
+    await session.refresh(transaction)
+    await session.refresh(asset)
+    await session.refresh(wallet)
+    await session.refresh(bill)
+    assert account.user_id == test_user.id
+    assert transaction.user_id == test_user.id
+    assert asset.user_id == test_user.id
+    assert wallet.user_id == test_user.id
+    assert bill.user_id == test_user.id
+    assert bill.workspace_id == test_workspace.id
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +263,163 @@ async def test_sync_holdings_creates_asset(session: AsyncSession, test_user):
     assert asset.name == "VWCE ETF"
     assert asset.type == "investment"
     assert asset.connection_id == conn.id
+    assert asset.workspace_id == conn.workspace_id
+
+
+@pytest.mark.asyncio
+async def test_sync_holdings_matches_asset_across_workspace_members(
+    session: AsyncSession, test_user, test_workspace
+):
+    other_member = User(
+        id=uuid.uuid4(),
+        email="other-member@example.com",
+        hashed_password="not-used",
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+    )
+    session.add(other_member)
+    await session.flush()
+    session.add(
+        WorkspaceMember(
+            id=uuid.uuid4(),
+            workspace_id=test_workspace.id,
+            user_id=other_member.id,
+            role="editor",
+        )
+    )
+    conn = await _make_connection(session, test_user.id, "Shared Broker")
+    existing = Asset(
+        id=uuid.uuid4(),
+        user_id=other_member.id,
+        workspace_id=test_workspace.id,
+        source="test",
+        external_id="shared-holding-id",
+        name="Existing holding",
+        type="investment",
+        currency="USD",
+        valuation_method="manual",
+    )
+    existing_group = AssetGroup(
+        id=uuid.uuid4(),
+        user_id=other_member.id,
+        workspace_id=test_workspace.id,
+        connection_id=None,
+        source="test",
+        external_id=conn.external_id,
+        name="Legacy wallet",
+        position=0,
+    )
+    session.add(existing_group)
+    await session.flush()
+    existing.group_id = existing_group.id
+    session.add(existing)
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.get_holdings = AsyncMock(
+        return_value=[
+            HoldingData(
+                external_id="shared-holding-id",
+                name="Updated holding",
+                currency="USD",
+                current_value=Decimal("500"),
+            )
+        ]
+    )
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        await _sync_holdings(session, test_user.id, conn, {"token": "t"})
+    await session.commit()
+
+    matching = (
+        await session.execute(
+            select(Asset).where(
+                Asset.workspace_id == test_workspace.id,
+                Asset.source == "test",
+                Asset.external_id == "shared-holding-id",
+            )
+        )
+    ).scalars().all()
+    assert [asset.id for asset in matching] == [existing.id]
+    assert matching[0].connection_id == conn.id
+    assert matching[0].name == "Updated holding"
+    assert matching[0].user_id == test_user.id
+    await session.refresh(existing_group)
+    assert existing_group.user_id == test_user.id
+
+
+@pytest.mark.asyncio
+async def test_sync_holdings_does_not_adopt_another_connections_wallet(
+    session: AsyncSession, test_user, test_workspace
+):
+    other_member = User(
+        id=uuid.uuid4(),
+        email="other-connection-owner@example.com",
+        hashed_password="not-used",
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+    )
+    session.add(other_member)
+    await session.flush()
+    session.add(
+        WorkspaceMember(
+            id=uuid.uuid4(),
+            workspace_id=test_workspace.id,
+            user_id=other_member.id,
+            role="editor",
+        )
+    )
+    current = await _make_connection(session, test_user.id, "Current Broker")
+    other = await _make_connection(session, other_member.id, "Other Broker")
+    other_group = AssetGroup(
+        id=uuid.uuid4(),
+        user_id=other_member.id,
+        workspace_id=test_workspace.id,
+        connection_id=other.id,
+        source="test",
+        external_id=other.external_id,
+        name="Other connection wallet",
+        position=0,
+    )
+    existing = Asset(
+        id=uuid.uuid4(),
+        user_id=other_member.id,
+        workspace_id=test_workspace.id,
+        connection_id=other.id,
+        group_id=other_group.id,
+        source="test",
+        external_id="shared-provider-holding",
+        name="Existing holding",
+        type="investment",
+        currency="USD",
+        valuation_method="manual",
+    )
+    session.add_all([other_group, existing])
+    await session.commit()
+
+    mock_provider = AsyncMock()
+    mock_provider.get_holdings = AsyncMock(
+        return_value=[
+            HoldingData(
+                external_id="shared-provider-holding",
+                name="Updated holding",
+                currency="USD",
+                current_value=Decimal("500"),
+            )
+        ]
+    )
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider):
+        await _sync_holdings(session, test_user.id, current, {"token": "t"})
+    await session.commit()
+
+    await session.refresh(other_group)
+    await session.refresh(existing)
+    assert other_group.user_id == other_member.id
+    assert other_group.connection_id == other.id
+    assert existing.group_id == other_group.id
 
 
 @pytest.mark.asyncio

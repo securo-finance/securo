@@ -488,6 +488,35 @@ class TestDashboardSummary:
 
 class TestSpendingByCategory:
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode", ["cash", "accrual"])
+    async def test_pending_credit_card_spend_is_available_in_projected_total(
+        self, session, test_user, test_workspace, cc_account, test_categories, mode
+    ):
+        """The dashboard category widget can include pending card spend.
+
+        ``total`` remains the settled-only value used by the actual/forecast
+        split, while ``projected_total`` is the all-in value that must match
+        the dashboard drill-down.
+        """
+        food = test_categories[0]
+        today = date.today()
+        pending = await _make_tx(
+            session, test_user.id, cc_account.id, today,
+            Decimal("100"), effective_date=today, category_id=food.id,
+        )
+        pending.status = "pending"
+        await session.commit()
+        await _set_mode(session, mode)
+
+        spending = await dashboard_service.get_spending_by_category(
+            session, test_workspace.id, test_user.id, month=today.replace(day=1)
+        )
+        food_row = next(row for row in spending if row.category_id == str(food.id))
+
+        assert food_row.total == 0.0
+        assert food_row.projected_total == 100.0
+
+    @pytest.mark.asyncio
     async def test_category_breakdown_follows_mode(
         self, session, test_user, test_workspace, cc_account, test_categories
     ):

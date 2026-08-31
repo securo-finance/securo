@@ -1,4 +1,4 @@
-.venv/
+.venv
 .env
 secrets/
 .worktrees/

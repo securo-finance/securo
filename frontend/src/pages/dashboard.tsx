@@ -424,8 +424,13 @@ export default function DashboardPage() {
       .filter(s => s.category_id !== null)
       .map(s => {
         const budget = s.category_id ? budgetMap.get(s.category_id) : undefined
-        const actual = s.total
-        const prevAmount = budget ? Number(budget.prev_month_amount) : 0
+        // The category widget must show the same spend set as its drill-down:
+        // settled transactions plus pending/future rows and recurring
+        // projections. The API keeps `total` as settled-only for callers that
+        // need the actual/forecast split, while `projected_total` is the
+        // user-visible all-in amount.
+        const actual = s.projected_total
+        const prevAmount = budget ? Number(budget.projected_prev_month_amount) : 0
         let momPct: number | null = null
         if (prevAmount > 0) {
           momPct = ((actual - prevAmount) / prevAmount) * 100
