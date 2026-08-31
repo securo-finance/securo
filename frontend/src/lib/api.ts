@@ -65,6 +65,11 @@ import type {
   TransactionEditPayload,
   InstallmentSeriesInput,
   TransactionApplyScope,
+  Debt,
+  DebtPlan,
+  DebtInstallment,
+  DebtStrategySetting,
+  DebtPayoffProjection,
 } from '@/types'
 
 const api = axios.create({
@@ -1050,6 +1055,57 @@ export const goals = {
   },
   summary: async (limit = 3): Promise<GoalSummary[]> => {
     const { data } = await api.get('/goals/summary', { params: { limit } })
+    return data
+  },
+}
+
+export const debts = {
+  list: async (): Promise<Debt[]> => {
+    const { data } = await api.get('/debts')
+    return data
+  },
+  get: async (id: string): Promise<Debt> => {
+    const { data } = await api.get(`/debts/${id}`)
+    return data
+  },
+  create: async (debt: Partial<Debt>): Promise<Debt> => {
+    const { data } = await api.post('/debts', debt)
+    return data
+  },
+  update: async (id: string, debt: Partial<Debt>): Promise<Debt> => {
+    const { data } = await api.patch(`/debts/${id}`, debt)
+    return data
+  },
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/debts/${id}`)
+  },
+  createPlan: async (debtId: string, plan: Partial<DebtPlan> & { activate?: boolean }): Promise<DebtPlan> => {
+    const { data } = await api.post(`/debts/${debtId}/plans`, plan)
+    return data
+  },
+  listPlanInstallments: async (debtId: string, planId: string): Promise<DebtInstallment[]> => {
+    const { data } = await api.get(`/debts/${debtId}/plans/${planId}/installments`)
+    return data
+  },
+  payInstallment: async (
+    installmentId: string,
+    payload: { paid_date: string; paid_amount?: number; transaction_id?: string },
+  ): Promise<DebtInstallment> => {
+    const { data } = await api.post(`/debts/installments/${installmentId}/pay`, payload)
+    return data
+  },
+  payoffProjection: async (): Promise<DebtPayoffProjection> => {
+    const { data } = await api.get('/debts/payoff-projection')
+    return data
+  },
+  getStrategySetting: async (): Promise<DebtStrategySetting> => {
+    const { data } = await api.get('/debts/strategy-setting')
+    return data
+  },
+  updateStrategySetting: async (
+    payload: Partial<Pick<DebtStrategySetting, 'method' | 'extra_monthly_amount'>>,
+  ): Promise<DebtStrategySetting> => {
+    const { data } = await api.patch('/debts/strategy-setting', payload)
     return data
   },
 }

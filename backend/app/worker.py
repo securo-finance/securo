@@ -53,6 +53,10 @@ celery_app.conf.beat_schedule = {
         # stamped with the 1:1 fallback (or left NULL) once real rates land.
         "schedule": 60 * 60 * 12,
     },
+    "settle-payroll-debt-installments-daily": {
+        "task": "app.tasks.debt_tasks.settle_payroll_installments",
+        "schedule": 60 * 60,  # every hour; idempotent (only touches pending, due installments)
+    },
 }
 
 celery_app.conf.include = [
@@ -60,6 +64,7 @@ celery_app.conf.include = [
     "app.tasks.recurring_tasks",
     "app.tasks.asset_tasks",
     "app.tasks.fx_rate_tasks",
+    "app.tasks.debt_tasks",
     # Optional agents module — registering the import is harmless when
     # AGENTS_ENABLED=false (the task just won't be dispatched).
     "app.agents.tasks.ingest",

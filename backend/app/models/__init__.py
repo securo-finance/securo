@@ -25,6 +25,7 @@ from app.models.group import Group, GroupMember
 from app.models.transaction_split import TransactionSplit
 from app.models.group_settlement import GroupSettlement
 from app.models.collection import Collection, collection_accounts, collection_asset_groups
+from app.models.debt import Debt, DebtPlan, DebtInstallment, DebtStrategySetting
 
 # Side-effect import: register the before_insert listener that auto-stamps
 # workspace_id from user_id on financial entities. Imported last so all
@@ -65,4 +66,8 @@ __all__ = [
     "Collection",
     "collection_accounts",
     "collection_asset_groups",
+    "Debt",
+    "DebtPlan",
+    "DebtInstallment",
+    "DebtStrategySetting",
 ]

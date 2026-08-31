@@ -25,6 +25,7 @@ const PERSONAL_MODULES: ModuleId[] = [
   'payees',
   'split_groups',
   'rules',
+  'debts',
 ]
 
 const linkKeys = (items: NavItem[]) =>
@@ -56,6 +57,7 @@ describe('visibleNavItems', () => {
       'transactions',
       'accounts',
       'import',
+      'debts',
       'reports',
       'assets',
       'budgets',

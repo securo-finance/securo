@@ -1007,3 +1007,82 @@ export interface ReportResponse {
   composition: ReportCompositionItem[]
   category_trend: CategoryTrendItem[]
 }
+
+export type DebtKind = 'loan' | 'payroll_loan' | 'credit_card_overdue' | 'other'
+export type DebtStatus = 'active' | 'negotiating' | 'paid_off' | 'defaulted'
+export type DebtPlanKind = 'original_contract' | 'renegotiated' | 'simulation'
+export type DebtPlanStatus = 'proposed' | 'active' | 'superseded' | 'rejected'
+export type DebtCollectionMode = 'payroll_deduction' | 'manual'
+export type DebtFrequency = 'weekly' | 'monthly' | 'quarterly' | 'yearly'
+export type DebtInstallmentStatus = 'pending' | 'paid' | 'late' | 'skipped'
+export type DebtStrategyMethod = 'snowball' | 'avalanche'
+
+export interface Debt {
+  id: string
+  workspace_id: string
+  kind: DebtKind
+  creditor_name: string
+  contract_reference: string | null
+  notes: string | null
+  original_principal: number
+  current_balance: number
+  currency: string
+  related_account_id: string | null
+  status: DebtStatus
+  opened_date: string
+  created_at: string
+  plans: DebtPlan[]
+}
+
+export interface DebtPlan {
+  id: string
+  debt_id: string
+  workspace_id: string
+  kind: DebtPlanKind
+  status: DebtPlanStatus
+  collection_mode: DebtCollectionMode
+  interest_rate: number
+  installment_amount: number
+  num_installments: number
+  first_due_date: string
+  frequency: DebtFrequency
+  notes: string | null
+  created_at: string
+  installments: DebtInstallment[]
+}
+
+export interface DebtInstallment {
+  id: string
+  plan_id: string
+  installment_number: number
+  due_date: string
+  amount: number
+  principal_portion: number
+  interest_portion: number
+  status: DebtInstallmentStatus
+  paid_date: string | null
+  paid_amount: number | null
+  transaction_id: string | null
+}
+
+export interface DebtStrategySetting {
+  id: string
+  workspace_id: string
+  method: DebtStrategyMethod
+  extra_monthly_amount: number
+}
+
+export interface DebtPayoffProjectionEntry {
+  debt_id: string
+  creditor_name: string
+  months_to_payoff: number | null
+  payoff_date: string | null
+  total_interest_remaining: number
+}
+
+export interface DebtPayoffProjection {
+  method: DebtStrategyMethod
+  extra_monthly_amount: number
+  order: DebtPayoffProjectionEntry[]
+  overall_payoff_date: string | null
+}

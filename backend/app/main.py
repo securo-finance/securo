@@ -29,6 +29,7 @@ from app.api.reports import router as reports_router
 from app.api.search import router as search_router
 from app.api.setup import router as setup_router
 from app.api.currencies import router as currencies_router
+from app.api.debts import router as debts_router
 from app.api.export import router as export_router
 from app.api.fx_rates import router as fx_rates_router
 from app.api.attachments import router as attachments_router
@@ -175,6 +176,7 @@ app.include_router(groups_router)
 app.include_router(assets_router)
 app.include_router(asset_groups_router)
 app.include_router(collections_router)
+app.include_router(debts_router)
 app.include_router(dashboard_router)
 app.include_router(reports_router)
 app.include_router(search_router)
