@@ -452,8 +452,8 @@ export const accounts = {
     const { data } = await api.get(`/accounts/${id}/bills`, { params: { limit } })
     return data
   },
-  linkedCards: async (id: string): Promise<AccountCard[]> => {
-    const { data } = await api.get(`/accounts/${id}/linked-cards`)
+  linkedCards: async (id?: string): Promise<AccountCard[]> => {
+    const { data } = await api.get(id ? `/accounts/${id}/linked-cards` : '/accounts/linked-cards')
     return data
   },
   updateLinkedCards: async (
@@ -478,6 +478,7 @@ export const transactions = {
   list: async (params?: {
     account_id?: string
     account_ids?: string[]
+    linked_card_ids?: string[]
     category_id?: string
     category_ids?: string[]
     payee_id?: string
@@ -677,6 +678,7 @@ export const transactions = {
   export: async (params?: {
     account_id?: string
     account_ids?: string[]
+    linked_card_ids?: string[]
     category_id?: string
     category_ids?: string[]
     payee_id?: string

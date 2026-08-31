@@ -44,6 +44,15 @@ async def list_accounts(
     return accounts
 
 
+@router.get("/linked-cards", response_model=list[AccountCardRead])
+async def list_linked_cards(
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """List provider-discovered card endings for the current workspace."""
+    return await account_service.get_workspace_linked_cards(session, ctx.workspace.id)
+
+
 @router.get("/{account_id}/summary", response_model=AccountSummary)
 async def get_account_summary(
     account_id: uuid.UUID,
