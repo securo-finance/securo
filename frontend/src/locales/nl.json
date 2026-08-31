@@ -617,7 +617,7 @@
     "linkedCards": "Gekoppelde kaarten",
     "linkedCardsHint": "Gebruik een label om ze in transacties te onderscheiden.",
     "noLinkedCards": "Er is nog geen kaarteinde herkend.",
-    "cardEnding": "Einde {{number}}",
+    "cardEnding": "Eindigend op {{number}}",
     "cardLabel": "Label",
     "cardLabelPlaceholder": "Label toevoegen",
     "created": "Account aangemaakt",
