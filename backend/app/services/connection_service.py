@@ -957,7 +957,7 @@ async def handle_oauth_callback(
         raise ValueError("OAuth callback missing provider")
 
     provider = get_provider(provider_name)
-    connection_data = await provider.handle_oauth_callback(code)
+    connection_data = await provider.handle_oauth_callback(code, state=state)
 
     if existing_reconnect:
         existing_reconnect.external_id = connection_data.external_id

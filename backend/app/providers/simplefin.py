@@ -253,7 +253,7 @@ class SimpleFinProvider(BankProvider):
     def get_oauth_url(self, *args, **kwargs):  # type: ignore[override]
         raise NotImplementedError("SimpleFIN uses paste-a-token flow, not OAuth redirect")
 
-    async def handle_oauth_callback(self, code: str) -> ConnectionData:
+    async def handle_oauth_callback(self, code: str, state: Optional[str] = None) -> ConnectionData:
         """Claim a SimpleFIN Access URL from a Setup Token.
 
         The endpoint name is a leftover from the OAuth flow but the contract
