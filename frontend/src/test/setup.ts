@@ -65,6 +65,40 @@ Element.prototype.getAnimations = vi.fn(() => [])
 
 window.scrollTo = vi.fn()
 
+// pdfjs-dist touches these at module scope, so importing the attachment
+// viewer throws before any component renders. That import is transitive from
+// the transactions, dashboard and account-detail pages, which would put three
+// of the busiest screens out of reach of any test. The stubs only need to
+// exist for the module to evaluate; nothing here renders a real PDF.
+class MockDOMMatrix {
+  a = 1
+  b = 0
+  c = 0
+  d = 1
+  e = 0
+  f = 0
+  multiply() {
+    return this
+  }
+  translate() {
+    return this
+  }
+  scale() {
+    return this
+  }
+  inverse() {
+    return this
+  }
+}
+
+globalThis.DOMMatrix ??= MockDOMMatrix as unknown as typeof DOMMatrix
+globalThis.Path2D ??= class {} as unknown as typeof Path2D
+globalThis.ImageData ??= class {
+  data = new Uint8ClampedArray()
+  width = 0
+  height = 0
+} as unknown as typeof ImageData
+
 // Recharts measures text through a canvas context. jsdom has no canvas backend
 // and logs a noisy "not implemented" error for every chart that renders.
 HTMLCanvasElement.prototype.getContext = vi.fn(
