@@ -829,6 +829,7 @@ async def get_portfolio_trend(
             "name": asset.name,
             "type": asset.type,
             "group_id": str(asset.group_id) if asset.group_id else None,
+            "investment_category": asset.investment_category,
         })
         asset_currency[aid] = asset.currency
 

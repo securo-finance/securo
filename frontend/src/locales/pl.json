@@ -1356,6 +1356,7 @@
     "syncedFromHint": "Pierwotnie zsynchronizowane z {{source}} — możesz dowolnie zmieniać nazwę, dopasowanie przy synchronizacji korzysta z identyfikatora połączenia.",
     "chartByWallet": "Wg portfela",
     "chartByAsset": "Wg aktywa",
+    "chartByCategory": "Wg typu",
     "chartGroupMode": "Grupowanie wykresu",
     "chartDrawMode": "Sposób rysowania wykresu",
     "chartStacked": "Skumulowany",
@@ -1364,7 +1365,20 @@
     "total": "Łącznie",
     "confirmRegenerateTitle": "Przeliczyć wartości ponownie?",
     "confirmRegenerate": "Zmieniono parametry wzrostu. Wszystkie automatycznie wygenerowane wartości zostaną usunięte i przeliczone ponownie. Wartości ręczne zostaną zachowane.",
-    "regenerate": "Przelicz ponownie"
+    "regenerate": "Przelicz ponownie",
+    "investmentCategory": {
+      "fixed_income": "Instrumenty dłużne",
+      "fixed_income_intl": "Instrumenty dłużne (zagraniczne)",
+      "equity": "Akcje",
+      "equity_intl": "Akcje (zagraniczne)",
+      "real_estate_fund": "Fundusze nieruchomości",
+      "multimarket": "Fundusze wielostrategiczne",
+      "funds": "Fundusze",
+      "funds_intl": "Fundusze zagraniczne",
+      "structured_note": "Produkty strukturyzowane",
+      "pension": "Emerytura",
+      "other": "Inne"
+    }
   },
   "reports": {
     "section": "Analityka",

@@ -1284,6 +1284,7 @@
     "syncedFromHint": "Початково синхронізовано з {{source}} — ви можете вільно перейменовувати, зіставлення використовує ID підключення.",
     "chartByWallet": "За гаманцями",
     "chartByAsset": "За активами",
+    "chartByCategory": "За типом",
     "chartGroupMode": "Групування графіка",
     "chartDrawMode": "Відображення графіка",
     "chartStacked": "Накопичено",
@@ -1292,7 +1293,20 @@
     "total": "Усього",
     "confirmRegenerateTitle": "Перегенерувати значення?",
     "confirmRegenerate": "Параметри зростання змінено. Усі автоматично згенеровані значення буде видалено та перераховано. Ручні значення збережуться.",
-    "regenerate": "Перегенерувати"
+    "regenerate": "Перегенерувати",
+    "investmentCategory": {
+      "fixed_income": "Облігації",
+      "fixed_income_intl": "Облігації (закордонні)",
+      "equity": "Акції",
+      "equity_intl": "Акції (закордонні)",
+      "real_estate_fund": "Фонди нерухомості",
+      "multimarket": "Змішані фонди",
+      "funds": "Фонди",
+      "funds_intl": "Закордонні фонди",
+      "structured_note": "Структуровані продукти",
+      "pension": "Пенсійні накопичення",
+      "other": "Інше"
+    }
   },
   "reports": {
     "section": "Аналітика",

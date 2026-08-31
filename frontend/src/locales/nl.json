@@ -1276,6 +1276,7 @@
     "syncedFromHint": "Oorspronkelijk gesynchroniseerd vanuit {{source}} - u kunt de naam vrijelijk wijzigen, synchronisatiematching gebruikt de verbindings-ID.",
     "chartByWallet": "Via portemonnee",
     "chartByAsset": "Op activa",
+    "chartByCategory": "Op type",
     "chartGroupMode": "Grafiekgroepering",
     "chartDrawMode": "Grafiek tekenen",
     "chartStacked": "Gestapeld",
@@ -1284,7 +1285,20 @@
     "total": "Totaal",
     "confirmRegenerateTitle": "Waarden opnieuw genereren?",
     "confirmRegenerate": "Groeiparameters veranderd. Alle automatisch gegenereerde waarden worden verwijderd en opnieuw berekend. Handmatige waarden blijven behouden.",
-    "regenerate": "Regenereer"
+    "regenerate": "Regenereer",
+    "investmentCategory": {
+      "fixed_income": "Vastrentende waarden",
+      "fixed_income_intl": "Vastrentende waarden (internationaal)",
+      "equity": "Aandelen",
+      "equity_intl": "Aandelen (internationaal)",
+      "real_estate_fund": "Vastgoedfondsen",
+      "multimarket": "Multi-strategiefondsen",
+      "funds": "Fondsen",
+      "funds_intl": "Fondsen (internationaal)",
+      "structured_note": "Gestructureerde producten",
+      "pension": "Pensioen",
+      "other": "Overig"
+    }
   },
   "reports": {
     "section": "Analyses",

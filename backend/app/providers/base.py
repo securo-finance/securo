@@ -170,6 +170,11 @@ class HoldingData:
     maturity_date: Optional[date] = None
     is_withdrawn: bool = False  # provider signaled the position was sold/transferred
     metadata: Optional[dict] = None
+    # Coarse asset-class bucket (e.g. "fixed_income", "equity_intl", "pension")
+    # for the portfolio chart's "By Type" grouping. None for providers that
+    # don't report a type/subtype we can map — those assets just render as
+    # their own line, same as an ungrouped wallet asset today.
+    investment_category: Optional[str] = None
     # Owning-account hint (SimpleFIN — issue #345): holdings are reported per
     # account, so each investment account gets its own wallet ("401(k)" apart
     # from "Rollover IRA"). None = the connection-default wallet, for

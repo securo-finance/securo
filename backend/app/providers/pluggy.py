@@ -249,6 +249,39 @@ _HOLDING_PROMOTED_KEYS = {
 # would produce badly-wrong evolution charts, so we skip it for those.
 _ISSUE_DATE_IS_PURCHASE_DATE = {"FIXED_INCOME", "COE"}
 
+# (type, subtype) -> category slug, keyed on Pluggy's investment taxonomy
+# (https://docs.pluggy.ai/reference/investments-list). A `None` subtype entry
+# is the fallback for any subtype not listed explicitly under that type.
+_CATEGORY_BY_TYPE_SUBTYPE = {
+    ("FIXED_INCOME", None): "fixed_income",
+    ("EQUITY", "REAL_ESTATE_FUND"): "real_estate_fund",
+    ("EQUITY", None): "equity",
+    ("ETF", None): "equity",
+    ("MUTUAL_FUND", "MULTIMARKET_FUND"): "multimarket",
+    ("MUTUAL_FUND", None): "funds",
+    ("COE", None): "structured_note",
+    ("SECURITY", "RETIREMENT"): "pension",
+    ("OTHER", None): "other",
+}
+# Categories split into a "_intl" variant when the holding isn't domestic.
+# Pluggy has no explicit country/market field, so foreign currency or the
+# OFFSHORE_FUND subtype are the only signals available.
+_GEO_SENSITIVE_CATEGORIES = {"fixed_income", "equity", "funds"}
+
+
+def _categorize_investment(
+    pluggy_type: str, pluggy_subtype: Optional[str], currency: str
+) -> Optional[str]:
+    category = _CATEGORY_BY_TYPE_SUBTYPE.get(
+        (pluggy_type, pluggy_subtype)
+    ) or _CATEGORY_BY_TYPE_SUBTYPE.get((pluggy_type, None))
+    if category is None:
+        return None
+    is_offshore = currency != "BRL" or pluggy_subtype == "OFFSHORE_FUND"
+    if is_offshore and category in _GEO_SENSITIVE_CATEGORIES:
+        return f"{category}_intl"
+    return category
+
 
 def _build_holding_data(inv: dict) -> HoldingData:
     """Map a Pluggy investment payload to HoldingData.
@@ -261,6 +294,8 @@ def _build_holding_data(inv: dict) -> HoldingData:
     current_value = _decimal_or_none(inv.get("balance")) or Decimal("0")
     pluggy_status = (inv.get("status") or "").upper()
     pluggy_type = (inv.get("type") or "").upper()
+    pluggy_subtype = (inv.get("subtype") or "").upper() or None
+    currency = inv.get("currencyCode") or "BRL"
 
     purchase_date: Optional[date] = None
     if pluggy_type in _ISSUE_DATE_IS_PURCHASE_DATE:
@@ -271,7 +306,7 @@ def _build_holding_data(inv: dict) -> HoldingData:
     return HoldingData(
         external_id=str(inv["id"]),
         name=inv.get("name") or "Investment",
-        currency=inv.get("currencyCode") or "BRL",
+        currency=currency,
         current_value=current_value,
         quantity=_decimal_or_none(inv.get("quantity")),
         unit_price=_decimal_or_none(inv.get("value")),
@@ -281,6 +316,7 @@ def _build_holding_data(inv: dict) -> HoldingData:
         maturity_date=_date_or_none(inv.get("dueDate")),
         is_withdrawn=pluggy_status == "TOTAL_WITHDRAWAL",
         metadata=metadata or None,
+        investment_category=_categorize_investment(pluggy_type, pluggy_subtype, currency),
     )
 
 

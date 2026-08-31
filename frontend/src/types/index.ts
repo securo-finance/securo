@@ -767,6 +767,7 @@ export interface Asset {
   isin: string | null
   maturity_date: string | null
   group_id: string | null
+  investment_category: string | null
   ticker: string | null
   ticker_exchange: string | null
   last_price: number | null

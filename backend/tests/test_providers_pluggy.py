@@ -510,6 +510,59 @@ def test_build_account_data_without_subtype_still_maps_bank_to_checking():
     assert out.type == "checking"
 
 
+@pytest.mark.parametrize(
+    "pluggy_type,pluggy_subtype,currency,expected",
+    [
+        ("FIXED_INCOME", "CDB", "BRL", "fixed_income"),
+        ("FIXED_INCOME", "TREASURY", "USD", "fixed_income_intl"),
+        ("EQUITY", "REAL_ESTATE_FUND", "BRL", "real_estate_fund"),
+        ("EQUITY", "STOCK", "BRL", "equity"),
+        ("EQUITY", "STOCK", "USD", "equity_intl"),
+        ("ETF", "ETF", "BRL", "equity"),
+        ("MUTUAL_FUND", "MULTIMARKET_FUND", "BRL", "multimarket"),
+        # OFFSHORE_FUND flags international even when priced in BRL.
+        ("MUTUAL_FUND", "OFFSHORE_FUND", "BRL", "funds_intl"),
+        ("MUTUAL_FUND", "STOCK_FUND", "USD", "funds_intl"),
+        ("MUTUAL_FUND", "STOCK_FUND", "BRL", "funds"),
+        ("COE", "STRUCTURED_NOTE", "BRL", "structured_note"),
+        ("SECURITY", "RETIREMENT", "BRL", "pension"),
+        ("OTHER", None, "BRL", "other"),
+        # Unmapped (type, subtype) pairs fall back to the bare-type entry;
+        # a wholly unknown type has none and returns None.
+        ("FIXED_INCOME", "SOMETHING_NEW", "BRL", "fixed_income"),
+        ("SOMETHING_NEW", None, "BRL", None),
+    ],
+)
+def test_categorize_investment_covers_pluggy_taxonomy(
+    pluggy_type, pluggy_subtype, currency, expected
+):
+    from app.providers.pluggy import _categorize_investment
+
+    assert _categorize_investment(pluggy_type, pluggy_subtype, currency) == expected
+
+
+def test_build_holding_data_sets_investment_category():
+    from app.providers.pluggy import _build_holding_data
+
+    inv = {
+        "id": "hold-1",
+        "name": "Tesouro IPCA+",
+        "type": "FIXED_INCOME",
+        "subtype": "TREASURY",
+        "balance": 1000,
+        "currencyCode": "BRL",
+    }
+
+    out = _build_holding_data(inv)
+
+    assert out.investment_category == "fixed_income"
+    # The promoted `investment_category` doesn't duplicate type/subtype out
+    # of metadata — those stay available for anyone reading the raw blob.
+    assert out.metadata is not None
+    assert out.metadata["type"] == "FIXED_INCOME"
+    assert out.metadata["subtype"] == "TREASURY"
+
+
 def _bank_account(external_id: str, compe: str) -> dict:
     return {
         "id": external_id,

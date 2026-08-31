@@ -1276,6 +1276,7 @@
     "syncedFromHint": "Sincronizada originalmente de {{source}} — pode renomear livremente, a sincronização não usa o nome.",
     "chartByWallet": "Por Carteira",
     "chartByAsset": "Por Ativo",
+    "chartByCategory": "Por Tipo",
     "chartGroupMode": "Agrupamento do gráfico",
     "chartDrawMode": "Desenho do gráfico",
     "chartStacked": "Empilhado",
@@ -1284,7 +1285,20 @@
     "total": "Total",
     "confirmRegenerateTitle": "Regenerar valores?",
     "confirmRegenerate": "Os parâmetros de crescimento foram alterados. Todos os valores gerados automaticamente serão excluídos e recalculados. Valores manuais serão mantidos.",
-    "regenerate": "Regenerar"
+    "regenerate": "Regenerar",
+    "investmentCategory": {
+      "fixed_income": "Renda Fixa",
+      "fixed_income_intl": "Renda Fixa Internacional",
+      "equity": "Renda Variável",
+      "equity_intl": "Renda Variável Internacional",
+      "real_estate_fund": "Fundos Imobiliários",
+      "multimarket": "Multimercado",
+      "funds": "Fundos",
+      "funds_intl": "Fundos Internacionais",
+      "structured_note": "Capital Protegido",
+      "pension": "Previdência Privada",
+      "other": "Outros"
+    }
   },
   "reports": {
     "section": "Análises",

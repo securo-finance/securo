@@ -52,6 +52,11 @@ class Asset(Base):
     isin: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     maturity_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     external_metadata: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    # Coarse asset-class bucket derived from the provider's type/subtype
+    # (e.g. "fixed_income", "equity_intl", "pension"). Sync-owned like `name`
+    # — always overwritten on resync. NULL for manual assets and providers
+    # that don't report a type we can map.
+    investment_category: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
 
     # Optional parent group ("wallet"). NULL means ungrouped. Deleting a
     # group nullifies this field rather than removing the asset.

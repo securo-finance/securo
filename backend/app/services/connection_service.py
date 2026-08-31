@@ -687,6 +687,7 @@ async def _upsert_asset_from_holding(
             ticker=holding.ticker,
             maturity_date=holding.maturity_date,
             external_metadata=holding.metadata,
+            investment_category=holding.investment_category,
             valuation_method="manual",
         )
         session.add(asset)
@@ -698,6 +699,7 @@ async def _upsert_asset_from_holding(
     asset.currency = holding.currency
     # external_metadata is a snapshot blob: we want the latest every time.
     asset.external_metadata = holding.metadata
+    asset.investment_category = holding.investment_category
     previous_connection_id = asset.connection_id
     asset.connection_id = connection_id
     # Only auto-unarchive when the holding moved to a different connection

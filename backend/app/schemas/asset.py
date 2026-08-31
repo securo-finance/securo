@@ -87,6 +87,7 @@ class AssetRead(BaseModel):
     isin: Optional[str] = None
     maturity_date: Optional[_date] = None
     group_id: Optional[uuid.UUID] = None
+    investment_category: Optional[str] = None
     ticker: Optional[str] = None
     ticker_exchange: Optional[str] = None
     last_price: Optional[float] = None

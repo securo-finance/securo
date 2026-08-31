@@ -1276,6 +1276,7 @@
     "syncedFromHint": "Originariamente sincronizzato da {{source}} — puoi rinominarlo liberamente, la corrispondenza di sincronizzazione usa l'ID della connessione.",
     "chartByWallet": "Per portafoglio",
     "chartByAsset": "Per bene",
+    "chartByCategory": "Per tipo",
     "chartGroupMode": "Raggruppamento grafico",
     "chartDrawMode": "Visualizzazione grafico",
     "chartStacked": "Impilato",
@@ -1284,7 +1285,20 @@
     "total": "Totale",
     "confirmRegenerateTitle": "Rigenerare i valori?",
     "confirmRegenerate": "I parametri di crescita sono cambiati. Tutti i valori generati automaticamente saranno eliminati e ricalcolati. I valori manuali saranno mantenuti.",
-    "regenerate": "Rigenera"
+    "regenerate": "Rigenera",
+    "investmentCategory": {
+      "fixed_income": "Reddito fisso",
+      "fixed_income_intl": "Reddito fisso internazionale",
+      "equity": "Azioni",
+      "equity_intl": "Azioni internazionali",
+      "real_estate_fund": "Fondi immobiliari",
+      "multimarket": "Fondi multi-strategia",
+      "funds": "Fondi",
+      "funds_intl": "Fondi internazionali",
+      "structured_note": "Prodotti strutturati",
+      "pension": "Previdenza",
+      "other": "Altro"
+    }
   },
   "reports": {
     "section": "Analisi",

@@ -1689,8 +1689,25 @@ export default function AssetsPage() {
 
 const PORTFOLIO_COLORS = ['#6366F1', '#F43F5E', '#F59E0B', '#10B981', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16']
 
+// Mirrors the category slugs `_categorize_investment` (backend/app/providers/pluggy.py)
+// can produce. Colors are fixed (not user-editable, unlike wallet colors) since
+// this is a system taxonomy, not a user-made grouping.
+const INVESTMENT_CATEGORY_META: Record<string, { color: string; labelKey: string }> = {
+  fixed_income: { color: '#EAB308', labelKey: 'assets.investmentCategory.fixed_income' },
+  fixed_income_intl: { color: '#CA8A04', labelKey: 'assets.investmentCategory.fixed_income_intl' },
+  equity: { color: '#F97316', labelKey: 'assets.investmentCategory.equity' },
+  equity_intl: { color: '#FB923C', labelKey: 'assets.investmentCategory.equity_intl' },
+  real_estate_fund: { color: '#14B8A6', labelKey: 'assets.investmentCategory.real_estate_fund' },
+  multimarket: { color: '#A855F7', labelKey: 'assets.investmentCategory.multimarket' },
+  funds: { color: '#22C55E', labelKey: 'assets.investmentCategory.funds' },
+  funds_intl: { color: '#4ADE80', labelKey: 'assets.investmentCategory.funds_intl' },
+  structured_note: { color: '#EF4444', labelKey: 'assets.investmentCategory.structured_note' },
+  pension: { color: '#8B5CF6', labelKey: 'assets.investmentCategory.pension' },
+  other: { color: '#94A3B8', labelKey: 'assets.investmentCategory.other' },
+}
+
 function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: dateLoc, mask }: {
-  data: { assets: { id: string; name: string; type: string; group_id: string | null }[]; trend: Record<string, unknown>[]; total: number }
+  data: { assets: { id: string; name: string; type: string; group_id: string | null; investment_category: string | null }[]; trend: Record<string, unknown>[]; total: number }
   wallets: AssetGroup[]
   currency: string
   locale: string
@@ -1703,7 +1720,7 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
   // the default drawing style, while letting users switch to true lines when
   // they need to compare each wallet/asset's own value instead of the running
   // cumulative total.
-  const [mode, setMode] = useState<'wallet' | 'asset'>('wallet')
+  const [mode, setMode] = useState<'wallet' | 'asset' | 'category'>('wallet')
   const [drawMode, setDrawMode] = useState<'stacked' | 'lines'>('stacked')
   const isStacked = drawMode === 'stacked'
 
@@ -1727,6 +1744,55 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
         sourceAssetIds: [a.id],
       }))
       return { series: s, displayTrend: data.trend }
+    }
+
+    // Shared by wallet/category mode: sum each bucket's source assets into
+    // one column per day so the stacked chart draws one band per bucket.
+    const sumTrendByBuckets = (entries: { key: string; sourceAssetIds: string[] }[]) =>
+      data.trend.map(row => {
+        const newRow: Record<string, unknown> = { date: row.date, _total: row._total }
+        for (const entry of entries) {
+          let sum = 0
+          for (const aid of entry.sourceAssetIds) sum += (row[aid] as number) ?? 0
+          newRow[entry.key] = sum
+        }
+        return newRow
+      })
+
+    if (mode === 'category') {
+      const categoryBuckets = new Map<string, string[]>()
+      const uncategorizedAssetIds: string[] = []
+      for (const a of data.assets) {
+        if (a.investment_category) {
+          if (!categoryBuckets.has(a.investment_category)) categoryBuckets.set(a.investment_category, [])
+          categoryBuckets.get(a.investment_category)!.push(a.id)
+        } else {
+          uncategorizedAssetIds.push(a.id)
+        }
+      }
+
+      const s: { key: string; name: string; color: string; sourceAssetIds: string[] }[] = []
+      let fallbackColorIdx = 0
+      for (const [category, assetIds] of categoryBuckets) {
+        const meta = INVESTMENT_CATEGORY_META[category]
+        s.push({
+          key: `c_${category}`,
+          name: meta ? t(meta.labelKey) : category,
+          color: meta?.color ?? PORTFOLIO_COLORS[fallbackColorIdx++ % PORTFOLIO_COLORS.length],
+          sourceAssetIds: assetIds,
+        })
+      }
+      for (const aid of uncategorizedAssetIds) {
+        const asset = data.assets.find(a => a.id === aid)
+        s.push({
+          key: aid,
+          name: asset?.name ?? aid,
+          color: PORTFOLIO_COLORS[fallbackColorIdx++ % PORTFOLIO_COLORS.length],
+          sourceAssetIds: [aid],
+        })
+      }
+
+      return { series: s, displayTrend: sumTrendByBuckets(s) }
     }
 
     const walletById = new Map<string, AssetGroup>()
@@ -1773,19 +1839,7 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
       })
     }
 
-    const newTrend = data.trend.map(row => {
-      const newRow: Record<string, unknown> = { date: row.date, _total: row._total }
-      for (const entry of s) {
-        let sum = 0
-        for (const aid of entry.sourceAssetIds) {
-          sum += (row[aid] as number) ?? 0
-        }
-        newRow[entry.key] = sum
-      }
-      return newRow
-    })
-
-    return { series: s, displayTrend: newTrend }
+    return { series: s, displayTrend: sumTrendByBuckets(s) }
   }, [mode, data, wallets, t])
   const sortedSeries = useMemo(() => {
     const lastRow = displayTrend[displayTrend.length - 1]
@@ -1819,6 +1873,14 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
                 className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${mode === 'asset' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 {t('assets.chartByAsset')}
+              </button>
+              <button
+                type="button"
+                aria-pressed={mode === 'category'}
+                onClick={() => setMode('category')}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${mode === 'category' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                {t('assets.chartByCategory')}
               </button>
             </div>
             <div role="group" aria-label={t('assets.chartDrawMode')} className="inline-flex items-center rounded-lg border border-border p-0.5 bg-muted/40">
