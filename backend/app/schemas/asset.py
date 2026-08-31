@@ -33,6 +33,10 @@ class AssetCreate(BaseModel):
     # médio model, consistent with the transaction ledger). When omitted, the
     # service seeds the buy at the live quote ("bought at market now").
     unit_price: Optional[Decimal] = None
+    # Manual counterpart to the sync-computed value set by
+    # `_categorize_investment` (providers/pluggy.py). Only meaningful when
+    # type == "investment"; the frontend hides the field otherwise.
+    investment_category: Optional[str] = None
 
 
 class AssetUpdate(BaseModel):
@@ -57,6 +61,7 @@ class AssetUpdate(BaseModel):
     group_id: Optional[uuid.UUID] = None
     ticker: Optional[str] = None
     ticker_exchange: Optional[str] = None
+    investment_category: Optional[str] = None
 
 
 class AssetRead(BaseModel):

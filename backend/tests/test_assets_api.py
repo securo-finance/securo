@@ -95,6 +95,33 @@ async def test_update_asset(client: AsyncClient, auth_headers: dict, test_asset_
 
 
 @pytest.mark.asyncio
+async def test_create_asset_with_investment_category(client: AsyncClient, auth_headers: dict):
+    """Manual counterpart to the sync-computed category: a manually-created
+    investment asset can carry `investment_category` from creation, so the
+    "By Type" chart groups it like a synced holding would."""
+    response = await client.post("/api/assets", headers=auth_headers, json={
+        "name": "MCCE11 - Mauá Capital Crédito",
+        "type": "investment",
+        "currency": "BRL",
+        "current_value": 10606.09,
+        "investment_category": "real_estate_fund",
+    })
+    assert response.status_code == 201
+    assert response.json()["investment_category"] == "real_estate_fund"
+
+
+@pytest.mark.asyncio
+async def test_update_asset_investment_category(client: AsyncClient, auth_headers: dict, test_asset_api: Asset):
+    response = await client.patch(
+        f"/api/assets/{test_asset_api.id}",
+        headers=auth_headers,
+        json={"investment_category": "pension"},
+    )
+    assert response.status_code == 200
+    assert response.json()["investment_category"] == "pension"
+
+
+@pytest.mark.asyncio
 async def test_delete_asset(client: AsyncClient, auth_headers: dict, session: AsyncSession, test_user: User):
     asset = Asset(
         id=uuid.uuid4(),

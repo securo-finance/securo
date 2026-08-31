@@ -19,6 +19,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import type { Asset, AssetGroup, AssetTransaction, AssetValue, MarketSymbolMatch, MarketSymbolQuote } from '@/types'
 import {
   Home,
@@ -41,6 +42,7 @@ import {
   PieChart,
   AlertTriangle,
   Upload,
+  Info,
 } from 'lucide-react'
 import {
   AreaChart,
@@ -145,6 +147,23 @@ const ASSET_TYPES = [
   'other',
 ] as const
 
+// Mirrors the category slugs `_categorize_investment` (backend/app/providers/pluggy.py)
+// can produce for synced holdings. Manual assets pick from the same list so
+// the "By Type" chart groups them consistently either way.
+const INVESTMENT_CATEGORIES = [
+  'fixed_income',
+  'fixed_income_intl',
+  'equity',
+  'equity_intl',
+  'real_estate_fund',
+  'multimarket',
+  'funds',
+  'funds_intl',
+  'structured_note',
+  'pension',
+  'other',
+] as const
+
 // Map a yfinance `quoteType` to Securo's asset type. Lives here (not the
 // backend) so if we ever swap the market-price provider the service stays
 // clean — all provider-specific vocabulary is translated at the edge.
@@ -225,6 +244,7 @@ export default function AssetsPage() {
   // Form state
   const [formName, setFormName] = useState('')
   const [formType, setFormType] = useState<string>('other')
+  const [formInvestmentCategory, setFormInvestmentCategory] = useState<string>('')
   const [formCurrency, setFormCurrency] = useState(userCurrency)
   const [formGroupId, setFormGroupId] = useState<string>('')
   const [formMethod, setFormMethod] = useState<string>('manual')
@@ -572,6 +592,7 @@ export default function AssetsPage() {
     setEditingAsset(null)
     setFormName('')
     setFormType('other')
+    setFormInvestmentCategory('')
     setFormCurrency(userCurrency)
     setFormGroupId('')
     setFormMethod('manual')
@@ -592,6 +613,7 @@ export default function AssetsPage() {
     setEditingAsset(asset)
     setFormName(asset.name)
     setFormType(asset.type)
+    setFormInvestmentCategory(asset.investment_category ?? '')
     setFormCurrency(asset.currency)
     setFormGroupId(asset.group_id ?? '')
     setFormMethod(asset.valuation_method)
@@ -631,6 +653,10 @@ export default function AssetsPage() {
       type: formType,
       currency: formCurrency,
       group_id: formGroupId || null,
+      // Only meaningful for type === 'investment'; the field is hidden (and
+      // cleared here) for every other type so a stale pick doesn't linger
+      // if the user switches Tipo away after choosing one.
+      investment_category: formType === 'investment' ? (formInvestmentCategory || null) : null,
       valuation_method: formMethod,
       purchase_date: formPurchaseDate || null,
       // Tickers have no total purchase price — the cost basis is derived from
@@ -1194,6 +1220,38 @@ export default function AssetsPage() {
                 </select>
               </div>
             </div>
+
+            {/* Investment category — only meaningful for type === 'investment'.
+                Synced Pluggy assets are locked out of this dialog entirely
+                (see isProviderOwned), so this only ever applies to manual or
+                market-priced investment holdings. */}
+            {formType === 'investment' && (
+              <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-300">
+                <div className="flex items-center gap-1.5">
+                  <Label>{t('assets.investmentCategoryField')}</Label>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button type="button" className="text-muted-foreground hover:text-foreground">
+                        <Info size={13} />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent className="w-64">
+                      <p>{t('assets.investmentCategoryHint')}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+                <select
+                  className="bg-card border border-border focus:outline-none focus:ring-2 focus:ring-primary px-3 py-2 rounded-lg text-foreground text-sm w-full"
+                  value={formInvestmentCategory}
+                  onChange={e => setFormInvestmentCategory(e.target.value)}
+                >
+                  <option value="">{t('assets.investmentCategoryPlaceholder')}</option>
+                  {INVESTMENT_CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>{t(`assets.investmentCategory.${cat}`)}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Valuation Method — locked on edit */}
             <div className="space-y-2">
