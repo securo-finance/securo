@@ -265,7 +265,11 @@ def _lines_table(document: InvoiceDocument) -> Optional[Table]:
         CONTENT_WIDTH * 0.46, CONTENT_WIDTH * 0.12,
         CONTENT_WIDTH * 0.21, CONTENT_WIDTH * 0.21,
     ]
-    table = Table(rows, colWidths=widths, repeatRows=1)
+    # `splitInRow` lets a single row break across pages. Without it a
+    # description taller than one page cannot be split at all, and the
+    # paginating loop below asks for a fresh page, fails again on the
+    # empty page, and asks again — forever.
+    table = Table(rows, colWidths=widths, repeatRows=1, splitInRow=1)
     table.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LINEBELOW", (0, 0), (-1, 0), 0.6, RULE),
@@ -423,6 +427,10 @@ def render_pdf(document: InvoiceDocument, logo_bytes: Optional[bytes] = None) ->
 
     if lines is not None:
         remaining: Optional[Table] = lines
+        # Whether the next attempt is happening on an otherwise empty
+        # page, which is what tells a "too full" failure apart from a
+        # "will never fit" one.
+        on_fresh_page = False
         while remaining is not None:
             available = y - floor
             # The totals must share the last page with the table, so the
@@ -436,12 +444,22 @@ def render_pdf(document: InvoiceDocument, logo_bytes: Optional[bytes] = None) ->
 
             parts = remaining.split(CONTENT_WIDTH, available)
             if len(parts) < 2:
-                # Cannot split into this space — start a fresh page rather
-                # than draw off the bottom edge, which is what this whole
-                # loop exists to prevent.
+                # Cannot split into this space. Normally that means the
+                # page is too full, and a fresh one solves it.
+                #
+                # If we are *already* at the top of a fresh page, it does
+                # not: the content will not fit anywhere, and asking for
+                # another page would ask forever. Draw it and move on —
+                # an overrun on one invoice beats a request that never
+                # returns and holds a worker until it is killed.
+                if on_fresh_page:
+                    remaining.drawOn(canvas, MARGIN, y - needed)
+                    remaining = None
+                    break
                 pages.append([])
                 canvas.showPage()
                 y = _draw_continuation_header(canvas, document, accent)
+                on_fresh_page = True
                 continue
 
             head, tail = parts[0], parts[1]
@@ -451,6 +469,9 @@ def render_pdf(document: InvoiceDocument, logo_bytes: Optional[bytes] = None) ->
             canvas.showPage()
             y = _draw_continuation_header(canvas, document, accent)
             remaining = tail
+            # The page the tail lands on carries only the continuation
+            # header, so it counts as fresh for the same reason.
+            on_fresh_page = True
 
     y -= 8 * mm
     totals.drawOn(canvas, PAGE_WIDTH - MARGIN - 74 * mm, y - totals_height)

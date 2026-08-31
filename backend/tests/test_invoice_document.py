@@ -1026,3 +1026,36 @@ def test_an_oversized_raster_is_refused_before_it_is_decoded():
 
     with pytest.raises(ValueError, match="megapixels"):
         invoice_logo_service.normalise(buf.getvalue(), "image/png")
+
+
+def test_a_line_taller_than_a_page_still_finishes():
+    """It used to hang, not fail. `split` returned nothing for a row
+    taller than the space, the loop asked for a fresh page, failed again
+    on the empty page and asked again — holding the worker until
+    something killed it, which is worse than an error the caller can see.
+
+    Guarded twice: the table may now break inside a row, and a failure to
+    split on an already-empty page draws the content instead of asking
+    for one more."""
+    import signal
+
+    huge = ("Servico de consultoria detalhado " * 400).strip()
+
+    def give_up(signum, frame):
+        raise AssertionError("pagination did not terminate")
+
+    signal.signal(signal.SIGALRM, give_up)
+    signal.alarm(20)
+    try:
+        document = _doc(1)
+        document.lines[0].description = huge
+        pdf = invoice_pdf.render_pdf(document)
+    finally:
+        signal.alarm(0)
+
+    import io as _io
+
+    import pypdf as _pypdf
+
+    assert pdf.startswith(b"%PDF")
+    assert len(_pypdf.PdfReader(_io.BytesIO(pdf)).pages) >= 1
