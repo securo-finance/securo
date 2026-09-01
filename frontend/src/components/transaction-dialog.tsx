@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { getAccountLabel, getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useDateLocale, useDisplayLocale } from '@/hooks/use-display-locale'
-import { formatCurrency } from '@/lib/format'
+import { formatAmountInput, formatCurrency, parseAmountInput } from '@/lib/format'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
 import { currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
@@ -425,7 +425,13 @@ function TransactionForm({
   })
   const seed = transaction ?? duplicateDraft
   const [description, setDescription] = useState(seed?.description ?? '')
-  const [amount, setAmount] = useState(seed?.amount?.toString() ?? '')
+  // Amount fields hold display-locale strings (comma decimals on dot_comma),
+  // so seeds from stored numbers go through formatAmountInput — a raw
+  // toString() would read back through parseAmountInput with the dot taken
+  // for a thousands separator.
+  const [amount, setAmount] = useState(
+    seed?.amount != null ? formatAmountInput(seed.amount, displayLocale, 8) : ''
+  )
   const [date, setDate] = useState(seed?.date ?? localDateString())
   const [type, setType] = useState<'debit' | 'credit'>(seed?.type ?? 'debit')
   const [status, setStatus] = useState<'posted' | 'pending'>(seed?.status ?? 'posted')
@@ -438,10 +444,10 @@ function TransactionForm({
   // when the selected account is a credit card.
   const [effectiveBillDate, setEffectiveBillDate] = useState(seed?.effective_bill_date ?? '')
   const [convertedAmount, setConvertedAmount] = useState(
-    seed?.amount_primary != null ? seed.amount_primary.toString() : ''
+    seed?.amount_primary != null ? formatAmountInput(seed.amount_primary, displayLocale, 8) : ''
   )
   const [fxRate, setFxRate] = useState(
-    seed?.fx_rate_used != null ? seed.fx_rate_used.toString() : ''
+    seed?.fx_rate_used != null ? formatAmountInput(seed.fx_rate_used, displayLocale, 8) : ''
   )
   const [hadInitialFx] = useState(
     !!transaction && (seed?.amount_primary != null || seed?.fx_rate_used != null)
@@ -656,10 +662,10 @@ function TransactionForm({
 
   const handleConvertedAmountChange = (val: string) => {
     setConvertedAmount(val)
-    const numVal = parseFloat(val)
-    const numAmount = parseFloat(amount)
+    const numVal = parseAmountInput(val, displayLocale)
+    const numAmount = parseAmountInput(amount, displayLocale)
     if (numVal && numAmount) {
-      setFxRate((numVal / numAmount).toString())
+      setFxRate(formatAmountInput(numVal / numAmount, displayLocale, 6))
     } else if (!val) {
       setFxRate('')
     }
@@ -667,10 +673,10 @@ function TransactionForm({
 
   const handleFxRateChange = (val: string) => {
     setFxRate(val)
-    const numRate = parseFloat(val)
-    const numAmount = parseFloat(amount)
+    const numRate = parseAmountInput(val, displayLocale)
+    const numAmount = parseAmountInput(amount, displayLocale)
     if (numRate && numAmount) {
-      setConvertedAmount((numAmount * numRate).toFixed(2))
+      setConvertedAmount(formatAmountInput(numAmount * numRate, displayLocale))
     } else if (!val) {
       setConvertedAmount('')
     }
@@ -678,10 +684,10 @@ function TransactionForm({
 
   const handleAmountChange = (val: string) => {
     setAmount(val)
-    const numAmount = parseFloat(val)
-    const numRate = parseFloat(fxRate)
+    const numAmount = parseAmountInput(val, displayLocale)
+    const numRate = parseAmountInput(fxRate, displayLocale)
     if (numRate && numAmount) {
-      setConvertedAmount((numAmount * numRate).toFixed(2))
+      setConvertedAmount(formatAmountInput(numAmount * numRate, displayLocale))
     }
   }
 
@@ -700,12 +706,23 @@ function TransactionForm({
         e.preventDefault()
         const action = pendingActionRef.current
         pendingActionRef.current = 'save'
-        const fxFields: Partial<Transaction> = {}
-        if (showConversion && convertedAmount) {
-          fxFields.amount_primary = parseFloat(convertedAmount)
+        // Amounts are typed under the display locale's separators (comma
+        // decimals on dot_comma), so they must be read back the same way —
+        // parseFloat would stop at the first comma and silently save the
+        // wrong value.
+        const parsedAmount = parseAmountInput(amount, displayLocale)
+        if (!isSynced && parsedAmount == null) {
+          toast.error(t('common.error'))
+          return
         }
-        if (showConversion && fxRate) {
-          fxFields.fx_rate_used = parseFloat(fxRate)
+        const fxFields: Partial<Transaction> = {}
+        const parsedConverted = parseAmountInput(convertedAmount, displayLocale)
+        const parsedFxRate = parseAmountInput(fxRate, displayLocale)
+        if (showConversion && parsedConverted != null) {
+          fxFields.amount_primary = parsedConverted
+        }
+        if (showConversion && parsedFxRate != null) {
+          fxFields.fx_rate_used = parsedFxRate
         }
         if (showConversion && hadInitialFx && !convertedAmount && !fxRate) {
           fxFields.amount_primary = null
@@ -740,7 +757,7 @@ function TransactionForm({
             } as TransactionEditPayload
           : {
               description,
-              amount: parseFloat(amount),
+              amount: parsedAmount ?? undefined,
               date,
               type,
               currency,
@@ -923,8 +940,8 @@ function TransactionForm({
             />
           ) : (
             <Input
-              type="number"
-              step="0.01"
+              type="text"
+              inputMode="decimal"
               value={amount}
               onChange={(e) => handleAmountChange(e.target.value)}
               required
@@ -995,8 +1012,8 @@ function TransactionForm({
                 />
               ) : (
                 <Input
-                  type="number"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   value={convertedAmount}
                   onChange={(e) => handleConvertedAmountChange(e.target.value)}
                   placeholder={t('transactions.autoCalculated')}
@@ -1007,8 +1024,8 @@ function TransactionForm({
             <div className="space-y-1">
               <Label className="text-xs">{t('transactions.exchangeRate')}</Label>
               <Input
-                type="number"
-                step="0.0001"
+                type="text"
+                inputMode="decimal"
                 value={fxRate}
                 onChange={(e) => handleFxRateChange(e.target.value)}
                 placeholder={t('transactions.autoCalculated')}
@@ -1131,7 +1148,7 @@ function TransactionForm({
           settling). Hide the section entirely in that case. */}
       {transaction?.source !== 'settlement' && (
         <TransactionSplitsSection
-          amount={parseFloat(amount) || 0}
+          amount={parseAmountInput(amount, displayLocale) ?? 0}
           currency={currency}
           value={splits}
           onChange={setSplits}
