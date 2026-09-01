@@ -312,6 +312,46 @@ async def test_preview_returns_suggested_categories(
     assert unknown["suggested_category_name"] is None
 
 
+async def test_preview_uses_csv_category_as_default(
+    client: AsyncClient, auth_headers, test_categories
+):
+    csv_content = (
+        "data,descricao,valor,categoria\n"
+        "10/02/2026,COMPRA QUALQUER,-25.50,  alimentac\u0327a\u0303o  \n"
+    ).encode("utf-8")
+
+    response = await client.post(
+        "/api/transactions/import/preview",
+        headers=auth_headers,
+        files={"file": ("extrato.csv", csv_content, "text/csv")},
+    )
+
+    assert response.status_code == 200
+    txn = response.json()["transactions"][0]
+    assert txn["suggested_category_id"] == str(test_categories[0].id)
+    assert txn["suggested_category_name"] == "Alimenta\u00e7\u00e3o"
+
+
+async def test_preview_rule_overrides_csv_category_default(
+    client: AsyncClient, auth_headers, test_categories, test_rules
+):
+    csv_content = (
+        "data,descricao,valor,categoria\n"
+        "10/02/2026,UBER TRIP,-25.50,Alimenta\u00e7\u00e3o\n"
+    ).encode("utf-8")
+
+    response = await client.post(
+        "/api/transactions/import/preview",
+        headers=auth_headers,
+        files={"file": ("extrato.csv", csv_content, "text/csv")},
+    )
+
+    assert response.status_code == 200
+    txn = response.json()["transactions"][0]
+    assert txn["suggested_category_id"] == str(test_categories[1].id)
+    assert txn["suggested_category_name"] == "Transporte"
+
+
 async def test_import_with_excluded_transactions(
     client: AsyncClient, auth_headers, test_account: Account
 ):
