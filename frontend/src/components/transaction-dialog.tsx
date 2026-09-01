@@ -664,7 +664,8 @@ function TransactionForm({
     setConvertedAmount(val)
     const numVal = parseAmountInput(val, displayLocale)
     const numAmount = parseAmountInput(amount, displayLocale)
-    if (numVal && numAmount) {
+    // Zero is a valid converted amount; only the divisor must be non-zero.
+    if (numVal != null && numAmount) {
       setFxRate(formatAmountInput(numVal / numAmount, displayLocale, 6))
     } else if (!val) {
       setFxRate('')
@@ -675,7 +676,7 @@ function TransactionForm({
     setFxRate(val)
     const numRate = parseAmountInput(val, displayLocale)
     const numAmount = parseAmountInput(amount, displayLocale)
-    if (numRate && numAmount) {
+    if (numRate != null && numAmount != null) {
       setConvertedAmount(formatAmountInput(numAmount * numRate, displayLocale))
     } else if (!val) {
       setConvertedAmount('')
@@ -686,7 +687,7 @@ function TransactionForm({
     setAmount(val)
     const numAmount = parseAmountInput(val, displayLocale)
     const numRate = parseAmountInput(fxRate, displayLocale)
-    if (numRate && numAmount) {
+    if (numRate != null && numAmount != null) {
       setConvertedAmount(formatAmountInput(numAmount * numRate, displayLocale))
     }
   }
@@ -718,6 +719,17 @@ function TransactionForm({
         const fxFields: Partial<Transaction> = {}
         const parsedConverted = parseAmountInput(convertedAmount, displayLocale)
         const parsedFxRate = parseAmountInput(fxRate, displayLocale)
+        // A conversion field left empty is optional, but a non-empty one
+        // that doesn't parse must block the save like the amount does —
+        // silently dropping it would persist a transaction missing the
+        // conversion the user typed.
+        if (
+          showConversion &&
+          ((convertedAmount && parsedConverted == null) || (fxRate && parsedFxRate == null))
+        ) {
+          toast.error(t('common.error'))
+          return
+        }
         if (showConversion && parsedConverted != null) {
           fxFields.amount_primary = parsedConverted
         }
