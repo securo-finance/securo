@@ -1758,7 +1758,7 @@ export default function TransactionsPage() {
       {viewMode === 'list' && selectedIds.size > 0 && (
         <div className="fixed bottom-0 left-0 right-0 lg:left-60 z-50">
         <div className="mx-auto max-w-7xl px-3 md:px-6 pb-4 md:pb-6">
-          <div className="flex items-stretch gap-1.5 bg-card border border-border shadow-xl rounded-2xl p-2">
+          <div className="relative flex items-center gap-1.5 bg-card border border-border shadow-xl rounded-2xl p-2">
             <MobileBulkSelectionActions
               selectedCount={selectedIds.size}
               categoryValue={bulkCategory}
@@ -1787,7 +1787,7 @@ export default function TransactionsPage() {
               onClear={() => { setSelectedIds(new Set()); setBulkCategory(''); setBulkTagInput('') }}
             />
 
-            <div className="hidden w-full items-stretch gap-1.5 sm:flex">
+            <div className="hidden min-w-0 flex-1 items-center gap-1.5 sm:flex">
             {/* Selection count + net total — stacked vertically so the
                 sum (issue #185) adds no horizontal width to an already
                 crowded bar. The sum is hidden below sm where only the
@@ -1818,6 +1818,9 @@ export default function TransactionsPage() {
 
             <div className="w-px bg-border/60 self-stretch" />
 
+            {/* Only contextual actions wrap. The selection summary and
+                global controls remain in fixed side columns. */}
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
             {/* Categorize — fires on selection, no separate Apply button */}
             <CategorySelect
               key={bulkCategory}
@@ -1935,24 +1938,24 @@ export default function TransactionsPage() {
               )
             })()}
 
+            </div>
+
             {/* Bulk Delete */}
             <Button
               size="sm"
               variant="destructive"
               onClick={() => setBulkDeleteConfirmOpen(true)}
               disabled={bulkDeleteMutation.isPending}
-              className="h-8 px-3 shrink-0 text-sm"
+              className="h-8 shrink-0 px-3 text-sm"
             >
               <Trash2 size={15} className="lg:mr-1.5" />
               <span className="hidden lg:inline">{t('common.delete')}</span>
             </Button>
 
-            <div className="ml-auto" />
-
-            {/* Close */}
+            {/* Global controls stay centered beside the wrapping action group. */}
             <button
               onClick={() => { setSelectedIds(new Set()); setBulkCategory(''); setBulkTagInput('') }}
-              className="text-muted-foreground hover:text-foreground p-2 shrink-0 self-center rounded-lg hover:bg-muted/60"
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted/60 hover:text-foreground"
               title={t('common.close', 'Close')}
             >
               <X size={16} />
