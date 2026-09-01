@@ -2,7 +2,6 @@ import csv
 import hashlib
 import io
 import re
-import unicodedata
 import uuid
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -36,11 +35,6 @@ _OFX_BALANCE_ROW_DESCRIPTIONS = (
     "saldo final",
     "s a l d o",
 )
-
-
-def _normalize_category_name(name: str) -> str:
-    """Normalize category names received from external text files."""
-    return " ".join(unicodedata.normalize("NFC", name).split()).casefold()
 
 
 def _decode_ofx_bytes(content: bytes) -> tuple[str, str]:
@@ -629,15 +623,12 @@ async def enrich_with_category_suggestions(
     )
     categories = category_result.scalars().all()
     category_name_map = {str(c.id): c.name for c in categories}
-    csv_category_map = {
-        _normalize_category_name(c.name): c
-        for c in categories
-    }
+    csv_category_map = {c.name: c for c in categories}
     hidden_categories = await get_hidden_category_ids(session, workspace_id)
 
     for txn in transactions:
         csv_category = (
-            csv_category_map.get(_normalize_category_name(txn.category_name))
+            csv_category_map.get(txn.category_name)
             if txn.category_name
             else None
         )
@@ -721,12 +712,7 @@ async def import_transactions(
     category_result = await session.execute(
         select(Category).where(Category.workspace_id == workspace_id)
     )
-    categories = category_result.scalars().all()
-    category_map = {c.name: c.id for c in categories}
-    normalized_category_map = {
-        _normalize_category_name(c.name): c.id
-        for c in categories
-    }
+    category_map = {c.name: c.id for c in category_result.scalars()}
 
     imported = 0
     skipped = 0
@@ -781,13 +767,11 @@ async def import_transactions(
 
         user_category_id = txn_data.category_id
         suggested_cat_id = txn_data.suggested_category_id
-        csv_category_id = None
-        if txn_data.category_name:
-            csv_category_id = category_map.get(txn_data.category_name)
-            if csv_category_id is None:
-                csv_category_id = normalized_category_map.get(
-                    _normalize_category_name(txn_data.category_name)
-                )
+        csv_category_id = (
+            category_map.get(txn_data.category_name)
+            if txn_data.category_name
+            else None
+        )
         category_id = (
             None
             if txn_data.force_uncategorized

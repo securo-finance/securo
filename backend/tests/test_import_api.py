@@ -317,7 +317,7 @@ async def test_preview_uses_csv_category_as_default(
 ):
     csv_content = (
         "data,descricao,valor,categoria\n"
-        "10/02/2026,COMPRA QUALQUER,-25.50,  alimentac\u0327a\u0303o  \n"
+        "10/02/2026,COMPRA QUALQUER,-25.50,Alimenta\u00e7\u00e3o\n"
     ).encode("utf-8")
 
     response = await client.post(
