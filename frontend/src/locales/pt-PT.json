@@ -2224,7 +2224,9 @@
       "exactAmountAnyClient": "Valor exato, qualquer pagador",
       "similarDescription": "Valor próximo e descrição parecida",
       "sameAccountExact": "Mesma conta, valor exato",
-      "unknown": "Regra"
+      "unknown": "Regra",
+      "partPayment": "Cliente conhecido, parte do que deve",
+      "severalInvoices": "Cliente conhecido, várias faturas de uma vez"
     },
     "outcome": {
       "link": "Liga sozinho",
@@ -2249,7 +2251,11 @@
       "atLeast": "a partir de {{value}}",
       "atMost": "até {{value}}",
       "textContains": "o extrato diz “{{text}}”",
-      "textExcludes": "o extrato não diz “{{text}}”"
+      "textExcludes": "o extrato não diz “{{text}}”",
+      "onArrival": "quando o dinheiro chega",
+      "onIssue": "quando uma fatura é emitida",
+      "amountPartial": "o valor cobre parte do que se deve",
+      "amountSet": "até {{count}} faturas somam esse valor"
     },
     "add": "Nova regra",
     "newRule": "Nova regra de conciliação",
@@ -2289,7 +2295,12 @@
       "noMaximum": "sem máximo",
       "text": "Texto do extrato",
       "textContains": "tem de conter…",
-      "textExcludes": "não pode conter…"
+      "textExcludes": "não pode conter…",
+      "trigger": "Quando procuramos",
+      "triggerHint": "A conciliação acontece em dois momentos, e a evidência não é a mesma nos dois.",
+      "amountMatch": "Quão perto o valor tem de estar",
+      "amountMatchHint": "Comparado com o que ainda se deve, não com o total original.",
+      "amountBandHint": "Sobre o pagamento em si — um tamanho que quer, ou não, que esta regra trate."
     },
     "counterparty": {
       "any": "Qualquer um",
@@ -2299,7 +2310,14 @@
       "exact": "Exatamente o valor em dívida",
       "tolerance": "Dentro de uma margem",
       "ratio": "Descontado o imposto retido",
-      "ratioHint": "Usa as taxas de retenção do seu país. Enquanto não existirem, a regra não corresponde a nada."
+      "ratioHint": "Usa as taxas de retenção do seu país. Enquanto não existirem, a regra não corresponde a nada.",
+      "partial": "Parte do que se deve",
+      "partialHint": "Para clientes que pagam a prestações. O que sobra fica em aberto, e o pagamento seguinte corresponde exatamente.",
+      "set": "Várias faturas somadas",
+      "setHint": "Para um pagamento que cobre mais de uma fatura. Se mais de uma combinação fechar, perguntamos em vez de escolher.",
+      "setMax": "No máximo estas faturas",
+      "setFee": "Admitir taxa de",
+      "setFeeHint": "Uma parte do valor das faturas, para um pagamento que chega líquido. Zero significa que o total tem de ser exato."
     },
     "queue": {
       "title": "À sua espera",
@@ -2311,7 +2329,8 @@
       "accept": "Ligar",
       "declineHint": "Não é isso. Este par não voltará a ser sugerido.",
       "linked": "Ligado",
-      "declined": "Descartado — não voltamos a perguntar"
+      "declined": "Descartado — não voltamos a perguntar",
+      "covers": "cobre"
     },
     "evidence": {
       "amountExact": "o valor corresponde exatamente",
@@ -2325,6 +2344,21 @@
       "any": "Tanto faz",
       "in": "Dinheiro a entrar",
       "out": "Dinheiro a sair"
+    },
+    "step": {
+      "what": "O que é esta regra",
+      "which": "Que dinheiro ela olha",
+      "whichHint": "Deixe tudo vazio e olha todo o dinheiro",
+      "match": "Quando conta como correspondência",
+      "matchHint": "Quão perto o pagamento e a promessa têm de estar"
+    },
+    "trigger": {
+      "money_arrives": "Quando o dinheiro chega",
+      "money_arrivesHint": "Entra um pagamento e procuramos a fatura que ele liquida.",
+      "invoice_issued": "Quando uma fatura é emitida",
+      "invoice_issuedHint": "O cliente pagou primeiro e a fatura veio depois — olhamos para trás, para o dinheiro que já lá estava.",
+      "both": "Nos dois momentos",
+      "bothHint": "A regra vale nos dois sentidos."
     }
   }
 }

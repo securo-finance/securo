@@ -163,6 +163,14 @@ class ReconciliationSuggestion(Base):
     #: the reaper rather than by the database.
     expectation_kind: Mapped[str] = mapped_column(String(16))
     expectation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    #: Ties together the several invoices one payment may cover, so the
+    #: queue asks *"does this cover these three?"* rather than three
+    #: separate questions somebody could answer inconsistently and end up
+    #: with a payment spread across two debts and short on a third. Null
+    #: for the ordinary single-invoice case.
+    group_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
     #: The rule that produced it, so the queue can say *why* — the same id
     #: the rules page shows.
     strategy_id: Mapped[str] = mapped_column(String(64))

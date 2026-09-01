@@ -32,7 +32,15 @@ class ReconciliationRuleRead(BaseModel):
     origin: str
     customised: bool
     enabled: bool
+    #: `link` or `suggest` — what happens when it matches.
     outcome: str
+    #: **Which moment it runs at.** `money_arrives` when a payment lands
+    #: and we look for the promise it answers; `invoice_issued` when a
+    #: document is written and we look back at money already there; `both`.
+    #: The evidence differs between the two, so a rule is allowed to trust
+    #: only one — and saying so here is what keeps that choice out of the
+    #: matching code, where nobody could see it.
+    trigger: str
     when: dict[str, Any]
     position: int
 
@@ -54,6 +62,7 @@ class ReconciliationRuleUpdate(BaseModel):
 
     enabled: Optional[bool] = None
     outcome: Optional[str] = None
+    trigger: Optional[str] = None
     when: Optional[dict[str, Any]] = None
     position: Optional[int] = None
 
@@ -64,6 +73,7 @@ class ReconciliationRuleCreate(BaseModel):
     node: str
     name: str = Field(min_length=1, max_length=120)
     outcome: str
+    trigger: str = "money_arrives"
     when: dict[str, Any]
     enabled: bool = True
     position: Optional[int] = None
@@ -78,6 +88,15 @@ class SuggestionTransactionRead(BaseModel):
     currency: Optional[str] = None
     date: date
     type: str
+
+
+class SuggestionCovers(BaseModel):
+    """One promise inside a question that names several."""
+
+    expectation_kind: str
+    expectation_id: uuid.UUID
+    label: Optional[str] = None
+    amount: Decimal
 
 
 class SuggestionRead(BaseModel):
@@ -103,3 +122,7 @@ class SuggestionRead(BaseModel):
     status: str
     created_at: datetime
     transaction: Optional[SuggestionTransactionRead] = None
+    #: Everything this one question covers. A single entry for the ordinary
+    #: case; several when one payment is offered against several invoices,
+    #: which is answered whole or not at all.
+    covers: list[SuggestionCovers] = []

@@ -2359,7 +2359,9 @@
       "exactAmountAnyClient": "Presná suma, ktokoľvek platí",
       "similarDescription": "Blízka suma a podobný popis",
       "sameAccountExact": "Rovnaký účet, presná suma",
-      "unknown": "Pravidlo"
+      "unknown": "Pravidlo",
+      "partPayment": "Známy klient, časť dlžnej sumy",
+      "severalInvoices": "Známy klient, viac faktúr naraz"
     },
     "outcome": {
       "link": "Spáruje samo",
@@ -2384,7 +2386,11 @@
       "atLeast": "od {{value}}",
       "atMost": "do {{value}}",
       "textContains": "výpis hovorí „{{text}}“",
-      "textExcludes": "výpis nehovorí „{{text}}“"
+      "textExcludes": "výpis nehovorí „{{text}}“",
+      "onArrival": "keď prídu peniaze",
+      "onIssue": "keď sa vystaví faktúra",
+      "amountPartial": "suma pokrýva časť dlžnej sumy",
+      "amountSet": "až {{count}} faktúr dá túto sumu"
     },
     "add": "Nové pravidlo",
     "newRule": "Nové pravidlo párovania",
@@ -2424,7 +2430,12 @@
       "noMaximum": "bez maxima",
       "text": "Text výpisu",
       "textContains": "musí obsahovať…",
-      "textExcludes": "nesmie obsahovať…"
+      "textExcludes": "nesmie obsahovať…",
+      "trigger": "Kedy hľadáme",
+      "triggerHint": "Párovanie prebieha v dvoch momentoch a dôkazy nie sú rovnaké.",
+      "amountMatch": "Ako presne musí sedieť suma",
+      "amountMatchHint": "Porovnáva sa s tým, čo ešte dlhujete, nie s pôvodným súčtom.",
+      "amountBandHint": "O samotnej platbe — veľkosť, ktorú má toto pravidlo riešiť alebo nie."
     },
     "counterparty": {
       "any": "Ktokoľvek",
@@ -2434,7 +2445,14 @@
       "exact": "Presne dlžná suma",
       "tolerance": "V rámci tolerancie",
       "ratio": "Po zrážkovej dani",
-      "ratioHint": "Používa sadzby zrážkovej dane vašej krajiny. Kým nie sú, pravidlo nespáruje nič."
+      "ratioHint": "Používa sadzby zrážkovej dane vašej krajiny. Kým nie sú, pravidlo nespáruje nič.",
+      "partial": "Časť dlžnej sumy",
+      "partialHint": "Pre klientov, ktorí platia po častiach. Zvyšok ostáva otvorený a ďalšia platba sadne presne.",
+      "set": "Viac faktúr spolu",
+      "setHint": "Pre platbu, ktorá pokrýva viac než jednu faktúru. Ak sedí viac kombinácií, radšej sa spýtame, než by sme vyberali.",
+      "setMax": "Najviac toľko faktúr",
+      "setFee": "Povoliť poplatok",
+      "setFeeHint": "Podiel z hodnoty faktúr, pre platbu prichádzajúcu v čistom. Nula znamená, že súčet musí sedieť presne."
     },
     "queue": {
       "title": "Čaká na vás",
@@ -2446,7 +2464,8 @@
       "accept": "Spárovať",
       "declineHint": "Toto to nie je. Tento pár už nebudeme navrhovať.",
       "linked": "Spárované",
-      "declined": "Zamietnuté — už sa nespýtame"
+      "declined": "Zamietnuté — už sa nespýtame",
+      "covers": "pokrýva"
     },
     "evidence": {
       "amountExact": "suma sedí presne",
@@ -2460,6 +2479,21 @@
       "any": "Je to jedno",
       "in": "Prichádzajúce peniaze",
       "out": "Odchádzajúce peniaze"
+    },
+    "step": {
+      "what": "Čo je toto pravidlo",
+      "which": "Na aké peniaze sa pozerá",
+      "whichHint": "Nechajte všetko prázdne a pozerá sa na všetky",
+      "match": "Kedy sa to počíta ako zhoda",
+      "matchHint": "Ako presne si musia platba a záväzok sadnúť"
+    },
+    "trigger": {
+      "money_arrives": "Keď prídu peniaze",
+      "money_arrivesHint": "Príde platba a hľadáme faktúru, ktorú uhrádza.",
+      "invoice_issued": "Keď sa vystaví faktúra",
+      "invoice_issuedHint": "Klient zaplatil skôr a faktúra prišla potom — pozeráme späť na peniaze, ktoré tam už boli.",
+      "both": "V oboch momentoch",
+      "bothHint": "Pravidlo platí na obe strany."
     }
   }
 }

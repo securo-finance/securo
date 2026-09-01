@@ -11,6 +11,7 @@ hide them from the people the recurring matcher was written for. The
 invoice *set* is marked inactive instead, which is the honest signal.
 """
 import uuid
+from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -31,6 +32,7 @@ from app.schemas.reconciliation import (
     ReconciliationRuleCreate,
     ReconciliationRuleRead,
     ReconciliationRuleUpdate,
+    SuggestionCovers,
     SuggestionRead,
 )
 from app.services import (
@@ -60,6 +62,7 @@ def _as_read(node: str, strategy: dict, position: int) -> ReconciliationRuleRead
         customised=bool(strategy.get("customised")),
         enabled=bool(strategy.get("enabled", True)),
         outcome=strategy.get("outcome", "suggest"),
+        trigger=strategy.get("trigger", "money_arrives"),
         when=strategy.get("when", {}),
         position=position,
     )
@@ -152,6 +155,7 @@ async def create_rule(
             {
                 "enabled": payload.enabled,
                 "outcome": payload.outcome,
+                "trigger": payload.trigger,
                 "when": payload.when,
             },
             position=payload.position,
@@ -223,7 +227,19 @@ async def list_suggestions(
     await session.commit()
 
     rows = await suggestions.open_for(session, ctx.workspace.id)
-    return [await _with_label(session, row) for row in rows]
+
+    # One row per *question*. A payment offered against three invoices is
+    # one thing to decide, and listing it three times would invite exactly
+    # the inconsistent answer the grouping exists to prevent.
+    seen: set[uuid.UUID] = set()
+    out = []
+    for row in rows:
+        if row.group_id is not None:
+            if row.group_id in seen:
+                continue
+            seen.add(row.group_id)
+        out.append(await _with_label(session, row))
+    return out
 
 
 @router.post("/suggestions/{suggestion_id}/accept", response_model=SuggestionRead)
@@ -237,6 +253,12 @@ async def accept_suggestion(
     An invoice gets an allocation; a recurring bill gets the charge bound
     to it. The two are genuinely different writes, which is why the
     suggestion service marks and this route links.
+
+    **A payment offered against several invoices is accepted whole.** The
+    question was "does this cover these three", so answering it two thirds
+    of the way would leave the payment short on the rest with nothing
+    having warned anybody. All the writes happen inside one savepoint: if
+    the last invoice refuses, the first two are not left standing.
     """
     row = await suggestions.get(session, ctx.workspace.id, suggestion_id)
     if row is None:
@@ -249,42 +271,54 @@ async def accept_suggestion(
             detail={"code": "already_answered", "message": "This one is already settled"},
         )
 
+    members = await suggestions.members_of(session, row)
+    try:
+        async with session.begin_nested():
+            for member in members:
+                await _settle(session, ctx, member)
+    except invoice_service.InvoiceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": exc.code, "message": str(exc)},
+        )
+
+    for member in members:
+        await suggestions.mark_accepted(session, member, ctx.user_id)
+    await session.commit()
+    return await _with_label(session, row)
+
+
+async def _settle(
+    session: AsyncSession, ctx: WorkspaceContext, row
+) -> None:
+    """Write one member of an accepted question."""
     if row.expectation_kind == "invoice":
         invoice = await session.get(Invoice, row.expectation_id)
         if invoice is None or invoice.workspace_id != ctx.workspace.id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found"
+            raise invoice_service.InvoiceError(
+                "invoice_missing", "The invoice is no longer there"
             )
-        try:
-            await invoice_service.allocate(
-                session,
-                invoice,
-                row.transaction_id,
-                amount=row.amount,
-                # The rule that suggested it, not "manual": the person
-                # agreed with a specific rule, and that is worth keeping.
-                method=row.strategy_id,
-            )
-        except invoice_service.InvoiceError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail={"code": exc.code, "message": str(exc)},
-            )
-    else:
-        bill = await session.get(RecurringTransaction, row.expectation_id)
-        if bill is None or bill.workspace_id != ctx.workspace.id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="Recurring bill not found"
-            )
-        from app.services import recurring_match_service
+        await invoice_service.allocate(
+            session,
+            invoice,
+            row.transaction_id,
+            amount=row.amount,
+            # The rule that suggested it, not "manual": the person agreed
+            # with a specific rule, and that is worth keeping.
+            method=row.strategy_id,
+        )
+        return
 
-        transaction = row.transaction
-        transaction.recurring_transaction_id = bill.id
-        recurring_match_service.advance_past(bill, transaction.date)
+    bill = await session.get(RecurringTransaction, row.expectation_id)
+    if bill is None or bill.workspace_id != ctx.workspace.id:
+        raise invoice_service.InvoiceError(
+            "bill_missing", "The recurring bill is no longer there"
+        )
+    from app.services import recurring_match_service
 
-    await suggestions.mark_accepted(session, row, ctx.user_id)
-    await session.commit()
-    return await _with_label(session, row)
+    transaction = row.transaction
+    transaction.recurring_transaction_id = bill.id
+    recurring_match_service.advance_past(bill, transaction.date)
 
 
 @router.post("/suggestions/{suggestion_id}/decline", response_model=SuggestionRead)
@@ -293,13 +327,17 @@ async def decline_suggestion(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Say no. The row stays, so this pair is never offered again."""
+    """Say no. The rows stay, so this pair is never offered again.
+
+    A grouped question is refused whole, for the same reason it is
+    accepted whole: it was one question."""
     row = await suggestions.get(session, ctx.workspace.id, suggestion_id)
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Suggestion not found"
         )
-    await suggestions.decline(session, row, ctx.user_id)
+    for member in await suggestions.members_of(session, row):
+        await suggestions.decline(session, member, ctx.user_id)
     await session.commit()
     return await _with_label(session, row)
 
@@ -328,22 +366,32 @@ async def _invoice_name(session: AsyncSession, invoice: Invoice) -> Optional[str
 
 
 async def _with_label(session: AsyncSession, row) -> SuggestionRead:
-    """Name the promise a suggestion points at.
+    """Name the promises a suggestion points at.
 
     Resolved here rather than stored on the row: an invoice that gets
     renumbered or a bill that gets renamed should read correctly in the
     queue, not as it was called on the day we became unsure about it.
     """
-    label = None
+    read = SuggestionRead.model_validate(row)
+    read.covers = [
+        SuggestionCovers(
+            expectation_kind=member.expectation_kind,
+            expectation_id=member.expectation_id,
+            label=await _name_of(session, member),
+            amount=member.amount,
+        )
+        for member in await suggestions.members_of(session, row)
+    ]
+    read.expectation_label = read.covers[0].label if read.covers else None
+    # What the whole question is worth, so a grouped row shows the payment
+    # rather than one slice of it.
+    read.amount = sum((c.amount for c in read.covers), Decimal("0"))
+    return read
+
+
+async def _name_of(session: AsyncSession, row) -> Optional[str]:
     if row.expectation_kind == "invoice":
         invoice = await session.get(Invoice, row.expectation_id)
-        if invoice is not None:
-            label = await _invoice_name(session, invoice)
-    else:
-        bill = await session.get(RecurringTransaction, row.expectation_id)
-        if bill is not None:
-            label = bill.description
-
-    read = SuggestionRead.model_validate(row)
-    read.expectation_label = label
-    return read
+        return await _invoice_name(session, invoice) if invoice else None
+    bill = await session.get(RecurringTransaction, row.expectation_id)
+    return bill.description if bill else None

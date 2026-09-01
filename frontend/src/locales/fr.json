@@ -2224,7 +2224,9 @@
       "exactAmountAnyClient": "Montant exact, n'importe quel payeur",
       "similarDescription": "Montant proche et libellé semblable",
       "sameAccountExact": "Même compte, montant exact",
-      "unknown": "Règle"
+      "unknown": "Règle",
+      "partPayment": "Client connu, une partie de ce qu'il doit",
+      "severalInvoices": "Client connu, plusieurs factures à la fois"
     },
     "outcome": {
       "link": "Rattache seule",
@@ -2249,7 +2251,11 @@
       "atLeast": "à partir de {{value}}",
       "atMost": "jusqu'à {{value}}",
       "textContains": "le relevé indique « {{text}} »",
-      "textExcludes": "le relevé n'indique pas « {{text}} »"
+      "textExcludes": "le relevé n'indique pas « {{text}} »",
+      "onArrival": "quand l'argent arrive",
+      "onIssue": "quand une facture est émise",
+      "amountPartial": "le montant couvre une partie de ce qui est dû",
+      "amountSet": "jusqu'à {{count}} factures en font le total"
     },
     "add": "Nouvelle règle",
     "newRule": "Nouvelle règle de rapprochement",
@@ -2289,7 +2295,12 @@
       "noMaximum": "pas de maximum",
       "text": "Libellé du relevé",
       "textContains": "doit contenir…",
-      "textExcludes": "ne doit pas contenir…"
+      "textExcludes": "ne doit pas contenir…",
+      "trigger": "Quand nous cherchons",
+      "triggerHint": "Le rapprochement a lieu à deux moments, et les indices ne sont pas les mêmes.",
+      "amountMatch": "À quel point le montant doit correspondre",
+      "amountMatchHint": "Comparé à ce qui reste dû, pas au total d'origine.",
+      "amountBandHint": "À propos du paiement lui-même : une taille que vous voulez, ou non, voir traitée par cette règle."
     },
     "counterparty": {
       "any": "N'importe qui",
@@ -2299,7 +2310,14 @@
       "exact": "Exactement le montant dû",
       "tolerance": "Dans une marge",
       "ratio": "Net de retenue à la source",
-      "ratioHint": "Utilise les taux de retenue de votre pays. Tant qu'il n'y en a pas, la règle ne correspond à rien."
+      "ratioHint": "Utilise les taux de retenue de votre pays. Tant qu'il n'y en a pas, la règle ne correspond à rien.",
+      "partial": "Une partie de ce qui est dû",
+      "partialHint": "Pour les clients qui paient en plusieurs fois. Le reste demeure ouvert, et le paiement suivant correspond exactement.",
+      "set": "Plusieurs factures additionnées",
+      "setHint": "Pour un paiement qui couvre plus d'une facture. Si plusieurs combinaisons tombent juste, nous demandons plutôt que de choisir.",
+      "setMax": "Au plus ce nombre de factures",
+      "setFee": "Admettre des frais de",
+      "setFeeHint": "Une part de la valeur des factures, pour un versement qui arrive net. Zéro signifie que le total doit être exact."
     },
     "queue": {
       "title": "En attente de vous",
@@ -2311,7 +2329,8 @@
       "accept": "Rattacher",
       "declineHint": "Ce n'est pas ça. Cette paire ne sera plus proposée.",
       "linked": "Rattaché",
-      "declined": "Écarté — nous ne redemanderons pas"
+      "declined": "Écarté — nous ne redemanderons pas",
+      "covers": "couvre"
     },
     "evidence": {
       "amountExact": "le montant correspond exactement",
@@ -2325,6 +2344,21 @@
       "any": "Peu importe",
       "in": "Argent entrant",
       "out": "Argent sortant"
+    },
+    "step": {
+      "what": "Ce qu'est cette règle",
+      "which": "Quel argent elle regarde",
+      "whichHint": "Laissez tout vide et elle regarde tout l'argent",
+      "match": "Quand cela compte comme un rapprochement",
+      "matchHint": "À quel point le paiement et la promesse doivent correspondre"
+    },
+    "trigger": {
+      "money_arrives": "Quand l'argent arrive",
+      "money_arrivesHint": "Un paiement tombe et nous cherchons la facture qu'il règle.",
+      "invoice_issued": "Quand une facture est émise",
+      "invoice_issuedHint": "Le client a payé d'abord, la facture suit — nous regardons en arrière, vers l'argent déjà là.",
+      "both": "Aux deux moments",
+      "bothHint": "La règle vaut dans les deux sens."
     }
   }
 }

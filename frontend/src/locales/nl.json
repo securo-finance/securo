@@ -2224,7 +2224,9 @@
       "exactAmountAnyClient": "Exact bedrag, willekeurige betaler",
       "similarDescription": "Vergelijkbaar bedrag en gelijkende omschrijving",
       "sameAccountExact": "Zelfde rekening, exact bedrag",
-      "unknown": "Regel"
+      "unknown": "Regel",
+      "partPayment": "Bekende klant, een deel van wat hij openstaat",
+      "severalInvoices": "Bekende klant, meerdere facturen tegelijk"
     },
     "outcome": {
       "link": "Koppelt zelf",
@@ -2249,7 +2251,11 @@
       "atLeast": "vanaf {{value}}",
       "atMost": "tot {{value}}",
       "textContains": "het afschrift zegt “{{text}}”",
-      "textExcludes": "het afschrift zegt niet “{{text}}”"
+      "textExcludes": "het afschrift zegt niet “{{text}}”",
+      "onArrival": "wanneer geld binnenkomt",
+      "onIssue": "wanneer een factuur wordt opgesteld",
+      "amountPartial": "het bedrag dekt een deel van wat openstaat",
+      "amountSet": "tot {{count}} facturen tellen op tot dat bedrag"
     },
     "add": "Nieuwe regel",
     "newRule": "Nieuwe afletterregel",
@@ -2289,7 +2295,12 @@
       "noMaximum": "geen maximum",
       "text": "Tekst op het afschrift",
       "textContains": "moet bevatten…",
-      "textExcludes": "mag niet bevatten…"
+      "textExcludes": "mag niet bevatten…",
+      "trigger": "Wanneer we zoeken",
+      "triggerHint": "Afletteren gebeurt op twee momenten, en het bewijs is niet hetzelfde.",
+      "amountMatch": "Hoe nauw het bedrag moet kloppen",
+      "amountMatchHint": "Vergeleken met wat nog openstaat, niet met het oorspronkelijke totaal.",
+      "amountBandHint": "Over de betaling zelf: een omvang die je deze regel wel of niet wilt laten behandelen."
     },
     "counterparty": {
       "any": "Iedereen",
@@ -2299,7 +2310,14 @@
       "exact": "Precies het openstaande bedrag",
       "tolerance": "Binnen een marge",
       "ratio": "Na inhouding van bronbelasting",
-      "ratioHint": "Gebruikt de inhoudingspercentages van jouw land. Zolang die er niet zijn, matcht de regel niets."
+      "ratioHint": "Gebruikt de inhoudingspercentages van jouw land. Zolang die er niet zijn, matcht de regel niets.",
+      "partial": "Een deel van wat openstaat",
+      "partialHint": "Voor klanten die in delen betalen. De rest blijft open, en de volgende betaling klopt precies.",
+      "set": "Meerdere facturen bij elkaar",
+      "setHint": "Voor een betaling die meer dan één factuur dekt. Passen er meerdere combinaties, dan vragen we het in plaats van te kiezen.",
+      "setMax": "Hoogstens zoveel facturen",
+      "setFee": "Sta een kosten toe van",
+      "setFeeHint": "Een deel van de waarde van de facturen, voor een uitbetaling die netto binnenkomt. Nul betekent dat het totaal exact moet kloppen."
     },
     "queue": {
       "title": "Wacht op jou",
@@ -2311,7 +2329,8 @@
       "accept": "Koppelen",
       "declineHint": "Dit is het niet. Dit paar wordt niet opnieuw voorgesteld.",
       "linked": "Gekoppeld",
-      "declined": "Afgewezen — we vragen het niet nog eens"
+      "declined": "Afgewezen — we vragen het niet nog eens",
+      "covers": "dekt"
     },
     "evidence": {
       "amountExact": "bedrag klopt precies",
@@ -2325,6 +2344,21 @@
       "any": "Maakt niet uit",
       "in": "Inkomend geld",
       "out": "Uitgaand geld"
+    },
+    "step": {
+      "what": "Wat deze regel is",
+      "which": "Naar welk geld hij kijkt",
+      "whichHint": "Laat alles leeg en hij kijkt naar al het geld",
+      "match": "Wanneer het als match telt",
+      "matchHint": "Hoe nauw de betaling en de belofte moeten passen"
+    },
+    "trigger": {
+      "money_arrives": "Wanneer geld binnenkomt",
+      "money_arrivesHint": "Een betaling komt binnen en we zoeken de factuur die hij voldoet.",
+      "invoice_issued": "Wanneer een factuur wordt opgesteld",
+      "invoice_issuedHint": "De klant betaalde eerst en de factuur volgt — we kijken terug naar geld dat er al was.",
+      "both": "Op beide momenten",
+      "bothHint": "De regel geldt beide kanten op."
     }
   }
 }

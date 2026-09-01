@@ -1311,6 +1311,16 @@ export interface InvoiceFacets {
  *  Deliberately not an open-ended condition tree like the categorization
  *  rules: matching runs on a fixed set of signals, and a form over exactly
  *  those is honest about what the engine can actually look at. */
+/** Which moment a rule runs at.
+ *
+ *  `money_arrives` — a payment lands and we look for the promise it
+ *  answers; the promise came first and was waiting.
+ *  `invoice_issued` — a document is written and we look back at money that
+ *  arrived before it existed, the client who pays and lets the nota
+ *  follow. Weaker evidence: that money already had a life of its own.
+ *  `both` — the rule trusts either. */
+export type Trigger = 'money_arrives' | 'invoice_issued' | 'both'
+
 export interface ReconciliationConditions {
   // -- Which money the rule is written for. Every one of these decides
   //    whether the rule is consulted at all, before any comparison. Absent
@@ -1328,11 +1338,22 @@ export interface ReconciliationConditions {
   // -- How closely the pair has to fit.
   counterparty?: 'any' | 'same_payee'
   amount?: {
-    match: 'exact' | 'tolerance' | 'ratio'
+    /** `partial` is what makes two transactions on one invoice reachable:
+     *  every other mode compares against the whole outstanding balance,
+     *  and half of it is simply not that. */
+    match: 'exact' | 'tolerance' | 'ratio' | 'partial' | 'set'
     percent?: string
+    /** For `set`: how many invoices one payment may cover. */
+    max_invoices?: number
     epsilon?: string
     ratios?: string
     difference_kind?: string
+    /** For `partial`: the smallest fraction of the balance worth
+     *  offering, so a token payment is not proposed as an instalment. */
+    min_ratio?: string
+    /** For `partial`: the largest, above which the gap is a fee or a
+     *  withholding rather than an instalment. */
+    max_ratio?: string
     /** Bounds on the movement itself, not on how close it is to the
      *  promise: "never link anything over ten thousand on its own". */
     min?: string
@@ -1368,6 +1389,7 @@ export interface ReconciliationRule {
   customised: boolean
   enabled: boolean
   outcome: 'link' | 'suggest'
+  trigger: Trigger
   when: ReconciliationConditions
   position: number
 }
@@ -1383,6 +1405,7 @@ export interface ReconciliationNode {
 export interface ReconciliationRulePatch {
   enabled?: boolean
   outcome?: 'link' | 'suggest'
+  trigger?: Trigger
   when?: ReconciliationConditions
   position?: number
 }
@@ -1391,6 +1414,7 @@ export interface ReconciliationRuleDraft {
   node: string
   name: string
   outcome: 'link' | 'suggest'
+  trigger?: Trigger
   when: ReconciliationConditions
   enabled?: boolean
   position?: number | null
@@ -1421,6 +1445,15 @@ export interface ReconciliationSuggestion {
   }
   status: 'pending' | 'accepted' | 'declined' | 'expired'
   created_at: string
+  /** Everything this one question covers. A single entry for the ordinary
+   *  case; several when one payment is offered against several invoices,
+   *  which is answered whole or not at all. */
+  covers: {
+    expectation_kind: 'invoice' | 'recurring'
+    expectation_id: string
+    label?: string | null
+    amount: string
+  }[]
   transaction?: {
     id: string
     description?: string | null

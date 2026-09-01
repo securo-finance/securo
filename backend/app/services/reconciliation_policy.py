@@ -60,6 +60,10 @@ MATCH_INVOICE: dict[str, Any] = {
             "id": "same_client_exact",
             "enabled": True,
             "outcome": "link",
+            # Runs at both moments: a known client paying the exact amount
+            # is as convincing before the nota as after it, and the
+            # pay-then-invoice case is ordinary here.
+            "trigger": "both",
             "when": {
                 "counterparty": "same_payee",
                 "amount": {"match": "exact"},
@@ -76,6 +80,7 @@ MATCH_INVOICE: dict[str, Any] = {
             "id": "same_client_net_of_withholding",
             "enabled": True,
             "outcome": "link",
+            "trigger": "both",
             "when": {
                 "counterparty": "same_payee",
                 # Ratios come from the jurisdiction pack, never from
@@ -95,6 +100,11 @@ MATCH_INVOICE: dict[str, Any] = {
             "id": "exact_amount_any_client",
             "enabled": True,
             "outcome": "link",
+            # Only when money arrives. Backwards, an exact amount from a
+            # payer we cannot name is not enough: that money already had a
+            # life of its own — a refund, a transfer, another job — and
+            # claiming it for a document written afterwards is a guess.
+            "trigger": "money_arrives",
             "when": {
                 "counterparty": "any",
                 "amount": {"match": "exact"},
@@ -104,9 +114,63 @@ MATCH_INVOICE: dict[str, Any] = {
             },
         },
         {
+            "id": "same_client_several_invoices",
+            "enabled": True,
+            # A link, because the arithmetic either works out or it does
+            # not: the engine only gets here when exactly one combination
+            # of this client's open invoices adds up to what arrived. Two
+            # combinations is a question, and the engine downgrades it on
+            # its own.
+            "outcome": "link",
+            "trigger": "money_arrives",
+            "when": {
+                "counterparty": "same_payee",
+                # The sum of several promises rather than any one of them.
+                # `percent` at zero means the total must be exact: a
+                # payout net of a fee needs a tolerance, and guessing
+                # which fee applies is how a wrong split gets written
+                # confidently. Somebody who knows their gateway's cut can
+                # set it here.
+                "amount": {"match": "set", "max_invoices": 6, "percent": "0"},
+                "date": {"before_days": 10, "after_days": 60},
+                "currency": {"conversion": "reject"},
+            },
+        },
+        {
+            "id": "same_client_part_payment",
+            "enabled": True,
+            # A suggestion, not a link. Money that covers part of an
+            # invoice is genuinely ambiguous — an instalment, a client
+            # paying what they had, or a different job entirely — and the
+            # difference matters enough to ask. Promoting it to a link is
+            # one click for somebody whose clients always pay in parts.
+            "outcome": "suggest",
+            "trigger": "both",
+            "when": {
+                "counterparty": "same_payee",
+                # The mode that makes two transactions on one invoice
+                # reachable at all. Every other mode compares against the
+                # whole outstanding balance, so nothing could ever propose
+                # the first half of a payment made in two.
+                # Between a twentieth and nineteen twentieths of what is
+                # owed. Below that it is noise; above it, the gap is a fee
+                # or a withholding rather than an instalment, and the
+                # tolerance rules are the ones written for that.
+                "amount": {
+                    "match": "partial",
+                    "min_ratio": "0.05",
+                    "max_ratio": "0.95",
+                },
+                "date": {"before_days": 10, "after_days": 60},
+                "currency": {"conversion": "reject"},
+                "unique_candidate": True,
+            },
+        },
+        {
             "id": "similar_description",
             "enabled": True,
             "outcome": "suggest",
+            "trigger": "money_arrives",
             "when": {
                 "counterparty": "any",
                 "amount": {"match": "tolerance", "percent": "2"},
@@ -143,6 +207,7 @@ MATCH_RECURRING: dict[str, Any] = {
             "id": "same_account_exact",
             "enabled": True,
             "outcome": "link",
+            "trigger": "money_arrives",
             "when": {
                 "counterparty": "any",
                 "same_account": True,
@@ -184,6 +249,7 @@ MATCH_PLACEHOLDER: dict[str, Any] = {
             "id": "placeholder_same_account_exact",
             "enabled": True,
             "outcome": "link",
+            "trigger": "money_arrives",
             "when": {
                 "counterparty": "any",
                 "same_account": True,

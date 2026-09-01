@@ -231,7 +231,7 @@ async def resolve_recurring(
 # Writing
 # ---------------------------------------------------------------------------
 _OUTCOMES = ("link", "suggest")
-_AMOUNT_MATCHES = ("exact", "tolerance", "ratio")
+_AMOUNT_MATCHES = ("exact", "tolerance", "ratio", "partial", "set")
 _COUNTERPARTIES = ("any", "same_payee")
 
 
@@ -250,6 +250,11 @@ def validate_config(config: dict[str, Any], *, whole: bool) -> dict[str, Any]:
 
     if "enabled" in config:
         clean["enabled"] = bool(config["enabled"])
+
+    if "trigger" in config:
+        if config["trigger"] not in ("money_arrives", "invoice_issued", "both"):
+            raise RuleError("bad_trigger", "Unknown moment for a rule to run")
+        clean["trigger"] = config["trigger"]
 
     if "outcome" in config:
         if config["outcome"] not in _OUTCOMES:
@@ -362,6 +367,51 @@ def _validate_amount(rule: Any) -> dict[str, Any]:
                 "A tolerance above 100% would match every amount there is",
             )
         checked["percent"] = percent
+    if match == "partial":
+        # A floor, so a token payment against a large invoice is not
+        # offered as an instalment. Expressed as a fraction of what is
+        # outstanding rather than an absolute, because "at least five per
+        # cent" means the same thing on a small invoice and a large one.
+        for bound, default in (("min_ratio", "0.05"), ("max_ratio", "0.95")):
+            raw = rule.get(bound, default)
+            try:
+                value = Decimal(str(raw))
+            except (ArithmeticError, TypeError, ValueError):
+                raise RuleError("bad_part_ratio", "That is not a fraction") from None
+            if not 0 <= value <= 1:
+                raise RuleError(
+                    "bad_part_ratio", "A part payment is between none and all of it"
+                )
+            checked[bound] = str(raw)
+        if Decimal(checked["min_ratio"]) > Decimal(checked["max_ratio"]):
+            raise RuleError(
+                "impossible_part_band",
+                "The lower share is above the upper one, so nothing can match",
+            )
+
+    if match == "set":
+        # How many promises one payment may cover, and how far the total
+        # may be from what arrived. The cap is bounded again in the engine
+        # — searching which invoices add up to a payment grows explosively,
+        # and a sync that hangs is worse than a match that is not made.
+        try:
+            most = int(rule.get("max_invoices", 6))
+        except (TypeError, ValueError):
+            raise RuleError("bad_set_size", "That is not a number of invoices") from None
+        if not 2 <= most <= 6:
+            raise RuleError(
+                "bad_set_size", "A combination holds between two and six invoices"
+            )
+        checked["max_invoices"] = most
+        checked["percent"] = _positive_number(
+            rule.get("percent", "0"), "bad_tolerance", "The tolerance must not be negative"
+        )
+        if Decimal(checked["percent"]) > 20:
+            raise RuleError(
+                "set_tolerance_too_wide",
+                "Above twenty per cent almost any group of invoices adds up",
+            )
+
     if match == "ratio":
         # The ratios themselves come from the jurisdiction pack, never from
         # a workspace: a wrong withholding rate would auto-link a wrong

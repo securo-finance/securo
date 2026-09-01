@@ -33,6 +33,7 @@ import {
 import type {
   Account,
   Payee,
+  Trigger,
   ReconciliationConditions,
   ReconciliationNode,
   ReconciliationRule,
@@ -47,6 +48,8 @@ const SHIPPED_NAME: Record<string, string> = {
   same_client_exact: 'reconciliation.rule.sameClientExact',
   same_client_net_of_withholding: 'reconciliation.rule.netOfWithholding',
   exact_amount_any_client: 'reconciliation.rule.exactAmountAnyClient',
+  same_client_part_payment: 'reconciliation.rule.partPayment',
+  same_client_several_invoices: 'reconciliation.rule.severalInvoices',
   similar_description: 'reconciliation.rule.similarDescription',
   same_account_exact: 'reconciliation.rule.sameAccountExact',
 }
@@ -75,15 +78,20 @@ function SectionCard({ children }: { children: React.ReactNode }) {
  *  a reader arrives with is "why did this match", and a sentence answers it
  *  where a grid of numbers does not. */
 function conditionSummary(
-  when: ReconciliationConditions,
+  when: ReconciliationConditions & { trigger?: Trigger },
   t: (key: string, opts?: Record<string, unknown>) => string,
   names: { accounts: Account[]; payees: Payee[] },
 ): string {
   const parts: string[] = []
 
-  // The scope filters come first, because they answer the question a
-  // reader arrives with — "when does this even apply?" — before the
-  // question of how closely the pair has to fit.
+  // The moment first, because it is the question the old summary could
+  // not answer: does this fire when money lands, or when the document is
+  // written? "Both" says nothing worth a word, so it says nothing.
+  if (when.trigger === 'invoice_issued') parts.push(t('reconciliation.cond.onIssue'))
+  else if (when.trigger === 'money_arrives') parts.push(t('reconciliation.cond.onArrival'))
+
+  // Then the scope filters, which answer "does this even apply?" before
+  // the question of how closely the pair has to fit.
   if (when.accounts?.in?.length) {
     parts.push(
       t('reconciliation.cond.accounts', {
@@ -127,6 +135,12 @@ function conditionSummary(
     parts.push(t('reconciliation.cond.amountTolerance', { percent: when.amount.percent }))
   else if (when.amount?.match === 'ratio')
     parts.push(t('reconciliation.cond.amountRatio'))
+  else if (when.amount?.match === 'partial')
+    parts.push(t('reconciliation.cond.amountPartial'))
+  else if (when.amount?.match === 'set')
+    parts.push(
+      t('reconciliation.cond.amountSet', { count: when.amount.max_invoices ?? 6 }),
+    )
 
   if (when.date)
     parts.push(
@@ -163,6 +177,40 @@ function OutcomeBadge({ outcome }: { outcome: 'link' | 'suggest' }) {
     </span>
   )
 }
+
+/** One of the three questions a rule answers, with its heading.
+ *
+ *  The form used to be a flat list, and two of its fields were both called
+ *  "Amount" — one asking how close the payment must be to the invoice, the
+ *  other asking which payments the rule looks at. Same word, different
+ *  question, twenty pixels apart. Splitting them under headings is not
+ *  decoration: it is the difference between a form you can read and one
+ *  you have to already understand. */
+function Step({
+  index,
+  title,
+  hint,
+  children,
+}: {
+  index: number
+  title: string
+  hint?: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="rounded-lg border border-border">
+      <header className="px-3 py-2 bg-muted/40 border-b border-border rounded-t-lg">
+        <p className="text-sm font-semibold text-foreground">
+          <span className="text-muted-foreground mr-1.5">{index}.</span>
+          {title}
+        </p>
+        {hint && <p className="text-xs text-muted-foreground mt-0.5">{hint}</p>}
+      </header>
+      <div className="p-3 space-y-3">{children}</div>
+    </section>
+  )
+}
+
 
 /** Pick none, one, or several — accounts or clients.
  *
@@ -240,6 +288,7 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
 
   const [name, setName] = useState(rule?.name ?? '')
   const [outcome, setOutcome] = useState<'link' | 'suggest'>(rule?.outcome ?? 'suggest')
+  const [trigger, setTrigger] = useState<Trigger>(rule?.trigger ?? 'money_arrives')
   const [when, setWhen] = useState<ReconciliationConditions>(rule?.when ?? EMPTY)
 
   // The dialog is mounted once and reused, so it has to be re-seeded
@@ -255,15 +304,16 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
     setSeeded(key)
     setName(rule?.name ?? '')
     setOutcome(rule?.outcome ?? 'suggest')
+    setTrigger(rule?.trigger ?? 'money_arrives')
     setWhen(rule?.when ?? EMPTY)
   }
 
   const save = useMutation({
     mutationFn: async () => {
       if (creating) {
-        return reconciliationApi.createRule({ node, name, outcome, when })
+        return reconciliationApi.createRule({ node, name, outcome, trigger, when })
       }
-      return reconciliationApi.updateRule(node, rule.id, { outcome, when })
+      return reconciliationApi.updateRule(node, rule.id, { outcome, trigger, when })
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['reconciliation-rules'] })
@@ -275,11 +325,24 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
 
   const amountMatch = when.amount?.match ?? 'exact'
 
+  /** One labelled control inside a step. Keeps the two amount questions
+   *  visually distinct even though both are about money. */
+  const field = (label: string, hint: string | null, control: React.ReactNode) => (
+    <div>
+      <Label>{label}</Label>
+      {hint && <p className="text-xs text-muted-foreground mt-0.5 mb-1.5">{hint}</p>}
+      <div className={hint ? '' : 'mt-1'}>{control}</div>
+    </div>
+  )
+
+  const inputClass =
+    'w-full px-3 py-2 text-sm border border-input rounded-md bg-background'
+
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
       {/* Capped and scrolled, with the actions outside the scrolling part.
-          A rule with its scope open is taller than a laptop viewport, and
-          a dialog whose Save button is below the fold with nothing to
+          A rule with every section open is taller than a laptop viewport,
+          and a dialog whose Save button is below the fold with nothing to
           scroll is a dialog you cannot save from. */}
       <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
         <DialogHeader>
@@ -290,228 +353,144 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
           </DialogTitle>
         </DialogHeader>
 
+        {/* Three questions, in the order a person asks them: when does this
+            run, which money does it look at, and what counts as a match.
+            The old flat list had two fields called "Amount" twenty pixels
+            apart — one about how close the payment must be to the invoice,
+            one about which payments the rule looks at. Same word, different
+            question. */}
         <div className="space-y-4 flex-1 overflow-y-auto -mx-1 px-1">
-          {creating && (
-            <div>
-              <Label>{t('reconciliation.field.name')}</Label>
-              <input
-                className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={t('reconciliation.field.namePlaceholder')}
-              />
-            </div>
-          )}
+          <Step index={1} title={t('reconciliation.step.what')}>
+            {creating &&
+              field(
+                t('reconciliation.field.name'),
+                null,
+                <input
+                  className={inputClass}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder={t('reconciliation.field.namePlaceholder')}
+                />,
+              )}
 
-          <div>
-            <Label>{t('reconciliation.field.outcome')}</Label>
-            <p className="text-xs text-muted-foreground mt-0.5 mb-1.5">
-              {t('reconciliation.field.outcomeHint')}
-            </p>
-            <div className="flex gap-2">
-              {(['link', 'suggest'] as const).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setOutcome(value)}
-                  className={cn(
-                    'flex-1 px-3 py-2 rounded-md text-sm font-medium border transition-colors',
-                    outcome === value
-                      ? 'bg-primary text-primary-foreground border-primary'
-                      : 'bg-background border-input text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {t(
-                    value === 'link'
-                      ? 'reconciliation.outcome.link'
-                      : 'reconciliation.outcome.suggest',
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
+            {field(
+              t('reconciliation.field.trigger'),
+              t('reconciliation.field.triggerHint'),
+              <div className="space-y-1.5">
+                {(['money_arrives', 'invoice_issued', 'both'] as const).map((value) => (
+                  <label
+                    key={value}
+                    className={cn(
+                      'flex items-start gap-2 px-3 py-2 rounded-md border cursor-pointer transition-colors',
+                      trigger === value
+                        ? 'border-primary bg-primary/5'
+                        : 'border-input hover:bg-muted',
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      className="mt-1"
+                      checked={trigger === value}
+                      onChange={() => setTrigger(value)}
+                    />
+                    <span>
+                      <span className="text-sm font-medium block">
+                        {t(`reconciliation.trigger.${value}`)}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {t(`reconciliation.trigger.${value}Hint`)}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>,
+            )}
 
-          <div>
-            <Label>{t('reconciliation.field.counterparty')}</Label>
-            <select
-              className="w-full mt-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
-              value={when.counterparty ?? 'any'}
-              onChange={(e) =>
-                setWhen({ ...when, counterparty: e.target.value as 'any' | 'same_payee' })
-              }
-            >
-              <option value="any">{t('reconciliation.counterparty.any')}</option>
-              <option value="same_payee">{t('reconciliation.counterparty.samePayee')}</option>
-            </select>
-          </div>
+            {field(
+              t('reconciliation.field.outcome'),
+              t('reconciliation.field.outcomeHint'),
+              <div className="flex gap-2">
+                {(['link', 'suggest'] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setOutcome(value)}
+                    className={cn(
+                      'flex-1 px-3 py-2 rounded-md text-sm font-medium border transition-colors',
+                      outcome === value
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-background border-input text-muted-foreground hover:text-foreground',
+                    )}
+                  >
+                    {t(
+                      value === 'link'
+                        ? 'reconciliation.outcome.link'
+                        : 'reconciliation.outcome.suggest',
+                    )}
+                  </button>
+                ))}
+              </div>,
+            )}
+          </Step>
 
-          <div>
-            <Label>{t('reconciliation.field.amount')}</Label>
-            <div className="flex gap-2 mt-1">
+          <Step
+            index={2}
+            title={t('reconciliation.step.which')}
+            hint={t('reconciliation.step.whichHint')}
+          >
+            {field(
+              t('reconciliation.field.accounts'),
+              null,
+              <MultiPicker
+                options={accountList.map((a) => ({ id: a.id, label: a.name }))}
+                selected={when.accounts?.in ?? []}
+                onChange={(ids) =>
+                  setWhen({ ...when, accounts: ids.length ? { in: ids } : undefined })
+                }
+                empty={t('reconciliation.field.anyAccount')}
+              />,
+            )}
+
+            {field(
+              t('reconciliation.field.payees'),
+              null,
+              <MultiPicker
+                options={payeeList.map((p) => ({ id: p.id, label: p.name }))}
+                selected={when.payees?.in ?? []}
+                onChange={(ids) =>
+                  setWhen({ ...when, payees: ids.length ? { in: ids } : undefined })
+                }
+                empty={t('reconciliation.field.anyPayee')}
+              />,
+            )}
+
+            {field(
+              t('reconciliation.field.direction'),
+              null,
               <select
-                className="flex-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
-                value={amountMatch}
-                onChange={(e) => {
-                  const match = e.target.value as 'exact' | 'tolerance' | 'ratio'
+                className={inputClass}
+                value={when.direction ?? 'any'}
+                onChange={(e) =>
                   setWhen({
                     ...when,
-                    amount:
-                      match === 'tolerance'
-                        ? { match, percent: when.amount?.percent ?? '2' }
-                        : { match },
+                    direction: e.target.value as 'any' | 'credit' | 'debit',
                   })
-                }}
+                }
               >
-                <option value="exact">{t('reconciliation.amount.exact')}</option>
-                <option value="tolerance">{t('reconciliation.amount.tolerance')}</option>
-                <option value="ratio">{t('reconciliation.amount.ratio')}</option>
-              </select>
-              {amountMatch === 'tolerance' && (
-                <div className="flex items-center gap-1">
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step="0.5"
-                    className="w-20 px-3 py-2 text-sm border border-input rounded-md bg-background"
-                    value={when.amount?.percent ?? '2'}
-                    onChange={(e) =>
-                      setWhen({
-                        ...when,
-                        amount: { match: 'tolerance', percent: e.target.value },
-                      })
-                    }
-                  />
-                  <span className="text-sm text-muted-foreground">%</span>
-                </div>
-              )}
-            </div>
-            {amountMatch === 'ratio' && (
-              <p className="text-xs text-muted-foreground mt-1">
-                {t('reconciliation.amount.ratioHint')}
-              </p>
+                <option value="any">{t('reconciliation.direction.any')}</option>
+                <option value="credit">{t('reconciliation.direction.in')}</option>
+                <option value="debit">{t('reconciliation.direction.out')}</option>
+              </select>,
             )}
-          </div>
 
-          <div>
-            <Label>{t('reconciliation.field.window')}</Label>
-            <p className="text-xs text-muted-foreground mt-0.5 mb-1.5">
-              {t('reconciliation.field.windowHint')}
-            </p>
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <span className="text-xs text-muted-foreground">
-                  {t('reconciliation.field.beforeDays')}
-                </span>
-                <input
-                  type="number"
-                  min={0}
-                  max={365}
-                  className="w-full mt-0.5 px-3 py-2 text-sm border border-input rounded-md bg-background"
-                  value={when.date?.before_days ?? 0}
-                  onChange={(e) =>
-                    setWhen({
-                      ...when,
-                      date: {
-                        before_days: Number(e.target.value),
-                        after_days: when.date?.after_days ?? 0,
-                      },
-                    })
-                  }
-                />
-              </div>
-              <div className="flex-1">
-                <span className="text-xs text-muted-foreground">
-                  {t('reconciliation.field.afterDays')}
-                </span>
-                <input
-                  type="number"
-                  min={0}
-                  max={365}
-                  className="w-full mt-0.5 px-3 py-2 text-sm border border-input rounded-md bg-background"
-                  value={when.date?.after_days ?? 0}
-                  onChange={(e) =>
-                    setWhen({
-                      ...when,
-                      date: {
-                        before_days: when.date?.before_days ?? 0,
-                        after_days: Number(e.target.value),
-                      },
-                    })
-                  }
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Scope: which money the rule is written for, before any
-              comparison happens. Collapsed behind a summary line so the
-              common case — a rule that applies to everything — stays as
-              short as it was. */}
-          <details className="rounded-md border border-input">
-            <summary className="px-3 py-2 text-sm font-medium cursor-pointer select-none">
-              {t('reconciliation.field.scope')}
-              <span className="ml-2 text-xs font-normal text-muted-foreground">
-                {t('reconciliation.field.scopeHint')}
-              </span>
-            </summary>
-            <div className="px-3 pb-3 pt-1 space-y-3 border-t border-input">
-              <div>
-                <span className="text-xs text-muted-foreground">
-                  {t('reconciliation.field.accounts')}
-                </span>
-                <MultiPicker
-                  options={accountList.map((a) => ({ id: a.id, label: a.name }))}
-                  selected={when.accounts?.in ?? []}
-                  onChange={(ids) =>
-                    setWhen({ ...when, accounts: ids.length ? { in: ids } : undefined })
-                  }
-                  empty={t('reconciliation.field.anyAccount')}
-                />
-              </div>
-
-              <div>
-                <span className="text-xs text-muted-foreground">
-                  {t('reconciliation.field.payees')}
-                </span>
-                <MultiPicker
-                  options={payeeList.map((p) => ({ id: p.id, label: p.name }))}
-                  selected={when.payees?.in ?? []}
-                  onChange={(ids) =>
-                    setWhen({ ...when, payees: ids.length ? { in: ids } : undefined })
-                  }
-                  empty={t('reconciliation.field.anyPayee')}
-                />
-              </div>
-
-              <div>
-                <span className="text-xs text-muted-foreground">
-                  {t('reconciliation.field.direction')}
-                </span>
-                <select
-                  className="w-full mt-0.5 px-3 py-2 text-sm border border-input rounded-md bg-background"
-                  value={when.direction ?? 'any'}
-                  onChange={(e) =>
-                    setWhen({
-                      ...when,
-                      direction: e.target.value as 'any' | 'credit' | 'debit',
-                    })
-                  }
-                >
-                  <option value="any">{t('reconciliation.direction.any')}</option>
-                  <option value="credit">{t('reconciliation.direction.in')}</option>
-                  <option value="debit">{t('reconciliation.direction.out')}</option>
-                </select>
-              </div>
-
-              <div>
-                <span className="text-xs text-muted-foreground">
-                  {t('reconciliation.field.currencyScope')}
-                </span>
+            {field(
+              t('reconciliation.field.currencyScope'),
+              null,
+              <>
                 <input
                   // Only what was typed is shouted. Uppercasing the
                   // placeholder too turns a hint into an instruction.
-                  className="w-full mt-0.5 px-3 py-2 text-sm border border-input rounded-md bg-background [&:not(:placeholder-shown)]:uppercase"
+                  className={`${inputClass} [&:not(:placeholder-shown)]:uppercase`}
                   placeholder={t('reconciliation.field.currencyPlaceholder')}
                   value={(when.currency?.in ?? []).join(', ')}
                   onChange={(e) => {
@@ -544,54 +523,54 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
                   />
                   {t('reconciliation.field.foreignOnly')}
                 </label>
-              </div>
+              </>,
+            )}
 
-              <div>
-                <span className="text-xs text-muted-foreground">
-                  {t('reconciliation.field.amountBand')}
-                </span>
-                <div className="flex gap-2 mt-0.5">
-                  <input
-                    type="number"
-                    min={0}
-                    className="flex-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
-                    placeholder={t('reconciliation.field.noMinimum')}
-                    value={when.amount?.min ?? ''}
-                    onChange={(e) =>
-                      setWhen({
-                        ...when,
-                        amount: {
-                          ...(when.amount ?? { match: 'exact' }),
-                          min: e.target.value || undefined,
-                        },
-                      })
-                    }
-                  />
-                  <input
-                    type="number"
-                    min={0}
-                    className="flex-1 px-3 py-2 text-sm border border-input rounded-md bg-background"
-                    placeholder={t('reconciliation.field.noMaximum')}
-                    value={when.amount?.max ?? ''}
-                    onChange={(e) =>
-                      setWhen({
-                        ...when,
-                        amount: {
-                          ...(when.amount ?? { match: 'exact' }),
-                          max: e.target.value || undefined,
-                        },
-                      })
-                    }
-                  />
-                </div>
-              </div>
-
-              <div>
-                <span className="text-xs text-muted-foreground">
-                  {t('reconciliation.field.text')}
-                </span>
+            {field(
+              t('reconciliation.field.amountBand'),
+              t('reconciliation.field.amountBandHint'),
+              <div className="flex gap-2">
                 <input
-                  className="w-full mt-0.5 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                  type="number"
+                  min={0}
+                  className={inputClass}
+                  placeholder={t('reconciliation.field.noMinimum')}
+                  value={when.amount?.min ?? ''}
+                  onChange={(e) =>
+                    setWhen({
+                      ...when,
+                      amount: {
+                        ...(when.amount ?? { match: 'exact' }),
+                        min: e.target.value || undefined,
+                      },
+                    })
+                  }
+                />
+                <input
+                  type="number"
+                  min={0}
+                  className={inputClass}
+                  placeholder={t('reconciliation.field.noMaximum')}
+                  value={when.amount?.max ?? ''}
+                  onChange={(e) =>
+                    setWhen({
+                      ...when,
+                      amount: {
+                        ...(when.amount ?? { match: 'exact' }),
+                        max: e.target.value || undefined,
+                      },
+                    })
+                  }
+                />
+              </div>,
+            )}
+
+            {field(
+              t('reconciliation.field.text'),
+              null,
+              <>
+                <input
+                  className={inputClass}
                   placeholder={t('reconciliation.field.textContains')}
                   value={when.text?.contains ?? ''}
                   onChange={(e) =>
@@ -602,7 +581,7 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
                   }
                 />
                 <input
-                  className="w-full mt-1.5 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                  className={`${inputClass} mt-1.5`}
                   placeholder={t('reconciliation.field.textExcludes')}
                   value={when.text?.not_contains ?? ''}
                   onChange={(e) =>
@@ -612,33 +591,243 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
                     })
                   }
                 />
-              </div>
-            </div>
-          </details>
+              </>,
+            )}
+          </Step>
 
-          <div>
-            <Label>{t('reconciliation.field.similarity')}</Label>
-            <p className="text-xs text-muted-foreground mt-0.5 mb-1.5">
-              {t('reconciliation.field.similarityHint')}
-            </p>
-            <input
-              type="number"
-              min={0}
-              max={1}
-              step="0.05"
-              className="w-28 px-3 py-2 text-sm border border-input rounded-md bg-background"
-              value={when.description_similarity?.min ?? ''}
-              placeholder={t('reconciliation.field.similarityOff')}
-              onChange={(e) =>
-                setWhen({
-                  ...when,
-                  description_similarity: e.target.value
-                    ? { min: e.target.value }
-                    : undefined,
-                })
-              }
-            />
-          </div>
+          <Step
+            index={3}
+            title={t('reconciliation.step.match')}
+            hint={t('reconciliation.step.matchHint')}
+          >
+            {field(
+              t('reconciliation.field.counterparty'),
+              null,
+              <select
+                className={inputClass}
+                value={when.counterparty ?? 'any'}
+                onChange={(e) =>
+                  setWhen({ ...when, counterparty: e.target.value as 'any' | 'same_payee' })
+                }
+              >
+                <option value="any">{t('reconciliation.counterparty.any')}</option>
+                <option value="same_payee">{t('reconciliation.counterparty.samePayee')}</option>
+              </select>,
+            )}
+
+            {field(
+              t('reconciliation.field.amountMatch'),
+              t('reconciliation.field.amountMatchHint'),
+              <>
+                <div className="flex gap-2">
+                  <select
+                    className={inputClass}
+                    value={amountMatch}
+                    onChange={(e) => {
+                      const match = e.target.value as
+                        | 'exact'
+                        | 'tolerance'
+                        | 'ratio'
+                        | 'partial'
+                        | 'set'
+                      const kept = { min: when.amount?.min, max: when.amount?.max }
+                      setWhen({
+                        ...when,
+                        amount:
+                          match === 'tolerance'
+                            ? { match, percent: when.amount?.percent ?? '2', ...kept }
+                            : match === 'partial'
+                              ? {
+                                  match,
+                                  min_ratio: when.amount?.min_ratio ?? '0.05',
+                                  max_ratio: when.amount?.max_ratio ?? '0.95',
+                                  ...kept,
+                                }
+                              : match === 'set'
+                                ? {
+                                    match,
+                                    max_invoices: when.amount?.max_invoices ?? 6,
+                                    percent: when.amount?.percent ?? '0',
+                                    ...kept,
+                                  }
+                                : { match, ...kept },
+                      })
+                    }}
+                  >
+                    <option value="exact">{t('reconciliation.amount.exact')}</option>
+                    <option value="partial">{t('reconciliation.amount.partial')}</option>
+                    <option value="set">{t('reconciliation.amount.set')}</option>
+                    <option value="tolerance">{t('reconciliation.amount.tolerance')}</option>
+                    <option value="ratio">{t('reconciliation.amount.ratio')}</option>
+                  </select>
+                  {amountMatch === 'tolerance' && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step="0.5"
+                        className="w-20 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                        value={when.amount?.percent ?? '2'}
+                        onChange={(e) =>
+                          setWhen({
+                            ...when,
+                            amount: {
+                              ...(when.amount ?? { match: 'tolerance' }),
+                              match: 'tolerance',
+                              percent: e.target.value,
+                            },
+                          })
+                        }
+                      />
+                      <span className="text-sm text-muted-foreground">%</span>
+                    </div>
+                  )}
+                </div>
+                {amountMatch === 'partial' && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {t('reconciliation.amount.partialHint')}
+                  </p>
+                )}
+                {amountMatch === 'set' && (
+                  <div className="mt-1.5 space-y-1.5">
+                    <p className="text-xs text-muted-foreground">
+                      {t('reconciliation.amount.setHint')}
+                    </p>
+                    <div className="flex gap-2 items-end">
+                      <label className="flex-1">
+                        <span className="text-xs text-muted-foreground">
+                          {t('reconciliation.amount.setMax')}
+                        </span>
+                        <input
+                          type="number"
+                          min={2}
+                          max={6}
+                          className={`${inputClass} mt-0.5`}
+                          value={when.amount?.max_invoices ?? 6}
+                          onChange={(e) =>
+                            setWhen({
+                              ...when,
+                              amount: {
+                                ...(when.amount ?? { match: 'set' }),
+                                match: 'set',
+                                max_invoices: Number(e.target.value),
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                      <label className="flex-1">
+                        <span className="text-xs text-muted-foreground">
+                          {t('reconciliation.amount.setFee')}
+                        </span>
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <input
+                            type="number"
+                            min={0}
+                            max={20}
+                            step="0.5"
+                            className={inputClass}
+                            value={when.amount?.percent ?? '0'}
+                            onChange={(e) =>
+                              setWhen({
+                                ...when,
+                                amount: {
+                                  ...(when.amount ?? { match: 'set' }),
+                                  match: 'set',
+                                  percent: e.target.value,
+                                },
+                              })
+                            }
+                          />
+                          <span className="text-sm text-muted-foreground">%</span>
+                        </div>
+                      </label>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {t('reconciliation.amount.setFeeHint')}
+                    </p>
+                  </div>
+                )}
+                {amountMatch === 'ratio' && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {t('reconciliation.amount.ratioHint')}
+                  </p>
+                )}
+              </>,
+            )}
+
+            {field(
+              t('reconciliation.field.window'),
+              t('reconciliation.field.windowHint'),
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <span className="text-xs text-muted-foreground">
+                    {t('reconciliation.field.beforeDays')}
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={365}
+                    className={`${inputClass} mt-0.5`}
+                    value={when.date?.before_days ?? 0}
+                    onChange={(e) =>
+                      setWhen({
+                        ...when,
+                        date: {
+                          before_days: Number(e.target.value),
+                          after_days: when.date?.after_days ?? 0,
+                        },
+                      })
+                    }
+                  />
+                </div>
+                <div className="flex-1">
+                  <span className="text-xs text-muted-foreground">
+                    {t('reconciliation.field.afterDays')}
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={365}
+                    className={`${inputClass} mt-0.5`}
+                    value={when.date?.after_days ?? 0}
+                    onChange={(e) =>
+                      setWhen({
+                        ...when,
+                        date: {
+                          before_days: when.date?.before_days ?? 0,
+                          after_days: Number(e.target.value),
+                        },
+                      })
+                    }
+                  />
+                </div>
+              </div>,
+            )}
+
+            {field(
+              t('reconciliation.field.similarity'),
+              t('reconciliation.field.similarityHint'),
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step="0.05"
+                className="w-28 px-3 py-2 text-sm border border-input rounded-md bg-background"
+                value={when.description_similarity?.min ?? ''}
+                placeholder={t('reconciliation.field.similarityOff')}
+                onChange={(e) =>
+                  setWhen({
+                    ...when,
+                    description_similarity: e.target.value
+                      ? { min: e.target.value }
+                      : undefined,
+                  })
+                }
+              />,
+            )}
+          </Step>
         </div>
 
         <div className="flex justify-end gap-2 pt-2 shrink-0 border-t border-border mt-2">
@@ -761,7 +950,7 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground font-mono truncate">
-                      {conditionSummary(rule.when, t, names)}
+                      {conditionSummary({ ...rule.when, trigger: rule.trigger }, t, names)}
                     </p>
                   </div>
 

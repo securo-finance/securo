@@ -203,29 +203,44 @@ async def _apply(
     hand-made link — the invoice is open, the currency agrees, the amount
     fits — protects an automatic one too. **An automatic decision is not
     a trusted one.**
+
+    **All of it or none of it.** One payment can settle several invoices,
+    and a payout that lands against four of them and fails on the fifth
+    would leave a ledger nobody can explain: money spread across some
+    debts, the rest of it unaccounted for, and no record of what was
+    attempted. The savepoint makes the whole set a single act.
     """
-    if decision.port != "linked" or decision.expectation is None:
+    if decision.port != "linked" or not decision.settlements:
         return None
 
-    invoice = await session.get(Invoice, decision.expectation.id)
-    if invoice is None:
-        return None
-
+    first: Optional[InvoiceAllocation] = None
     try:
-        return await invoice_service.allocate(
-            session,
-            invoice,
-            transaction.id,
-            amount=decision.amount,
-            # The strategy id, not a generic "auto": this is what lets the
-            # screen answer "why is this linked" with the name of the rule
-            # that fired.
-            method=decision.strategy or "auto",
-        )
+        async with session.begin_nested():
+            for settlement in decision.settlements:
+                invoice = await session.get(Invoice, settlement.expectation.id)
+                if invoice is None:
+                    raise invoice_service.InvoiceError(
+                        "invoice_missing", "The invoice is no longer there"
+                    )
+                allocation = await invoice_service.allocate(
+                    session,
+                    invoice,
+                    transaction.id,
+                    amount=settlement.amount,
+                    # The strategy id, not a generic "auto": this is what
+                    # lets the screen answer "why is this linked" with the
+                    # name of the rule that fired.
+                    method=decision.strategy or "auto",
+                )
+                if first is None:
+                    first = allocation
     except invoice_service.InvoiceError:
-        # A guard refused it. The money stays unexplained, which is the
-        # honest outcome — the alternative is a link the ledger rejects.
+        # A guard refused one of them, so none of them happened. The money
+        # stays unexplained, which is the honest outcome — the alternative
+        # is a half-settled payout.
         return None
+
+    return first
 
 
 async def match_incoming(
@@ -396,14 +411,18 @@ async def match_for_invoice(
     later. Nothing about the money changed, so nothing would ever
     re-examine it — this is the pass that does.
 
-    **It is deliberately stricter than the forward direction, and only
-    the known-client strategies run here.** The asymmetry is in the
-    evidence, not in the code's convenience: when an invoice is already
-    open and money of its exact value lands, the promise came first and
-    the payment answers it. Backwards, the money already had a life of
-    its own — it may have been a refund, a transfer, or another job — and
-    an exact amount from a payer we cannot name is not enough to claim
-    it. That case is a suggestion, and it waits for the queue.
+    **Which rules run here is the rules' own business, not this
+    function's.** It used to be hardcoded — only known-client strategies,
+    decided in this file — and that was a restriction nobody could see or
+    change, on a page whose whole purpose is that matching is not a black
+    box. Now a rule declares the moments it trusts, and this pass simply
+    asks for the ones that trust this one.
+
+    The asymmetry that motivated the old restriction is still real, and it
+    lives in the shipped defaults instead: money of an exact value from a
+    payer we cannot name links when an invoice was already open and
+    waiting, and does not when the document came afterwards. The
+    difference is that a workspace can now disagree.
 
     One allocation at most, and none at all if several movements fit.
     Picking the most recent of three identical payments would be
@@ -419,19 +438,23 @@ async def match_for_invoice(
     policy["strategies"] = [
         strategy
         for strategy in policy["strategies"]
-        if strategy.get("when", {}).get("counterparty") == "same_payee"
+        if strategy.get("trigger", "money_arrives") in ("invoice_issued", "both")
     ]
-    if not invoice.payee_id or not policy["strategies"]:
+    if not policy["strategies"]:
         return None
 
     window_start = invoice.due_date - timedelta(days=LOOKBACK_DAYS)
     wanted_direction = "credit" if invoice.direction == "receivable" else "debit"
 
+    # Not narrowed by payee any more. The old query could afford it
+    # because the only rules that ran here demanded a known client; now
+    # that the rules decide, the query has to be able to see everything
+    # they might legitimately match, or a workspace's own rule would fail
+    # for a reason nothing on screen could explain.
     result = await session.execute(
         select(Transaction)
         .where(
             Transaction.workspace_id == invoice.workspace_id,
-            Transaction.payee_id == invoice.payee_id,
             Transaction.type == wanted_direction,
             Transaction.currency == invoice.currency,
             Transaction.date >= window_start,
@@ -451,12 +474,14 @@ async def match_for_invoice(
     for transaction in result.scalars().all():
         if await _already_settles_something(session, transaction.id):
             continue
+        movement = _as_movement(transaction)
         decision = evaluate(
-            _as_movement(transaction),
+            movement,
             expectation,
             policy,
             withholding_ratios=reconciliation_policy.withholding_ratios(None),
             base_currency=await _base_currency(session, invoice.workspace_id),
+            trigger="invoice_issued",
         )
         if decision.port == "linked":
             settles.append((transaction, decision))
@@ -464,6 +489,13 @@ async def match_for_invoice(
                 # Two payments answer this invoice equally well. Neither
                 # is taken; a person decides which.
                 return None
+        elif decision.port == "suggested":
+            # Dropping these would make a rule set to suggest do nothing
+            # at this moment while doing something at the other — the same
+            # silent switch the queue exists to prevent.
+            await reconciliation_suggestion_service.record(
+                session, invoice.workspace_id, transaction.id, decision, movement, NODE
+            )
 
     if not settles:
         return None

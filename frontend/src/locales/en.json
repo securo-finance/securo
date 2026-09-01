@@ -2223,7 +2223,9 @@
       "exactAmountAnyClient": "Exact amount, any payer",
       "similarDescription": "Close amount and similar description",
       "sameAccountExact": "Same account, exact amount",
-      "unknown": "Rule"
+      "unknown": "Rule",
+      "partPayment": "Known client, part of what they owe",
+      "severalInvoices": "Known client, several invoices at once"
     },
     "outcome": {
       "link": "Links",
@@ -2248,7 +2250,11 @@
       "atLeast": "at least {{value}}",
       "atMost": "at most {{value}}",
       "textContains": "the statement says “{{text}}”",
-      "textExcludes": "the statement does not say “{{text}}”"
+      "textExcludes": "the statement does not say “{{text}}”",
+      "onArrival": "when money arrives",
+      "onIssue": "when an invoice is issued",
+      "amountPartial": "the amount covers part of what is owed",
+      "amountSet": "up to {{count}} invoices add up to it"
     },
     "add": "New rule",
     "newRule": "New matching rule",
@@ -2288,7 +2294,12 @@
       "noMaximum": "no maximum",
       "text": "Statement text",
       "textContains": "must contain…",
-      "textExcludes": "must not contain…"
+      "textExcludes": "must not contain…",
+      "trigger": "When we look",
+      "triggerHint": "Matching happens at two moments, and the evidence is not the same in both.",
+      "amountMatch": "How close the amount must be",
+      "amountMatchHint": "Compared against what is still owed, not the original total.",
+      "amountBandHint": "About the payment itself — a size you do or do not want this rule handling."
     },
     "counterparty": {
       "any": "Anyone",
@@ -2298,7 +2309,14 @@
       "exact": "Exactly the amount owed",
       "tolerance": "Within a margin",
       "ratio": "Net of withholding tax",
-      "ratioHint": "Uses the withholding rates for your country. Nothing matches until those are set."
+      "ratioHint": "Uses the withholding rates for your country. Nothing matches until those are set.",
+      "partial": "Part of what is owed",
+      "partialHint": "For clients who pay in instalments. What is left stays open, and the next payment matches it exactly.",
+      "set": "Several invoices added up",
+      "setHint": "For a payment that covers more than one invoice. If more than one combination adds up, we ask instead of choosing.",
+      "setMax": "At most this many invoices",
+      "setFee": "Allow for a fee of",
+      "setFeeHint": "A share of what the invoices are worth, for a payout that arrives net of a cut. Zero means the total must be exact."
     },
     "queue": {
       "title": "Waiting for you",
@@ -2310,7 +2328,8 @@
       "accept": "Link",
       "declineHint": "Not a match. This pair will not be suggested again.",
       "linked": "Linked",
-      "declined": "Dismissed — we will not ask again"
+      "declined": "Dismissed — we will not ask again",
+      "covers": "covers"
     },
     "evidence": {
       "amountExact": "amount matches exactly",
@@ -2324,6 +2343,21 @@
       "any": "Either",
       "in": "Money coming in",
       "out": "Money going out"
+    },
+    "step": {
+      "what": "What this rule is",
+      "which": "Which money it looks at",
+      "whichHint": "Leave everything empty and it looks at all of it",
+      "match": "When it counts as a match",
+      "matchHint": "How closely the payment and the promise have to fit"
+    },
+    "trigger": {
+      "money_arrives": "When money arrives",
+      "money_arrivesHint": "A payment lands and we look for the invoice it settles.",
+      "invoice_issued": "When an invoice is issued",
+      "invoice_issuedHint": "The client paid first and the invoice follows — we look back at money already there.",
+      "both": "Both moments",
+      "bothHint": "The rule is trusted either way round."
     }
   }
 }

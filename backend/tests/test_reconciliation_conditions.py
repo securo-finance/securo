@@ -735,3 +735,498 @@ class TestShippedRulesUnchanged:
             account_id=ACCOUNT,
         )
         assert evaluate(charge, [occurrence], policy).port == "linked"
+
+
+# ===========================================================================
+# Two transactions, one invoice
+# ===========================================================================
+class TestPartPayments:
+    """One invoice settled by several payments.
+
+    The ledger has always allowed it — allocations are many-to-one with an
+    amount — but until this mode existed nothing could ever *propose* the
+    first half. Every other comparison measures against the whole
+    outstanding balance, and half of it is simply not that. So a client
+    paying R$3.000 in two transfers produced two unmatched rows and an
+    invoice that looked untouched.
+    """
+
+    def part_rule(self, outcome: str = "suggest", **extra) -> dict:
+        return one_rule(
+            {
+                "counterparty": "same_payee",
+                "amount": {"match": "partial", "min_ratio": "0.05", **extra},
+                "date": {"before_days": 30, "after_days": 30},
+            },
+            outcome=outcome,
+        )
+
+    def test_half_of_what_is_owed_is_offered(self):
+        decision = evaluate(
+            money(amount=Decimal("1500.00")), [an_invoice()], self.part_rule()
+        )
+        assert decision.port == "suggested"
+        assert decision.amount == Decimal("1500.00")
+
+    def test_what_is_left_over_is_named(self):
+        """So the screen can say "R$1.500 of R$3.000" rather than leaving a
+        reader to do the subtraction."""
+        decision = evaluate(
+            money(amount=Decimal("1200.00")), [an_invoice()], self.part_rule()
+        )
+        assert decision.difference == Decimal("1800.00")
+        assert decision.difference_kind == "part_payment"
+
+    def test_the_whole_amount_is_not_a_part_payment(self):
+        """Strictly less than, so this and an exact match never both fire
+        and a trace never has to explain which one won."""
+        decision = evaluate(money(), [an_invoice()], self.part_rule())
+        assert decision.port == "unmatched"
+
+    def test_more_than_is_owed_is_not_a_part_payment_either(self):
+        decision = evaluate(
+            money(amount=Decimal("5000.00")), [an_invoice()], self.part_rule()
+        )
+        assert decision.port == "unmatched"
+
+    def test_a_token_amount_is_not_offered_as_an_instalment(self):
+        """R$10 against a R$3.000 invoice is noise. Offering it would teach
+        people to stop reading the queue, which costs more than the one
+        match it might have caught."""
+        decision = evaluate(
+            money(amount=Decimal("10.00")), [an_invoice()], self.part_rule()
+        )
+        assert decision.port == "unmatched"
+
+    def test_the_floor_is_a_fraction_so_it_scales(self):
+        """Five per cent means the same thing on a small invoice and a
+        large one, which an absolute floor could not."""
+        small = evaluate(
+            money(amount=Decimal("10.00")),
+            [an_invoice(amount=Decimal("100.00"))],
+            self.part_rule(),
+        )
+        assert small.port == "suggested", "ten per cent of a small invoice is real"
+
+    def test_the_floor_can_be_removed(self):
+        decision = evaluate(
+            money(amount=Decimal("1.00")),
+            [an_invoice()],
+            self.part_rule(min_ratio="0"),
+        )
+        assert decision.port == "suggested"
+
+    def test_a_workspace_may_promote_part_payments_to_linking(self):
+        """For somebody whose clients always pay in parts, confirming each
+        one is the manual work the feature exists to remove."""
+        decision = evaluate(
+            money(amount=Decimal("1500.00")), [an_invoice()], self.part_rule("link")
+        )
+        assert decision.port == "linked"
+
+    def test_the_second_payment_matches_exactly_once_the_first_is_booked(self):
+        """Which is why the shipped default only suggests: after the first
+        half is recorded, the balance is 1500 and the second half is an
+        ordinary exact match. The ambiguity only ever exists at the start."""
+        remaining = an_invoice(amount=Decimal("1500.00"))
+        decision = evaluate(
+            money(amount=Decimal("1500.00")), [remaining], one_rule(BASE)
+        )
+        assert decision.port == "linked"
+        assert decision.amount == Decimal("1500.00")
+
+    def test_a_part_payment_never_claims_more_than_is_owed(self):
+        decision = evaluate(
+            money(amount=Decimal("2999.99")), [an_invoice()], self.part_rule()
+        )
+        assert decision.amount is not None
+        assert decision.amount == Decimal("2999.99")
+        assert decision.amount < Decimal("3000.00")
+
+
+# ===========================================================================
+# Which moment a rule runs at
+# ===========================================================================
+class TestTrigger:
+    """Money arriving, or a document being written.
+
+    Two different questions with different evidence behind them, and until
+    now the answer was hardcoded in whichever function happened to be
+    doing the looking — a restriction nobody could see or change, on a
+    feature whose entire premise is that matching is not a black box.
+    """
+
+    def only_when(self, trigger: str) -> dict:
+        policy = one_rule(BASE)
+        policy["strategies"][0]["trigger"] = trigger
+        return policy
+
+    def test_a_rule_for_arriving_money_sits_out_the_look_back(self):
+        decision = evaluate(
+            money(), [an_invoice()], self.only_when("money_arrives"),
+            trigger="invoice_issued",
+        )
+        assert decision.port == "unmatched"
+        assert decision.trace[0].rejected_by is Reason.WRONG_MOMENT
+
+    def test_a_rule_for_the_look_back_sits_out_arriving_money(self):
+        decision = evaluate(
+            money(), [an_invoice()], self.only_when("invoice_issued"),
+            trigger="money_arrives",
+        )
+        assert decision.port == "unmatched"
+        assert decision.trace[0].rejected_by is Reason.WRONG_MOMENT
+
+    def test_both_runs_at_either_moment(self):
+        policy = self.only_when("both")
+        for moment in ("money_arrives", "invoice_issued"):
+            assert evaluate(money(), [an_invoice()], policy, trigger=moment).port == "linked"
+
+    def test_a_rule_that_says_nothing_runs_when_money_arrives(self):
+        """The common case, and the one a rule written without thinking
+        about this should mean."""
+        policy = one_rule(BASE)
+        assert "trigger" not in policy["strategies"][0]
+        assert evaluate(money(), [an_invoice()], policy).port == "linked"
+        assert (
+            evaluate(money(), [an_invoice()], policy, trigger="invoice_issued").port
+            == "unmatched"
+        )
+
+    def test_the_wrong_moment_is_told_apart_from_a_failed_comparison(self):
+        """"This rule runs at the other moment" and "this rule looked and
+        said no" are different problems with different fixes, so they are
+        different reasons."""
+        decision = evaluate(
+            money(), [an_invoice()], self.only_when("invoice_issued")
+        )
+        assert decision.trace[0].rejected_by is Reason.WRONG_MOMENT
+        assert decision.trace[0].rejected_by is not Reason.OUT_OF_SCOPE
+
+    def test_a_rule_at_the_wrong_moment_lets_the_next_one_try(self):
+        policy = {
+            "version": 1,
+            "node": "test",
+            "scope": {"movement": "any", "ignore_transaction_sources": []},
+            "strategies": [
+                {
+                    "id": "look_back_only",
+                    "enabled": True,
+                    "outcome": "suggest",
+                    "trigger": "invoice_issued",
+                    "when": BASE,
+                },
+                {
+                    "id": "arrivals",
+                    "enabled": True,
+                    "outcome": "link",
+                    "trigger": "money_arrives",
+                    "when": BASE,
+                },
+            ],
+            "on_ambiguity": "suggest",
+        }
+        decision = evaluate(money(), [an_invoice()], policy)
+        assert decision.port == "linked"
+        assert decision.strategy == "arrivals"
+
+
+class TestShippedTriggers:
+    """What the defaults say about the two moments, and why.
+
+    These are product decisions rather than arithmetic, so they are pinned
+    here: a change to any of them changes whose money gets claimed by a
+    document written afterwards.
+    """
+
+    def shipped(self, rule_id: str) -> dict:
+        policy = policy_module.default_policy("reconciliation.match_invoice")
+        return next(s for s in policy["strategies"] if s["id"] == rule_id)
+
+    def test_a_known_client_paying_exactly_is_trusted_at_both_moments(self):
+        """The pay-then-invoice case is ordinary here, and a named client
+        paying their exact amount is as convincing before the nota as
+        after it."""
+        assert self.shipped("same_client_exact")["trigger"] == "both"
+
+    def test_an_unnamed_payer_is_only_trusted_when_a_promise_was_waiting(self):
+        """Backwards, that money already had a life of its own — a refund,
+        a transfer, another job — and claiming it for a document written
+        afterwards is a guess."""
+        assert self.shipped("exact_amount_any_client")["trigger"] == "money_arrives"
+
+    def test_part_payments_are_offered_at_both_moments_and_never_linked(self):
+        rule = self.shipped("same_client_part_payment")
+        assert rule["trigger"] == "both"
+        assert rule["outcome"] == "suggest"
+        assert rule["when"]["amount"]["match"] == "partial"
+
+
+# ===========================================================================
+# One transaction, several invoices
+# ===========================================================================
+class TestSets:
+    """A payment that answers several promises at once.
+
+    The gateway payout, the client clearing three of their own invoices in
+    one transfer, the commercial arrangement that settles a month at a
+    time. The ledger has always been able to record it — allocations are
+    many-to-many with an amount — but a decision that could only name one
+    promise could never propose it.
+
+    The hard part is not the arithmetic, it is **refusing when there is
+    more than one answer**. Three invoices of a thousand and a credit of
+    two thousand admit three equally good readings, and picking one would
+    be inventing certainty exactly where the single-promise path refuses.
+    """
+
+    def set_rule(self, outcome: str = "link", **amount) -> dict:
+        return one_rule(
+            {
+                "counterparty": "same_payee",
+                "amount": {"match": "set", "max_invoices": 6, "percent": "0", **amount},
+                "date": {"before_days": 30, "after_days": 30},
+            },
+            outcome=outcome,
+        )
+
+    def test_a_payment_covering_two_invoices_settles_both(self):
+        decision = evaluate(
+            money(amount=Decimal("3000.00")),
+            [an_invoice(amount=Decimal("1000.00")), an_invoice(amount=Decimal("2000.00"))],
+            self.set_rule(),
+        )
+        assert decision.port == "linked"
+        assert len(decision.settlements) == 2
+        assert sum(s.amount for s in decision.settlements) == Decimal("3000.00")
+
+    def test_a_payment_covering_three_invoices_settles_all_three(self):
+        decision = evaluate(
+            money(amount=Decimal("6000.00")),
+            [
+                an_invoice(amount=Decimal("1000.00")),
+                an_invoice(amount=Decimal("2000.00")),
+                an_invoice(amount=Decimal("3000.00")),
+            ],
+            self.set_rule(),
+        )
+        assert decision.port == "linked"
+        assert len(decision.settlements) == 3
+
+    def test_each_invoice_is_settled_for_its_own_amount(self):
+        """Not the payment split evenly. The whole point of allocations
+        carrying an amount is that each debt gets what it is owed."""
+        decision = evaluate(
+            money(amount=Decimal("3000.00")),
+            [an_invoice(amount=Decimal("1000.00")), an_invoice(amount=Decimal("2000.00"))],
+            self.set_rule(),
+        )
+        assert sorted(s.amount for s in decision.settlements) == [
+            Decimal("1000.00"),
+            Decimal("2000.00"),
+        ]
+
+    def test_two_combinations_that_both_add_up_settle_nothing_automatically(self):
+        """Three invoices of a thousand and a payment of two thousand: any
+        two of them fit. Which two is a question about intent, not
+        arithmetic."""
+        decision = evaluate(
+            money(amount=Decimal("2000.00")),
+            [
+                an_invoice(amount=Decimal("1000.00")),
+                an_invoice(amount=Decimal("1000.00")),
+                an_invoice(amount=Decimal("1000.00")),
+            ],
+            self.set_rule(),
+        )
+        assert decision.port == "suggested"
+        assert any(n.rejected_by is Reason.AMBIGUOUS_SET for n in decision.trace)
+
+    def test_an_ambiguous_set_still_offers_one_reading_to_start_from(self):
+        """A person answering the question needs something concrete in
+        front of them, not an empty prompt."""
+        decision = evaluate(
+            money(amount=Decimal("2000.00")),
+            [
+                an_invoice(amount=Decimal("1000.00")),
+                an_invoice(amount=Decimal("1000.00")),
+                an_invoice(amount=Decimal("1000.00")),
+            ],
+            self.set_rule(),
+        )
+        assert len(decision.settlements) == 2
+
+    def test_a_single_invoice_is_left_to_the_ordinary_rules(self):
+        """A set rule is about combinations. One invoice matching exactly
+        is what the exact rule is for, and having both claim it would make
+        the trace ambiguous about which fired."""
+        decision = evaluate(
+            money(), [an_invoice()], self.set_rule()
+        )
+        assert decision.port == "unmatched"
+
+    def test_smaller_combinations_are_preferred_over_larger_ones(self):
+        """A payment that is exactly one pair should not be reported as
+        also being a trio that happens to sum the same."""
+        decision = evaluate(
+            money(amount=Decimal("3000.00")),
+            [
+                an_invoice(amount=Decimal("1000.00")),
+                an_invoice(amount=Decimal("2000.00")),
+                an_invoice(amount=Decimal("500.00")),
+                an_invoice(amount=Decimal("2500.00")),
+            ],
+            self.set_rule(),
+        )
+        # Two pairs add up, so it is ambiguous — and the reading offered is
+        # a pair rather than something longer.
+        assert decision.port == "suggested"
+        assert len(decision.settlements) == 2
+
+    def test_a_payment_that_matches_nothing_together_is_left_alone(self):
+        decision = evaluate(
+            money(amount=Decimal("7777.00")),
+            [an_invoice(amount=Decimal("1000.00")), an_invoice(amount=Decimal("2000.00"))],
+            self.set_rule(),
+        )
+        assert decision.port == "unmatched"
+
+    def test_only_this_clients_invoices_are_combined(self):
+        """The counterparty is what keeps the search small and the answer
+        meaningful: adding up strangers' invoices to reach a total is
+        numerology, not reconciliation."""
+        decision = evaluate(
+            money(amount=Decimal("3000.00")),
+            [
+                an_invoice(amount=Decimal("1000.00")),
+                an_invoice(amount=Decimal("2000.00"), payee_id=OTHER_CLIENT),
+            ],
+            self.set_rule(),
+        )
+        assert decision.port == "unmatched"
+
+    def test_invoices_outside_the_date_window_are_not_combined(self):
+        decision = evaluate(
+            money(amount=Decimal("3000.00")),
+            [
+                an_invoice(amount=Decimal("1000.00")),
+                an_invoice(amount=Decimal("2000.00"), when=TODAY - timedelta(days=200)),
+            ],
+            self.set_rule(),
+        )
+        assert decision.port == "unmatched"
+
+    def test_invoices_in_another_currency_are_not_combined(self):
+        decision = evaluate(
+            money(amount=Decimal("3000.00")),
+            [
+                an_invoice(amount=Decimal("1000.00")),
+                an_invoice(amount=Decimal("2000.00"), currency="USD"),
+            ],
+            self.set_rule(),
+        )
+        assert decision.port == "unmatched"
+
+    def test_a_fee_can_be_allowed_for_and_is_named(self):
+        """The gateway case: the payout is the invoices minus the cut. The
+        gap is reported rather than swallowed, so the caller can book it
+        instead of leaving money unexplained."""
+        decision = evaluate(
+            money(amount=Decimal("2940.00")),
+            [an_invoice(amount=Decimal("1000.00")), an_invoice(amount=Decimal("2000.00"))],
+            self.set_rule(percent="2"),
+        )
+        assert decision.port == "linked"
+        assert decision.difference == Decimal("-60.00")
+        assert decision.difference_kind == "set_difference"
+
+    def test_without_a_tolerance_a_fee_stops_the_match(self):
+        """Shipped at zero on purpose. Guessing which fee applies is how a
+        wrong split gets written confidently."""
+        decision = evaluate(
+            money(amount=Decimal("2940.00")),
+            [an_invoice(amount=Decimal("1000.00")), an_invoice(amount=Decimal("2000.00"))],
+            self.set_rule(),
+        )
+        assert decision.port == "unmatched"
+
+    def test_the_number_of_invoices_in_one_answer_is_capped(self):
+        """A cap the rule sets, bounded again by the engine. Somebody who
+        allows two cannot be handed a combination of four."""
+        decision = evaluate(
+            money(amount=Decimal("4000.00")),
+            [an_invoice(amount=Decimal("1000.00")) for _ in range(4)],
+            self.set_rule(max_invoices=2),
+        )
+        assert decision.port == "unmatched"
+
+    def test_too_many_open_invoices_is_refused_out_loud(self):
+        """Searching which of forty invoices add up to a payment is
+        subset-sum, and a sync that hangs is worse than a match that is
+        not made. Refusing silently would leave somebody wondering why
+        their payout never matched."""
+        decision = evaluate(
+            money(amount=Decimal("3000.00")),
+            [an_invoice(amount=Decimal("100.00")) for _ in range(40)],
+            self.set_rule(),
+        )
+        assert decision.port == "unmatched"
+        assert any(n.rejected_by is Reason.TOO_MANY_TO_COMBINE for n in decision.trace)
+
+    def test_a_settled_invoice_is_never_part_of_a_combination(self):
+        decision = evaluate(
+            money(amount=Decimal("3000.00")),
+            [
+                an_invoice(amount=Decimal("1000.00")),
+                an_invoice(amount=Decimal("2000.00")),
+                an_invoice(amount=Decimal("0")),
+            ],
+            self.set_rule(),
+        )
+        assert decision.port == "linked"
+        assert all(s.expectation.amount > Decimal("0") for s in decision.settlements)
+
+    def test_a_set_rule_that_finds_nothing_lets_the_next_rule_try(self):
+        """It is one strategy among several, not a terminal branch."""
+        policy = {
+            "version": 1,
+            "node": "test",
+            "scope": {"movement": "any", "ignore_transaction_sources": []},
+            "strategies": [
+                {
+                    "id": "sets",
+                    "enabled": True,
+                    "outcome": "link",
+                    "when": {
+                        "counterparty": "same_payee",
+                        "amount": {"match": "set"},
+                        "date": {"before_days": 30, "after_days": 30},
+                    },
+                },
+                {"id": "singles", "enabled": True, "outcome": "link", "when": BASE},
+            ],
+            "on_ambiguity": "suggest",
+        }
+        decision = evaluate(money(), [an_invoice()], policy)
+        assert decision.port == "linked"
+        assert decision.strategy == "singles"
+
+
+class TestSettlementsAreAlwaysPresent:
+    """Every decision names its settlements, even the ordinary one.
+
+    A caller that has to ask "is this the single kind or the several kind"
+    before it can write anything is a caller that will one day forget to.
+    """
+
+    def test_an_ordinary_match_carries_one_settlement(self):
+        decision = evaluate(money(), [an_invoice()], one_rule(BASE))
+        assert len(decision.settlements) == 1
+        assert decision.settlements[0].expectation is decision.expectation
+        assert decision.settlements[0].amount == decision.amount
+
+    def test_an_unmatched_decision_carries_none(self):
+        decision = evaluate(
+            money(currency="USD"), [an_invoice()], one_rule(BASE)
+        )
+        assert decision.settlements == []

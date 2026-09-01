@@ -39,6 +39,7 @@ strategy fired and why the others did not.
 from __future__ import annotations
 
 import uuid
+import itertools
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
@@ -52,6 +53,22 @@ Port = Literal["linked", "suggested", "unmatched"]
 #: Which kind of promise a candidate is. The engine treats them alike;
 #: the caller uses this to pick how to apply the decision.
 ExpectationKind = Literal["invoice", "recurring"]
+
+#: **Which way round the match is being made.** Matching happens at two
+#: different moments and they are not the same question.
+#:
+#:   - `money_arrives`: a payment lands and we look for the promise it
+#:     answers. The promise came first and was waiting.
+#:   - `invoice_issued`: a document is written and we look back at money
+#:     that arrived before it existed — the client who pays and lets the
+#:     nota follow.
+#:
+#: The evidence is weaker in the second: money that was already sitting
+#: there had a life of its own, and might have been a refund or another
+#: job. So a rule says which moments it is willing to run in, and that
+#: choice is on the page rather than buried in whichever function happens
+#: to be doing the looking.
+Trigger = Literal["money_arrives", "invoice_issued", "both"]
 
 
 class Reason(str, Enum):
@@ -77,6 +94,15 @@ class Reason(str, Enum):
     #: different question: not "why did this pair fail" but "why was this
     #: rule not even consulted".
     OUT_OF_SCOPE = "rule_does_not_apply_here"
+    #: The rule runs at the other moment — when money arrives rather than
+    #: when a document is written, or the reverse.
+    WRONG_MOMENT = "rule_runs_at_another_moment"
+    #: More than one combination of promises adds up to this payment, and
+    #: they are equally good. A person picks.
+    AMBIGUOUS_SET = "several_combinations_add_up"
+    #: Too many promises are open to work out which combination this
+    #: payment covers without guessing.
+    TOO_MANY_TO_COMBINE = "too_many_candidates_to_combine"
 
 
 @dataclass(frozen=True)
@@ -129,6 +155,22 @@ class Expectation:
     issued: Optional[date] = None
 
 
+@dataclass(frozen=True)
+class Settlement:
+    """One promise, and how much of this movement goes against it.
+
+    Exists because a payment does not always answer exactly one thing. A
+    client clearing three of their own invoices in a single transfer is
+    ordinary, and so is a commercial arrangement that settles a month's
+    worth at once. The ledger has always been able to record that —
+    allocations are many-to-many with an amount on each — but a decision
+    that could only ever name one promise could never propose it.
+    """
+
+    expectation: Expectation
+    amount: Decimal
+
+
 @dataclass
 class Consideration:
     """One candidate, and what the engine made of it."""
@@ -150,6 +192,13 @@ class Decision:
     """
 
     port: Port
+    #: Everything this movement settles. Usually one entry; several when a
+    #: single payment answers several promises at once.
+    settlements: list[Settlement] = field(default_factory=list)
+    #: The first settlement, spelled out, because one promise is the
+    #: overwhelming majority and every caller written before sets existed
+    #: still reads these. Never a *different* answer from `settlements` —
+    #: its head.
     expectation: Optional[Expectation] = None
     strategy: Optional[str] = None
     amount: Optional[Decimal] = None
@@ -219,6 +268,36 @@ def _amount_verdict(
         allowed = (want * percent / Decimal("100")).copy_abs()
         return abs(moved - want) <= allowed, None, None
 
+    if match == "partial":
+        # Money that covers *part* of what is owed. Two transactions
+        # settling one invoice is ordinary — an instalment, a client
+        # paying what they had — and the ledger has always supported it,
+        # but without this mode nothing could ever propose the first half:
+        # every other mode compares against the whole outstanding balance
+        # and a half is simply not it.
+        #
+        # Strictly less than, so this and `exact` never both fire and a
+        # trace never has to explain which one won.
+        if moved >= want or moved <= Decimal("0"):
+            return False, None, None
+
+        floor = Decimal(str(rule.get("min_ratio", "0")))
+        if floor > 0 and moved < (want * floor):
+            # A token amount against a large invoice is noise, not an
+            # instalment. Offering it would teach people to ignore the
+            # queue.
+            return False, None, None
+
+        ceiling = Decimal(str(rule.get("max_ratio", "1")))
+        if ceiling < 1 and moved > (want * ceiling):
+            # Money that is *almost* the whole thing is not an instalment
+            # either — it is a fee, a withholding, a rounding. Calling it
+            # a part payment would put a confident wrong word on the
+            # queue, and the tolerance rules are the ones written for it.
+            return False, None, None
+
+        return True, (want - moved), "part_payment"
+
     if match == "ratio":
         epsilon = Decimal(str(rule.get("epsilon", "0")))
         for ratio in ratios:
@@ -259,6 +338,55 @@ def _within_window(
         ((issued or expected) - movement_date).days <= before
         and (movement_date - expected).days <= after
     )
+
+
+#: How many open promises a set rule will consider at once, and how many
+#: it will put in one answer. Both are hard limits rather than
+#: preferences: finding which invoices add up to a payment is subset-sum,
+#: which grows explosively, and a sync that hangs is worse than a match
+#: that is not made. Beyond these the engine says so and stops.
+MAX_SET_CANDIDATES = 12
+MAX_SET_SIZE = 6
+
+
+def _combinations_that_add_up(
+    moved: Decimal,
+    candidates: list[Expectation],
+    percent: Decimal,
+    max_size: int,
+) -> list[list[Expectation]]:
+    """Which groups of promises this payment could be covering.
+
+    Every group that fits, not the first one found — because the number of
+    answers *is* the finding. One combination is a match; two are a
+    question, and picking the first would be inventing certainty exactly
+    where the single-promise path refuses to.
+
+    Search order is smallest group first, so a payment that settles one
+    invoice exactly is never reported as also settling three that happen
+    to sum to the same figure.
+    """
+    found: list[list[Expectation]] = []
+    usable = [c for c in candidates if c.amount > Decimal("0")]
+    if len(usable) > MAX_SET_CANDIDATES:
+        return []
+
+    for size in range(2, min(max_size, len(usable)) + 1):
+        for group in itertools.combinations(usable, size):
+            total = sum((c.amount for c in group), Decimal("0"))
+            # The allowance is a share of what the invoices are worth, not
+            # of what arrived. A gateway's cut is a percentage of the
+            # gross, and "two per cent" should mean the thing a person
+            # means by it rather than two per cent of the figure left
+            # after the cut.
+            tolerance = (total * percent / Decimal("100")).copy_abs()
+            if abs(total - moved) <= tolerance:
+                found.append(list(group))
+                # Two is already an answer of "ask a person", so there is
+                # nothing to learn from finding a third.
+                if len(found) > 1:
+                    return found
+    return found
 
 
 def _in_scope(
@@ -329,6 +457,129 @@ def _in_scope(
     return True
 
 
+def _eligible_for_set(
+    movement: Movement, candidate: Expectation, rule: dict[str, Any]
+) -> bool:
+    """Whether a promise may take part in a combination at all.
+
+    Every condition except the amount, because the amount is the one being
+    asked about the group rather than the member. Narrowing first is also
+    what keeps the search tractable: a rule that demands the same client
+    usually leaves three or four candidates, not four hundred.
+    """
+    if candidate.direction != movement.direction:
+        return False
+    if candidate.amount <= Decimal("0"):
+        return False
+    if rule.get("currency", {}).get("conversion", "reject") == "reject":
+        if candidate.currency != movement.currency:
+            return False
+    if rule.get("counterparty") == "same_payee":
+        if not movement.payee_id or movement.payee_id != candidate.payee_id:
+            return False
+    if rule.get("same_account") and movement.account_id != candidate.account_id:
+        return False
+    if not _within_window(movement.when, candidate.when, rule.get("date", {}), candidate.issued):
+        return False
+    return True
+
+
+def _evaluate_set(
+    movement: Movement,
+    candidates: list[Expectation],
+    strategy: dict[str, Any],
+    rule: dict[str, Any],
+    base_currency: Optional[str],
+    trace: list[Consideration],
+) -> Optional[Decision]:
+    """One payment against several promises.
+
+    Returns a decision when this rule has something to say, and nothing
+    when it does not — so the strategies after it still get their turn.
+
+    The whole design of the rest of this module carries over unchanged:
+    **one answer is a match, more than one is a question.** Three invoices
+    of a thousand and a credit of two thousand admit three equally good
+    readings, and choosing among them is a person's job.
+    """
+    amount_rule = rule.get("amount", {})
+    eligible = [c for c in candidates if _eligible_for_set(movement, c, rule)]
+    moved = abs(movement.amount)
+
+    if len(eligible) < 2:
+        return None
+
+    if len(eligible) > MAX_SET_CANDIDATES:
+        # Refusing loudly. Silently searching a space this size would make
+        # a sync unpredictable, and silently skipping it would leave
+        # somebody wondering why their payout never matched.
+        trace.append(
+            Consideration(
+                expectation_id=eligible[0].id,
+                strategy=strategy["id"],
+                rejected_by=Reason.TOO_MANY_TO_COMBINE,
+            )
+        )
+        return None
+
+    percent = Decimal(str(amount_rule.get("percent", "0")))
+    max_size = min(int(amount_rule.get("max_invoices", MAX_SET_SIZE)), MAX_SET_SIZE)
+
+    groups = _combinations_that_add_up(moved, eligible, percent, max_size)
+    if not groups:
+        for candidate in eligible:
+            trace.append(
+                Consideration(
+                    expectation_id=candidate.id,
+                    strategy=strategy["id"],
+                    rejected_by=Reason.AMOUNT,
+                )
+            )
+        return None
+
+    outcome = strategy.get("outcome", "suggest")
+    if len(groups) > 1:
+        # Several combinations fit. Which one is a question about intent,
+        # not about arithmetic, so it goes to a person.
+        outcome = policy_ambiguity = "suggest"
+        for candidate in eligible:
+            trace.append(
+                Consideration(
+                    expectation_id=candidate.id,
+                    strategy=strategy["id"],
+                    rejected_by=Reason.AMBIGUOUS_SET,
+                )
+            )
+        del policy_ambiguity
+
+    chosen = groups[0]
+    settlements = [Settlement(expectation=c, amount=c.amount) for c in chosen]
+    total = sum((s.amount for s in settlements), Decimal("0"))
+
+    for candidate in chosen:
+        trace.append(
+            Consideration(
+                expectation_id=candidate.id, strategy=strategy["id"], score=1.0
+            )
+        )
+
+    return Decision(
+        port="linked" if outcome == "link" else "suggested",
+        settlements=settlements,
+        expectation=settlements[0].expectation,
+        strategy=strategy["id"],
+        amount=settlements[0].amount,
+        # What the payment carried beyond the invoices it covers: a
+        # gateway fee, a bank charge, a rounding. Named rather than
+        # swallowed, so the caller can book it instead of leaving money
+        # unexplained.
+        difference=(moved - total) if moved != total else None,
+        difference_kind="set_difference" if moved != total else None,
+        score=1.0,
+        trace=trace,
+    )
+
+
 def evaluate(
     movement: Movement,
     candidates: list[Expectation],
@@ -336,6 +587,7 @@ def evaluate(
     *,
     withholding_ratios: Optional[list[Decimal]] = None,
     base_currency: Optional[str] = None,
+    trigger: str = "money_arrives",
 ) -> Decision:
     """Which expectation this movement settles, if any.
 
@@ -346,6 +598,10 @@ def evaluate(
     `base_currency` is what the workspace normally deals in, and is only
     consulted by rules that say "foreign": what counts as foreign is a
     fact about the workspace, not about the money.
+
+    `trigger` says which of the two moments this is — money arriving, or a
+    document being written — and rules that were not written for this
+    moment sit it out.
     """
     trace: list[Consideration] = []
     ratios = withholding_ratios or []
@@ -359,6 +615,22 @@ def evaluate(
     for strategy in policy.get("strategies", []):
         if not strategy.get("enabled", True):
             continue
+        # Written for the other moment. Looking back at money that was
+        # already there is weaker evidence than answering a promise that
+        # was waiting, so a rule is allowed to say it only trusts one of
+        # them — and saying so on the page beats the same restriction
+        # hardcoded into whichever function does the looking.
+        wanted = strategy.get("trigger", "money_arrives")
+        if wanted != "both" and wanted != trigger:
+            trace.append(
+                Consideration(
+                    expectation_id=candidates[0].id if candidates else uuid.uuid4(),
+                    strategy=strategy["id"],
+                    rejected_by=Reason.WRONG_MOMENT,
+                )
+            )
+            continue
+
         rule = strategy.get("when", {})
         if not _in_scope(movement, rule, base_currency):
             # Not written for money like this. One note rather than one per
@@ -372,6 +644,17 @@ def evaluate(
                 )
             )
             continue
+        # A payment that answers several promises at once. Kept as its own
+        # branch because it asks a different question of the candidates:
+        # not "which one of you is this" but "which of you, together".
+        if rule.get("amount", {}).get("match") == "set":
+            decision = _evaluate_set(
+                movement, candidates, strategy, rule, base_currency, trace
+            )
+            if decision is not None:
+                return decision
+            continue
+
         matched: list[tuple[Expectation, Optional[Decimal], Optional[str], float]] = []
 
         for candidate in candidates:
@@ -452,6 +735,10 @@ def evaluate(
         settled = min(abs(movement.amount), winner.amount)
         return Decision(
             port="linked" if outcome == "link" else "suggested",
+            # Always a set, even when it holds one. A caller that has to
+            # ask "is this the single kind or the several kind" before it
+            # can write anything is a caller that will one day forget to.
+            settlements=[Settlement(expectation=winner, amount=settled)],
             expectation=winner,
             strategy=strategy["id"],
             amount=settled,

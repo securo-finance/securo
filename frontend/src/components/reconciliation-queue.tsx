@@ -149,9 +149,35 @@ export function ReconciliationQueue({ canWrite }: { canWrite: boolean }) {
                       suggestion.expectation_kind === 'invoice'
                         ? 'reconciliation.queue.maySettle'
                         : 'reconciliation.queue.mayBe',
-                      { name: suggestion.expectation_label ?? '—' },
+                      {
+                        // One payment can answer several promises, and the
+                        // question is the whole question — so the row names
+                        // all of them rather than the first and a count.
+                        name:
+                          suggestion.covers.length > 1
+                            ? suggestion.covers
+                                .map((c) => c.label ?? '—')
+                                .join(', ')
+                            : suggestion.expectation_label ?? '—',
+                      },
                     )}
                   </p>
+
+                  {suggestion.covers.length > 1 && (
+                    <ul className="mt-1 space-y-0.5">
+                      {suggestion.covers.map((cover) => (
+                        <li
+                          key={cover.expectation_id}
+                          className="text-xs text-muted-foreground flex justify-between gap-3 max-w-xs"
+                        >
+                          <span className="truncate">{cover.label ?? '—'}</span>
+                          <span className="tabular-nums">
+                            {money(cover.amount, suggestion.scores.currency)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                   <Evidence suggestion={suggestion} />
                 </div>
 

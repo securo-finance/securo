@@ -2224,7 +2224,9 @@
       "exactAmountAnyClient": "Importo esatto, qualsiasi pagatore",
       "similarDescription": "Importo vicino e descrizione simile",
       "sameAccountExact": "Stesso conto, importo esatto",
-      "unknown": "Regola"
+      "unknown": "Regola",
+      "partPayment": "Cliente noto, parte di quanto deve",
+      "severalInvoices": "Cliente noto, più fatture insieme"
     },
     "outcome": {
       "link": "Collega da sola",
@@ -2249,7 +2251,11 @@
       "atLeast": "da {{value}}",
       "atMost": "fino a {{value}}",
       "textContains": "l'estratto dice “{{text}}”",
-      "textExcludes": "l'estratto non dice “{{text}}”"
+      "textExcludes": "l'estratto non dice “{{text}}”",
+      "onArrival": "quando arriva il denaro",
+      "onIssue": "quando si emette una fattura",
+      "amountPartial": "l'importo copre parte di quanto è dovuto",
+      "amountSet": "fino a {{count}} fatture danno quella somma"
     },
     "add": "Nuova regola",
     "newRule": "Nuova regola di riconciliazione",
@@ -2289,7 +2295,12 @@
       "noMaximum": "nessun massimo",
       "text": "Testo dell'estratto conto",
       "textContains": "deve contenere…",
-      "textExcludes": "non deve contenere…"
+      "textExcludes": "non deve contenere…",
+      "trigger": "Quando cerchiamo",
+      "triggerHint": "La riconciliazione avviene in due momenti, e le prove non sono le stesse.",
+      "amountMatch": "Quanto deve avvicinarsi l'importo",
+      "amountMatchHint": "Confrontato con quanto è ancora dovuto, non con il totale originale.",
+      "amountBandHint": "Sul pagamento in sé: una dimensione che vuoi, o non vuoi, che questa regola tratti."
     },
     "counterparty": {
       "any": "Chiunque",
@@ -2299,7 +2310,14 @@
       "exact": "Esattamente l'importo dovuto",
       "tolerance": "Entro un margine",
       "ratio": "Al netto della ritenuta d'acconto",
-      "ratioHint": "Usa le aliquote di ritenuta del tuo paese. Finché non ci sono, la regola non corrisponde a nulla."
+      "ratioHint": "Usa le aliquote di ritenuta del tuo paese. Finché non ci sono, la regola non corrisponde a nulla.",
+      "partial": "Parte di quanto è dovuto",
+      "partialHint": "Per clienti che pagano a rate. Il resto resta aperto, e il pagamento successivo combacia esattamente.",
+      "set": "Più fatture sommate",
+      "setHint": "Per un pagamento che copre più di una fattura. Se più di una combinazione torna, chiediamo invece di scegliere.",
+      "setMax": "Al massimo queste fatture",
+      "setFee": "Ammetti una commissione del",
+      "setFeeHint": "Una quota del valore delle fatture, per un accredito che arriva al netto. Zero significa che il totale deve essere esatto."
     },
     "queue": {
       "title": "In attesa di te",
@@ -2311,7 +2329,8 @@
       "accept": "Collega",
       "declineHint": "Non è questo. Questa coppia non verrà più suggerita.",
       "linked": "Collegato",
-      "declined": "Scartato: non lo chiederemo più"
+      "declined": "Scartato: non lo chiederemo più",
+      "covers": "copre"
     },
     "evidence": {
       "amountExact": "l'importo corrisponde esattamente",
@@ -2325,6 +2344,21 @@
       "any": "Indifferente",
       "in": "Denaro in entrata",
       "out": "Denaro in uscita"
+    },
+    "step": {
+      "what": "Che regola è questa",
+      "which": "Quale denaro guarda",
+      "whichHint": "Lascia tutto vuoto e guarda tutto il denaro",
+      "match": "Quando conta come corrispondenza",
+      "matchHint": "Quanto devono combaciare il pagamento e la promessa"
+    },
+    "trigger": {
+      "money_arrives": "Quando arriva il denaro",
+      "money_arrivesHint": "Entra un pagamento e cerchiamo la fattura che salda.",
+      "invoice_issued": "Quando si emette una fattura",
+      "invoice_issuedHint": "Il cliente ha pagato prima e la fattura è arrivata dopo: guardiamo indietro, al denaro già presente.",
+      "both": "In entrambi i momenti",
+      "bothHint": "La regola vale in tutti e due i versi."
     }
   }
 }

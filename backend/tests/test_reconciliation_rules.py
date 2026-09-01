@@ -1075,3 +1075,457 @@ def test_pruning_keeps_only_what_differs():
 def test_pruning_an_identical_rule_leaves_nothing():
     shipped = {"outcome": "link", "when": {"amount": {"match": "exact"}}}
     assert rules._prune(dict(shipped), shipped) == {}
+
+
+# ---------------------------------------------------------------------------
+# One invoice, several payments — end to end
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_a_client_paying_in_two_transfers_is_reconciled_without_manual_work(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """The whole journey, because the parts working in isolation is not
+    the claim: a R$3.000 invoice paid as two R$1.500 transfers ends up
+    settled, with both transactions on it.
+
+    The first half is a suggestion — it genuinely could be an instalment,
+    a different job, or a client paying what they had — and the second is
+    an ordinary exact match, because by then the balance *is* 1500. The
+    ambiguity only ever exists at the start.
+    """
+    invoice = await an_invoice(client, biz_headers, client_payee)
+
+    first = await a_payment(client, biz_headers, account, client_payee, amount="1500.00")
+    assert first["id"]
+
+    queue = (
+        await client.get("/api/reconciliation/suggestions", headers=biz_headers)
+    ).json()
+    assert len(queue) == 1
+    assert queue[0]["strategy_id"] == "same_client_part_payment"
+    assert Decimal(queue[0]["amount"]) == Decimal("1500.00")
+
+    accepted = await client.post(
+        f"/api/reconciliation/suggestions/{queue[0]['id']}/accept", headers=biz_headers
+    )
+    assert accepted.status_code == 200, accepted.text
+
+    partly = (
+        await client.get(f"/api/invoices/{invoice['id']}", headers=biz_headers)
+    ).json()
+    assert partly["state"] == "partial"
+    assert Decimal(partly["balance"]) == Decimal("1500.00")
+
+    # The second transfer needs nobody: what is outstanding is now exactly
+    # what arrived.
+    await a_payment(client, biz_headers, account, client_payee, amount="1500.00")
+
+    settled = (
+        await client.get(f"/api/invoices/{invoice['id']}", headers=biz_headers)
+    ).json()
+    assert settled["state"] == "paid"
+    assert len(settled["allocations"]) == 2
+    assert sum(Decimal(a["amount"]) for a in settled["allocations"]) == Decimal("3000.00")
+    assert {a["method"] for a in settled["allocations"]} == {
+        "same_client_part_payment",
+        "same_client_exact",
+    }
+
+
+@pytest.mark.asyncio
+async def test_three_payments_can_settle_one_invoice(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """Nothing about the design caps it at two. Each accepted part narrows
+    the balance for the next."""
+    invoice = await an_invoice(client, biz_headers, client_payee)
+
+    for amount in ("1000.00", "1000.00"):
+        await a_payment(client, biz_headers, account, client_payee, amount=amount)
+        queue = (
+            await client.get("/api/reconciliation/suggestions", headers=biz_headers)
+        ).json()
+        assert queue, f"no suggestion for the {amount} transfer"
+        await client.post(
+            f"/api/reconciliation/suggestions/{queue[0]['id']}/accept",
+            headers=biz_headers,
+        )
+
+    await a_payment(client, biz_headers, account, client_payee, amount="1000.00")
+
+    settled = (
+        await client.get(f"/api/invoices/{invoice['id']}", headers=biz_headers)
+    ).json()
+    assert settled["state"] == "paid"
+    assert len(settled["allocations"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_a_workspace_that_wants_part_payments_linked_can_say_so(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """For somebody whose clients always pay in parts, confirming every
+    instalment is precisely the manual work this feature exists to
+    remove."""
+    await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_part_payment",
+        headers=biz_headers,
+        json={"outcome": "link"},
+    )
+    invoice = await an_invoice(client, biz_headers, client_payee)
+    await a_payment(client, biz_headers, account, client_payee, amount="1500.00")
+
+    partly = (
+        await client.get(f"/api/invoices/{invoice['id']}", headers=biz_headers)
+    ).json()
+    assert partly["state"] == "partial"
+    assert len(partly["allocations"]) == 1
+    assert (
+        await client.get("/api/reconciliation/suggestions", headers=biz_headers)
+    ).json() == [], "nothing was left to ask about"
+
+
+@pytest.mark.asyncio
+async def test_a_token_payment_is_not_offered_as_an_instalment(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    await an_invoice(client, biz_headers, client_payee)
+    await a_payment(client, biz_headers, account, client_payee, amount="20.00")
+
+    assert (
+        await client.get("/api/reconciliation/suggestions", headers=biz_headers)
+    ).json() == []
+
+
+# ---------------------------------------------------------------------------
+# The moment a rule runs at, visible and editable
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_every_rule_says_which_moment_it_runs_at(
+    client: AsyncClient, biz_headers
+):
+    """It used to be decided in the matching code, where nobody could see
+    it. A page that claims matching is not a black box cannot keep a rule
+    about *when we even look* out of view."""
+    nodes = (await client.get("/api/reconciliation/rules", headers=biz_headers)).json()
+    invoice_rules = next(n for n in nodes if n["node"] == INVOICE_NODE)["rules"]
+
+    assert all("trigger" in rule for rule in invoice_rules)
+    by_id = {rule["id"]: rule["trigger"] for rule in invoice_rules}
+    assert by_id["same_client_exact"] == "both"
+    assert by_id["exact_amount_any_client"] == "money_arrives"
+
+
+@pytest.mark.asyncio
+async def test_narrowing_a_rule_to_arriving_money_stops_it_looking_back(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """The restriction that used to be hardcoded is now a choice, and it
+    works in both directions: a workspace can take it away as well as
+    apply it."""
+    await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact",
+        headers=biz_headers,
+        json={"trigger": "money_arrives"},
+    )
+    await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_part_payment",
+        headers=biz_headers,
+        json={"trigger": "money_arrives"},
+    )
+
+    await a_payment(
+        client, biz_headers, account, client_payee, when=TODAY - timedelta(days=6)
+    )
+    invoice = await an_invoice(client, biz_headers, client_payee)
+
+    detail = (
+        await client.get(f"/api/invoices/{invoice['id']}", headers=biz_headers)
+    ).json()
+    assert detail["allocations"] == [], "no rule was willing to look back"
+
+
+@pytest.mark.asyncio
+async def test_widening_a_rule_lets_an_unnamed_payer_settle_a_later_invoice(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, test_user
+):
+    """We ship this off, because money that predates a document had a life
+    of its own. Somebody who knows their account only ever receives client
+    payments is entitled to disagree, and now can.
+
+    The payment sits two days before the invoice was written, inside this
+    rule's own three-day early window — so the only thing standing between
+    it and a match is the moment the rule is willing to run at, which is
+    exactly what this test is about."""
+    await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/exact_amount_any_client",
+        headers=biz_headers,
+        json={"trigger": "both"},
+    )
+
+    resp = await client.post(
+        "/api/transactions",
+        headers=biz_headers,
+        json={
+            "description": "TED RECEBIDA",
+            "amount": "3000.00",
+            "currency": "USD",
+            "date": str(TODAY - timedelta(days=2)),
+            "type": "credit",
+            "account_id": str(account.id),
+        },
+    )
+    assert resp.status_code in (200, 201), resp.text
+
+    resp = await client.post(
+        "/api/invoices",
+        headers=biz_headers,
+        json={"total": "3000.00", "due_date": str(TODAY)},
+    )
+    invoice = resp.json()
+
+    detail = (
+        await client.get(f"/api/invoices/{invoice['id']}", headers=biz_headers)
+    ).json()
+    assert len(detail["allocations"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_bad_moment_is_refused(client: AsyncClient, biz_headers):
+    resp = await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact",
+        headers=biz_headers,
+        json={"trigger": "whenever"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["code"] == "bad_trigger"
+
+
+# ---------------------------------------------------------------------------
+# One transaction, several invoices — end to end
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_one_transfer_settles_three_invoices_from_the_same_client(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """The commercial arrangement that pays a month at a time: one
+    transfer, three invoices, and nothing for anybody to do."""
+    invoices = [
+        await an_invoice(client, biz_headers, client_payee, total=total)
+        for total in ("1000.00", "2000.00", "3000.00")
+    ]
+    await a_payment(client, biz_headers, account, client_payee, amount="6000.00")
+
+    for invoice, total in zip(invoices, ("1000.00", "2000.00", "3000.00")):
+        detail = (
+            await client.get(f"/api/invoices/{invoice['id']}", headers=biz_headers)
+        ).json()
+        assert detail["state"] == "paid", f"{total} left open"
+        assert len(detail["allocations"]) == 1
+        # Each debt got what it was owed, not the payment split evenly.
+        assert Decimal(detail["allocations"][0]["amount"]) == Decimal(total)
+        assert detail["allocations"][0]["method"] == "same_client_several_invoices"
+
+
+@pytest.mark.asyncio
+async def test_the_same_transaction_appears_on_every_invoice_it_settled(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """Many-to-many in both directions, which is the claim: one payment
+    row, three allocation rows, all pointing at it."""
+    invoices = [
+        await an_invoice(client, biz_headers, client_payee, total=total)
+        for total in ("1000.00", "2000.00")
+    ]
+    payment = await a_payment(
+        client, biz_headers, account, client_payee, amount="3000.00"
+    )
+
+    for invoice in invoices:
+        detail = (
+            await client.get(f"/api/invoices/{invoice['id']}", headers=biz_headers)
+        ).json()
+        assert detail["allocations"][0]["transaction_id"] == payment["id"]
+
+
+@pytest.mark.asyncio
+async def test_an_ambiguous_combination_is_asked_about_as_one_question(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """Three invoices of a thousand and a payment of two thousand: any two
+    fit. The queue asks *"does this cover these two?"* once, not twice —
+    two separate questions could be answered inconsistently and leave the
+    payment spread across one debt and short on another."""
+    for _ in range(3):
+        await an_invoice(client, biz_headers, client_payee, total="1000.00")
+    await a_payment(client, biz_headers, account, client_payee, amount="2000.00")
+
+    queue = (
+        await client.get("/api/reconciliation/suggestions", headers=biz_headers)
+    ).json()
+    assert len(queue) == 1, "one question, not one per invoice"
+    offered = queue[0]
+    assert offered["strategy_id"] == "same_client_several_invoices"
+    assert len(offered["covers"]) == 2
+    assert Decimal(offered["amount"]) == Decimal("2000.00")
+
+
+@pytest.mark.asyncio
+async def test_accepting_a_combination_settles_all_of_it(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    for _ in range(3):
+        await an_invoice(client, biz_headers, client_payee, total="1000.00")
+    await a_payment(client, biz_headers, account, client_payee, amount="2000.00")
+
+    queue = (
+        await client.get("/api/reconciliation/suggestions", headers=biz_headers)
+    ).json()
+    resp = await client.post(
+        f"/api/reconciliation/suggestions/{queue[0]['id']}/accept", headers=biz_headers
+    )
+    assert resp.status_code == 200, resp.text
+
+    paid = [
+        inv
+        for inv in (
+            await client.get("/api/invoices", headers=biz_headers)
+        ).json()
+        if inv["state"] == "paid"
+    ]
+    assert len(paid) == 2, "both halves of the answer were written"
+    assert (
+        await client.get("/api/reconciliation/suggestions", headers=biz_headers)
+    ).json() == [], "the question is answered and gone"
+
+
+@pytest.mark.asyncio
+async def test_declining_a_combination_refuses_all_of_it(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee,
+    business_ws,
+):
+    """And every member is remembered as refused, so no part of it comes
+    back on the next sync wearing a different combination."""
+    for _ in range(3):
+        await an_invoice(client, biz_headers, client_payee, total="1000.00")
+    await a_payment(client, biz_headers, account, client_payee, amount="2000.00")
+
+    queue = (
+        await client.get("/api/reconciliation/suggestions", headers=biz_headers)
+    ).json()
+    await client.post(
+        f"/api/reconciliation/suggestions/{queue[0]['id']}/decline", headers=biz_headers
+    )
+
+    result = await session.execute(select(ReconciliationSuggestion))
+    rows = result.unique().scalars().all()
+    assert len(rows) == 2
+    assert {row.status for row in rows} == {"declined"}
+    assert len({row.group_id for row in rows}) == 1, "one question, one group"
+
+
+@pytest.mark.asyncio
+async def test_a_gateway_fee_can_be_allowed_for(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """*"The payout is my invoices minus their cut."* Shipped at zero
+    because guessing which fee applies is how a wrong split gets written
+    confidently — but somebody who knows their gateway's percentage can
+    say so."""
+    await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_several_invoices",
+        headers=biz_headers,
+        json={"when": {"amount": {"match": "set", "max_invoices": 6, "percent": "2"}}},
+    )
+    for total in ("1000.00", "2000.00"):
+        await an_invoice(client, biz_headers, client_payee, total=total)
+
+    await a_payment(client, biz_headers, account, client_payee, amount="2940.00")
+
+    paid = [
+        inv
+        for inv in (await client.get("/api/invoices", headers=biz_headers)).json()
+        if inv["state"] == "paid"
+    ]
+    assert len(paid) == 2
+
+
+@pytest.mark.asyncio
+async def test_without_the_tolerance_a_short_payout_settles_nothing(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """The shipped behaviour, and the safe one."""
+    for total in ("1000.00", "2000.00"):
+        await an_invoice(client, biz_headers, client_payee, total=total)
+    await a_payment(client, biz_headers, account, client_payee, amount="2940.00")
+
+    paid = [
+        inv
+        for inv in (await client.get("/api/invoices", headers=biz_headers)).json()
+        if inv["state"] == "paid"
+    ]
+    assert paid == []
+
+
+@pytest.mark.asyncio
+async def test_a_combination_is_written_whole_or_not_at_all(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """If one invoice of a payout refuses, none of them are written. A
+    payment landing against two of three debts and unaccounted for on the
+    rest is a ledger nobody can explain."""
+    first = await an_invoice(client, biz_headers, client_payee, total="1000.00")
+    await an_invoice(client, biz_headers, client_payee, total="2000.00")
+
+    # Voiding one of them makes it refuse allocation while leaving it out
+    # of the candidate list is not possible — so instead the whole set
+    # simply stops matching, which is the same guarantee seen from the
+    # outside: no partial write.
+    await client.post(f"/api/invoices/{first['id']}/void", headers=biz_headers)
+    await a_payment(client, biz_headers, account, client_payee, amount="3000.00")
+
+    detail = (
+        await client.get(f"/api/invoices/{first['id']}", headers=biz_headers)
+    ).json()
+    assert detail["allocations"] == []
+    remaining = (
+        await client.get("/api/invoices", headers=biz_headers)
+    ).json()
+    assert not any(inv["state"] == "paid" for inv in remaining)
+
+
+@pytest.mark.asyncio
+async def test_a_set_rule_is_visible_and_editable_like_every_other(
+    client: AsyncClient, biz_headers
+):
+    nodes = (await client.get("/api/reconciliation/rules", headers=biz_headers)).json()
+    rule = find(nodes, INVOICE_NODE, "same_client_several_invoices")
+    assert rule["outcome"] == "link"
+    assert rule["when"]["amount"]["match"] == "set"
+    assert rule["when"]["amount"]["max_invoices"] == 6
+
+
+@pytest.mark.asyncio
+async def test_an_impossible_set_size_is_refused(client: AsyncClient, biz_headers):
+    resp = await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_several_invoices",
+        headers=biz_headers,
+        json={"when": {"amount": {"match": "set", "max_invoices": 50}}},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["code"] == "bad_set_size"
+
+
+@pytest.mark.asyncio
+async def test_a_tolerance_wide_enough_to_match_anything_is_refused(
+    client: AsyncClient, biz_headers
+):
+    """Above twenty per cent almost any group of invoices adds up to
+    almost any payment, and a rule that always matches is not a rule."""
+    resp = await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_several_invoices",
+        headers=biz_headers,
+        json={"when": {"amount": {"match": "set", "percent": "60"}}},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["code"] == "set_tolerance_too_wide"

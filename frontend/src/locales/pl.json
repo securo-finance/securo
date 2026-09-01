@@ -2325,7 +2325,9 @@
       "exactAmountAnyClient": "Dokładna kwota, dowolny płatnik",
       "similarDescription": "Zbliżona kwota i podobny opis",
       "sameAccountExact": "To samo konto, dokładna kwota",
-      "unknown": "Reguła"
+      "unknown": "Reguła",
+      "partPayment": "Znany klient, część należności",
+      "severalInvoices": "Znany klient, kilka faktur naraz"
     },
     "outcome": {
       "link": "Wiąże sama",
@@ -2350,7 +2352,11 @@
       "atLeast": "od {{value}}",
       "atMost": "do {{value}}",
       "textContains": "wyciąg mówi „{{text}}”",
-      "textExcludes": "wyciąg nie mówi „{{text}}”"
+      "textExcludes": "wyciąg nie mówi „{{text}}”",
+      "onArrival": "gdy wpływają pieniądze",
+      "onIssue": "gdy wystawiana jest faktura",
+      "amountPartial": "kwota pokrywa część należności",
+      "amountSet": "do {{count}} faktur daje tę sumę"
     },
     "add": "Nowa reguła",
     "newRule": "Nowa reguła dopasowania",
@@ -2390,7 +2396,12 @@
       "noMaximum": "bez maksimum",
       "text": "Treść wyciągu",
       "textContains": "musi zawierać…",
-      "textExcludes": "nie może zawierać…"
+      "textExcludes": "nie może zawierać…",
+      "trigger": "Kiedy szukamy",
+      "triggerHint": "Dopasowanie dzieje się w dwóch momentach, a dowody nie są takie same.",
+      "amountMatch": "Jak blisko musi być kwota",
+      "amountMatchHint": "Porównywana z tym, co wciąż pozostaje do zapłaty, nie z pierwotną sumą.",
+      "amountBandHint": "O samej płatności — wielkość, którą ta reguła ma obsługiwać albo nie."
     },
     "counterparty": {
       "any": "Ktokolwiek",
@@ -2400,7 +2411,14 @@
       "exact": "Dokładnie należna kwota",
       "tolerance": "W granicach marginesu",
       "ratio": "Po potrąceniu podatku u źródła",
-      "ratioHint": "Używa stawek podatku u źródła Twojego kraju. Dopóki ich nie ma, reguła niczego nie dopasuje."
+      "ratioHint": "Używa stawek podatku u źródła Twojego kraju. Dopóki ich nie ma, reguła niczego nie dopasuje.",
+      "partial": "Część należności",
+      "partialHint": "Dla klientów płacących w ratach. Reszta pozostaje otwarta, a kolejna płatność pasuje dokładnie.",
+      "set": "Kilka faktur razem",
+      "setHint": "Dla płatności pokrywającej więcej niż jedną fakturę. Jeśli pasuje więcej niż jedna kombinacja, pytamy zamiast wybierać.",
+      "setMax": "Najwyżej tyle faktur",
+      "setFee": "Dopuść prowizję",
+      "setFeeHint": "Część wartości faktur, dla wypłaty przychodzącej netto. Zero oznacza, że suma musi się zgadzać dokładnie."
     },
     "queue": {
       "title": "Czeka na Ciebie",
@@ -2412,7 +2430,8 @@
       "accept": "Powiąż",
       "declineHint": "To nie to. Ta para nie będzie już proponowana.",
       "linked": "Powiązano",
-      "declined": "Odrzucono — nie zapytamy ponownie"
+      "declined": "Odrzucono — nie zapytamy ponownie",
+      "covers": "pokrywa"
     },
     "evidence": {
       "amountExact": "kwota zgadza się dokładnie",
@@ -2426,6 +2445,21 @@
       "any": "Obojętnie",
       "in": "Pieniądze wpływające",
       "out": "Pieniądze wypływające"
+    },
+    "step": {
+      "what": "Czym jest ta reguła",
+      "which": "Na jakie pieniądze patrzy",
+      "whichHint": "Zostaw wszystko puste, a patrzy na wszystkie",
+      "match": "Kiedy liczy się jako dopasowanie",
+      "matchHint": "Jak blisko muszą być płatność i zobowiązanie"
+    },
+    "trigger": {
+      "money_arrives": "Gdy wpływają pieniądze",
+      "money_arrivesHint": "Wpływa płatność i szukamy faktury, którą opłaca.",
+      "invoice_issued": "Gdy wystawiana jest faktura",
+      "invoice_issuedHint": "Klient zapłacił najpierw, faktura poszła później — patrzymy wstecz, na pieniądze już obecne.",
+      "both": "W obu momentach",
+      "bothHint": "Reguła obowiązuje w obie strony."
     }
   }
 }

@@ -31,14 +31,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.reconciliation import ReconciliationSuggestion
-from app.services.reconciliation_engine import Decision, Movement
+from app.services.reconciliation_engine import Decision, Movement, Settlement
 
 #: How long an unanswered suggestion stays in the queue. Long enough that
 #: somebody who reconciles monthly still sees it; short enough that the
@@ -47,7 +46,9 @@ from app.services.reconciliation_engine import Decision, Movement
 STALE_AFTER_DAYS = 60
 
 
-def _signal_scores(decision: Decision, movement: Movement) -> dict[str, object]:
+def _signal_scores(
+    decision: Decision, movement: Movement, settlement: "Settlement"
+) -> dict[str, object]:
     """The per-signal breakdown a person actually needs.
 
     One overall number would be worse than none. "We are 78% sure" is not
@@ -56,15 +57,17 @@ def _signal_scores(decision: Decision, movement: Movement) -> dict[str, object]:
     and lets them disagree with a specific thing rather than with a
     verdict.
     """
-    expectation = decision.expectation
-    if expectation is None:
-        return {}
+    expectation = settlement.expectation
     return {
         "strategy": decision.strategy,
+        # How many promises this one payment is being offered against, so
+        # the queue can say "one of three" rather than showing a number
+        # that looks wrong on its own.
+        "of_set": len(decision.settlements),
         "description": round(decision.score, 3),
         "amount_expected": str(expectation.amount),
         "amount_moved": str(abs(movement.amount)),
-        "amount_exact": abs(movement.amount) == expectation.amount,
+        "amount_exact": settlement.amount == expectation.amount,
         "days_apart": (movement.when - expectation.when).days,
         "same_counterparty": bool(
             movement.payee_id and movement.payee_id == expectation.payee_id
@@ -80,46 +83,88 @@ async def record(
     decision: Decision,
     movement: Movement,
     node: str,
-) -> Optional[ReconciliationSuggestion]:
+) -> list[ReconciliationSuggestion]:
     """Keep a doubtful match, unless this pair has been settled already.
 
-    Returns nothing when the pair is already in the queue or was already
-    answered — which is the common case on a re-sync, and the whole reason
-    the table exists.
-    """
-    if decision.port != "suggested" or decision.expectation is None:
-        return None
+    Returns the rows written — several when one payment may be covering
+    several promises, and none at all when every pair is already in the
+    queue or was already answered. That last case is the common one on a
+    re-sync, and the whole reason the table exists.
 
-    expectation = decision.expectation
-    existing = await session.execute(
+    A payment covering several invoices is stored as a **group**, because
+    the question is the whole question. Asking about each invoice
+    separately would let somebody accept two thirds of a payout and leave
+    the payment short on the rest, with nothing on screen having warned
+    them.
+    """
+    if decision.port != "suggested" or not decision.settlements:
+        return []
+
+    group_id = uuid.uuid4() if len(decision.settlements) > 1 else None
+    written: list[ReconciliationSuggestion] = []
+
+    for settlement in decision.settlements:
+        expectation = settlement.expectation
+        existing = await session.execute(
+            select(ReconciliationSuggestion).where(
+                ReconciliationSuggestion.workspace_id == workspace_id,
+                ReconciliationSuggestion.transaction_id == transaction_id,
+                ReconciliationSuggestion.expectation_kind == expectation.kind,
+                ReconciliationSuggestion.expectation_id == expectation.id,
+            )
+        )
+        if existing.scalar_one_or_none() is not None:
+            # Pending, accepted or declined — all three mean "do not ask
+            # again". Declined is the one that matters: re-offering it is
+            # the failure this table was built to prevent.
+            #
+            # One member of a group already answered is enough to drop the
+            # whole group: the question was about the combination, and a
+            # combination missing a piece is a different question.
+            return []
+
+        written.append(
+            ReconciliationSuggestion(
+                id=uuid.uuid4(),
+                workspace_id=workspace_id,
+                transaction_id=transaction_id,
+                group_id=group_id,
+                expectation_kind=expectation.kind,
+                expectation_id=expectation.id,
+                strategy_id=decision.strategy or "unknown",
+                node=node,
+                amount=settlement.amount,
+                scores=_signal_scores(decision, movement, settlement),
+                status="pending",
+            )
+        )
+
+    for suggestion in written:
+        session.add(suggestion)
+    if written:
+        await session.flush()
+    return written
+
+
+async def members_of(
+    session: AsyncSession, suggestion: ReconciliationSuggestion
+) -> list[ReconciliationSuggestion]:
+    """Every row this question is made of.
+
+    A suggestion covering one invoice is its own group of one. A payment
+    offered against three is answered whole or not at all — accepting two
+    thirds of it would leave the payment short on the rest, with nothing
+    on screen having said so.
+    """
+    if suggestion.group_id is None:
+        return [suggestion]
+    result = await session.execute(
         select(ReconciliationSuggestion).where(
-            ReconciliationSuggestion.workspace_id == workspace_id,
-            ReconciliationSuggestion.transaction_id == transaction_id,
-            ReconciliationSuggestion.expectation_kind == expectation.kind,
-            ReconciliationSuggestion.expectation_id == expectation.id,
+            ReconciliationSuggestion.workspace_id == suggestion.workspace_id,
+            ReconciliationSuggestion.group_id == suggestion.group_id,
         )
     )
-    if existing.scalar_one_or_none() is not None:
-        # Pending, accepted or declined — all three mean "do not ask
-        # again". Declined is the one that matters: re-offering it is the
-        # failure this table was built to prevent.
-        return None
-
-    suggestion = ReconciliationSuggestion(
-        id=uuid.uuid4(),
-        workspace_id=workspace_id,
-        transaction_id=transaction_id,
-        expectation_kind=expectation.kind,
-        expectation_id=expectation.id,
-        strategy_id=decision.strategy or "unknown",
-        node=node,
-        amount=decision.amount or Decimal("0"),
-        scores=_signal_scores(decision, movement),
-        status="pending",
-    )
-    session.add(suggestion)
-    await session.flush()
-    return suggestion
+    return list(result.unique().scalars().all())
 
 
 async def open_for(
