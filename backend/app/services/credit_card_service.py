@@ -57,13 +57,17 @@ def get_cycle_dates(
 
 def compute_available_credit(
     credit_limit: Optional[Decimal],
-    current_balance: Decimal,
+    booked_balance: Decimal,
 ) -> Optional[Decimal]:
-    """available = limit − utilized. current_balance for a credit card is negative when debt."""
+    """Return fallback credit from a normalized booked card balance.
+
+    ``booked_balance`` uses the stored Securo invariant: positive is debt and
+    negative is credit/guthaben. Provider-reported available credit should be
+    preferred by callers because it may already include pending transactions.
+    """
     if credit_limit is None:
         return None
-    utilized = -current_balance if current_balance < 0 else Decimal("0")
-    return credit_limit - utilized
+    return credit_limit - booked_balance
 
 
 def apply_effective_date(transaction, account, *, bill_due_date: Optional[date] = None) -> None:

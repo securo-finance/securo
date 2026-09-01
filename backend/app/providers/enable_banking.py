@@ -9,6 +9,7 @@ The flow requires the user to pick a country and bank before the
 authorization URL can be generated, so `get_oauth_url` takes
 `flow_params={"country", "institution_name"}`.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -99,6 +100,12 @@ def _pick_balance(balances: list[dict]) -> Optional[dict]:
         if key in by_type:
             return by_type[key]
     return balances[0] if isinstance(balances[0], dict) else None
+
+
+def _balance_of_type(balances: list[dict], *balance_types: str) -> Optional[dict]:
+    """Return the first requested ISO 20022 balance type present."""
+    by_type = {b.get("balance_type") or b.get("type"): b for b in balances if isinstance(b, dict)}
+    return next((by_type[k] for k in balance_types if k in by_type), None)
 
 
 def _balance_decimal(balance: Optional[dict]) -> Decimal:
@@ -192,10 +199,7 @@ class EnableBankingProvider(BankProvider):
 
     @property
     def redirect_uri(self) -> str:
-        return (
-            get_settings().enable_banking_oauth_redirect_uri
-            or default_oauth_redirect_uri()
-        )
+        return get_settings().enable_banking_oauth_redirect_uri or default_oauth_redirect_uri()
 
     # ----- credentials -----
 
@@ -270,16 +274,12 @@ class EnableBankingProvider(BankProvider):
         async with self._client() as client:
             resp = await client.request(method, path, params=params, json=json_body)
         if resp.status_code in (401, 410):
-            raise SessionExpiredError(
-                f"Enable Banking returned {resp.status_code} for {path}"
-            )
+            raise SessionExpiredError(f"Enable Banking returned {resp.status_code} for {path}")
         if resp.status_code == 429:
             # The bank (ASPSP) is throttling us — transient, not a broken
             # connection. Surface a distinct type so sync can skip-and-retry
             # instead of erroring the connection.
-            raise ProviderRateLimited(
-                f"Enable Banking {method} {path} → 429: {resp.text[:200]}"
-            )
+            raise ProviderRateLimited(f"Enable Banking {method} {path} → 429: {resp.text[:200]}")
         if resp.status_code >= 400:
             raise httpx.HTTPStatusError(
                 f"Enable Banking {method} {path} → {resp.status_code}: {resp.text[:300]}",
@@ -290,9 +290,7 @@ class EnableBankingProvider(BankProvider):
 
     # ----- institution listing -----
 
-    async def list_institutions(
-        self, country: Optional[str] = None
-    ) -> InstitutionListData:
+    async def list_institutions(self, country: Optional[str] = None) -> InstitutionListData:
         params: dict[str, Any] = {}
         if country:
             params["country"] = country.upper()
@@ -339,9 +337,7 @@ class EnableBankingProvider(BankProvider):
         valid_until_days = min(valid_until_days, MAX_VALID_UNTIL_DAYS)
         valid_until_dt = datetime.now(timezone.utc) + timedelta(days=valid_until_days)
         # EB wants RFC3339 with a trailing 'Z' for UTC.
-        valid_until = valid_until_dt.replace(microsecond=0).isoformat().replace(
-            "+00:00", "Z"
-        )
+        valid_until = valid_until_dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
         return {
             "access": {"valid_until": valid_until},
             "aspsp": {"name": institution_name, "country": country.upper()},
@@ -364,9 +360,7 @@ class EnableBankingProvider(BankProvider):
                 "Enable Banking requires flow_params with 'country' and 'institution_name'"
             )
         psu_type = (flow_params.get("psu_type") or DEFAULT_PSU_TYPE).strip()
-        valid_until_days = int(
-            flow_params.get("valid_until_days") or DEFAULT_VALID_UNTIL_DAYS
-        )
+        valid_until_days = int(flow_params.get("valid_until_days") or DEFAULT_VALID_UNTIL_DAYS)
         payload = self._build_auth_payload(
             country=country,
             institution_name=institution_name,
@@ -390,9 +384,7 @@ class EnableBankingProvider(BankProvider):
     ) -> str:
         stored = (settings or {}).get("flow_params") or {}
         if not stored.get("country") or not stored.get("institution_name"):
-            raise RuntimeError(
-                "Cannot reauth Enable Banking connection without stored flow_params"
-            )
+            raise RuntimeError("Cannot reauth Enable Banking connection without stored flow_params")
         return await self.get_oauth_url(redirect_uri, state, flow_params=stored)
 
     # ----- session exchange -----
@@ -457,29 +449,43 @@ class EnableBankingProvider(BankProvider):
     async def _build_account(self, raw: dict) -> AccountData:
         uid = raw.get("uid") or raw.get("account_uid") or ""
         currency = raw.get("currency") or "EUR"
+        account_type = _map_cash_account_type(raw.get("cash_account_type"))
         # EB doesn't include balances in the session payload; fetch separately.
         balance = Decimal("0")
+        expected_balance: Optional[Decimal] = None
+        available_credit: Optional[Decimal] = None
         try:
             bal_resp = await self._request("GET", f"/accounts/{uid}/balances")
-            picked = _pick_balance(bal_resp.get("balances") or [])
-            balance = _balance_decimal(picked)
-            currency = _balance_currency(picked, currency)
+            balances = bal_resp.get("balances") or []
+            if account_type == "credit_card":
+                # EB card balances use the cash-account sign: positive means
+                # the bank owes the customer, negative means debt. Normalize
+                # booked/expected snapshots once at the provider boundary.
+                booked = _balance_of_type(balances, "CLBD", "OPBD")
+                expected = _balance_of_type(balances, "XPCD")
+                available = _balance_of_type(balances, "ITAV", "CLAV", "OPAV")
+                fallback = booked or expected or _pick_balance(balances)
+                balance = -_balance_decimal(fallback)
+                if expected is not None:
+                    expected_balance = -_balance_decimal(expected)
+                if available is not None:
+                    available_credit = _balance_decimal(available)
+                currency = _balance_currency(booked or expected or available or fallback, currency)
+            else:
+                picked = _pick_balance(balances)
+                balance = _balance_decimal(picked)
+                currency = _balance_currency(picked, currency)
         except (httpx.HTTPError, SessionExpiredError) as exc:
-            logger.warning(
-                "Failed to fetch balances for account %s: %s", uid, exc
-            )
-        name = (
-            raw.get("display_name")
-            or raw.get("product")
-            or raw.get("name")
-            or "Account"
-        )
+            logger.warning("Failed to fetch balances for account %s: %s", uid, exc)
+        name = raw.get("display_name") or raw.get("product") or raw.get("name") or "Account"
         return AccountData(
             external_id=uid,
             name=name,
-            type=_map_cash_account_type(raw.get("cash_account_type")),
+            type=account_type,
             balance=balance,
             currency=currency,
+            expected_balance=expected_balance,
+            available_credit=available_credit,
             masked_number=mask_last4(_account_identifier(raw)),
         )
 
@@ -559,9 +565,7 @@ class EnableBankingProvider(BankProvider):
                 params=params,
             )
             for raw_txn, status in self._iter_transactions(page):
-                parsed = self._build_transaction(
-                    account_external_id, raw_txn, status, payee_source
-                )
+                parsed = self._build_transaction(account_external_id, raw_txn, status, payee_source)
                 # A broken pagination cursor can make Enable Banking return a
                 # page we have already consumed. Keep the result idempotent
                 # even before the repeated cursor is detected below.

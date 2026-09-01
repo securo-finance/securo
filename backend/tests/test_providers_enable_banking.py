@@ -4,11 +4,12 @@ Covers: JWT signing/claims, transaction fingerprint stability, account-type
 mapping, nested vs flat transaction page shapes, restricted-mode handling.
 HTTP is mocked end-to-end via httpx.MockTransport.
 """
+
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -37,10 +38,14 @@ def _rsa_pem() -> tuple[str, str]:
         format=serialization.PrivateFormat.PKCS8,
         encryption_algorithm=serialization.NoEncryption(),
     ).decode("utf-8")
-    public_pem = key.public_key().public_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo,
-    ).decode("utf-8")
+    public_pem = (
+        key.public_key()
+        .public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        .decode("utf-8")
+    )
     return private_pem, public_pem
 
 
@@ -75,9 +80,7 @@ def test_jwt_token_has_expected_claims_and_kid(eb_keys):
     assert header["kid"] == "test-app-id-123"
     assert header["typ"] == "JWT"
 
-    claims = jwt.decode(
-        token, public_pem, algorithms=["RS256"], audience="api.enablebanking.com"
-    )
+    claims = jwt.decode(token, public_pem, algorithms=["RS256"], audience="api.enablebanking.com")
     assert claims["iss"] == "enablebanking.com"
     assert claims["aud"] == "api.enablebanking.com"
     assert isinstance(claims["iat"], int)
@@ -225,9 +228,7 @@ async def test_get_oauth_url_returns_consent_url(eb_keys):
 async def test_get_oauth_url_rejects_missing_flow_params(eb_keys):
     provider = EnableBankingProvider()
     with pytest.raises(ValueError):
-        await provider.get_oauth_url(
-            "https://x/cb", "s", flow_params={"country": "DE"}
-        )
+        await provider.get_oauth_url("https://x/cb", "s", flow_params={"country": "DE"})
 
 
 @pytest.mark.asyncio
@@ -305,6 +306,70 @@ async def test_handle_oauth_callback_builds_connection_data(eb_keys):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("closing_booked", "expected_internal"),
+    [
+        ("-100.00", Decimal("100.00")),
+        ("0.00", Decimal("0.00")),
+        ("2.23", Decimal("-2.23")),
+    ],
+)
+async def test_credit_card_booked_balance_is_normalized(closing_booked, expected_internal):
+    provider = EnableBankingProvider()
+    provider._request = AsyncMock(
+        return_value={
+            "balances": [
+                {
+                    "balance_type": "CLBD",
+                    "balance_amount": {
+                        "amount": closing_booked,
+                        "currency": "EUR",
+                    },
+                }
+            ]
+        }
+    )
+
+    account = await provider._build_account(
+        {"uid": "card-1", "cash_account_type": "CARD", "currency": "EUR"}
+    )
+
+    assert account.balance == expected_internal
+
+
+@pytest.mark.asyncio
+async def test_credit_card_balance_types_remain_distinct():
+    """Sanitized regression payload: booked credit plus pending card spend."""
+    provider = EnableBankingProvider()
+    provider._request = AsyncMock(
+        return_value={
+            "balances": [
+                {
+                    "balance_type": "CLBD",
+                    "balance_amount": {"amount": "2.23", "currency": "EUR"},
+                },
+                {
+                    "balance_type": "XPCD",
+                    "balance_amount": {"amount": "-12.04", "currency": "EUR"},
+                },
+                {
+                    "balance_type": "ITAV",
+                    "balance_amount": {"amount": "1987.96", "currency": "EUR"},
+                },
+            ]
+        }
+    )
+
+    account = await provider._build_account(
+        {"uid": "card-1", "cash_account_type": "CARD", "currency": "EUR"}
+    )
+
+    assert account.balance == Decimal("-2.23")
+    assert account.expected_balance == Decimal("12.04")
+    assert account.available_credit == Decimal("1987.96")
+
+
+@pytest.mark.asyncio
 async def test_get_transactions_parses_nested_and_flat_shapes(eb_keys):
     """Both `transactions:{booked,pending}` and flat list must produce the
     same internal TransactionData list."""
@@ -337,7 +402,11 @@ async def test_get_transactions_parses_nested_and_flat_shapes(eb_keys):
         assert request.url.path == "/accounts/acc-1/transactions"
         return httpx.Response(200, json=nested_page)
 
-    credentials = {"session_id_enc": None, "session_id": "sess-x", "valid_until": "2099-01-01T00:00:00Z"}
+    credentials = {
+        "session_id_enc": None,
+        "session_id": "sess-x",
+        "valid_until": "2099-01-01T00:00:00Z",
+    }
     with _patch_client(provider, handler):
         nested = await provider.get_transactions(credentials, "acc-1", date(2026, 5, 1))
 
@@ -407,9 +476,7 @@ async def test_get_transactions_stops_on_repeated_continuation_key(eb_keys, capl
         "valid_until": "2099-01-01T00:00:00Z",
     }
     with _patch_client(provider, handler), caplog.at_level("WARNING"):
-        transactions = await provider.get_transactions(
-            credentials, "acc-1", date(2026, 5, 1)
-        )
+        transactions = await provider.get_transactions(credentials, "acc-1", date(2026, 5, 1))
 
     assert len(requests) == 2
     assert requests[0].url.params.get("continuation_key") is None
@@ -421,9 +488,7 @@ async def test_get_transactions_stops_on_repeated_continuation_key(eb_keys, capl
 @pytest.mark.asyncio
 async def test_refresh_credentials_expired_raises(eb_keys):
     provider = EnableBankingProvider()
-    expired = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat().replace(
-        "+00:00", "Z"
-    )
+    expired = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat().replace("+00:00", "Z")
     with pytest.raises(SessionExpiredError):
         await provider.refresh_credentials({"valid_until": expired})
 
@@ -431,9 +496,7 @@ async def test_refresh_credentials_expired_raises(eb_keys):
 @pytest.mark.asyncio
 async def test_refresh_credentials_valid_passes(eb_keys):
     provider = EnableBankingProvider()
-    future = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat().replace(
-        "+00:00", "Z"
-    )
+    future = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat().replace("+00:00", "Z")
     creds = {"valid_until": future, "session_id_enc": "enc"}
     out = await provider.refresh_credentials(creds)
     assert out is creds

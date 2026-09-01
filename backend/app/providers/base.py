@@ -60,6 +60,13 @@ class AccountData:
     type: str  # checking, savings, credit_card
     balance: Decimal
     currency: str
+    # Credit-card snapshots use Securo's internal sign convention: positive
+    # means debt, negative means credit/guthaben. ``balance`` is the booked
+    # snapshot; expected_balance may include pending transactions.
+    expected_balance: Optional[Decimal] = None
+    # Provider-reported spendable credit/funds. This is an absolute amount,
+    # not a signed balance, and must not be negated.
+    available_credit: Optional[Decimal] = None
     credit_limit: Optional[Decimal] = None
     statement_close_day: Optional[int] = None
     payment_due_day: Optional[int] = None
@@ -292,9 +299,7 @@ class BankProvider(ABC):
         """Create a connect token for widget-based flows. Override in widget providers."""
         raise NotImplementedError(f"{self.name} does not support widget connect tokens")
 
-    async def list_institutions(
-        self, country: Optional[str] = None
-    ) -> "InstitutionListData":
+    async def list_institutions(self, country: Optional[str] = None) -> "InstitutionListData":
         """List supported institutions (banks). Empty by default for providers
         that don't surface a selection step (Pluggy uses its own widget).
         """
@@ -339,8 +344,11 @@ class BankProvider(ABC):
 
     @abstractmethod
     async def get_transactions(
-        self, credentials: dict, account_external_id: str,
-        since: Optional[date] = None, payee_source: str = "auto",
+        self,
+        credentials: dict,
+        account_external_id: str,
+        since: Optional[date] = None,
+        payee_source: str = "auto",
     ) -> list[TransactionData]:
         """Fetch transactions for an account."""
         ...

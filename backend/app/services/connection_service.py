@@ -185,9 +185,7 @@ async def _resolve_institution(
                     select(Institution)
                     .where(
                         Institution.connection_id == connection_id,
-                        Institution.external_id == ext
-                        if ext
-                        else Institution.name == name,
+                        Institution.external_id == ext if ext else Institution.name == name,
                     )
                     .limit(1)
                 )
@@ -203,6 +201,7 @@ async def _resolve_institution(
             inst.logo_url = new_logo
     cache[key] = inst
     return inst
+
 
 PLUGGY_CATEGORY_MAP = {
     "Eating out": "Alimentação",
@@ -268,9 +267,7 @@ async def _sync_holdings(
         provider = get_provider(connection.provider)
         holdings = await provider.get_holdings(credentials)
     except Exception:  # noqa: BLE001
-        logger.exception(
-            "Failed to fetch holdings for connection %s", connection.id
-        )
+        logger.exception("Failed to fetch holdings for connection %s", connection.id)
         return
 
     source = connection.provider
@@ -354,8 +351,7 @@ async def _sync_holdings(
             )
             wallet_key = _wallet_external_id(connection.external_id, key)
             default_name = (
-                _clean_institution_name(holding.account_name)
-                or connection.institution_name
+                _clean_institution_name(holding.account_name) or connection.institution_name
             )
             # The first claim on a wallet key adopts the wallet these
             # holdings lived in before — the legacy connection-keyed one, or
@@ -389,9 +385,7 @@ async def _sync_holdings(
                 if key:
                     key_shape = or_(
                         key_shape,
-                        AssetGroup.external_id.endswith(
-                            f"::{key}", autoescape=True
-                        ),
+                        AssetGroup.external_id.endswith(f"::{key}", autoescape=True),
                     )
                 candidates = [
                     g
@@ -415,7 +409,9 @@ async def _sync_holdings(
                                 key_shape,
                             )
                         )
-                    ).scalars().all()
+                    )
+                    .scalars()
+                    .all()
                     if g.id not in claimed
                 ]
                 # A stale key parses as exactly "{old prefix}::{key}"; a
@@ -431,27 +427,17 @@ async def _sync_holdings(
                     and g.external_id[: -len(tail)]
                     and "::" not in g.external_id[: -len(tail)]
                 ]
-                plain = [
-                    g
-                    for g in candidates
-                    if g.external_id and "::" not in g.external_id
-                ]
+                plain = [g for g in candidates if g.external_id and "::" not in g.external_id]
                 pool = suffixed or (
-                    []
-                    if (has_any_split_wallets if key else has_split_wallets)
-                    else plain
+                    [] if (has_any_split_wallets if key else has_split_wallets) else plain
                 )
-                exact = [
-                    g for g in pool if g.external_id == connection.external_id
-                ]
+                exact = [g for g in pool if g.external_id == connection.external_id]
                 if exact:
                     legacy = exact[0]
                 else:
                     ours = [g for g in pool if g.connection_id == connection.id]
                     if not ours:
-                        ours = [
-                            g for g in pool if await _holds_synced_asset(g.id)
-                        ]
+                        ours = [g for g in pool if await _holds_synced_asset(g.id)]
                     if len(ours) == 1:
                         legacy = ours[0]
             if legacy is not None:
@@ -462,9 +448,7 @@ async def _sync_holdings(
                     async with session.begin_nested():
                         legacy.external_id = wallet_key
                         legacy.connection_id = connection.id
-                        if _is_auto_wallet_name(
-                            legacy.name, connection.institution_name
-                        ):
+                        if _is_auto_wallet_name(legacy.name, connection.institution_name):
                             legacy.name = await _unique_default_name(
                                 session,
                                 user_id,
@@ -588,7 +572,12 @@ async def _sync_holdings(
             existing.sell_date = None
 
         asset = await _upsert_asset_from_holding(
-            session, existing, holding, user_id, connection.id, source,
+            session,
+            existing,
+            holding,
+            user_id,
+            connection.id,
+            source,
             workspace_id=connection.workspace_id,
         )
         if asset.group_id is not None:
@@ -613,10 +602,7 @@ async def _sync_holdings(
         # user made themselves ("US Stocks", source "manual") is never
         # touched.
         group = await _wallet_for(holding)
-        hint_lost = (
-            holding.account_external_id is None
-            and asset.group_id in split_group_ids
-        )
+        hint_lost = holding.account_external_id is None and asset.group_id in split_group_ids
         if (
             not hint_lost
             and (asset.group_id is None or asset.group_id in sync_owned_group_ids)
@@ -911,9 +897,7 @@ async def get_reauth_url(
     )
 
 
-async def list_provider_institutions(
-    provider_name: str, country: Optional[str] = None
-) -> dict:
+async def list_provider_institutions(provider_name: str, country: Optional[str] = None) -> dict:
     provider = get_provider(provider_name)
     data = await provider.list_institutions(country)
     return {
@@ -1014,7 +998,9 @@ async def handle_oauth_callback(
         existing_reconnect.institution_name = (
             connection_data.institution_name or existing_reconnect.institution_name
         )
-        existing_reconnect.logo_url = _clean_logo_url(connection_data.logo_url) or existing_reconnect.logo_url
+        existing_reconnect.logo_url = (
+            _clean_logo_url(connection_data.logo_url) or existing_reconnect.logo_url
+        )
         existing_reconnect.credentials = connection_data.credentials
         existing_reconnect.status = "active"
         # Re-sync from current data on next sync cycle.
@@ -1066,6 +1052,8 @@ async def handle_oauth_callback(
             masked_number=acc_data.masked_number,
             type=acc_data.type,
             balance=acc_data.balance,
+            expected_balance=acc_data.expected_balance if is_cc else None,
+            available_credit=acc_data.available_credit if is_cc else None,
             currency=acc_data.currency,
             credit_limit=acc_data.credit_limit if is_cc else None,
             statement_close_day=acc_data.statement_close_day if is_cc else None,
@@ -1108,16 +1096,11 @@ async def handle_oauth_callback(
                     synced_dup.status = "posted"
                     synced_dup.external_id = txn_data.external_id
                     synced_dup.raw_data = txn_data.raw_data
-                    if (
-                        txn_data.bill_external_id
-                        and synced_dup.effective_bill_date is None
-                    ):
+                    if txn_data.bill_external_id and synced_dup.effective_bill_date is None:
                         bill = bills_by_external_id.get(txn_data.bill_external_id)
                         if bill is not None and synced_dup.bill_id != bill.id:
                             synced_dup.bill_id = bill.id
-                            apply_effective_date(
-                                synced_dup, account, bill_due_date=bill.due_date
-                            )
+                            apply_effective_date(synced_dup, account, bill_due_date=bill.due_date)
                 continue
 
             category_id = await _match_pluggy_category(
@@ -1322,10 +1305,13 @@ async def _find_synced_duplicate(
     for candidate in result.scalars():
         if candidate.external_id and candidate.external_id.startswith("bill_charge:"):
             continue
-        if _description_similarity(
-            candidate.original_description or candidate.description,
-            txn_data.description,
-        ) >= 0.7:
+        if (
+            _description_similarity(
+                candidate.original_description or candidate.description,
+                txn_data.description,
+            )
+            >= 0.7
+        ):
             return candidate
 
     return None
@@ -1381,10 +1367,13 @@ async def _cleanup_phantom_duplicates(
             )
         )
         for sibling in sibling_result.scalars():
-            if _description_similarity(
-                sibling.original_description or sibling.description,
-                tx.original_description or tx.description,
-            ) >= 0.9:
+            if (
+                _description_similarity(
+                    sibling.original_description or sibling.description,
+                    tx.original_description or tx.description,
+                )
+                >= 0.9
+            ):
                 await session.delete(tx)
                 deleted += 1
                 break
@@ -1418,6 +1407,7 @@ def _compute_bill_close_date(due_date: date, close_day: Optional[int]) -> date:
     after the payment in the tx list, which doesn't match real bank semantics.
     """
     import calendar  # local — not used elsewhere in this file
+
     if not close_day:
         return due_date
     last = calendar.monthrange(due_date.year, due_date.month)[1]
@@ -1495,12 +1485,14 @@ async def _sync_bill_finance_charges(
         external_id = f"bill_charge:{bill.external_id}:{charge_id}"
         desired_external_ids.add(external_id)
 
-        existing = (await session.execute(
-            select(Transaction).where(
-                Transaction.account_id == account.id,
-                Transaction.external_id == external_id,
+        existing = (
+            await session.execute(
+                select(Transaction).where(
+                    Transaction.account_id == account.id,
+                    Transaction.external_id == external_id,
+                )
             )
-        )).scalar_one_or_none()
+        ).scalar_one_or_none()
 
         description = _describe_finance_charge(
             str(raw.get("type") or ""), raw.get("additionalInfo")
@@ -1535,13 +1527,19 @@ async def _sync_bill_finance_charges(
     # Drop synthetic charges Pluggy no longer reports for this bill (e.g.
     # the bank reversed an erroneous fee on a re-sync). Real transactions
     # don't share the bill_charge: prefix so they're untouched.
-    orphans = (await session.execute(
-        select(Transaction).where(
-            Transaction.account_id == account.id,
-            Transaction.bill_id == bill.id,
-            Transaction.external_id.like(f"bill_charge:{bill.external_id}:%"),
+    orphans = (
+        (
+            await session.execute(
+                select(Transaction).where(
+                    Transaction.account_id == account.id,
+                    Transaction.bill_id == bill.id,
+                    Transaction.external_id.like(f"bill_charge:{bill.external_id}:%"),
+                )
+            )
         )
-    )).scalars().all()
+        .scalars()
+        .all()
+    )
     for tx in orphans:
         if tx.external_id not in desired_external_ids:
             await session.delete(tx)
@@ -1571,19 +1569,21 @@ async def _sync_credit_card_bills(
     try:
         bills_data = await provider.get_bills(credentials, account.external_id)
     except Exception as e:  # noqa: BLE001 — provider failures must not fail sync
-        logger.info(
-            "Skipping credit-card bills sync for account %s: %s", account.id, e
-        )
+        logger.info("Skipping credit-card bills sync for account %s: %s", account.id, e)
         return {}
 
     if not bills_data:
         return {}
 
     existing = (
-        await session.execute(
-            select(CreditCardBill).where(CreditCardBill.account_id == account.id)
+        (
+            await session.execute(
+                select(CreditCardBill).where(CreditCardBill.account_id == account.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     by_external_id: dict[str, CreditCardBill] = {b.external_id: b for b in existing}
 
     for bd in bills_data:
@@ -1619,7 +1619,11 @@ async def _sync_credit_card_bills(
         raw_charges = (bd.raw_data or {}).get("financeCharges")
         if isinstance(raw_charges, list) and raw_charges:
             await _sync_bill_finance_charges(
-                session, user_id, account, bill, raw_charges,
+                session,
+                user_id,
+                account,
+                bill,
+                raw_charges,
             )
 
     return by_external_id
@@ -1684,7 +1688,8 @@ async def sync_connection(
                     connection.logo_url = logo
             except Exception:
                 logger.warning(
-                    "Failed to backfill logo for connection %s", connection.id,
+                    "Failed to backfill logo for connection %s",
+                    connection.id,
                     exc_info=True,
                 )
 
@@ -1766,6 +1771,11 @@ async def sync_connection(
                 account.balance = _simplefin_to_internal_balance(
                     connection.provider, account.type, acc_data.balance
                 )
+                if account.type == "credit_card":
+                    # Snapshot fields are provider-owned. Clear stale values
+                    # when a later response no longer supplies them.
+                    account.expected_balance = acc_data.expected_balance
+                    account.available_credit = acc_data.available_credit
                 account.name = acc_data.name
                 # Backfills existing accounts on their next sync. Only written
                 # when the provider actually returns an identifier, so a payload
@@ -1805,6 +1815,8 @@ async def sync_connection(
                     masked_number=acc_data.masked_number,
                     type=acc_data.type,
                     balance=acc_data.balance,
+                    expected_balance=acc_data.expected_balance if is_cc else None,
+                    available_credit=acc_data.available_credit if is_cc else None,
                     currency=acc_data.currency,
                     credit_limit=acc_data.credit_limit if is_cc else None,
                     statement_close_day=acc_data.statement_close_day if is_cc else None,
@@ -1877,16 +1889,11 @@ async def sync_connection(
                     # User's manual override wins: if effective_bill_date is
                     # set, we don't touch bill_id or effective_date — the
                     # user has explicitly overridden the auto bucketing.
-                    if (
-                        txn_data.bill_external_id
-                        and existing_tx.effective_bill_date is None
-                    ):
+                    if txn_data.bill_external_id and existing_tx.effective_bill_date is None:
                         bill = bills_by_external_id.get(txn_data.bill_external_id)
                         if bill is not None and existing_tx.bill_id != bill.id:
                             existing_tx.bill_id = bill.id
-                            apply_effective_date(
-                                existing_tx, account, bill_due_date=bill.due_date
-                            )
+                            apply_effective_date(existing_tx, account, bill_due_date=bill.due_date)
                     continue
 
                 # Pass 2: Fuzzy match against manual transactions
@@ -1909,9 +1916,7 @@ async def sync_connection(
                 # comes back under a new external id with a different
                 # status, fingerprint match collapses it instead of letting
                 # both rows land.
-                synced_dup = await _find_synced_duplicate(
-                    session, account.id, txn_data
-                )
+                synced_dup = await _find_synced_duplicate(session, account.id, txn_data)
                 if synced_dup:
                     if synced_dup.original_description is None:
                         synced_dup.original_description = txn_data.description
@@ -1921,10 +1926,7 @@ async def sync_connection(
                         synced_dup.status = "posted"
                         synced_dup.external_id = txn_data.external_id
                         synced_dup.raw_data = txn_data.raw_data
-                        if (
-                            txn_data.bill_external_id
-                            and synced_dup.effective_bill_date is None
-                        ):
+                        if txn_data.bill_external_id and synced_dup.effective_bill_date is None:
                             bill = bills_by_external_id.get(txn_data.bill_external_id)
                             if bill is not None and synced_dup.bill_id != bill.id:
                                 synced_dup.bill_id = bill.id
@@ -1933,9 +1935,7 @@ async def sync_connection(
                                 )
                     continue
 
-                incoming_currency = (
-                    txn_data.currency or acc_data.currency or user_currency
-                )
+                incoming_currency = txn_data.currency or acc_data.currency or user_currency
                 category_id = await _match_pluggy_category(
                     session,
                     workspace_id,
@@ -1986,24 +1986,20 @@ async def sync_connection(
                     account,
                     bill_due_date=bill.due_date if bill else None,
                 )
-                preview = await preview_rules_for_transaction(
-                    session, user_id, transaction
-                )
+                preview = await preview_rules_for_transaction(session, user_id, transaction)
 
                 # Normalize before recurring reconciliation. A generated
                 # placeholder is upgraded in place; otherwise the normalized
                 # candidate may fulfill an active definition, which advances so
                 # later generation cannot duplicate the occurrence.
-                placeholder = (
-                    await recurring_match_service.find_placeholder_for_incoming(
-                        session,
-                        account.id,
-                        txn_data.amount,
-                        incoming_currency,
-                        txn_data.type,
-                        txn_data.date,
-                        preview.description,
-                    )
+                placeholder = await recurring_match_service.find_placeholder_for_incoming(
+                    session,
+                    account.id,
+                    txn_data.amount,
+                    incoming_currency,
+                    txn_data.type,
+                    txn_data.date,
+                    preview.description,
                 )
                 if placeholder:
                     if placeholder.is_ignored:
@@ -2025,35 +2021,27 @@ async def sync_connection(
                         placeholder.payee = txn_data.payee
                     if placeholder.payee_id is None:
                         placeholder.payee_id = preview.payee_id
-                    placeholder.notes = merge_notes(
-                        placeholder.notes, preview.notes
-                    )
+                    placeholder.notes = merge_notes(placeholder.notes, preview.notes)
                     if preview.is_ignored:
                         placeholder.is_ignored = True
                     merged_count += 1
                     continue
 
-                recurring_link = (
-                    await recurring_match_service.find_bill_for_incoming(
-                        session,
-                        user_id,
-                        account.id,
-                        txn_data.amount,
-                        incoming_currency,
-                        txn_data.type,
-                        txn_data.date,
-                        preview.description,
-                    )
+                recurring_link = await recurring_match_service.find_bill_for_incoming(
+                    session,
+                    user_id,
+                    account.id,
+                    txn_data.amount,
+                    incoming_currency,
+                    txn_data.type,
+                    txn_data.date,
+                    preview.description,
                 )
-                transaction.recurring_transaction_id = (
-                    recurring_link.id if recurring_link else None
-                )
+                transaction.recurring_transaction_id = recurring_link.id if recurring_link else None
                 session.add(transaction)
                 await session.flush()
                 if recurring_link is not None:
-                    recurring_match_service.advance_past(
-                        recurring_link, txn_data.date
-                    )
+                    recurring_match_service.advance_past(recurring_link, txn_data.date)
                 new_tx_ids.append(transaction.id)
                 await apply_rules_to_transaction(session, user_id, transaction)
 
@@ -2172,32 +2160,32 @@ async def delete_connection(
     # (user_id, source, external_id). The FK's ON DELETE SET NULL will
     # then clear connection_id when the row is removed below.
     await session.execute(
-        update(Asset)
-        .where(Asset.connection_id == connection.id)
-        .values(is_archived=True)
+        update(Asset).where(Asset.connection_id == connection.id).values(is_archived=True)
     )
 
     # Track payees referenced by this connection's transactions so we can
     # remove only newly-orphaned records after deleting the connection.
     affected_payee_ids = (
-        await session.execute(
-            select(Transaction.payee_id)
-            .join(Account, Account.id == Transaction.account_id)
-            .where(
-                Account.connection_id == connection.id,
-                Transaction.payee_id.isnot(None),
+        (
+            await session.execute(
+                select(Transaction.payee_id)
+                .join(Account, Account.id == Transaction.account_id)
+                .where(
+                    Account.connection_id == connection.id,
+                    Transaction.payee_id.isnot(None),
+                )
+                .distinct()
             )
-            .distinct()
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     await session.delete(connection)
     await session.flush()
 
     if affected_payee_ids:
-        has_transactions = exists(
-            select(Transaction.id).where(Transaction.payee_id == Payee.id)
-        )
+        has_transactions = exists(select(Transaction.id).where(Transaction.payee_id == Payee.id))
         has_external_mappings = exists(
             select(PayeeMapping.id).where(
                 PayeeMapping.target_id == Payee.id,

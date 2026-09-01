@@ -164,6 +164,7 @@ export interface Account {
   current_balance: number
   previous_balance: number | null
   balance_primary: number | null
+  expected_balance: number | null
   currency: string
   credit_limit: number | null
   available_credit: number | null

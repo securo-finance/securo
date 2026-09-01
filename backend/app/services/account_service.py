@@ -19,7 +19,11 @@ from app.services._query_filters import (
     is_inside_provider_snapshot,
     is_not_future,
 )
-from app.services.credit_card_service import apply_effective_date, compute_available_credit, get_cycle_dates
+from app.services.credit_card_service import (
+    apply_effective_date,
+    compute_available_credit,
+    get_cycle_dates,
+)
 from app.models.category import Category
 
 
@@ -48,7 +52,9 @@ def _opening_balance_values(account_type: str, balance: Decimal) -> tuple[Decima
     return amount, "credit" if is_credit else "debit"
 
 
-async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_closed: bool = False) -> list[dict]:
+async def get_accounts(
+    session: AsyncSession, workspace_id: uuid.UUID, include_closed: bool = False
+) -> list[dict]:
     today = _Date.today()
     # Subquery: compute current_balance per account from transactions in one pass
     # Use amount_primary only when tx currency differs from account currency
@@ -128,9 +134,9 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
     query = query.order_by(Account.name)
     result = await session.execute(query)
     return [
-            serialize_account(acc, current_balance, previous_balance, connection)
-            for acc, connection, current_balance, previous_balance in result.all()
-        ]
+        serialize_account(acc, current_balance, previous_balance, connection)
+        for acc, connection, current_balance, previous_balance in result.all()
+    ]
 
 
 def _institution(
@@ -182,6 +188,11 @@ def serialize_account(
         "currency": acc.currency,
         "current_balance": resolved_balance,
         "previous_balance": float(previous_balance or 0),
+        "expected_balance": (
+            -float(acc.expected_balance)
+            if acc.type == "credit_card" and acc.expected_balance is not None
+            else None
+        ),
         "is_closed": acc.is_closed,
         "closed_at": acc.closed_at,
         "credit_limit": float(acc.credit_limit) if acc.credit_limit is not None else None,
@@ -198,7 +209,9 @@ def serialize_account(
     }
 
     if acc.type == "credit_card":
-        available = compute_available_credit(acc.credit_limit, Decimal(str(resolved_balance)))
+        available = acc.available_credit
+        if available is None:
+            available = compute_available_credit(acc.credit_limit, acc.balance)
         payload["available_credit"] = float(available) if available is not None else None
         cycle = get_cycle_dates(acc.statement_close_day, acc.payment_due_day)
         payload["next_close_date"] = cycle["next_close_date"]
@@ -235,7 +248,9 @@ async def get_credit_card_bills(
     return list(result.scalars().all())
 
 
-async def get_account(session: AsyncSession, account_id: uuid.UUID, workspace_id: uuid.UUID) -> Optional[Account]:
+async def get_account(
+    session: AsyncSession, account_id: uuid.UUID, workspace_id: uuid.UUID
+) -> Optional[Account]:
     result = await session.execute(
         select(Account)
         .outerjoin(BankConnection)
@@ -309,9 +324,7 @@ async def update_account(
     # Track whether we need to recompute effective_date for all transactions.
     # Changes to the CC cycle days shift which bill each historical purchase
     # belongs to, so stored effective_dates need to be rebuilt.
-    cycle_fields_changed = any(
-        k in update_data for k in ("statement_close_day", "payment_due_day")
-    )
+    cycle_fields_changed = any(k in update_data for k in ("statement_close_day", "payment_due_day"))
 
     # Bank-connected accounts are managed by the sync pipeline. Beyond display
     # name and credit card metadata (limit + cycle days, which providers often
@@ -361,6 +374,8 @@ async def update_account(
         # If the override moves the account away from credit_card, drop any
         # stale card metadata so it isn't left half credit-card.
         if new_type != "credit_card":
+            account.expected_balance = None
+            account.available_credit = None
             account.credit_limit = None
             account.statement_close_day = None
             account.payment_due_day = None
@@ -445,9 +460,7 @@ async def _recompute_effective_dates(session: AsyncSession, account: Account) ->
     Called when an account's CC cycle metadata (statement_close_day,
     payment_due_day) changes, so historical transactions get rebucketed into
     the correct bill. Cheap: a few hundred rows per account at most."""
-    result = await session.execute(
-        select(Transaction).where(Transaction.account_id == account.id)
-    )
+    result = await session.execute(select(Transaction).where(Transaction.account_id == account.id))
     for tx in result.scalars():
         apply_effective_date(tx, account)
 
@@ -496,6 +509,7 @@ async def sync_opening_balance_for_connected_account(
         select(func.coalesce(func.sum(signed_amount), 0)).where(
             Transaction.account_id == account.id,
             Transaction.source != "opening_balance",
+            *([Transaction.status == "posted"] if is_cc else []),
             Transaction.date <= balance_cutoff,
             Transaction.is_ignored == False,
             or_(
@@ -528,6 +542,7 @@ async def sync_opening_balance_for_connected_account(
         select(func.min(Transaction.date)).where(
             Transaction.account_id == account.id,
             Transaction.source != "opening_balance",
+            *([Transaction.status == "posted"] if is_cc else []),
             Transaction.date <= balance_cutoff,
             Transaction.is_ignored == False,
             or_(
@@ -570,7 +585,9 @@ async def sync_opening_balance_for_connected_account(
     await session.flush()
 
 
-async def delete_account(session: AsyncSession, account_id: uuid.UUID, workspace_id: uuid.UUID) -> bool:
+async def delete_account(
+    session: AsyncSession, account_id: uuid.UUID, workspace_id: uuid.UUID
+) -> bool:
     account = await get_account(session, account_id, workspace_id)
     if not account:
         return False
@@ -584,6 +601,7 @@ async def delete_account(session: AsyncSession, account_id: uuid.UUID, workspace
     from app.models.import_log import ImportLog
     from app.models.recurring_transaction import RecurringTransaction
     from app.models.goal import Goal
+
     tx_result = await session.execute(
         select(Transaction.id).where(Transaction.account_id == account_id)
     )
@@ -601,23 +619,13 @@ async def delete_account(session: AsyncSession, account_id: uuid.UUID, workspace
     # The transaction rows themselves cascade-delete via Account.transactions
     # when session.delete(account) flushes below.
     await session.execute(
-        update(Transaction)
-        .where(Transaction.account_id == account_id)
-        .values(import_id=None)
+        update(Transaction).where(Transaction.account_id == account_id).values(import_id=None)
     )
+    await session.execute(delete(ImportLog).where(ImportLog.account_id == account_id))
     await session.execute(
-        delete(ImportLog).where(ImportLog.account_id == account_id)
+        delete(RecurringTransaction).where(RecurringTransaction.account_id == account_id)
     )
-    await session.execute(
-        delete(RecurringTransaction).where(
-            RecurringTransaction.account_id == account_id
-        )
-    )
-    await session.execute(
-        update(Goal)
-        .where(Goal.account_id == account_id)
-        .values(account_id=None)
-    )
+    await session.execute(update(Goal).where(Goal.account_id == account_id).values(account_id=None))
 
     await session.delete(account)
     await session.commit()
@@ -666,8 +674,11 @@ async def reopen_account(
 
 
 async def get_account_summary(
-    session: AsyncSession, account_id: uuid.UUID, workspace_id: uuid.UUID,
-    date_from: Optional[_Date] = None, date_to: Optional[_Date] = None,
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    date_from: Optional[_Date] = None,
+    date_to: Optional[_Date] = None,
     bill_id: Optional[uuid.UUID] = None,
     unbilled_only: bool = False,
 ) -> Optional[dict]:
@@ -738,13 +749,14 @@ async def get_account_summary(
     #       we'd drop user-added compensations for missing provider txs.
     # Without bill_id (cycle-math or non-CC), apply the date window straight.
     from sqlalchemy import and_ as _and, not_ as _not  # local: only for scope
+
     # Resolve the active bill's due_date once so the pending-exclusion can
     # trust our cycle-math pre-classification (see get_transactions).
     active_due_subq = (
-        select(CreditCardBill.due_date)
-        .where(CreditCardBill.id == bill_id)
-        .scalar_subquery()
-    ) if bill_id is not None else None
+        (select(CreditCardBill.due_date).where(CreditCardBill.id == bill_id).scalar_subquery())
+        if bill_id is not None
+        else None
+    )
 
     def _scope(query):
         if bill_id is not None:
@@ -762,12 +774,14 @@ async def get_account_summary(
                 # the override doesn't snap to a real bill due_date and
                 # bill_id stays null (issue #162). Mirrors the same
                 # carve-out in get_transactions.
-                _not(_and(
-                    Transaction.source == "sync",
-                    Transaction.status == "pending",
-                    Transaction.effective_bill_date.is_(None),
-                    Transaction.effective_date != active_due_subq,
-                )),
+                _not(
+                    _and(
+                        Transaction.source == "sync",
+                        Transaction.status == "pending",
+                        Transaction.effective_bill_date.is_(None),
+                        Transaction.effective_date != active_due_subq,
+                    )
+                ),
                 bucket_date >= date_from,
                 bucket_date <= date_to,
             )
@@ -798,14 +812,16 @@ async def get_account_summary(
     # Income = SUM of credit transactions in window (excluding opening_balance,
     # paired transfers, and transfer-like categories).
     income_result = await session.execute(
-        _scope(select(func.coalesce(func.sum(effective_amount), 0)).where(
-            Transaction.account_id == account_id,
-            Transaction.type == "credit",
-            Transaction.source != "opening_balance",
-            bucket_date <= today,
-            Transaction.status == "posted",
-            counts_as_pnl(),
-        ))
+        _scope(
+            select(func.coalesce(func.sum(effective_amount), 0)).where(
+                Transaction.account_id == account_id,
+                Transaction.type == "credit",
+                Transaction.source != "opening_balance",
+                bucket_date <= today,
+                Transaction.status == "posted",
+                counts_as_pnl(),
+            )
+        )
     )
     monthly_income = float(income_result.scalar())
 
@@ -820,23 +836,27 @@ async def get_account_summary(
             else_=func.abs(effective_amount),
         )
         expenses_result = await session.execute(
-            _scope(select(func.coalesce(func.sum(signed_for_bill), 0)).where(
-                Transaction.account_id == account_id,
-                Transaction.source != "opening_balance",
-                bucket_date <= today,
-                Transaction.status == "posted",
-                counts_as_pnl(),
-            ))
+            _scope(
+                select(func.coalesce(func.sum(signed_for_bill), 0)).where(
+                    Transaction.account_id == account_id,
+                    Transaction.source != "opening_balance",
+                    bucket_date <= today,
+                    Transaction.status == "posted",
+                    counts_as_pnl(),
+                )
+            )
         )
     else:
         expenses_result = await session.execute(
-            _scope(select(func.coalesce(func.sum(func.abs(effective_amount)), 0)).where(
-                Transaction.account_id == account_id,
-                Transaction.type == "debit",
-                bucket_date <= today,
-                Transaction.status == "posted",
-                counts_as_pnl(),
-            ))
+            _scope(
+                select(func.coalesce(func.sum(func.abs(effective_amount)), 0)).where(
+                    Transaction.account_id == account_id,
+                    Transaction.type == "debit",
+                    bucket_date <= today,
+                    Transaction.status == "posted",
+                    counts_as_pnl(),
+                )
+            )
         )
     monthly_expenses = float(expenses_result.scalar())
 
@@ -850,33 +870,39 @@ async def get_account_summary(
         bucket_date > today,
     )
     forecast_income_result = await session.execute(
-        _scope(select(func.coalesce(func.sum(effective_amount), 0)).where(
-            Transaction.account_id == account_id,
-            Transaction.type == "credit",
-            Transaction.source != "opening_balance",
-            forecast_condition,
-            counts_as_pnl(),
-        ))
+        _scope(
+            select(func.coalesce(func.sum(effective_amount), 0)).where(
+                Transaction.account_id == account_id,
+                Transaction.type == "credit",
+                Transaction.source != "opening_balance",
+                forecast_condition,
+                counts_as_pnl(),
+            )
+        )
     )
     forecast_income = float(forecast_income_result.scalar() or 0)
 
     if account.type == "credit_card":
         forecast_expense_result = await session.execute(
-            _scope(select(func.coalesce(func.sum(signed_for_bill), 0)).where(
-                Transaction.account_id == account_id,
-                Transaction.source != "opening_balance",
-                forecast_condition,
-                counts_as_pnl(),
-            ))
+            _scope(
+                select(func.coalesce(func.sum(signed_for_bill), 0)).where(
+                    Transaction.account_id == account_id,
+                    Transaction.source != "opening_balance",
+                    forecast_condition,
+                    counts_as_pnl(),
+                )
+            )
         )
     else:
         forecast_expense_result = await session.execute(
-            _scope(select(func.coalesce(func.sum(func.abs(effective_amount)), 0)).where(
-                Transaction.account_id == account_id,
-                Transaction.type == "debit",
-                forecast_condition,
-                counts_as_pnl(),
-            ))
+            _scope(
+                select(func.coalesce(func.sum(func.abs(effective_amount)), 0)).where(
+                    Transaction.account_id == account_id,
+                    Transaction.type == "debit",
+                    forecast_condition,
+                    counts_as_pnl(),
+                )
+            )
         )
     forecast_expenses = float(forecast_expense_result.scalar() or 0)
 
@@ -910,20 +936,30 @@ async def get_account_summary(
                 Transaction.date <= today,
             ]
             posted_result = await session.execute(
-                select(func.coalesce(func.sum(
-                    case(
-                        (Transaction.type == "credit", effective_amount),
-                        else_=-effective_amount,
+                select(
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (Transaction.type == "credit", effective_amount),
+                                else_=-effective_amount,
+                            )
+                        ),
+                        0,
                     )
-                ), 0)).where(*period_filters, Transaction.status == "posted")
+                ).where(*period_filters, Transaction.status == "posted")
             )
             pending_result = await session.execute(
-                select(func.coalesce(func.sum(
-                    case(
-                        (Transaction.type == "credit", effective_amount),
-                        else_=-effective_amount,
+                select(
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (Transaction.type == "credit", effective_amount),
+                                else_=-effective_amount,
+                            )
+                        ),
+                        0,
                     )
-                ), 0)).where(
+                ).where(
                     *period_filters,
                     Transaction.status == "pending",
                     is_inside_provider_snapshot(),
@@ -934,12 +970,17 @@ async def get_account_summary(
 
             if date_from > today:
                 before_window_result = await session.execute(
-                    select(func.coalesce(func.sum(
-                        case(
-                            (Transaction.type == "credit", effective_amount),
-                            else_=-effective_amount,
+                    select(
+                        func.coalesce(
+                            func.sum(
+                                case(
+                                    (Transaction.type == "credit", effective_amount),
+                                    else_=-effective_amount,
+                                )
+                            ),
+                            0,
                         )
-                    ), 0)).where(
+                    ).where(
                         *ob_base_filters,
                         Transaction.date > today,
                         Transaction.date < date_from,
@@ -949,12 +990,17 @@ async def get_account_summary(
                 opening_balance += float(before_window_result.scalar() or 0)
         else:
             manual_result = await session.execute(
-                select(func.coalesce(func.sum(
-                    case(
-                        (Transaction.type == "credit", effective_amount),
-                        else_=-effective_amount,
+                select(
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (Transaction.type == "credit", effective_amount),
+                                else_=-effective_amount,
+                            )
+                        ),
+                        0,
                     )
-                ), 0)).where(
+                ).where(
                     *ob_base_filters,
                     Transaction.date < date_from,
                     Transaction.status.in_(("posted", "pending")),
@@ -989,7 +1035,9 @@ def _signed_amount_expr(account_currency: str):
 
 
 async def _account_balance_at(
-    session: AsyncSession, account_id: uuid.UUID, cutoff: _Date,
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    cutoff: _Date,
     account_currency: str = "",
 ) -> float:
     """Get balance for a single account at a specific date.
@@ -1012,14 +1060,18 @@ async def _account_balance_at(
 
 
 async def _account_daily_balance_series(
-    session: AsyncSession, account_id: uuid.UUID,
-    date_from: _Date, date_to: _Date,
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    date_from: _Date,
+    date_to: _Date,
     account_currency: str = "",
 ) -> list[dict]:
     """Build daily balance series for [date_from, date_to] inclusive.
     Excludes ignored transactions from balance calculations."""
     # Get balance at end of day before range start
-    start_balance = await _account_balance_at(session, account_id, date_from - timedelta(days=1), account_currency)
+    start_balance = await _account_balance_at(
+        session, account_id, date_from - timedelta(days=1), account_currency
+    )
 
     # Get daily deltas within range: group by actual date
     # Exclude ignored transactions from daily deltas
@@ -1058,8 +1110,11 @@ async def _account_daily_balance_series(
 
 
 async def get_account_balance_history(
-    session: AsyncSession, account_id: uuid.UUID, workspace_id: uuid.UUID,
-    date_from: Optional[_Date] = None, date_to: Optional[_Date] = None,
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    date_from: Optional[_Date] = None,
+    date_to: Optional[_Date] = None,
 ) -> Optional[list[dict]]:
     account = await get_account(session, account_id, workspace_id)
     if not account:
@@ -1073,7 +1128,9 @@ async def get_account_balance_history(
 
     sign = -1.0 if (account.type == "credit_card" and account.connection_id) else 1.0
 
-    series = await _account_daily_balance_series(session, account_id, date_from, date_to, account.currency)
+    series = await _account_daily_balance_series(
+        session, account_id, date_from, date_to, account.currency
+    )
 
     if sign != 1.0:
         for point in series:
