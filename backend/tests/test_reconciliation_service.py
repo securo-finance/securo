@@ -314,6 +314,36 @@ async def test_an_invoice_in_another_workspace_is_never_a_candidate(
     assert applied == []
 
 
+@pytest.mark.asyncio
+async def test_a_payment_typed_in_by_hand_settles_its_invoice(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee, test_user
+):
+    """Through the endpoint, not the service. Someone who reconciles by
+    typing the Pix in should not then have to go and link it — that is the
+    manual work the feature exists to remove, and leaving this path out
+    would remove it only for people whose bank happens to be connected."""
+    invoice = await an_invoice(client, biz_headers, payee_id=client_payee.id)
+
+    resp = await client.post(
+        "/api/transactions",
+        headers=biz_headers,
+        json={
+            "description": "PIX RECEBIDO ALPHA",
+            "amount": "3000.00",
+            "currency": "USD",
+            "date": str(TODAY),
+            "type": "credit",
+            "account_id": str(account.id),
+            "payee_id": str(client_payee.id),
+        },
+    )
+    assert resp.status_code in (200, 201), resp.text
+
+    settled = await _load(session, invoice["id"])
+    assert len(settled.allocations) == 1
+    assert settled.allocations[0].method == "same_client_exact"
+
+
 # ---------------------------------------------------------------------------
 # The direction that is easy to forget
 # ---------------------------------------------------------------------------
