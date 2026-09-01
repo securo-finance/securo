@@ -3,7 +3,7 @@ import { useRegisterPageChatContext } from '@/lib/page-chat-context'
 import { getAccountName } from '@/lib/account-utils'
 import { AccountIcon } from '@/components/account-icon'
 import { currentMonth, monthRange, monthFromRange } from '@/lib/month-utils'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -35,7 +35,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Clock, HelpCircle, Info, Paperclip, Trash2, Users, X, EyeClosed, SlidersHorizontal } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Clock, HelpCircle, Info, Paperclip, Trash2, Users, X, EyeClosed, SlidersHorizontal, Receipt } from 'lucide-react'
 import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload } from '@/types'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { PageHeader } from '@/components/page-header'
@@ -1110,6 +1110,29 @@ export default function TransactionsPage() {
                     })}
               </span>
             )}
+            {/* The invoice this settles. Same badge shape as the split
+                and transfer markers beside it, and absent entirely in a
+                workspace without the invoicing module — the server does
+                not send the field there. */}
+            {/* One badge per invoice this row settles: a payout net of
+                fees settles several, and showing only the last one read
+                as if the others had never been paid. */}
+            {(tx.invoice_links ?? []).map((link) => (
+              <Link
+                key={link.invoice_id}
+                to={`/invoices/${link.invoice_id}`}
+                onClick={(e) => e.stopPropagation()}
+                title={t('transactions.invoiceBadgeTooltip')}
+                className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900 px-1.5 py-0.5 rounded-full hover:bg-emerald-100 dark:hover:bg-emerald-950/70 transition-colors"
+              >
+                <Receipt className="h-3 w-3" />
+                {link.external_number
+                  ? t('transactions.invoiceBadge', { number: link.external_number })
+                  : link.number != null
+                    ? t('transactions.invoiceBadge', { number: link.number })
+                    : t('transactions.invoiceBadgeNoNumber')}
+              </Link>
+            ))}
             {!!tx.transfer_pair_id && (
               <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
                 <ArrowLeftRight className="h-3 w-3" />

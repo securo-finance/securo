@@ -547,6 +547,8 @@ class EnableBankingProvider(BankProvider):
         date_to = date.today().isoformat()
         transactions: list[TransactionData] = []
         continuation_key: Optional[str] = None
+        seen_continuation_keys: set[str] = set()
+        seen_transaction_ids: set[str] = set()
         for _ in range(TRANSACTION_PAGE_LIMIT):
             params: dict[str, Any] = {"date_from": date_from, "date_to": date_to}
             if continuation_key:
@@ -560,11 +562,25 @@ class EnableBankingProvider(BankProvider):
                 parsed = self._build_transaction(
                     account_external_id, raw_txn, status, payee_source
                 )
-                if parsed:
+                # A broken pagination cursor can make Enable Banking return a
+                # page we have already consumed. Keep the result idempotent
+                # even before the repeated cursor is detected below.
+                if parsed and parsed.external_id not in seen_transaction_ids:
                     transactions.append(parsed)
-            continuation_key = page.get("continuation_key") or None
-            if not continuation_key:
+                    seen_transaction_ids.add(parsed.external_id)
+
+            next_continuation_key = page.get("continuation_key") or None
+            if not next_continuation_key:
                 break
+            if next_continuation_key in seen_continuation_keys:
+                logger.warning(
+                    "Enable Banking pagination loop detected for account %s "
+                    "(repeated continuation key); stopping pagination",
+                    account_external_id,
+                )
+                break
+            seen_continuation_keys.add(next_continuation_key)
+            continuation_key = next_continuation_key
         return transactions
 
     @staticmethod
