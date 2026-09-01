@@ -163,6 +163,40 @@ MATCH_RECURRING: dict[str, Any] = {
     "on_ambiguity": "suggest",
 }
 
+#: A real charge arriving where a generated placeholder is already
+#: standing.
+#:
+#: Separate from `match_recurring` because its window genuinely differs:
+#: five days either side, the same on both, regardless of how often the
+#: bill repeats. That is not an oversight in the code this replaces — the
+#: placeholder was written *for* a specific occurrence, so there is no
+#: neighbouring occurrence to be confused with, and the window can afford
+#: to be symmetric where the bill-level one cannot.
+MATCH_PLACEHOLDER: dict[str, Any] = {
+    "version": POLICY_VERSION,
+    "node": "reconciliation.match_placeholder",
+    "scope": {
+        "movement": "any",
+        "ignore_transaction_sources": [],
+    },
+    "strategies": [
+        {
+            "id": "placeholder_same_account_exact",
+            "enabled": True,
+            "outcome": "link",
+            "when": {
+                "counterparty": "any",
+                "same_account": True,
+                "amount": {"match": "exact"},
+                "date": {"before_days": 5, "after_days": 5},
+                "currency": {"conversion": "reject"},
+                "description_similarity": {"min": "0.6"},
+            },
+        },
+    ],
+    "on_ambiguity": "suggest",
+}
+
 #: A weekly bill sits closer to its neighbours, so its window narrows or
 #: a charge could match the wrong occurrence. Carried as an override on
 #: the strategy rather than as a second document.
@@ -173,6 +207,7 @@ RECURRING_WINDOW_BY_FREQUENCY: dict[str, dict[str, int]] = {
 _DEFAULTS: dict[str, dict[str, Any]] = {
     MATCH_INVOICE["node"]: MATCH_INVOICE,
     MATCH_RECURRING["node"]: MATCH_RECURRING,
+    MATCH_PLACEHOLDER["node"]: MATCH_PLACEHOLDER,
 }
 
 

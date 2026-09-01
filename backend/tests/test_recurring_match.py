@@ -76,15 +76,27 @@ async def _add_tx(session, test_user, test_workspace, account, **kw):
 
 
 def test_description_similarity():
-    assert rms._description_similarity("Netflix Sub", "netflix sub") == 1.0
-    assert rms._description_similarity("Netflix", "Spotify") == 0.0
-    assert rms._description_similarity(None, "x") == 0.0
+    """The measure moved into the shared engine; the bar it sets did not."""
+    from app.services.reconciliation_engine import _similar
+
+    assert _similar("Netflix Sub", "netflix sub") == 1.0
+    assert _similar("Netflix", "Spotify") == 0.0
+    assert _similar(None, "x") == 0.0
 
 
 def test_match_window():
-    assert rms._match_window("weekly") == (2, 2)
-    assert rms._match_window("monthly") == (3, 5)
-    assert rms._match_window("yearly") == (3, 5)
+    """The windows are policy now rather than a function, and they are the
+    same windows: a weekly bill sits closer to its neighbours, so it gets
+    less room on either side."""
+    from app.services import reconciliation_policy
+
+    def window(frequency: str) -> tuple[int, int]:
+        rule = reconciliation_policy.for_recurring(frequency)["strategies"][0]["when"]
+        return rule["date"]["before_days"], rule["date"]["after_days"]
+
+    assert window("weekly") == (2, 2)
+    assert window("monthly") == (3, 5)
+    assert window("yearly") == (3, 5)
 
 
 # ---------------------------------------------------------------------------

@@ -375,6 +375,34 @@ def test_every_candidate_leaves_a_reason_behind():
     assert Reason.DATE in {n.rejected_by for n in decision.trace}
 
 
+def test_the_winner_carries_its_score():
+    """A caller holding several movements for one promise ranks them by
+    this — the recurring matcher does, and has always taken the better
+    -matching charge rather than refusing both. It is also what a
+    suggestion has to show a person to be worth showing."""
+    charge = Movement(
+        amount=Decimal("89.90"), currency="BRL", direction="debit", when=TODAY,
+        description="NETFLIX ASSINATURA", account_id=ACCOUNT, source="sync",
+    )
+    exact = evaluate(
+        charge, [a_recurring_occurrence()], policy_module.for_recurring("monthly")
+    )
+    partial_words = evaluate(
+        charge,
+        [a_recurring_occurrence(description="NETFLIX ASSINATURA MENSAL")],
+        policy_module.for_recurring("monthly"),
+    )
+
+    assert exact.score == 1.0
+    assert 0.6 <= partial_words.score < 1.0
+
+    # A strategy with no graded signal still reports a usable score rather
+    # than a zero that would sort below every graded match.
+    assert evaluate(an_inflow(), [an_invoice()], receivable()).score == 1.0
+    # And nothing decided scores nothing, so it never sorts above a match.
+    assert evaluate(an_inflow(currency="USD"), [an_invoice()], receivable()).score == 0.0
+
+
 def test_the_winning_strategy_is_named():
     """What lets the screen answer "why is this linked" with the name of
     the rule rather than a shrug."""

@@ -152,6 +152,15 @@ class Decision:
     #: books the difference; the engine only names it.
     difference: Optional[Decimal] = None
     difference_kind: Optional[str] = None
+    #: How well the winner scored, 1.0 when the strategy carries no
+    #: graded signal. A caller holding several movements for one
+    #: expectation ranks them by this — the recurring matcher does, and
+    #: has always taken the better-matching charge rather than refusing
+    #: both. Exposed rather than dug out of the trace because it is also
+    #: what a suggestion has to show a person to be worth showing. Zero
+    #: when nothing was decided, so an unmatched result never sorts above
+    #: a real one.
+    score: float = 0.0
     trace: list[Consideration] = field(default_factory=list)
 
 
@@ -348,7 +357,7 @@ def evaluate(
                         note.rejected_by = Reason.AMBIGUOUS
             matched.sort(key=lambda m: m[3], reverse=True)
 
-        winner, difference, difference_kind, _ = matched[0]
+        winner, difference, difference_kind, score = matched[0]
         settled = min(abs(movement.amount), winner.amount)
         return Decision(
             port="linked" if outcome == "link" else "suggested",
@@ -357,6 +366,7 @@ def evaluate(
             amount=settled,
             difference=difference,
             difference_kind=difference_kind,
+            score=score,
             trace=trace,
         )
 
