@@ -1,6 +1,6 @@
 [project]
 name = "securo-backend"
-version = "0.14.5"
+version = "0.15.0"
 description = "Securo API - Personal Finance Manager"
 requires-python = ">=3.11"
 # These ranges express intent; the resolved versions live in uv.lock, which is
