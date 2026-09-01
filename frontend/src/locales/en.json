@@ -2208,5 +2208,122 @@
         "subtitle": "Add a connection to point Securo at your local Ollama, OpenAI, Anthropic, or any OpenAI-compatible endpoint."
       }
     }
+  },
+  "reconciliation": {
+    "node": {
+      "invoices": "Invoice matching",
+      "invoicesHint": "How money arriving is bound to the invoices it settles. Tried in order — the first rule that matches wins.",
+      "recurring": "Recurring bill matching",
+      "recurringHint": "How a real charge is recognised as the bill it pays, so you never end up with the row twice.",
+      "inactive": "Not in use here"
+    },
+    "rule": {
+      "sameClientExact": "Known client, exact amount",
+      "netOfWithholding": "Known client, paid net of withholding",
+      "exactAmountAnyClient": "Exact amount, any payer",
+      "similarDescription": "Close amount and similar description",
+      "sameAccountExact": "Same account, exact amount",
+      "unknown": "Rule"
+    },
+    "outcome": {
+      "link": "Links",
+      "suggest": "Suggests"
+    },
+    "cond": {
+      "samePayee": "the payer is a known client",
+      "sameAccount": "the same account",
+      "amountExact": "the amount matches exactly",
+      "amountTolerance": "the amount is within {{percent}}%",
+      "amountRatio": "the amount matches net of withholding",
+      "window": "up to {{before}} days early, {{after}} days late",
+      "similarity": "the description is at least {{min}} similar",
+      "currencyAllow": "any currency",
+      "none": "no conditions",
+      "accounts": "in {{names}}",
+      "payees": "for {{names}}",
+      "moneyIn": "money coming in",
+      "moneyOut": "money going out",
+      "foreign": "in a foreign currency",
+      "currencyIn": "in {{codes}}",
+      "atLeast": "at least {{value}}",
+      "atMost": "at most {{value}}",
+      "textContains": "the statement says “{{text}}”",
+      "textExcludes": "the statement does not say “{{text}}”"
+    },
+    "add": "New rule",
+    "newRule": "New matching rule",
+    "saved": "Rule saved",
+    "reset": "Rule restored",
+    "restore": "Restore what we ship",
+    "changed": "Changed",
+    "yours": "Yours",
+    "turnOn": "Turn on",
+    "turnOff": "Turn off",
+    "field": {
+      "name": "Name",
+      "namePlaceholder": "e.g. Known client, close amount",
+      "outcome": "What it does when it matches",
+      "outcomeHint": "Link binds the payment on its own. Suggest sends it to the queue below for you to confirm.",
+      "counterparty": "Who paid",
+      "amount": "Amount",
+      "window": "How far apart the dates may be",
+      "windowHint": "Late is counted from the due date, early from the day the invoice was written — so paying the day after issue is not weeks early.",
+      "beforeDays": "Days early",
+      "afterDays": "Days late",
+      "similarity": "Description similarity",
+      "similarityHint": "From 0 to 1. Leave empty to ignore the description entirely.",
+      "similarityOff": "off",
+      "scope": "When this rule applies",
+      "scopeHint": "Leave empty to apply to everything",
+      "accounts": "Bank accounts",
+      "anyAccount": "Any account",
+      "payees": "Clients",
+      "anyPayee": "Any client",
+      "direction": "Money in or out",
+      "currencyScope": "Only these currencies",
+      "currencyPlaceholder": "e.g. USD, EUR",
+      "foreignOnly": "Only currencies other than the one this workspace uses",
+      "amountBand": "Only amounts in this range",
+      "noMinimum": "no minimum",
+      "noMaximum": "no maximum",
+      "text": "Statement text",
+      "textContains": "must contain…",
+      "textExcludes": "must not contain…"
+    },
+    "counterparty": {
+      "any": "Anyone",
+      "samePayee": "The client on the invoice"
+    },
+    "amount": {
+      "exact": "Exactly the amount owed",
+      "tolerance": "Within a margin",
+      "ratio": "Net of withholding tax",
+      "ratioHint": "Uses the withholding rates for your country. Nothing matches until those are set."
+    },
+    "queue": {
+      "title": "Waiting for you",
+      "hint": "Matches that looked plausible without being certain. This list should stay short — if it does not, the rules above want changing.",
+      "empty": "Nothing to review. Everything matched on its own.",
+      "aPayment": "A payment",
+      "maySettle": "may settle {{name}}",
+      "mayBe": "may be {{name}}",
+      "accept": "Link",
+      "declineHint": "Not a match. This pair will not be suggested again.",
+      "linked": "Linked",
+      "declined": "Dismissed — we will not ask again"
+    },
+    "evidence": {
+      "amountExact": "amount matches exactly",
+      "amountOff": "expected {{expected}}, received {{moved}}",
+      "knownPayer": "known payer",
+      "unknownPayer": "payer not identified",
+      "sameDay": "same day",
+      "daysApart": "{{days}} days apart"
+    },
+    "direction": {
+      "any": "Either",
+      "in": "Money coming in",
+      "out": "Money going out"
+    }
   }
 }

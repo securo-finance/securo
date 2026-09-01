@@ -2209,5 +2209,122 @@
         "openai": "OpenAI Responses API"
       }
     }
+  },
+  "reconciliation": {
+    "node": {
+      "invoices": "Riconciliazione delle fatture",
+      "invoicesHint": "Come il denaro in entrata viene collegato alle fatture che salda. Provate in ordine: vince la prima che corrisponde.",
+      "recurring": "Riconciliazione delle ricorrenti",
+      "recurringHint": "Come un addebito reale viene riconosciuto come la spesa che paga, così il movimento non compare due volte.",
+      "inactive": "Non usata qui"
+    },
+    "rule": {
+      "sameClientExact": "Cliente noto, importo esatto",
+      "netOfWithholding": "Cliente noto, pagato al netto della ritenuta",
+      "exactAmountAnyClient": "Importo esatto, qualsiasi pagatore",
+      "similarDescription": "Importo vicino e descrizione simile",
+      "sameAccountExact": "Stesso conto, importo esatto",
+      "unknown": "Regola"
+    },
+    "outcome": {
+      "link": "Collega da sola",
+      "suggest": "Suggerisce"
+    },
+    "cond": {
+      "samePayee": "chi paga è un cliente noto",
+      "sameAccount": "lo stesso conto",
+      "amountExact": "l'importo corrisponde esattamente",
+      "amountTolerance": "l'importo rientra nel {{percent}}%",
+      "amountRatio": "l'importo corrisponde al netto della ritenuta",
+      "window": "fino a {{before}} giorni in anticipo, {{after}} in ritardo",
+      "similarity": "la descrizione è simile almeno {{min}}",
+      "currencyAllow": "qualsiasi valuta",
+      "none": "nessuna condizione",
+      "accounts": "su {{names}}",
+      "payees": "per {{names}}",
+      "moneyIn": "denaro in entrata",
+      "moneyOut": "denaro in uscita",
+      "foreign": "in valuta estera",
+      "currencyIn": "in {{codes}}",
+      "atLeast": "da {{value}}",
+      "atMost": "fino a {{value}}",
+      "textContains": "l'estratto dice “{{text}}”",
+      "textExcludes": "l'estratto non dice “{{text}}”"
+    },
+    "add": "Nuova regola",
+    "newRule": "Nuova regola di riconciliazione",
+    "saved": "Regola salvata",
+    "reset": "Regola ripristinata",
+    "restore": "Torna all'impostazione predefinita",
+    "changed": "Modificata",
+    "yours": "Tua",
+    "turnOn": "Attiva",
+    "turnOff": "Disattiva",
+    "field": {
+      "name": "Nome",
+      "namePlaceholder": "es.: Cliente noto, importo vicino",
+      "outcome": "Cosa fare quando corrisponde",
+      "outcomeHint": "Collega salda da sola. Suggerisci la manda nell'elenco qui sotto perché tu la confermi.",
+      "counterparty": "Chi ha pagato",
+      "amount": "Importo",
+      "window": "Distanza consentita tra le date",
+      "windowHint": "Il ritardo si conta dalla scadenza, l'anticipo dal giorno in cui la fattura è stata emessa: pagare il giorno dopo l'emissione non è settimane in anticipo.",
+      "beforeDays": "Giorni in anticipo",
+      "afterDays": "Giorni in ritardo",
+      "similarity": "Somiglianza della descrizione",
+      "similarityHint": "Da 0 a 1. Lascia vuoto per ignorare la descrizione.",
+      "similarityOff": "disattivata",
+      "scope": "Quando si applica questa regola",
+      "scopeHint": "Lascia vuoto per applicarla a tutto",
+      "accounts": "Conti bancari",
+      "anyAccount": "Qualsiasi conto",
+      "payees": "Clienti",
+      "anyPayee": "Qualsiasi cliente",
+      "direction": "Entrata o uscita",
+      "currencyScope": "Solo in queste valute",
+      "currencyPlaceholder": "es.: USD, EUR",
+      "foreignOnly": "Solo valute diverse da quella di questo spazio",
+      "amountBand": "Solo importi in questo intervallo",
+      "noMinimum": "nessun minimo",
+      "noMaximum": "nessun massimo",
+      "text": "Testo dell'estratto conto",
+      "textContains": "deve contenere…",
+      "textExcludes": "non deve contenere…"
+    },
+    "counterparty": {
+      "any": "Chiunque",
+      "samePayee": "Il cliente della fattura"
+    },
+    "amount": {
+      "exact": "Esattamente l'importo dovuto",
+      "tolerance": "Entro un margine",
+      "ratio": "Al netto della ritenuta d'acconto",
+      "ratioHint": "Usa le aliquote di ritenuta del tuo paese. Finché non ci sono, la regola non corrisponde a nulla."
+    },
+    "queue": {
+      "title": "In attesa di te",
+      "hint": "Corrispondenze plausibili ma non certe. Questo elenco dovrebbe restare corto: se non lo è, sono le regole sopra da cambiare.",
+      "empty": "Niente da rivedere. Ha combaciato tutto da solo.",
+      "aPayment": "Un pagamento",
+      "maySettle": "potrebbe saldare {{name}}",
+      "mayBe": "potrebbe essere {{name}}",
+      "accept": "Collega",
+      "declineHint": "Non è questo. Questa coppia non verrà più suggerita.",
+      "linked": "Collegato",
+      "declined": "Scartato: non lo chiederemo più"
+    },
+    "evidence": {
+      "amountExact": "l'importo corrisponde esattamente",
+      "amountOff": "atteso {{expected}}, ricevuto {{moved}}",
+      "knownPayer": "pagatore noto",
+      "unknownPayer": "pagatore non identificato",
+      "sameDay": "stesso giorno",
+      "daysApart": "{{days}} giorni di differenza"
+    },
+    "direction": {
+      "any": "Indifferente",
+      "in": "Denaro in entrata",
+      "out": "Denaro in uscita"
+    }
   }
 }

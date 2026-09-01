@@ -2209,5 +2209,122 @@
         "subtitle": "Ajoutez une connexion pour pointer Securo vers votre Ollama local, OpenAI, Anthropic, ou tout point de terminaison compatible OpenAI."
       }
     }
+  },
+  "reconciliation": {
+    "node": {
+      "invoices": "Rapprochement des factures",
+      "invoicesHint": "Comment l'argent qui arrive est rattaché aux factures qu'il règle. Essayées dans l'ordre : la première qui correspond l'emporte.",
+      "recurring": "Rapprochement des récurrences",
+      "recurringHint": "Comment un prélèvement réel est reconnu comme la dépense qu'il paie, pour que l'opération n'apparaisse pas deux fois.",
+      "inactive": "Non utilisée ici"
+    },
+    "rule": {
+      "sameClientExact": "Client connu, montant exact",
+      "netOfWithholding": "Client connu, payé net de retenue",
+      "exactAmountAnyClient": "Montant exact, n'importe quel payeur",
+      "similarDescription": "Montant proche et libellé semblable",
+      "sameAccountExact": "Même compte, montant exact",
+      "unknown": "Règle"
+    },
+    "outcome": {
+      "link": "Rattache seule",
+      "suggest": "Propose"
+    },
+    "cond": {
+      "samePayee": "le payeur est un client connu",
+      "sameAccount": "le même compte",
+      "amountExact": "le montant correspond exactement",
+      "amountTolerance": "le montant est à {{percent}}% près",
+      "amountRatio": "le montant correspond net de retenue",
+      "window": "jusqu'à {{before}} jours en avance, {{after}} en retard",
+      "similarity": "le libellé se ressemble au moins de {{min}}",
+      "currencyAllow": "toute devise",
+      "none": "aucune condition",
+      "accounts": "sur {{names}}",
+      "payees": "pour {{names}}",
+      "moneyIn": "argent entrant",
+      "moneyOut": "argent sortant",
+      "foreign": "en devise étrangère",
+      "currencyIn": "en {{codes}}",
+      "atLeast": "à partir de {{value}}",
+      "atMost": "jusqu'à {{value}}",
+      "textContains": "le relevé indique « {{text}} »",
+      "textExcludes": "le relevé n'indique pas « {{text}} »"
+    },
+    "add": "Nouvelle règle",
+    "newRule": "Nouvelle règle de rapprochement",
+    "saved": "Règle enregistrée",
+    "reset": "Règle rétablie",
+    "restore": "Revenir au réglage par défaut",
+    "changed": "Modifiée",
+    "yours": "La vôtre",
+    "turnOn": "Activer",
+    "turnOff": "Désactiver",
+    "field": {
+      "name": "Nom",
+      "namePlaceholder": "ex. : Client connu, montant proche",
+      "outcome": "Ce qu'elle fait quand elle correspond",
+      "outcomeHint": "Rattacher règle tout seul. Proposer l'envoie dans la liste ci-dessous, pour que vous confirmiez.",
+      "counterparty": "Qui a payé",
+      "amount": "Montant",
+      "window": "Écart autorisé entre les dates",
+      "windowHint": "Le retard se compte depuis l'échéance, l'avance depuis le jour d'émission de la facture : payer le lendemain de l'émission n'est pas des semaines en avance.",
+      "beforeDays": "Jours en avance",
+      "afterDays": "Jours en retard",
+      "similarity": "Ressemblance du libellé",
+      "similarityHint": "De 0 à 1. Laissez vide pour ignorer le libellé.",
+      "similarityOff": "désactivé",
+      "scope": "Quand cette règle s'applique",
+      "scopeHint": "Laissez vide pour tout couvrir",
+      "accounts": "Comptes bancaires",
+      "anyAccount": "N'importe quel compte",
+      "payees": "Clients",
+      "anyPayee": "N'importe quel client",
+      "direction": "Entrée ou sortie",
+      "currencyScope": "Uniquement ces devises",
+      "currencyPlaceholder": "ex. : USD, EUR",
+      "foreignOnly": "Uniquement les devises autres que celle de cet espace",
+      "amountBand": "Uniquement les montants dans cette plage",
+      "noMinimum": "pas de minimum",
+      "noMaximum": "pas de maximum",
+      "text": "Libellé du relevé",
+      "textContains": "doit contenir…",
+      "textExcludes": "ne doit pas contenir…"
+    },
+    "counterparty": {
+      "any": "N'importe qui",
+      "samePayee": "Le client de la facture"
+    },
+    "amount": {
+      "exact": "Exactement le montant dû",
+      "tolerance": "Dans une marge",
+      "ratio": "Net de retenue à la source",
+      "ratioHint": "Utilise les taux de retenue de votre pays. Tant qu'il n'y en a pas, la règle ne correspond à rien."
+    },
+    "queue": {
+      "title": "En attente de vous",
+      "hint": "Des rapprochements plausibles mais pas certains. Cette liste devrait rester courte ; sinon, ce sont les règles ci-dessus qu'il faut changer.",
+      "empty": "Rien à vérifier. Tout a été rapproché tout seul.",
+      "aPayment": "Un paiement",
+      "maySettle": "règle peut-être {{name}}",
+      "mayBe": "est peut-être {{name}}",
+      "accept": "Rattacher",
+      "declineHint": "Ce n'est pas ça. Cette paire ne sera plus proposée.",
+      "linked": "Rattaché",
+      "declined": "Écarté — nous ne redemanderons pas"
+    },
+    "evidence": {
+      "amountExact": "le montant correspond exactement",
+      "amountOff": "attendu {{expected}}, reçu {{moved}}",
+      "knownPayer": "payeur connu",
+      "unknownPayer": "payeur non identifié",
+      "sameDay": "même jour",
+      "daysApart": "{{days}} jours d'écart"
+    },
+    "direction": {
+      "any": "Peu importe",
+      "in": "Argent entrant",
+      "out": "Argent sortant"
+    }
   }
 }

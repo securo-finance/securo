@@ -2209,5 +2209,122 @@
         "subtitle": "Voeg een verbinding toe om Securo te richten op uw lokale Ollama, OpenAI, Anthropic of een ander OpenAI-compatibel endpoint."
       }
     }
+  },
+  "reconciliation": {
+    "node": {
+      "invoices": "Facturen afletteren",
+      "invoicesHint": "Hoe binnenkomend geld wordt gekoppeld aan de facturen die het voldoet. In volgorde geprobeerd — de eerste regel die past, wint.",
+      "recurring": "Terugkerende posten afletteren",
+      "recurringHint": "Hoe een echte afschrijving herkend wordt als de rekening die hij betaalt, zodat de boeking niet dubbel verschijnt.",
+      "inactive": "Hier niet in gebruik"
+    },
+    "rule": {
+      "sameClientExact": "Bekende klant, exact bedrag",
+      "netOfWithholding": "Bekende klant, betaald na inhouding",
+      "exactAmountAnyClient": "Exact bedrag, willekeurige betaler",
+      "similarDescription": "Vergelijkbaar bedrag en gelijkende omschrijving",
+      "sameAccountExact": "Zelfde rekening, exact bedrag",
+      "unknown": "Regel"
+    },
+    "outcome": {
+      "link": "Koppelt zelf",
+      "suggest": "Stelt voor"
+    },
+    "cond": {
+      "samePayee": "de betaler is een bekende klant",
+      "sameAccount": "dezelfde rekening",
+      "amountExact": "het bedrag klopt precies",
+      "amountTolerance": "het bedrag valt binnen {{percent}}%",
+      "amountRatio": "het bedrag klopt na inhouding",
+      "window": "tot {{before}} dagen te vroeg, {{after}} dagen te laat",
+      "similarity": "de omschrijving lijkt minstens {{min}}",
+      "currencyAllow": "elke valuta",
+      "none": "geen voorwaarden",
+      "accounts": "op {{names}}",
+      "payees": "voor {{names}}",
+      "moneyIn": "inkomend geld",
+      "moneyOut": "uitgaand geld",
+      "foreign": "in vreemde valuta",
+      "currencyIn": "in {{codes}}",
+      "atLeast": "vanaf {{value}}",
+      "atMost": "tot {{value}}",
+      "textContains": "het afschrift zegt “{{text}}”",
+      "textExcludes": "het afschrift zegt niet “{{text}}”"
+    },
+    "add": "Nieuwe regel",
+    "newRule": "Nieuwe afletterregel",
+    "saved": "Regel opgeslagen",
+    "reset": "Regel hersteld",
+    "restore": "Terug naar de standaard",
+    "changed": "Gewijzigd",
+    "yours": "Van jou",
+    "turnOn": "Aanzetten",
+    "turnOff": "Uitzetten",
+    "field": {
+      "name": "Naam",
+      "namePlaceholder": "bijv.: Bekende klant, bedrag dichtbij",
+      "outcome": "Wat er gebeurt als hij past",
+      "outcomeHint": "Koppelen boekt vanzelf. Voorstellen zet het in de lijst hieronder, zodat jij het bevestigt.",
+      "counterparty": "Wie betaalde",
+      "amount": "Bedrag",
+      "window": "Toegestaan verschil tussen de datums",
+      "windowHint": "Te laat telt vanaf de vervaldatum, te vroeg vanaf de dag dat de factuur is opgesteld — de dag na uitgifte betalen is niet weken te vroeg.",
+      "beforeDays": "Dagen te vroeg",
+      "afterDays": "Dagen te laat",
+      "similarity": "Gelijkenis van de omschrijving",
+      "similarityHint": "Van 0 tot 1. Laat leeg om de omschrijving te negeren.",
+      "similarityOff": "uit",
+      "scope": "Wanneer deze regel geldt",
+      "scopeHint": "Laat leeg om voor alles te gelden",
+      "accounts": "Bankrekeningen",
+      "anyAccount": "Elke rekening",
+      "payees": "Klanten",
+      "anyPayee": "Elke klant",
+      "direction": "Inkomend of uitgaand",
+      "currencyScope": "Alleen in deze valuta",
+      "currencyPlaceholder": "bijv. USD, EUR",
+      "foreignOnly": "Alleen valuta anders dan die van deze werkruimte",
+      "amountBand": "Alleen bedragen in dit bereik",
+      "noMinimum": "geen minimum",
+      "noMaximum": "geen maximum",
+      "text": "Tekst op het afschrift",
+      "textContains": "moet bevatten…",
+      "textExcludes": "mag niet bevatten…"
+    },
+    "counterparty": {
+      "any": "Iedereen",
+      "samePayee": "De klant op de factuur"
+    },
+    "amount": {
+      "exact": "Precies het openstaande bedrag",
+      "tolerance": "Binnen een marge",
+      "ratio": "Na inhouding van bronbelasting",
+      "ratioHint": "Gebruikt de inhoudingspercentages van jouw land. Zolang die er niet zijn, matcht de regel niets."
+    },
+    "queue": {
+      "title": "Wacht op jou",
+      "hint": "Koppelingen die aannemelijk zijn maar niet zeker. Deze lijst hoort kort te blijven — zo niet, dan moeten de regels hierboven anders.",
+      "empty": "Niets te beoordelen. Alles is vanzelf gekoppeld.",
+      "aPayment": "Een betaling",
+      "maySettle": "voldoet mogelijk {{name}}",
+      "mayBe": "is mogelijk {{name}}",
+      "accept": "Koppelen",
+      "declineHint": "Dit is het niet. Dit paar wordt niet opnieuw voorgesteld.",
+      "linked": "Gekoppeld",
+      "declined": "Afgewezen — we vragen het niet nog eens"
+    },
+    "evidence": {
+      "amountExact": "bedrag klopt precies",
+      "amountOff": "verwacht {{expected}}, ontvangen {{moved}}",
+      "knownPayer": "bekende betaler",
+      "unknownPayer": "betaler niet herkend",
+      "sameDay": "zelfde dag",
+      "daysApart": "{{days}} dagen verschil"
+    },
+    "direction": {
+      "any": "Maakt niet uit",
+      "in": "Inkomend geld",
+      "out": "Uitgaand geld"
+    }
   }
 }

@@ -2209,5 +2209,122 @@
         "openai": "OpenAI Responses API"
       }
     }
+  },
+  "reconciliation": {
+    "node": {
+      "invoices": "Conciliação de faturas",
+      "invoicesHint": "Como o dinheiro que entra é ligado às faturas que liquida. Testadas por ordem — ganha a primeira que corresponder.",
+      "recurring": "Conciliação de recorrentes",
+      "recurringHint": "Como uma cobrança real é reconhecida como a conta que paga, para o movimento não aparecer duas vezes.",
+      "inactive": "Não usada aqui"
+    },
+    "rule": {
+      "sameClientExact": "Cliente conhecido, valor exato",
+      "netOfWithholding": "Cliente conhecido, pago com retenção",
+      "exactAmountAnyClient": "Valor exato, qualquer pagador",
+      "similarDescription": "Valor próximo e descrição parecida",
+      "sameAccountExact": "Mesma conta, valor exato",
+      "unknown": "Regra"
+    },
+    "outcome": {
+      "link": "Liga sozinho",
+      "suggest": "Sugere"
+    },
+    "cond": {
+      "samePayee": "o pagador é um cliente conhecido",
+      "sameAccount": "a mesma conta",
+      "amountExact": "o valor corresponde exatamente",
+      "amountTolerance": "o valor está dentro de {{percent}}%",
+      "amountRatio": "o valor corresponde descontada a retenção",
+      "window": "até {{before}} dias adiantado, {{after}} dias atrasado",
+      "similarity": "a descrição é pelo menos {{min}} semelhante",
+      "currencyAllow": "qualquer moeda",
+      "none": "sem condições",
+      "accounts": "em {{names}}",
+      "payees": "para {{names}}",
+      "moneyIn": "dinheiro a entrar",
+      "moneyOut": "dinheiro a sair",
+      "foreign": "em moeda estrangeira",
+      "currencyIn": "em {{codes}}",
+      "atLeast": "a partir de {{value}}",
+      "atMost": "até {{value}}",
+      "textContains": "o extrato diz “{{text}}”",
+      "textExcludes": "o extrato não diz “{{text}}”"
+    },
+    "add": "Nova regra",
+    "newRule": "Nova regra de conciliação",
+    "saved": "Regra guardada",
+    "reset": "Regra restaurada",
+    "restore": "Voltar ao valor por omissão",
+    "changed": "Alterada",
+    "yours": "Sua",
+    "turnOn": "Ativar",
+    "turnOff": "Desativar",
+    "field": {
+      "name": "Nome",
+      "namePlaceholder": "ex.: Cliente conhecido, valor próximo",
+      "outcome": "O que fazer quando corresponder",
+      "outcomeHint": "Ligar liquida sozinho. Sugerir envia para a lista abaixo, para confirmar.",
+      "counterparty": "Quem pagou",
+      "amount": "Valor",
+      "window": "Distância permitida entre as datas",
+      "windowHint": "O atraso conta a partir do vencimento; a antecipação, a partir do dia em que a fatura foi emitida — pagar no dia seguinte à emissão não é semanas adiantado.",
+      "beforeDays": "Dias adiantado",
+      "afterDays": "Dias atrasado",
+      "similarity": "Semelhança da descrição",
+      "similarityHint": "De 0 a 1. Deixe vazio para ignorar a descrição.",
+      "similarityOff": "desligado",
+      "scope": "Quando esta regra se aplica",
+      "scopeHint": "Deixe vazio para valer para tudo",
+      "accounts": "Contas bancárias",
+      "anyAccount": "Qualquer conta",
+      "payees": "Clientes",
+      "anyPayee": "Qualquer cliente",
+      "direction": "Entrada ou saída",
+      "currencyScope": "Apenas nestas moedas",
+      "currencyPlaceholder": "ex.: USD, EUR",
+      "foreignOnly": "Apenas moedas diferentes da que este espaço usa",
+      "amountBand": "Apenas valores neste intervalo",
+      "noMinimum": "sem mínimo",
+      "noMaximum": "sem máximo",
+      "text": "Texto do extrato",
+      "textContains": "tem de conter…",
+      "textExcludes": "não pode conter…"
+    },
+    "counterparty": {
+      "any": "Qualquer um",
+      "samePayee": "O cliente da fatura"
+    },
+    "amount": {
+      "exact": "Exatamente o valor em dívida",
+      "tolerance": "Dentro de uma margem",
+      "ratio": "Descontado o imposto retido",
+      "ratioHint": "Usa as taxas de retenção do seu país. Enquanto não existirem, a regra não corresponde a nada."
+    },
+    "queue": {
+      "title": "À sua espera",
+      "hint": "Correspondências plausíveis, mas sem certeza. Esta lista deve manter-se curta — se não ficar, são as regras acima que precisam de mudar.",
+      "empty": "Nada para rever. Correspondeu tudo sozinho.",
+      "aPayment": "Um pagamento",
+      "maySettle": "pode liquidar {{name}}",
+      "mayBe": "pode ser {{name}}",
+      "accept": "Ligar",
+      "declineHint": "Não é isso. Este par não voltará a ser sugerido.",
+      "linked": "Ligado",
+      "declined": "Descartado — não voltamos a perguntar"
+    },
+    "evidence": {
+      "amountExact": "o valor corresponde exatamente",
+      "amountOff": "esperado {{expected}}, recebido {{moved}}",
+      "knownPayer": "pagador conhecido",
+      "unknownPayer": "pagador não identificado",
+      "sameDay": "mesmo dia",
+      "daysApart": "{{days}} dias de diferença"
+    },
+    "direction": {
+      "any": "Tanto faz",
+      "in": "Dinheiro a entrar",
+      "out": "Dinheiro a sair"
+    }
   }
 }

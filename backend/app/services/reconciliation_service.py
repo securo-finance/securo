@@ -14,20 +14,26 @@ by money that landed on Friday of the week before, and a matcher that
 only looked forward would never see it. So issuing an invoice looks back
 at money nobody has explained yet.
 
-## Only `linked` is acted on here
+## Both ports are acted on, and they are not equals
 
-The engine also returns `suggested`. Nothing stores those yet, and
-dropping them costs nothing today because today nothing matches at all.
-They need a row of their own — with `declined` and `expired` states, so a
-suggestion somebody rejected does not come back on the next sync — and
-that is its own slice.
+`linked` writes an allocation. `suggested` goes to the queue in
+`reconciliation_suggestion_service`, to be answered by a person.
 
-What must stay true when it arrives: **the automatic tier carries the
-traffic and the queue is the residue.** The accountant interview is
-unambiguous that import-then-make-the-user-confirm is what killed
-adoption of the incumbent — *"eles acharam muito trabalhoso"* — and a
-product that turns every payment into a confirmation is that product
-with a different logo.
+**The automatic tier carries the traffic and the queue is the residue.**
+That ordering is the product, not an implementation detail: the
+accountant interview is unambiguous that import-then-make-the-user-confirm
+is what killed adoption of the incumbent — *"eles acharam muito
+trabalhoso"* — and a product that turns every payment into a confirmation
+is that product with a different logo. If the queue is where the volume
+goes, the rules are wrong, and the fix belongs in the rules.
+
+## The rules are the workspace's, not ours
+
+Which is why nothing here calls `default_policy` any more. The policy
+comes from `reconciliation_rule_service.resolve`, which is what we ship
+with whatever this workspace changed applied over it. A person can turn a
+rule off, loosen it, demote it from linking to suggesting, or write one
+of their own, and this module simply runs what comes back.
 """
 from __future__ import annotations
 
@@ -41,9 +47,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.invoice import Invoice, InvoiceAllocation
+from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.models.workspace import Workspace
-from app.services import invoice_service, reconciliation_policy
+from app.services import (
+    invoice_service,
+    reconciliation_policy,
+    reconciliation_rule_service,
+    reconciliation_suggestion_service,
+)
 from app.services.module_service import ModuleId, resolve_modules
 from app.services.reconciliation_engine import (
     Decision,
@@ -51,6 +63,13 @@ from app.services.reconciliation_engine import (
     Movement,
     evaluate,
 )
+
+#: The policy document this module runs under.
+NODE = reconciliation_policy.MATCH_INVOICE["node"]
+
+#: The other kind of promise. A personal workspace has only these, and
+#: the doubtful space has to serve it too.
+RECURRING_NODE = reconciliation_policy.MATCH_RECURRING["node"]
 
 #: How far back issuing an invoice looks for money that already arrived.
 #: Wide enough for the pay-then-invoice case, bounded so issuing an
@@ -92,6 +111,20 @@ def _as_movement(transaction: Transaction) -> Movement:
         account_id=transaction.account_id,
         source=transaction.source,
     )
+
+
+async def _base_currency(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> Optional[str]:
+    """What this workspace normally deals in.
+
+    Only rules that say "foreign" consult it, and they need it because
+    foreign is relative: dollars are unremarkable to a workspace that
+    keeps its books in dollars and worth a second look to one that does
+    not.
+    """
+    workspace = await session.get(Workspace, workspace_id)
+    return workspace.default_currency if workspace else None
 
 
 async def _module_is_on(session: AsyncSession, workspace_id: uuid.UUID) -> bool:
@@ -200,19 +233,38 @@ async def match_incoming(
     workspace_id: uuid.UUID,
     transactions: list[Transaction],
 ) -> list[InvoiceAllocation]:
-    """Bind newly arrived money to the invoices it settles.
+    """Bind newly arrived money to the promises it answers.
 
     Called once per batch rather than once per row: the candidate list is
     fetched a single time and reused, so a sync importing three hundred
     transactions runs one query for invoices instead of three hundred.
+
+    Two passes, and the second is not an afterthought. A workspace that
+    never issues an invoice still has promises — the rent leaving on the
+    5th, the retainer arriving on the 20th — and the doubtful space has to
+    exist for them too, or reconciliation would be a feature only
+    businesses got.
     """
     if not transactions:
         return []
 
-    if not await _module_is_on(session, workspace_id):
-        return []
+    applied: list[InvoiceAllocation] = []
+    if await _module_is_on(session, workspace_id):
+        applied = await _match_invoices(session, workspace_id, transactions)
 
-    policy = reconciliation_policy.default_policy("reconciliation.match_invoice")
+    await _suggest_recurring(session, workspace_id, transactions)
+    return applied
+
+
+async def _match_invoices(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    transactions: list[Transaction],
+) -> list[InvoiceAllocation]:
+    # What the workspace normally deals in, so a rule can say "foreign".
+    # Foreign is a fact about the workspace, not about the money.
+    base_currency = await _base_currency(session, workspace_id)
+    policy = await reconciliation_rule_service.resolve(session, workspace_id, NODE)
     candidates = await _open_invoices(session, workspace_id, policy)
     if not candidates:
         return []
@@ -224,11 +276,13 @@ async def match_incoming(
             continue
 
         expectations = [_as_expectation(inv) for inv in candidates]
+        movement = _as_movement(transaction)
         decision = evaluate(
-            _as_movement(transaction),
+            movement,
             expectations,
             policy,
             withholding_ratios=reconciliation_policy.withholding_ratios(None),
+            base_currency=base_currency,
         )
         allocation = await _apply(session, decision, transaction)
         if allocation is not None:
@@ -237,8 +291,100 @@ async def match_incoming(
             # dropped, and the following transaction must see that rather
             # than settling the same debt twice.
             candidates = await _open_invoices(session, workspace_id, policy)
+        else:
+            # Not confident enough to act. The pair goes to the queue,
+            # where the service refuses to re-ask anything already
+            # answered — including anything already refused.
+            await reconciliation_suggestion_service.record(
+                session, workspace_id, transaction.id, decision, movement, NODE
+            )
 
     return applied
+
+
+async def _suggest_recurring(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    transactions: list[Transaction],
+) -> None:
+    """Offer the recurring bills that money might answer.
+
+    Nothing is linked here. A charge that the recurring rules were
+    confident about was already bound during normalisation, in place, and
+    carries a `recurring_transaction_id` by the time it reaches this
+    function — so anything still unattached is by definition something
+    that pass was *not* sure about.
+
+    Which is exactly why this exists: it is what happens when somebody
+    demotes the recurring rule from linking to suggesting. Without it that
+    setting would be a switch that quietly does nothing, and a
+    configuration screen whose switches do nothing is worse than no screen.
+    """
+    unexplained = [
+        transaction
+        for transaction in transactions
+        if transaction.recurring_transaction_id is None
+        and transaction.source != "recurring"
+        and not transaction.is_ignored
+    ]
+    if not unexplained:
+        return
+
+    result = await session.execute(
+        select(RecurringTransaction).where(
+            RecurringTransaction.workspace_id == workspace_id,
+            RecurringTransaction.is_active.is_(True),
+        )
+    )
+    bills = list(result.scalars().all())
+    if not bills:
+        return
+
+    from app.services.recurring_transaction_service import adjust_weekend_date
+
+    composed = await reconciliation_rule_service.resolve(
+        session, workspace_id, RECURRING_NODE
+    )
+    base_currency = await _base_currency(session, workspace_id)
+
+    for transaction in unexplained:
+        if await _already_settles_something(session, transaction.id):
+            continue
+        movement = _as_movement(transaction)
+        for bill in bills:
+            if bill.account_id != transaction.account_id:
+                continue
+            occurrence = adjust_weekend_date(
+                bill.next_occurrence, bill.weekend_adjustment
+            )
+            decision = evaluate(
+                movement,
+                [
+                    Expectation(
+                        kind="recurring",
+                        id=bill.id,
+                        amount=Decimal(bill.amount or 0),
+                        currency=bill.currency,
+                        direction=bill.type,
+                        when=occurrence,
+                        description=bill.description,
+                        account_id=bill.account_id,
+                    )
+                ],
+                reconciliation_rule_service.narrow_for_frequency(
+                    composed, bill.frequency
+                ),
+                base_currency=base_currency,
+            )
+            if decision.port == "suggested":
+                await reconciliation_suggestion_service.record(
+                    session,
+                    workspace_id,
+                    transaction.id,
+                    decision,
+                    movement,
+                    RECURRING_NODE,
+                )
 
 
 async def match_for_invoice(
@@ -263,7 +409,9 @@ async def match_for_invoice(
     Picking the most recent of three identical payments would be
     inventing certainty exactly where the forward direction refuses to.
     """
-    policy = reconciliation_policy.default_policy("reconciliation.match_invoice")
+    policy = await reconciliation_rule_service.resolve(
+        session, invoice.workspace_id, NODE
+    )
     wanted = set(policy.get("scope", {}).get("candidate_states", []))
     if invoice_service.derive_state(invoice, date.today()) not in wanted:
         return None
@@ -308,6 +456,7 @@ async def match_for_invoice(
             expectation,
             policy,
             withholding_ratios=reconciliation_policy.withholding_ratios(None),
+            base_currency=await _base_currency(session, invoice.workspace_id),
         )
         if decision.port == "linked":
             settles.append((transaction, decision))

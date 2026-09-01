@@ -21,6 +21,8 @@ import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { RuleDialog } from '@/components/rule-dialog'
+import { ReconciliationRules } from '@/components/reconciliation-rules'
+import { ReconciliationQueue } from '@/components/reconciliation-queue'
 import { findCategoryReference, getRuleCategoryName } from '@/lib/category-reference-utils'
 
 function SectionCard({ children }: { children: React.ReactNode }) {
@@ -464,6 +466,14 @@ export default function RulesPage() {
           <p className="text-sm text-muted-foreground text-center py-10">{t('rules.empty')}</p>
         )}
       </SectionCard>
+
+      {/* Matching rules below categorization rules, because they are the
+          same promise made twice: the software decides things about your
+          money, and you get to see the decision and disagree with it. */}
+      <div className="mt-6 space-y-6">
+        <ReconciliationRules canWrite={canWrite} />
+        <ReconciliationQueue canWrite={canWrite} />
+      </div>
 
       <DeleteConfirmationDialog
         open={!!deletingRule}

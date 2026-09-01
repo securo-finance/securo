@@ -40,7 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
-from app.services import reconciliation_policy
+from app.services import reconciliation_policy, reconciliation_rule_service
 from app.services.reconciliation_engine import Expectation, Movement, evaluate
 
 # Real-transaction sources a recurring charge can arrive under. Excludes
@@ -124,7 +124,9 @@ async def find_real_tx_for_occurrence(
     Used by generate_pending: instead of writing a duplicate placeholder for an
     occurrence a real charge already covers, link that charge to the bill.
     """
-    policy = reconciliation_policy.for_recurring(recurring.frequency)
+    policy = await reconciliation_rule_service.resolve_recurring(
+        session, recurring.workspace_id, recurring.frequency
+    )
     result = await session.execute(
         select(Transaction).where(
             Transaction.account_id == recurring.account_id,
@@ -233,14 +235,27 @@ async def find_bill_for_incoming(
 
     best: Optional[RecurringTransaction] = None
     best_score = 0.0
+    # The workspace's rules are fetched once for the batch and then
+    # narrowed per bill, rather than queried per candidate: every bill here
+    # belongs to one account, so they share a workspace, and the only thing
+    # that varies between them is how often they repeat.
+    composed: Optional[dict] = None
     for recurring in result.scalars():
+        if composed is None:
+            composed = await reconciliation_rule_service.resolve(
+                session,
+                recurring.workspace_id,
+                reconciliation_policy.MATCH_RECURRING["node"],
+            )
         occurrence = adjust_weekend_date(
             recurring.next_occurrence, recurring.weekend_adjustment
         )
         decision = evaluate(
             charge,
             [_as_occurrence(recurring, occurrence)],
-            reconciliation_policy.for_recurring(recurring.frequency),
+            reconciliation_rule_service.narrow_for_frequency(
+                composed, recurring.frequency
+            ),
         )
         if decision.port == "linked" and decision.score > best_score:
             best_score = decision.score

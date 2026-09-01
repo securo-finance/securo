@@ -76,6 +76,11 @@ import type {
   InstallmentSeriesInput,
   TransactionApplyScope,
   InvoiceAttachment,
+  ReconciliationNode,
+  ReconciliationRule,
+  ReconciliationRuleDraft,
+  ReconciliationRulePatch,
+  ReconciliationSuggestion,
 } from '@/types'
 
 const api = axios.create({
@@ -993,6 +998,50 @@ export const rules = {
 }
 
 // Recurring Transactions
+// Reconciliation — the rules matching follows, and the matches it was
+// not confident enough to make on its own.
+export const reconciliation = {
+  rules: async (): Promise<ReconciliationNode[]> => {
+    const { data } = await api.get('/reconciliation/rules')
+    return data
+  },
+  updateRule: async (
+    node: string,
+    id: string,
+    patch: ReconciliationRulePatch,
+  ): Promise<ReconciliationRule> => {
+    const { data } = await api.patch(
+      `/reconciliation/rules/${encodeURIComponent(node)}/${encodeURIComponent(id)}`,
+      patch,
+    )
+    return data
+  },
+  createRule: async (rule: ReconciliationRuleDraft): Promise<ReconciliationRule> => {
+    const { data } = await api.post('/reconciliation/rules', rule)
+    return data
+  },
+  /** Drops a rule the workspace wrote, or puts a shipped one back under
+   * whatever we ship today. One verb, because from the page they are the
+   * same gesture. */
+  resetRule: async (node: string, id: string): Promise<void> => {
+    await api.delete(
+      `/reconciliation/rules/${encodeURIComponent(node)}/${encodeURIComponent(id)}`,
+    )
+  },
+  suggestions: async (): Promise<ReconciliationSuggestion[]> => {
+    const { data } = await api.get('/reconciliation/suggestions')
+    return data
+  },
+  accept: async (id: string): Promise<ReconciliationSuggestion> => {
+    const { data } = await api.post(`/reconciliation/suggestions/${id}/accept`)
+    return data
+  },
+  decline: async (id: string): Promise<ReconciliationSuggestion> => {
+    const { data } = await api.post(`/reconciliation/suggestions/${id}/decline`)
+    return data
+  },
+}
+
 export const recurring = {
   list: async (): Promise<RecurringTransaction[]> => {
     const { data } = await api.get('/recurring-transactions')

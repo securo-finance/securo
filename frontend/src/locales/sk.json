@@ -2344,5 +2344,122 @@
         "subtitle": "Pridaj pripojenie a nasmeruj Securo na lokálnu Ollamu, OpenAI, Anthropic alebo ľubovoľný OpenAI-compatible endpoint."
       }
     }
+  },
+  "reconciliation": {
+    "node": {
+      "invoices": "Párovanie faktúr",
+      "invoicesHint": "Ako sa prichádzajúce peniaze viažu na faktúry, ktoré uhrádzajú. Skúšajú sa po poradí — vyhráva prvé pravidlo, ktoré sadne.",
+      "recurring": "Párovanie opakovaných platieb",
+      "recurringHint": "Ako sa skutočná platba rozpozná ako účet, ktorý uhrádza, aby sa pohyb neobjavil dvakrát.",
+      "inactive": "Tu sa nepoužíva"
+    },
+    "rule": {
+      "sameClientExact": "Známy klient, presná suma",
+      "netOfWithholding": "Známy klient, zaplatené po zrážke dane",
+      "exactAmountAnyClient": "Presná suma, ktokoľvek platí",
+      "similarDescription": "Blízka suma a podobný popis",
+      "sameAccountExact": "Rovnaký účet, presná suma",
+      "unknown": "Pravidlo"
+    },
+    "outcome": {
+      "link": "Spáruje samo",
+      "suggest": "Navrhuje"
+    },
+    "cond": {
+      "samePayee": "platiteľ je známy klient",
+      "sameAccount": "rovnaký účet",
+      "amountExact": "suma sedí presne",
+      "amountTolerance": "suma je v rozmedzí {{percent}}%",
+      "amountRatio": "suma sedí po zrážke dane",
+      "window": "až {{before}} dní skôr, {{after}} dní neskôr",
+      "similarity": "popis je podobný aspoň na {{min}}",
+      "currencyAllow": "akákoľvek mena",
+      "none": "žiadne podmienky",
+      "accounts": "na {{names}}",
+      "payees": "pre {{names}}",
+      "moneyIn": "prichádzajúce peniaze",
+      "moneyOut": "odchádzajúce peniaze",
+      "foreign": "v cudzej mene",
+      "currencyIn": "v {{codes}}",
+      "atLeast": "od {{value}}",
+      "atMost": "do {{value}}",
+      "textContains": "výpis hovorí „{{text}}“",
+      "textExcludes": "výpis nehovorí „{{text}}“"
+    },
+    "add": "Nové pravidlo",
+    "newRule": "Nové pravidlo párovania",
+    "saved": "Pravidlo uložené",
+    "reset": "Pravidlo obnovené",
+    "restore": "Vrátiť na predvolené",
+    "changed": "Zmenené",
+    "yours": "Vaše",
+    "turnOn": "Zapnúť",
+    "turnOff": "Vypnúť",
+    "field": {
+      "name": "Názov",
+      "namePlaceholder": "napr.: Známy klient, blízka suma",
+      "outcome": "Čo urobí, keď sadne",
+      "outcomeHint": "Spárovať vyrovná samo. Navrhnúť pošle položku do zoznamu nižšie na vaše potvrdenie.",
+      "counterparty": "Kto zaplatil",
+      "amount": "Suma",
+      "window": "Povolený rozdiel medzi dátumami",
+      "windowHint": "Omeškanie sa počíta od splatnosti, predčasná platba odo dňa vystavenia faktúry — zaplatiť deň po vystavení nie sú týždne vopred.",
+      "beforeDays": "Dní skôr",
+      "afterDays": "Dní neskôr",
+      "similarity": "Podobnosť popisu",
+      "similarityHint": "Od 0 do 1. Nechajte prázdne, ak sa popis nemá brať do úvahy.",
+      "similarityOff": "vypnuté",
+      "scope": "Kedy toto pravidlo platí",
+      "scopeHint": "Nechajte prázdne, aby platilo pre všetko",
+      "accounts": "Bankové účty",
+      "anyAccount": "Ktorýkoľvek účet",
+      "payees": "Klienti",
+      "anyPayee": "Ktorýkoľvek klient",
+      "direction": "Príjem alebo výdaj",
+      "currencyScope": "Len v týchto menách",
+      "currencyPlaceholder": "napr. USD, EUR",
+      "foreignOnly": "Len meny iné než mena tohto priestoru",
+      "amountBand": "Len sumy v tomto rozsahu",
+      "noMinimum": "bez minima",
+      "noMaximum": "bez maxima",
+      "text": "Text výpisu",
+      "textContains": "musí obsahovať…",
+      "textExcludes": "nesmie obsahovať…"
+    },
+    "counterparty": {
+      "any": "Ktokoľvek",
+      "samePayee": "Klient z faktúry"
+    },
+    "amount": {
+      "exact": "Presne dlžná suma",
+      "tolerance": "V rámci tolerancie",
+      "ratio": "Po zrážkovej dani",
+      "ratioHint": "Používa sadzby zrážkovej dane vašej krajiny. Kým nie sú, pravidlo nespáruje nič."
+    },
+    "queue": {
+      "title": "Čaká na vás",
+      "hint": "Párovania, ktoré sú pravdepodobné, ale nie isté. Tento zoznam má zostať krátky — ak nezostane, treba zmeniť pravidlá vyššie.",
+      "empty": "Nič na kontrolu. Všetko sa spárovalo samo.",
+      "aPayment": "Platba",
+      "maySettle": "môže uhrádzať {{name}}",
+      "mayBe": "môže byť {{name}}",
+      "accept": "Spárovať",
+      "declineHint": "Toto to nie je. Tento pár už nebudeme navrhovať.",
+      "linked": "Spárované",
+      "declined": "Zamietnuté — už sa nespýtame"
+    },
+    "evidence": {
+      "amountExact": "suma sedí presne",
+      "amountOff": "očakávané {{expected}}, prijaté {{moved}}",
+      "knownPayer": "známy platiteľ",
+      "unknownPayer": "platiteľ nerozpoznaný",
+      "sameDay": "rovnaký deň",
+      "daysApart": "rozdiel {{days}} dní"
+    },
+    "direction": {
+      "any": "Je to jedno",
+      "in": "Prichádzajúce peniaze",
+      "out": "Odchádzajúce peniaze"
+    }
   }
 }

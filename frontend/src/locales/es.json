@@ -2209,5 +2209,122 @@
         "openai": "OpenAI Responses API"
       }
     }
+  },
+  "reconciliation": {
+    "node": {
+      "invoices": "Conciliación de facturas",
+      "invoicesHint": "Cómo se vincula el dinero que entra con las facturas que salda. Se prueban en orden: gana la primera que coincide.",
+      "recurring": "Conciliación de recurrentes",
+      "recurringHint": "Cómo se reconoce un cargo real como el recibo que paga, para que el movimiento no aparezca dos veces.",
+      "inactive": "No se usa aquí"
+    },
+    "rule": {
+      "sameClientExact": "Cliente conocido, importe exacto",
+      "netOfWithholding": "Cliente conocido, pagado con retención",
+      "exactAmountAnyClient": "Importe exacto, cualquier pagador",
+      "similarDescription": "Importe cercano y descripción parecida",
+      "sameAccountExact": "Misma cuenta, importe exacto",
+      "unknown": "Regla"
+    },
+    "outcome": {
+      "link": "Vincula solo",
+      "suggest": "Sugiere"
+    },
+    "cond": {
+      "samePayee": "el pagador es un cliente conocido",
+      "sameAccount": "la misma cuenta",
+      "amountExact": "el importe coincide exactamente",
+      "amountTolerance": "el importe está dentro del {{percent}}%",
+      "amountRatio": "el importe coincide descontada la retención",
+      "window": "hasta {{before}} días antes, {{after}} días después",
+      "similarity": "la descripción se parece al menos {{min}}",
+      "currencyAllow": "cualquier moneda",
+      "none": "sin condiciones",
+      "accounts": "en {{names}}",
+      "payees": "para {{names}}",
+      "moneyIn": "dinero que entra",
+      "moneyOut": "dinero que sale",
+      "foreign": "en moneda extranjera",
+      "currencyIn": "en {{codes}}",
+      "atLeast": "desde {{value}}",
+      "atMost": "hasta {{value}}",
+      "textContains": "el extracto dice “{{text}}”",
+      "textExcludes": "el extracto no dice “{{text}}”"
+    },
+    "add": "Nueva regla",
+    "newRule": "Nueva regla de conciliación",
+    "saved": "Regla guardada",
+    "reset": "Regla restaurada",
+    "restore": "Volver al valor por defecto",
+    "changed": "Modificada",
+    "yours": "Tuya",
+    "turnOn": "Activar",
+    "turnOff": "Desactivar",
+    "field": {
+      "name": "Nombre",
+      "namePlaceholder": "p. ej.: Cliente conocido, importe cercano",
+      "outcome": "Qué hacer cuando coincide",
+      "outcomeHint": "Vincular salda por su cuenta. Sugerir lo envía a la lista de abajo para que lo confirmes.",
+      "counterparty": "Quién pagó",
+      "amount": "Importe",
+      "window": "Distancia permitida entre las fechas",
+      "windowHint": "El retraso se cuenta desde el vencimiento; la anticipación, desde el día en que se emitió la factura, así pagar al día siguiente no parece semanas antes.",
+      "beforeDays": "Días antes",
+      "afterDays": "Días después",
+      "similarity": "Similitud de la descripción",
+      "similarityHint": "De 0 a 1. Déjalo vacío para ignorar la descripción.",
+      "similarityOff": "desactivado",
+      "scope": "Cuándo se aplica esta regla",
+      "scopeHint": "Déjalo vacío para que valga para todo",
+      "accounts": "Cuentas bancarias",
+      "anyAccount": "Cualquier cuenta",
+      "payees": "Clientes",
+      "anyPayee": "Cualquier cliente",
+      "direction": "Entrada o salida",
+      "currencyScope": "Solo en estas monedas",
+      "currencyPlaceholder": "p. ej.: USD, EUR",
+      "foreignOnly": "Solo monedas distintas de la que usa este espacio",
+      "amountBand": "Solo importes en este rango",
+      "noMinimum": "sin mínimo",
+      "noMaximum": "sin máximo",
+      "text": "Texto del extracto",
+      "textContains": "debe contener…",
+      "textExcludes": "no debe contener…"
+    },
+    "counterparty": {
+      "any": "Cualquiera",
+      "samePayee": "El cliente de la factura"
+    },
+    "amount": {
+      "exact": "Exactamente el importe adeudado",
+      "tolerance": "Dentro de un margen",
+      "ratio": "Descontada la retención fiscal",
+      "ratioHint": "Usa los tipos de retención de tu país. Mientras no existan, la regla no coincide con nada."
+    },
+    "queue": {
+      "title": "Esperándote",
+      "hint": "Coincidencias plausibles pero sin certeza. Esta lista debería quedarse corta; si no, son las reglas de arriba las que hay que cambiar.",
+      "empty": "Nada que revisar. Todo coincidió solo.",
+      "aPayment": "Un pago",
+      "maySettle": "puede saldar {{name}}",
+      "mayBe": "puede ser {{name}}",
+      "accept": "Vincular",
+      "declineHint": "No es esto. Este par no se volverá a sugerir.",
+      "linked": "Vinculado",
+      "declined": "Descartado: no volveremos a preguntar"
+    },
+    "evidence": {
+      "amountExact": "el importe coincide exactamente",
+      "amountOff": "esperado {{expected}}, recibido {{moved}}",
+      "knownPayer": "pagador conocido",
+      "unknownPayer": "pagador sin identificar",
+      "sameDay": "mismo día",
+      "daysApart": "{{days}} días de diferencia"
+    },
+    "direction": {
+      "any": "Cualquiera",
+      "in": "Dinero que entra",
+      "out": "Dinero que sale"
+    }
   }
 }

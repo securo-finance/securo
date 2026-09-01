@@ -71,6 +71,12 @@ class Reason(str, Enum):
     ALREADY_SETTLED = "nothing_left_to_settle"
     AMBIGUOUS = "several_candidates_matched"
     SOURCE_IGNORED = "transaction_source_ignored"
+    #: The rule does not apply to this money at all — wrong account, wrong
+    #: currency, outside the amount band, text that does not match. Kept
+    #: apart from the comparison reasons above because it answers a
+    #: different question: not "why did this pair fail" but "why was this
+    #: rule not even consulted".
+    OUT_OF_SCOPE = "rule_does_not_apply_here"
 
 
 @dataclass(frozen=True)
@@ -255,18 +261,91 @@ def _within_window(
     )
 
 
+def _in_scope(
+    movement: Movement, rule: dict[str, Any], base_currency: Optional[str]
+) -> bool:
+    """Does this rule apply to this money at all?
+
+    Separate from the comparisons below, and worth naming as its own idea.
+    Every other signal asks *how well the pair fits*; these ask *whether
+    the rule was written for money like this* — a specific account, a
+    currency that is not the one you normally deal in, an amount above the
+    threshold where you stop trusting an automatic match, a statement line
+    whose text you recognise.
+
+    That distinction is what the market converged on independently: Xero
+    and QuickBooks both let a rule name its bank account, its direction
+    and a text fragment before any comparison happens. Without it a rule
+    can only say "money like this matches invoices like that", and every
+    real request — *only for dollars*, *only above ten thousand*, *only
+    this client* — is inexpressible.
+
+    All conditions must hold. Deliberately no ANY/OR mode, unlike the
+    categorization rules: those pick a label and a wrong guess is a
+    mislabelled row, while these bind money to a debt. "The amount matches
+    OR the date is close" is a sentence with no safe reading.
+    """
+    accounts = rule.get("accounts", {}).get("in")
+    if accounts and str(movement.account_id) not in {str(a) for a in accounts}:
+        return False
+
+    payees = rule.get("payees", {}).get("in")
+    if payees and str(movement.payee_id) not in {str(p) for p in payees}:
+        return False
+
+    direction = rule.get("direction")
+    if direction and direction != "any" and movement.direction != direction:
+        return False
+
+    currency = rule.get("currency", {})
+    allowed = currency.get("in")
+    if allowed and movement.currency not in set(allowed):
+        return False
+    if currency.get("foreign"):
+        # "Foreign" is relative to the workspace, so without knowing the
+        # base currency the honest answer is that the rule does not apply
+        # — never that everything is foreign.
+        if not base_currency or movement.currency == base_currency:
+            return False
+
+    amount_rule = rule.get("amount", {})
+    moved = abs(movement.amount)
+    minimum = amount_rule.get("min")
+    if minimum not in (None, "") and moved < Decimal(str(minimum)):
+        return False
+    maximum = amount_rule.get("max")
+    if maximum not in (None, "") and moved > Decimal(str(maximum)):
+        return False
+
+    text = rule.get("text", {})
+    description = (movement.description or "").lower()
+    contains = text.get("contains")
+    if contains and contains.lower() not in description:
+        return False
+    excludes = text.get("not_contains")
+    if excludes and excludes.lower() in description:
+        return False
+
+    return True
+
+
 def evaluate(
     movement: Movement,
     candidates: list[Expectation],
     policy: dict[str, Any],
     *,
     withholding_ratios: Optional[list[Decimal]] = None,
+    base_currency: Optional[str] = None,
 ) -> Decision:
     """Which expectation this movement settles, if any.
 
     Strategies are ordered and the first one to match wins — the same
     precedence `rules.priority` already has, so there is one mental model
     for "which rule applied" across the product.
+
+    `base_currency` is what the workspace normally deals in, and is only
+    consulted by rules that say "foreign": what counts as foreign is a
+    fact about the workspace, not about the money.
     """
     trace: list[Consideration] = []
     ratios = withholding_ratios or []
@@ -281,6 +360,18 @@ def evaluate(
         if not strategy.get("enabled", True):
             continue
         rule = strategy.get("when", {})
+        if not _in_scope(movement, rule, base_currency):
+            # Not written for money like this. One note rather than one per
+            # candidate: the rule was never consulted, so there is nothing
+            # to say about any particular promise.
+            trace.append(
+                Consideration(
+                    expectation_id=candidates[0].id if candidates else uuid.uuid4(),
+                    strategy=strategy["id"],
+                    rejected_by=Reason.OUT_OF_SCOPE,
+                )
+            )
+            continue
         matched: list[tuple[Expectation, Optional[Decimal], Optional[str], float]] = []
 
         for candidate in candidates:

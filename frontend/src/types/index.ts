@@ -1301,3 +1301,132 @@ export interface InvoiceFacets {
     draft: number
   }
 }
+
+// ---------------------------------------------------------------------------
+// Reconciliation
+// ---------------------------------------------------------------------------
+
+/** The signals matching consults, as the API sends them.
+ *
+ *  Deliberately not an open-ended condition tree like the categorization
+ *  rules: matching runs on a fixed set of signals, and a form over exactly
+ *  those is honest about what the engine can actually look at. */
+export interface ReconciliationConditions {
+  // -- Which money the rule is written for. Every one of these decides
+  //    whether the rule is consulted at all, before any comparison. Absent
+  //    means "no limit", never "none".
+  /** Only money in these bank accounts. */
+  accounts?: { in: string[] }
+  /** Only money from these clients. Different from `counterparty`, which
+   *  asks whether the payer is the one named on the invoice. */
+  payees?: { in: string[] }
+  /** Only money coming in, or only money going out. */
+  direction?: 'any' | 'credit' | 'debit'
+  /** What the statement line has to say, or must not. Case-insensitive. */
+  text?: { contains?: string; not_contains?: string }
+
+  // -- How closely the pair has to fit.
+  counterparty?: 'any' | 'same_payee'
+  amount?: {
+    match: 'exact' | 'tolerance' | 'ratio'
+    percent?: string
+    epsilon?: string
+    ratios?: string
+    difference_kind?: string
+    /** Bounds on the movement itself, not on how close it is to the
+     *  promise: "never link anything over ten thousand on its own". */
+    min?: string
+    max?: string
+  }
+  /** Asymmetric on purpose: late is measured from the due date, early from
+   *  the day the promise was written. */
+  date?: { before_days: number; after_days: number }
+  description_similarity?: { min: string }
+  currency?: {
+    /** Whether a movement may settle a promise held in another currency. */
+    conversion: 'reject' | 'allow'
+    /** Only these currency codes. */
+    in?: string[]
+    /** Only currencies other than the workspace's own — what somebody
+     *  means by "check anything that is not in our money". */
+    foreign?: boolean
+  }
+  same_account?: boolean
+  unique_candidate?: boolean
+}
+
+export interface ReconciliationRule {
+  id: string
+  node: string
+  /** Set only for a rule the workspace wrote. A shipped rule keeps its
+   *  translated name, which would otherwise freeze in one language the day
+   *  somebody edited a threshold. */
+  name?: string | null
+  origin: 'default' | 'custom'
+  /** Whether this workspace departed from what we ship. Drives the "you
+   *  changed this" mark and the offer to put it back. */
+  customised: boolean
+  enabled: boolean
+  outcome: 'link' | 'suggest'
+  when: ReconciliationConditions
+  position: number
+}
+
+export interface ReconciliationNode {
+  node: string
+  /** Whether the set is reachable for this workspace at all. The invoice
+   *  rules mean nothing where the module is off. */
+  active: boolean
+  rules: ReconciliationRule[]
+}
+
+export interface ReconciliationRulePatch {
+  enabled?: boolean
+  outcome?: 'link' | 'suggest'
+  when?: ReconciliationConditions
+  position?: number
+}
+
+export interface ReconciliationRuleDraft {
+  node: string
+  name: string
+  outcome: 'link' | 'suggest'
+  when: ReconciliationConditions
+  enabled?: boolean
+  position?: number | null
+}
+
+/** One match the engine was not confident enough to make on its own.
+ *
+ *  `scores` is a per-signal breakdown rather than one number: "78% sure" is
+ *  not something anyone can check, while "the amount is exact and the date
+ *  is four days out" tells a person exactly where to look. */
+export interface ReconciliationSuggestion {
+  id: string
+  node: string
+  strategy_id: string
+  expectation_kind: 'invoice' | 'recurring'
+  expectation_id: string
+  expectation_label?: string | null
+  amount: string
+  scores: {
+    strategy?: string
+    description?: number
+    amount_expected?: string
+    amount_moved?: string
+    amount_exact?: boolean
+    days_apart?: number
+    same_counterparty?: boolean
+    currency?: string
+  }
+  status: 'pending' | 'accepted' | 'declined' | 'expired'
+  created_at: string
+  transaction?: {
+    id: string
+    description?: string | null
+    amount: string
+    currency?: string | null
+    date: string
+    type: string
+  } | null
+}

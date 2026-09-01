@@ -2209,5 +2209,122 @@
         "subtitle": "Füge eine Verbindung hinzu, um Securo auf dein lokales Ollama, OpenAI, Anthropic oder einen OpenAI-kompatiblen Endpunkt zu verweisen."
       }
     }
+  },
+  "reconciliation": {
+    "node": {
+      "invoices": "Rechnungsabgleich",
+      "invoicesHint": "Wie eingehendes Geld den Rechnungen zugeordnet wird, die es begleicht. Der Reihe nach geprüft — die erste passende Regel gewinnt.",
+      "recurring": "Abgleich wiederkehrender Posten",
+      "recurringHint": "Wie eine echte Abbuchung als die Rechnung erkannt wird, die sie bezahlt, damit der Posten nicht doppelt erscheint.",
+      "inactive": "Hier nicht in Gebrauch"
+    },
+    "rule": {
+      "sameClientExact": "Bekannter Kunde, exakter Betrag",
+      "netOfWithholding": "Bekannter Kunde, abzüglich Quellensteuer",
+      "exactAmountAnyClient": "Exakter Betrag, beliebiger Zahler",
+      "similarDescription": "Ähnlicher Betrag und ähnlicher Text",
+      "sameAccountExact": "Gleiches Konto, exakter Betrag",
+      "unknown": "Regel"
+    },
+    "outcome": {
+      "link": "Verknüpft selbst",
+      "suggest": "Schlägt vor"
+    },
+    "cond": {
+      "samePayee": "der Zahler ist ein bekannter Kunde",
+      "sameAccount": "dasselbe Konto",
+      "amountExact": "der Betrag stimmt genau",
+      "amountTolerance": "der Betrag liegt innerhalb von {{percent}}%",
+      "amountRatio": "der Betrag stimmt abzüglich Quellensteuer",
+      "window": "bis zu {{before}} Tage früher, {{after}} Tage später",
+      "similarity": "der Text ist mindestens {{min}} ähnlich",
+      "currencyAllow": "jede Währung",
+      "none": "keine Bedingungen",
+      "accounts": "auf {{names}}",
+      "payees": "für {{names}}",
+      "moneyIn": "eingehendes Geld",
+      "moneyOut": "ausgehendes Geld",
+      "foreign": "in Fremdwährung",
+      "currencyIn": "in {{codes}}",
+      "atLeast": "ab {{value}}",
+      "atMost": "bis {{value}}",
+      "textContains": "im Auszug steht „{{text}}“",
+      "textExcludes": "im Auszug steht nicht „{{text}}“"
+    },
+    "add": "Neue Regel",
+    "newRule": "Neue Abgleichregel",
+    "saved": "Regel gespeichert",
+    "reset": "Regel zurückgesetzt",
+    "restore": "Auf Standard zurücksetzen",
+    "changed": "Geändert",
+    "yours": "Ihre",
+    "turnOn": "Einschalten",
+    "turnOff": "Ausschalten",
+    "field": {
+      "name": "Name",
+      "namePlaceholder": "z. B.: Bekannter Kunde, ähnlicher Betrag",
+      "outcome": "Was passiert, wenn sie zutrifft",
+      "outcomeHint": "Verknüpfen bucht von selbst. Vorschlagen schickt es in die Liste unten, damit Sie es bestätigen.",
+      "counterparty": "Wer gezahlt hat",
+      "amount": "Betrag",
+      "window": "Zulässiger Abstand zwischen den Daten",
+      "windowHint": "Verspätung zählt ab dem Fälligkeitstag, Vorauszahlung ab dem Tag der Rechnungsstellung — wer einen Tag nach Ausstellung zahlt, ist nicht Wochen zu früh.",
+      "beforeDays": "Tage früher",
+      "afterDays": "Tage später",
+      "similarity": "Textähnlichkeit",
+      "similarityHint": "Von 0 bis 1. Leer lassen, um den Text zu ignorieren.",
+      "similarityOff": "aus",
+      "scope": "Wann diese Regel gilt",
+      "scopeHint": "Leer lassen, damit sie für alles gilt",
+      "accounts": "Bankkonten",
+      "anyAccount": "Beliebiges Konto",
+      "payees": "Kunden",
+      "anyPayee": "Beliebiger Kunde",
+      "direction": "Ein- oder Ausgang",
+      "currencyScope": "Nur in diesen Währungen",
+      "currencyPlaceholder": "z. B. USD, EUR",
+      "foreignOnly": "Nur Währungen außer der dieses Arbeitsbereichs",
+      "amountBand": "Nur Beträge in diesem Bereich",
+      "noMinimum": "kein Minimum",
+      "noMaximum": "kein Maximum",
+      "text": "Text im Kontoauszug",
+      "textContains": "muss enthalten …",
+      "textExcludes": "darf nicht enthalten …"
+    },
+    "counterparty": {
+      "any": "Beliebig",
+      "samePayee": "Der Kunde auf der Rechnung"
+    },
+    "amount": {
+      "exact": "Genau der offene Betrag",
+      "tolerance": "Innerhalb einer Toleranz",
+      "ratio": "Abzüglich Quellensteuer",
+      "ratioHint": "Nutzt die Quellensteuersätze Ihres Landes. Solange es keine gibt, trifft die Regel auf nichts zu."
+    },
+    "queue": {
+      "title": "Wartet auf Sie",
+      "hint": "Zuordnungen, die plausibel, aber nicht sicher sind. Diese Liste sollte kurz bleiben — wenn nicht, gehören die Regeln oben geändert.",
+      "empty": "Nichts zu prüfen. Alles hat von selbst gepasst.",
+      "aPayment": "Eine Zahlung",
+      "maySettle": "begleicht vielleicht {{name}}",
+      "mayBe": "ist vielleicht {{name}}",
+      "accept": "Verknüpfen",
+      "declineHint": "Passt nicht. Dieses Paar wird nicht erneut vorgeschlagen.",
+      "linked": "Verknüpft",
+      "declined": "Verworfen — wir fragen nicht noch einmal"
+    },
+    "evidence": {
+      "amountExact": "Betrag stimmt genau",
+      "amountOff": "erwartet {{expected}}, erhalten {{moved}}",
+      "knownPayer": "bekannter Zahler",
+      "unknownPayer": "Zahler nicht erkannt",
+      "sameDay": "gleicher Tag",
+      "daysApart": "{{days}} Tage Abstand"
+    },
+    "direction": {
+      "any": "Egal",
+      "in": "Eingehendes Geld",
+      "out": "Ausgehendes Geld"
+    }
   }
 }
