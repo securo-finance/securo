@@ -367,13 +367,8 @@ async def test_pending_and_future_rows_are_current_vs_projected(
     """Pending and future rows affect the forecast, never a manual current balance."""
     today = date.today()
     future_date = today + timedelta(days=3)
-    # Keep the requested dashboard month aligned with the future transaction.
-    # Near the end of a month, ``today + 3`` may belong to the next month.
-    summary_month = (
-        _current_month_str()
-        if future_date.month == today.month
-        else _next_month_str()
-    )
+    # Keep the queried month aligned with the future row at month boundaries.
+    forecast_month = future_date.replace(day=1).isoformat()
     acc_resp = await client.post(
         "/api/accounts",
         json={"name": "Forecast split", "type": "checking", "balance": 1000.00, "currency": "BRL"},
@@ -406,7 +401,7 @@ async def test_pending_and_future_rows_are_current_vs_projected(
 
     resp = await client.get(
         "/api/dashboard/summary",
-        params={"month": summary_month},
+        params={"month": forecast_month},
         headers=auth_headers,
     )
     assert resp.status_code == 200

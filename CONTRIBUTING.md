@@ -55,7 +55,7 @@ The same applies to issues. An issue produced by pointing a model at the reposit
 1. Create a branch from `main`: `git checkout -b feature/your-feature`
 2. Make your changes
 3. Run backend tests: `cd backend && uv sync --all-extras && uv run pytest` (Python 3.11+)
-4. Run frontend lint: `cd frontend && npm run lint`
+4. Run frontend checks: `cd frontend && npm run lint && npm test`
 5. Commit with a clear message (see below)
 6. Push your branch and open a Pull Request
 
@@ -73,6 +73,14 @@ local and CI stay in sync.
 
 [prek](https://github.com/j178/prek) is a drop-in replacement for pre-commit:
 same `.pre-commit-config.yaml`, but a single binary with no Python bootstrap.
+
+### Frontend tests
+
+Vitest and Testing Library. Render through `renderWithProviders` from
+`@/test/utils`, which wires up TanStack Query, the router and i18n, and import
+with the `@/` alias rather than a relative path. Assert on what the user sees:
+the rendered text, the disabled button, the error that appears on a failed
+request.
 
 ### Adding a frontend dependency
 
