@@ -29,7 +29,7 @@ ACCOUNT = uuid.uuid4()
 
 
 def receivable() -> dict:
-    return policy_module.default_policy("reconciliation.match_receivable")
+    return policy_module.default_policy("reconciliation.match_invoice")
 
 
 def an_invoice(
@@ -40,6 +40,7 @@ def an_invoice(
     when: date = TODAY,
     description: str = "Consultoria",
     payee_id: uuid.UUID | None = CLIENT,
+    issued: date | None = None,
 ) -> Expectation:
     """Built field by field rather than from a splatted dict: keyword
     -splatting a heterogeneous mapping loses every type on the way in,
@@ -51,6 +52,7 @@ def an_invoice(
         currency=currency,
         direction=direction,
         when=when,
+        issued=issued,
         description=description,
         payee_id=payee_id,
     )
@@ -157,6 +159,27 @@ def test_an_invoice_with_nothing_left_is_not_a_candidate():
 
     assert decision.port == "unmatched"
     assert any(n.rejected_by is Reason.ALREADY_SETTLED for n in decision.trace)
+
+
+def test_paying_the_day_after_issue_is_not_twenty_nine_days_early():
+    """An invoice issued on the 1st and due on the 30th, paid on the 2nd.
+    Measured from the due date that is 28 days early and rejected — which
+    would reject the best-paying client in the workspace. Early is
+    measured from the day the promise was made."""
+    invoice = an_invoice(when=TODAY + timedelta(days=29), issued=TODAY)
+    decision = evaluate(an_inflow(when=TODAY + timedelta(days=1)), [invoice], receivable())
+
+    assert decision.port == "linked"
+
+
+def test_money_from_before_the_invoice_existed_still_has_a_limit():
+    """The look-back is not unbounded: money from two months before the
+    document was written is not this document's."""
+    invoice = an_invoice(when=TODAY + timedelta(days=29), issued=TODAY)
+    decision = evaluate(an_inflow(when=TODAY - timedelta(days=60)), [invoice], receivable())
+
+    assert decision.port == "unmatched"
+    assert any(n.rejected_by is Reason.DATE for n in decision.trace)
 
 
 def test_the_date_window_is_asymmetric_on_purpose():

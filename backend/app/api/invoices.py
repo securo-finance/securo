@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFi
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
+from app.models.invoice import Invoice
 from app.models.workspace import Workspace
 from app.core.module_gate import require_module, require_module_write
 from app.core.workspace_context import WorkspaceContext
@@ -38,6 +39,7 @@ from app.services import (
     invoice_document,
     invoice_pdf,
     invoice_service,
+    reconciliation_service,
 )
 from app.services.invoice_service import InvoiceError
 from app.services.module_service import ModuleId
@@ -211,6 +213,24 @@ async def list_invoices(
     return [_serialize(inv) for inv in invoices]
 
 
+async def _settle_from_money_already_there(
+    session: AsyncSession, invoice: Invoice
+) -> None:
+    """Look back at payments that arrived before this document existed.
+
+    The client pays, and the nota follows days later — common enough here
+    that a matcher which only looked forward would miss a good share of
+    the traffic. Nothing about the money changes when the invoice is
+    written, so this is the only moment anything would re-examine it.
+
+    Called from the router rather than from `invoice_service`, which
+    matching already depends on. Failing to find a match is the ordinary
+    outcome and never affects the response.
+    """
+    if await reconciliation_service.match_for_invoice(session, invoice):
+        await session.commit()
+
+
 @router.post("", response_model=InvoiceRead, status_code=status.HTTP_201_CREATED)
 async def create_invoice(
     payload: InvoiceCreate,
@@ -228,7 +248,8 @@ async def create_invoice(
         raise _http(exc)
     await session.commit()
     invoice = await _load(session, invoice.id, ctx.workspace.id)
-    return _serialize(invoice)
+    await _settle_from_money_already_there(session, invoice)
+    return _serialize(await _load(session, invoice.id, ctx.workspace.id))
 
 
 @router.get("/{invoice_id}", response_model=InvoiceRead)
@@ -289,6 +310,9 @@ async def issue_invoice(
     except InvoiceError as exc:
         raise _http(exc)
     await session.commit()
+    await _settle_from_money_already_there(
+        session, await _load(session, invoice_id, ctx.workspace.id)
+    )
     return _serialize(await _load(session, invoice_id, ctx.workspace.id))
 
 

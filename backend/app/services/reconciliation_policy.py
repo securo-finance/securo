@@ -29,7 +29,13 @@ from typing import Any
 #: migrated against. Overrides record the version they were written for.
 POLICY_VERSION = 1
 
-#: Money arriving against something a client owes us.
+#: Money moving against an invoice, in either direction.
+#:
+#: Named for the object rather than the direction: a payable is settled
+#: by money going out and by the same strategies, and the engine already
+#: refuses a candidate whose direction disagrees with the movement. A
+#: node called `match_receivable` that also matched bills would be a name
+#: that lies.
 #:
 #: The withholding strategy is a `link` rather than a `suggest`, and that
 #: is the most consequential line in this file. A R$3.000 invoice paid by
@@ -38,11 +44,11 @@ POLICY_VERSION = 1
 #: *the best clients* to the queue, and the accountant interview is
 #: explicit that import-then-make-the-user-confirm is what killed
 #: adoption of the incumbent.
-MATCH_RECEIVABLE: dict[str, Any] = {
+MATCH_INVOICE: dict[str, Any] = {
     "version": POLICY_VERSION,
-    "node": "reconciliation.match_receivable",
+    "node": "reconciliation.match_invoice",
     "scope": {
-        "movement": "inflow",
+        "movement": "any",
         "candidate_states": ["open", "partial", "overdue"],
         # A generated placeholder is a promise, not the money that keeps
         # it. Matching one against an invoice would settle a debt with
@@ -57,7 +63,11 @@ MATCH_RECEIVABLE: dict[str, Any] = {
             "when": {
                 "counterparty": "same_payee",
                 "amount": {"match": "exact"},
-                "date": {"before_days": 5, "after_days": 60},
+                # `before_days` counts back from the **issue date**, not
+                # the due date: a client who pays a deposit, or pays on
+                # the promise of a nota that follows, is the ordinary
+                # case here and not an anomaly to be queued.
+                "date": {"before_days": 10, "after_days": 60},
                 "currency": {"conversion": "reject"},
                 "unique_candidate": True,
             },
@@ -76,7 +86,7 @@ MATCH_RECEIVABLE: dict[str, Any] = {
                     "epsilon": "0.02",
                     "difference_kind": "withholding_tax",
                 },
-                "date": {"before_days": 5, "after_days": 60},
+                "date": {"before_days": 10, "after_days": 60},
                 "currency": {"conversion": "reject"},
                 "unique_candidate": True,
             },
@@ -107,7 +117,6 @@ MATCH_RECEIVABLE: dict[str, Any] = {
         },
     ],
     "on_ambiguity": "suggest",
-    "partial": {"allow": True, "wait_days": 15},
 }
 
 #: Money moving against a recurring bill or income.
@@ -141,12 +150,17 @@ MATCH_RECURRING: dict[str, Any] = {
                 "date": {"before_days": 3, "after_days": 5},
                 "currency": {"conversion": "reject"},
                 "description_similarity": {"min": "0.6"},
-                "unique_candidate": True,
+                # Deliberately **not** `unique_candidate`, unlike the
+                # invoice node. Two placeholders of the same value on one
+                # account are told apart by description, and production
+                # has always taken the better-matching one rather than
+                # refusing both. Refusing here would be a stricter product
+                # than the one running today, on the day this lands, for
+                # people who never asked for reconciliation at all.
             },
         },
     ],
     "on_ambiguity": "suggest",
-    "partial": {"allow": False, "wait_days": 0},
 }
 
 #: A weekly bill sits closer to its neighbours, so its window narrows or
@@ -157,7 +171,7 @@ RECURRING_WINDOW_BY_FREQUENCY: dict[str, dict[str, int]] = {
 }
 
 _DEFAULTS: dict[str, dict[str, Any]] = {
-    MATCH_RECEIVABLE["node"]: MATCH_RECEIVABLE,
+    MATCH_INVOICE["node"]: MATCH_INVOICE,
     MATCH_RECURRING["node"]: MATCH_RECURRING,
 }
 

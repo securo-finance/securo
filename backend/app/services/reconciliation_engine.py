@@ -117,6 +117,10 @@ class Expectation:
     #: Set for a recurring bill, which is charged to a known account.
     #: Null for an invoice, where the money may land anywhere.
     account_id: Optional[uuid.UUID] = None
+    #: When the promise came into existence, if that is a different day
+    #: from when it comes due. An invoice has both and they are weeks
+    #: apart; a recurring occurrence has one, and leaves this null.
+    issued: Optional[date] = None
 
 
 @dataclass
@@ -211,15 +215,35 @@ def _amount_verdict(
     return False, None, None
 
 
-def _within_window(movement_date: date, expected: date, rule: dict[str, Any]) -> bool:
-    """Asymmetric on purpose: money arrives *after* a due date far more
+def _within_window(
+    movement_date: date,
+    expected: date,
+    rule: dict[str, Any],
+    issued: Optional[date] = None,
+) -> bool:
+    """Is this money close enough in time to be this promise's?
+
+    Asymmetric on purpose: money arrives *after* a due date far more
     often than before it, and a symmetric window either misses the late
-    ones or reaches into the neighbouring occurrence."""
+    ones or reaches into the neighbouring occurrence.
+
+    The two sides are also measured from different days when the
+    expectation has both. **Late is late by reference to the due date;
+    early is early by reference to the day the promise was made.** An
+    invoice due on the 30th and issued on the 1st is not "29 days paid
+    early" when the client pays on the 2nd — it is paid the day after it
+    was issued, which is the best case there is. Collapsing both onto the
+    due date is what would push every deposit and every pay-then-invoice
+    into the rejected pile. A recurring occurrence has no separate issue
+    date, leaves `issued` null, and keeps the single-anchor behaviour it
+    has always had.
+    """
     before = int(rule.get("before_days", 0))
     after = int(rule.get("after_days", 0))
-    return (expected - movement_date).days <= before and (
-        movement_date - expected
-    ).days <= after
+    return (
+        ((issued or expected) - movement_date).days <= before
+        and (movement_date - expected).days <= after
+    )
 
 
 def evaluate(
@@ -288,7 +312,9 @@ def evaluate(
                 trace.append(note)
                 continue
 
-            if not _within_window(movement.when, candidate.when, rule.get("date", {})):
+            if not _within_window(
+                movement.when, candidate.when, rule.get("date", {}), candidate.issued
+            ):
                 note.rejected_by = Reason.DATE
                 trace.append(note)
                 continue

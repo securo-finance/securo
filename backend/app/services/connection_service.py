@@ -36,7 +36,7 @@ from app.providers.base import (
 )
 from app.services import oauth_state
 from app.services import admin_service
-from app.services import recurring_match_service
+from app.services import reconciliation_service, recurring_match_service
 from app.services.account_service import (
     _simplefin_to_internal_balance,
     sync_opening_balance_for_connected_account,
@@ -1189,6 +1189,19 @@ async def handle_oauth_callback(
     # Detect transfer pairs among newly synced transactions
     await detect_transfer_pairs(session, workspace_id, candidate_ids=new_tx_ids)
 
+    # And settle what this money was promised against, once the rows exist.
+    if new_tx_ids:
+        landed = list(
+            (
+                await session.execute(
+                    select(Transaction).where(Transaction.id.in_(new_tx_ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        await reconciliation_service.match_incoming(session, workspace_id, landed)
+
     # Investment holdings live on /investments — separate endpoint from
     # /accounts. Pulled after account setup when enabled so holdings are
     # available on the Assets page immediately after the widget closes.
@@ -2077,6 +2090,25 @@ async def sync_connection(
         # Detect transfer pairs among newly synced transactions
         if new_tx_ids:
             await detect_transfer_pairs(session, workspace_id, candidate_ids=new_tx_ids)
+
+            # Then settle whatever this money was promised against. It runs
+            # after the rows are written, not inside the loop: the recurring
+            # match upgrades a placeholder in place, while an invoice link is
+            # a row pointing at a transaction that has to exist first. It is
+            # also a single batch, so the candidate invoices are loaded once
+            # per sync rather than once per transaction.
+            landed = list(
+                (
+                    await session.execute(
+                        select(Transaction).where(Transaction.id.in_(new_tx_ids))
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            await reconciliation_service.match_incoming(
+                session, workspace_id, landed
+            )
 
         # Clean up phantom duplicates: providers occasionally double-report the
         # same payment with different ids. Once transfer detection has paired
