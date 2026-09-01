@@ -138,8 +138,8 @@ export default function GoalsPage() {
   const { t } = useTranslation()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
-  const { canWrite } = useWorkspace()
-  const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const { current, canWrite } = useWorkspace()
+  const userCurrency = current?.default_currency ?? user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)

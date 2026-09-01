@@ -88,7 +88,8 @@ export function AppLayout() {
   const { t } = useTranslation()
   const { user, logout, updateUser } = useAuth()
   const { activeAccountIds } = useCollectionFilter()
-  const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const { current: currentWorkspace } = useWorkspace()
+  const userCurrency = currentWorkspace?.default_currency ?? user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
   const { theme, setTheme, resolvedTheme } = useTheme()
   const location = useLocation()

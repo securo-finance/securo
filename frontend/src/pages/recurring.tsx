@@ -66,8 +66,8 @@ function RecurringTab() {
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
-  const { canWrite } = useWorkspace()
-  const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const { current, canWrite } = useWorkspace()
+  const userCurrency = current?.default_currency ?? user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<RecurringTransaction | null>(null)

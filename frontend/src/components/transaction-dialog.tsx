@@ -5,6 +5,7 @@ import { useDateLocale, useDisplayLocale } from '@/hooks/use-display-locale'
 import { formatCurrency } from '@/lib/format'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
+import { useWorkspace } from '@/contexts/workspace-context'
 import { currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
@@ -409,8 +410,9 @@ function TransactionForm({
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { user } = useAuth()
+  const { current } = useWorkspace()
   const { privacyMode, MASK } = usePrivacyMode()
-  const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const userCurrency = current?.default_currency ?? user?.preferences?.currency_display ?? 'USD'
   const dateLocale = useDateLocale()
   const displayLocale = useDisplayLocale()
   const sortedAccounts = useMemo(() => sortAccountsByDisplayName(accounts), [accounts])

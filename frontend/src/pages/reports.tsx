@@ -26,6 +26,7 @@ import { PageHeader } from '@/components/page-header'
 import { CashflowSankey } from '@/components/reports/CashflowSankey'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
+import { useWorkspace } from '@/contexts/workspace-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import type { ReportResponse, CategoryTrendItem } from '@/types'
 import { formatCurrency } from '@/lib/format'
@@ -135,7 +136,8 @@ export default function ReportsPage() {
   const { t } = useTranslation()
   const { mask, privacyMode, MASK } = usePrivacyMode()
   const { user } = useAuth()
-  const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const { current } = useWorkspace()
+  const userCurrency = current?.default_currency ?? user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
 
   const [rangeKey, setRangeKey] = useState('1y')

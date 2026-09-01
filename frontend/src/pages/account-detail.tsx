@@ -274,8 +274,8 @@ export default function AccountDetailPage() {
   const { t, i18n } = useTranslation()
   const { mask, privacyMode, MASK } = usePrivacyMode()
   const { user } = useAuth()
-  const { canWrite } = useWorkspace()
-  const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const { current, canWrite } = useWorkspace()
+  const userCurrency = current?.default_currency ?? user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
   const isMobile = useIsMobile()

@@ -52,6 +52,7 @@ import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useAuth } from '@/contexts/auth-context'
+import { useWorkspace } from '@/contexts/workspace-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import type { Rule, Transaction } from '@/types'
@@ -95,7 +96,8 @@ export default function DashboardPage() {
   const { mask, privacyMode, MASK } = usePrivacyMode()
   const isMobile = useIsMobile()
   const { user } = useAuth()
-  const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const { current } = useWorkspace()
+  const userCurrency = current?.default_currency ?? user?.preferences?.currency_display ?? 'USD'
   const displayName = user?.preferences?.display_name || ''
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()

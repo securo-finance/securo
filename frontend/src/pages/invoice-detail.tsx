@@ -84,8 +84,8 @@ export default function InvoiceDetailPage() {
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
-  const { canWrite } = useWorkspace()
-  const fallbackCurrency = user?.preferences?.currency_display ?? 'USD'
+  const { current, canWrite } = useWorkspace()
+  const fallbackCurrency = current?.default_currency ?? user?.preferences?.currency_display ?? 'USD'
 
   const [linkOpen, setLinkOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)

@@ -60,8 +60,8 @@ export default function PayeesPage() {
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
-  const { canWrite } = useWorkspace()
-  const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const { current, canWrite } = useWorkspace()
+  const userCurrency = current?.default_currency ?? user?.preferences?.currency_display ?? 'USD'
   // No entry for an unset type: most rows come from sync, which cannot know
   // a legal nature from a bank descriptor, and a badge reading "unknown" on
   // hundreds of rows is noise rather than information.

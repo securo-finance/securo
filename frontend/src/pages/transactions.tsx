@@ -91,8 +91,8 @@ export default function TransactionsPage() {
   const isMobile = useIsMobile()
   const { user } = useAuth()
   const { activeAccountIds } = useCollectionFilter()
-  const { canWrite } = useWorkspace()
-  const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const { current, canWrite } = useWorkspace()
+  const userCurrency = current?.default_currency ?? user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState<number>(() => {

@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 
 import { groups as groupsApi, type GroupCreatePayload } from '@/lib/api'
 import { useAuth } from '@/contexts/auth-context'
+import { useWorkspace } from '@/contexts/workspace-context'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -76,7 +77,8 @@ function BulkAddToGroupForm({
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const { user } = useAuth()
-  const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const { current } = useWorkspace()
+  const userCurrency = current?.default_currency ?? user?.preferences?.currency_display ?? 'USD'
 
   // Track group creation state and fields
   const [isCreatingGroup, setIsCreatingGroup] = useState(false)

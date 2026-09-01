@@ -93,8 +93,8 @@ export default function InvoicesPage() {
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
-  const { canWrite } = useWorkspace()
-  const currency = user?.preferences?.currency_display ?? 'USD'
+  const { current, canWrite } = useWorkspace()
+  const currency = current?.default_currency ?? user?.preferences?.currency_display ?? 'USD'
 
   // `null` is "every year". The default is the current one, which is
   // what someone opening the page is almost always asking about.

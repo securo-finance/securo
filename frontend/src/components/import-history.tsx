@@ -39,8 +39,8 @@ export function ImportHistory({ entity }: ImportHistoryProps) {
   const dateLocale = useDateLocale()
   const queryClient = useQueryClient()
   const { user } = useAuth()
-  const { canWrite } = useWorkspace()
-  const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const { current, canWrite } = useWorkspace()
+  const userCurrency = current?.default_currency ?? user?.preferences?.currency_display ?? 'USD'
   const [deleteTarget, setDeleteTarget] = useState<ImportLog | null>(null)
 
   const { data: logs = [] } = useQuery({

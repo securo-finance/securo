@@ -7,6 +7,7 @@ import { AlertTriangle, Info, Paperclip, X } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
 import { useAuth } from '@/contexts/auth-context'
+import { useWorkspace } from '@/contexts/workspace-context'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import type { Transaction } from '@/types'
 import { formatCurrency } from '@/lib/format'
@@ -50,8 +51,9 @@ export function TransactionDrillDown({
 }) {
   const { t } = useTranslation()
   const { user } = useAuth()
+  const { current } = useWorkspace()
   const { mask } = usePrivacyMode()
-  const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const userCurrency = current?.default_currency ?? user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
   const panelRef = useRef<HTMLDivElement>(null)

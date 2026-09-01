@@ -65,8 +65,8 @@ export default function AccountsPage() {
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
-  const { canWrite } = useWorkspace()
-  const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const { current, canWrite } = useWorkspace()
+  const userCurrency = current?.default_currency ?? user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingAccount, setEditingAccount] = useState<Account | null>(null)
@@ -677,7 +677,8 @@ function AccountDialog({
 }) {
   const { t } = useTranslation()
   const { user } = useAuth()
-  const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const { current } = useWorkspace()
+  const userCurrency = current?.default_currency ?? user?.preferences?.currency_display ?? 'USD'
   const { data: supportedCurrencies } = useQuery({
     queryKey: ['currencies'],
     queryFn: currencies.list,
