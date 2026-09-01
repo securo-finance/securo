@@ -35,10 +35,7 @@ plus one entry in KIND_SPECS, and a named validator if its format is
 checkable. Both are pull requests, which is the point: a document that no
 code understands is a document no export can use.
 """
-try:
-    import tomllib
-except ImportError:
-    import tomli as tomllib
+import tomllib
 from dataclasses import dataclass
 from enum import Enum
 from functools import lru_cache

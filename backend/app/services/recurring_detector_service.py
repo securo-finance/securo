@@ -239,7 +239,7 @@ async def detect_recurring_patterns(
             total_annual_sub_cost += annual_impact
 
         item = DetectedRecurringItem(
-            merchant_name=sorted_txs[-1].payee or sorted_txs[-1].description,
+            merchant_name=sorted_txs[-1].payee or sorted_txs[-1].description or norm_key,
             normalized_key=norm_key,
             direction=direction,
             cadence=cadence,

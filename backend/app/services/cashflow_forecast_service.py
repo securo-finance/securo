@@ -175,7 +175,8 @@ async def generate_cashflow_forecast(
 
         if discretionary_txs:
             total_discretionary = sum(Decimal(str(t.amount_primary or t.amount)) for t in discretionary_txs)
-            daily_discretionary_burn = (total_discretionary / Decimal("90")).quantize(Decimal("0.01"))
+            history_days = max(1, (today - min(t.date for t in discretionary_txs)).days)
+            daily_discretionary_burn = (total_discretionary / Decimal(str(history_days))).quantize(Decimal("0.01"))
 
     # 5. Day-by-day simulation loop
     daily_points: list[DailyForecastPoint] = []
@@ -212,9 +213,9 @@ async def generate_cashflow_forecast(
         start_bal = current_balance
         end_bal = (start_bal + day_net).quantize(Decimal("0.01"))
 
+        total_inflow += day_inflow
+        total_outflow += day_outflow
         if day_idx > 0:
-            total_inflow += day_inflow
-            total_outflow += day_outflow
             total_discretionary += day_burn
 
         if end_bal < lowest_balance:

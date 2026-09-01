@@ -22,6 +22,7 @@ from app.models.import_log import ImportLog
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.schemas.account import AccountCreate, AccountUpdate
+import app.services.account_service as account_service
 from app.services.account_service import (
     _simplefin_to_internal_balance,
     create_account,
@@ -36,6 +37,15 @@ from app.services.account_service import (
     sync_opening_balance_for_connected_account,
     update_account,
 )
+
+
+FROZEN_TODAY = date(2026, 9, 20)
+
+
+class _FrozenDate(date):
+    @classmethod
+    def today(cls):
+        return FROZEN_TODAY
 
 
 # ---------------------------------------------------------------------------
@@ -844,7 +854,7 @@ async def test_get_account_summary_keeps_pending_for_credit_card(session: AsyncS
 
 @pytest.mark.asyncio
 async def test_get_account_summary_opening_balance_connected_excludes_period_pending(
-    session, test_user, test_workspace, test_connection
+    session, test_user, test_workspace, test_connection, monkeypatch
 ):
     """Connected non-CC opening balance backs out period pending so the
     frontend walk (opening + displayed period rows) does not double count them.
@@ -857,7 +867,8 @@ async def test_get_account_summary_opening_balance_connected_excludes_period_pen
         session, test_user.id, "Conn Opening", balance="780.00",
         connection_id=test_connection.id,
     )
-    today = date.today()
+    monkeypatch.setattr(account_service, "_Date", _FrozenDate)
+    today = FROZEN_TODAY
     month_start = today.replace(day=1)
     prev_month = (month_start - timedelta(days=1)).replace(day=1)
     await _add_txn(session, test_user.id, account.id, 500, "credit", prev_month + timedelta(days=5))
@@ -876,7 +887,7 @@ async def test_get_account_summary_opening_balance_connected_excludes_period_pen
 
 @pytest.mark.asyncio
 async def test_get_account_summary_connected_keeps_recurring_pending_in_the_walk(
-    session, test_user, test_workspace, test_connection
+    session, test_user, test_workspace, test_connection, monkeypatch
 ):
     """A recurring placeholder still moves the projected balance on a
     connected account.
@@ -890,7 +901,8 @@ async def test_get_account_summary_connected_keeps_recurring_pending_in_the_walk
         session, test_user.id, "Conn Recurring", balance="780.00",
         connection_id=test_connection.id,
     )
-    today = date.today()
+    monkeypatch.setattr(account_service, "_Date", _FrozenDate)
+    today = FROZEN_TODAY
     month_start = today.replace(day=1)
     prev_month = (month_start - timedelta(days=1)).replace(day=1)
     await _add_txn(session, test_user.id, account.id, 500, "credit", prev_month + timedelta(days=5))
@@ -917,14 +929,15 @@ async def test_get_account_summary_connected_keeps_recurring_pending_in_the_walk
 
 @pytest.mark.asyncio
 async def test_get_account_summary_connected_excludes_future_rows_from_opening_balance(
-    session, test_user, test_workspace, test_connection
+    session, test_user, test_workspace, test_connection, monkeypatch
 ):
     """Future-dated rows remain projections and do not shift today's opening."""
     account = await _make_account(
         session, test_user.id, "Conn Future Rows", balance="780.00",
         connection_id=test_connection.id,
     )
-    today = date.today()
+    monkeypatch.setattr(account_service, "_Date", _FrozenDate)
+    today = FROZEN_TODAY
     month_start = today.replace(day=1)
     prev_month = (month_start - timedelta(days=1)).replace(day=1)
     await _add_txn(session, test_user.id, account.id, 500, "credit", prev_month + timedelta(days=5))
