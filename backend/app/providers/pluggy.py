@@ -443,6 +443,7 @@ class PluggyProvider(BankProvider):
         account_list = []
         for acc in raw_accounts:
             account_list.append(_build_account_data(acc, self._map_account_type))
+        await _annotate_institutions(raw_accounts, account_list)
 
         return ConnectionData(
             external_id=item_id,
