@@ -2484,6 +2484,8 @@
       "empty": "Jeszcze nic. Wypełni się, gdy dopasowanie powiąże, zapyta i otrzyma odpowiedź."
     },
     "moveUp": "Sprawdzaj tę wcześniej",
-    "moveDown": "Sprawdzaj tę później"
+    "moveDown": "Sprawdzaj tę później",
+    "matchingTitle": "Reguły dopasowania",
+    "matchingHint": "Jak wpływające pieniądze są wiązane z tym, co opłacają. Każdy zestaw sprawdzany po kolei — wygrywa pierwsza pasująca reguła."
   }
 }

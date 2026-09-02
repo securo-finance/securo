@@ -2383,6 +2383,8 @@
       "empty": "Nog niets. Dit vult zich terwijl het afletteren koppelt, vraagt en antwoord krijgt."
     },
     "moveUp": "Deze eerder proberen",
-    "moveDown": "Deze later proberen"
+    "moveDown": "Deze later proberen",
+    "matchingTitle": "Afletterregels",
+    "matchingHint": "Hoe binnenkomend geld wordt gekoppeld aan wat het voldoet. Elke set wordt op volgorde geprobeerd — de eerste regel die past, wint."
   }
 }

@@ -2518,6 +2518,8 @@
       "empty": "Zatiaľ nič. Naplní sa, ako párovanie spája, pýta sa a dostáva odpoveď."
     },
     "moveUp": "Skúšať túto skôr",
-    "moveDown": "Skúšať túto neskôr"
+    "moveDown": "Skúšať túto neskôr",
+    "matchingTitle": "Pravidlá párovania",
+    "matchingHint": "Ako sa prichádzajúce peniaze viažu na to, čo uhrádzajú. Každá sada sa skúša po poradí — vyhráva prvé pravidlo, ktoré sadne."
   }
 }

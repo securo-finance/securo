@@ -2382,6 +2382,8 @@
       "empty": "Nothing yet. This fills in as matching links, asks and is answered."
     },
     "moveUp": "Try this one earlier",
-    "moveDown": "Try this one later"
+    "moveDown": "Try this one later",
+    "matchingTitle": "Matching rules",
+    "matchingHint": "How money that arrives is bound to what it settles. Each set is tried in order — the first rule that matches wins."
   }
 }

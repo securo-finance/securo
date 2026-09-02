@@ -2383,6 +2383,8 @@
       "empty": "Nada aún. Esto se llena a medida que la conciliación vincula, pregunta y se responde."
     },
     "moveUp": "Probar esta antes",
-    "moveDown": "Probar esta después"
+    "moveDown": "Probar esta después",
+    "matchingTitle": "Reglas de conciliación",
+    "matchingHint": "Cómo el dinero que entra se vincula con lo que salda. Cada conjunto se prueba en orden: gana la primera regla que coincide."
   }
 }

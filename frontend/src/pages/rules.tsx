@@ -352,8 +352,22 @@ export default function RulesPage() {
             { value: 'rules', label: t('rules.tab.rules') },
             {
               value: 'queue',
-              label: t('rules.tab.queue'),
-              count: pending?.length || undefined,
+              // The count is rendered here rather than through Segmented's
+              // own `count`, which is a muted figure beside a filter — the
+              // right weight for "Overdue 2" and the wrong one for work
+              // waiting on somebody. This is a nudge, so it looks like
+              // one; when there is nothing waiting it disappears entirely
+              // rather than announcing a zero.
+              label: (
+                <span className="inline-flex items-center gap-1.5">
+                  {t('rules.tab.queue')}
+                  {!!pending?.length && (
+                    <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-semibold tabular-nums">
+                      {pending.length}
+                    </span>
+                  )}
+                </span>
+              ),
             },
             { value: 'history', label: t('rules.tab.history') },
           ]}

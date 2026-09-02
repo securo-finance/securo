@@ -2383,6 +2383,8 @@
       "empty": "Rien pour l'instant. Cela se remplit à mesure que le rapprochement rattache, demande et reçoit une réponse."
     },
     "moveUp": "Essayer celle-ci plus tôt",
-    "moveDown": "Essayer celle-ci plus tard"
+    "moveDown": "Essayer celle-ci plus tard",
+    "matchingTitle": "Règles de rapprochement",
+    "matchingHint": "Comment l'argent qui arrive est rattaché à ce qu'il règle. Chaque ensemble est essayé dans l'ordre : la première règle qui correspond l'emporte."
   }
 }

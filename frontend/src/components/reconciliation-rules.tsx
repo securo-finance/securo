@@ -38,7 +38,7 @@ import type {
   ReconciliationNode,
   ReconciliationRule,
 } from '@/types'
-import { Plus, RotateCcw, Trash2, Zap, HelpCircle, ChevronUp, ChevronDown } from 'lucide-react'
+import { Plus, RotateCcw, Trash2, Zap, HelpCircle, ChevronUp, ChevronDown, Power } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 /** Names for the rules we ship. Kept here rather than sent by the API so
@@ -912,11 +912,26 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
 
   return (
     <>
+      {/* One card for matching, not one per set. The two sets are real —
+          separate ordered lists, matched against different kinds of
+          promise — but a whole card each, with its own frame, heading and
+          button, is a lot of furniture for a list that is often one rule
+          long. They are sections of the same thing. */}
+      <SectionCard>
+        <div className="px-4 sm:px-5 py-4 border-b border-border">
+          <p className="text-sm font-semibold text-foreground">
+            {t('reconciliation.matchingTitle')}
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {t('reconciliation.matchingHint')}
+          </p>
+        </div>
+
       {nodes.map((group) => (
-        <SectionCard key={group.node}>
-          <div className="px-4 sm:px-5 py-4 border-b border-border flex flex-wrap items-start justify-between gap-2">
+        <div key={group.node}>
+          <div className="px-4 sm:px-5 py-2.5 bg-muted/40 border-b border-border flex flex-wrap items-center justify-between gap-2">
             <div>
-              <p className="text-sm font-semibold text-foreground">
+              <p className="text-xs font-semibold text-foreground">
                 {t(NODE_TITLE[group.node] ?? group.node)}
                 {!group.active && (
                   <span className="ml-2 text-[10px] font-semibold bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full">
@@ -924,18 +939,18 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
                   </span>
                 )}
               </p>
-              <p className="text-xs text-muted-foreground mt-0.5">
+              <p className="text-[11px] text-muted-foreground mt-0.5">
                 {t(NODE_HINT[group.node] ?? '')}
               </p>
             </div>
             {canWrite && (
               <Button
                 size="sm"
-                variant="outline"
-                className="gap-1.5 h-8"
+                variant="ghost"
+                className="gap-1.5 h-7 text-xs"
                 onClick={() => setEditing({ node: group.node, rule: null })}
               >
-                <Plus size={13} />
+                <Plus size={12} />
                 <span className="hidden sm:inline">{t('reconciliation.add')}</span>
               </Button>
             )}
@@ -1023,12 +1038,27 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
                       className="flex items-center gap-1 shrink-0"
                       onClick={(e) => e.stopPropagation()}
                     >
+                      {/* An icon, not the word "Turn off". The row beside
+                          this one — a categorization rule — ends in an
+                          icon, and mixing a text button with an icon
+                          button in the same position made two lists of
+                          rules read as two unrelated features. */}
                       <button
-                        className="px-2 py-1 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
+                        className={cn(
+                          'p-1.5 rounded-md transition-colors hover:bg-background',
+                          rule.enabled
+                            ? 'text-emerald-600 hover:text-emerald-700'
+                            : 'text-muted-foreground hover:text-foreground',
+                        )}
+                        title={t(
+                          rule.enabled
+                            ? 'reconciliation.turnOff'
+                            : 'reconciliation.turnOn',
+                        )}
                         onClick={() => toggle.mutate({ node: group.node, rule })}
                         disabled={toggle.isPending}
                       >
-                        {t(rule.enabled ? 'reconciliation.turnOff' : 'reconciliation.turnOn')}
+                        <Power size={13} />
                       </button>
                       {rule.customised && (
                         <button
@@ -1054,8 +1084,9 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
               </div>
             ))}
           </div>
-        </SectionCard>
+        </div>
       ))}
+      </SectionCard>
 
       <RuleEditor
         open={editing !== null}

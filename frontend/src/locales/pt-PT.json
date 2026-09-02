@@ -2383,6 +2383,8 @@
       "empty": "Nada ainda. Isto preenche-se à medida que a conciliação liga, pergunta e é respondida."
     },
     "moveUp": "Tentar esta antes",
-    "moveDown": "Tentar esta depois"
+    "moveDown": "Tentar esta depois",
+    "matchingTitle": "Regras de conciliação",
+    "matchingHint": "Como o dinheiro que chega é ligado ao que liquida. Cada conjunto é testado por ordem — ganha a primeira regra que corresponder."
   }
 }

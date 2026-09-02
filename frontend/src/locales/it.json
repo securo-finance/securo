@@ -2383,6 +2383,8 @@
       "empty": "Ancora niente. Si riempie man mano che la riconciliazione collega, chiede e riceve risposta."
     },
     "moveUp": "Provare questa prima",
-    "moveDown": "Provare questa dopo"
+    "moveDown": "Provare questa dopo",
+    "matchingTitle": "Regole di riconciliazione",
+    "matchingHint": "Come il denaro in entrata viene collegato a ciò che salda. Ogni insieme è provato in ordine: vince la prima regola che corrisponde."
   }
 }

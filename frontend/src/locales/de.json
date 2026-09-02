@@ -2383,6 +2383,8 @@
       "empty": "Noch nichts. Das füllt sich, während der Abgleich verknüpft, fragt und beantwortet wird."
     },
     "moveUp": "Diese früher prüfen",
-    "moveDown": "Diese später prüfen"
+    "moveDown": "Diese später prüfen",
+    "matchingTitle": "Abgleichregeln",
+    "matchingHint": "Wie eingehendes Geld dem zugeordnet wird, was es begleicht. Jeder Satz wird der Reihe nach geprüft — die erste passende Regel gewinnt."
   }
 }
