@@ -157,6 +157,47 @@ def counts_as_pnl():
     )
 
 
+def counts_on_bill():
+    """SQL filter: True when a transaction belongs on a credit-card bill.
+
+    A bill total is an *amount owed*, not a reporting figure, and the two
+    answer to different authorities: the bill has to match what the bank
+    says you owe, while P/L answers to how the user chose to categorize
+    their spending. So the card's cycle total cannot reuse
+    `counts_as_pnl` — every judgment that helper makes about what counts
+    as *spending* is a judgment the bank never made.
+
+    Kept out, because they are genuinely not charges on this bill:
+      - paired transfers (the bill *payment* is not a purchase),
+      - settlement debits (a repayment of a share already booked),
+      - rows the user flagged `is_ignored`, on the transaction or its
+        category — those leave the account balance too, so dropping them
+        from the bill keeps the card's two numbers telling one story.
+
+    Kept in, and this is the whole point of the helper:
+      - `treat_as_transfer` categories. Buying an investment with the
+        card still lands on the statement; the category says how to
+        report the purchase, not whether the bank billed for it.
+
+    Deliberately spelled out rather than defined as "`counts_as_pnl`
+    minus a clause": a filter for what a *report* excludes will keep
+    growing as the product learns new ways to say "don't count this",
+    and a bill total must not inherit those. Every clause here is one
+    somebody chose for the bill.
+    """
+    return and_(
+        Transaction.transfer_pair_id.is_(None),
+        Transaction.is_ignored.is_(False),
+        ~and_(Transaction.source == "settlement", Transaction.type == "debit"),
+        or_(
+            Transaction.category_id.is_(None),
+            Transaction.category_id.not_in(
+                select(Category.id).where(Category.is_ignored.is_(True))
+            ),
+        ),
+    )
+
+
 def counts_as_user_pnl():
     """SQL filter for *user-level* P/L (dashboard, reports, budgets).
 
