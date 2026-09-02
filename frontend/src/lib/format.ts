@@ -64,6 +64,7 @@ const CURRENCY_LOCALE: Record<string, string> = {
   VND: 'vi-VN',
   SGD: 'en-SG',
   AZN: 'az-AZ',
+  TRY: 'tr-TR',
 }
 
 /**

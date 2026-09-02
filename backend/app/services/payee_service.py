@@ -260,10 +260,38 @@ async def update_payee(
     return payee
 
 
+async def _invoice_count(session: AsyncSession, payee_ids: list[uuid.UUID]) -> int:
+    """How many invoices name any of these counterparties.
+
+    Reads the model rather than calling the invoicing service: this is
+    the same layer, and a service-to-service call here would make the
+    payee module depend on a module most workspaces never enable.
+    """
+    from app.models.invoice import Invoice
+
+    result = await session.execute(
+        select(func.count())
+        .select_from(Invoice)
+        .where(Invoice.payee_id.in_(payee_ids))
+    )
+    return int(result.scalar_one())
+
+
 async def delete_payee(session: AsyncSession, payee_id: uuid.UUID, workspace_id: uuid.UUID) -> bool:
     payee = await get_payee(session, payee_id, workspace_id)
     if not payee:
         return False
+
+    # Invoices hold this payee under a RESTRICT foreign key, deliberately:
+    # deleting a client must never silently delete the record of money
+    # they owed. Refuse in words rather than letting the constraint
+    # surface as a 500, and point at the way out — merging keeps the
+    # history, which is what someone deleting a duplicate actually wants.
+    invoiced = await _invoice_count(session, [payee_id])
+    if invoiced:
+        raise ValueError(
+            f"payee_has_invoices:{invoiced}"
+        )
 
     # Null out transaction references
     await session.execute(
@@ -291,6 +319,10 @@ async def bulk_delete_payees(session: AsyncSession, workspace_id: uuid.UUID, pay
 
     if not valid_ids:
         return 0
+
+    invoiced = await _invoice_count(session, valid_ids)
+    if invoiced:
+        raise ValueError(f"payee_has_invoices:{invoiced}")
 
     # Null out transaction references
     await session.execute(
@@ -340,6 +372,22 @@ async def merge_payees(
         .values(payee_id=target_id)
     )
     reassigned = cast(CursorResult, result).rowcount
+
+    # Invoices follow the merge for the same reason transactions do: the
+    # two rows were one counterparty all along, and leaving the invoices
+    # behind would both strand them and trip the RESTRICT foreign key on
+    # the delete below.
+    #
+    # The issued document is untouched by this. Its snapshot froze the
+    # client's name and documents at issuance, so a merge changes who the
+    # invoice is *linked to* without rewriting what the client received.
+    from app.models.invoice import Invoice
+
+    await session.execute(
+        update(Invoice)
+        .where(Invoice.payee_id.in_(source_ids))
+        .values(payee_id=target_id)
+    )
 
     # Update mappings: point source mappings to target
     for source_id in source_ids:

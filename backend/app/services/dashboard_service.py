@@ -411,17 +411,18 @@ async def get_summary(
         Transaction.transfer_pair_id.is_(None),
         *acct_filter,
     ]
-    pending_categorization = await session.scalar(
-        select(func.count())
+    pending_categorization_result = await session.execute(
+        select(
+            func.count(),
+            func.coalesce(func.sum(func.abs(Transaction.amount)), 0),
+        )
         .select_from(Transaction)
         .where(*pending_cat_filters)
-    ) or 0
-
-    pending_categorization_amount = abs(float(await session.scalar(
-        select(func.coalesce(func.sum(func.abs(Transaction.amount)), 0))
-        .select_from(Transaction)
-        .where(*pending_cat_filters)
-    ) or 0))
+    )
+    pending_categorization, pending_categorization_amount = (
+        pending_categorization_result.one()
+    )
+    pending_categorization_amount = abs(float(pending_categorization_amount or 0))
 
     # Get user's primary currency (user already loaded above for reporting mode)
     primary_currency = user.primary_currency if user else get_settings().default_currency
@@ -1322,11 +1323,82 @@ async def _total_balance_by_currency(
 ) -> dict[str, float]:
     """Get total balance across all open accounts at a date, grouped by currency."""
     accounts = await _get_open_accounts(session, workspace_id, account_ids)
+    if not accounts:
+        return {}
+
+    today = date.today()
+    balance_cutoff = min(cutoff, today)
+    connected = [account for account in accounts if account.connection_id]
+    manual = [account for account in accounts if not account.connection_id]
+
+    # Resolve every account of the same kind in one aggregate instead of one
+    # query per account. This matters especially for balance-history, which
+    # asks for two historical cutoffs and used to multiply the round-trips by
+    # the number of accounts.
+    effective = case(
+        (Transaction.currency == Account.currency, Transaction.amount),
+        else_=func.coalesce(Transaction.amount_primary, Transaction.amount),
+    )
+    signed = case(
+        (Transaction.type == "credit", effective),
+        else_=-effective,
+    )
+
+    async def grouped_sums(account_ids: list[uuid.UUID], *filters) -> dict[uuid.UUID, float]:
+        if not account_ids:
+            return {}
+        result = await session.execute(
+            select(Transaction.account_id, func.coalesce(func.sum(signed), 0))
+            .join(Account, Transaction.account_id == Account.id)
+            .outerjoin(Category, Transaction.category_id == Category.id)
+            .where(
+                Transaction.account_id.in_(account_ids),
+                Transaction.is_ignored == False,
+                *filters,
+                or_(
+                    Transaction.category_id.is_(None),
+                    Category.is_ignored == False,
+                ),
+            )
+            .group_by(Transaction.account_id)
+        )
+        return {row[0]: float(row[1] or 0) for row in result.all()}
+
+    manual_sums = await grouped_sums(
+        [account.id for account in manual],
+        Transaction.date <= balance_cutoff,
+        *([] if include_pending else [Transaction.status == "posted"]),
+    )
+
+    connected_deltas: dict[uuid.UUID, float] = {}
+    connected_pending: dict[uuid.UUID, float] = {}
+    if connected and cutoff < today:
+        connected_ids = [account.id for account in connected]
+        connected_deltas = await grouped_sums(
+            connected_ids,
+            Transaction.date > cutoff,
+            Transaction.date <= today,
+            *([] if include_pending else [Transaction.status == "posted"]),
+        )
+        if not include_pending:
+            connected_pending = await grouped_sums(
+                connected_ids,
+                Transaction.date <= today,
+                Transaction.status == "pending",
+            )
+
     totals: dict[str, float] = {}
     for account in accounts:
-        bal = await _account_balance_at(
-            session, account, cutoff, include_pending=include_pending
-        )
+        if account.connection_id:
+            bal = float(account.balance)
+            if account.type == "credit_card":
+                bal = -bal
+            if cutoff < today:
+                bal -= connected_deltas.get(account.id, 0.0)
+                if not include_pending:
+                    bal -= connected_pending.get(account.id, 0.0)
+        else:
+            bal = manual_sums.get(account.id, 0.0)
         totals[account.currency] = totals.get(account.currency, 0) + bal
     return totals
 
