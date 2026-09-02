@@ -502,8 +502,10 @@ async def test_lookup_bank_info_returns_cached_value_without_http_call():
         return_value='{"name": "Banco XP S.A.", "logo_url": "https://x/348.svg"}'
     )
 
-    with patch("app.core.redis.get_redis", new=AsyncMock(return_value=fake_redis)), \
+    with patch("app.providers.pluggy.get_settings") as mock_settings, \
+         patch("app.core.redis.get_redis", new=AsyncMock(return_value=fake_redis)), \
          patch("app.providers.pluggy.httpx.AsyncClient") as fake_client_cls:
+        mock_settings.return_value.brasilapi_institution_lookup_enabled = True
         result = await _lookup_bank_info("348")
 
     assert result == {"name": "Banco XP S.A.", "logo_url": "https://x/348.svg"}
@@ -524,8 +526,26 @@ async def test_lookup_bank_info_is_none_and_non_fatal_on_http_failure():
     fake_client.__aenter__ = AsyncMock(return_value=fake_client)
     fake_client.__aexit__ = AsyncMock(return_value=None)
 
-    with patch("app.core.redis.get_redis", new=AsyncMock(return_value=fake_redis)), \
+    with patch("app.providers.pluggy.get_settings") as mock_settings, \
+         patch("app.core.redis.get_redis", new=AsyncMock(return_value=fake_redis)), \
          patch("app.providers.pluggy.httpx.AsyncClient", return_value=fake_client):
+        mock_settings.return_value.brasilapi_institution_lookup_enabled = True
         result = await _lookup_bank_info("348")
 
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_lookup_bank_info_disabled_by_default_skips_http_call():
+    """No BrasilAPI call — not even a cache read — until a deploy opts in."""
+    from app.providers.pluggy import _lookup_bank_info
+
+    with patch("app.providers.pluggy.get_settings") as mock_settings, \
+         patch("app.core.redis.get_redis") as fake_get_redis, \
+         patch("app.providers.pluggy.httpx.AsyncClient") as fake_client_cls:
+        mock_settings.return_value.brasilapi_institution_lookup_enabled = False
+        result = await _lookup_bank_info("348")
+
+    assert result is None
+    fake_get_redis.assert_not_called()
+    fake_client_cls.assert_not_called()

@@ -80,7 +80,14 @@ async def _lookup_bank_info(compe: str) -> Optional[dict]:
     change. A lookup failure (network, cache, anything) must never break
     sync — it just means the affected accounts fall back to the connection's
     own institution fields, same as any Pluggy connection without this hint.
+
+    Gated by ``brasilapi_institution_lookup_enabled``: this is the only place
+    a COMPE code leaves the server, so deploys must opt in before any call
+    to BrasilAPI is made.
     """
+    if not get_settings().brasilapi_institution_lookup_enabled:
+        return None
+
     from app.core.redis import get_redis
 
     cache_key = f"pluggy:bank_info:{compe}"
