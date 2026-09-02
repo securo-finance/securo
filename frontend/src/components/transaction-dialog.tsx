@@ -507,6 +507,9 @@ function TransactionForm({
     el.style.height = `${el.scrollHeight + border}px`
   }, [description, isSynced])
   const [isIgnored, setIsIgnored] = useState(seed?.is_ignored ?? false)
+  const [excludeFromReports, setExcludeFromReports] = useState(
+    seed?.exclude_from_pnl ?? false,
+  )
   const [togglingIgnore, setTogglingIgnore] = useState(false)
   const [recurringLinked, setRecurringLinked] = useState(seed?.recurring_transaction_id != null)
   const [unlinkingRecurring, setUnlinkingRecurring] = useState(false)
@@ -729,12 +732,16 @@ function TransactionForm({
           : hadInitialSplits
             ? { splits: { share_type: 'equal', splits: [] } }
             : {}
+        const pnlExclusionPayload = transaction
+          ? { exclude_from_pnl: excludeFromReports }
+          : {}
         const txData = isSynced
           ? {
               category_id: categoryId || null,
               payee_id: payeeId || null,
               notes: notes.trim() || null,
               is_ignored: isIgnored,
+              ...pnlExclusionPayload,
               ...overridePayload,
               ...splitsPayload,
             } as TransactionEditPayload
@@ -749,6 +756,7 @@ function TransactionForm({
               account_id: accountId || undefined,
               notes: notes.trim() || null,
               is_ignored: isIgnored,
+              ...pnlExclusionPayload,
               // Creation defaults to "posted" server-side; the user can
               // override to "pending" right in the form (date & status row).
               status,
@@ -1088,6 +1096,25 @@ function TransactionForm({
           placeholder={t('transactions.notesPlaceholder')}
         />
       </div>
+
+      {transaction && (
+        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 rounded border-border accent-primary"
+            checked={excludeFromReports}
+            onChange={(event) => setExcludeFromReports(event.target.checked)}
+          />
+          <span>
+            <span className="block text-sm font-medium">
+              {t('transactions.excludeFromReports')}
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              {t('transactions.excludeFromReportsHint')}
+            </span>
+          </span>
+        </label>
+      )}
 
       {/* Manual bill-cycle override (issue #92). CC accounts only. Empty
           input = use auto bucketing (Pluggy bill_id when available, cycle

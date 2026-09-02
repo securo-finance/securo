@@ -3,9 +3,10 @@ import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery } from '@tanstack/react-query'
 import { transactions as transactionsApi, dashboard, admin } from '@/lib/api'
-import { AlertTriangle, Info, Paperclip, X } from 'lucide-react'
+import { AlertTriangle, Clock, Info, Paperclip, X } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuth } from '@/contexts/auth-context'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import type { Transaction } from '@/types'
@@ -35,6 +36,7 @@ type DisplayItem = {
   categoryName: string | null
   categoryColor: string | null
   isProjected: boolean
+  isPending: boolean
   attachmentCount: number
   transaction: Transaction | null
 }
@@ -106,6 +108,7 @@ export function TransactionDrillDown({
         categoryName: tx.category?.name ?? null,
         categoryColor: tx.category?.color ?? null,
         isProjected: false,
+        isPending: tx.status === 'pending',
         attachmentCount: tx.attachment_count ?? 0,
         transaction: tx,
       })
@@ -131,6 +134,7 @@ export function TransactionDrillDown({
         categoryName: pt.category_name,
         categoryColor: pt.category_color ?? null,
         isProjected: true,
+        isPending: false,
         attachmentCount: 0,
         transaction: null,
       })
@@ -172,15 +176,25 @@ export function TransactionDrillDown({
   // amount_primary; if it's missing we can't convert, so skip the row
   // instead of adding a raw foreign amount as if it were primary. This
   // matches how get_summary computes monthly_*_primary on the backend.
-  const absTotal = displayItems.reduce((sum, item) => {
-    if (item.currency === userCurrency) {
-      return sum + Math.abs(item.amount)
-    }
-    if (item.amountPrimary != null) {
-      return sum + Math.abs(item.amountPrimary)
-    }
-    return sum
-  }, 0)
+  const { absTotal, postedTotal, pendingTotal } = displayItems.reduce(
+    (totals, item) => {
+      // For foreign-currency rows, skip missing conversions rather than
+      // treating the raw amount as the user's primary currency.
+      const amount = item.currency === userCurrency
+        ? Math.abs(item.amount)
+        : item.amountPrimary != null
+          ? Math.abs(item.amountPrimary)
+          : 0
+
+      totals.absTotal += amount
+      if (item.isPending) totals.pendingTotal += amount
+      if (item.transaction?.status === 'posted') totals.postedTotal += amount
+      return totals
+    },
+    { absTotal: 0, postedTotal: 0, pendingTotal: 0 },
+  )
+
+  const hasPendingTransactions = displayItems.some((item) => item.isPending)
 
   return (
     <>
@@ -254,6 +268,16 @@ export function TransactionDrillDown({
                       {item.isProjected && (
                         <ProjectedTransactionBadge />
                       )}
+                      {item.isPending && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="shrink-0 inline-flex items-center justify-center rounded-full border border-amber-200 bg-amber-50 p-0.5 dark:border-amber-500/30 dark:bg-amber-500/10">
+                              <Clock size={12} className="text-amber-500" role="img" aria-label={t('transactions.pending')} />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>{t('transactions.pending')}</TooltipContent>
+                        </Tooltip>
+                      )}
                       {item.attachmentCount > 0 && (
                         <Paperclip size={12} className="text-muted-foreground shrink-0" />
                       )}
@@ -292,17 +316,34 @@ export function TransactionDrillDown({
         {/* Footer */}
         {displayItems.length > 0 && (
           <div className="px-5 py-3 border-t border-border bg-muted/50 shrink-0">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">
-                {t('dashboard.drillDownTotal', {
-                  count: displayItems.length,
-                  total: mask(formatCurrency(absTotal, userCurrency, locale)),
-                })}
-              </span>
-              <span className="text-sm font-bold tabular-nums text-foreground">
-                {mask(formatCurrency(absTotal, userCurrency, locale))}
-              </span>
-            </div>
+            {hasPendingTransactions ? (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
+                  <span>{t('dashboard.drillDownSettledTotal')}</span>
+                  <span className="tabular-nums text-foreground">{mask(formatCurrency(postedTotal, userCurrency, locale))}</span>
+                </div>
+                <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
+                  <span>{t('dashboard.drillDownPendingTotal')}</span>
+                  <span className="tabular-nums text-foreground">{mask(formatCurrency(pendingTotal, userCurrency, locale))}</span>
+                </div>
+                <div className="flex items-center justify-between gap-4 border-t border-border pt-2 mt-2">
+                  <span className="text-xs font-medium text-muted-foreground">{t('dashboard.drillDownShownTotal')}</span>
+                  <span className="text-sm font-bold tabular-nums text-foreground">{mask(formatCurrency(postedTotal + pendingTotal, userCurrency, locale))}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">
+                  {t('dashboard.drillDownTotal', {
+                    count: displayItems.length,
+                    total: mask(formatCurrency(absTotal, userCurrency, locale)),
+                  })}
+                </span>
+                <span className="text-sm font-bold tabular-nums text-foreground">
+                  {mask(formatCurrency(absTotal, userCurrency, locale))}
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>

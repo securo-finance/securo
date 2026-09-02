@@ -18,8 +18,8 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision = "086"
-down_revision = "085"
+revision = "087"
+down_revision = "086"
 branch_labels = None
 depends_on = None
 

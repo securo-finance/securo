@@ -17,8 +17,8 @@ means exactly what it meant yesterday.
 import sqlalchemy as sa
 from alembic import op
 
-revision = "088"
-down_revision = "087"
+revision = "089"
+down_revision = "088"
 branch_labels = None
 depends_on = None
 
