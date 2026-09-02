@@ -9,6 +9,7 @@ const baseAsset = {
   sell_date: null,
   sell_price: null,
   total_invested: null,
+  value_count: 0,
 }
 
 describe('getAssetProfit', () => {
@@ -17,6 +18,7 @@ describe('getAssetProfit', () => {
       ...baseAsset,
       gain_loss: 446.45,
       purchase_price: 3679,
+      value_count: 1,
     })).toEqual({
       amount: 446.45,
       percentage: (446.45 / 3679) * 100,
@@ -29,7 +31,16 @@ describe('getAssetProfit', () => {
       gain_loss: -50,
       purchase_price: 950,
       total_invested: 1000,
+      value_count: 1,
     })).toEqual({ amount: -50, percentage: -5 })
+  })
+
+  it('hides fallback zero profit until a manual valuation exists', () => {
+    expect(getAssetProfit({
+      ...baseAsset,
+      gain_loss: 0,
+      purchase_price: 1000,
+    })).toBeNull()
   })
 
   it('shows the cumulative realized gain for a sold ledger asset', () => {
