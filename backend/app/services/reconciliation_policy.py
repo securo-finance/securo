@@ -2,8 +2,8 @@
 
 Two nodes ship: one for money arriving against an invoice, one for money
 moving against a recurring bill. They are separate documents because
-their scopes genuinely differ — an invoice has no account and is settled
-N:N, a recurring bill is anchored to one account and settled once — and
+their scopes genuinely differ (an invoice has no account and is settled
+N:N, a recurring bill is anchored to one account and settled once), and
 because a workspace should be able to loosen one without touching the
 other.
 
@@ -16,7 +16,7 @@ product, and the UI renders shipped ∪ override.
 Nothing here is surfaced yet. It is written as a document from the first
 line because the direction for automations is a node graph, and a
 threshold that starts life as a constant inside an engine has to be
-excavated later — see `recurring_match_service`, whose numbers were
+excavated later; see `recurring_match_service`, whose numbers were
 excellent and unreachable.
 """
 from __future__ import annotations
@@ -39,7 +39,7 @@ POLICY_VERSION = 1
 #:
 #: The withholding strategy is a `link` rather than a `suggest`, and that
 #: is the most consequential line in this file. A R$3.000 invoice paid by
-#: a Brazilian company lands as R$2.955 or R$2.860,50 — withholding is
+#: a Brazilian company lands as R$2.955 or R$2.860,50: withholding is
 #: 1.5–11%, not cents. Sending those to a confirmation queue would send
 #: *the best clients* to the queue, and the accountant interview is
 #: explicit that import-then-make-the-user-confirm is what killed
@@ -102,7 +102,7 @@ MATCH_INVOICE: dict[str, Any] = {
             "outcome": "link",
             # Only when money arrives. Backwards, an exact amount from a
             # payer we cannot name is not enough: that money already had a
-            # life of its own — a refund, a transfer, another job — and
+            # life of its own (a refund, a transfer, another job), and
             # claiming it for a document written afterwards is a guess.
             "trigger": "money_arrives",
             "when": {
@@ -140,8 +140,8 @@ MATCH_INVOICE: dict[str, Any] = {
             "id": "same_client_part_payment",
             "enabled": True,
             # A suggestion, not a link. Money that covers part of an
-            # invoice is genuinely ambiguous — an instalment, a client
-            # paying what they had, or a different job entirely — and the
+            # invoice is genuinely ambiguous (an instalment, a client
+            # paying what they had, or a different job entirely), and the
             # difference matters enough to ask. Promoting it to a link is
             # one click for somebody whose clients always pay in parts.
             "outcome": "suggest",
@@ -176,7 +176,6 @@ MATCH_INVOICE: dict[str, Any] = {
                 "amount": {"match": "tolerance", "percent": "2"},
                 "date": {"before_days": 10, "after_days": 45},
                 "description_similarity": {"min": "0.6"},
-                "currency": {"conversion": "allow"},
             },
         },
     ],
@@ -190,7 +189,7 @@ MATCH_INVOICE: dict[str, Any] = {
 #: lifted out of the code unchanged: same account, same direction, exact
 #: amount, 3 days before / 5 after (2/2 weekly), description similarity
 #: at 0.6, and only the exact tier auto-links. Reproducing today's
-#: behaviour exactly is the point — a personal workspace should notice
+#: behaviour exactly is the point: a personal workspace should notice
 #: nothing on the day this lands, and gain the ability to change it on
 #: the day the automations screen ships.
 MATCH_RECURRING: dict[str, Any] = {
@@ -233,7 +232,7 @@ MATCH_RECURRING: dict[str, Any] = {
 #:
 #: Separate from `match_recurring` because its window genuinely differs:
 #: five days either side, the same on both, regardless of how often the
-#: bill repeats. That is not an oversight in the code this replaces — the
+#: bill repeats. That is not an oversight in the code this replaces: the
 #: placeholder was written *for* a specific occurrence, so there is no
 #: neighbouring occurrence to be confused with, and the window can afford
 #: to be symmetric where the bill-level one cannot.
@@ -280,8 +279,8 @@ _DEFAULTS: dict[str, dict[str, Any]] = {
 def default_policy(node: str) -> dict[str, Any]:
     """The shipped document for one node.
 
-    Deep-copied, because callers adjust it per movement — the recurring
-    window narrows for a weekly bill — and a caller must never be able to
+    Deep-copied, because callers adjust it per movement (the recurring
+    window narrows for a weekly bill), and a caller must never be able to
     edit the defaults for everyone else in the process.
     """
     try:
@@ -305,7 +304,7 @@ def withholding_ratios(jurisdiction: str | None) -> list[Decimal]:
 
     Placeholder until the jurisdiction pack carries these: the ratio
     strategy is disabled in practice while this returns nothing, which is
-    the honest state — a wrong ratio would auto-link a wrong amount, and
+    the honest state: a wrong ratio would auto-link a wrong amount, and
     that is worse than asking.
     """
     return []

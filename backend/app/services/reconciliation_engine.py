@@ -2,8 +2,8 @@
 
 **This module decides and never writes.** It touches no session, loads
 nothing, and returns a decision plus the reasoning that produced it.
-Applying that decision — creating an allocation, or upgrading a
-placeholder in place — belongs to the caller, and is deliberately a
+Applying that decision (creating an allocation, or upgrading a
+placeholder in place) belongs to the caller, and is deliberately a
 separate step: a function that mutates cannot be dry-run, and "show me
 what would happen before it happens" is the whole point of putting this
 in front of a person.
@@ -13,8 +13,8 @@ in front of a person.
 An invoice and a scheduled recurring occurrence are the same thing seen
 from here: **a promise that money will move, waiting for the movement
 that confirms it.** A workspace that never issues an invoice still has
-promises — the rent leaving on the 5th, the retainer arriving on the
-20th — and they want matching for exactly the same reason.
+promises (the rent leaving on the 5th, the retainer arriving on the
+20th), and they want matching for exactly the same reason.
 
 So both arrive here as an `Expectation` and are scored by the same
 signals. What they do *not* share is what happens afterwards, and that
@@ -60,7 +60,7 @@ ExpectationKind = Literal["invoice", "recurring"]
 #:   - `money_arrives`: a payment lands and we look for the promise it
 #:     answers. The promise came first and was waiting.
 #:   - `invoice_issued`: a document is written and we look back at money
-#:     that arrived before it existed — the client who pays and lets the
+#:     that arrived before it existed: the client who pays and lets the
 #:     nota follow.
 #:
 #: The evidence is weaker in the second: money that was already sitting
@@ -88,13 +88,13 @@ class Reason(str, Enum):
     ALREADY_SETTLED = "nothing_left_to_settle"
     AMBIGUOUS = "several_candidates_matched"
     SOURCE_IGNORED = "transaction_source_ignored"
-    #: The rule does not apply to this money at all — wrong account, wrong
+    #: The rule does not apply to this money at all: wrong account, wrong
     #: currency, outside the amount band, text that does not match. Kept
     #: apart from the comparison reasons above because it answers a
     #: different question: not "why did this pair fail" but "why was this
     #: rule not even consulted".
     OUT_OF_SCOPE = "rule_does_not_apply_here"
-    #: The rule runs at the other moment — when money arrives rather than
+    #: The rule runs at the other moment: when money arrives rather than
     #: when a document is written, or the reverse.
     WRONG_MOMENT = "rule_runs_at_another_moment"
     #: More than one combination of promises adds up to this payment, and
@@ -111,8 +111,8 @@ class Movement:
 
     Built from a `Transaction` by the caller. A value object rather than
     the ORM row so this module stays pure and trivially testable, and so
-    a future intake that is not a `Transaction` — a gateway payout line,
-    say — can be scored without pretending to be one.
+    a future intake that is not a `Transaction` (a gateway payout line,
+    say) can be scored without pretending to be one.
     """
 
     amount: Decimal
@@ -124,7 +124,7 @@ class Movement:
     payee_id: Optional[uuid.UUID] = None
     account_id: Optional[uuid.UUID] = None
     #: `sync`, `ofx`, `csv`, `manual`, `recurring`. A policy may ignore
-    #: some — the receivable node ignores `recurring`, because a
+    #: some: the receivable node ignores `recurring`, because a
     #: generated placeholder is a promise and not the money itself.
     source: Optional[str] = None
 
@@ -162,8 +162,8 @@ class Settlement:
     Exists because a payment does not always answer exactly one thing. A
     client clearing three of their own invoices in a single transfer is
     ordinary, and so is a commercial arrangement that settles a month's
-    worth at once. The ledger has always been able to record that —
-    allocations are many-to-many with an amount on each — but a decision
+    worth at once. The ledger has always been able to record that
+    (allocations are many-to-many with an amount on each), but a decision
     that could only ever name one promise could never propose it.
     """
 
@@ -197,19 +197,19 @@ class Decision:
     settlements: list[Settlement] = field(default_factory=list)
     #: The first settlement, spelled out, because one promise is the
     #: overwhelming majority and every caller written before sets existed
-    #: still reads these. Never a *different* answer from `settlements` —
+    #: still reads these. Never a *different* answer from `settlements`:
     #: its head.
     expectation: Optional[Expectation] = None
     strategy: Optional[str] = None
     amount: Optional[Decimal] = None
     #: Set when a strategy matched a known fraction rather than the whole
-    #: — Brazilian withholding is the reason this exists. The caller
+    #: Brazilian withholding is the reason this exists. The caller
     #: books the difference; the engine only names it.
     difference: Optional[Decimal] = None
     difference_kind: Optional[str] = None
     #: How well the winner scored, 1.0 when the strategy carries no
     #: graded signal. A caller holding several movements for one
-    #: expectation ranks them by this — the recurring matcher does, and
+    #: expectation ranks them by this: the recurring matcher does, and
     #: has always taken the better-matching charge rather than refusing
     #: both. Exposed rather than dug out of the trace because it is also
     #: what a suggestion has to show a person to be worth showing. Zero
@@ -222,7 +222,7 @@ class Decision:
 def _similar(a: Optional[str], b: Optional[str]) -> float:
     """Description similarity, 0..1.
 
-    Token overlap over the longer side — the measure
+    Token overlap over the longer side: the measure
     `recurring_match_service` has run in production since issue #116, and
     the same bar the bank-sync fuzzy merge tunes against. Reproduced
     rather than improved on purpose: this lands under thousands of
@@ -232,7 +232,7 @@ def _similar(a: Optional[str], b: Optional[str]) -> float:
 
     It is deliberately unforgiving. "NETFLIX.COM" against "NETFLIX
     ASSINATURA" scores zero, because a bank string and a hand-typed one
-    rarely share tokens exactly — which is why the exact-amount signal
+    rarely share tokens exactly, which is why the exact-amount signal
     carries the weight and this only guards against two bills of the same
     value on one account. A looser measure belongs in the policy as a
     knob, next to the threshold, not baked in here.
@@ -270,8 +270,8 @@ def _amount_verdict(
 
     if match == "partial":
         # Money that covers *part* of what is owed. Two transactions
-        # settling one invoice is ordinary — an instalment, a client
-        # paying what they had — and the ledger has always supported it,
+        # settling one invoice is ordinary (an instalment, a client
+        # paying what they had), and the ledger has always supported it,
         # but without this mode nothing could ever propose the first half:
         # every other mode compares against the whole outstanding balance
         # and a half is simply not it.
@@ -291,7 +291,7 @@ def _amount_verdict(
         ceiling = Decimal(str(rule.get("max_ratio", "1")))
         if ceiling < 1 and moved > (want * ceiling):
             # Money that is *almost* the whole thing is not an instalment
-            # either — it is a fee, a withholding, a rounding. Calling it
+            # either: it is a fee, a withholding, a rounding. Calling it
             # a part payment would put a confident wrong word on the
             # queue, and the tolerance rules are the ones written for it.
             return False, None, None
@@ -325,7 +325,7 @@ def _within_window(
     expectation has both. **Late is late by reference to the due date;
     early is early by reference to the day the promise was made.** An
     invoice due on the 30th and issued on the 1st is not "29 days paid
-    early" when the client pays on the 2nd — it is paid the day after it
+    early" when the client pays on the 2nd: it is paid the day after it
     was issued, which is the best case there is. Collapsing both onto the
     due date is what would push every deposit and every pay-then-invoice
     into the rejected pile. A recurring occurrence has no separate issue
@@ -357,7 +357,7 @@ def _combinations_that_add_up(
 ) -> list[list[Expectation]]:
     """Which groups of promises this payment could be covering.
 
-    Every group that fits, not the first one found — because the number of
+    Every group that fits, not the first one found, because the number of
     answers *is* the finding. One combination is a match; two are a
     question, and picking the first would be inventing certainty exactly
     where the single-promise path refuses to.
@@ -396,7 +396,7 @@ def _in_scope(
 
     Separate from the comparisons below, and worth naming as its own idea.
     Every other signal asks *how well the pair fits*; these ask *whether
-    the rule was written for money like this* — a specific account, a
+    the rule was written for money like this*: a specific account, a
     currency that is not the one you normally deal in, an amount above the
     threshold where you stop trusting an automatic match, a statement line
     whose text you recognise.
@@ -405,8 +405,8 @@ def _in_scope(
     and QuickBooks both let a rule name its bank account, its direction
     and a text fragment before any comparison happens. Without it a rule
     can only say "money like this matches invoices like that", and every
-    real request — *only for dollars*, *only above ten thousand*, *only
-    this client* — is inexpressible.
+    real request (*only for dollars*, *only above ten thousand*, *only
+    this client*) is inexpressible.
 
     All conditions must hold. Deliberately no ANY/OR mode, unlike the
     categorization rules: those pick a label and a wrong guess is a
@@ -431,8 +431,8 @@ def _in_scope(
         return False
     if currency.get("foreign"):
         # "Foreign" is relative to the workspace, so without knowing the
-        # base currency the honest answer is that the rule does not apply
-        # — never that everything is foreign.
+        # base currency the honest answer is that the rule does not apply,
+        # never that everything is foreign.
         if not base_currency or movement.currency == base_currency:
             return False
 
@@ -471,9 +471,8 @@ def _eligible_for_set(
         return False
     if candidate.amount <= Decimal("0"):
         return False
-    if rule.get("currency", {}).get("conversion", "reject") == "reject":
-        if candidate.currency != movement.currency:
-            return False
+    if candidate.currency != movement.currency:
+        return False
     if rule.get("counterparty") == "same_payee":
         if not movement.payee_id or movement.payee_id != candidate.payee_id:
             return False
@@ -495,7 +494,7 @@ def _evaluate_set(
     """One payment against several promises.
 
     Returns a decision when this rule has something to say, and nothing
-    when it does not — so the strategies after it still get their turn.
+    when it does not, so the strategies after it still get their turn.
 
     The whole design of the rest of this module carries over unchanged:
     **one answer is a match, more than one is a question.** Three invoices
@@ -591,7 +590,7 @@ def evaluate(
 ) -> Decision:
     """Which expectation this movement settles, if any.
 
-    Strategies are ordered and the first one to match wins — the same
+    Strategies are ordered and the first one to match wins; the same
     precedence `rules.priority` already has, so there is one mental model
     for "which rule applied" across the product.
 
@@ -599,8 +598,8 @@ def evaluate(
     consulted by rules that say "foreign": what counts as foreign is a
     fact about the workspace, not about the money.
 
-    `trigger` says which of the two moments this is — money arriving, or a
-    document being written — and rules that were not written for this
+    `trigger` says which of the two moments this is (money arriving, or a
+    document being written), and rules that were not written for this
     moment sit it out.
     """
     trace: list[Consideration] = []
@@ -618,7 +617,7 @@ def evaluate(
         # Written for the other moment. Looking back at money that was
         # already there is weaker evidence than answering a promise that
         # was waiting, so a rule is allowed to say it only trusts one of
-        # them — and saying so on the page beats the same restriction
+        # them, and saying so on the page beats the same restriction
         # hardcoded into whichever function does the looking.
         wanted = strategy.get("trigger", "money_arrives")
         if wanted != "both" and wanted != trigger:
@@ -670,11 +669,25 @@ def evaluate(
                 trace.append(note)
                 continue
 
-            if rule.get("currency", {}).get("conversion", "reject") == "reject":
-                if candidate.currency != movement.currency:
-                    note.rejected_by = Reason.CURRENCY
-                    trace.append(note)
-                    continue
+            # Always, and not a setting.
+            #
+            # There was a `currency.conversion` knob here whose "allow"
+            # value read as *convert and compare*. It did no such thing:
+            # this module is pure and holds no session, so it cannot look
+            # up a rate. All "allow" did was stop comparing currencies,
+            # which made a $3.000 payment an **exact** match for a €3.000
+            # invoice and settled the euros with the dollars.
+            #
+            # Matching across currencies needs three things this does not
+            # have: a rate, a date to take it on (the invoice's or the
+            # bank's, and they differ), and somewhere to put the leftover
+            # difference. The third is the same booking problem as
+            # withholding, which is why it belongs with deductions rather
+            # than here.
+            if candidate.currency != movement.currency:
+                note.rejected_by = Reason.CURRENCY
+                trace.append(note)
+                continue
 
             if rule.get("counterparty") == "same_payee":
                 if not movement.payee_id or movement.payee_id != candidate.payee_id:

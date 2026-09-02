@@ -3,16 +3,16 @@
 Pure tests, no database: the engine decides and never writes, which is
 what lets this file ask several hundred questions in a fraction of a
 second. Reconciliation binds money to debts, so the bar here is not "the
-happy path works" — it is that each condition is exercised on **both**
+happy path works": it is that each condition is exercised on **both**
 sides of its boundary, and that combinations behave the way the sentence
 on screen says they do.
 
 Organised by the question each condition answers:
 
-  - *Does this rule apply to money like this?* — account, payee list,
+  - *Does this rule apply to money like this?*: account, payee list,
     direction, currency, amount band, statement text. These decide
     whether the rule is consulted at all.
-  - *Does this money answer this promise?* — amount comparison, dates,
+  - *Does this money answer this promise?*: amount comparison, dates,
     description similarity, counterparty. These decide the pair.
 
 The distinction matters because the two fail differently, and a person
@@ -27,6 +27,7 @@ from decimal import Decimal
 import pytest
 
 from app.services import reconciliation_policy as policy_module
+from app.services import reconciliation_rule_service as rule_service
 from app.services.reconciliation_engine import (
     Expectation,
     Movement,
@@ -173,7 +174,7 @@ class TestPayeeScope:
     """"Only for these clients."
 
     Distinct from `counterparty: same_payee`, which asks whether the payer
-    is *the one on the invoice*. This names specific clients — the ask
+    is *the one on the invoice*. This names specific clients: the ask
     behind "this customer always pays short, never auto-link them".
     """
 
@@ -286,14 +287,28 @@ class TestCurrencyScope:
             == "unmatched"
         )
 
-    def test_scope_and_conversion_are_independent(self):
-        """Naming a currency says which money the rule is for; conversion
-        says whether the pair may disagree. A rule can do both."""
-        rule = with_scope(currency={"conversion": "allow", "in": ["USD"]})
-        decision = evaluate(
-            money(currency="USD"), [an_invoice(currency="BRL")], one_rule(rule)
+    def test_naming_a_currency_never_lets_the_pair_disagree(self):
+        """`in` says which money the rule looks at at all. It is not
+        permission for the two sides to be different money.
+
+        This test used to assert the opposite, because a
+        `conversion: allow` knob read as *convert and compare* and did
+        nothing of the sort: it settled a Brazilian invoice with dollars
+        at face value, and this test pinned that as a feature.
+        """
+        rule = with_scope(currency={"in": ["USD"]})
+        assert (
+            evaluate(
+                money(currency="USD"), [an_invoice(currency="BRL")], one_rule(rule)
+            ).port
+            == "unmatched"
         )
-        assert decision.port == "linked"
+        assert (
+            evaluate(
+                money(currency="USD"), [an_invoice(currency="USD")], one_rule(rule)
+            ).port
+            == "linked"
+        )
 
 
 class TestAmountBand:
@@ -301,7 +316,7 @@ class TestAmountBand:
 
     Xero's amount operators, and the single most requested guardrail:
     small payments settle themselves, large ones get a human. It is a
-    filter on the money, not a comparison with the promise — a rule can
+    filter on the money, not a comparison with the promise: a rule can
     demand an exact match *and* refuse to act above a ceiling.
     """
 
@@ -327,7 +342,7 @@ class TestAmountBand:
 
     def test_a_band_is_read_on_the_size_of_the_movement_not_its_sign(self):
         """An outflow of 3000 is three thousand of money, not minus three
-        thousand — otherwise every band would need writing twice."""
+        thousand: otherwise every band would need writing twice."""
         rule = with_scope(
             direction="debit", amount={"match": "exact", "min": "1000", "max": "5000"}
         )
@@ -420,7 +435,7 @@ class TestStatementText:
 # Conditions working together
 # ===========================================================================
 class TestCombinations:
-    """Every condition must hold — there is no ANY mode, on purpose.
+    """Every condition must hold: there is no ANY mode, on purpose.
 
     The categorization rules above this feature offer AND/OR because a
     wrong guess there is a mislabelled row. Here a wrong guess binds money
@@ -500,7 +515,7 @@ class TestCombinations:
         assert anyone.strategy == "everyone_else_links"
 
     def test_a_rule_out_of_scope_lets_the_next_one_try(self):
-        """Out of scope is not a verdict on the money — it means this rule
+        """Out of scope is not a verdict on the money: it means this rule
         had nothing to say, and the rest still get their turn."""
         policy = {
             "version": 1,
@@ -530,7 +545,7 @@ class TestCombinations:
 
     def test_scope_is_judged_once_however_many_promises_are_open(self):
         """The rule was never consulted, so there is nothing to say about
-        any particular invoice — one note, not one per candidate."""
+        any particular invoice: one note, not one per candidate."""
         rule = with_scope(accounts={"in": [str(OTHER_ACCOUNT)]})
         decision = evaluate(
             money(), [an_invoice(), an_invoice(), an_invoice()], one_rule(rule)
@@ -743,8 +758,8 @@ class TestShippedRulesUnchanged:
 class TestPartPayments:
     """One invoice settled by several payments.
 
-    The ledger has always allowed it — allocations are many-to-one with an
-    amount — but until this mode existed nothing could ever *propose* the
+    The ledger has always allowed it: allocations are many-to-one with an
+    amount, but until this mode existed nothing could ever *propose* the
     first half. Every other comparison measures against the whole
     outstanding balance, and half of it is simply not that. So a client
     paying R$3.000 in two transfers produced two unmatched rows and an
@@ -852,7 +867,7 @@ class TestTrigger:
 
     Two different questions with different evidence behind them, and until
     now the answer was hardcoded in whichever function happened to be
-    doing the looking — a restriction nobody could see or change, on a
+    doing the looking: a restriction nobody could see or change, on a
     feature whose entire premise is that matching is not a black box.
     """
 
@@ -950,8 +965,8 @@ class TestShippedTriggers:
         assert self.shipped("same_client_exact")["trigger"] == "both"
 
     def test_an_unnamed_payer_is_only_trusted_when_a_promise_was_waiting(self):
-        """Backwards, that money already had a life of its own — a refund,
-        a transfer, another job — and claiming it for a document written
+        """Backwards, that money already had a life of its own: a refund,
+        a transfer, another job, and claiming it for a document written
         afterwards is a guess."""
         assert self.shipped("exact_amount_any_client")["trigger"] == "money_arrives"
 
@@ -970,8 +985,8 @@ class TestSets:
 
     The gateway payout, the client clearing three of their own invoices in
     one transfer, the commercial arrangement that settles a month at a
-    time. The ledger has always been able to record it — allocations are
-    many-to-many with an amount — but a decision that could only name one
+    time. The ledger has always been able to record it: allocations are
+    many-to-many with an amount, but a decision that could only name one
     promise could never propose it.
 
     The hard part is not the arithmetic, it is **refusing when there is
@@ -1078,7 +1093,7 @@ class TestSets:
             ],
             self.set_rule(),
         )
-        # Two pairs add up, so it is ambiguous — and the reading offered is
+        # Two pairs add up, so it is ambiguous, and the reading offered is
         # a pair rather than something longer.
         assert decision.port == "suggested"
         assert len(decision.settlements) == 2
@@ -1241,7 +1256,7 @@ class TestTolerangeBands:
 
     The shape the ordered list was built for: first match wins, so a band
     is just a looser rule placed after a tighter one. Nothing new is
-    needed — but the rules shipped *below* a person's own still get their
+    needed, but the rules shipped *below* a person's own still get their
     turn, and that is where this gets interesting.
     """
 
@@ -1319,7 +1334,7 @@ class TestTolerangeBands:
         assert over.port == "suggested" and over.strategy == "two_to_five"
 
     def test_the_boundary_belongs_to_the_tighter_rule(self):
-        """Exactly two per cent links rather than asks — inclusive, and on
+        """Exactly two per cent links rather than asks: inclusive, and on
         the side a person means when they write "under 2%"."""
         decision = evaluate(
             money(amount=Decimal("2940.00")), [an_invoice()], self.banded()
@@ -1328,7 +1343,7 @@ class TestTolerangeBands:
 
     def test_above_the_last_band_nothing_matches(self):
         """"Reject" is not a verb the engine has. It is what happens when
-        no rule claims the money — same outcome, reached by absence."""
+        no rule claims the money: same outcome, reached by absence."""
         decision = evaluate(
             money(amount=Decimal("2700.00")), [an_invoice()], self.banded()
         )
@@ -1340,7 +1355,7 @@ class TestTolerangeBands:
         a balance is an instalment, and it offers it.
 
         Which is correct in isolation and wrong for somebody who said
-        "above five per cent, leave it alone" — so expressing a real
+        "above five per cent, leave it alone", so expressing a real
         ceiling means narrowing or turning off what lies below it, not
         only adding rules above.
         """
@@ -1361,7 +1376,7 @@ class TestTolerangeBands:
         same point with no gap, so the region a person means by "above
         five per cent" is precisely the region part-payment claims.
 
-        There is no threshold to tune — the resolution is the switch that
+        There is no threshold to tune: the resolution is the switch that
         is already on the page. Worth knowing before somebody spends an
         afternoon adjusting numbers that cannot express what they want.
         """
@@ -1388,3 +1403,60 @@ class TestTolerangeBands:
         )
         assert decision.port == "suggested"
         assert decision.strategy == "two_to_five", "the band above wins the seam"
+
+
+class TestMoneyInAnotherCurrency:
+    """Never matched, and not a setting somebody can turn off.
+
+    There used to be a `currency.conversion` knob whose `allow` value read
+    as *convert and compare*. It did no such thing: the engine is pure and
+    cannot look up a rate, so all `allow` did was stop comparing
+    currencies. A $3.000 payment became an **exact** match for a €3.000
+    invoice, and settled the euros with the dollars.
+    """
+
+    def test_a_payment_in_another_currency_never_settles_an_invoice(self):
+        decision = evaluate(
+            money(currency="USD"),
+            [an_invoice(currency="EUR")],
+            one_rule(with_scope()),
+            base_currency="USD",
+        )
+
+        assert decision.port == "unmatched"
+        assert any(n.rejected_by is Reason.CURRENCY for n in decision.trace)
+
+    def test_the_same_numbers_are_not_the_same_money(self):
+        """The exact-amount rule is the dangerous one: both sides read
+        3000, and only the currency says they are different money."""
+        decision = evaluate(
+            money(amount=Decimal("3000.00"), currency="USD"),
+            [an_invoice(amount=Decimal("3000.00"), currency="EUR")],
+            one_rule(with_scope()),
+            base_currency="USD",
+        )
+
+        assert decision.settlements == []
+
+    def test_asking_for_conversion_no_longer_turns_the_check_off(self):
+        """The knob is gone from the engine, so a stored rule that still
+        carries it is matched as if it never said anything."""
+        decision = evaluate(
+            money(currency="USD"),
+            [an_invoice(currency="EUR")],
+            one_rule(with_scope(currency={"conversion": "allow"})),
+            base_currency="USD",
+        )
+
+        assert decision.port == "unmatched"
+
+    def test_a_rule_cannot_ask_for_conversion_that_does_not_exist(self):
+        """Refused on the way in rather than quietly ignored, so a policy
+        file carrying it is reported instead of doing something other than
+        what it says."""
+        with pytest.raises(rule_service.RuleError) as caught:
+            rule_service.validate_config(
+                {"when": {"currency": {"conversion": "allow"}}}, whole=False
+            )
+
+        assert caught.value.code == "conversion_unsupported"
