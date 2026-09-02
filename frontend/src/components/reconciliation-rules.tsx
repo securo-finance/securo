@@ -1038,11 +1038,12 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
                       className="flex items-center gap-1 shrink-0"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      {/* An icon, not the word "Turn off". The row beside
-                          this one — a categorization rule — ends in an
-                          icon, and mixing a text button with an icon
-                          button in the same position made two lists of
-                          rules read as two unrelated features. */}
+                      {/* Two slots, in this order, on every rule in both
+                          lists: stop it, then get rid of it. The same
+                          icons in the same places, because a
+                          categorization rule and a matching rule are the
+                          same promise made twice and reading as two
+                          unrelated features was the whole complaint. */}
                       <button
                         className={cn(
                           'p-1.5 rounded-md transition-colors hover:bg-background',
@@ -1050,17 +1051,13 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
                             ? 'text-emerald-600 hover:text-emerald-700'
                             : 'text-muted-foreground hover:text-foreground',
                         )}
-                        title={t(
-                          rule.enabled
-                            ? 'reconciliation.turnOff'
-                            : 'reconciliation.turnOn',
-                        )}
+                        title={t(rule.enabled ? 'rules.turnOff' : 'rules.turnOn')}
                         onClick={() => toggle.mutate({ node: group.node, rule })}
                         disabled={toggle.isPending}
                       >
                         <Power size={13} />
                       </button>
-                      {rule.customised && (
+                      {rule.customised ? (
                         <button
                           className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
                           title={t(
@@ -1077,6 +1074,21 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
                             <RotateCcw size={13} />
                           )}
                         </button>
+                      ) : (
+                        // A rule that ships with Securo has no delete,
+                        // and cannot: it is in the image, so it would be
+                        // back on the next start. Turning it off is what
+                        // deleting it means. Left in place and greyed
+                        // rather than omitted — an absent button in the
+                        // one column where the list above has a bin is
+                        // read as a bug, and the tooltip is where the
+                        // answer belongs.
+                        <span
+                          className="p-1.5 rounded-md text-muted-foreground/30 cursor-not-allowed"
+                          title={t('rules.shippedCannotDelete')}
+                        >
+                          <Trash2 size={13} />
+                        </span>
                       )}
                     </div>
                   )}

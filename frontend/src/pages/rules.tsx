@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dialog'
 import type { Category, Payee, Rule, RuleAction, RuleCondition, RuleConditionNode, RuleExportPayload } from '@/types'
 import { isConditionGroup } from '@/lib/rule-conditions'
-import { Trash2, Plus, RefreshCw, Package, Check, ArrowUpDown, ArrowUp, ArrowDown, Download, Upload } from 'lucide-react'
+import { Trash2, Plus, RefreshCw, Package, Check, ArrowUpDown, ArrowUp, ArrowDown, Download, Upload, Power } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
 import { useWorkspace } from '@/contexts/workspace-context'
@@ -238,6 +238,27 @@ export default function RulesPage() {
       } else {
         toast.error(t('common.error'))
       }
+    },
+  })
+
+  // Flipping the switch, and nothing else.
+  //
+  // Turning a rule on through the editor also runs it over transactions
+  // already filed, which is the right default when you have just
+  // finished writing the rule. It is the wrong default for one click on
+  // an icon: nothing on screen warned that months of categories were
+  // about to be rewritten. So the row does the smaller act, and catching
+  // up stays explicit — the editor's own checkbox, or "Reset and
+  // reapply" in the header.
+  const toggleMutation = useMutation({
+    mutationFn: (rule: Rule) =>
+      rulesApi.update(rule.id, { is_active: !rule.is_active, apply_to_existing: false }),
+    onSuccess: (_result, rule) => {
+      queryClient.invalidateQueries({ queryKey: ['rules'] })
+      toast.success(t(rule.is_active ? 'rules.turnedOff' : 'rules.turnedOn'))
+    },
+    onError: (err: unknown) => {
+      toast.error(extractApiError(err, t('common.error')))
     },
   })
 
@@ -500,6 +521,27 @@ export default function RulesPage() {
                   </div>
                   {canWrite && (
                     <div className="flex items-center gap-1 shrink-0">
+                      {/* Stopping a rule and deleting it are different
+                          decisions, and only one of them was reachable
+                          from here. The other was a checkbox inside the
+                          editor — so switching a rule off meant opening
+                          it, finding the box, and saving a form you did
+                          not want to change. It lives on the row now, in
+                          the same place and the same shape as on a
+                          matching rule below. */}
+                      <button
+                        className={cn(
+                          'p-1.5 rounded-md transition-colors hover:bg-background',
+                          rule.is_active
+                            ? 'text-emerald-600 hover:text-emerald-700'
+                            : 'text-muted-foreground hover:text-foreground',
+                        )}
+                        onClick={(e) => { e.stopPropagation(); toggleMutation.mutate(rule) }}
+                        disabled={toggleMutation.isPending}
+                        title={t(rule.is_active ? 'rules.turnOff' : 'rules.turnOn')}
+                      >
+                        <Power size={13} />
+                      </button>
                       <button
                         className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
                         onClick={(e) => { e.stopPropagation(); setDeletingRule(rule) }}
