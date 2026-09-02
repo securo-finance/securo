@@ -21,6 +21,7 @@ import { formatCurrency } from '@/lib/format'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { cn } from '@/lib/utils'
+import { ReconciliationPair, type PairSide } from '@/components/reconciliation-pair'
 
 function SectionCard({ children }: { children: React.ReactNode }) {
   return (
@@ -51,6 +52,9 @@ export function ReconciliationHistory() {
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
   const [expanded, setExpanded] = useState(false)
+  // Same panel the queue uses. "Linked to AUR5" tells you what happened;
+  // it does not let you check whether it should have.
+  const [inspecting, setInspecting] = useState<ReconciliationHistoryEvent | null>(null)
 
   const { data: events } = useQuery<ReconciliationHistoryEvent[]>({
     queryKey: ['reconciliation-history'],
@@ -96,7 +100,8 @@ export function ReconciliationHistory() {
           return (
             <div
               key={event.id}
-              className="px-4 sm:px-5 py-2.5 flex items-start gap-3 text-sm"
+              className="px-4 sm:px-5 py-2.5 flex items-start gap-3 text-sm hover:bg-muted/60 transition-colors cursor-pointer"
+              onClick={() => setInspecting(event)}
             >
               <Icon size={14} className={cn('mt-0.5 shrink-0', look.tone)} />
               <div className="flex-1 min-w-0">
@@ -142,6 +147,23 @@ export function ReconciliationHistory() {
               })}
         </button>
       )}
+      <ReconciliationPair
+        open={inspecting !== null}
+        onClose={() => setInspecting(null)}
+        transactionId={inspecting?.transaction_id}
+        sides={
+          inspecting
+            ? [
+                {
+                  kind: inspecting.expectation_kind,
+                  id: inspecting.expectation_id,
+                  label: inspecting.expectation_label,
+                  amount: inspecting.amount,
+                } satisfies PairSide,
+              ]
+            : []
+        }
+      />
     </SectionCard>
   )
 }

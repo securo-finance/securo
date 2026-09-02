@@ -2486,6 +2486,21 @@
     "moveUp": "Sprawdzaj tę wcześniej",
     "moveDown": "Sprawdzaj tę później",
     "matchingTitle": "Reguły dopasowania",
-    "matchingHint": "Jak wpływające pieniądze są wiązane z tym, co opłacają. Każdy zestaw sprawdzany po kolei — wygrywa pierwsza pasująca reguła."
+    "matchingHint": "Jak wpływające pieniądze są wiązane z tym, co opłacają. Każdy zestaw sprawdzany po kolei — wygrywa pierwsza pasująca reguła.",
+    "pair": {
+      "title": "Zobowiązanie i pieniądze",
+      "owed": "Co jest należne",
+      "arrived": "Co wpłynęło",
+      "total": "Razem",
+      "balance": "Wciąż otwarte",
+      "due": "Termin",
+      "applied": "Zaliczone tutaj",
+      "date": "Data",
+      "account": "Konto",
+      "payer": "Płatnik",
+      "draftInvoice": "Faktura robocza",
+      "recurringBill": "Rachunek cykliczny",
+      "noMoney": "Brak transakcji."
+    }
   }
 }

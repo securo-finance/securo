@@ -2385,6 +2385,21 @@
     "moveUp": "Deze eerder proberen",
     "moveDown": "Deze later proberen",
     "matchingTitle": "Afletterregels",
-    "matchingHint": "Hoe binnenkomend geld wordt gekoppeld aan wat het voldoet. Elke set wordt op volgorde geprobeerd — de eerste regel die past, wint."
+    "matchingHint": "Hoe binnenkomend geld wordt gekoppeld aan wat het voldoet. Elke set wordt op volgorde geprobeerd — de eerste regel die past, wint.",
+    "pair": {
+      "title": "De belofte en het geld",
+      "owed": "Wat openstaat",
+      "arrived": "Wat binnenkwam",
+      "total": "Totaal",
+      "balance": "Nog open",
+      "due": "Vervalt",
+      "applied": "Hier toegepast",
+      "date": "Datum",
+      "account": "Rekening",
+      "payer": "Betaler",
+      "draftInvoice": "Conceptfactuur",
+      "recurringBill": "Terugkerende rekening",
+      "noMoney": "Geen transactie hierbij."
+    }
   }
 }

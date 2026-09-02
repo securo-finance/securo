@@ -2384,6 +2384,21 @@
     "moveUp": "Try this one earlier",
     "moveDown": "Try this one later",
     "matchingTitle": "Matching rules",
-    "matchingHint": "How money that arrives is bound to what it settles. Each set is tried in order — the first rule that matches wins."
+    "matchingHint": "How money that arrives is bound to what it settles. Each set is tried in order — the first rule that matches wins.",
+    "pair": {
+      "title": "The promise and the money",
+      "owed": "What is owed",
+      "arrived": "What arrived",
+      "total": "Total",
+      "balance": "Still open",
+      "due": "Due",
+      "applied": "Applied here",
+      "date": "Date",
+      "account": "Account",
+      "payer": "Payer",
+      "draftInvoice": "Draft invoice",
+      "recurringBill": "Recurring bill",
+      "noMoney": "No transaction on this one."
+    }
   }
 }

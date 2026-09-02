@@ -2385,6 +2385,21 @@
     "moveUp": "Essayer celle-ci plus tôt",
     "moveDown": "Essayer celle-ci plus tard",
     "matchingTitle": "Règles de rapprochement",
-    "matchingHint": "Comment l'argent qui arrive est rattaché à ce qu'il règle. Chaque ensemble est essayé dans l'ordre : la première règle qui correspond l'emporte."
+    "matchingHint": "Comment l'argent qui arrive est rattaché à ce qu'il règle. Chaque ensemble est essayé dans l'ordre : la première règle qui correspond l'emporte.",
+    "pair": {
+      "title": "La promesse et l'argent",
+      "owed": "Ce qui est dû",
+      "arrived": "Ce qui est arrivé",
+      "total": "Total",
+      "balance": "Reste dû",
+      "due": "Échéance",
+      "applied": "Appliqué ici",
+      "date": "Date",
+      "account": "Compte",
+      "payer": "Payeur",
+      "draftInvoice": "Facture en brouillon",
+      "recurringBill": "Dépense récurrente",
+      "noMoney": "Aucune opération ici."
+    }
   }
 }

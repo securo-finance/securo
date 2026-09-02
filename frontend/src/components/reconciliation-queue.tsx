@@ -13,6 +13,7 @@
  *  is not something a person can check, and a queue nobody can check is a
  *  queue they clear without reading.
  */
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { reconciliation as reconciliationApi } from '@/lib/api'
@@ -22,6 +23,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import type { ReconciliationSuggestion } from '@/types'
 import { Check, X, CircleCheck } from 'lucide-react'
+import { ReconciliationPair, type PairSide } from '@/components/reconciliation-pair'
 import { formatCurrency } from '@/lib/format'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -99,6 +101,10 @@ export function ReconciliationQueue({ canWrite }: { canWrite: boolean }) {
     queryFn: reconciliationApi.suggestions,
   })
 
+  // Deciding is a comparison, and the evidence chips describe an invoice
+  // without ever showing it. One click puts both halves on screen.
+  const [inspecting, setInspecting] = useState<ReconciliationSuggestion | null>(null)
+
   const accept = useSettleMutation('accept', queryClient, t)
   const decline = useSettleMutation('decline', queryClient, t)
 
@@ -133,7 +139,11 @@ export function ReconciliationQueue({ canWrite }: { canWrite: boolean }) {
       ) : (
         <div className="divide-y divide-border">
           {suggestions.map((suggestion) => (
-            <div key={suggestion.id} className="px-4 sm:px-5 py-3">
+            <div
+              key={suggestion.id}
+              className="px-4 sm:px-5 py-3 hover:bg-muted/60 transition-colors cursor-pointer"
+              onClick={() => setInspecting(suggestion)}
+            >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-foreground truncate">
@@ -186,7 +196,10 @@ export function ReconciliationQueue({ canWrite }: { canWrite: boolean }) {
                     {money(suggestion.amount, suggestion.scores.currency)}
                   </span>
                   {canWrite && (
-                    <div className="flex items-center gap-1">
+                    <div
+                      className="flex items-center gap-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <Button
                         size="sm"
                         variant="outline"
@@ -217,6 +230,17 @@ export function ReconciliationQueue({ canWrite }: { canWrite: boolean }) {
           ))}
         </div>
       )}
+      <ReconciliationPair
+        open={inspecting !== null}
+        onClose={() => setInspecting(null)}
+        transactionId={inspecting?.transaction?.id}
+        sides={(inspecting?.covers ?? []).map<PairSide>((cover) => ({
+          kind: cover.expectation_kind,
+          id: cover.expectation_id,
+          label: cover.label,
+          amount: cover.amount,
+        }))}
+      />
     </SectionCard>
   )
 }

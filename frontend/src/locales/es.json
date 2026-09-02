@@ -2385,6 +2385,21 @@
     "moveUp": "Probar esta antes",
     "moveDown": "Probar esta después",
     "matchingTitle": "Reglas de conciliación",
-    "matchingHint": "Cómo el dinero que entra se vincula con lo que salda. Cada conjunto se prueba en orden: gana la primera regla que coincide."
+    "matchingHint": "Cómo el dinero que entra se vincula con lo que salda. Cada conjunto se prueba en orden: gana la primera regla que coincide.",
+    "pair": {
+      "title": "La promesa y el dinero",
+      "owed": "Lo que se debe",
+      "arrived": "Lo que llegó",
+      "total": "Total",
+      "balance": "Pendiente",
+      "due": "Vence",
+      "applied": "Aplicado aquí",
+      "date": "Fecha",
+      "account": "Cuenta",
+      "payer": "Pagador",
+      "draftInvoice": "Factura en borrador",
+      "recurringBill": "Cuenta recurrente",
+      "noMoney": "Sin transacción en esta."
+    }
   }
 }
