@@ -1,4 +1,5 @@
 import { useRef, useState, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { categories as categoriesApi, categoryGroups as categoryGroupsApi, rules as rulesApi, accounts as accountsApi, payees as payeesApi } from '@/lib/api'
@@ -36,10 +37,25 @@ function SectionCard({ children }: { children: React.ReactNode }) {
   )
 }
 
-function SectionHeader({ title, action }: { title: string; action?: React.ReactNode }) {
+function SectionHeader({
+  title,
+  hint,
+  action,
+}: {
+  title: string
+  /** One line saying what this list of rules decides. The matching card
+   *  carried one and this one did not, so the two cards answered
+   *  different questions: one told you what it was for, the other
+   *  assumed you knew. */
+  hint?: string
+  action?: React.ReactNode
+}) {
   return (
-    <div className="px-4 sm:px-5 py-4 border-b border-border flex flex-wrap items-center justify-between gap-2">
-      <p className="text-sm font-semibold text-foreground">{title}</p>
+    <div className="px-4 sm:px-5 py-4 border-b border-border flex flex-wrap items-start justify-between gap-2">
+      <div>
+        <p className="text-sm font-semibold text-foreground">{title}</p>
+        {hint && <p className="text-xs text-muted-foreground mt-0.5">{hint}</p>}
+      </div>
       {action}
     </div>
   )
@@ -248,7 +264,7 @@ export default function RulesPage() {
   // finished writing the rule. It is the wrong default for one click on
   // an icon: nothing on screen warned that months of categories were
   // about to be rewritten. So the row does the smaller act, and catching
-  // up stays explicit — the editor's own checkbox, or "Reset and
+  // up stays explicit: the editor's own checkbox, or "Reset and
   // reapply" in the header.
   const toggleMutation = useMutation({
     mutationFn: (rule: Rule) =>
@@ -346,12 +362,23 @@ export default function RulesPage() {
     return list.sort((a, b) => dir * (a.priority - b.priority))
   }, [rulesList, displayCategories, sortBy, sortDir])
 
-  // Three reasons to come here, not one. Rules is configuration — visited
+  // Three reasons to come here, not one. Rules is configuration: visited
   // when somebody wants to change behaviour. The queue is *work*, visited
   // when there is something pending. History is *audit*, visited to find
   // out what happened. Burying work inside a configuration page meant only
   // people who came to configure something ever discovered they had any.
-  const [tab, setTab] = useState<'rules' | 'queue' | 'history'>('rules')
+  // Addressable, because the queue is now linked to from elsewhere: a
+  // badge on a transaction row is a promise to land on the question, and
+  // landing on the rules list instead would break it.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requested = searchParams.get('tab')
+  const tab: 'rules' | 'queue' | 'history' =
+    requested === 'queue' || requested === 'history' ? requested : 'rules'
+  const setTab = (next: 'rules' | 'queue' | 'history') => {
+    // `replace`, so the back button leaves the page rather than walking
+    // back through tabs somebody clicked on the way.
+    setSearchParams(next === 'rules' ? {} : { tab: next }, { replace: true })
+  }
 
   // Fetched here rather than inside the queue so the count can sit on the
   // tab: a queue nobody can see is not a queue.
@@ -374,7 +401,7 @@ export default function RulesPage() {
             {
               value: 'queue',
               // The count is rendered here rather than through Segmented's
-              // own `count`, which is a muted figure beside a filter — the
+              // own `count`, which is a muted figure beside a filter: the
               // right weight for "Overdue 2" and the wrong one for work
               // waiting on somebody. This is a nudge, so it looks like
               // one; when there is nothing waiting it disappears entirely
@@ -402,6 +429,7 @@ export default function RulesPage() {
       <SectionCard>
         <SectionHeader
           title={t('rules.sectionTitle')}
+          hint={t('rules.sectionHint')}
           action={
             canWrite ? (
               <div className="flex gap-2">
@@ -524,7 +552,7 @@ export default function RulesPage() {
                       {/* Stopping a rule and deleting it are different
                           decisions, and only one of them was reachable
                           from here. The other was a checkbox inside the
-                          editor — so switching a rule off meant opening
+                          editor, so switching a rule off meant opening
                           it, finding the box, and saving a form you did
                           not want to change. It lives on the row now, in
                           the same place and the same shape as on a
