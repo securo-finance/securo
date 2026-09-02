@@ -2375,6 +2375,8 @@
         "expired": "Unbeantwortet abgelaufen — {{name}}",
         "unlinked": "Von {{name}} gelöst"
       }
-    }
+    },
+    "moveUp": "Diese früher prüfen",
+    "moveDown": "Diese später prüfen"
   }
 }

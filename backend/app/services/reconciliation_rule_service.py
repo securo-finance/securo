@@ -153,7 +153,11 @@ def compose(node: str, rows: list[ReconciliationRule]) -> dict[str, Any]:
         row = patches.get(strategy["id"])
         merged = _merge(strategy, row.config) if row else strategy
         merged["origin"] = "default"
-        merged["customised"] = row is not None
+        # "Changed" means the *rule* differs, not that a row exists. A row
+        # carrying only a position — written when somebody reordered the
+        # list — is not a departure from what we ship, and marking it as
+        # one would offer to "restore" a rule that was never altered.
+        merged["customised"] = bool(row and row.config)
         asked = row is not None and row.position is not None
         place = float(row.position) if asked and row else float(index)
         ordered.append((place, 0 if asked else 1, index, merged))
@@ -591,6 +595,62 @@ async def upsert_override(
         row.position = position
     await session.flush()
     return row
+
+
+async def reorder(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    node: str,
+    strategy_ids: list[str],
+) -> None:
+    """Fix the order rules are tried in.
+
+    Writes an explicit position for **every** rule in the node rather than
+    only the one that moved. Order is the mechanism the whole feature
+    rests on — the first rule that matches wins, so a band is expressed by
+    what sits above and below it — and half-implicit ordering, where some
+    rules carry a position and others fall back to where we happened to
+    ship them, is the kind of thing that reads correctly today and
+    silently rearranges the day a default is inserted.
+
+    A row holding only a position is not a customised rule: its `config`
+    stays empty, so it keeps inheriting every improvement.
+    """
+    if node not in EDITABLE_NODES:
+        raise RuleError("unknown_node", "That set of rules cannot be reordered")
+
+    known = {s["id"] for s in reconciliation_policy.default_policy(node)["strategies"]}
+    rows = {row.strategy_id: row for row in await overrides_for(session, workspace_id, node)}
+    known |= {row_id for row_id, row in rows.items() if row.origin == "custom"}
+
+    unknown = [rid for rid in strategy_ids if rid not in known]
+    if unknown:
+        raise RuleError("unknown_rule", "No such rule in this set")
+    if len(set(strategy_ids)) != len(strategy_ids):
+        raise RuleError("duplicate_rule", "A rule cannot be in two places at once")
+    if set(strategy_ids) != known:
+        raise RuleError(
+            "incomplete_order",
+            "Reordering names every rule in the set, so none is left implicit",
+        )
+
+    for place, strategy_id in enumerate(strategy_ids):
+        row = rows.get(strategy_id)
+        if row is None:
+            row = ReconciliationRule(
+                id=uuid.uuid4(),
+                workspace_id=workspace_id,
+                user_id=user_id,
+                node=node,
+                strategy_id=strategy_id,
+                origin="default",
+                config={},
+                policy_version=reconciliation_policy.POLICY_VERSION,
+            )
+            session.add(row)
+        row.position = place
+    await session.flush()
 
 
 async def create_custom(

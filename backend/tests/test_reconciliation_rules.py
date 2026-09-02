@@ -1881,3 +1881,154 @@ async def test_but_accepting_it_leaves_the_invoice_short_by_the_withheld_tax(
     assert Decimal(detail["allocations"][0]["amount"]) == Decimal("2955.00")
     assert Decimal(detail["balance"]) == Decimal("45.00")
     assert detail["state"] == "partial", "not paid — and it never will be"
+
+
+# ---------------------------------------------------------------------------
+# The order rules are tried in
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_the_order_can_be_changed_and_holds(
+    client: AsyncClient, biz_headers
+):
+    """Order is the mechanism, not a preference: the first rule that
+    matches wins, so a band is expressed by what sits above and below."""
+    nodes = (await client.get("/api/reconciliation/rules", headers=biz_headers)).json()
+    ids = [r["id"] for r in next(n for n in nodes if n["node"] == INVOICE_NODE)["rules"]]
+
+    reversed_ids = list(reversed(ids))
+    resp = await client.put(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/order",
+        headers=biz_headers,
+        json={"order": reversed_ids},
+    )
+    assert resp.status_code == 200, resp.text
+    assert [r["id"] for r in resp.json()] == reversed_ids
+
+    again = (await client.get("/api/reconciliation/rules", headers=biz_headers)).json()
+    assert [
+        r["id"] for r in next(n for n in again if n["node"] == INVOICE_NODE)["rules"]
+    ] == reversed_ids
+
+
+@pytest.mark.asyncio
+async def test_reordering_alone_does_not_mark_a_rule_as_changed(
+    client: AsyncClient, biz_headers, session: AsyncSession, business_ws
+):
+    """A row carrying only a position is not a departure from what we
+    ship. Marking it as one would offer to "restore" a rule nobody
+    altered — and would suggest it had stopped inheriting improvements,
+    which it has not."""
+    nodes = (await client.get("/api/reconciliation/rules", headers=biz_headers)).json()
+    ids = [r["id"] for r in next(n for n in nodes if n["node"] == INVOICE_NODE)["rules"]]
+    await client.put(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/order",
+        headers=biz_headers,
+        json={"order": list(reversed(ids))},
+    )
+
+    after = (await client.get("/api/reconciliation/rules", headers=biz_headers)).json()
+    rules_now = next(n for n in after if n["node"] == INVOICE_NODE)["rules"]
+    assert all(r["customised"] is False for r in rules_now)
+
+    # Rows exist — they carry the order — but their config is empty, so
+    # every one of them still inherits what we ship.
+    result = await session.execute(
+        select(ReconciliationRule).where(
+            ReconciliationRule.workspace_id == uuid.UUID(business_ws["id"])
+        )
+    )
+    stored = result.scalars().all()
+    assert stored and all(row.config == {} for row in stored)
+
+
+@pytest.mark.asyncio
+async def test_reordering_changes_which_rule_wins(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """The point of it. Moving the part-payment rule above the exact one
+    changes what happens to money, not just what the list looks like."""
+    nodes = (await client.get("/api/reconciliation/rules", headers=biz_headers)).json()
+    ids = [r["id"] for r in next(n for n in nodes if n["node"] == INVOICE_NODE)["rules"]]
+
+    # A rule that suggests, moved above every rule that links.
+    moved = ["similar_description"] + [i for i in ids if i != "similar_description"]
+    await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/similar_description",
+        headers=biz_headers,
+        json={"when": {"description_similarity": {"min": "0"}}},
+    )
+    await client.put(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/order",
+        headers=biz_headers,
+        json={"order": moved},
+    )
+
+    invoice = await an_invoice(client, biz_headers, client_payee)
+    await a_payment(client, biz_headers, account, client_payee)
+
+    detail = (
+        await client.get(f"/api/invoices/{invoice['id']}", headers=biz_headers)
+    ).json()
+    assert detail["allocations"] == [], "the suggesting rule got there first"
+    queue = (
+        await client.get("/api/reconciliation/suggestions", headers=biz_headers)
+    ).json()
+    assert queue[0]["strategy_id"] == "similar_description"
+
+
+@pytest.mark.asyncio
+async def test_an_order_that_leaves_a_rule_out_is_refused(
+    client: AsyncClient, biz_headers
+):
+    """Naming only some rules would leave the rest wherever we happened to
+    ship them — an order that reads correctly today and rearranges itself
+    the day a default is inserted."""
+    resp = await client.put(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/order",
+        headers=biz_headers,
+        json={"order": ["same_client_exact"]},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["code"] == "incomplete_order"
+
+
+@pytest.mark.asyncio
+async def test_a_rule_named_twice_is_refused(client: AsyncClient, biz_headers):
+    nodes = (await client.get("/api/reconciliation/rules", headers=biz_headers)).json()
+    ids = [r["id"] for r in next(n for n in nodes if n["node"] == INVOICE_NODE)["rules"]]
+    resp = await client.put(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/order",
+        headers=biz_headers,
+        json={"order": [ids[0]] + ids},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"]["code"] == "duplicate_rule"
+
+
+@pytest.mark.asyncio
+async def test_a_workspaces_own_rule_takes_part_in_the_order(
+    client: AsyncClient, biz_headers
+):
+    created = await client.post(
+        "/api/reconciliation/rules",
+        headers=biz_headers,
+        json={
+            "node": INVOICE_NODE,
+            "name": "Minha regra",
+            "outcome": "suggest",
+            "when": {"amount": {"match": "exact"}},
+        },
+    )
+    mine = created.json()["id"]
+
+    nodes = (await client.get("/api/reconciliation/rules", headers=biz_headers)).json()
+    ids = [r["id"] for r in next(n for n in nodes if n["node"] == INVOICE_NODE)["rules"]]
+    assert mine in ids
+
+    resp = await client.put(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/order",
+        headers=biz_headers,
+        json={"order": [mine] + [i for i in ids if i != mine]},
+    )
+    assert resp.status_code == 200
+    assert resp.json()[0]["id"] == mine

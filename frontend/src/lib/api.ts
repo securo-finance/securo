@@ -1017,6 +1017,19 @@ export const reconciliation = {
     )
     return data
   },
+  /** Set the order rules are tried in. Names every rule in the set: the
+   *  first match wins, so a half-implicit order rearranges itself the day
+   *  a new default ships. */
+  reorderRules: async (
+    node: string,
+    order: string[],
+  ): Promise<ReconciliationRule[]> => {
+    const { data } = await api.put(
+      `/reconciliation/rules/${encodeURIComponent(node)}/order`,
+      { order },
+    )
+    return data
+  },
   createRule: async (rule: ReconciliationRuleDraft): Promise<ReconciliationRule> => {
     const { data } = await api.post('/reconciliation/rules', rule)
     return data

@@ -38,7 +38,7 @@ import type {
   ReconciliationNode,
   ReconciliationRule,
 } from '@/types'
-import { Plus, RotateCcw, Trash2, Zap, HelpCircle } from 'lucide-react'
+import { Plus, RotateCcw, Trash2, Zap, HelpCircle, ChevronUp, ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 /** Names for the rules we ship. Kept here rather than sent by the API so
@@ -63,6 +63,20 @@ const NODE_HINT: Record<string, string> = {
   'reconciliation.match_invoice': 'reconciliation.node.invoicesHint',
   'reconciliation.match_recurring': 'reconciliation.node.recurringHint',
 }
+
+/** The whole order with two entries exchanged.
+ *
+ *  Returns every id, not the pair that moved, because that is what the
+ *  API takes — and for a good reason: an order where some rules are
+ *  placed and the rest fall back to wherever we shipped them reads fine
+ *  today and quietly rearranges the day a new default is inserted. */
+function swap(rules: ReconciliationRule[], from: number, to: number): string[] {
+  const ids = rules.map((rule) => rule.id)
+  const moved = ids.splice(from, 1)[0]
+  ids.splice(to, 0, moved)
+  return ids
+}
+
 
 function SectionCard({ children }: { children: React.ReactNode }) {
   return (
@@ -873,6 +887,17 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
     onError: (error) => toast.error(extractApiError(error, t('common.error'))),
   })
 
+  // Moving one rule sends the whole order, because that is what the API
+  // takes: an order where some rules are placed and others fall back to
+  // where we shipped them reads correctly today and rearranges itself the
+  // day a default is inserted.
+  const move = useMutation({
+    mutationFn: ({ node, ids }: { node: string; ids: string[] }) =>
+      reconciliationApi.reorderRules(node, ids),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['reconciliation-rules'] }),
+    onError: (error) => toast.error(extractApiError(error, t('common.error'))),
+  })
+
   const reset = useMutation({
     mutationFn: ({ node, id }: { node: string; id: string }) =>
       reconciliationApi.resetRule(node, id),
@@ -917,7 +942,7 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
           </div>
 
           <div className="divide-y divide-border">
-            {group.rules.map((rule) => (
+            {group.rules.map((rule, index) => (
               <div
                 key={rule.id}
                 className={cn(
@@ -928,6 +953,45 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
                 onClick={() => { if (canWrite) setEditing({ node: group.node, rule }) }}
               >
                 <div className="flex items-start justify-between gap-4">
+                  {/* The position, shown because it *is* the mechanism: the
+                      first rule that matches wins, so a band like "link
+                      under 2%, ask between 2 and 5" is one rule placed
+                      above another with no lower bound written anywhere.
+                      An order you cannot see is a rule you cannot reason
+                      about. */}
+                  <div className="flex flex-col items-center shrink-0 pt-0.5">
+                    <span className="text-xs font-semibold text-muted-foreground tabular-nums w-5 text-center">
+                      {index + 1}
+                    </span>
+                    {canWrite && group.rules.length > 1 && (
+                      <div
+                        className="flex flex-col -space-y-1 mt-0.5"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          className="text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:hover:text-muted-foreground"
+                          disabled={index === 0 || move.isPending}
+                          title={t('reconciliation.moveUp')}
+                          onClick={() =>
+                            move.mutate({ node: group.node, ids: swap(group.rules, index, index - 1) })
+                          }
+                        >
+                          <ChevronUp size={13} />
+                        </button>
+                        <button
+                          className="text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:hover:text-muted-foreground"
+                          disabled={index === group.rules.length - 1 || move.isPending}
+                          title={t('reconciliation.moveDown')}
+                          onClick={() =>
+                            move.mutate({ node: group.node, ids: swap(group.rules, index, index + 1) })
+                          }
+                        >
+                          <ChevronDown size={13} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <p className="text-sm font-semibold text-foreground">

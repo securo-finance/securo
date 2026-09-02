@@ -2510,6 +2510,8 @@
         "expired": "Vypršalo bez odpovede — {{name}}",
         "unlinked": "Odpojené od {{name}}"
       }
-    }
+    },
+    "moveUp": "Skúšať túto skôr",
+    "moveDown": "Skúšať túto neskôr"
   }
 }

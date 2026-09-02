@@ -2375,6 +2375,8 @@
         "expired": "Caducó sin respuesta — {{name}}",
         "unlinked": "Desvinculado de {{name}}"
       }
-    }
+    },
+    "moveUp": "Probar esta antes",
+    "moveDown": "Probar esta después"
   }
 }

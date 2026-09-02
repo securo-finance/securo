@@ -2374,6 +2374,8 @@
         "expired": "Expired unanswered — {{name}}",
         "unlinked": "Unlinked from {{name}}"
       }
-    }
+    },
+    "moveUp": "Try this one earlier",
+    "moveDown": "Try this one later"
   }
 }

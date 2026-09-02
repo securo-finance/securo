@@ -2375,6 +2375,8 @@
         "expired": "Onbeantwoord verlopen — {{name}}",
         "unlinked": "Ontkoppeld van {{name}}"
       }
-    }
+    },
+    "moveUp": "Deze eerder proberen",
+    "moveDown": "Deze later proberen"
   }
 }

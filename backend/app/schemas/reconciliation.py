@@ -79,6 +79,17 @@ class ReconciliationRuleCreate(BaseModel):
     position: Optional[int] = None
 
 
+class ReconciliationOrder(BaseModel):
+    """The order rules are tried in, named in full.
+
+    Every rule in the set, not only the one that moved: order is the
+    mechanism the feature rests on, and a half-implicit order rearranges
+    itself the day a new default is shipped.
+    """
+
+    order: list[str] = Field(min_length=1)
+
+
 class SuggestionTransactionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -1230,3 +1230,161 @@ class TestSettlementsAreAlwaysPresent:
             money(currency="USD"), [an_invoice()], one_rule(BASE)
         )
         assert decision.settlements == []
+
+
+# ===========================================================================
+# Bands: link under 2%, ask between 2% and 5%, refuse above
+# ===========================================================================
+class TestTolerangeBands:
+    """*"Under two per cent I want it linked. Between two and five, ask me.
+    Above five, leave it alone."*
+
+    The shape the ordered list was built for: first match wins, so a band
+    is just a looser rule placed after a tighter one. Nothing new is
+    needed — but the rules shipped *below* a person's own still get their
+    turn, and that is where this gets interesting.
+    """
+
+    def banded(self, *, with_shipped_partial: bool = False) -> dict:
+        strategies = [
+            {
+                "id": "under_two",
+                "enabled": True,
+                "outcome": "link",
+                "when": {
+                    "counterparty": "same_payee",
+                    "amount": {"match": "tolerance", "percent": "2"},
+                    "date": {"before_days": 30, "after_days": 30},
+                },
+            },
+            {
+                "id": "two_to_five",
+                "enabled": True,
+                "outcome": "suggest",
+                "when": {
+                    "counterparty": "same_payee",
+                    "amount": {"match": "tolerance", "percent": "5"},
+                    "date": {"before_days": 30, "after_days": 30},
+                },
+            },
+        ]
+        if with_shipped_partial:
+            # What actually sits below a workspace's own rules.
+            strategies.append(
+                {
+                    "id": "same_client_part_payment",
+                    "enabled": True,
+                    "outcome": "suggest",
+                    "when": {
+                        "counterparty": "same_payee",
+                        "amount": {
+                            "match": "partial",
+                            "min_ratio": "0.05",
+                            "max_ratio": "0.95",
+                        },
+                        "date": {"before_days": 30, "after_days": 30},
+                    },
+                }
+            )
+        return {
+            "version": 1,
+            "node": "test",
+            "scope": {"movement": "any", "ignore_transaction_sources": []},
+            "strategies": strategies,
+            "on_ambiguity": "suggest",
+        }
+
+    def test_a_one_percent_difference_links(self):
+        decision = evaluate(
+            money(amount=Decimal("2970.00")), [an_invoice()], self.banded()
+        )
+        assert decision.port == "linked"
+        assert decision.strategy == "under_two"
+
+    def test_a_three_percent_difference_is_asked_about(self):
+        """The band is expressed by *order*, not by a lower bound: the 5%
+        rule only ever sees what the 2% rule did not take."""
+        decision = evaluate(
+            money(amount=Decimal("2910.00")), [an_invoice()], self.banded()
+        )
+        assert decision.port == "suggested"
+        assert decision.strategy == "two_to_five"
+
+    def test_the_bands_hold_on_both_sides_of_the_amount(self):
+        """Tolerance is symmetric, so an overpayment falls in the same
+        band as an underpayment of the same size."""
+        over = evaluate(
+            money(amount=Decimal("3090.00")), [an_invoice()], self.banded()
+        )
+        assert over.port == "suggested" and over.strategy == "two_to_five"
+
+    def test_the_boundary_belongs_to_the_tighter_rule(self):
+        """Exactly two per cent links rather than asks — inclusive, and on
+        the side a person means when they write "under 2%"."""
+        decision = evaluate(
+            money(amount=Decimal("2940.00")), [an_invoice()], self.banded()
+        )
+        assert decision.port == "linked"
+
+    def test_above_the_last_band_nothing_matches(self):
+        """"Reject" is not a verb the engine has. It is what happens when
+        no rule claims the money — same outcome, reached by absence."""
+        decision = evaluate(
+            money(amount=Decimal("2700.00")), [an_invoice()], self.banded()
+        )
+        assert decision.port == "unmatched"
+
+    def test_but_a_shipped_rule_below_still_gets_its_turn(self):
+        """**The non-obvious part.** A 10% difference is not rejected while
+        the shipped part-payment rule sits underneath: to that rule, 90% of
+        a balance is an instalment, and it offers it.
+
+        Which is correct in isolation and wrong for somebody who said
+        "above five per cent, leave it alone" — so expressing a real
+        ceiling means narrowing or turning off what lies below it, not
+        only adding rules above.
+        """
+        decision = evaluate(
+            money(amount=Decimal("2700.00")),
+            [an_invoice()],
+            self.banded(with_shipped_partial=True),
+        )
+        assert decision.port == "suggested"
+        assert decision.strategy == "same_client_part_payment"
+
+    def test_a_real_ceiling_means_turning_off_what_lies_underneath(self):
+        """The two rules tile the space exactly, which is why narrowing is
+        not enough.
+
+        A 5% tolerance reaches down to 95% of the balance. The shipped
+        part-payment rule offers from 5% *to* 95% of it. They meet at the
+        same point with no gap, so the region a person means by "above
+        five per cent" is precisely the region part-payment claims.
+
+        There is no threshold to tune — the resolution is the switch that
+        is already on the page. Worth knowing before somebody spends an
+        afternoon adjusting numbers that cannot express what they want.
+        """
+        with_partial = self.banded(with_shipped_partial=True)
+        under_five = evaluate(
+            money(amount=Decimal("2700.00")), [an_invoice()], with_partial
+        )
+        assert under_five.port == "suggested"
+        assert under_five.strategy == "same_client_part_payment"
+
+        with_partial["strategies"][2]["enabled"] = False
+        assert (
+            evaluate(money(amount=Decimal("2700.00")), [an_invoice()], with_partial).port
+            == "unmatched"
+        )
+
+    def test_the_two_rules_meet_exactly_and_leave_no_gap(self):
+        """Pinned because it is arithmetic somebody will otherwise
+        rediscover by being confused: at exactly 95% of the balance both
+        rules would fire, and the tighter one placed first takes it."""
+        at_the_seam = money(amount=Decimal("2850.00"))
+        decision = evaluate(
+            at_the_seam, [an_invoice()], self.banded(with_shipped_partial=True)
+        )
+        assert decision.port == "suggested"
+        assert decision.strategy == "two_to_five", "the band above wins the seam"

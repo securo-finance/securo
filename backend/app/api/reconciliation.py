@@ -32,6 +32,7 @@ from app.schemas.reconciliation import (
     ReconciliationNodeRead,
     ReconciliationRuleCreate,
     ReconciliationRuleRead,
+    ReconciliationOrder,
     ReconciliationRuleUpdate,
     HistoryEventRead,
     SuggestionCovers,
@@ -138,6 +139,37 @@ async def update_rule(
 
     await session.commit()
     return await _one(session, ctx.workspace.id, node, strategy_id)
+
+
+@router.put(
+    "/rules/{node}/order", response_model=list[ReconciliationRuleRead]
+)
+async def reorder_rules(
+    node: str,
+    payload: ReconciliationOrder,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Set the order rules are tried in.
+
+    The first rule that matches wins, so this is not cosmetic: it is how a
+    band is expressed — *link under two per cent, ask between two and
+    five* is one rule placed above another, with no lower bound written
+    anywhere.
+    """
+    try:
+        await rules.reorder(
+            session, ctx.workspace.id, ctx.user_id, node, payload.order
+        )
+    except rules.RuleError as exc:
+        raise _http(exc)
+    await session.commit()
+
+    policy = await rules.resolve(session, ctx.workspace.id, node)
+    return [
+        _as_read(node, strategy, index)
+        for index, strategy in enumerate(policy["strategies"])
+    ]
 
 
 @router.post(

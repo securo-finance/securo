@@ -2476,6 +2476,8 @@
         "expired": "Wygasło bez odpowiedzi — {{name}}",
         "unlinked": "Rozłączono z {{name}}"
       }
-    }
+    },
+    "moveUp": "Sprawdzaj tę wcześniej",
+    "moveDown": "Sprawdzaj tę później"
   }
 }
