@@ -1785,3 +1785,99 @@ async def test_a_payment_settling_several_invoices_records_each_link(
         Decimal("1000.00"),
         Decimal("2000.00"),
     ]
+
+
+# ---------------------------------------------------------------------------
+# The withholding gap, and what a rule can and cannot do about it
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_a_rule_can_send_a_withheld_payment_to_the_queue_today(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """R$3.000 invoiced, R$2.955 received — 1,5% IRRF withheld by a PJ
+    client. Nothing shipped catches it: the exact rules miss by R$45, the
+    part-payment rule refuses because 98,5% of the balance is a fee and
+    not an instalment, and the tolerance rule that would catch it also
+    demands a matching description, which bank text almost never has.
+
+    But a workspace can write the rule itself, and it works.
+    """
+    resp = await client.post(
+        "/api/reconciliation/rules",
+        headers=biz_headers,
+        json={
+            "node": INVOICE_NODE,
+            "name": "Cliente conhecido, diferença pequena",
+            "outcome": "suggest",
+            "position": 0,
+            "when": {
+                "counterparty": "same_payee",
+                "amount": {"match": "tolerance", "percent": "2"},
+                "date": {"before_days": 10, "after_days": 60},
+            },
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
+    await an_invoice(client, biz_headers, client_payee, total="3000.00")
+    await a_payment(client, biz_headers, account, client_payee, amount="2955.00")
+
+    queue = (
+        await client.get("/api/reconciliation/suggestions", headers=biz_headers)
+    ).json()
+    assert len(queue) == 1, "the withheld payment reached a person"
+    assert queue[0]["scores"]["amount_exact"] is False
+    assert queue[0]["scores"]["amount_expected"] == "3000.00"
+    assert queue[0]["scores"]["amount_moved"] == "2955.00"
+
+
+@pytest.mark.asyncio
+async def test_but_accepting_it_leaves_the_invoice_short_by_the_withheld_tax(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """The half a rule cannot reach, and the reason `invoice_deductions`
+    is still owed.
+
+    Reviewing the payment is solvable with a rule. **Closing the invoice
+    is not.** Accepting allocates what actually arrived, so R$45 stays
+    outstanding — the invoice reads `partial` forever, and the aging
+    report carries R$45 that is never coming, because it was never a
+    debt: the client paid it to the Receita on the seller's behalf.
+
+    Nothing in the ledger can currently say that. `uncollectible` is a
+    whole-invoice decision and the wrong word besides. Until a deduction
+    can be recorded, the honest outcome of this flow is a permanently
+    part-paid invoice.
+    """
+    await client.post(
+        "/api/reconciliation/rules",
+        headers=biz_headers,
+        json={
+            "node": INVOICE_NODE,
+            "name": "Cliente conhecido, diferença pequena",
+            "outcome": "suggest",
+            "position": 0,
+            "when": {
+                "counterparty": "same_payee",
+                "amount": {"match": "tolerance", "percent": "2"},
+                "date": {"before_days": 10, "after_days": 60},
+            },
+        },
+    )
+    invoice = await an_invoice(client, biz_headers, client_payee, total="3000.00")
+    await a_payment(client, biz_headers, account, client_payee, amount="2955.00")
+
+    queue = (
+        await client.get("/api/reconciliation/suggestions", headers=biz_headers)
+    ).json()
+    accepted = await client.post(
+        f"/api/reconciliation/suggestions/{queue[0]['id']}/accept", headers=biz_headers
+    )
+    assert accepted.status_code == 200, accepted.text
+
+    detail = (
+        await client.get(f"/api/invoices/{invoice['id']}", headers=biz_headers)
+    ).json()
+    assert Decimal(detail["allocations"][0]["amount"]) == Decimal("2955.00")
+    assert Decimal(detail["balance"]) == Decimal("45.00")
+    assert detail["state"] == "partial", "not paid — and it never will be"
