@@ -1,9 +1,13 @@
 import json
+import uuid
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.transaction import Transaction
 
 
 @pytest.mark.asyncio
@@ -393,7 +397,12 @@ async def test_import_with_excluded_transactions(
 
 
 async def test_import_with_category_override(
-    client: AsyncClient, auth_headers, test_account: Account, test_categories: list
+    client: AsyncClient,
+    auth_headers,
+    test_account: Account,
+    test_categories: list,
+    test_rules,
+    session: AsyncSession,
 ):
     override_cat_id = str(test_categories[0].id)
     response = await client.post(
@@ -403,7 +412,7 @@ async def test_import_with_category_override(
             "account_id": str(test_account.id),
             "transactions": [
                 {
-                    "description": "GROCERY",
+                    "description": "UBER EXPLICIT OVERRIDE",
                     "amount": "25.50",
                     "date": "2026-02-10",
                     "type": "debit",
@@ -420,3 +429,79 @@ async def test_import_with_category_override(
     logs_resp = await client.get("/api/import-logs", headers=auth_headers)
     log = next(entry for entry in logs_resp.json() if entry["id"] == import_log_id)
     assert log["transaction_count"] == 1
+
+    result = await session.execute(
+        select(Transaction).where(
+            Transaction.import_id == uuid.UUID(import_log_id),
+        )
+    )
+    imported = result.scalar_one()
+    assert imported.category_id == test_categories[0].id
+
+
+async def test_import_rule_overrides_csv_category_default(
+    client: AsyncClient,
+    auth_headers,
+    test_account: Account,
+    test_categories: list,
+    test_rules,
+    session: AsyncSession,
+):
+    response = await client.post(
+        "/api/transactions/import",
+        headers=auth_headers,
+        json={
+            "account_id": str(test_account.id),
+            "transactions": [
+                {
+                    "description": "UBER CSV DEFAULT",
+                    "amount": "25.50",
+                    "date": "2026-02-11",
+                    "type": "debit",
+                    "category_name": test_categories[0].name,
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 201
+    import_log_id = uuid.UUID(response.json()["import_log_id"])
+    result = await session.execute(
+        select(Transaction).where(Transaction.import_id == import_log_id)
+    )
+    imported = result.scalar_one()
+    assert imported.category_id == test_categories[1].id
+
+
+async def test_import_uses_csv_category_when_no_rule_matches(
+    client: AsyncClient,
+    auth_headers,
+    test_account: Account,
+    test_categories: list,
+    test_rules,
+    session: AsyncSession,
+):
+    response = await client.post(
+        "/api/transactions/import",
+        headers=auth_headers,
+        json={
+            "account_id": str(test_account.id),
+            "transactions": [
+                {
+                    "description": "NO MATCH CSV DEFAULT",
+                    "amount": "25.50",
+                    "date": "2026-02-12",
+                    "type": "debit",
+                    "category_name": test_categories[0].name,
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 201
+    import_log_id = uuid.UUID(response.json()["import_log_id"])
+    result = await session.execute(
+        select(Transaction).where(Transaction.import_id == import_log_id)
+    )
+    imported = result.scalar_one()
+    assert imported.category_id == test_categories[0].id

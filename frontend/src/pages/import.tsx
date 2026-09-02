@@ -130,7 +130,7 @@ function TransactionImportPanel() {
         excluded: rt.excluded,
         category_id: rt.selected_category_id !== undefined
           ? (rt.selected_category_id ?? undefined)
-          : (rt.suggested_category_id ?? undefined),
+          : undefined,
         force_uncategorized: rt.selected_category_id === null,
       }))
       return transactionsApi.import(
