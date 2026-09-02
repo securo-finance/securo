@@ -351,3 +351,18 @@ describe('documentProvenance', () => {
     expect(documentProvenance('   ')).toEqual({ kind: 'uploaded' })
   })
 })
+
+describe('documentProvenance, on the page we drew ourselves', () => {
+  it('names it rather than printing the source id', () => {
+    // It read as the literal "De issued · Sep 02" on screen: a machine
+    // name is right for somebody else's integration and wrong for us.
+    expect(documentProvenance('issued')).toEqual({ kind: 'ours' })
+  })
+
+  it('still treats every other source as the system that sent it', () => {
+    expect(documentProvenance('issued-by-hand')).toEqual({
+      kind: 'system',
+      name: 'issued-by-hand',
+    })
+  })
+})

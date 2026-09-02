@@ -34,6 +34,7 @@ from app.schemas.invoice import (
     ShareLinkRead,
 )
 from app.services import (
+    invoice_archive,
     invoice_attachment_service,
     invoice_logo_service,
     invoice_document,
@@ -249,6 +250,13 @@ async def create_invoice(
         raise _http(exc)
     await session.commit()
     invoice = await _load(session, invoice.id, ctx.workspace.id)
+    # A workspace that opens invoices on creation issues them here, so the
+    # document has to be filed here too. Both doors, or the one that is
+    # missed silently goes back to a PDF that drifts.
+    await invoice_archive.file_issued_document(
+        session, invoice, ctx.workspace, ctx.user_id
+    )
+    await session.commit()
     await _settle_from_money_already_there(session, invoice)
     return _serialize(await _load(session, invoice.id, ctx.workspace.id))
 
@@ -310,6 +318,13 @@ async def issue_invoice(
         await invoice_service.issue_invoice(session, invoice)
     except InvoiceError as exc:
         raise _http(exc)
+    await session.commit()
+    # Filed while the figures still say what was sent. From here the
+    # answer to "what did we send" is a stored file rather than a
+    # re-rendering that depends on what has happened since.
+    await invoice_archive.file_issued_document(
+        session, invoice, ctx.workspace, ctx.user_id
+    )
     await session.commit()
     await _settle_from_money_already_there(
         session, await _load(session, invoice_id, ctx.workspace.id)
