@@ -6,13 +6,13 @@
  *  a module; this is those numbers, with a name and a switch.
  *
  *  Two things this screen deliberately is not. It is not an open-ended
- *  condition builder like the rules above it — matching runs on a fixed set
+ *  condition builder like the rules above it: matching runs on a fixed set
  *  of signals, and offering fields the engine cannot read would be a lie
  *  told in a nice font. And it is not a list stored in the database: what
  *  you see is what we ship with whatever you changed applied over it, so a
  *  rule you never touched keeps improving when we improve it.
  */
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -36,10 +36,12 @@ import type {
   Trigger,
   ReconciliationConditions,
   ReconciliationNode,
+  ReconciliationPolicyFile,
   ReconciliationRule,
 } from '@/types'
-import { Plus, RotateCcw, Trash2, Zap, HelpCircle, ChevronUp, ChevronDown, Power } from 'lucide-react'
+import { Plus, RotateCcw, Trash2, Zap, HelpCircle, ChevronUp, ChevronDown, Power, Download, Upload } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 
 /** Names for the rules we ship. Kept here rather than sent by the API so
  *  they follow the reader's language, and so a rule someone edited does not
@@ -54,6 +56,11 @@ const SHIPPED_NAME: Record<string, string> = {
   same_account_exact: 'reconciliation.rule.sameAccountExact',
 }
 
+/** What the file says it is. A categorization export dropped into the
+ *  matching importer would otherwise arrive as a file with no rules in
+ *  it and look like it worked. */
+const POLICY_FORMAT = 'securo-reconciliation-rules'
+
 const NODE_TITLE: Record<string, string> = {
   'reconciliation.match_invoice': 'reconciliation.node.invoices',
   'reconciliation.match_recurring': 'reconciliation.node.recurring',
@@ -67,7 +74,7 @@ const NODE_HINT: Record<string, string> = {
 /** The whole order with two entries exchanged.
  *
  *  Returns every id, not the pair that moved, because that is what the
- *  API takes — and for a good reason: an order where some rules are
+ *  API takes, and for a good reason: an order where some rules are
  *  placed and the rest fall back to wherever we shipped them reads fine
  *  today and quietly rearranges the day a new default is inserted. */
 function swap(rules: ReconciliationRule[], from: number, to: number): string[] {
@@ -169,9 +176,6 @@ function conditionSummary(
       t('reconciliation.cond.similarity', { min: when.description_similarity.min }),
     )
 
-  if (when.currency?.conversion === 'allow')
-    parts.push(t('reconciliation.cond.currencyAllow'))
-
   return parts.join(' · ') || t('reconciliation.cond.none')
 }
 
@@ -195,7 +199,7 @@ function OutcomeBadge({ outcome }: { outcome: 'link' | 'suggest' }) {
 /** One of the three questions a rule answers, with its heading.
  *
  *  The form used to be a flat list, and two of its fields were both called
- *  "Amount" — one asking how close the payment must be to the invoice, the
+ *  "Amount": one asking how close the payment must be to the invoice, the
  *  other asking which payments the rule looks at. Same word, different
  *  question, twenty pixels apart. Splitting them under headings is not
  *  decoration: it is the difference between a form you can read and one
@@ -226,7 +230,7 @@ function Step({
 }
 
 
-/** Pick none, one, or several — accounts or clients.
+/** Pick none, one, or several: accounts or clients.
  *
  *  Checkboxes rather than a multi-select control because the list is short
  *  and the state that matters is "nothing chosen", which a native
@@ -306,7 +310,7 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
   const [when, setWhen] = useState<ReconciliationConditions>(rule?.when ?? EMPTY)
 
   // The dialog is mounted once and reused, so it has to be re-seeded
-  // whenever it opens — and the seed has to be *forgotten* when it closes.
+  // whenever it opens, and the seed has to be *forgotten* when it closes.
   // Without the second half, reopening the same rule after cancelling
   // shows the abandoned edits as though they had been saved, which is a
   // worse lie than losing them: the screen would claim a threshold the
@@ -370,7 +374,7 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
         {/* Three questions, in the order a person asks them: when does this
             run, which money does it look at, and what counts as a match.
             The old flat list had two fields called "Amount" twenty pixels
-            apart — one about how close the payment must be to the invoice,
+            apart: one about how close the payment must be to the invoice,
             one about which payments the rule looks at. Same word, different
             question. */}
         <div className="space-y-4 flex-1 overflow-y-auto -mx-1 px-1">
@@ -863,6 +867,15 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
   const [editing, setEditing] = useState<{ node: string; rule: ReconciliationRule | null } | null>(
     null,
   )
+  const [deleting, setDeleting] = useState<{
+    node: string
+    rule: ReconciliationRule
+  } | null>(null)
+  const [pending, setPending] = useState<{
+    file: ReconciliationPolicyFile
+    name: string
+  } | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
 
   const { data: nodes } = useQuery<ReconciliationNode[]>({
     queryKey: ['reconciliation-rules'],
@@ -908,53 +921,170 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
     onError: (error) => toast.error(extractApiError(error, t('common.error'))),
   })
 
+  const remove = useMutation({
+    mutationFn: ({ node, id }: { node: string; id: string }) =>
+      reconciliationApi.deleteRule(node, id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['reconciliation-rules'] })
+      setDeleting(null)
+      toast.success(t('rules.deleted'))
+    },
+    onError: (error) => toast.error(extractApiError(error, t('common.error'))),
+  })
+
+  const exporting = useMutation({
+    mutationFn: () => reconciliationApi.exportRules(),
+    onSuccess: () => toast.success(t('reconciliation.exported')),
+    onError: (error) => toast.error(extractApiError(error, t('common.error'))),
+  })
+
+  const importing = useMutation({
+    mutationFn: (file: ReconciliationPolicyFile) =>
+      reconciliationApi.importRules(file, true),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['reconciliation-rules'] })
+      setPending(null)
+      toast.success(t('reconciliation.imported', result))
+    },
+    onError: (error) => toast.error(extractApiError(error, t('common.error'))),
+  })
+
+  async function readFile(file: File) {
+    try {
+      const parsed = JSON.parse(await file.text()) as ReconciliationPolicyFile
+      if (parsed.format !== POLICY_FORMAT || !Array.isArray(parsed.nodes)) {
+        // A categorization export dropped in here would otherwise arrive
+        // as a file with no rules and look like it worked.
+        toast.error(t('reconciliation.invalidImportFile'))
+        return
+      }
+      setPending({ file: parsed, name: file.name })
+    } catch {
+      toast.error(t('reconciliation.invalidImportFile'))
+    }
+  }
+
   if (!nodes) return null
+
+  // One set is the shape today, and the card is laid out for it: no strip
+  // naming a list the card already names, and adding lives in the header.
+  const single = nodes.length === 1 ? nodes[0] : null
+
+  // Nothing here is live for this workspace. A card of rules that cannot
+  // act on anything, under a heading saying so, is furniture, and while
+  // there were two sets one of them was always live, which is why the
+  // page could carry the honest label instead.
+  if (!nodes.some((group) => group.active)) return null
 
   return (
     <>
-      {/* One card for matching, not one per set. The two sets are real —
+      {/* One card for matching, not one per set. The two sets are real:
           separate ordered lists, matched against different kinds of
-          promise — but a whole card each, with its own frame, heading and
+          promise, but a whole card each, with its own frame, heading and
           button, is a lot of furniture for a list that is often one rule
           long. They are sections of the same thing. */}
       <SectionCard>
-        <div className="px-4 sm:px-5 py-4 border-b border-border">
-          <p className="text-sm font-semibold text-foreground">
-            {t('reconciliation.matchingTitle')}
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {t('reconciliation.matchingHint')}
-          </p>
+        <div className="px-4 sm:px-5 py-4 border-b border-border flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <p className="text-sm font-semibold text-foreground">
+              {t('reconciliation.matchingTitle')}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {t('reconciliation.matchingHint')}
+            </p>
+          </div>
+          {/* A policy is worth more than one workspace. Somebody who has
+              worked out how their clients' banks actually behave should
+              be able to hand that to the next machine without retyping
+              eleven thresholds. */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 h-8"
+              onClick={() => exporting.mutate()}
+              disabled={exporting.isPending}
+            >
+              <Download size={12} />
+              <span className="hidden sm:inline">{t('rules.export')}</span>
+            </Button>
+            {canWrite && single && (
+              // With one set, the card is the list, and adding belongs
+              // where the list is named; the same place, shape and word
+              // as on the categorization card above.
+              <Button
+                size="sm"
+                className="gap-1.5 h-8 order-last"
+                onClick={() => setEditing({ node: single.node, rule: null })}
+              >
+                <Plus size={13} />
+                <span className="hidden sm:inline">{t('rules.add')}</span>
+              </Button>
+            )}
+            {canWrite && (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 h-8"
+                  onClick={() => fileInput.current?.click()}
+                  disabled={importing.isPending}
+                >
+                  <Upload size={12} />
+                  <span className="hidden sm:inline">{t('rules.import')}</span>
+                </Button>
+                <input
+                  ref={fileInput}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  data-testid="reconciliation-import-input"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0]
+                    if (file) void readFile(file)
+                    event.target.value = ''
+                  }}
+                />
+              </>
+            )}
+          </div>
         </div>
 
       {nodes.map((group) => (
         <div key={group.node}>
-          <div className="px-4 sm:px-5 py-2.5 bg-muted/40 border-b border-border flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="text-xs font-semibold text-foreground">
+          {/* Only when there is more than one set to tell apart. A strip
+              naming the single list that follows it, inside a card that
+              already names it, is a heading for a heading. */}
+          {!single && (
+          <div className="px-4 sm:px-5 py-2 bg-muted/40 border-b border-border flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+            <p className="text-xs text-muted-foreground">
+              <span className="font-semibold text-foreground">
                 {t(NODE_TITLE[group.node] ?? group.node)}
-                {!group.active && (
-                  <span className="ml-2 text-[10px] font-semibold bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full">
-                    {t('reconciliation.node.inactive')}
-                  </span>
-                )}
-              </p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
-                {t(NODE_HINT[group.node] ?? '')}
-              </p>
-            </div>
+              </span>
+              <span className="mx-1.5">·</span>
+              {t(NODE_HINT[group.node] ?? '')}
+              {!group.active && (
+                <span className="ml-2 text-[10px] font-semibold bg-muted text-muted-foreground px-1.5 py-0.5 rounded-full">
+                  {t('reconciliation.node.inactive')}
+                </span>
+              )}
+            </p>
             {canWrite && (
+              // The same word as the list above, from the same key. Two
+              // names for one act made two lists of rules read as two
+              // features that happen to sit near each other.
               <Button
                 size="sm"
-                variant="ghost"
-                className="gap-1.5 h-7 text-xs"
+                variant="outline"
+                className="gap-1.5 h-8"
                 onClick={() => setEditing({ node: group.node, rule: null })}
               >
-                <Plus size={12} />
-                <span className="hidden sm:inline">{t('reconciliation.add')}</span>
+                <Plus size={13} />
+                <span className="hidden sm:inline">{t('rules.add')}</span>
               </Button>
             )}
           </div>
+          )}
 
           <div className="divide-y divide-border">
             {group.rules.map((rule, index) => (
@@ -1057,48 +1187,134 @@ export function ReconciliationRules({ canWrite }: { canWrite: boolean }) {
                       >
                         <Power size={13} />
                       </button>
-                      {rule.customised ? (
+                      {/* Only where there is something to undo. Putting
+                          a rule back the way we ship it and getting rid
+                          of it are different wishes, and one icon for
+                          both meant a workspace could restore our
+                          version of a rule or keep it, and nothing
+                          else. */}
+                      {rule.customised && rule.origin === 'default' && (
                         <button
                           className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-background transition-colors"
-                          title={t(
-                            rule.origin === 'custom'
-                              ? 'common.delete'
-                              : 'reconciliation.restore',
-                          )}
+                          title={t('reconciliation.restore')}
                           onClick={() => reset.mutate({ node: group.node, id: rule.id })}
                           disabled={reset.isPending}
                         >
-                          {rule.origin === 'custom' ? (
-                            <Trash2 size={13} />
-                          ) : (
-                            <RotateCcw size={13} />
-                          )}
+                          <RotateCcw size={13} />
                         </button>
-                      ) : (
-                        // A rule that ships with Securo has no delete,
-                        // and cannot: it is in the image, so it would be
-                        // back on the next start. Turning it off is what
-                        // deleting it means. Left in place and greyed
-                        // rather than omitted — an absent button in the
-                        // one column where the list above has a bin is
-                        // read as a bug, and the tooltip is where the
-                        // answer belongs.
-                        <span
-                          className="p-1.5 rounded-md text-muted-foreground/30 cursor-not-allowed"
-                          title={t('rules.shippedCannotDelete')}
-                        >
-                          <Trash2 size={13} />
-                        </span>
                       )}
+                      {/* No rule we refuse to remove, ours included. A
+                          matching policy decides what happens to
+                          somebody's money, and a default we happen to
+                          believe in is not a reason to make them keep
+                          it. What we keep is the name, so the list below
+                          can offer it back. */}
+                      <button
+                        className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950 transition-colors"
+                        title={t('common.delete')}
+                        onClick={() => setDeleting({ node: group.node, rule })}
+                        disabled={remove.isPending}
+                      >
+                        <Trash2 size={13} />
+                      </button>
                     </div>
                   )}
                 </div>
               </div>
             ))}
+
+            {group.rules.length === 0 && (
+              <p className="px-4 sm:px-5 py-6 text-xs text-muted-foreground text-center">
+                {t('reconciliation.noneLeft')}
+              </p>
+            )}
           </div>
+
+          {/* What was thrown away, and the way back. Deleting a shipped
+              rule leaves a tombstone rather than a hole, so we still know
+              its name, and without somewhere to show it, deleting one
+              would be a trap: the row is gone from the page and there is
+              nothing left to click. */}
+          {group.discarded.length > 0 && (
+            <div className="px-4 sm:px-5 py-2.5 bg-muted/30 border-t border-border flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="text-[11px] text-muted-foreground">
+                {t('reconciliation.discarded')}
+              </span>
+              {group.discarded.map((gone) => (
+                <button
+                  key={gone.id}
+                  className="text-[11px] font-medium text-muted-foreground hover:text-foreground underline decoration-dotted underline-offset-2 disabled:opacity-50"
+                  disabled={!canWrite || reset.isPending}
+                  title={t('reconciliation.restore')}
+                  onClick={() => reset.mutate({ node: group.node, id: gone.id })}
+                >
+                  {t(SHIPPED_NAME[gone.id] ?? 'reconciliation.rule.unknown')}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       ))}
       </SectionCard>
+
+      <DeleteConfirmationDialog
+        open={deleting !== null}
+        title={t('reconciliation.confirmDeleteTitle')}
+        description={t('reconciliation.confirmDeleteDescription', {
+          name:
+            deleting?.rule.name ||
+            t(SHIPPED_NAME[deleting?.rule.id ?? ''] ?? 'reconciliation.rule.unknown'),
+        })}
+        isPending={remove.isPending}
+        onClose={() => setDeleting(null)}
+        onConfirm={() =>
+          deleting && remove.mutate({ node: deleting.node, id: deleting.rule.id })
+        }
+      />
+
+      {/* Asked rather than assumed. Importing replaces the matching rules
+          this workspace has now (order is the mechanism here, and there
+          is no correct way to interleave two orderings), so a policy
+          somebody tuned is not something to overwrite on a mis-click. */}
+      <Dialog open={pending !== null} onOpenChange={(open) => { if (!open) setPending(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('reconciliation.importConfirmTitle')}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              {t('reconciliation.importConfirmDescription', {
+                count: (pending?.file.nodes ?? []).reduce(
+                  (sum, node) => sum + node.rules.length,
+                  0,
+                ),
+                file: pending?.name ?? '',
+              })}
+            </p>
+            <p className="font-medium text-amber-600 dark:text-amber-400">
+              {t('reconciliation.importOverwriteWarning')}
+            </p>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPending(null)}
+              disabled={importing.isPending}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => { if (pending) importing.mutate(pending.file) }}
+              disabled={!pending || importing.isPending}
+            >
+              {t('rules.confirmOverwriteImport')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <RuleEditor
         open={editing !== null}

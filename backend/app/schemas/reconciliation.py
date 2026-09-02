@@ -20,7 +20,7 @@ class RuleWindow(BaseModel):
 
 
 class ReconciliationRuleRead(BaseModel):
-    """One rule as the page shows it — shipped, changed, or the workspace's own.
+    """One rule as the page shows it: shipped, changed, or the workspace's own.
 
     `customised` is what lets the screen say "you changed this" and offer
     to put it back, without the client having to know what we ship.
@@ -32,17 +32,30 @@ class ReconciliationRuleRead(BaseModel):
     origin: str
     customised: bool
     enabled: bool
-    #: `link` or `suggest` — what happens when it matches.
+    #: `link` or `suggest`: what happens when it matches.
     outcome: str
     #: **Which moment it runs at.** `money_arrives` when a payment lands
     #: and we look for the promise it answers; `invoice_issued` when a
     #: document is written and we look back at money already there; `both`.
     #: The evidence differs between the two, so a rule is allowed to trust
-    #: only one — and saying so here is what keeps that choice out of the
+    #: only one, and saying so here is what keeps that choice out of the
     #: matching code, where nobody could see it.
     trigger: str
     when: dict[str, Any]
     position: int
+
+
+class DiscardedRuleRead(BaseModel):
+    """A rule we ship that this workspace threw away.
+
+    Sent so the page can offer it back. A shipped rule is a document in
+    the image, so deleting one leaves a tombstone rather than a hole:
+    which means we still know its name, and the only alternative to
+    showing it here would be a deletion nobody could undo.
+    """
+
+    id: str
+    node: str
 
 
 class ReconciliationNodeRead(BaseModel):
@@ -54,6 +67,7 @@ class ReconciliationNodeRead(BaseModel):
     #: they were live would be a lie the page tells every time it loads.
     active: bool
     rules: list[ReconciliationRuleRead]
+    discarded: list[DiscardedRuleRead] = []
 
 
 class ReconciliationRuleUpdate(BaseModel):
@@ -155,8 +169,29 @@ class HistoryEventRead(BaseModel):
     expectation_label: Optional[str] = None
     amount: Decimal
     strategy_id: Optional[str] = None
-    #: Null means the rules did it on their own — the distinction a reader
+    #: Null means the rules did it on their own: the distinction a reader
     #: reaches for first.
     user_id: Optional[uuid.UUID] = None
     transaction_id: Optional[uuid.UUID] = None
     transaction_description: Optional[str] = None
+
+
+class ReconciliationImportRequest(BaseModel):
+    """A matching-rules file, and permission to replace what is here.
+
+    `overwrite` is asked for rather than assumed: importing replaces the
+    workspace's matching rules, and a policy somebody tuned is not
+    something to overwrite on a mis-click.
+    """
+
+    payload: dict[str, Any]
+    overwrite: bool = False
+
+
+class ReconciliationImportResponse(BaseModel):
+    imported: int
+    #: Rules the file carried that could not be brought in: one naming an
+    #: account this workspace does not have, or a rule this version no
+    #: longer ships. Counted rather than hidden: "12 imported" and "12
+    #: imported, 3 skipped" are different outcomes.
+    skipped: int

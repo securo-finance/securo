@@ -372,7 +372,14 @@
       "fromSystem": "From {{source}} · {{date}}",
       "fromUpload": "Uploaded · {{date}}"
     },
-    "draftSaved": "Draft saved"
+    "draftSaved": "Draft saved",
+    "suggestions": {
+      "title_one": "A payment may settle this invoice",
+      "title_other": "{{count}} payments may settle this invoice",
+      "wouldApply": "would apply {{amount}}",
+      "alsoCovers_one": "also covers {{count}} other invoice",
+      "alsoCovers_other": "also covers {{count}} other invoices"
+    }
   },
   "collections": {
     "title": "Collections",
@@ -799,7 +806,9 @@
     "calendarTransfersExcluded": "Transfers are not counted as income or expenses",
     "invoiceBadge": "Invoice {{number}}",
     "invoiceBadgeNoNumber": "Invoice",
-    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it."
+    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it.",
+    "suggestionBadge": "Question",
+    "suggestionBadgeTooltip": "A payment may settle this. Open the queue to answer."
   },
   "accounts": {
     "title": "Accounts",
@@ -1119,6 +1128,7 @@
     "createMissingCategories": "Also create default categories the pack needs",
     "duplicateName": "A rule with this name already exists",
     "sectionTitle": "Categorization Rules",
+    "sectionHint": "How to categorize transactions.",
     "resetAndReapplyAll": "Reset and reapply",
     "confirmResetAndReapplyAll": "Reset matching transaction categories, notes, and rule-managed descriptions, then reapply all active rules?",
     "add": "Add",
@@ -1165,7 +1175,6 @@
     "turnOff": "Turn off",
     "turnedOn": "Rule turned on",
     "turnedOff": "Rule turned off",
-    "shippedCannotDelete": "This rule comes with Securo. Turn it off instead of deleting it.",
     "noConditions": "(no conditions)",
     "noActions": "(no actions)",
     "fieldDescription": "Description",
@@ -2220,10 +2229,10 @@
   },
   "reconciliation": {
     "node": {
-      "invoices": "Invoice matching",
-      "invoicesHint": "How money arriving is bound to the invoices it settles. Tried in order — the first rule that matches wins.",
-      "recurring": "Recurring bill matching",
-      "recurringHint": "How a real charge is recognised as the bill it pays, so you never end up with the row twice.",
+      "invoices": "Invoices",
+      "invoicesHint": "against the invoices you issued",
+      "recurring": "Recurring bills",
+      "recurringHint": "against the bills you were already expecting",
       "inactive": "Not in use here"
     },
     "rule": {
@@ -2248,7 +2257,6 @@
       "amountRatio": "the amount matches net of withholding",
       "window": "up to {{before}} days early, {{after}} days late",
       "similarity": "the description is at least {{min}} similar",
-      "currencyAllow": "any currency",
       "none": "no conditions",
       "accounts": "in {{names}}",
       "payees": "for {{names}}",
@@ -2265,7 +2273,6 @@
       "amountPartial": "the amount covers part of what is owed",
       "amountSet": "up to {{count}} invoices add up to it"
     },
-    "add": "New rule",
     "newRule": "New matching rule",
     "saved": "Rule saved",
     "reset": "Rule restored",
@@ -2280,7 +2287,7 @@
       "counterparty": "Who paid",
       "amount": "Amount",
       "window": "How far apart the dates may be",
-      "windowHint": "Late is counted from the due date, early from the day the invoice was written — so paying the day after issue is not weeks early.",
+      "windowHint": "Late is counted from the due date, early from the day the invoice was written, so paying the day after issue is not weeks early.",
       "beforeDays": "Days early",
       "afterDays": "Days late",
       "similarity": "Description similarity",
@@ -2306,7 +2313,7 @@
       "triggerHint": "Matching happens at two moments, and the evidence is not the same in both.",
       "amountMatch": "How close the amount must be",
       "amountMatchHint": "Compared against what is still owed, not the original total.",
-      "amountBandHint": "About the payment itself — a size you do or do not want this rule handling."
+      "amountBandHint": "About the payment itself: a size you do or do not want this rule handling."
     },
     "counterparty": {
       "any": "Anyone",
@@ -2327,7 +2334,7 @@
     },
     "queue": {
       "title": "Waiting for you",
-      "hint": "Matches that looked plausible without being certain. This list should stay short — if it does not, the rules want changing.",
+      "hint": "Matches that need your confirmation.",
       "empty": "Nothing to review. Everything matched on its own.",
       "aPayment": "A payment",
       "maySettle": "may settle {{name}}",
@@ -2335,7 +2342,7 @@
       "accept": "Link",
       "declineHint": "Not a match. This pair will not be suggested again.",
       "linked": "Linked",
-      "declined": "Dismissed — we will not ask again",
+      "declined": "Dismissed. We will not ask again",
       "covers": "covers"
     },
     "evidence": {
@@ -2362,23 +2369,23 @@
       "money_arrives": "When money arrives",
       "money_arrivesHint": "A payment lands and we look for the invoice it settles.",
       "invoice_issued": "When an invoice is issued",
-      "invoice_issuedHint": "The client paid first and the invoice follows — we look back at money already there.",
+      "invoice_issuedHint": "The client paid first and the invoice follows, so we look back at money already there.",
       "both": "Both moments",
       "bothHint": "The rule is trusted either way round."
     },
     "history": {
       "title": "What matching did",
-      "hint": "Newest first. Undoing a link is recorded here too — nothing else keeps it.",
+      "hint": "Newest first.",
       "byPerson": "by you",
       "byRules": "by the rules",
       "more": "Show {{count}} more",
       "less": "Show fewer",
       "action": {
         "linked": "Linked to {{name}}",
-        "accepted": "You linked it to {{name}}",
+        "accepted": "Suggestion accepted for {{name}}",
         "suggested": "Offered against {{name}}",
-        "declined": "You dismissed {{name}}",
-        "expired": "Expired unanswered — {{name}}",
+        "declined": "Suggestion dismissed for {{name}}",
+        "expired": "Suggestion expired: {{name}}",
         "unlinked": "Unlinked from {{name}}"
       },
       "empty": "Nothing yet. This fills in as matching links, asks and is answered."
@@ -2386,7 +2393,7 @@
     "moveUp": "Try this one earlier",
     "moveDown": "Try this one later",
     "matchingTitle": "Matching rules",
-    "matchingHint": "How money that arrives is bound to what it settles. Each set is tried in order — the first rule that matches wins.",
+    "matchingHint": "How money that arrives is bound to the invoices.",
     "pair": {
       "owed": "What is owed",
       "arrived": "What arrived",
@@ -2402,6 +2409,16 @@
       "acrossInvoices": "across {{count}} invoices",
       "dueOn": "due {{date}}",
       "totalOf": "{{amount}} total"
-    }
+    },
+    "discarded": "Deleted from this workspace:",
+    "noneLeft": "No matching rules left in this set. Nothing here is matched automatically.",
+    "confirmDeleteTitle": "Delete this rule?",
+    "confirmDeleteDescription": "\"{{name}}\" stops deciding anything. You can bring it back later if it is one of ours.",
+    "exported": "Matching rules downloaded",
+    "imported": "Imported {{imported}} rules ({{skipped}} skipped)",
+    "invalidImportFile": "That is not a matching-rules file",
+    "importConfirmTitle": "Import matching rules?",
+    "importConfirmDescription": "File {{file}} contains {{count}} rules.",
+    "importOverwriteWarning": "Importing replaces the matching rules this workspace has now, including their order. This cannot be undone."
   }
 }

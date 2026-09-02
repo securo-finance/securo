@@ -77,6 +77,7 @@ import type {
   TransactionApplyScope,
   InvoiceAttachment,
   ReconciliationNode,
+  ReconciliationPolicyFile,
   ReconciliationRule,
   ReconciliationRuleDraft,
   ReconciliationRulePatch,
@@ -999,7 +1000,7 @@ export const rules = {
 }
 
 // Recurring Transactions
-// Reconciliation — the rules matching follows, and the matches it was
+// Reconciliation: the rules matching follows, and the matches it was
 // not confident enough to make on its own.
 export const reconciliation = {
   rules: async (): Promise<ReconciliationNode[]> => {
@@ -1034,13 +1035,49 @@ export const reconciliation = {
     const { data } = await api.post('/reconciliation/rules', rule)
     return data
   },
-  /** Drops a rule the workspace wrote, or puts a shipped one back under
-   * whatever we ship today. One verb, because from the page they are the
-   * same gesture. */
-  resetRule: async (node: string, id: string): Promise<void> => {
+  /** Get rid of a rule, whoever wrote it: ours included. What happens
+   *  underneath differs (a rule of your own is a row and goes; one of
+   *  ours ships in the image, so a tombstone records that this workspace
+   *  does not run it) but that is our problem, not something to make a
+   *  person learn. */
+  deleteRule: async (node: string, id: string): Promise<void> => {
     await api.delete(
       `/reconciliation/rules/${encodeURIComponent(node)}/${encodeURIComponent(id)}`,
     )
+  },
+  /** Forget everything this workspace did to one of our rules (a moved
+   *  threshold, a place in the order, a deletion), and go back to
+   *  whatever we ship today. */
+  resetRule: async (node: string, id: string): Promise<void> => {
+    await api.post(
+      `/reconciliation/rules/${encodeURIComponent(node)}/${encodeURIComponent(id)}/reset`,
+    )
+  },
+  exportRules: async (): Promise<void> => {
+    const { data } = await api.get('/reconciliation/rules/export', {
+      responseType: 'blob',
+    })
+    const blob = new Blob([data], { type: 'application/json;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `securo-reconciliation-rules-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  },
+  /** Replaces rather than merges: order is the mechanism here, and there
+   *  is no correct way to interleave two orderings. Hence `overwrite`. */
+  importRules: async (
+    payload: ReconciliationPolicyFile,
+    overwrite = false,
+  ): Promise<{ imported: number; skipped: number }> => {
+    const { data } = await api.post('/reconciliation/rules/import', {
+      payload,
+      overwrite,
+    })
+    return data
   },
   /** What matching did, newest first. `expectationId` narrows it to
    *  everything that ever happened to one invoice. */

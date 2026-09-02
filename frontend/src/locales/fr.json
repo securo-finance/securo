@@ -372,7 +372,14 @@
       "fromSystem": "De {{source}} · {{date}}",
       "fromUpload": "Importé · {{date}}"
     },
-    "draftSaved": "Brouillon enregistré"
+    "draftSaved": "Brouillon enregistré",
+    "suggestions": {
+      "title_one": "Un paiement peut solder cette facture",
+      "title_other": "{{count}} paiements peuvent solder cette facture",
+      "wouldApply": "appliquerait {{amount}}",
+      "alsoCovers_one": "couvre aussi {{count}} autre facture",
+      "alsoCovers_other": "couvre aussi {{count}} autres factures"
+    }
   },
   "collections": {
     "title": "Collections",
@@ -799,7 +806,9 @@
     "calendarTransfersExcluded": "Les virements ne comptent pas comme revenus ou dépenses",
     "invoiceBadge": "Invoice {{number}}",
     "invoiceBadgeNoNumber": "Invoice",
-    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it."
+    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it.",
+    "suggestionBadge": "Question",
+    "suggestionBadgeTooltip": "Un paiement peut solder cette facture. Ouvrez la file pour répondre."
   },
   "accounts": {
     "title": "Comptes",
@@ -1120,6 +1129,7 @@
     "createMissingCategories": "Créer aussi les catégories par défaut dont le pack a besoin",
     "duplicateName": "Une règle portant ce nom existe déjà",
     "sectionTitle": "Règles de catégorisation",
+    "sectionHint": "Comment catégoriser les transactions.",
     "resetAndReapplyAll": "Réinitialiser et réappliquer",
     "confirmResetAndReapplyAll": "Réinitialiser les catégories, les notes et les descriptions gérées par des règles des transactions correspondantes, puis réappliquer toutes les règles actives ?",
     "add": "Ajouter",
@@ -1166,7 +1176,6 @@
     "turnOff": "Désactiver",
     "turnedOn": "Règle activée",
     "turnedOff": "Règle désactivée",
-    "shippedCannotDelete": "Cette règle est fournie avec Securo. Désactivez-la au lieu de la supprimer.",
     "noConditions": "(aucune condition)",
     "noActions": "(aucune action)",
     "fieldDescription": "Description",
@@ -2221,10 +2230,10 @@
   },
   "reconciliation": {
     "node": {
-      "invoices": "Rapprochement des factures",
-      "invoicesHint": "Comment l'argent qui arrive est rattaché aux factures qu'il règle. Essayées dans l'ordre : la première qui correspond l'emporte.",
-      "recurring": "Rapprochement des récurrences",
-      "recurringHint": "Comment un prélèvement réel est reconnu comme la dépense qu'il paie, pour que l'opération n'apparaisse pas deux fois.",
+      "invoices": "Factures",
+      "invoicesHint": "face aux factures que vous avez émises",
+      "recurring": "Charges récurrentes",
+      "recurringHint": "face aux charges que vous attendiez déjà",
       "inactive": "Non utilisée ici"
     },
     "rule": {
@@ -2249,7 +2258,6 @@
       "amountRatio": "le montant correspond net de retenue",
       "window": "jusqu'à {{before}} jours en avance, {{after}} en retard",
       "similarity": "le libellé se ressemble au moins de {{min}}",
-      "currencyAllow": "toute devise",
       "none": "aucune condition",
       "accounts": "sur {{names}}",
       "payees": "pour {{names}}",
@@ -2266,7 +2274,6 @@
       "amountPartial": "le montant couvre une partie de ce qui est dû",
       "amountSet": "jusqu'à {{count}} factures en font le total"
     },
-    "add": "Nouvelle règle",
     "newRule": "Nouvelle règle de rapprochement",
     "saved": "Règle enregistrée",
     "reset": "Règle rétablie",
@@ -2328,7 +2335,7 @@
     },
     "queue": {
       "title": "En attente de vous",
-      "hint": "Des rapprochements plausibles mais pas certains. Cette liste devrait rester courte ; sinon, ce sont les règles qu'il faut changer.",
+      "hint": "Rapprochements qui attendent votre confirmation.",
       "empty": "Rien à vérifier. Tout a été rapproché tout seul.",
       "aPayment": "Un paiement",
       "maySettle": "règle peut-être {{name}}",
@@ -2336,7 +2343,7 @@
       "accept": "Rattacher",
       "declineHint": "Ce n'est pas ça. Cette paire ne sera plus proposée.",
       "linked": "Rattaché",
-      "declined": "Écarté — nous ne redemanderons pas",
+      "declined": "Écarté. Nous ne redemanderons pas",
       "covers": "couvre"
     },
     "evidence": {
@@ -2363,23 +2370,23 @@
       "money_arrives": "Quand l'argent arrive",
       "money_arrivesHint": "Un paiement tombe et nous cherchons la facture qu'il règle.",
       "invoice_issued": "Quand une facture est émise",
-      "invoice_issuedHint": "Le client a payé d'abord, la facture suit — nous regardons en arrière, vers l'argent déjà là.",
+      "invoice_issuedHint": "Le client a payé d'abord, la facture suit, alors nous regardons en arrière, vers l'argent déjà là.",
       "both": "Aux deux moments",
       "bothHint": "La règle vaut dans les deux sens."
     },
     "history": {
       "title": "Ce que le rapprochement a fait",
-      "hint": "Du plus récent. Annuler un rattachement est aussi consigné ici : rien d'autre ne le garde.",
+      "hint": "Du plus récent.",
       "byPerson": "par vous",
       "byRules": "par les règles",
       "more": "Afficher {{count}} de plus",
       "less": "Afficher moins",
       "action": {
         "linked": "Rattaché à {{name}}",
-        "accepted": "Vous l'avez rattaché à {{name}}",
+        "accepted": "Suggestion acceptée pour {{name}}",
         "suggested": "Proposé pour {{name}}",
-        "declined": "Vous avez écarté {{name}}",
-        "expired": "Expiré sans réponse — {{name}}",
+        "declined": "Suggestion écartée pour {{name}}",
+        "expired": "Suggestion expirée : {{name}}",
         "unlinked": "Détaché de {{name}}"
       },
       "empty": "Rien pour l'instant. Cela se remplit à mesure que le rapprochement rattache, demande et reçoit une réponse."
@@ -2387,7 +2394,7 @@
     "moveUp": "Essayer celle-ci plus tôt",
     "moveDown": "Essayer celle-ci plus tard",
     "matchingTitle": "Règles de rapprochement",
-    "matchingHint": "Comment l'argent qui arrive est rattaché à ce qu'il règle. Chaque ensemble est essayé dans l'ordre : la première règle qui correspond l'emporte.",
+    "matchingHint": "Comment l'argent qui arrive est rattaché aux factures.",
     "pair": {
       "owed": "Ce qui est dû",
       "arrived": "Ce qui est arrivé",
@@ -2403,6 +2410,16 @@
       "acrossInvoices": "sur {{count}} factures",
       "dueOn": "échéance {{date}}",
       "totalOf": "total de {{amount}}"
-    }
+    },
+    "discarded": "Supprimées de cet espace :",
+    "noneLeft": "Plus aucune règle de rapprochement dans cet ensemble. Rien n'est rapproché automatiquement ici.",
+    "confirmDeleteTitle": "Supprimer cette règle ?",
+    "confirmDeleteDescription": "« {{name}} » ne décide plus rien. S'il s'agit d'une des nôtres, vous pourrez la rétablir plus tard.",
+    "exported": "Règles de rapprochement téléchargées",
+    "imported": "{{imported}} règles importées ({{skipped}} ignorées)",
+    "invalidImportFile": "Ce n'est pas un fichier de règles de rapprochement",
+    "importConfirmTitle": "Importer les règles de rapprochement ?",
+    "importConfirmDescription": "Le fichier {{file}} contient {{count}} règles.",
+    "importOverwriteWarning": "L'import remplace les règles de rapprochement de cet espace, y compris leur ordre. C'est irréversible."
   }
 }

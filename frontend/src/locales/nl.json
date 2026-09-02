@@ -372,7 +372,14 @@
       "fromSystem": "Van {{source}} · {{date}}",
       "fromUpload": "Geüpload · {{date}}"
     },
-    "draftSaved": "Concept opgeslagen"
+    "draftSaved": "Concept opgeslagen",
+    "suggestions": {
+      "title_one": "Een betaling kan deze factuur voldoen",
+      "title_other": "{{count}} betalingen kunnen deze factuur voldoen",
+      "wouldApply": "zou {{amount}} toepassen",
+      "alsoCovers_one": "dekt ook {{count}} andere factuur",
+      "alsoCovers_other": "dekt ook {{count}} andere facturen"
+    }
   },
   "collections": {
     "title": "Collecties",
@@ -799,7 +806,9 @@
     "calendarTransfersExcluded": "Overdrachten worden niet meegeteld als inkomsten of uitgaven",
     "invoiceBadge": "Invoice {{number}}",
     "invoiceBadgeNoNumber": "Invoice",
-    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it."
+    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it.",
+    "suggestionBadge": "Vraag",
+    "suggestionBadgeTooltip": "Een betaling kan deze factuur voldoen. Open de wachtrij om te antwoorden."
   },
   "accounts": {
     "title": "Rekeningen",
@@ -1120,6 +1129,7 @@
     "createMissingCategories": "Maak ook standaardcategorieën aan die het pakket nodig heeft",
     "duplicateName": "Er bestaat al een regel met deze naam",
     "sectionTitle": "Categorisatieregels",
+    "sectionHint": "Hoe transacties worden gecategoriseerd.",
     "resetAndReapplyAll": "Resetten en opnieuw aanvragen",
     "confirmResetAndReapplyAll": "Overeenkomende transactiecategorieën, notities en door regels beheerde beschrijvingen resetten en vervolgens alle actieve regels opnieuw toepassen?",
     "add": "Toevoegen",
@@ -1164,7 +1174,6 @@
     "turnOff": "Uitzetten",
     "turnedOn": "Regel ingeschakeld",
     "turnedOff": "Regel uitgeschakeld",
-    "shippedCannotDelete": "Deze regel hoort bij Securo. Zet hem uit in plaats van hem te verwijderen.",
     "noConditions": "(geen voorwaarden)",
     "noActions": "(geen acties)",
     "fieldDescription": "Beschrijving",
@@ -2221,10 +2230,10 @@
   },
   "reconciliation": {
     "node": {
-      "invoices": "Facturen afletteren",
-      "invoicesHint": "Hoe binnenkomend geld wordt gekoppeld aan de facturen die het voldoet. In volgorde geprobeerd — de eerste regel die past, wint.",
-      "recurring": "Terugkerende posten afletteren",
-      "recurringHint": "Hoe een echte afschrijving herkend wordt als de rekening die hij betaalt, zodat de boeking niet dubbel verschijnt.",
+      "invoices": "Facturen",
+      "invoicesHint": "tegen de facturen die je hebt verstuurd",
+      "recurring": "Terugkerende kosten",
+      "recurringHint": "tegen de kosten die je al verwachtte",
       "inactive": "Hier niet in gebruik"
     },
     "rule": {
@@ -2249,7 +2258,6 @@
       "amountRatio": "het bedrag klopt na inhouding",
       "window": "tot {{before}} dagen te vroeg, {{after}} dagen te laat",
       "similarity": "de omschrijving lijkt minstens {{min}}",
-      "currencyAllow": "elke valuta",
       "none": "geen voorwaarden",
       "accounts": "op {{names}}",
       "payees": "voor {{names}}",
@@ -2266,7 +2274,6 @@
       "amountPartial": "het bedrag dekt een deel van wat openstaat",
       "amountSet": "tot {{count}} facturen tellen op tot dat bedrag"
     },
-    "add": "Nieuwe regel",
     "newRule": "Nieuwe afletterregel",
     "saved": "Regel opgeslagen",
     "reset": "Regel hersteld",
@@ -2281,7 +2288,7 @@
       "counterparty": "Wie betaalde",
       "amount": "Bedrag",
       "window": "Toegestaan verschil tussen de datums",
-      "windowHint": "Te laat telt vanaf de vervaldatum, te vroeg vanaf de dag dat de factuur is opgesteld — de dag na uitgifte betalen is niet weken te vroeg.",
+      "windowHint": "Te laat telt vanaf de vervaldatum, te vroeg vanaf de dag dat de factuur is opgesteld, dus de dag na uitgifte betalen is niet weken te vroeg.",
       "beforeDays": "Dagen te vroeg",
       "afterDays": "Dagen te laat",
       "similarity": "Gelijkenis van de omschrijving",
@@ -2328,7 +2335,7 @@
     },
     "queue": {
       "title": "Wacht op jou",
-      "hint": "Koppelingen die aannemelijk zijn maar niet zeker. Deze lijst hoort kort te blijven — zo niet, dan moeten de regels anders.",
+      "hint": "Koppelingen die je bevestiging nodig hebben.",
       "empty": "Niets te beoordelen. Alles is vanzelf gekoppeld.",
       "aPayment": "Een betaling",
       "maySettle": "voldoet mogelijk {{name}}",
@@ -2336,7 +2343,7 @@
       "accept": "Koppelen",
       "declineHint": "Dit is het niet. Dit paar wordt niet opnieuw voorgesteld.",
       "linked": "Gekoppeld",
-      "declined": "Afgewezen — we vragen het niet nog eens",
+      "declined": "Afgewezen. We vragen het niet nog eens",
       "covers": "dekt"
     },
     "evidence": {
@@ -2363,23 +2370,23 @@
       "money_arrives": "Wanneer geld binnenkomt",
       "money_arrivesHint": "Een betaling komt binnen en we zoeken de factuur die hij voldoet.",
       "invoice_issued": "Wanneer een factuur wordt opgesteld",
-      "invoice_issuedHint": "De klant betaalde eerst en de factuur volgt — we kijken terug naar geld dat er al was.",
+      "invoice_issuedHint": "De klant betaalde eerst en de factuur volgt, dus kijken we terug naar geld dat er al was.",
       "both": "Op beide momenten",
       "bothHint": "De regel geldt beide kanten op."
     },
     "history": {
       "title": "Wat het afletteren deed",
-      "hint": "Nieuwste eerst. Een koppeling ongedaan maken staat hier ook — niets anders bewaart dat.",
+      "hint": "Nieuwste eerst.",
       "byPerson": "door jou",
       "byRules": "door de regels",
       "more": "Toon {{count}} meer",
       "less": "Toon minder",
       "action": {
         "linked": "Gekoppeld aan {{name}}",
-        "accepted": "Je koppelde het aan {{name}}",
+        "accepted": "Voorstel voor {{name}} geaccepteerd",
         "suggested": "Voorgesteld voor {{name}}",
-        "declined": "Je wees {{name}} af",
-        "expired": "Onbeantwoord verlopen — {{name}}",
+        "declined": "Voorstel voor {{name}} afgewezen",
+        "expired": "Voorstel verlopen: {{name}}",
         "unlinked": "Ontkoppeld van {{name}}"
       },
       "empty": "Nog niets. Dit vult zich terwijl het afletteren koppelt, vraagt en antwoord krijgt."
@@ -2387,7 +2394,7 @@
     "moveUp": "Deze eerder proberen",
     "moveDown": "Deze later proberen",
     "matchingTitle": "Afletterregels",
-    "matchingHint": "Hoe binnenkomend geld wordt gekoppeld aan wat het voldoet. Elke set wordt op volgorde geprobeerd — de eerste regel die past, wint.",
+    "matchingHint": "Hoe binnenkomend geld aan de facturen wordt gekoppeld.",
     "pair": {
       "owed": "Wat openstaat",
       "arrived": "Wat binnenkwam",
@@ -2403,6 +2410,16 @@
       "acrossInvoices": "over {{count}} facturen",
       "dueOn": "vervalt {{date}}",
       "totalOf": "totaal {{amount}}"
-    }
+    },
+    "discarded": "Verwijderd uit deze werkruimte:",
+    "noneLeft": "Geen koppelregels meer in deze set. Hier wordt niets automatisch gekoppeld.",
+    "confirmDeleteTitle": "Deze regel verwijderen?",
+    "confirmDeleteDescription": "“{{name}}” beslist niets meer. Als het een van onze regels is, kun je hem later terughalen.",
+    "exported": "Koppelregels gedownload",
+    "imported": "{{imported}} regels geïmporteerd ({{skipped}} overgeslagen)",
+    "invalidImportFile": "Dit is geen bestand met koppelregels",
+    "importConfirmTitle": "Koppelregels importeren?",
+    "importConfirmDescription": "Bestand {{file}} bevat {{count}} regels.",
+    "importOverwriteWarning": "Importeren vervangt de koppelregels van deze werkruimte, inclusief hun volgorde. Dit kan niet ongedaan worden gemaakt."
   }
 }

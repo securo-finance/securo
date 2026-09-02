@@ -372,7 +372,14 @@
       "fromSystem": "Z {{source}} · {{date}}",
       "fromUpload": "Nahrané · {{date}}"
     },
-    "draftSaved": "Koncept uložený"
+    "draftSaved": "Koncept uložený",
+    "suggestions": {
+      "title_one": "Platba môže uhradiť túto faktúru",
+      "title_other": "{{count}} platieb môže uhradiť túto faktúru",
+      "wouldApply": "použila by {{amount}}",
+      "alsoCovers_one": "pokrýva aj {{count}} ďalšiu faktúru",
+      "alsoCovers_other": "pokrýva aj {{count}} ďalších faktúr"
+    }
   },
   "collections": {
     "title": "Zbierky",
@@ -843,7 +850,9 @@
     "calendarTransfersExcluded": "Prevody sa nepočítajú ako príjem ani výdavok",
     "invoiceBadge": "Faktúra {{number}}",
     "invoiceBadgeNoNumber": "Faktúra",
-    "invoiceBadgeTooltip": "Táto transakcia vyrovnáva faktúru. Otvorte ju."
+    "invoiceBadgeTooltip": "Táto transakcia vyrovnáva faktúru. Otvorte ju.",
+    "suggestionBadge": "Otázka",
+    "suggestionBadgeTooltip": "Platba môže uhradiť túto faktúru. Otvorte front a odpovedzte."
   },
   "accounts": {
     "title": "Účty",
@@ -1199,6 +1208,7 @@
     "createMissingCategories": "Vytvoriť aj predvolené kategórie, ktoré balík potrebuje",
     "duplicateName": "Pravidlo s týmto názvom už existuje",
     "sectionTitle": "Pravidlá kategorizácie",
+    "sectionHint": "Ako kategorizovať transakcie.",
     "resetAndReapplyAll": "Resetovať a znovu aplikovať",
     "confirmResetAndReapplyAll": "Resetovať kategórie, poznámky a popisy spravované pravidlami pri zodpovedajúcich transakciách a potom znovu aplikovať všetky aktívne pravidlá?",
     "add": "Pridať",
@@ -1249,7 +1259,6 @@
     "turnOff": "Vypnúť",
     "turnedOn": "Pravidlo zapnuté",
     "turnedOff": "Pravidlo vypnuté",
-    "shippedCannotDelete": "Toto pravidlo je súčasťou Securo. Namiesto odstránenia ho vypnite.",
     "noConditions": "(žiadne podmienky)",
     "noActions": "(žiadne akcie)",
     "fieldDescription": "Popis",
@@ -1276,8 +1285,8 @@
     "sortBy_priority": "Priorita",
     "sortBy_name": "Názov",
     "sortBy_category": "Kategória",
-    "export": "Export",
-    "import": "Import",
+    "export": "Exportovať",
+    "import": "Importovať",
     "exported": "Export pravidiel stiahnutý",
     "imported": "Importovaných pravidiel: {{imported}} (preskočených: {{skipped}})",
     "invalidImportFile": "Neplatný súbor importu pravidiel",
@@ -2356,10 +2365,10 @@
   },
   "reconciliation": {
     "node": {
-      "invoices": "Párovanie faktúr",
-      "invoicesHint": "Ako sa prichádzajúce peniaze viažu na faktúry, ktoré uhrádzajú. Skúšajú sa po poradí — vyhráva prvé pravidlo, ktoré sadne.",
-      "recurring": "Párovanie opakovaných platieb",
-      "recurringHint": "Ako sa skutočná platba rozpozná ako účet, ktorý uhrádza, aby sa pohyb neobjavil dvakrát.",
+      "invoices": "Faktúry",
+      "invoicesHint": "voči faktúram, ktoré ste vystavili",
+      "recurring": "Opakované náklady",
+      "recurringHint": "voči nákladom, ktoré ste už čakali",
       "inactive": "Tu sa nepoužíva"
     },
     "rule": {
@@ -2384,7 +2393,6 @@
       "amountRatio": "suma sedí po zrážke dane",
       "window": "až {{before}} dní skôr, {{after}} dní neskôr",
       "similarity": "popis je podobný aspoň na {{min}}",
-      "currencyAllow": "akákoľvek mena",
       "none": "žiadne podmienky",
       "accounts": "na {{names}}",
       "payees": "pre {{names}}",
@@ -2401,7 +2409,6 @@
       "amountPartial": "suma pokrýva časť dlžnej sumy",
       "amountSet": "až {{count}} faktúr dá túto sumu"
     },
-    "add": "Nové pravidlo",
     "newRule": "Nové pravidlo párovania",
     "saved": "Pravidlo uložené",
     "reset": "Pravidlo obnovené",
@@ -2416,7 +2423,7 @@
       "counterparty": "Kto zaplatil",
       "amount": "Suma",
       "window": "Povolený rozdiel medzi dátumami",
-      "windowHint": "Omeškanie sa počíta od splatnosti, predčasná platba odo dňa vystavenia faktúry — zaplatiť deň po vystavení nie sú týždne vopred.",
+      "windowHint": "Omeškanie sa počíta od splatnosti, predčasná platba odo dňa vystavenia faktúry, takže zaplatiť deň po vystavení nie sú týždne vopred.",
       "beforeDays": "Dní skôr",
       "afterDays": "Dní neskôr",
       "similarity": "Podobnosť popisu",
@@ -2442,7 +2449,7 @@
       "triggerHint": "Párovanie prebieha v dvoch momentoch a dôkazy nie sú rovnaké.",
       "amountMatch": "Ako presne musí sedieť suma",
       "amountMatchHint": "Porovnáva sa s tým, čo ešte dlhujete, nie s pôvodným súčtom.",
-      "amountBandHint": "O samotnej platbe — veľkosť, ktorú má toto pravidlo riešiť alebo nie."
+      "amountBandHint": "O samotnej platbe: veľkosť, ktorú má toto pravidlo riešiť alebo nie."
     },
     "counterparty": {
       "any": "Ktokoľvek",
@@ -2463,7 +2470,7 @@
     },
     "queue": {
       "title": "Čaká na vás",
-      "hint": "Párovania, ktoré sú pravdepodobné, ale nie isté. Tento zoznam má zostať krátky — ak nezostane, treba zmeniť pravidlá.",
+      "hint": "Párovania, ktoré čakajú na vaše potvrdenie.",
       "empty": "Nič na kontrolu. Všetko sa spárovalo samo.",
       "aPayment": "Platba",
       "maySettle": "môže uhrádzať {{name}}",
@@ -2471,7 +2478,7 @@
       "accept": "Spárovať",
       "declineHint": "Toto to nie je. Tento pár už nebudeme navrhovať.",
       "linked": "Spárované",
-      "declined": "Zamietnuté — už sa nespýtame",
+      "declined": "Zamietnuté. Už sa nespýtame",
       "covers": "pokrýva"
     },
     "evidence": {
@@ -2498,23 +2505,23 @@
       "money_arrives": "Keď prídu peniaze",
       "money_arrivesHint": "Príde platba a hľadáme faktúru, ktorú uhrádza.",
       "invoice_issued": "Keď sa vystaví faktúra",
-      "invoice_issuedHint": "Klient zaplatil skôr a faktúra prišla potom — pozeráme späť na peniaze, ktoré tam už boli.",
+      "invoice_issuedHint": "Klient zaplatil skôr a faktúra prišla potom, takže pozeráme späť na peniaze, ktoré tam už boli.",
       "both": "V oboch momentoch",
       "bothHint": "Pravidlo platí na obe strany."
     },
     "history": {
       "title": "Čo párovanie urobilo",
-      "hint": "Od najnovších. Zrušenie väzby je zaznamenané tiež — nič iné to neuchová.",
+      "hint": "Od najnovších.",
       "byPerson": "vami",
       "byRules": "pravidlami",
       "more": "Zobraziť ďalších {{count}}",
       "less": "Zobraziť menej",
       "action": {
-        "linked": "Spárované s {{name}}",
-        "accepted": "Spárovali ste to s {{name}}",
+        "linked": "Prepojené s {{name}}",
+        "accepted": "Návrh pre {{name}} prijatý",
         "suggested": "Navrhnuté pre {{name}}",
-        "declined": "Zamietli ste {{name}}",
-        "expired": "Vypršalo bez odpovede — {{name}}",
+        "declined": "Návrh pre {{name}} zamietnutý",
+        "expired": "Návrh vypršal: {{name}}",
         "unlinked": "Odpojené od {{name}}"
       },
       "empty": "Zatiaľ nič. Naplní sa, ako párovanie spája, pýta sa a dostáva odpoveď."
@@ -2522,7 +2529,7 @@
     "moveUp": "Skúšať túto skôr",
     "moveDown": "Skúšať túto neskôr",
     "matchingTitle": "Pravidlá párovania",
-    "matchingHint": "Ako sa prichádzajúce peniaze viažu na to, čo uhrádzajú. Každá sada sa skúša po poradí — vyhráva prvé pravidlo, ktoré sadne.",
+    "matchingHint": "Ako sa prichádzajúce peniaze viažu na faktúry.",
     "pair": {
       "owed": "Čo sa dlhuje",
       "arrived": "Čo prišlo",
@@ -2538,6 +2545,16 @@
       "acrossInvoices": "na {{count}} faktúr",
       "dueOn": "splatnosť {{date}}",
       "totalOf": "spolu {{amount}}"
-    }
+    },
+    "discarded": "Odstránené z tohto priestoru:",
+    "noneLeft": "V tejto skupine už nie sú žiadne pravidlá párovania. Nič sa tu nepáruje automaticky.",
+    "confirmDeleteTitle": "Odstrániť toto pravidlo?",
+    "confirmDeleteDescription": "„{{name}}“ prestáva o čomkoľvek rozhodovať. Ak je to jedno z našich, môžete ho neskôr vrátiť.",
+    "exported": "Pravidlá párovania stiahnuté",
+    "imported": "Importovaných {{imported}} pravidiel ({{skipped}} preskočených)",
+    "invalidImportFile": "Toto nie je súbor s pravidlami párovania",
+    "importConfirmTitle": "Importovať pravidlá párovania?",
+    "importConfirmDescription": "Súbor {{file}} obsahuje {{count}} pravidiel.",
+    "importOverwriteWarning": "Import nahradí pravidlá párovania tohto priestoru vrátane ich poradia. Nedá sa to vrátiť."
   }
 }

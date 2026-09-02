@@ -130,7 +130,7 @@ async def test_the_shipped_rules_are_visible_without_anyone_creating_them(
     assert resp.status_code == 200, resp.text
     nodes = resp.json()
 
-    assert {n["node"] for n in nodes} == {INVOICE_NODE, RECURRING_NODE}
+    assert {n["node"] for n in nodes} == {INVOICE_NODE}
     exact = find(nodes, INVOICE_NODE, "same_client_exact")
     assert exact["enabled"] is True
     assert exact["outcome"] == "link"
@@ -139,27 +139,60 @@ async def test_the_shipped_rules_are_visible_without_anyone_creating_them(
 
 
 @pytest.mark.asyncio
-async def test_a_personal_workspace_sees_recurring_rules_but_not_live_invoice_ones(
+async def test_a_personal_workspace_is_told_the_invoice_rules_are_not_live_here(
     client: AsyncClient, auth_headers
 ):
-    """Reconciliation is not a business feature. Somebody who never issues
-    a document still has promises, and the rules that match them are
-    theirs to change."""
+    """Shown, but honestly marked. Pretending they were live in a
+    workspace that never issues a document would be a lie the page tells
+    on every load."""
     resp = await client.get("/api/reconciliation/rules", headers=auth_headers)
     assert resp.status_code == 200, resp.text
     by_node = {n["node"]: n for n in resp.json()}
 
-    assert by_node[RECURRING_NODE]["active"] is True
-    assert by_node[RECURRING_NODE]["rules"], "a personal workspace has recurring rules"
-    # Shown, but honestly marked: pretending the invoice rules were live
-    # here would be a lie the page tells on every load.
     assert by_node[INVOICE_NODE]["active"] is False
+
+
+@pytest.mark.asyncio
+async def test_the_recurring_rules_are_not_offered(client: AsyncClient, biz_headers):
+    """They were, next to the invoice rules, and the split was the
+    confusing part rather than the rules in it: an invoice can itself be
+    recurring, so asking which of two lists a monthly retainer belongs in
+    has no answer. What is left decides whose money this is; the recurring
+    set is bookkeeping about rows we wrote ourselves."""
+    listing = (
+        await client.get("/api/reconciliation/rules", headers=biz_headers)
+    ).json()
+    assert RECURRING_NODE not in {n["node"] for n in listing}
+
+    for method, url, body in (
+        ("patch", f"/api/reconciliation/rules/{RECURRING_NODE}/same_account_exact",
+         {"enabled": False}),
+        ("delete", f"/api/reconciliation/rules/{RECURRING_NODE}/same_account_exact",
+         None),
+    ):
+        call = getattr(client, method)
+        resp = await call(url, headers=biz_headers, **({"json": body} if body else {}))
+        assert resp.status_code == 400, f"{method} {url} -> {resp.status_code}"
+
+
+@pytest.mark.asyncio
+async def test_the_recurring_rules_keep_running_even_though_nobody_sees_them(
+    session: AsyncSession, business_ws
+):
+    """Taking a set off the page is not the same as switching it off. The
+    charge that pays a bill we generated still has to be recognised, or
+    the row appears twice."""
+    policy = await rules.resolve(
+        session, uuid.UUID(business_ws["id"]), RECURRING_NODE
+    )
+    assert [s["id"] for s in policy["strategies"]] == ["same_account_exact"]
+    assert policy["strategies"][0]["enabled"] is True
 
 
 @pytest.mark.asyncio
 async def test_the_placeholder_rules_are_not_offered(client: AsyncClient, biz_headers):
     """It decides whether an arriving charge is a row we generated
-    ourselves — bookkeeping about our own duplicates, not a judgement
+    ourselves: bookkeeping about our own duplicates, not a judgement
     about whose money this is. A lever whose only effect is duplicate rows
     does not belong on a page."""
     resp = await client.get("/api/reconciliation/rules", headers=biz_headers)
@@ -235,8 +268,8 @@ async def test_resetting_returns_to_what_ships_today(
         headers=biz_headers,
         json={"enabled": False},
     )
-    resp = await client.delete(
-        f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact",
+    resp = await client.post(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact/reset",
         headers=biz_headers,
     )
     assert resp.status_code == 204
@@ -256,7 +289,7 @@ async def test_a_rule_that_would_match_everything_is_refused(
 ):
     """Configurable is not the same as unguarded. A tolerance above 100%
     matches every amount there is, and a rule that links everything to
-    everything is not a preference — it is a broken ledger."""
+    everything is not a preference: it is a broken ledger."""
     resp = await client.patch(
         f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact",
         headers=biz_headers,
@@ -271,7 +304,7 @@ async def test_a_shape_the_engine_cannot_read_is_refused_on_the_way_in(
     client: AsyncClient, biz_headers
 ):
     """A rule naming a match mode the engine never heard of would not fail
-    loudly — it would quietly stop matching, and nobody would find out
+    loudly: it would quietly stop matching, and nobody would find out
     until a month of payments had gone unreconciled."""
     resp = await client.patch(
         f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact",
@@ -289,7 +322,7 @@ async def test_a_shape_the_engine_cannot_read_is_refused_on_the_way_in(
 async def test_a_workspace_can_write_its_own_rule_and_run_it_first(
     client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
 ):
-    """Order matters — the first rule that matches wins — so a rule
+    """Order matters (the first rule that matches wins), so a rule
     somebody wrote is worth little if it can only ever run last."""
     resp = await client.post(
         "/api/reconciliation/rules",
@@ -443,7 +476,7 @@ async def test_a_declined_suggestion_never_comes_back(
     business_ws,
 ):
     """The single most important behaviour in the queue. Re-asking
-    yesterday's question is how people stop reading it — and then they
+    yesterday's question is how people stop reading it, and then they
     stop reading the good ones too."""
     await client.patch(
         f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact",
@@ -713,7 +746,7 @@ class TestConditionValidation:
 
     def test_a_band_that_can_never_match_is_refused(self):
         """Above 10000 and below 100 is not a narrow rule, it is a rule
-        that will never fire — and it would look fine on the screen."""
+        that will never fire, and it would look fine on the screen."""
         assert (
             self.refused({"amount": {"match": "exact", "min": "10000", "max": "100"}})
             == "impossible_amount_band"
@@ -931,8 +964,8 @@ async def test_a_conditions_effect_is_undone_by_restoring_the_rule(
         headers=biz_headers,
         json={"when": {"amount": {"match": "exact", "max": "10"}}},
     )
-    await client.delete(
-        f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact",
+    await client.post(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact/reset",
         headers=biz_headers,
     )
 
@@ -953,7 +986,7 @@ async def test_a_form_that_sends_the_whole_rule_still_stores_only_the_change(
     """A form holds every field whether or not somebody touched it, so the
     screen sends the whole rule. Storing that verbatim would freeze the
     signals nobody had an opinion about, and this workspace would stop
-    receiving improvements to them — the exact failure the design exists
+    receiving improvements to them: the exact failure the design exists
     to avoid. The difference is taken on the server, where no future
     caller can forget it."""
     shipped = find(
@@ -1078,7 +1111,7 @@ def test_pruning_an_identical_rule_leaves_nothing():
 
 
 # ---------------------------------------------------------------------------
-# One invoice, several payments — end to end
+# One invoice, several payments: end to end
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_a_client_paying_in_two_transfers_is_reconciled_without_manual_work(
@@ -1088,8 +1121,8 @@ async def test_a_client_paying_in_two_transfers_is_reconciled_without_manual_wor
     the claim: a R$3.000 invoice paid as two R$1.500 transfers ends up
     settled, with both transactions on it.
 
-    The first half is a suggestion — it genuinely could be an instalment,
-    a different job, or a client paying what they had — and the second is
+    The first half is a suggestion (it genuinely could be an instalment,
+    a different job, or a client paying what they had), and the second is
     an ordinary exact match, because by then the balance *is* 1500. The
     ambiguity only ever exists at the start.
     """
@@ -1254,7 +1287,7 @@ async def test_widening_a_rule_lets_an_unnamed_payer_settle_a_later_invoice(
     payments is entitled to disagree, and now can.
 
     The payment sits two days before the invoice was written, inside this
-    rule's own three-day early window — so the only thing standing between
+    rule's own three-day early window, so the only thing standing between
     it and a match is the moment the rule is willing to run at, which is
     exactly what this test is about."""
     await client.patch(
@@ -1302,7 +1335,7 @@ async def test_a_bad_moment_is_refused(client: AsyncClient, biz_headers):
 
 
 # ---------------------------------------------------------------------------
-# One transaction, several invoices — end to end
+# One transaction, several invoices: end to end
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_one_transfer_settles_three_invoices_from_the_same_client(
@@ -1353,7 +1386,7 @@ async def test_an_ambiguous_combination_is_asked_about_as_one_question(
     client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
 ):
     """Three invoices of a thousand and a payment of two thousand: any two
-    fit. The queue asks *"does this cover these two?"* once, not twice —
+    fit. The queue asks *"does this cover these two?"* once, not twice:
     two separate questions could be answered inconsistently and leave the
     payment spread across one debt and short on another."""
     for _ in range(3):
@@ -1430,7 +1463,7 @@ async def test_a_gateway_fee_can_be_allowed_for(
 ):
     """*"The payout is my invoices minus their cut."* Shipped at zero
     because guessing which fee applies is how a wrong split gets written
-    confidently — but somebody who knows their gateway's percentage can
+    confidently, but somebody who knows their gateway's percentage can
     say so."""
     await client.patch(
         f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_several_invoices",
@@ -1478,7 +1511,7 @@ async def test_a_combination_is_written_whole_or_not_at_all(
     await an_invoice(client, biz_headers, client_payee, total="2000.00")
 
     # Voiding one of them makes it refuse allocation while leaving it out
-    # of the candidate list is not possible — so instead the whole set
+    # of the candidate list is not possible, so instead the whole set
     # simply stops matching, which is the same guarantee seen from the
     # outside: no partial write.
     await client.post(f"/api/invoices/{first['id']}/void", headers=biz_headers)
@@ -1582,7 +1615,7 @@ async def test_undoing_a_link_leaves_a_trace(
     assert events[0]["user_id"] is not None, "a person did this one"
     assert events[0]["strategy_id"] == "same_client_exact", "what it had been"
 
-    # And the invoice really is open again — the history did not replace
+    # And the invoice really is open again: the history did not replace
     # the undoing, it recorded it.
     after = (
         await client.get(f"/api/invoices/{invoice['id']}", headers=biz_headers)
@@ -1614,8 +1647,8 @@ async def test_a_question_and_its_answer_both_land_in_the_stream(
     ).json()
     actions = [e["action"] for e in events]
 
-    # Two rows, not three. Accepting *is* the link — the allocation is its
-    # consequence, not a second event — and the whole stream is organised
+    # Two rows, not three. Accepting *is* the link (the allocation is its
+    # consequence, not a second event), and the whole stream is organised
     # around one line: was this me, or was this the rules? `linked` means
     # the rules; `accepted` means a person. Writing both would blur it.
     assert actions == ["accepted", "suggested"], "newest first, one row per act"
@@ -1771,8 +1804,8 @@ async def test_a_payment_settling_several_invoices_records_each_link(
     client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
 ):
     """Links are the exception, and deliberately: each one is a separate
-    write against a separate debt, and the invoice-level history — *what
-    ever happened to this invoice* — has to find its own row."""
+    write against a separate debt, and the invoice-level history (*what
+    ever happened to this invoice*) has to find its own row."""
     for total in ("1000.00", "2000.00"):
         await an_invoice(client, biz_headers, client_payee, total=total)
     await a_payment(client, biz_headers, account, client_payee, amount="3000.00")
@@ -1794,7 +1827,7 @@ async def test_a_payment_settling_several_invoices_records_each_link(
 async def test_a_rule_can_send_a_withheld_payment_to_the_queue_today(
     client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
 ):
-    """R$3.000 invoiced, R$2.955 received — 1,5% IRRF withheld by a PJ
+    """R$3.000 invoiced, R$2.955 received: 1,5% IRRF withheld by a PJ
     client. Nothing shipped catches it: the exact rules miss by R$45, the
     part-payment rule refuses because 98,5% of the balance is a fee and
     not an instalment, and the tolerance rule that would catch it also
@@ -1840,7 +1873,7 @@ async def test_but_accepting_it_leaves_the_invoice_short_by_the_withheld_tax(
 
     Reviewing the payment is solvable with a rule. **Closing the invoice
     is not.** Accepting allocates what actually arrived, so R$45 stays
-    outstanding — the invoice reads `partial` forever, and the aging
+    outstanding: the invoice reads `partial` forever, and the aging
     report carries R$45 that is never coming, because it was never a
     debt: the client paid it to the Receita on the seller's behalf.
 
@@ -1880,7 +1913,7 @@ async def test_but_accepting_it_leaves_the_invoice_short_by_the_withheld_tax(
     ).json()
     assert Decimal(detail["allocations"][0]["amount"]) == Decimal("2955.00")
     assert Decimal(detail["balance"]) == Decimal("45.00")
-    assert detail["state"] == "partial", "not paid — and it never will be"
+    assert detail["state"] == "partial", "not paid, and it never will be"
 
 
 # ---------------------------------------------------------------------------
@@ -1916,7 +1949,7 @@ async def test_reordering_alone_does_not_mark_a_rule_as_changed(
 ):
     """A row carrying only a position is not a departure from what we
     ship. Marking it as one would offer to "restore" a rule nobody
-    altered — and would suggest it had stopped inheriting improvements,
+    altered, and would suggest it had stopped inheriting improvements,
     which it has not."""
     nodes = (await client.get("/api/reconciliation/rules", headers=biz_headers)).json()
     ids = [r["id"] for r in next(n for n in nodes if n["node"] == INVOICE_NODE)["rules"]]
@@ -1930,7 +1963,7 @@ async def test_reordering_alone_does_not_mark_a_rule_as_changed(
     rules_now = next(n for n in after if n["node"] == INVOICE_NODE)["rules"]
     assert all(r["customised"] is False for r in rules_now)
 
-    # Rows exist — they carry the order — but their config is empty, so
+    # Rows exist (they carry the order), but their config is empty, so
     # every one of them still inherits what we ship.
     result = await session.execute(
         select(ReconciliationRule).where(
@@ -1981,7 +2014,7 @@ async def test_an_order_that_leaves_a_rule_out_is_refused(
     client: AsyncClient, biz_headers
 ):
     """Naming only some rules would leave the rest wherever we happened to
-    ship them — an order that reads correctly today and rearranges itself
+    ship them: an order that reads correctly today and rearranges itself
     the day a default is inserted."""
     resp = await client.put(
         f"/api/reconciliation/rules/{INVOICE_NODE}/order",
@@ -2032,3 +2065,465 @@ async def test_a_workspaces_own_rule_takes_part_in_the_order(
     )
     assert resp.status_code == 200
     assert resp.json()[0]["id"] == mine
+
+
+# ---------------------------------------------------------------------------
+# Throwing a rule away, including one of ours
+# ---------------------------------------------------------------------------
+def node_of(nodes: list[dict], node: str) -> dict:
+    for entry in nodes:
+        if entry["node"] == node:
+            return entry
+    raise AssertionError(f"{node} not in {[n['node'] for n in nodes]}")
+
+
+def ids_in(nodes: list[dict], node: str) -> list[str]:
+    return [rule["id"] for rule in node_of(nodes, node)["rules"]]
+
+
+async def policy(client: AsyncClient, headers: dict) -> list[dict]:
+    resp = await client.get("/api/reconciliation/rules", headers=headers)
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+@pytest.mark.asyncio
+async def test_a_rule_we_ship_can_be_deleted(client: AsyncClient, biz_headers):
+    """Turning one off was the only thing on offer, which reads as us
+    deciding what somebody may be rid of. A matching policy decides what
+    happens to their money."""
+    before = await policy(client, biz_headers)
+    assert "exact_amount_any_client" in ids_in(before, INVOICE_NODE)
+
+    resp = await client.delete(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/exact_amount_any_client",
+        headers=biz_headers,
+    )
+    assert resp.status_code == 204, resp.text
+
+    after = await policy(client, biz_headers)
+    assert "exact_amount_any_client" not in ids_in(after, INVOICE_NODE)
+
+
+@pytest.mark.asyncio
+async def test_a_deleted_rule_stops_deciding(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """The list is not the point; the engine is. A rule that is off the
+    page and still matching would be the worst of both."""
+    await client.delete(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact",
+        headers=biz_headers,
+    )
+    await client.delete(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/exact_amount_any_client",
+        headers=biz_headers,
+    )
+
+    invoice = await an_invoice(client, biz_headers, client_payee)
+    await a_payment(client, biz_headers, account, client_payee)
+
+    detail = await client.get(f"/api/invoices/{invoice['id']}", headers=biz_headers)
+    assert detail.json()["allocations"] == []
+
+
+@pytest.mark.asyncio
+async def test_a_deleted_rule_is_named_so_it_can_come_back(
+    client: AsyncClient, biz_headers
+):
+    """A shipped rule leaves a tombstone rather than a hole, so we still
+    know what was thrown away. Without this the delete is a trap: the row
+    is gone from the page and there is nothing left to click."""
+    await client.delete(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/similar_description",
+        headers=biz_headers,
+    )
+
+    listing = await policy(client, biz_headers)
+    assert [item["id"] for item in node_of(listing, INVOICE_NODE)["discarded"]] == [
+        "similar_description"
+    ]
+
+    resp = await client.post(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/similar_description/reset",
+        headers=biz_headers,
+    )
+    assert resp.status_code == 204
+
+    back = await policy(client, biz_headers)
+    assert "similar_description" in ids_in(back, INVOICE_NODE)
+    assert node_of(back, INVOICE_NODE)["discarded"] == []
+
+
+@pytest.mark.asyncio
+async def test_deleting_survives_a_later_edit_of_another_rule(
+    client: AsyncClient, biz_headers
+):
+    """`upsert_override` drops a row that no longer disagrees with us.
+    "I do not want this rule" is a disagreement even when every threshold
+    matches, and the row must not be swept up by that rule."""
+    await client.delete(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/exact_amount_any_client",
+        headers=biz_headers,
+    )
+    # Sets a value, then sets it straight back: the path that deletes a
+    # row it decides is redundant.
+    shipped = next(
+        s
+        for s in reconciliation_policy.default_policy(INVOICE_NODE)["strategies"]
+        if s["id"] == "exact_amount_any_client"
+    )
+    await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/exact_amount_any_client",
+        headers=biz_headers,
+        json={"outcome": shipped["outcome"]},
+    )
+
+    after = await policy(client, biz_headers)
+    assert "exact_amount_any_client" not in ids_in(after, INVOICE_NODE)
+
+
+@pytest.mark.asyncio
+async def test_reordering_does_not_demand_a_rule_that_was_deleted(
+    client: AsyncClient, biz_headers
+):
+    """Reordering names every rule so none is left implicit. A deleted one
+    is not a rule any more, and asking for it would make the list
+    unorderable after any delete."""
+    await client.delete(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/similar_description",
+        headers=biz_headers,
+    )
+    remaining = ids_in(await policy(client, biz_headers), INVOICE_NODE)
+
+    resp = await client.put(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/order",
+        headers=biz_headers,
+        json={"order": list(reversed(remaining))},
+    )
+    assert resp.status_code == 200, resp.text
+    assert ids_in(await policy(client, biz_headers), INVOICE_NODE) == list(
+        reversed(remaining)
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_workspaces_own_rule_is_deleted_outright(
+    client: AsyncClient, biz_headers, session: AsyncSession, business_ws
+):
+    """It exists nowhere else, so there is nothing to record."""
+    created = await client.post(
+        "/api/reconciliation/rules",
+        headers=biz_headers,
+        json={
+            "node": INVOICE_NODE,
+            "name": "So do Bradesco",
+            "outcome": "suggest",
+            "when": {"amount": {"match": "exact"}},
+        },
+    )
+    assert created.status_code == 201, created.text
+    rule_id = created.json()["id"]
+
+    await client.delete(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/{rule_id}", headers=biz_headers
+    )
+
+    assert rule_id not in ids_in(await policy(client, biz_headers), INVOICE_NODE)
+    rows = (
+        await session.execute(
+            select(ReconciliationRule).where(
+                ReconciliationRule.workspace_id == uuid.UUID(business_ws["id"]),
+                ReconciliationRule.strategy_id == rule_id,
+            )
+        )
+    ).scalars().all()
+    assert rows == [], "no tombstone for a rule that was only ever a row"
+
+
+@pytest.mark.asyncio
+async def test_every_shipped_rule_can_go(client: AsyncClient, biz_headers):
+    """No protected rule, and no rule whose removal breaks the page."""
+    for rule_id in ids_in(await policy(client, biz_headers), INVOICE_NODE):
+        resp = await client.delete(
+            f"/api/reconciliation/rules/{INVOICE_NODE}/{rule_id}", headers=biz_headers
+        )
+        assert resp.status_code == 204, resp.text
+
+    empty = await policy(client, biz_headers)
+    assert ids_in(empty, INVOICE_NODE) == []
+    assert len(node_of(empty, INVOICE_NODE)["discarded"]) > 0
+
+
+@pytest.mark.asyncio
+async def test_a_rule_that_does_not_exist_cannot_be_deleted(
+    client: AsyncClient, biz_headers
+):
+    resp = await client.delete(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/nao_existe", headers=biz_headers
+    )
+    assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Carrying a policy elsewhere
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_the_export_carries_the_policy_that_is_actually_running(
+    client: AsyncClient, biz_headers
+):
+    await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact",
+        headers=biz_headers,
+        json={"when": {"date": {"before_days": 3, "after_days": 90}}},
+    )
+    await client.delete(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/similar_description",
+        headers=biz_headers,
+    )
+
+    resp = await client.get("/api/reconciliation/rules/export", headers=biz_headers)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["format"] == "securo-reconciliation-rules"
+
+    node = next(n for n in body["nodes"] if n["node"] == INVOICE_NODE)
+    exported = next(r for r in node["rules"] if r["id"] == "same_client_exact")
+    assert exported["when"]["date"] == {"before_days": 3, "after_days": 90}
+    assert "similar_description" in node["discarded"]
+
+
+@pytest.mark.asyncio
+async def test_an_import_reproduces_the_file_including_what_was_thrown_away(
+    client: AsyncClient, biz_headers
+):
+    """A file that quietly restored six rules the author had deleted would
+    describe a policy nobody chose."""
+    await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact",
+        headers=biz_headers,
+        json={"when": {"date": {"before_days": 3, "after_days": 90}}},
+    )
+    await client.delete(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/similar_description",
+        headers=biz_headers,
+    )
+    file = (
+        await client.get("/api/reconciliation/rules/export", headers=biz_headers)
+    ).json()
+
+    # Back to shipped, so the import has something to do.
+    for rule_id in ("same_client_exact", "similar_description"):
+        await client.post(
+            f"/api/reconciliation/rules/{INVOICE_NODE}/{rule_id}/reset",
+            headers=biz_headers,
+        )
+
+    resp = await client.post(
+        "/api/reconciliation/rules/import",
+        headers=biz_headers,
+        json={"payload": file, "overwrite": True},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["skipped"] == 0
+    assert resp.json()["imported"] > 0
+
+    listing = await policy(client, biz_headers)
+    restored = find(listing, INVOICE_NODE, "same_client_exact")
+    assert restored["when"]["date"] == {"before_days": 3, "after_days": 90}
+    assert "similar_description" not in ids_in(listing, INVOICE_NODE)
+
+
+@pytest.mark.asyncio
+async def test_an_import_keeps_the_order_the_file_describes(
+    client: AsyncClient, biz_headers
+):
+    """Order is the mechanism (the first rule that matches wins), so a
+    file that arrived in a different order would be a different policy."""
+    original = ids_in(await policy(client, biz_headers), INVOICE_NODE)
+    await client.put(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/order",
+        headers=biz_headers,
+        json={"order": list(reversed(original))},
+    )
+    file = (
+        await client.get("/api/reconciliation/rules/export", headers=biz_headers)
+    ).json()
+
+    await client.post(
+        "/api/reconciliation/rules/import",
+        headers=biz_headers,
+        json={"payload": file, "overwrite": True},
+    )
+    assert ids_in(await policy(client, biz_headers), INVOICE_NODE) == list(
+        reversed(original)
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_rule_of_your_own_travels_with_its_name(
+    client: AsyncClient, biz_headers
+):
+    await client.post(
+        "/api/reconciliation/rules",
+        headers=biz_headers,
+        json={
+            "node": INVOICE_NODE,
+            "name": "Repasse da maquininha",
+            "outcome": "suggest",
+            "when": {"amount": {"match": "tolerance", "tolerance": "2"}},
+        },
+    )
+    file = (
+        await client.get("/api/reconciliation/rules/export", headers=biz_headers)
+    ).json()
+    node = next(n for n in file["nodes"] if n["node"] == INVOICE_NODE)
+    assert any(r["name"] == "Repasse da maquininha" for r in node["rules"])
+
+    resp = await client.post(
+        "/api/reconciliation/rules/import",
+        headers=biz_headers,
+        json={"payload": file, "overwrite": True},
+    )
+    assert resp.status_code == 200, resp.text
+    names = [
+        rule["name"]
+        for rule in node_of(await policy(client, biz_headers), INVOICE_NODE)["rules"]
+    ]
+    assert "Repasse da maquininha" in names
+
+
+@pytest.mark.asyncio
+async def test_an_account_a_rule_names_travels_by_name_not_by_id(
+    client: AsyncClient, biz_headers, account
+):
+    """A UUID means nothing in another database. The names are what
+    survive the trip."""
+    await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact",
+        headers=biz_headers,
+        json={"when": {"accounts": {"in": [str(account.id)]}}},
+    )
+    file = (
+        await client.get("/api/reconciliation/rules/export", headers=biz_headers)
+    ).json()
+    node = next(n for n in file["nodes"] if n["node"] == INVOICE_NODE)
+    exported = next(r for r in node["rules"] if r["id"] == "same_client_exact")
+    assert exported["when"]["accounts"]["in"] == ["Conta PJ"]
+
+    await client.post(
+        "/api/reconciliation/rules/import",
+        headers=biz_headers,
+        json={"payload": file, "overwrite": True},
+    )
+    back = find(await policy(client, biz_headers), INVOICE_NODE, "same_client_exact")
+    assert back["when"]["accounts"]["in"] == [str(account.id)]
+
+
+@pytest.mark.asyncio
+async def test_a_rule_naming_an_account_we_do_not_have_is_skipped_not_widened(
+    client: AsyncClient, biz_headers, account
+):
+    """A rule that was limited to one account and arrives limited to
+    nobody is a different rule, and a wider one: the dangerous direction
+    when the decision is whether money moves."""
+    await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact",
+        headers=biz_headers,
+        json={"when": {"accounts": {"in": [str(account.id)]}}},
+    )
+    file = (
+        await client.get("/api/reconciliation/rules/export", headers=biz_headers)
+    ).json()
+    node = next(n for n in file["nodes"] if n["node"] == INVOICE_NODE)
+    rule = next(r for r in node["rules"] if r["id"] == "same_client_exact")
+    rule["when"]["accounts"]["in"] = ["Conta que nao existe aqui"]
+
+    resp = await client.post(
+        "/api/reconciliation/rules/import",
+        headers=biz_headers,
+        json={"payload": file, "overwrite": True},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["skipped"] == 1
+
+    back = find(await policy(client, biz_headers), INVOICE_NODE, "same_client_exact")
+    assert "accounts" not in back["when"], "shipped, not a widened copy of theirs"
+
+
+@pytest.mark.asyncio
+async def test_an_import_asks_before_replacing_what_is_already_there(
+    client: AsyncClient, biz_headers
+):
+    """Merging two orderings has no correct answer, so an import replaces
+   , which is exactly why it has to ask first."""
+    await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact",
+        headers=biz_headers,
+        json={"enabled": False},
+    )
+    file = (
+        await client.get("/api/reconciliation/rules/export", headers=biz_headers)
+    ).json()
+
+    refused = await client.post(
+        "/api/reconciliation/rules/import",
+        headers=biz_headers,
+        json={"payload": file},
+    )
+    assert refused.status_code == 409
+
+    accepted = await client.post(
+        "/api/reconciliation/rules/import",
+        headers=biz_headers,
+        json={"payload": file, "overwrite": True},
+    )
+    assert accepted.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_a_file_of_the_wrong_kind_is_refused(client: AsyncClient, biz_headers):
+    """A categorization export dropped in here would otherwise arrive as a
+    file with no rules and look like it worked."""
+    resp = await client.post(
+        "/api/reconciliation/rules/import",
+        headers=biz_headers,
+        json={
+            "payload": {"format": "securo-categorization-rules", "rules": []},
+            "overwrite": True,
+        },
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_a_rule_this_version_no_longer_ships_is_skipped(
+    client: AsyncClient, biz_headers
+):
+    """Guessing at what it meant is worse than saying it was skipped."""
+    file = (
+        await client.get("/api/reconciliation/rules/export", headers=biz_headers)
+    ).json()
+    node = next(n for n in file["nodes"] if n["node"] == INVOICE_NODE)
+    node["rules"].append(
+        {
+            "id": "regra_de_uma_versao_futura",
+            "origin": "default",
+            "name": None,
+            "enabled": True,
+            "outcome": "link",
+            "trigger": "money_arrives",
+            "when": {"amount": {"match": "exact"}},
+        }
+    )
+
+    resp = await client.post(
+        "/api/reconciliation/rules/import",
+        headers=biz_headers,
+        json={"payload": file, "overwrite": True},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["skipped"] == 1
+    assert "regra_de_uma_versao_futura" not in ids_in(
+        await policy(client, biz_headers), INVOICE_NODE
+    )

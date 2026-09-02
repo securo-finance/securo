@@ -9,7 +9,7 @@ months from now would never reach anyone who had already opened the
 page. So an untouched rule keeps improving with the product, and a row
 here exists exactly when somebody decided otherwise.
 
-`reconciliation_suggestions` holds the doubtful space — money that looks
+`reconciliation_suggestions` holds the doubtful space: money that looks
 like it answers a promise without the evidence to say so. Its most
 important column is `status`, and specifically that `declined` is stored:
 without it a suggestion somebody rejected comes back on the next sync,
@@ -22,6 +22,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Optional
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -30,6 +31,7 @@ from sqlalchemy import (
     Numeric,
     String,
     UniqueConstraint,
+    false,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -81,14 +83,14 @@ class ReconciliationRule(Base):
     user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
-    #: Which policy document this belongs to — invoices or recurring bills.
+    #: Which policy document this belongs to: invoices or recurring bills.
     node: Mapped[str] = mapped_column(String(64))
     #: The shipped strategy being overridden, or this rule's own id.
     strategy_id: Mapped[str] = mapped_column(String(64))
     #: `default` patches something we ship; `custom` is the workspace's own.
     origin: Mapped[str] = mapped_column(String(16), default="default")
     #: What the workspace calls it. Null for an overridden default, which
-    #: keeps its translated shipped name — a name that would otherwise
+    #: keeps its translated shipped name: a name that would otherwise
     #: freeze in one language the day somebody edited a threshold.
     name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     #: Where it sits in the order strategies are tried. Null means "leave
@@ -96,6 +98,18 @@ class ReconciliationRule(Base):
     #: default does not require rewriting every other row.
     position: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     config: Mapped[dict[str, Any]] = mapped_column(_Json, default=dict)
+    #: The workspace threw this rule away.
+    #:
+    #: Only meaningful on an `origin='default'` row: a rule of the
+    #: workspace's own is deleted by deleting the row, because it exists
+    #: nowhere else. A shipped rule is a document in the image, so the
+    #: only way to be rid of it is to say so here. `config` is kept, not
+    #: cleared: a deleted rule does not run, and nobody is served by
+    #: silently discarding thresholds somebody tuned in case they bring
+    #: it back.
+    deleted: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
     #: The shape this override was written against, so a future change to
     #: the document can tell which rows it has to migrate.
     policy_version: Mapped[int] = mapped_column(Integer, default=1)
@@ -171,7 +185,7 @@ class ReconciliationSuggestion(Base):
     group_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )
-    #: The rule that produced it, so the queue can say *why* — the same id
+    #: The rule that produced it, so the queue can say *why*; the same id
     #: the rules page shows.
     strategy_id: Mapped[str] = mapped_column(String(64))
     node: Mapped[str] = mapped_column(String(64))
@@ -198,7 +212,7 @@ class ReconciliationEvent(Base):
     """What matching did, in one order.
 
     Small on purpose. Most of what a person calls "the history" is
-    already stored — a link is an allocation with a rule id and a
+    already stored: a link is an allocation with a rule id and a
     timestamp, an answered suggestion is a suggestion row with a status
     and who resolved it. What did not exist was a single stream: reading
     those two tables together means joining shapes that have nothing in
@@ -247,7 +261,7 @@ class ReconciliationEvent(Base):
     expectation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
     amount: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2))
     strategy_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    #: Null means the system did it on its own — the difference a reader
+    #: Null means the system did it on its own: the difference a reader
     #: most often wants: was this me, or was this the rules?
     user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True

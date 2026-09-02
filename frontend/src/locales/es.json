@@ -372,7 +372,14 @@
       "fromSystem": "De {{source}} · {{date}}",
       "fromUpload": "Subido · {{date}}"
     },
-    "draftSaved": "Borrador guardado"
+    "draftSaved": "Borrador guardado",
+    "suggestions": {
+      "title_one": "Un pago puede saldar esta factura",
+      "title_other": "{{count}} pagos pueden saldar esta factura",
+      "wouldApply": "aplicaría {{amount}}",
+      "alsoCovers_one": "también cubre otra {{count}} factura",
+      "alsoCovers_other": "también cubre otras {{count}} facturas"
+    }
   },
   "collections": {
     "title": "Colecciones",
@@ -799,7 +806,9 @@
     "calendarTransfersExcluded": "Las transferencias no cuentan como ingresos ni gastos",
     "invoiceBadge": "Invoice {{number}}",
     "invoiceBadgeNoNumber": "Invoice",
-    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it."
+    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it.",
+    "suggestionBadge": "Pregunta",
+    "suggestionBadgeTooltip": "Un pago puede saldar esta factura. Abre la cola para responder."
   },
   "accounts": {
     "title": "Cuentas",
@@ -1120,6 +1129,7 @@
     "createMissingCategories": "Crear también las categorías predeterminadas que necesita el paquete",
     "duplicateName": "Ya existe una regla con este nombre",
     "sectionTitle": "Reglas de categorización",
+    "sectionHint": "Cómo categorizar las transacciones.",
     "resetAndReapplyAll": "Restablecer y reaplicar",
     "confirmResetAndReapplyAll": "¿Restablecer las categorías, las notas y las descripciones gestionadas por reglas de las transacciones coincidentes y volver a aplicar todas las reglas activas?",
     "add": "Agregar",
@@ -1166,7 +1176,6 @@
     "turnOff": "Desactivar",
     "turnedOn": "Regla activada",
     "turnedOff": "Regla desactivada",
-    "shippedCannotDelete": "Esta regla viene con Securo. Desactívala en lugar de eliminarla.",
     "noConditions": "(sin condiciones)",
     "noActions": "(sin acciones)",
     "fieldDescription": "Descripción",
@@ -1193,15 +1202,15 @@
     "sortBy_priority": "Prioridad",
     "sortBy_name": "Nombre",
     "sortBy_category": "Categoría",
-    "export": "Export",
-    "import": "Import",
+    "export": "Exportar",
+    "import": "Importar",
     "exported": "Rules export downloaded",
     "imported": "Imported {{imported}} rules ({{skipped}} skipped)",
     "invalidImportFile": "Invalid rules import file",
     "importConfirmTitle": "Import categorization rules?",
     "importConfirmDescription": "File {{file}} contains {{count}} rules.",
     "importOverwriteWarning": "Importing will overwrite your current categorization rules. This cannot be undone.",
-    "confirmOverwriteImport": "Overwrite and import",
+    "confirmOverwriteImport": "Sobrescribir e importar",
     "tab": {
       "rules": "Reglas",
       "queue": "Esperándote",
@@ -2221,10 +2230,10 @@
   },
   "reconciliation": {
     "node": {
-      "invoices": "Conciliación de facturas",
-      "invoicesHint": "Cómo se vincula el dinero que entra con las facturas que salda. Se prueban en orden: gana la primera que coincide.",
-      "recurring": "Conciliación de recurrentes",
-      "recurringHint": "Cómo se reconoce un cargo real como el recibo que paga, para que el movimiento no aparezca dos veces.",
+      "invoices": "Facturas",
+      "invoicesHint": "contra las facturas que emitiste",
+      "recurring": "Gastos recurrentes",
+      "recurringHint": "contra los cargos que ya esperabas",
       "inactive": "No se usa aquí"
     },
     "rule": {
@@ -2249,7 +2258,6 @@
       "amountRatio": "el importe coincide descontada la retención",
       "window": "hasta {{before}} días antes, {{after}} días después",
       "similarity": "la descripción se parece al menos {{min}}",
-      "currencyAllow": "cualquier moneda",
       "none": "sin condiciones",
       "accounts": "en {{names}}",
       "payees": "para {{names}}",
@@ -2266,7 +2274,6 @@
       "amountPartial": "el importe cubre parte de lo que se debe",
       "amountSet": "hasta {{count}} facturas suman ese importe"
     },
-    "add": "Nueva regla",
     "newRule": "Nueva regla de conciliación",
     "saved": "Regla guardada",
     "reset": "Regla restaurada",
@@ -2328,7 +2335,7 @@
     },
     "queue": {
       "title": "Esperándote",
-      "hint": "Coincidencias plausibles pero sin certeza. Esta lista debería quedarse corta; si no, son las reglas las que hay que cambiar.",
+      "hint": "Conciliaciones que necesitan tu confirmación.",
       "empty": "Nada que revisar. Todo coincidió solo.",
       "aPayment": "Un pago",
       "maySettle": "puede saldar {{name}}",
@@ -2369,17 +2376,17 @@
     },
     "history": {
       "title": "Qué hizo la conciliación",
-      "hint": "Lo más reciente primero. Deshacer un vínculo también queda aquí: nada más lo guarda.",
+      "hint": "Lo más reciente primero.",
       "byPerson": "por ti",
       "byRules": "por las reglas",
       "more": "Ver {{count}} más",
       "less": "Ver menos",
       "action": {
         "linked": "Vinculado a {{name}}",
-        "accepted": "Lo vinculaste a {{name}}",
+        "accepted": "Sugerencia aceptada para {{name}}",
         "suggested": "Propuesto para {{name}}",
-        "declined": "Descartaste {{name}}",
-        "expired": "Caducó sin respuesta — {{name}}",
+        "declined": "Sugerencia descartada para {{name}}",
+        "expired": "Sugerencia caducada: {{name}}",
         "unlinked": "Desvinculado de {{name}}"
       },
       "empty": "Nada aún. Esto se llena a medida que la conciliación vincula, pregunta y se responde."
@@ -2387,7 +2394,7 @@
     "moveUp": "Probar esta antes",
     "moveDown": "Probar esta después",
     "matchingTitle": "Reglas de conciliación",
-    "matchingHint": "Cómo el dinero que entra se vincula con lo que salda. Cada conjunto se prueba en orden: gana la primera regla que coincide.",
+    "matchingHint": "Cómo el dinero que entra se vincula a las facturas.",
     "pair": {
       "owed": "Lo que se debe",
       "arrived": "Lo que llegó",
@@ -2403,6 +2410,16 @@
       "acrossInvoices": "en {{count}} facturas",
       "dueOn": "vence {{date}}",
       "totalOf": "total de {{amount}}"
-    }
+    },
+    "discarded": "Eliminadas de este espacio:",
+    "noneLeft": "No queda ninguna regla de conciliación en este conjunto. Aquí no se concilia nada automáticamente.",
+    "confirmDeleteTitle": "¿Eliminar esta regla?",
+    "confirmDeleteDescription": "\"{{name}}\" deja de decidir nada. Si es una de las nuestras, puedes recuperarla más tarde.",
+    "exported": "Reglas de conciliación descargadas",
+    "imported": "{{imported}} reglas importadas ({{skipped}} omitidas)",
+    "invalidImportFile": "Ese no es un archivo de reglas de conciliación",
+    "importConfirmTitle": "¿Importar reglas de conciliación?",
+    "importConfirmDescription": "El archivo {{file}} contiene {{count}} reglas.",
+    "importOverwriteWarning": "La importación reemplaza las reglas de conciliación de este espacio, incluido su orden. No se puede deshacer."
   }
 }

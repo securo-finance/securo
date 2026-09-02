@@ -372,7 +372,14 @@
       "fromSystem": "Von {{source}} · {{date}}",
       "fromUpload": "Hochgeladen · {{date}}"
     },
-    "draftSaved": "Entwurf gespeichert"
+    "draftSaved": "Entwurf gespeichert",
+    "suggestions": {
+      "title_one": "Eine Zahlung könnte diese Rechnung begleichen",
+      "title_other": "{{count}} Zahlungen könnten diese Rechnung begleichen",
+      "wouldApply": "würde {{amount}} anrechnen",
+      "alsoCovers_one": "deckt auch {{count}} weitere Rechnung",
+      "alsoCovers_other": "deckt auch {{count}} weitere Rechnungen"
+    }
   },
   "collections": {
     "title": "Sammlungen",
@@ -799,7 +806,9 @@
     "calendarTransfersExcluded": "Umbuchungen zählen nicht als Einnahmen oder Ausgaben",
     "invoiceBadge": "Invoice {{number}}",
     "invoiceBadgeNoNumber": "Invoice",
-    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it."
+    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it.",
+    "suggestionBadge": "Frage",
+    "suggestionBadgeTooltip": "Eine Zahlung könnte diese Rechnung begleichen. Öffnen Sie die Warteschlange."
   },
   "accounts": {
     "title": "Konten",
@@ -1120,6 +1129,7 @@
     "createMissingCategories": "Auch die benötigten Standardkategorien erstellen",
     "duplicateName": "Eine Regel mit diesem Namen existiert bereits",
     "sectionTitle": "Kategorisierungsregeln",
+    "sectionHint": "Wie Transaktionen kategorisiert werden.",
     "resetAndReapplyAll": "Zurücksetzen und erneut anwenden",
     "confirmResetAndReapplyAll": "Kategorien, Notizen und durch Regeln geänderte Beschreibungen übereinstimmender Transaktionen zurücksetzen und anschließend alle aktiven Regeln erneut anwenden?",
     "add": "Hinzufügen",
@@ -1166,7 +1176,6 @@
     "turnOff": "Ausschalten",
     "turnedOn": "Regel aktiviert",
     "turnedOff": "Regel deaktiviert",
-    "shippedCannotDelete": "Diese Regel gehört zu Securo. Schalten Sie sie aus, statt sie zu löschen.",
     "noConditions": "(keine Bedingungen)",
     "noActions": "(keine Aktionen)",
     "fieldDescription": "Beschreibung",
@@ -2221,10 +2230,10 @@
   },
   "reconciliation": {
     "node": {
-      "invoices": "Rechnungsabgleich",
-      "invoicesHint": "Wie eingehendes Geld den Rechnungen zugeordnet wird, die es begleicht. Der Reihe nach geprüft — die erste passende Regel gewinnt.",
-      "recurring": "Abgleich wiederkehrender Posten",
-      "recurringHint": "Wie eine echte Abbuchung als die Rechnung erkannt wird, die sie bezahlt, damit der Posten nicht doppelt erscheint.",
+      "invoices": "Rechnungen",
+      "invoicesHint": "gegen die Rechnungen, die Sie gestellt haben",
+      "recurring": "Wiederkehrende Kosten",
+      "recurringHint": "gegen die Kosten, die Sie ohnehin erwartet haben",
       "inactive": "Hier nicht in Gebrauch"
     },
     "rule": {
@@ -2249,7 +2258,6 @@
       "amountRatio": "der Betrag stimmt abzüglich Quellensteuer",
       "window": "bis zu {{before}} Tage früher, {{after}} Tage später",
       "similarity": "der Text ist mindestens {{min}} ähnlich",
-      "currencyAllow": "jede Währung",
       "none": "keine Bedingungen",
       "accounts": "auf {{names}}",
       "payees": "für {{names}}",
@@ -2266,7 +2274,6 @@
       "amountPartial": "der Betrag deckt einen Teil des Offenen",
       "amountSet": "bis zu {{count}} Rechnungen ergeben die Summe"
     },
-    "add": "Neue Regel",
     "newRule": "Neue Abgleichregel",
     "saved": "Regel gespeichert",
     "reset": "Regel zurückgesetzt",
@@ -2281,7 +2288,7 @@
       "counterparty": "Wer gezahlt hat",
       "amount": "Betrag",
       "window": "Zulässiger Abstand zwischen den Daten",
-      "windowHint": "Verspätung zählt ab dem Fälligkeitstag, Vorauszahlung ab dem Tag der Rechnungsstellung — wer einen Tag nach Ausstellung zahlt, ist nicht Wochen zu früh.",
+      "windowHint": "Verspätung zählt ab dem Fälligkeitstag, Vorauszahlung ab dem Tag der Rechnungsstellung, wer also einen Tag nach Ausstellung zahlt, ist nicht Wochen zu früh.",
       "beforeDays": "Tage früher",
       "afterDays": "Tage später",
       "similarity": "Textähnlichkeit",
@@ -2328,7 +2335,7 @@
     },
     "queue": {
       "title": "Wartet auf Sie",
-      "hint": "Zuordnungen, die plausibel, aber nicht sicher sind. Diese Liste sollte kurz bleiben — wenn nicht, gehören die Regeln geändert.",
+      "hint": "Zuordnungen, die Ihre Bestätigung brauchen.",
       "empty": "Nichts zu prüfen. Alles hat von selbst gepasst.",
       "aPayment": "Eine Zahlung",
       "maySettle": "begleicht vielleicht {{name}}",
@@ -2336,7 +2343,7 @@
       "accept": "Verknüpfen",
       "declineHint": "Passt nicht. Dieses Paar wird nicht erneut vorgeschlagen.",
       "linked": "Verknüpft",
-      "declined": "Verworfen — wir fragen nicht noch einmal",
+      "declined": "Verworfen. Wir fragen nicht noch einmal",
       "covers": "deckt"
     },
     "evidence": {
@@ -2363,31 +2370,31 @@
       "money_arrives": "Wenn Geld eingeht",
       "money_arrivesHint": "Eine Zahlung trifft ein und wir suchen die Rechnung, die sie begleicht.",
       "invoice_issued": "Wenn eine Rechnung gestellt wird",
-      "invoice_issuedHint": "Der Kunde zahlte zuerst, die Rechnung folgt — wir sehen zurück auf Geld, das schon da war.",
+      "invoice_issuedHint": "Der Kunde zahlte zuerst, die Rechnung folgt, also sehen wir zurück auf Geld, das schon da war.",
       "both": "Zu beiden Zeitpunkten",
       "bothHint": "Die Regel gilt in beide Richtungen."
     },
     "history": {
       "title": "Was der Abgleich getan hat",
-      "hint": "Neueste zuerst. Auch das Lösen einer Verknüpfung steht hier — sonst hält es nichts fest.",
+      "hint": "Neueste zuerst.",
       "byPerson": "von Ihnen",
       "byRules": "von den Regeln",
       "more": "{{count}} weitere anzeigen",
       "less": "Weniger anzeigen",
       "action": {
         "linked": "Mit {{name}} verknüpft",
-        "accepted": "Sie haben es mit {{name}} verknüpft",
+        "accepted": "Vorschlag für {{name}} angenommen",
         "suggested": "Für {{name}} vorgeschlagen",
-        "declined": "Sie haben {{name}} verworfen",
-        "expired": "Unbeantwortet abgelaufen — {{name}}",
-        "unlinked": "Von {{name}} gelöst"
+        "declined": "Vorschlag für {{name}} verworfen",
+        "expired": "Vorschlag abgelaufen: {{name}}",
+        "unlinked": "Von {{name}} getrennt"
       },
       "empty": "Noch nichts. Das füllt sich, während der Abgleich verknüpft, fragt und beantwortet wird."
     },
     "moveUp": "Diese früher prüfen",
     "moveDown": "Diese später prüfen",
     "matchingTitle": "Abgleichregeln",
-    "matchingHint": "Wie eingehendes Geld dem zugeordnet wird, was es begleicht. Jeder Satz wird der Reihe nach geprüft — die erste passende Regel gewinnt.",
+    "matchingHint": "Wie eingehendes Geld den Rechnungen zugeordnet wird.",
     "pair": {
       "owed": "Was offen ist",
       "arrived": "Was eingegangen ist",
@@ -2403,6 +2410,16 @@
       "acrossInvoices": "auf {{count}} Rechnungen",
       "dueOn": "fällig {{date}}",
       "totalOf": "Gesamt {{amount}}"
-    }
+    },
+    "discarded": "Aus diesem Arbeitsbereich gelöscht:",
+    "noneLeft": "Keine Abgleichsregeln mehr in dieser Gruppe. Hier wird nichts automatisch zugeordnet.",
+    "confirmDeleteTitle": "Diese Regel löschen?",
+    "confirmDeleteDescription": "„{{name}}“ entscheidet nichts mehr. Wenn es eine unserer Regeln ist, können Sie sie später zurückholen.",
+    "exported": "Abgleichsregeln heruntergeladen",
+    "imported": "{{imported}} Regeln importiert ({{skipped}} übersprungen)",
+    "invalidImportFile": "Das ist keine Datei mit Abgleichsregeln",
+    "importConfirmTitle": "Abgleichsregeln importieren?",
+    "importConfirmDescription": "Die Datei {{file}} enthält {{count}} Regeln.",
+    "importOverwriteWarning": "Der Import ersetzt die Abgleichsregeln dieses Arbeitsbereichs samt ihrer Reihenfolge. Das lässt sich nicht rückgängig machen."
   }
 }

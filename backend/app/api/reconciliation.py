@@ -2,7 +2,7 @@
 
 Two surfaces that belong together: the rules decide, and the queue is
 where a decision was not confident enough to be made alone. Seeing them
-side by side is the point — somebody staring at a long queue should be
+side by side is the point: somebody staring at a long queue should be
 one click from the rule that keeps sending things there.
 
 Not gated on the invoices module. The recurring rules apply to a personal
@@ -15,6 +15,7 @@ from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +30,9 @@ from app.models.reconciliation import ReconciliationRule
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.schemas.reconciliation import (
+    DiscardedRuleRead,
+    ReconciliationImportRequest,
+    ReconciliationImportResponse,
     ReconciliationNodeRead,
     ReconciliationRuleCreate,
     ReconciliationRuleRead,
@@ -41,6 +45,7 @@ from app.schemas.reconciliation import (
 from app.services import (
     invoice_service,
     reconciliation_history_service as history,
+    reconciliation_portability as portability,
     reconciliation_rule_service as rules,
     reconciliation_suggestion_service as suggestions,
 )
@@ -83,7 +88,7 @@ async def list_rules(
     """Every rule this workspace runs, in the order they are tried.
 
     Shipped ∪ changed, composed on read. Nothing here is stored as a list
-    of rules — that is what keeps an untouched rule improving when we
+    of rules: that is what keeps an untouched rule improving when we
     improve it.
     """
     enabled_modules = resolve_modules(ctx.workspace)
@@ -102,6 +107,9 @@ async def list_rules(
                     _as_read(node, strategy, index)
                     for index, strategy in enumerate(policy["strategies"])
                 ],
+                discarded=[
+                    DiscardedRuleRead(**item) for item in policy.get("discarded", [])
+                ],
             )
         )
     return out
@@ -115,7 +123,7 @@ async def update_rule(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Change a rule — one we ship, or one the workspace wrote."""
+    """Change a rule: one we ship, or one the workspace wrote."""
     data = payload.model_dump(exclude_unset=True)
     position = data.pop("position", None)
     existing = await _find_custom(session, ctx.workspace.id, node, strategy_id)
@@ -153,7 +161,7 @@ async def reorder_rules(
     """Set the order rules are tried in.
 
     The first rule that matches wins, so this is not cosmetic: it is how a
-    band is expressed — *link under two per cent, ask between two and
+    band is expressed: *link under two per cent, ask between two and
     five* is one rule placed above another, with no lower bound written
     anywhere.
     """
@@ -203,20 +211,84 @@ async def create_rule(
 
 
 @router.delete("/rules/{node}/{strategy_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_rule(
+    node: str,
+    strategy_id: str,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Get rid of a rule, including one of ours.
+
+    There is no rule we refuse to remove. What happens underneath differs:
+    a workspace's own rule is a row and goes; one of ours is a document
+    in the image, so a tombstone records that this workspace does not run
+    it, but that is our problem, not something to make a person learn.
+    """
+    try:
+        await rules.delete_rule(session, ctx.workspace.id, node, strategy_id)
+    except rules.RuleError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message)
+    await session.commit()
+
+
+@router.post("/rules/{node}/{strategy_id}/reset", status_code=status.HTTP_204_NO_CONTENT)
 async def reset_rule(
     node: str,
     strategy_id: str,
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Delete a workspace's own rule, or put a shipped one back.
+    """Forget everything this workspace did to one of our rules.
 
-    One verb for both, because from the page they are the same gesture:
-    "stop doing my version of this". What comes back for a shipped rule is
-    whatever we ship *today*, not what shipped the day it was changed.
+    One verb for every kind of disagreement, because they are all the same
+    row: a threshold somebody moved, a place in the order, and a rule
+    somebody deleted all go back together. What comes back is whatever we
+    ship *today*, not what shipped the day it was changed.
     """
     await rules.reset(session, ctx.workspace.id, node, strategy_id)
     await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Carrying a policy elsewhere
+# ---------------------------------------------------------------------------
+@router.get("/rules/export")
+async def export_rules(
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """The matching policy as a file, with ids resolved to names."""
+    payload = await portability.export_policy(session, ctx.workspace.id)
+    return JSONResponse(
+        content=payload,
+        headers={
+            "Content-Disposition": 'attachment; filename="securo-reconciliation-rules.json"',
+        },
+    )
+
+
+@router.post("/rules/import", response_model=ReconciliationImportResponse)
+async def import_rules(
+    data: ReconciliationImportRequest,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        result = await portability.import_policy(
+            session,
+            ctx.workspace.id,
+            ctx.user_id,
+            data.payload,
+            overwrite=data.overwrite,
+        )
+    except rules.ExistingPolicyError as exc:
+        # 409 rather than 400: nothing is wrong with the file, and the
+        # answer is a question for the person rather than a correction.
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    except rules.RuleError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message)
+    await session.commit()
+    return ReconciliationImportResponse(**result)
 
 
 async def _find_custom(
@@ -385,7 +457,7 @@ async def _invoice_name(session: AsyncSession, invoice: Invoice) -> Optional[str
     """The number as the client would recognise it.
 
     Mirrors what every invoice screen shows, and for the same reason: the
-    snapshot taken at issue is authoritative — including when it recorded
+    snapshot taken at issue is authoritative: including when it recorded
     *no* prefix, which is an answer rather than a gap. An invoice issued
     as "2" must keep reading as "2" after somebody sets a prefix, or the
     queue would name a document differently from the copy the client is
@@ -446,7 +518,7 @@ async def list_history(
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """The stream, newest first — or everything that happened to one promise.
+    """The stream, newest first, or everything that happened to one promise.
 
     Newest first here and oldest first in the queue, deliberately: a queue
     is work to get through, so its oldest question is the most urgent,

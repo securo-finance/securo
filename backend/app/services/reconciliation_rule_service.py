@@ -5,7 +5,7 @@ computed, on every read, from two things: the document that shipped with
 the image, and the rows recording what somebody chose to change. That is
 the whole idea, and it costs one small query per match.
 
-The alternative — writing the defaults into each workspace at creation —
+The alternative, writing the defaults into each workspace at creation,
 looks simpler for about six months, until the day a better default ships
 and reaches nobody who had already opened the page. Under this model an
 untouched rule keeps improving with the product, and a row exists exactly
@@ -39,17 +39,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.reconciliation import ReconciliationRule
 from app.services import reconciliation_policy
 
-#: The nodes a person is shown and may edit.
+#: The nodes a person is shown and may edit. One, deliberately.
 #:
-#: `match_placeholder` is deliberately absent. It decides whether an
-#: arriving charge is the same event as a row we generated ourselves —
-#: bookkeeping about our own duplicates, not a judgement about whose money
-#: this is. Putting it on the page would offer someone a lever whose only
-#: effect is duplicate rows in their ledger.
-EDITABLE_NODES = (
-    reconciliation_policy.MATCH_INVOICE["node"],
-    reconciliation_policy.MATCH_RECURRING["node"],
-)
+#: `match_placeholder` and `match_recurring` are both absent, for the same
+#: reason: they decide whether an arriving charge is the same event as a
+#: row we generated ourselves. That is bookkeeping about our own
+#: duplicates, not a judgement about whose money this is, and putting it
+#: on the page offers a lever whose only visible effect is rows appearing
+#: twice in a ledger.
+#:
+#: `match_recurring` was on the page, next to invoice matching, and the
+#: split was the confusing part rather than the rules in it. **An invoice
+#: can itself be recurring**: a monthly retainer is billed on the same
+#: day every month, so "invoices" and "recurring" are not two kinds of
+#: promise anybody distinguishes when they look at their own work. Asking
+#: which of the two lists a monthly service invoice belonged in had no
+#: answer, because the honest one is *both*, and the two lists were
+#: matching against different things entirely: one against a document you
+#: issued and are owed for, the other against a row we wrote in advance
+#: because you told us to expect it.
+#:
+#: So the page is about the promise a client made. The recurring set keeps
+#: running on what we ship.
+EDITABLE_NODES = (reconciliation_policy.MATCH_INVOICE["node"],)
 
 #: A custom rule's id: what the workspace typed, reduced to something
 #: safe to store, compare and show. Ids are compared against shipped ones,
@@ -59,6 +71,15 @@ _ID_SHAPE = re.compile(r"[^a-z0-9_]+")
 #: Reserved prefix so a workspace can never write a rule that shadows one
 #: of ours by claiming its id.
 CUSTOM_PREFIX = "custom_"
+
+
+class ExistingPolicyError(Exception):
+    """Importing would replace matching rules this workspace already has.
+
+    Its own type rather than a `RuleError`, because it is not a bad
+    request: the file is fine, and the answer is a question for the
+    person rather than a correction to the file.
+    """
 
 
 class RuleError(Exception):
@@ -79,7 +100,7 @@ def _merge(shipped: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
     """Apply a sparse patch over a shipped rule.
 
     Recursive, so a workspace that only widened the date window keeps
-    every other signal live — including improvements shipped later. A
+    every other signal live: including improvements shipped later. A
     patch that replaced the whole `when` block would silently freeze the
     signals it did not mention, which is the failure this exists to
     avoid.
@@ -96,7 +117,7 @@ def _merge(shipped: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
 def _prune(patch: dict[str, Any], shipped: dict[str, Any]) -> dict[str, Any]:
     """Drop everything the patch says that we already say ourselves.
 
-    The screen sends a whole rule, because a form holds a whole rule —
+    The screen sends a whole rule, because a form holds a whole rule:
     every field, whether or not somebody touched it. Storing that as the
     override would quietly freeze the parts nobody meant to change, and
     the workspace would stop receiving improvements to signals it never
@@ -142,20 +163,26 @@ def compose(node: str, rows: list[ReconciliationRule]) -> dict[str, Any]:
     """
     policy = reconciliation_policy.default_policy(node)
     patches = {row.strategy_id: row for row in rows if row.origin == "default"}
+    # Thrown away by this workspace. Still shipped, so we still know its
+    # name, which is the only reason the page can offer it back.
+    discarded: list[dict[str, Any]] = []
     # Sort key: where it sits, then whether somebody *asked* for that spot,
     # then the shipped order. The middle term is what makes "put this
-    # first" mean first — an explicit position beats a rule that merely
+    # first" mean first: an explicit position beats a rule that merely
     # happens to occupy that index, while a rule nobody positioned never
     # displaces one that was.
     ordered: list[tuple[float, int, int, dict[str, Any]]] = []
 
     for index, strategy in enumerate(policy["strategies"]):
         row = patches.get(strategy["id"])
+        if row is not None and row.deleted:
+            discarded.append({"id": strategy["id"], "node": node})
+            continue
         merged = _merge(strategy, row.config) if row else strategy
         merged["origin"] = "default"
         # "Changed" means the *rule* differs, not that a row exists. A row
-        # carrying only a position — written when somebody reordered the
-        # list — is not a departure from what we ship, and marking it as
+        # carrying only a position: written when somebody reordered the
+        # list: is not a departure from what we ship, and marking it as
         # one would offer to "restore" a rule that was never altered.
         merged["customised"] = bool(row and row.config)
         asked = row is not None and row.position is not None
@@ -180,6 +207,7 @@ def compose(node: str, rows: list[ReconciliationRule]) -> dict[str, Any]:
 
     ordered.sort(key=lambda item: (item[0], item[1], item[2]))
     policy["strategies"] = [strategy for _, _, _, strategy in ordered]
+    policy["discarded"] = discarded
     return policy
 
 
@@ -197,7 +225,7 @@ def narrow_for_frequency(policy: dict[str, Any], frequency: str) -> dict[str, An
     Somebody who widened the monthly window to ten days has said something
     reasonable about how late their bills post; letting that same ten days
     apply to a weekly bill would let a charge match the neighbouring
-    occurrence, which is not a preference they expressed — it is a fact
+    occurrence, which is not a preference they expressed: it is a fact
     about weekly bills sitting seven days apart. So the workspace's number
     wins wherever it is tighter, and loses only where physics disagrees.
 
@@ -334,7 +362,7 @@ def _positive_number(value: Any, code: str, message: str) -> str:
 def _validate_amount(rule: Any) -> dict[str, Any]:
     """Two different questions live in this block, and they are not the same.
 
-    `match` asks how close the money has to be **to the promise** — exact,
+    `match` asks how close the money has to be **to the promise**: exact,
     within a margin, net of withholding. `min` and `max` ask whether the
     rule applies to money of this size at all, which is what somebody
     means by "don't link anything over ten thousand on its own". Keeping
@@ -396,7 +424,7 @@ def _validate_amount(rule: Any) -> dict[str, Any]:
     if match == "set":
         # How many promises one payment may cover, and how far the total
         # may be from what arrived. The cap is bounded again in the engine
-        # — searching which invoices add up to a payment grows explosively,
+        #: searching which invoices add up to a payment grows explosively,
         # and a sync that hangs is worse than a match that is not made.
         try:
             most = int(rule.get("max_invoices", 6))
@@ -432,14 +460,24 @@ def _validate_currency(rule: Any) -> dict[str, Any]:
     """Two independent questions again, and conflating them would hide one.
 
     `conversion` says whether a movement may settle a promise held in a
-    different currency — a comparison rule. `in` and `foreign` say which
+    different currency: a comparison rule. `in` and `foreign` say which
     money the rule is written for at all. Somebody who wants "dollars are
     reviewed by hand" needs the second, and has no use for the first.
     """
     if not isinstance(rule, dict):
         raise RuleError("bad_currency", "Unknown currency condition")
+    # `allow` used to be accepted here and meant "stop comparing
+    # currencies", which is not conversion: it settled a euro invoice
+    # with dollars at face value. Refused on the way in rather than
+    # quietly ignored, so a policy file carrying it is reported instead
+    # of silently doing something other than what it says.
     conversion = rule.get("conversion", "reject")
-    if conversion not in ("reject", "allow"):
+    if conversion == "allow":
+        raise RuleError(
+            "conversion_unsupported",
+            "Money in another currency is never matched. Converting it needs a rate and a place to book the difference.",
+        )
+    if conversion != "reject":
         raise RuleError("bad_currency", "Unknown currency condition")
     checked: dict[str, Any] = {"conversion": conversion}
 
@@ -461,7 +499,7 @@ def _validate_ids(rule: Any, code: str) -> list[str]:
     Stored as strings rather than UUID objects because this lives in JSON
     and has to survive a round trip through the database unchanged. They
     are compared as strings too, so a malformed id narrows the rule to
-    nothing rather than widening it to everything — the safe direction to
+    nothing rather than widening it to everything: the safe direction to
     fail in when the thing being decided is whether money moves.
     """
     if isinstance(rule, dict):
@@ -560,11 +598,16 @@ async def upsert_override(
     )
     pruned = _prune(merged, shipped_strategy)
 
-    if not pruned and position is None:
+    if not pruned and position is None and not (row is not None and row.deleted):
         # Nothing left to disagree about. Setting a value back to what we
         # ship is the same act as restoring it, so the row goes and the
         # rule returns to the live default rather than lingering as a
         # copy that happens to agree today.
+        #
+        # Except when the row is a tombstone: "I do not want this rule"
+        # is a disagreement even when every threshold matches ours, and
+        # dropping the row here would quietly bring back a rule somebody
+        # deleted.
         if row is not None:
             await session.delete(row)
             await session.flush()
@@ -608,8 +651,8 @@ async def reorder(
 
     Writes an explicit position for **every** rule in the node rather than
     only the one that moved. Order is the mechanism the whole feature
-    rests on — the first rule that matches wins, so a band is expressed by
-    what sits above and below it — and half-implicit ordering, where some
+    rests on: the first rule that matches wins, so a band is expressed by
+    what sits above and below it, and half-implicit ordering, where some
     rules carry a position and others fall back to where we happened to
     ship them, is the kind of thing that reads correctly today and
     silently rearranges the day a default is inserted.
@@ -623,6 +666,9 @@ async def reorder(
     known = {s["id"] for s in reconciliation_policy.default_policy(node)["strategies"]}
     rows = {row.strategy_id: row for row in await overrides_for(session, workspace_id, node)}
     known |= {row_id for row_id, row in rows.items() if row.origin == "custom"}
+    # A rule this workspace deleted is not in the list any more, so
+    # naming every rule cannot mean naming that one.
+    known -= {row_id for row_id, row in rows.items() if row.deleted}
 
     unknown = [rid for rid in strategy_ids if rid not in known]
     if unknown:
@@ -708,14 +754,61 @@ async def update_custom(
     return row
 
 
+async def delete_rule(
+    session: AsyncSession, workspace_id: uuid.UUID, node: str, strategy_id: str
+) -> None:
+    """Get rid of a rule, whoever wrote it.
+
+    A rule the workspace wrote is deleted by deleting its row: it exists
+    nowhere else. One of ours cannot be, because it is a document in the
+    image and would be back on the next start, so the row records that
+    this workspace does not want it, and `compose` leaves it out.
+
+    There is no rule we refuse to remove. A matching policy decides what
+    happens to somebody's money, and a default we happen to believe in is
+    not a reason to make them keep it. What we do keep is the name, so
+    the page can offer it back.
+    """
+    if node not in EDITABLE_NODES:
+        raise RuleError("unknown_node", "That set of rules cannot be edited")
+
+    row = await _find(session, workspace_id, node, strategy_id)
+    if row is not None and row.origin == "custom":
+        await session.delete(row)
+        await session.flush()
+        return
+
+    shipped = {s["id"] for s in reconciliation_policy.default_policy(node)["strategies"]}
+    if strategy_id not in shipped:
+        raise RuleError("unknown_rule", "No such rule in this set")
+
+    if row is None:
+        row = ReconciliationRule(
+            id=uuid.uuid4(),
+            workspace_id=workspace_id,
+            node=node,
+            strategy_id=strategy_id,
+            origin="default",
+            config={},
+            policy_version=reconciliation_policy.POLICY_VERSION,
+        )
+        session.add(row)
+    row.deleted = True
+    await session.flush()
+
+
 async def reset(
     session: AsyncSession, workspace_id: uuid.UUID, node: str, strategy_id: str
 ) -> None:
     """Forget a change, and go back to whatever we ship *today*.
 
-    Not "go back to what shipped when you changed it" — deleting the row
+    Not "go back to what shipped when you changed it": deleting the row
     puts the rule back under the live default, which is the point of not
     copying defaults in the first place.
+
+    One row holds every kind of disagreement, so one verb undoes all of
+    them: a threshold somebody moved, a place in the order, and a rule
+    somebody deleted all go back to shipped together.
     """
     row = await _find(session, workspace_id, node, strategy_id)
     if row is not None:

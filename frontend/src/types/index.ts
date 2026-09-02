@@ -1313,12 +1313,12 @@ export interface InvoiceFacets {
  *  those is honest about what the engine can actually look at. */
 /** Which moment a rule runs at.
  *
- *  `money_arrives` — a payment lands and we look for the promise it
+ *  `money_arrives`: a payment lands and we look for the promise it
  *  answers; the promise came first and was waiting.
- *  `invoice_issued` — a document is written and we look back at money that
+ *  `invoice_issued`: a document is written and we look back at money that
  *  arrived before it existed, the client who pays and lets the nota
  *  follow. Weaker evidence: that money already had a life of its own.
- *  `both` — the rule trusts either. */
+ *  `both`: the rule trusts either. */
 export type Trigger = 'money_arrives' | 'invoice_issued' | 'both'
 
 export interface ReconciliationConditions {
@@ -1368,7 +1368,7 @@ export interface ReconciliationConditions {
     conversion: 'reject' | 'allow'
     /** Only these currency codes. */
     in?: string[]
-    /** Only currencies other than the workspace's own — what somebody
+    /** Only currencies other than the workspace's own: what somebody
      *  means by "check anything that is not in our money". */
     foreign?: boolean
   }
@@ -1400,6 +1400,33 @@ export interface ReconciliationNode {
    *  rules mean nothing where the module is off. */
   active: boolean
   rules: ReconciliationRule[]
+  /** Rules we ship that this workspace threw away. Sent so the page can
+   *  offer them back: a shipped rule leaves a tombstone rather than a
+   *  hole, so we still know its name, and without this the delete is a
+   *  trap, because the row is gone and there is nothing left to click. */
+  discarded: { id: string; node: string }[]
+}
+
+/** A matching policy as a file. Ids are resolved to names on the way out
+ *  and looked up again on the way in: a UUID means nothing in another
+ *  database. */
+export interface ReconciliationPolicyFile {
+  format: string
+  version: number
+  policy_version: number
+  nodes: {
+    node: string
+    rules: {
+      id: string
+      origin: string
+      name: string | null
+      enabled: boolean
+      outcome: string
+      trigger: string
+      when: Record<string, unknown>
+    }[]
+    discarded: string[]
+  }[]
 }
 
 export interface ReconciliationRulePatch {
@@ -1467,9 +1494,9 @@ export interface ReconciliationSuggestion {
 /** One thing matching did.
  *
  *  `linked` means the rules did it on their own; `accepted` means a person
- *  did, by answering a question. They are never both written for one act —
+ *  did, by answering a question. They are never both written for one act:
  *  the allocation an acceptance produces is its consequence, not a second
- *  event — because the whole stream is organised around that one line. */
+ *  event, because the whole stream is organised around that one line. */
 export interface ReconciliationHistoryEvent {
   id: string
   at: string

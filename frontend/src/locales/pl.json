@@ -372,7 +372,14 @@
       "fromSystem": "Z {{source}} · {{date}}",
       "fromUpload": "Przesłano · {{date}}"
     },
-    "draftSaved": "Szkic zapisany"
+    "draftSaved": "Szkic zapisany",
+    "suggestions": {
+      "title_one": "Płatność może opłacić tę fakturę",
+      "title_other": "{{count}} płatności może opłacić tę fakturę",
+      "wouldApply": "zastosowałaby {{amount}}",
+      "alsoCovers_one": "obejmuje też {{count}} inną fakturę",
+      "alsoCovers_other": "obejmuje też {{count}} innych faktur"
+    }
   },
   "collections": {
     "title": "Kolekcje",
@@ -832,7 +839,9 @@
     "calendarTransfersExcluded": "Transfery nie liczą się jako przychody ani wydatki",
     "invoiceBadge": "Invoice {{number}}",
     "invoiceBadgeNoNumber": "Invoice",
-    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it."
+    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it.",
+    "suggestionBadge": "Pytanie",
+    "suggestionBadgeTooltip": "Płatność może opłacić tę fakturę. Otwórz kolejkę, aby odpowiedzieć."
   },
   "accounts": {
     "title": "Konta",
@@ -1179,6 +1188,7 @@
     "createMissingCategories": "Utwórz też domyślne kategorie wymagane przez pakiet",
     "duplicateName": "Reguła o tej nazwie już istnieje",
     "sectionTitle": "Reguły kategoryzacji",
+    "sectionHint": "Jak kategoryzować transakcje.",
     "resetAndReapplyAll": "Zresetuj i zastosuj ponownie",
     "confirmResetAndReapplyAll": "Zresetować kategorie, notatki i opisy zarządzane przez reguły pasujących transakcji, a następnie zastosować ponownie wszystkie aktywne reguły?",
     "add": "Dodaj",
@@ -1228,7 +1238,6 @@
     "turnOff": "Wyłącz",
     "turnedOn": "Reguła włączona",
     "turnedOff": "Reguła wyłączona",
-    "shippedCannotDelete": "Ta reguła jest częścią Securo. Wyłącz ją zamiast usuwać.",
     "noConditions": "(brak warunków)",
     "noActions": "(brak akcji)",
     "fieldDescription": "Opis",
@@ -1255,15 +1264,15 @@
     "sortBy_priority": "Priorytet",
     "sortBy_name": "Nazwa",
     "sortBy_category": "Kategoria",
-    "export": "Export",
-    "import": "Import",
+    "export": "Eksportuj",
+    "import": "Importuj",
     "exported": "Rules export downloaded",
     "imported": "Imported {{imported}} rules ({{skipped}} skipped)",
     "invalidImportFile": "Invalid rules import file",
     "importConfirmTitle": "Import categorization rules?",
     "importConfirmDescription": "File {{file}} contains {{count}} rules.",
     "importOverwriteWarning": "Importing will overwrite your current categorization rules. This cannot be undone.",
-    "confirmOverwriteImport": "Overwrite and import",
+    "confirmOverwriteImport": "Nadpisz i importuj",
     "tab": {
       "rules": "Reguły",
       "queue": "Czeka na Ciebie",
@@ -2322,10 +2331,10 @@
   },
   "reconciliation": {
     "node": {
-      "invoices": "Dopasowywanie faktur",
-      "invoicesHint": "Jak wpływające pieniądze są wiązane z fakturami, które opłacają. Sprawdzane po kolei — wygrywa pierwsza pasująca reguła.",
-      "recurring": "Dopasowywanie płatności cyklicznych",
-      "recurringHint": "Jak rzeczywiste obciążenie zostaje rozpoznane jako rachunek, który opłaca, żeby pozycja nie pojawiła się dwa razy.",
+      "invoices": "Faktury",
+      "invoicesHint": "wobec faktur, które wystawiłeś",
+      "recurring": "Wydatki cykliczne",
+      "recurringHint": "wobec kosztów, których już się spodziewałeś",
       "inactive": "Tu nieużywane"
     },
     "rule": {
@@ -2350,7 +2359,6 @@
       "amountRatio": "kwota zgadza się po potrąceniu podatku",
       "window": "do {{before}} dni wcześniej, {{after}} dni później",
       "similarity": "opis jest podobny co najmniej w {{min}}",
-      "currencyAllow": "dowolna waluta",
       "none": "brak warunków",
       "accounts": "na {{names}}",
       "payees": "dla {{names}}",
@@ -2367,7 +2375,6 @@
       "amountPartial": "kwota pokrywa część należności",
       "amountSet": "do {{count}} faktur daje tę sumę"
     },
-    "add": "Nowa reguła",
     "newRule": "Nowa reguła dopasowania",
     "saved": "Reguła zapisana",
     "reset": "Reguła przywrócona",
@@ -2382,7 +2389,7 @@
       "counterparty": "Kto zapłacił",
       "amount": "Kwota",
       "window": "Dopuszczalna różnica dat",
-      "windowHint": "Opóźnienie liczy się od terminu płatności, a przedpłata od dnia wystawienia faktury — zapłata dzień po wystawieniu to nie tygodnie przed czasem.",
+      "windowHint": "Opóźnienie liczy się od terminu płatności, a przedpłata od dnia wystawienia faktury, więc zapłata dzień po wystawieniu to nie tygodnie przed czasem.",
       "beforeDays": "Dni wcześniej",
       "afterDays": "Dni później",
       "similarity": "Podobieństwo opisu",
@@ -2408,7 +2415,7 @@
       "triggerHint": "Dopasowanie dzieje się w dwóch momentach, a dowody nie są takie same.",
       "amountMatch": "Jak blisko musi być kwota",
       "amountMatchHint": "Porównywana z tym, co wciąż pozostaje do zapłaty, nie z pierwotną sumą.",
-      "amountBandHint": "O samej płatności — wielkość, którą ta reguła ma obsługiwać albo nie."
+      "amountBandHint": "O samej płatności: wielkość, którą ta reguła ma obsługiwać albo nie."
     },
     "counterparty": {
       "any": "Ktokolwiek",
@@ -2429,7 +2436,7 @@
     },
     "queue": {
       "title": "Czeka na Ciebie",
-      "hint": "Dopasowania prawdopodobne, ale niepewne. Ta lista powinna być krótka — jeśli nie jest, to reguły wymagają zmiany.",
+      "hint": "Dopasowania, które czekają na potwierdzenie.",
       "empty": "Nic do sprawdzenia. Wszystko dopasowało się samo.",
       "aPayment": "Płatność",
       "maySettle": "może opłacać {{name}}",
@@ -2437,7 +2444,7 @@
       "accept": "Powiąż",
       "declineHint": "To nie to. Ta para nie będzie już proponowana.",
       "linked": "Powiązano",
-      "declined": "Odrzucono — nie zapytamy ponownie",
+      "declined": "Odrzucono. Nie zapytamy ponownie",
       "covers": "pokrywa"
     },
     "evidence": {
@@ -2464,23 +2471,23 @@
       "money_arrives": "Gdy wpływają pieniądze",
       "money_arrivesHint": "Wpływa płatność i szukamy faktury, którą opłaca.",
       "invoice_issued": "Gdy wystawiana jest faktura",
-      "invoice_issuedHint": "Klient zapłacił najpierw, faktura poszła później — patrzymy wstecz, na pieniądze już obecne.",
+      "invoice_issuedHint": "Klient zapłacił najpierw, faktura poszła później, więc patrzymy wstecz, na pieniądze już obecne.",
       "both": "W obu momentach",
       "bothHint": "Reguła obowiązuje w obie strony."
     },
     "history": {
       "title": "Co zrobiło dopasowanie",
-      "hint": "Od najnowszych. Cofnięcie powiązania też jest tu zapisane — nic innego tego nie trzyma.",
+      "hint": "Od najnowszych.",
       "byPerson": "przez Ciebie",
       "byRules": "przez reguły",
       "more": "Pokaż jeszcze {{count}}",
       "less": "Pokaż mniej",
       "action": {
         "linked": "Powiązano z {{name}}",
-        "accepted": "Powiązałeś z {{name}}",
+        "accepted": "Przyjęto propozycję dla {{name}}",
         "suggested": "Zaproponowano dla {{name}}",
-        "declined": "Odrzuciłeś {{name}}",
-        "expired": "Wygasło bez odpowiedzi — {{name}}",
+        "declined": "Odrzucono propozycję dla {{name}}",
+        "expired": "Propozycja wygasła: {{name}}",
         "unlinked": "Rozłączono z {{name}}"
       },
       "empty": "Jeszcze nic. Wypełni się, gdy dopasowanie powiąże, zapyta i otrzyma odpowiedź."
@@ -2488,7 +2495,7 @@
     "moveUp": "Sprawdzaj tę wcześniej",
     "moveDown": "Sprawdzaj tę później",
     "matchingTitle": "Reguły dopasowania",
-    "matchingHint": "Jak wpływające pieniądze są wiązane z tym, co opłacają. Każdy zestaw sprawdzany po kolei — wygrywa pierwsza pasująca reguła.",
+    "matchingHint": "Jak wpływające pieniądze są wiązane z fakturami.",
     "pair": {
       "owed": "Co jest należne",
       "arrived": "Co wpłynęło",
@@ -2504,6 +2511,16 @@
       "acrossInvoices": "na {{count}} faktur",
       "dueOn": "termin {{date}}",
       "totalOf": "razem {{amount}}"
-    }
+    },
+    "discarded": "Usunięte z tej przestrzeni:",
+    "noneLeft": "W tym zestawie nie ma już reguł dopasowania. Nic nie jest tu dopasowywane automatycznie.",
+    "confirmDeleteTitle": "Usunąć tę regułę?",
+    "confirmDeleteDescription": "„{{name}}” przestaje o czymkolwiek decydować. Jeśli to jedna z naszych, można ją później przywrócić.",
+    "exported": "Pobrano reguły dopasowania",
+    "imported": "Zaimportowano {{imported}} reguł ({{skipped}} pominięto)",
+    "invalidImportFile": "To nie jest plik z regułami dopasowania",
+    "importConfirmTitle": "Zaimportować reguły dopasowania?",
+    "importConfirmDescription": "Plik {{file}} zawiera {{count}} reguł.",
+    "importOverwriteWarning": "Import zastępuje reguły dopasowania tej przestrzeni wraz z ich kolejnością. Tego nie da się cofnąć."
   }
 }
