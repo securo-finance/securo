@@ -26,7 +26,7 @@ const paths = Object.keys(modules)
 // First evaluation of a module compiles its whole transitive graph through
 // Vite, which is slow and varies with how much else is running in parallel.
 // The default 5s is a budget for a *test*, not for a compile, and the page
-// with the heaviest graph sits right on it — so adding one component
+// with the heaviest graph sits right on it, so adding one component
 // anywhere in the tree can fail a page test that has nothing to do with it.
 //
 // A generous ceiling hides nothing: a module that fails to evaluate rejects

@@ -7,7 +7,7 @@ is the reason this module contains no thresholds.
 
 ## It runs in both directions, and that is not symmetry for its own sake
 
-Money arrives and settles an invoice that already existed — the obvious
+Money arrives and settles an invoice that already existed: the obvious
 case. But the common Brazilian one runs the other way: the client pays,
 *then* the nota is issued. An invoice created on Tuesday is often settled
 by money that landed on Friday of the week before, and a matcher that
@@ -22,8 +22,8 @@ at money nobody has explained yet.
 **The automatic tier carries the traffic and the queue is the residue.**
 That ordering is the product, not an implementation detail: the
 accountant interview is unambiguous that import-then-make-the-user-confirm
-is what killed adoption of the incumbent — *"eles acharam muito
-trabalhoso"* — and a product that turns every payment into a confirmation
+is what killed adoption of the incumbent (*"eles acharam muito
+trabalhoso"*), and a product that turns every payment into a confirmation
 is that product with a different logo. If the queue is where the volume
 goes, the rules are wrong, and the fix belongs in the rules.
 
@@ -132,7 +132,7 @@ async def _module_is_on(session: AsyncSession, workspace_id: uuid.UUID) -> bool:
     """Whether this workspace has invoicing at all.
 
     The candidate query would return nothing for a personal workspace
-    anyway, so this is not correctness — it is the modularity promise
+    anyway, so this is not correctness: it is the modularity promise
     kept literally: a workspace that never enabled the module pays one
     cheap lookup on an already-loaded row, not a join against a table it
     has no rows in, on every transaction of every sync.
@@ -149,7 +149,7 @@ async def _open_invoices(
     """Every invoice the policy considers still waiting for money.
 
     Two filters, and the split is not incidental. `status` is a stored
-    decision — draft, void, written off — so SQL can exclude it. Whether
+    decision (draft, void, written off), so SQL can exclude it. Whether
     something is `partial` or `overdue` is **derived per read** from the
     allocations and the clock, so it is decided here, against the same
     function the screen uses. Reading `candidate_states` rather than
@@ -201,8 +201,8 @@ async def _apply(
 
     Applying is deliberately a separate step from deciding, and it goes
     through `allocate` rather than around it: every guard that protects a
-    hand-made link — the invoice is open, the currency agrees, the amount
-    fits — protects an automatic one too. **An automatic decision is not
+    hand-made link (the invoice is open, the currency agrees, the amount
+    fits) protects an automatic one too. **An automatic decision is not
     a trusted one.**
 
     **All of it or none of it.** One payment can settle several invoices,
@@ -250,7 +250,7 @@ async def _apply(
                 )
     except invoice_service.InvoiceError:
         # A guard refused one of them, so none of them happened. The money
-        # stays unexplained, which is the honest outcome — the alternative
+        # stays unexplained, which is the honest outcome: the alternative
         # is a half-settled payout.
         return None
 
@@ -269,8 +269,8 @@ async def match_incoming(
     transactions runs one query for invoices instead of three hundred.
 
     Two passes, and the second is not an afterthought. A workspace that
-    never issues an invoice still has promises — the rent leaving on the
-    5th, the retainer arriving on the 20th — and the doubtful space has to
+    never issues an invoice still has promises (the rent leaving on the
+    5th, the retainer arriving on the 20th), and the doubtful space has to
     exist for them too, or reconciliation would be a feature only
     businesses got.
     """
@@ -323,7 +323,7 @@ async def _match_invoices(
         else:
             # Not confident enough to act. The pair goes to the queue,
             # where the service refuses to re-ask anything already
-            # answered — including anything already refused.
+            # answered, including anything already refused.
             await reconciliation_suggestion_service.record(
                 session, workspace_id, transaction.id, decision, movement, NODE
             )
@@ -341,7 +341,7 @@ async def _suggest_recurring(
     Nothing is linked here. A charge that the recurring rules were
     confident about was already bound during normalisation, in place, and
     carries a `recurring_transaction_id` by the time it reaches this
-    function — so anything still unattached is by definition something
+    function, so anything still unattached is by definition something
     that pass was *not* sure about.
 
     Which is exactly why this exists: it is what happens when somebody
@@ -423,11 +423,11 @@ async def match_for_invoice(
 
     The pay-then-invoice case: a client pays, and the nota follows days
     later. Nothing about the money changed, so nothing would ever
-    re-examine it — this is the pass that does.
+    re-examine it: this is the pass that does.
 
     **Which rules run here is the rules' own business, not this
-    function's.** It used to be hardcoded — only known-client strategies,
-    decided in this file — and that was a restriction nobody could see or
+    function's.** It used to be hardcoded: only known-client strategies,
+    decided in this file, and that was a restriction nobody could see or
     change, on a page whose whole purpose is that matching is not a black
     box. Now a rule declares the moments it trusts, and this pass simply
     asks for the ones that trust this one.
@@ -505,7 +505,7 @@ async def match_for_invoice(
                 return None
         elif decision.port == "suggested":
             # Dropping these would make a rule set to suggest do nothing
-            # at this moment while doing something at the other — the same
+            # at this moment while doing something at the other; the same
             # silent switch the queue exists to prevent.
             await reconciliation_suggestion_service.record(
                 session, invoice.workspace_id, transaction.id, decision, movement, NODE

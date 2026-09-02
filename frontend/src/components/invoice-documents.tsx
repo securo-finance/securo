@@ -81,7 +81,7 @@ export function InvoiceDocumentBrowser({
 
   // Issuing files the page as it read at that moment, and that file is
   // the document from then on. Listing the live render beside it shows
-  // one invoice twice under one name — and the live one is precisely the
+  // one invoice twice under one name, and the live one is precisely the
   // copy that drifts as payments land, which is what filing was for.
   const filedAtIssue = attachments.some((a) => a.source === ISSUED_BY_US)
 

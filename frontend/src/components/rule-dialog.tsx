@@ -745,7 +745,7 @@ export function RuleDialog({
 
           {/* No "rule is active" box here any more. Whether a rule runs
               is a property of the rule as it sits in the list, not of
-              the form you edit it in — and having it here meant turning
+              the form you edit it in, and having it here meant turning
               one off was: open it, scroll, find a checkbox, save a form
               you did not otherwise want to touch. It is a switch on the
               row now. `isActive` is still carried and sent back

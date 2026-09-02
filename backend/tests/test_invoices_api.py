@@ -1514,7 +1514,7 @@ async def test_a_document_somebody_already_filed_is_never_overwritten(
     original. Ours would be a second opinion about a document that has
     one.
 
-    Marking it primary is the act that says so — an ordinary upload
+    Marking it primary is the act that says so: an ordinary upload
     against an invoice we wrote is supplementary paper, and the guard is
     deliberately keyed to that flag rather than to "any file is here".
     """

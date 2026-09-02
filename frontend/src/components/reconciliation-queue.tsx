@@ -8,8 +8,8 @@
  *  Which is why the empty state is written as good news rather than as an
  *  apology for having nothing to show.
  *
- *  Each row states its evidence — the amount is exact, the payer is known,
- *  the date is four days out — instead of a confidence score. A percentage
+ *  Each row states its evidence (the amount is exact, the payer is known,
+ *  the date is four days out) instead of a confidence score. A percentage
  *  is not something a person can check, and a queue nobody can check is a
  *  queue they clear without reading.
  */
@@ -164,7 +164,7 @@ export function ReconciliationQueue({ canWrite }: { canWrite: boolean }) {
                         : 'reconciliation.queue.mayBe',
                       {
                         // One payment can answer several promises, and the
-                        // question is the whole question — so the row names
+                        // question is the whole question, so the row names
                         // all of them rather than the first and a count.
                         name:
                           suggestion.covers.length > 1

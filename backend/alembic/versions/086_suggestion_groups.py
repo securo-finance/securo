@@ -1,6 +1,6 @@
 """a suggestion that names several invoices at once
 
-One payment can settle several invoices — a client clearing three of
+One payment can settle several invoices: a client clearing three of
 their own in a transfer, a commercial arrangement paying a month at once.
 When the engine is sure, it writes them all. When it is not, the question
 it asks has to be the whole question: *does this payment cover these

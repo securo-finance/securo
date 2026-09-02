@@ -874,9 +874,9 @@ async def import_transactions(
     # Update import log with actual imported count
     import_log.transaction_count = imported
 
-    # Invoices last, and as one batch. Unlike the recurring match above —
+    # Invoices last, and as one batch. Unlike the recurring match above:
     # which upgrades a placeholder in place and so must happen before the
-    # row is written — settling an invoice creates an allocation pointing
+    # row is written: settling an invoice creates an allocation pointing
     # at a transaction, which has to exist first.
     await reconciliation_service.match_incoming(session, workspace_id, landed)
 

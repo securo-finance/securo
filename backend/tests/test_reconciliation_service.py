@@ -1,7 +1,7 @@
 """Money and promises, brought together against a real database.
 
 The engine's own tests prove what it decides. These prove the half that
-loads candidates and writes the result — including the direction that is
+loads candidates and writes the result: including the direction that is
 easy to forget: an invoice issued *after* the money arrived.
 """
 import uuid
@@ -176,7 +176,7 @@ async def test_one_payment_never_settles_two_invoices(
     )
     await session.commit()
 
-    # Two identical invoices are ambiguous, so nothing is linked at all —
+    # Two identical invoices are ambiguous, so nothing is linked at all:
     # and the second pass adds nothing either way.
     assert first == [] and again == []
     total = await session.execute(select(InvoiceAllocation))
@@ -189,7 +189,7 @@ async def test_half_the_money_is_not_taken_for_the_whole_invoice(
 ):
     """R$1.500 against a R$3.000 invoice is not evidence of anything. It
     could be an instalment, a different job, or a client paying the wrong
-    amount — and the engine has no exact signal to tell those apart, so it
+    amount, and the engine has no exact signal to tell those apart, so it
     takes none of them."""
     invoice = await an_invoice(client, biz_headers, payee_id=client_payee.id)
     half = await a_transaction(
@@ -209,7 +209,7 @@ async def test_half_the_money_is_not_taken_for_the_whole_invoice(
 async def test_the_rest_of_an_instalment_matches_what_is_left(
     client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee, test_user
 ):
-    """Once a person books the first half, the second is exact again —
+    """Once a person books the first half, the second is exact again:
     because a candidate's amount is its **balance**, not its total. This
     is what makes a market that pays in parts reconcilable at all: each
     settlement narrows the target for the next one."""
@@ -319,7 +319,7 @@ async def test_a_payment_typed_in_by_hand_settles_its_invoice(
     client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee, test_user
 ):
     """Through the endpoint, not the service. Someone who reconciles by
-    typing the Pix in should not then have to go and link it — that is the
+    typing the Pix in should not then have to go and link it: that is the
     manual work the feature exists to remove, and leaving this path out
     would remove it only for people whose bank happens to be connected."""
     invoice = await an_invoice(client, biz_headers, payee_id=client_payee.id)
@@ -353,7 +353,7 @@ async def test_an_invoice_issued_after_the_payment_finds_it(
 ):
     """The common Brazilian case: the client pays, and the nota follows
     days later. Nothing about the money changed, so nothing would ever
-    re-examine it — this is the pass that does."""
+    re-examine it: this is the pass that does."""
     paid = await a_transaction(
         session, account, test_user,
         when=TODAY - timedelta(days=6), payee_id=client_payee.id,
@@ -371,7 +371,7 @@ async def test_money_from_a_payer_we_cannot_name_is_left_alone(
     client: AsyncClient, biz_headers, session: AsyncSession, account, test_user
 ):
     """Backwards, an exact amount is not enough. The money already had a
-    life of its own — a refund, a transfer, another job — and claiming it
+    life of its own (a refund, a transfer, another job), and claiming it
     for a document written afterwards is a guess. Forward, the same
     payment links, because there the promise came first."""
     await a_transaction(session, account, test_user, when=TODAY - timedelta(days=6))
@@ -401,7 +401,7 @@ async def test_the_look_back_stops_at_the_window(
     client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee, test_user
 ):
     """Bounded so issuing an invoice never scans a year of a busy
-    account — and because money from six months ago is not this
+    account, and because money from six months ago is not this
     invoice's."""
     await a_transaction(
         session, account, test_user,

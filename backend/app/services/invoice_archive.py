@@ -5,7 +5,7 @@
 `/pdf` renders the invoice live, and the renderer prints *Paid* and
 *Balance* as soon as money moves against it. So an invoice sent showing
 "Total 10.000" came back, after a 5.000 payment, showing a balance of
-5.000 — a different document at the same address, including the public
+5.000: a different document at the same address, including the public
 link the client was given.
 
 That is the same failure the numbering rules exist to prevent: **renaming
@@ -22,7 +22,7 @@ documents were coming out of one door:
 ## Why filing, rather than a flag on the renderer
 
 The architecture already answers this and was not being used. An invoice
-gathers paper — `invoice_attachments` — and one file can be marked as
+gathers paper (`invoice_attachments`), and one file can be marked as
 *the* document, which `/pdf` already prefers over anything it could
 render. A file cannot drift. So issuing files the PDF, and from that
 moment the answer to "what did we send" is a stored artifact rather than
@@ -35,7 +35,7 @@ freeze anything: it is frozen because it is a file.
 
 **An imported document is never filed this way.** We did not write it,
 and rendering our own page over someone else's bill produces something
-that looks official and is not — the same reason `/pdf` refuses to render
+that looks official and is not; the same reason `/pdf` refuses to render
 for them at all.
 
 **Failing to file never fails the issue.** Issuing an invoice is the act
@@ -88,7 +88,7 @@ async def file_issued_document(
         # are still moving.
         return
 
-    # Somebody already filed the real thing — a signed copy, the version
+    # Somebody already filed the real thing: a signed copy, the version
     # that went by email. Ours would be a second opinion about a document
     # that has an original.
     if await invoice_attachment_service.primary_for(session, invoice.id) is not None:
@@ -126,7 +126,7 @@ async def file_issued_document(
         )
     except Exception:  # noqa: BLE001 - see the module docstring
         # Issuing is the act that matters. A storage error must not leave
-        # a workspace unable to bill, so this is logged and swallowed —
+        # a workspace unable to bill, so this is logged and swallowed:
         # the invoice is issued either way, and `/pdf` falls back to
         # rendering exactly as it did before.
         logger.warning(

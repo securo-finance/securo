@@ -2,7 +2,7 @@
 
 A suggestion is what the engine produces when the signals point somewhere
 but not hard enough to act. Storing them rather than recomputing them is
-not an optimisation — it is the only way to remember that somebody
+not an optimisation: it is the only way to remember that somebody
 already said no.
 
 ## Why `declined` is the important column
@@ -11,7 +11,7 @@ Without it the loop is: sync finds a plausible pair, the person rejects
 it, the next sync finds the same pair and asks again. A queue that
 re-asks yesterday's questions is worse than no queue, because people stop
 reading it, and then they stop reading the good ones too. The accountant
-interview is unambiguous about where that ends — an incumbent whose
+interview is unambiguous about where that ends: an incumbent whose
 import-then-confirm flow was abandoned because *"eles acharam muito
 trabalhoso"*.
 
@@ -25,7 +25,7 @@ months is not a question any more.
 
 Every suggestion here is a payment the automatic tier could not claim.
 If this queue is where the volume goes, the rules are wrong and the fix
-is in the rules — not in asking people to work harder.
+is in the rules, not in asking people to work harder.
 """
 from __future__ import annotations
 
@@ -88,7 +88,7 @@ async def record(
 ) -> list[ReconciliationSuggestion]:
     """Keep a doubtful match, unless this pair has been settled already.
 
-    Returns the rows written — several when one payment may be covering
+    Returns the rows written: several when one payment may be covering
     several promises, and none at all when every pair is already in the
     queue or was already answered. That last case is the common one on a
     re-sync, and the whole reason the table exists.
@@ -116,7 +116,7 @@ async def record(
             )
         )
         if existing.scalar_one_or_none() is not None:
-            # Pending, accepted or declined — all three mean "do not ask
+            # Pending, accepted or declined: all three mean "do not ask
             # again". Declined is the one that matters: re-offering it is
             # the failure this table was built to prevent.
             #
@@ -171,7 +171,7 @@ async def members_of(
     """Every row this question is made of.
 
     A suggestion covering one invoice is its own group of one. A payment
-    offered against three is answered whole or not at all — accepting two
+    offered against three is answered whole or not at all: accepting two
     thirds of it would leave the payment short on the rest, with nothing
     on screen having said so.
     """
@@ -237,7 +237,7 @@ async def get(
 def _resolve(
     suggestion: ReconciliationSuggestion, status: str, user_id: Optional[uuid.UUID]
 ) -> None:
-    """Mark one row. **Does not write history** — a grouped question is
+    """Mark one row. **Does not write history**: a grouped question is
     resolved row by row but *happened* once, so the event belongs to
     whoever knows the whole act. `answered` is that place."""
     suggestion.status = status
@@ -251,7 +251,7 @@ async def answered(
     status: str,
     user_id: Optional[uuid.UUID],
 ) -> None:
-    """Record that a question — all of it — was answered.
+    """Record that a question (all of it) was answered.
 
     One event, whether the question named one invoice or four. Splitting
     it would put several rows in the stream against a single decision, in
@@ -350,8 +350,8 @@ async def drop_for_expectation(
 ) -> None:
     """Clear the queue of a promise that no longer exists.
 
-    There is no foreign key to follow — an invoice and a recurring bill
-    live in different tables — so a deleted promise is cleaned up here.
+    There is no foreign key to follow (an invoice and a recurring bill
+    live in different tables), so a deleted promise is cleaned up here.
     Only pending rows go: an answered question stays answered, which is
     what keeps `declined` meaningful.
     """

@@ -9,7 +9,7 @@ the synced charge. This service reconciles the two.
 
 The judgement used to live here as constants and a hand-rolled comparison.
 It now lives in `reconciliation_engine`, under policy documents in
-`reconciliation_policy` — the same decider an invoice goes through, because
+`reconciliation_policy`; the same decider an invoice goes through, because
 **an invoice and a scheduled occurrence are the same kind of promise**: money
 that is expected, waiting for the movement that confirms it.
 
@@ -19,15 +19,15 @@ five either side against a placeholder), description token-overlap at 0.6, and
 the better-matching candidate wins rather than both being refused. This lands
 under bills that have been reconciling this way since #116, and a matcher that
 started finding pairs it used to miss would be a behaviour change nobody asked
-for. What is gained today is only that those numbers are now reachable — a
+for. What is gained today is only that those numbers are now reachable: a
 threshold buried in a module is a threshold no one can ever be shown or offered.
 
 The queries stay here, because they are what differs: three lookups, in two
 directions, over two tables. Only the verdict is shared.
 
 One dormant edge is worth naming: a bill of zero is now never matched, because
-a promise with nothing outstanding is not a candidate. Nothing reaches it —
-banks do not post charges of zero — but it is a difference rather than an
+a promise with nothing outstanding is not a candidate. Nothing reaches it:
+banks do not post charges of zero, but it is a difference rather than an
 identity.
 """
 import uuid
@@ -44,12 +44,12 @@ from app.services import reconciliation_policy, reconciliation_rule_service
 from app.services.reconciliation_engine import Expectation, Movement, evaluate
 
 # Real-transaction sources a recurring charge can arrive under. Excludes
-# "recurring" itself — that is the generated placeholder, handled separately.
+# "recurring" itself: that is the generated placeholder, handled separately.
 _REAL_SOURCES = ("sync", "ofx", "csv", "manual")
 
 #: The widest window any recurring policy uses, in days. Only the SQL date
 #: range is cut with it; the policy still decides, per candidate, whether a
-#: charge is close enough. Kept generous on purpose — narrowing the query to
+#: charge is close enough. Kept generous on purpose: narrowing the query to
 #: the exact window would silently re-implement the rule in a second place,
 #: and the two would drift.
 _QUERY_WINDOW_DAYS = 5
@@ -73,7 +73,7 @@ def _as_occurrence(
     """One expected occurrence of a bill, as the engine sees it.
 
     `when` is passed rather than read off the row because the caller knows
-    which occurrence is in question — the one being generated, or the next one
+    which occurrence is in question: the one being generated, or the next one
     due, adjusted for a weekend.
     """
     return Expectation(
@@ -161,7 +161,7 @@ async def find_placeholder_for_incoming(
 
     Inverted from the rest of the module: the placeholder is the thing being
     searched for, so the incoming charge plays the part of the promise and each
-    placeholder is scored against it. The window is symmetric here — a
+    placeholder is scored against it. The window is symmetric here: a
     placeholder was written for one specific occurrence, so unlike a bill it has
     no neighbour to be confused with.
     """
@@ -208,8 +208,8 @@ async def find_bill_for_incoming(
     caller stamps the charge with the bill and advances the bill past the
     fulfilled occurrence so generate_pending won't later duplicate it.
 
-    The one lookup shaped the way the engine natively is — one movement, many
-    promises — except that each bill carries its own window, so each is asked
+    The one lookup shaped the way the engine natively is (one movement, many
+    promises), except that each bill carries its own window, so each is asked
     under its own policy rather than all of them under one.
     """
     from app.services.recurring_transaction_service import adjust_weekend_date
@@ -266,8 +266,8 @@ async def find_bill_for_incoming(
 def advance_past(recurring: RecurringTransaction, fulfilled_date: date) -> None:
     """Advance a bill's next_occurrence past the occurrence a charge fulfilled.
 
-    The target is floored at the bill's current next_occurrence — the matched
-    occurrence — so an *early-posted* charge (one that lands inside the
+    The target is floored at the bill's current next_occurrence: the matched
+    occurrence, so an *early-posted* charge (one that lands inside the
     before-window, i.e. before next_occurrence) still moves the pointer forward.
     Advancing only past the posting date would leave next_occurrence unchanged
     for early charges (e.g. a Jan 8 charge for a Jan 10 occurrence), and

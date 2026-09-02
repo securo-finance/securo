@@ -220,7 +220,7 @@ async def _settle_from_money_already_there(
 ) -> None:
     """Look back at payments that arrived before this document existed.
 
-    The client pays, and the nota follows days later — common enough here
+    The client pays, and the nota follows days later: common enough here
     that a matcher which only looked forward would miss a good share of
     the traffic. Nothing about the money changes when the invoice is
     written, so this is the only moment anything would re-examine it.

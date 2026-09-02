@@ -1,7 +1,7 @@
 """What the matcher decides, and why.
 
 Pure tests: no session, no fixtures, no database. That is the point of
-splitting deciding from writing — the half that holds the judgement can
+splitting deciding from writing: the half that holds the judgement can
 be asked a hundred questions in a second.
 
 The organising claim under all of it: **an invoice and a recurring
@@ -84,7 +84,7 @@ def an_inflow(
 # ---------------------------------------------------------------------------
 def test_a_known_client_paying_the_exact_amount_is_linked_not_suggested():
     """This is a lookup, not a heuristic. The payee is already on the
-    transaction — set by a mapping or a rule — so asking a person to
+    transaction (set by a mapping or a rule), so asking a person to
     confirm it would be asking them to confirm what they configured."""
     invoice = an_invoice()
     decision = evaluate(an_inflow(), [invoice], receivable())
@@ -163,7 +163,7 @@ def test_an_invoice_with_nothing_left_is_not_a_candidate():
 
 def test_paying_the_day_after_issue_is_not_twenty_nine_days_early():
     """An invoice issued on the 1st and due on the 30th, paid on the 2nd.
-    Measured from the due date that is 28 days early and rejected — which
+    Measured from the due date that is 28 days early and rejected, which
     would reject the best-paying client in the workspace. Early is
     measured from the day the promise was made."""
     invoice = an_invoice(when=TODAY + timedelta(days=29), issued=TODAY)
@@ -212,8 +212,8 @@ def test_a_second_instalment_matches_what_is_left_not_the_original_total():
 
 
 def test_more_money_than_the_invoice_owes_settles_only_what_is_owed():
-    """The remainder is not this module's problem — it is an ordinary
-    transaction — but the allocation must never exceed the debt."""
+    """The remainder is not this module's problem (it is an ordinary
+    transaction), but the allocation must never exceed the debt."""
     decision = evaluate(
         an_inflow(amount=Decimal("5000.00")),
         [an_invoice(amount=Decimal("3000.00"))],
@@ -237,12 +237,12 @@ def test_more_money_than_the_invoice_owes_settles_only_what_is_owed():
 
 
 # ---------------------------------------------------------------------------
-# Withholding — the reason the ratio strategy is a link
+# Withholding: the reason the ratio strategy is a link
 # ---------------------------------------------------------------------------
 def test_an_invoice_paid_net_of_withholding_is_linked_and_the_gap_named():
     """R$3.000 from a Brazilian company lands as R$2.955 after 1.5% IRRF.
     Sending that to a confirmation queue sends the best clients to the
-    queue — and the difference is named so the caller can book it rather
+    queue, and the difference is named so the caller can book it rather
     than leaving R$45 unexplained."""
     decision = evaluate(
         an_inflow(amount=Decimal("2955.00")),
@@ -377,7 +377,7 @@ def test_every_candidate_leaves_a_reason_behind():
 
 def test_the_winner_carries_its_score():
     """A caller holding several movements for one promise ranks them by
-    this — the recurring matcher does, and has always taken the better
+    this: the recurring matcher does, and has always taken the better
     -matching charge rather than refusing both. It is also what a
     suggestion has to show a person to be worth showing."""
     charge = Movement(

@@ -753,7 +753,7 @@ async def create_transaction(
 
     # A payment recorded by hand settles an invoice exactly as a synced one
     # does. Someone who reconciles by typing the Pix in should not have to
-    # then go and link it — that is the manual work the whole feature exists
+    # then go and link it: that is the manual work the whole feature exists
     # to remove, and leaving this path out would remove it only for people
     # whose bank happens to be connected.
     await reconciliation_service.match_incoming(session, workspace_id, [transaction])

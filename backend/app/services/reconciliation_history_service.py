@@ -3,7 +3,7 @@
 Two functions, and that is the whole module. The restraint is the design:
 almost everything a person calls "the history" is already stored
 elsewhere, so the temptation is to build a second copy of the ledger and
-call it an audit trail. What was actually missing is narrower — a single
+call it an audit trail. What was actually missing is narrower: a single
 stream, in one order, including the one event that used to vanish.
 
 ## What gets written, and what deliberately does not
@@ -15,14 +15,14 @@ undone. Six verbs, each of which changed something a person can see.
 rules made on their own is `linked`; a link a person made by accepting a
 question is `accepted`, and the allocation is its consequence rather than
 a second event. That is the same line the whole stream is organised
-around — *was this me, or was this the rules?* — and writing both would
+around (*was this me, or was this the rules?*), and writing both would
 put two rows against one decision and blur it.
 
 Not written: everything the engine looked at and passed over. A sync of
 three hundred transactions where two hundred and ninety match nothing
 would produce two hundred and ninety rows saying so, and a history nobody
-can scan is the same as no history. The engine's full trace — which rule
-fired, why each candidate lost — stays in memory and reaches a person
+can scan is the same as no history. The engine's full trace (which rule
+fired, why each candidate lost) stays in memory and reaches a person
 through the queue's evidence, where it is attached to a decision they
 have to make rather than filed away for nobody.
 """
@@ -92,8 +92,8 @@ async def recent(
     is work to get through, so the oldest question is the most urgent,
     while a history is read to find out what just happened.
 
-    `expectation_id` narrows it to one promise — everything that ever
-    happened to this invoice — which is the second and only other way
+    `expectation_id` narrows it to one promise (everything that ever
+    happened to this invoice), which is the second and only other way
     anybody reads this.
     """
     query = select(ReconciliationEvent).where(

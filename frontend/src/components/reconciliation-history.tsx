@@ -2,13 +2,13 @@
  *
  *  Sits under the queue because the two answer neighbouring questions:
  *  the queue is *what still needs me*, this is *what already happened*.
- *  Newest first here and oldest first there, deliberately — a queue is
+ *  Newest first here and oldest first there, deliberately: a queue is
  *  work to get through, so its oldest item is the most urgent, while a
  *  history is read to find out what just happened.
  *
  *  One line per event and nothing else. The thing a reader wants from a
  *  history like this is almost always the same: *was that me, or was that
- *  the rules?* — so that distinction is what the row leads with, and the
+ *  the rules?*, so that distinction is what the row leads with, and the
  *  rest is detail behind it.
  */
 import { useState } from 'react'
@@ -16,7 +16,7 @@ import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { reconciliation as reconciliationApi } from '@/lib/api'
 import type { ReconciliationHistoryEvent } from '@/types'
-import { Zap, Link2Off, HelpCircle, Check, X, Clock } from 'lucide-react'
+import { Link2, Link2Off, HelpCircle, Check, X, Clock } from 'lucide-react'
 import { formatCurrency } from '@/lib/format'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -34,9 +34,14 @@ function SectionCard({ children }: { children: React.ReactNode }) {
 /** The six verbs, each with the shape a reader can scan for. */
 const LOOK: Record<
   ReconciliationHistoryEvent['action'],
-  { icon: typeof Zap; tone: string }
+  { icon: typeof Link2; tone: string }
 > = {
-  linked: { icon: Zap, tone: 'text-emerald-600' },
+  // A link, not a lightning bolt. The bolt meant "the rules did this",
+  // which is a claim about *who*, and a person linking a payment by hand
+  // writes a `linked` event too: the row then showed the automatic mark
+  // beside the words "by you". Who did it is said once, in the line
+  // underneath, where it can be read rather than decoded.
+  linked: { icon: Link2, tone: 'text-emerald-600' },
   accepted: { icon: Check, tone: 'text-emerald-600' },
   suggested: { icon: HelpCircle, tone: 'text-amber-600' },
   declined: { icon: X, tone: 'text-muted-foreground' },
