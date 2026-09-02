@@ -1197,7 +1197,12 @@
     "importConfirmTitle": "Import categorization rules?",
     "importConfirmDescription": "File {{file}} contains {{count}} rules.",
     "importOverwriteWarning": "Importing will overwrite your current categorization rules. This cannot be undone.",
-    "confirmOverwriteImport": "Overwrite and import"
+    "confirmOverwriteImport": "Overwrite and import",
+    "tab": {
+      "rules": "Regras",
+      "queue": "Esperando você",
+      "history": "Histórico"
+    }
   },
   "categories": {
     "title": "Categorias",
@@ -2321,7 +2326,7 @@
     },
     "queue": {
       "title": "Esperando você",
-      "hint": "Casamentos plausíveis, mas sem certeza. Esta lista deve ficar curta — se não ficar, são as regras acima que precisam mudar.",
+      "hint": "Casamentos plausíveis, mas sem certeza. Esta lista deve ficar curta — se não ficar, são as regras que precisam mudar.",
       "empty": "Nada para revisar. Tudo casou sozinho.",
       "aPayment": "Um pagamento",
       "maySettle": "pode quitar {{name}}",
@@ -2374,7 +2379,8 @@
         "declined": "Você descartou {{name}}",
         "expired": "Expirou sem resposta — {{name}}",
         "unlinked": "Desligado de {{name}}"
-      }
+      },
+      "empty": "Nada ainda. Isto se preenche conforme a conciliação liga, pergunta e é respondida."
     },
     "moveUp": "Tentar esta antes",
     "moveDown": "Tentar esta depois"

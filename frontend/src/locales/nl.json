@@ -1197,7 +1197,12 @@
     "importOverwriteWarning": "Als u importeert, worden uw huidige categorisatieregels overschreven. Dit kan niet ongedaan worden gemaakt.",
     "confirmOverwriteImport": "Overschrijven en importeren",
     "confirmDeleteTitle": "Regel verwijderen?",
-    "confirmDeleteDescription": "De regel \"{{name}}\" wordt permanent verwijderd en wordt niet meer uitgevoerd. Wijzigingen die al op bestaande transacties zijn toegepast, blijven behouden. Deze actie kan niet ongedaan worden gemaakt."
+    "confirmDeleteDescription": "De regel \"{{name}}\" wordt permanent verwijderd en wordt niet meer uitgevoerd. Wijzigingen die al op bestaande transacties zijn toegepast, blijven behouden. Deze actie kan niet ongedaan worden gemaakt.",
+    "tab": {
+      "rules": "Regels",
+      "queue": "Wacht op jou",
+      "history": "Geschiedenis"
+    }
   },
   "categories": {
     "title": "Categorieën",
@@ -2321,7 +2326,7 @@
     },
     "queue": {
       "title": "Wacht op jou",
-      "hint": "Koppelingen die aannemelijk zijn maar niet zeker. Deze lijst hoort kort te blijven — zo niet, dan moeten de regels hierboven anders.",
+      "hint": "Koppelingen die aannemelijk zijn maar niet zeker. Deze lijst hoort kort te blijven — zo niet, dan moeten de regels anders.",
       "empty": "Niets te beoordelen. Alles is vanzelf gekoppeld.",
       "aPayment": "Een betaling",
       "maySettle": "voldoet mogelijk {{name}}",
@@ -2374,7 +2379,8 @@
         "declined": "Je wees {{name}} af",
         "expired": "Onbeantwoord verlopen — {{name}}",
         "unlinked": "Ontkoppeld van {{name}}"
-      }
+      },
+      "empty": "Nog niets. Dit vult zich terwijl het afletteren koppelt, vraagt en antwoord krijgt."
     },
     "moveUp": "Deze eerder proberen",
     "moveDown": "Deze later proberen"

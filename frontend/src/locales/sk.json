@@ -1280,7 +1280,12 @@
     "importConfirmTitle": "Importovať pravidlá kategorizácie?",
     "importConfirmDescription": "Počet pravidiel v súbore {{file}}: {{count}}.",
     "importOverwriteWarning": "Import prepíše tvoje aktuálne pravidlá kategorizácie. Túto akciu nie je možné vrátiť späť.",
-    "confirmOverwriteImport": "Prepísať a importovať"
+    "confirmOverwriteImport": "Prepísať a importovať",
+    "tab": {
+      "rules": "Pravidlá",
+      "queue": "Čaká na vás",
+      "history": "História"
+    }
   },
   "categories": {
     "title": "Kategórie",
@@ -2456,7 +2461,7 @@
     },
     "queue": {
       "title": "Čaká na vás",
-      "hint": "Párovania, ktoré sú pravdepodobné, ale nie isté. Tento zoznam má zostať krátky — ak nezostane, treba zmeniť pravidlá vyššie.",
+      "hint": "Párovania, ktoré sú pravdepodobné, ale nie isté. Tento zoznam má zostať krátky — ak nezostane, treba zmeniť pravidlá.",
       "empty": "Nič na kontrolu. Všetko sa spárovalo samo.",
       "aPayment": "Platba",
       "maySettle": "môže uhrádzať {{name}}",
@@ -2509,7 +2514,8 @@
         "declined": "Zamietli ste {{name}}",
         "expired": "Vypršalo bez odpovede — {{name}}",
         "unlinked": "Odpojené od {{name}}"
-      }
+      },
+      "empty": "Zatiaľ nič. Naplní sa, ako párovanie spája, pýta sa a dostáva odpoveď."
     },
     "moveUp": "Skúšať túto skôr",
     "moveDown": "Skúšať túto neskôr"

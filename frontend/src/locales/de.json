@@ -1197,7 +1197,12 @@
     "importConfirmTitle": "Kategorisierungsregeln importieren?",
     "importConfirmDescription": "Die Datei {{file}} enthält {{count}} Regeln.",
     "importOverwriteWarning": "Der Import überschreibt deine aktuellen Kategorisierungsregeln. Dies kann nicht rückgängig gemacht werden.",
-    "confirmOverwriteImport": "Überschreiben und importieren"
+    "confirmOverwriteImport": "Überschreiben und importieren",
+    "tab": {
+      "rules": "Regeln",
+      "queue": "Wartet auf Sie",
+      "history": "Verlauf"
+    }
   },
   "categories": {
     "title": "Kategorien",
@@ -2321,7 +2326,7 @@
     },
     "queue": {
       "title": "Wartet auf Sie",
-      "hint": "Zuordnungen, die plausibel, aber nicht sicher sind. Diese Liste sollte kurz bleiben — wenn nicht, gehören die Regeln oben geändert.",
+      "hint": "Zuordnungen, die plausibel, aber nicht sicher sind. Diese Liste sollte kurz bleiben — wenn nicht, gehören die Regeln geändert.",
       "empty": "Nichts zu prüfen. Alles hat von selbst gepasst.",
       "aPayment": "Eine Zahlung",
       "maySettle": "begleicht vielleicht {{name}}",
@@ -2374,7 +2379,8 @@
         "declined": "Sie haben {{name}} verworfen",
         "expired": "Unbeantwortet abgelaufen — {{name}}",
         "unlinked": "Von {{name}} gelöst"
-      }
+      },
+      "empty": "Noch nichts. Das füllt sich, während der Abgleich verknüpft, fragt und beantwortet wird."
     },
     "moveUp": "Diese früher prüfen",
     "moveDown": "Diese später prüfen"

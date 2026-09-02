@@ -1196,7 +1196,12 @@
     "importConfirmTitle": "Import categorization rules?",
     "importConfirmDescription": "File {{file}} contains {{count}} rules.",
     "importOverwriteWarning": "Importing will overwrite your current categorization rules. This cannot be undone.",
-    "confirmOverwriteImport": "Overwrite and import"
+    "confirmOverwriteImport": "Overwrite and import",
+    "tab": {
+      "rules": "Rules",
+      "queue": "Waiting for you",
+      "history": "History"
+    }
   },
   "categories": {
     "title": "Categories",
@@ -2320,7 +2325,7 @@
     },
     "queue": {
       "title": "Waiting for you",
-      "hint": "Matches that looked plausible without being certain. This list should stay short — if it does not, the rules above want changing.",
+      "hint": "Matches that looked plausible without being certain. This list should stay short — if it does not, the rules want changing.",
       "empty": "Nothing to review. Everything matched on its own.",
       "aPayment": "A payment",
       "maySettle": "may settle {{name}}",
@@ -2373,7 +2378,8 @@
         "declined": "You dismissed {{name}}",
         "expired": "Expired unanswered — {{name}}",
         "unlinked": "Unlinked from {{name}}"
-      }
+      },
+      "empty": "Nothing yet. This fills in as matching links, asks and is answered."
     },
     "moveUp": "Try this one earlier",
     "moveDown": "Try this one later"

@@ -57,7 +57,7 @@ export function ReconciliationHistory() {
     queryFn: () => reconciliationApi.history(),
   })
 
-  if (!events || events.length === 0) return null
+  if (!events) return null
 
   const shown = expanded ? events : events.slice(0, SHOWN_AT_FIRST)
   const money = (value: string) =>
@@ -81,6 +81,14 @@ export function ReconciliationHistory() {
         </p>
       </div>
 
+      {events.length === 0 ? (
+        // An empty state rather than nothing: as a card in a stack,
+        // rendering nothing was right. As a tab somebody clicked, a blank
+        // page reads as broken.
+        <p className="text-sm text-muted-foreground text-center py-10">
+          {t('reconciliation.history.empty')}
+        </p>
+      ) : (
       <div className="divide-y divide-border">
         {shown.map((event) => {
           const look = LOOK[event.action]
@@ -120,6 +128,7 @@ export function ReconciliationHistory() {
           )
         })}
       </div>
+      )}
 
       {events.length > SHOWN_AT_FIRST && (
         <button

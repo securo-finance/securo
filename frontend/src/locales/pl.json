@@ -1259,7 +1259,12 @@
     "importConfirmTitle": "Import categorization rules?",
     "importConfirmDescription": "File {{file}} contains {{count}} rules.",
     "importOverwriteWarning": "Importing will overwrite your current categorization rules. This cannot be undone.",
-    "confirmOverwriteImport": "Overwrite and import"
+    "confirmOverwriteImport": "Overwrite and import",
+    "tab": {
+      "rules": "Reguły",
+      "queue": "Czeka na Ciebie",
+      "history": "Historia"
+    }
   },
   "categories": {
     "title": "Kategorie",
@@ -2422,7 +2427,7 @@
     },
     "queue": {
       "title": "Czeka na Ciebie",
-      "hint": "Dopasowania prawdopodobne, ale niepewne. Ta lista powinna być krótka — jeśli nie jest, to reguły powyżej wymagają zmiany.",
+      "hint": "Dopasowania prawdopodobne, ale niepewne. Ta lista powinna być krótka — jeśli nie jest, to reguły wymagają zmiany.",
       "empty": "Nic do sprawdzenia. Wszystko dopasowało się samo.",
       "aPayment": "Płatność",
       "maySettle": "może opłacać {{name}}",
@@ -2475,7 +2480,8 @@
         "declined": "Odrzuciłeś {{name}}",
         "expired": "Wygasło bez odpowiedzi — {{name}}",
         "unlinked": "Rozłączono z {{name}}"
-      }
+      },
+      "empty": "Jeszcze nic. Wypełni się, gdy dopasowanie powiąże, zapyta i otrzyma odpowiedź."
     },
     "moveUp": "Sprawdzaj tę wcześniej",
     "moveDown": "Sprawdzaj tę później"

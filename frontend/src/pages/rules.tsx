@@ -24,6 +24,8 @@ import { RuleDialog } from '@/components/rule-dialog'
 import { ReconciliationRules } from '@/components/reconciliation-rules'
 import { ReconciliationQueue } from '@/components/reconciliation-queue'
 import { ReconciliationHistory } from '@/components/reconciliation-history'
+import { Segmented } from '@/components/invoice-ui'
+import { reconciliation as reconciliationApi } from '@/lib/api'
 import { findCategoryReference, getRuleCategoryName } from '@/lib/category-reference-utils'
 
 function SectionCard({ children }: { children: React.ReactNode }) {
@@ -323,10 +325,45 @@ export default function RulesPage() {
     return list.sort((a, b) => dir * (a.priority - b.priority))
   }, [rulesList, displayCategories, sortBy, sortDir])
 
+  // Three reasons to come here, not one. Rules is configuration — visited
+  // when somebody wants to change behaviour. The queue is *work*, visited
+  // when there is something pending. History is *audit*, visited to find
+  // out what happened. Burying work inside a configuration page meant only
+  // people who came to configure something ever discovered they had any.
+  const [tab, setTab] = useState<'rules' | 'queue' | 'history'>('rules')
+
+  // Fetched here rather than inside the queue so the count can sit on the
+  // tab: a queue nobody can see is not a queue.
+  const { data: pending } = useQuery({
+    queryKey: ['reconciliation-suggestions'],
+    queryFn: reconciliationApi.suggestions,
+  })
+
   return (
     <div>
       <PageHeader section={t('rules.section')} title={t('nav.rules')} />
 
+      <div className="mb-4">
+        <Segmented
+          value={tab}
+          onChange={setTab}
+          testIdPrefix="automation-tab"
+          options={[
+            { value: 'rules', label: t('rules.tab.rules') },
+            {
+              value: 'queue',
+              label: t('rules.tab.queue'),
+              count: pending?.length || undefined,
+            },
+            { value: 'history', label: t('rules.tab.history') },
+          ]}
+        />
+      </div>
+
+      {tab === 'queue' && <ReconciliationQueue canWrite={canWrite} />}
+      {tab === 'history' && <ReconciliationHistory />}
+
+      <div className={tab === 'rules' ? '' : 'hidden'}>
       <SectionCard>
         <SectionHeader
           title={t('rules.sectionTitle')}
@@ -473,8 +510,7 @@ export default function RulesPage() {
           money, and you get to see the decision and disagree with it. */}
       <div className="mt-6 space-y-6">
         <ReconciliationRules canWrite={canWrite} />
-        <ReconciliationQueue canWrite={canWrite} />
-        <ReconciliationHistory />
+      </div>
       </div>
 
       <DeleteConfirmationDialog

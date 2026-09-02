@@ -1197,7 +1197,12 @@
     "importConfirmTitle": "Importer les règles de catégorisation ?",
     "importConfirmDescription": "Le fichier {{file}} contient {{count}} règles.",
     "importOverwriteWarning": "L'importation écrasera vos règles de catégorisation actuelles. Cette action est irréversible.",
-    "confirmOverwriteImport": "Écraser et importer"
+    "confirmOverwriteImport": "Écraser et importer",
+    "tab": {
+      "rules": "Règles",
+      "queue": "En attente de vous",
+      "history": "Historique"
+    }
   },
   "categories": {
     "title": "Catégories",
@@ -2321,7 +2326,7 @@
     },
     "queue": {
       "title": "En attente de vous",
-      "hint": "Des rapprochements plausibles mais pas certains. Cette liste devrait rester courte ; sinon, ce sont les règles ci-dessus qu'il faut changer.",
+      "hint": "Des rapprochements plausibles mais pas certains. Cette liste devrait rester courte ; sinon, ce sont les règles qu'il faut changer.",
       "empty": "Rien à vérifier. Tout a été rapproché tout seul.",
       "aPayment": "Un paiement",
       "maySettle": "règle peut-être {{name}}",
@@ -2374,7 +2379,8 @@
         "declined": "Vous avez écarté {{name}}",
         "expired": "Expiré sans réponse — {{name}}",
         "unlinked": "Détaché de {{name}}"
-      }
+      },
+      "empty": "Rien pour l'instant. Cela se remplit à mesure que le rapprochement rattache, demande et reçoit une réponse."
     },
     "moveUp": "Essayer celle-ci plus tôt",
     "moveDown": "Essayer celle-ci plus tard"
