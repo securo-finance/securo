@@ -2387,19 +2387,20 @@
     "matchingTitle": "Afletterregels",
     "matchingHint": "Hoe binnenkomend geld wordt gekoppeld aan wat het voldoet. Elke set wordt op volgorde geprobeerd — de eerste regel die past, wint.",
     "pair": {
-      "title": "De belofte en het geld",
       "owed": "Wat openstaat",
       "arrived": "Wat binnenkwam",
-      "total": "Totaal",
-      "balance": "Nog open",
-      "due": "Vervalt",
-      "applied": "Hier toegepast",
-      "date": "Datum",
-      "account": "Rekening",
-      "payer": "Betaler",
       "draftInvoice": "Conceptfactuur",
       "recurringBill": "Terugkerende rekening",
-      "noMoney": "Geen transactie hierbij."
+      "noMoney": "Geen transactie hierbij.",
+      "stillOpen": "nog open",
+      "thisPayment": "deze betaling",
+      "wasApplied": "toegepast",
+      "wouldRemain": "blijft open",
+      "wouldClose": "voldoet hem",
+      "thePayment": "de betaling",
+      "acrossInvoices": "over {{count}} facturen",
+      "dueOn": "vervalt {{date}}",
+      "totalOf": "totaal {{amount}}"
     }
   }
 }

@@ -102,8 +102,9 @@ export function ReconciliationQueue({ canWrite }: { canWrite: boolean }) {
   })
 
   // Deciding is a comparison, and the evidence chips describe an invoice
-  // without ever showing it. One click puts both halves on screen.
-  const [inspecting, setInspecting] = useState<ReconciliationSuggestion | null>(null)
+  // without ever showing it. Expanding the row puts both halves on screen
+  // without taking the Accept button away with a modal.
+  const [openId, setOpenId] = useState<string | null>(null)
 
   const accept = useSettleMutation('accept', queryClient, t)
   const decline = useSettleMutation('decline', queryClient, t)
@@ -142,7 +143,9 @@ export function ReconciliationQueue({ canWrite }: { canWrite: boolean }) {
             <div
               key={suggestion.id}
               className="px-4 sm:px-5 py-3 hover:bg-muted/60 transition-colors cursor-pointer"
-              onClick={() => setInspecting(suggestion)}
+              onClick={() =>
+                setOpenId((current) => (current === suggestion.id ? null : suggestion.id))
+              }
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
@@ -226,21 +229,24 @@ export function ReconciliationQueue({ canWrite }: { canWrite: boolean }) {
                   )}
                 </div>
               </div>
+
+              <div onClick={(e) => e.stopPropagation()}>
+                <ReconciliationPair
+                  open={openId === suggestion.id}
+                  transactionId={suggestion.transaction?.id}
+                  pending
+                  sides={suggestion.covers.map<PairSide>((cover) => ({
+                    kind: cover.expectation_kind,
+                    id: cover.expectation_id,
+                    label: cover.label,
+                    amount: cover.amount,
+                  }))}
+                />
+              </div>
             </div>
           ))}
         </div>
       )}
-      <ReconciliationPair
-        open={inspecting !== null}
-        onClose={() => setInspecting(null)}
-        transactionId={inspecting?.transaction?.id}
-        sides={(inspecting?.covers ?? []).map<PairSide>((cover) => ({
-          kind: cover.expectation_kind,
-          id: cover.expectation_id,
-          label: cover.label,
-          amount: cover.amount,
-        }))}
-      />
     </SectionCard>
   )
 }

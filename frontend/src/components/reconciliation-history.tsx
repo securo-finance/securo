@@ -54,7 +54,7 @@ export function ReconciliationHistory() {
   const [expanded, setExpanded] = useState(false)
   // Same panel the queue uses. "Linked to AUR5" tells you what happened;
   // it does not let you check whether it should have.
-  const [inspecting, setInspecting] = useState<ReconciliationHistoryEvent | null>(null)
+  const [openId, setOpenId] = useState<string | null>(null)
 
   const { data: events } = useQuery<ReconciliationHistoryEvent[]>({
     queryKey: ['reconciliation-history'],
@@ -100,9 +100,12 @@ export function ReconciliationHistory() {
           return (
             <div
               key={event.id}
-              className="px-4 sm:px-5 py-2.5 flex items-start gap-3 text-sm hover:bg-muted/60 transition-colors cursor-pointer"
-              onClick={() => setInspecting(event)}
+              className="px-4 sm:px-5 py-2.5 text-sm hover:bg-muted/60 transition-colors cursor-pointer"
+              onClick={() =>
+                setOpenId((current) => (current === event.id ? null : event.id))
+              }
             >
+              <div className="flex items-start gap-3">
               <Icon size={14} className={cn('mt-0.5 shrink-0', look.tone)} />
               <div className="flex-1 min-w-0">
                 <p className="text-foreground">
@@ -129,6 +132,23 @@ export function ReconciliationHistory() {
               <span className="text-xs text-muted-foreground shrink-0 tabular-nums">
                 {when(event.at)}
               </span>
+              </div>
+
+              <ReconciliationPair
+                open={openId === event.id}
+                transactionId={event.transaction_id}
+                // Already written: the invoice reflects it, so the panel
+                // reports rather than projects.
+                pending={false}
+                sides={[
+                  {
+                    kind: event.expectation_kind,
+                    id: event.expectation_id,
+                    label: event.expectation_label,
+                    amount: event.amount,
+                  } satisfies PairSide,
+                ]}
+              />
             </div>
           )
         })}
@@ -147,23 +167,6 @@ export function ReconciliationHistory() {
               })}
         </button>
       )}
-      <ReconciliationPair
-        open={inspecting !== null}
-        onClose={() => setInspecting(null)}
-        transactionId={inspecting?.transaction_id}
-        sides={
-          inspecting
-            ? [
-                {
-                  kind: inspecting.expectation_kind,
-                  id: inspecting.expectation_id,
-                  label: inspecting.expectation_label,
-                  amount: inspecting.amount,
-                } satisfies PairSide,
-              ]
-            : []
-        }
-      />
     </SectionCard>
   )
 }

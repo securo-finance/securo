@@ -2522,19 +2522,20 @@
     "matchingTitle": "Pravidlá párovania",
     "matchingHint": "Ako sa prichádzajúce peniaze viažu na to, čo uhrádzajú. Každá sada sa skúša po poradí — vyhráva prvé pravidlo, ktoré sadne.",
     "pair": {
-      "title": "Záväzok a peniaze",
       "owed": "Čo sa dlhuje",
       "arrived": "Čo prišlo",
-      "total": "Spolu",
-      "balance": "Stále otvorené",
-      "due": "Splatnosť",
-      "applied": "Započítané tu",
-      "date": "Dátum",
-      "account": "Účet",
-      "payer": "Platiteľ",
       "draftInvoice": "Faktúra v návrhu",
       "recurringBill": "Opakovaná platba",
-      "noMoney": "Bez transakcie."
+      "noMoney": "Bez transakcie.",
+      "stillOpen": "stále otvorené",
+      "thisPayment": "táto platba",
+      "wasApplied": "započítané",
+      "wouldRemain": "zostane",
+      "wouldClose": "uhrádza ju",
+      "thePayment": "platba",
+      "acrossInvoices": "na {{count}} faktúr",
+      "dueOn": "splatnosť {{date}}",
+      "totalOf": "spolu {{amount}}"
     }
   }
 }

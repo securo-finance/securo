@@ -2387,19 +2387,20 @@
     "matchingTitle": "Abgleichregeln",
     "matchingHint": "Wie eingehendes Geld dem zugeordnet wird, was es begleicht. Jeder Satz wird der Reihe nach geprüft — die erste passende Regel gewinnt.",
     "pair": {
-      "title": "Das Versprechen und das Geld",
       "owed": "Was offen ist",
       "arrived": "Was eingegangen ist",
-      "total": "Gesamt",
-      "balance": "Noch offen",
-      "due": "Fällig",
-      "applied": "Hier angerechnet",
-      "date": "Datum",
-      "account": "Konto",
-      "payer": "Zahler",
       "draftInvoice": "Rechnungsentwurf",
       "recurringBill": "Wiederkehrende Rechnung",
-      "noMoney": "Keine Buchung dazu."
+      "noMoney": "Keine Buchung dazu.",
+      "stillOpen": "noch offen",
+      "thisPayment": "diese Zahlung",
+      "wasApplied": "angerechnet",
+      "wouldRemain": "bliebe offen",
+      "wouldClose": "gleicht sie aus",
+      "thePayment": "die Zahlung",
+      "acrossInvoices": "auf {{count}} Rechnungen",
+      "dueOn": "fällig {{date}}",
+      "totalOf": "Gesamt {{amount}}"
     }
   }
 }

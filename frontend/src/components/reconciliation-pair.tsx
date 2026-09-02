@@ -1,18 +1,20 @@
-/** The promise and the money, side by side.
+/** The promise and the money, resolved into the arithmetic that decides.
  *
- *  Reconciling is a comparison, and until now the two halves of it lived
- *  on different pages. The queue showed evidence *about* an invoice —
- *  "the amount is exact, the payer is known" — without ever showing the
- *  invoice, so answering the question meant opening another tab and
- *  holding two screens in your head. The history had the same shape.
+ *  This began as a dialog holding two bordered boxes and an arrow. Three
+ *  things were wrong with it, and the structural one came first: a modal
+ *  is the answer you reach for before thinking. You inspected, closed,
+ *  and the Accept button was behind the thing you had just dismissed. So
+ *  this expands the row in place. The list stays put, several can be read
+ *  in sequence, and the decision stays under your cursor.
  *
- *  Left is what is owed, right is what arrived. That order is not
- *  arbitrary: the promise came first in every case except the look-back,
- *  and reading left to right is reading the story in the order it
- *  happened.
+ *  The second was that a reader had to diff two lists in their head. The
+ *  question is never "what are the properties of this invoice", it is
+ *  "does this money belong to this debt", and that is one subtraction. So
+ *  the subtraction is the headline, and everything else is provenance
+ *  underneath it, quieter and smaller.
  *
- *  A payment can answer several promises at once, so the left column is a
- *  list. The right is always one movement — money arrives once.
+ *  The third was boxes inside a box. There are no cards here: a hairline
+ *  between two columns says the same thing and costs nothing.
  */
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
@@ -21,17 +23,10 @@ import {
   transactions as transactionsApi,
   accounts as accountsApi,
 } from '@/lib/api'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import type { Account, Invoice, Transaction } from '@/types'
 import { formatCurrency } from '@/lib/format'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
-import { ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export interface PairSide {
@@ -42,103 +37,124 @@ export interface PairSide {
   amount: string
 }
 
-function Field({ label, value }: { label: string; value: React.ReactNode }) {
+/** A figure with its meaning beneath it, sized so the figures read as one
+ *  row of numbers and the words stay out of the way. */
+function Figure({
+  value,
+  caption,
+  tone = 'neutral',
+}: {
+  value: string
+  caption: string
+  tone?: 'neutral' | 'applied' | 'quiet'
+}) {
   return (
-    <div className="flex justify-between gap-3 text-xs">
-      <span className="text-muted-foreground shrink-0">{label}</span>
-      <span className="text-foreground text-right tabular-nums">{value}</span>
+    <div className="min-w-0">
+      <p
+        className={cn(
+          'text-lg font-semibold tabular-nums leading-none truncate',
+          tone === 'applied' && 'text-emerald-600 dark:text-emerald-400',
+          tone === 'quiet' && 'text-muted-foreground',
+          tone === 'neutral' && 'text-foreground',
+        )}
+      >
+        {value}
+      </p>
+      <p className="text-[11px] text-muted-foreground mt-1 truncate">{caption}</p>
     </div>
   )
 }
 
-function InvoiceSide({
-  id,
-  label,
-  amount,
+/** One line of provenance. Deliberately not a label/value table: six rows
+ *  of those compete with the figures above, and the figures are what the
+ *  decision rests on. */
+function Facts({ items }: { items: (string | null | undefined)[] }) {
+  const shown = items.filter(Boolean) as string[]
+  return (
+    <p className="text-xs text-muted-foreground leading-relaxed">
+      {shown.join(' · ')}
+    </p>
+  )
+}
+
+function useInvoice(id: string, enabled: boolean) {
+  return useQuery<Invoice>({
+    queryKey: ['invoice', id],
+    queryFn: () => invoicesApi.get(id),
+    enabled,
+  })
+}
+
+function PromiseLine({
+  side,
+  open,
   money,
   showDate,
 }: {
-  id: string
-  label?: string | null
-  amount: string
-  money: (value: string | number | null | undefined, currency?: string | null) => string
+  side: PairSide
+  open: boolean
+  money: (value: string | number | null | undefined, code?: string | null) => string
   showDate: (iso: string) => string
 }) {
   const { t } = useTranslation()
-  const { data: invoice } = useQuery<Invoice>({
-    queryKey: ['invoice', id],
-    queryFn: () => invoicesApi.get(id),
-  })
+  const { data: invoice } = useInvoice(side.id, open && side.kind === 'invoice')
 
-  if (!invoice) {
+  if (side.kind !== 'invoice') {
     return (
-      <div className="rounded-lg border border-border p-3">
-        <p className="text-xs text-muted-foreground">{t('common.loading')}</p>
+      <div>
+        <p className="text-sm font-medium text-foreground">
+          {side.label ?? t('reconciliation.pair.recurringBill')}
+        </p>
+        <Facts items={[t('reconciliation.pair.recurringBill')]} />
       </div>
     )
   }
 
-  // The label the API already resolved. Composing it here from `series`
-  // and `number` gets it wrong — `series` is the fiscal year, and the
-  // prefix a reader recognises lives in the snapshot taken at issue.
-  // Recomputing what the server already worked out is how the same number
-  // ends up written two ways on one screen.
-  const name = label ?? invoice.external_number ?? null
+  if (!invoice) {
+    return <p className="text-xs text-muted-foreground">{t('common.loading')}</p>
+  }
+
+  // The label the API resolved. Composing it from `series` and `number`
+  // gets it wrong: `series` is the fiscal year, and the prefix a reader
+  // recognises lives in the snapshot taken at issue.
+  const name = side.label ?? invoice.external_number ?? null
 
   return (
-    <div className="rounded-lg border border-border p-3 space-y-1.5">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-foreground">
-          {name ?? t('reconciliation.pair.draftInvoice')}
-        </p>
-        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
-          {t(`invoices.state.${invoice.state}`, invoice.state)}
-        </span>
-      </div>
-      {invoice.payee?.name && (
-        <p className="text-xs text-muted-foreground truncate">{invoice.payee.name}</p>
-      )}
-
-      <div className="pt-1.5 space-y-1 border-t border-border">
-        <Field
-          label={t('reconciliation.pair.total')}
-          value={money(invoice.total, invoice.currency)}
-        />
-        <Field
-          label={t('reconciliation.pair.balance')}
-          value={money(invoice.balance, invoice.currency)}
-        />
-        <Field label={t('reconciliation.pair.due')} value={showDate(invoice.due_date)} />
-      </div>
-
-      {/* The share of the movement that this promise takes. On its own the
-          two columns only say "these are related"; this says how. */}
-      <div className="pt-1.5 border-t border-border">
-        <Field
-          label={t('reconciliation.pair.applied')}
-          value={
-            <span className="font-semibold text-emerald-600">
-              {money(amount, invoice.currency)}
-            </span>
-          }
-        />
-      </div>
+    <div className="space-y-0.5">
+      <p className="text-sm font-medium text-foreground flex items-center gap-2">
+        {name ?? t('reconciliation.pair.draftInvoice')}
+        {invoice.state === 'overdue' && (
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-rose-600 dark:text-rose-400">
+            {t('invoices.state.overdue', 'overdue')}
+          </span>
+        )}
+      </p>
+      <Facts
+        items={[
+          invoice.payee?.name,
+          t('reconciliation.pair.dueOn', { date: showDate(invoice.due_date) }),
+          t('reconciliation.pair.totalOf', {
+            amount: money(invoice.total, invoice.currency),
+          }),
+        ]}
+      />
     </div>
   )
 }
 
 export function ReconciliationPair({
   open,
-  onClose,
   transactionId,
   sides,
-  title,
+  /** Pending means the money has not been applied yet, so the arithmetic
+   *  can say what *would* be left. Once applied, the invoice already
+   *  reflects it, and subtracting again would be a lie told confidently. */
+  pending,
 }: {
   open: boolean
-  onClose: () => void
   transactionId?: string | null
   sides: PairSide[]
-  title?: string
+  pending: boolean
 }) {
   const { t } = useTranslation()
   const locale = useDisplayLocale()
@@ -150,112 +166,130 @@ export function ReconciliationPair({
     queryFn: () => accountsApi.list(),
     enabled: open,
   })
-
   const { data: transaction } = useQuery<Transaction>({
     queryKey: ['transaction', transactionId],
     queryFn: () => transactionsApi.get(transactionId as string),
     enabled: open && !!transactionId,
   })
+  const first = sides.length > 0 ? sides[0] : undefined
+  const { data: firstInvoice } = useInvoice(
+    first?.id ?? '',
+    open && first?.kind === 'invoice',
+  )
 
-  const money = (value: string | number | null | undefined, currency?: string | null) =>
-    mask(formatCurrency(Number(value ?? 0), currency || 'USD', locale))
+  if (!open) return null
+
+  const currency = firstInvoice?.currency ?? transaction?.currency
+  const money = (value: string | number | null | undefined, code?: string | null) =>
+    mask(formatCurrency(Number(value ?? 0), code || currency || 'USD', locale))
   const showDate = (iso: string) =>
     new Date(`${iso}T00:00:00`).toLocaleDateString(dateLocale)
   const accountName = accounts.find((a) => a.id === transaction?.account_id)?.name
 
+  const applied = sides.reduce((sum, side) => sum + Number(side.amount), 0)
+  const outstanding = Number(firstInvoice?.balance ?? 0)
+  const remaining = outstanding - applied
+  const singleInvoice = sides.length === 1 && first?.kind === 'invoice'
+
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
-      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle>{title ?? t('reconciliation.pair.title')}</DialogTitle>
-        </DialogHeader>
-
-        <div className="grid gap-4 sm:grid-cols-[1fr_auto_1fr] items-start flex-1 overflow-y-auto">
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-              {t('reconciliation.pair.owed')}
-            </p>
-            {sides.map((side) =>
-              side.kind === 'invoice' ? (
-                <InvoiceSide
-                  key={side.id}
-                  id={side.id}
-                  label={side.label}
-                  amount={side.amount}
-                  money={money}
-                  showDate={showDate}
-                />
-              ) : (
-                // A recurring bill is a promise too, but it has no
-                // document behind it — so it shows what it is rather than
-                // pretending to a shape it does not have.
-                <div key={side.id} className="rounded-lg border border-border p-3">
-                  <p className="text-sm font-semibold text-foreground">
-                    {side.label ?? t('reconciliation.pair.recurringBill')}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {t('reconciliation.pair.recurringBill')}
-                  </p>
-                </div>
-              ),
+    <div className="mt-3 pt-3 border-t border-border">
+      {/* The subtraction that decides, before anything else. One invoice
+          gets the whole sentence; a payment spread over several gets the
+          two totals, because "what is left" is not one number then. */}
+      <div className="flex items-end gap-6 sm:gap-10 flex-wrap">
+        {singleInvoice ? (
+          <>
+            <Figure
+              value={money(outstanding)}
+              caption={t('reconciliation.pair.stillOpen')}
+              tone="quiet"
+            />
+            <Figure
+              value={money(applied)}
+              caption={
+                pending
+                  ? t('reconciliation.pair.thisPayment')
+                  : t('reconciliation.pair.wasApplied')
+              }
+              tone="applied"
+            />
+            {pending && (
+              <Figure
+                value={money(remaining > 0 ? remaining : 0)}
+                caption={
+                  remaining <= 0
+                    ? t('reconciliation.pair.wouldClose')
+                    : t('reconciliation.pair.wouldRemain')
+                }
+                tone={remaining <= 0 ? 'applied' : 'neutral'}
+              />
             )}
-          </div>
-
-          <div className="hidden sm:flex items-center justify-center pt-8 text-muted-foreground">
-            <ArrowRight size={16} />
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-              {t('reconciliation.pair.arrived')}
-            </p>
-            {transaction ? (
-              <div className="rounded-lg border border-border p-3 space-y-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-foreground truncate">
-                    {transaction.description}
-                  </p>
-                  <span
-                    className={cn(
-                      'text-sm font-bold tabular-nums shrink-0',
-                      transaction.type === 'credit'
-                        ? 'text-emerald-600'
-                        : 'text-foreground',
-                    )}
-                  >
-                    {money(transaction.amount, transaction.currency)}
-                  </span>
-                </div>
-                <div className="pt-1.5 space-y-1 border-t border-border">
-                  <Field
-                    label={t('reconciliation.pair.date')}
-                    value={showDate(transaction.date)}
-                  />
-                  {accountName && (
-                    <Field
-                      label={t('reconciliation.pair.account')}
-                      value={accountName}
-                    />
-                  )}
-                  {/* `payee_name` is the resolved one; `payee` is the raw
-                      string the bank sent, which is worth falling back to
-                      when nothing has been mapped yet. */}
-                  {(transaction.payee_name || transaction.payee) && (
-                    <Field
-                      label={t('reconciliation.pair.payer')}
-                      value={transaction.payee_name || transaction.payee}
-                    />
-                  )}
-                </div>
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                {transactionId ? t('common.loading') : t('reconciliation.pair.noMoney')}
-              </p>
+          </>
+        ) : (
+          <>
+            <Figure
+              value={money(applied)}
+              caption={t('reconciliation.pair.acrossInvoices', {
+                count: sides.length,
+              })}
+              tone="applied"
+            />
+            {transaction && (
+              <Figure
+                value={money(transaction.amount, transaction.currency)}
+                caption={t('reconciliation.pair.thePayment')}
+                tone="quiet"
+              />
             )}
-          </div>
+          </>
+        )}
+      </div>
+
+      {/* Provenance, quieter, split only by a hairline. Boxes here would be
+          boxes inside a row inside a card. */}
+      <div className="mt-4 grid gap-4 sm:grid-cols-2 sm:divide-x divide-border">
+        <div className="space-y-2 sm:pr-5">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+            {t('reconciliation.pair.owed')}
+          </p>
+          {sides.map((side) => (
+            <PromiseLine
+              key={side.id}
+              side={side}
+              open={open}
+              money={money}
+              showDate={showDate}
+            />
+          ))}
         </div>
-      </DialogContent>
-    </Dialog>
+
+        <div className="space-y-2 sm:pl-5">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+            {t('reconciliation.pair.arrived')}
+          </p>
+          {transaction ? (
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium text-foreground truncate">
+                {transaction.description}
+              </p>
+              <Facts
+                items={[
+                  showDate(transaction.date),
+                  accountName,
+                  // `payee_name` is the resolved one; `payee` is the raw
+                  // string the bank sent, worth falling back to when
+                  // nothing has been mapped yet.
+                  transaction.payee_name || transaction.payee,
+                ]}
+              />
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {transactionId ? t('common.loading') : t('reconciliation.pair.noMoney')}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }

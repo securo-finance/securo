@@ -2387,19 +2387,20 @@
     "matchingTitle": "Regras de conciliação",
     "matchingHint": "Como o dinheiro que chega é ligado ao que liquida. Cada conjunto é testado por ordem — ganha a primeira regra que corresponder.",
     "pair": {
-      "title": "A promessa e o dinheiro",
       "owed": "O que se deve",
       "arrived": "O que chegou",
-      "total": "Total",
-      "balance": "Em aberto",
-      "due": "Vence",
-      "applied": "Aplicado aqui",
-      "date": "Data",
-      "account": "Conta",
-      "payer": "Pagador",
       "draftInvoice": "Fatura em rascunho",
       "recurringBill": "Conta recorrente",
-      "noMoney": "Sem transação nesta."
+      "noMoney": "Sem transação nesta.",
+      "stillOpen": "em aberto",
+      "thisPayment": "este pagamento",
+      "wasApplied": "aplicado",
+      "wouldRemain": "ficaria",
+      "wouldClose": "liquida",
+      "thePayment": "o pagamento",
+      "acrossInvoices": "em {{count}} faturas",
+      "dueOn": "vence {{date}}",
+      "totalOf": "total de {{amount}}"
     }
   }
 }

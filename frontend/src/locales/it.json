@@ -2387,19 +2387,20 @@
     "matchingTitle": "Regole di riconciliazione",
     "matchingHint": "Come il denaro in entrata viene collegato a ciò che salda. Ogni insieme è provato in ordine: vince la prima regola che corrisponde.",
     "pair": {
-      "title": "La promessa e il denaro",
       "owed": "Quanto è dovuto",
       "arrived": "Quanto è arrivato",
-      "total": "Totale",
-      "balance": "Ancora aperto",
-      "due": "Scadenza",
-      "applied": "Applicato qui",
-      "date": "Data",
-      "account": "Conto",
-      "payer": "Pagatore",
       "draftInvoice": "Fattura in bozza",
       "recurringBill": "Spesa ricorrente",
-      "noMoney": "Nessuna transazione qui."
+      "noMoney": "Nessuna transazione qui.",
+      "stillOpen": "ancora aperto",
+      "thisPayment": "questo pagamento",
+      "wasApplied": "applicato",
+      "wouldRemain": "resterebbe",
+      "wouldClose": "la salda",
+      "thePayment": "il pagamento",
+      "acrossInvoices": "su {{count}} fatture",
+      "dueOn": "scade {{date}}",
+      "totalOf": "totale di {{amount}}"
     }
   }
 }
