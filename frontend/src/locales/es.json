@@ -2359,6 +2359,22 @@
       "invoice_issuedHint": "El cliente pagó antes y la factura vino después: miramos hacia atrás, al dinero que ya estaba.",
       "both": "En ambos momentos",
       "bothHint": "La regla vale en los dos sentidos."
+    },
+    "history": {
+      "title": "Qué hizo la conciliación",
+      "hint": "Lo más reciente primero. Deshacer un vínculo también queda aquí: nada más lo guarda.",
+      "byPerson": "por ti",
+      "byRules": "por las reglas",
+      "more": "Ver {{count}} más",
+      "less": "Ver menos",
+      "action": {
+        "linked": "Vinculado a {{name}}",
+        "accepted": "Lo vinculaste a {{name}}",
+        "suggested": "Propuesto para {{name}}",
+        "declined": "Descartaste {{name}}",
+        "expired": "Caducó sin respuesta — {{name}}",
+        "unlinked": "Desvinculado de {{name}}"
+      }
     }
   }
 }

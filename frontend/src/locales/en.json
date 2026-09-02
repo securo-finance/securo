@@ -2358,6 +2358,22 @@
       "invoice_issuedHint": "The client paid first and the invoice follows — we look back at money already there.",
       "both": "Both moments",
       "bothHint": "The rule is trusted either way round."
+    },
+    "history": {
+      "title": "What matching did",
+      "hint": "Newest first. Undoing a link is recorded here too — nothing else keeps it.",
+      "byPerson": "by you",
+      "byRules": "by the rules",
+      "more": "Show {{count}} more",
+      "less": "Show fewer",
+      "action": {
+        "linked": "Linked to {{name}}",
+        "accepted": "You linked it to {{name}}",
+        "suggested": "Offered against {{name}}",
+        "declined": "You dismissed {{name}}",
+        "expired": "Expired unanswered — {{name}}",
+        "unlinked": "Unlinked from {{name}}"
+      }
     }
   }
 }

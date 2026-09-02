@@ -2359,6 +2359,22 @@
       "invoice_issuedHint": "Il cliente ha pagato prima e la fattura è arrivata dopo: guardiamo indietro, al denaro già presente.",
       "both": "In entrambi i momenti",
       "bothHint": "La regola vale in tutti e due i versi."
+    },
+    "history": {
+      "title": "Cosa ha fatto la riconciliazione",
+      "hint": "Dal più recente. Anche annullare un collegamento resta qui: nient'altro lo conserva.",
+      "byPerson": "da te",
+      "byRules": "dalle regole",
+      "more": "Mostra altri {{count}}",
+      "less": "Mostra meno",
+      "action": {
+        "linked": "Collegato a {{name}}",
+        "accepted": "L'hai collegato a {{name}}",
+        "suggested": "Proposto per {{name}}",
+        "declined": "Hai scartato {{name}}",
+        "expired": "Scaduto senza risposta — {{name}}",
+        "unlinked": "Scollegato da {{name}}"
+      }
     }
   }
 }

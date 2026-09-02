@@ -31,12 +31,14 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from decimal import Decimal
+from typing import Any, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.reconciliation import ReconciliationSuggestion
+from app.services import reconciliation_history_service
 from app.services.reconciliation_engine import Decision, Movement, Settlement
 
 #: How long an unanswered suggestion stays in the queue. Long enough that
@@ -141,7 +143,24 @@ async def record(
 
     for suggestion in written:
         session.add(suggestion)
+
     if written:
+        # **One event per question, not per invoice inside it.** A payment
+        # offered against three invoices is one thing that happened and one
+        # thing a person will answer; three rows in the stream would be the
+        # same noise the queue collapses, in the place meant for scanning.
+        head = written[0]
+        await reconciliation_history_service.record(
+            session,
+            workspace_id,
+            "suggested",
+            expectation_kind=head.expectation_kind,
+            expectation_id=head.expectation_id,
+            amount=sum((s.amount for s in written), Decimal("0")),
+            transaction_id=transaction_id,
+            strategy_id=head.strategy_id,
+            detail={"of_set": len(written)},
+        )
         await session.flush()
     return written
 
@@ -218,9 +237,41 @@ async def get(
 def _resolve(
     suggestion: ReconciliationSuggestion, status: str, user_id: Optional[uuid.UUID]
 ) -> None:
+    """Mark one row. **Does not write history** — a grouped question is
+    resolved row by row but *happened* once, so the event belongs to
+    whoever knows the whole act. `answered` is that place."""
     suggestion.status = status
     suggestion.resolved_at = datetime.now(timezone.utc)
     suggestion.resolved_by = user_id
+
+
+async def answered(
+    session: AsyncSession,
+    members: list[ReconciliationSuggestion],
+    status: str,
+    user_id: Optional[uuid.UUID],
+) -> None:
+    """Record that a question — all of it — was answered.
+
+    One event, whether the question named one invoice or four. Splitting
+    it would put several rows in the stream against a single decision, in
+    the one place built for scanning.
+    """
+    if not members:
+        return
+    head = members[0]
+    await reconciliation_history_service.record(
+        session,
+        head.workspace_id,
+        status,
+        expectation_kind=head.expectation_kind,
+        expectation_id=head.expectation_id,
+        amount=sum((m.amount for m in members), Decimal("0")),
+        transaction_id=head.transaction_id,
+        strategy_id=head.strategy_id,
+        user_id=user_id,
+        detail={"of_set": len(members)},
+    )
 
 
 async def decline(
@@ -255,6 +306,16 @@ async def mark_accepted(
     return suggestion
 
 
+def _by_question(
+    rows: list[ReconciliationSuggestion],
+) -> list[list[ReconciliationSuggestion]]:
+    """Gather rows back into the questions they came from."""
+    groups: dict[Any, list[ReconciliationSuggestion]] = {}
+    for row in rows:
+        groups.setdefault(row.group_id or row.id, []).append(row)
+    return list(groups.values())
+
+
 async def expire_stale(
     session: AsyncSession, workspace_id: uuid.UUID, *, now: Optional[datetime] = None
 ) -> int:
@@ -274,8 +335,11 @@ async def expire_stale(
     )
     stale = list(result.unique().scalars().all())
     for suggestion in stale:
-        suggestion.status = "expired"
-        suggestion.resolved_at = datetime.now(timezone.utc)
+        # Nobody answered, so nobody is recorded as having.
+        _resolve(suggestion, "expired", None)
+    # Grouped questions expire as one event, like every other answer.
+    for group in _by_question(stale):
+        await answered(session, group, "expired", None)
     if stale:
         await session.flush()
     return len(stale)

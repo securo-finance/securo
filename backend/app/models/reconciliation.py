@@ -192,3 +192,64 @@ class ReconciliationSuggestion(Base):
     )
 
     transaction: Mapped["Transaction"] = relationship(lazy="joined")
+
+
+class ReconciliationEvent(Base):
+    """What matching did, in one order.
+
+    Small on purpose. Most of what a person calls "the history" is
+    already stored — a link is an allocation with a rule id and a
+    timestamp, an answered suggestion is a suggestion row with a status
+    and who resolved it. What did not exist was a single stream: reading
+    those two tables together means joining shapes that have nothing in
+    common and no shared ordering.
+
+    And one event genuinely had nowhere to live. `unallocate` **deletes**
+    the allocation, so a match that was made and then undone looked
+    exactly like one that never happened. That is the row this table
+    exists for first.
+
+    It is **not** a log of everything the engine considered. A sync of
+    three hundred transactions where two hundred and ninety match nothing
+    would write two hundred and ninety rows saying nothing happened, and
+    a history nobody can scan is the same as no history.
+    """
+
+    __tablename__ = "reconciliation_events"
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('linked', 'suggested', 'accepted', 'declined',"
+            " 'expired', 'unlinked')",
+            name="ck_reconciliation_event_action",
+        ),
+        Index("ix_reconciliation_events_stream", "workspace_id", "at"),
+        Index("ix_reconciliation_events_expectation", "expectation_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE")
+    )
+    at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    action: Mapped[str] = mapped_column(String(16))
+    #: SET NULL rather than CASCADE: deleting a transaction should not
+    #: erase the record that something was once matched to it. The
+    #: history is the one place that has to survive the tidying up.
+    transaction_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("transactions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    expectation_kind: Mapped[str] = mapped_column(String(16))
+    expectation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    amount: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2))
+    strategy_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    #: Null means the system did it on its own — the difference a reader
+    #: most often wants: was this me, or was this the rules?
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    detail: Mapped[dict[str, Any]] = mapped_column(_Json, default=dict)

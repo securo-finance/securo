@@ -2359,6 +2359,22 @@
       "invoice_issuedHint": "Le client a payé d'abord, la facture suit — nous regardons en arrière, vers l'argent déjà là.",
       "both": "Aux deux moments",
       "bothHint": "La règle vaut dans les deux sens."
+    },
+    "history": {
+      "title": "Ce que le rapprochement a fait",
+      "hint": "Du plus récent. Annuler un rattachement est aussi consigné ici : rien d'autre ne le garde.",
+      "byPerson": "par vous",
+      "byRules": "par les règles",
+      "more": "Afficher {{count}} de plus",
+      "less": "Afficher moins",
+      "action": {
+        "linked": "Rattaché à {{name}}",
+        "accepted": "Vous l'avez rattaché à {{name}}",
+        "suggested": "Proposé pour {{name}}",
+        "declined": "Vous avez écarté {{name}}",
+        "expired": "Expiré sans réponse — {{name}}",
+        "unlinked": "Détaché de {{name}}"
+      }
     }
   }
 }

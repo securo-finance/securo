@@ -2359,6 +2359,22 @@
       "invoice_issuedHint": "De klant betaalde eerst en de factuur volgt — we kijken terug naar geld dat er al was.",
       "both": "Op beide momenten",
       "bothHint": "De regel geldt beide kanten op."
+    },
+    "history": {
+      "title": "Wat het afletteren deed",
+      "hint": "Nieuwste eerst. Een koppeling ongedaan maken staat hier ook — niets anders bewaart dat.",
+      "byPerson": "door jou",
+      "byRules": "door de regels",
+      "more": "Toon {{count}} meer",
+      "less": "Toon minder",
+      "action": {
+        "linked": "Gekoppeld aan {{name}}",
+        "accepted": "Je koppelde het aan {{name}}",
+        "suggested": "Voorgesteld voor {{name}}",
+        "declined": "Je wees {{name}} af",
+        "expired": "Onbeantwoord verlopen — {{name}}",
+        "unlinked": "Ontkoppeld van {{name}}"
+      }
     }
   }
 }

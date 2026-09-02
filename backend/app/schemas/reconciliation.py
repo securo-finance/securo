@@ -126,3 +126,26 @@ class SuggestionRead(BaseModel):
     #: case; several when one payment is offered against several invoices,
     #: which is answered whole or not at all.
     covers: list[SuggestionCovers] = []
+
+
+class HistoryEventRead(BaseModel):
+    """One thing that happened, as the stream shows it."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    at: datetime
+    #: `linked` · `suggested` · `accepted` · `declined` · `expired` ·
+    #: `unlinked`. Six verbs, each of which changed something visible.
+    action: str
+    expectation_kind: str
+    expectation_id: uuid.UUID
+    #: Resolved for display, so a renamed invoice reads correctly.
+    expectation_label: Optional[str] = None
+    amount: Decimal
+    strategy_id: Optional[str] = None
+    #: Null means the rules did it on their own — the distinction a reader
+    #: reaches for first.
+    user_id: Optional[uuid.UUID] = None
+    transaction_id: Optional[uuid.UUID] = None
+    transaction_description: Optional[str] = None

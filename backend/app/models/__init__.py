@@ -27,7 +27,11 @@ from app.models.group_settlement import GroupSettlement
 from app.models.collection import Collection, collection_accounts, collection_asset_groups
 from app.models.invoice import Invoice, InvoiceAllocation, InvoiceLine, InvoiceSettings
 from app.models.invoice_attachment import InvoiceAttachment
-from app.models.reconciliation import ReconciliationRule, ReconciliationSuggestion
+from app.models.reconciliation import (
+    ReconciliationEvent,
+    ReconciliationRule,
+    ReconciliationSuggestion,
+)
 
 # Side-effect import: register the before_insert listener that auto-stamps
 # workspace_id from user_id on financial entities. Imported last so all
@@ -72,6 +76,7 @@ __all__ = [
     "InvoiceLine",
     "InvoiceSettings",
     "InvoiceAttachment",
+    "ReconciliationEvent",
     "ReconciliationRule",
     "ReconciliationSuggestion",
     "collection_accounts",

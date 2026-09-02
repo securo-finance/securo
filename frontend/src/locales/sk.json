@@ -2494,6 +2494,22 @@
       "invoice_issuedHint": "Klient zaplatil skôr a faktúra prišla potom — pozeráme späť na peniaze, ktoré tam už boli.",
       "both": "V oboch momentoch",
       "bothHint": "Pravidlo platí na obe strany."
+    },
+    "history": {
+      "title": "Čo párovanie urobilo",
+      "hint": "Od najnovších. Zrušenie väzby je zaznamenané tiež — nič iné to neuchová.",
+      "byPerson": "vami",
+      "byRules": "pravidlami",
+      "more": "Zobraziť ďalších {{count}}",
+      "less": "Zobraziť menej",
+      "action": {
+        "linked": "Spárované s {{name}}",
+        "accepted": "Spárovali ste to s {{name}}",
+        "suggested": "Navrhnuté pre {{name}}",
+        "declined": "Zamietli ste {{name}}",
+        "expired": "Vypršalo bez odpovede — {{name}}",
+        "unlinked": "Odpojené od {{name}}"
+      }
     }
   }
 }

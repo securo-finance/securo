@@ -52,6 +52,7 @@ from app.models.transaction import Transaction
 from app.models.workspace import Workspace
 from app.services import (
     invoice_service,
+    reconciliation_history_service,
     reconciliation_policy,
     reconciliation_rule_service,
     reconciliation_suggestion_service,
@@ -234,6 +235,19 @@ async def _apply(
                 )
                 if first is None:
                     first = allocation
+                await reconciliation_history_service.record(
+                    session,
+                    invoice.workspace_id,
+                    "linked",
+                    expectation_kind=settlement.expectation.kind,
+                    expectation_id=settlement.expectation.id,
+                    amount=settlement.amount,
+                    transaction_id=transaction.id,
+                    strategy_id=decision.strategy,
+                    # No user: the rules did this on their own, and that
+                    # is the distinction a reader reaches for first.
+                    detail={"of_set": len(decision.settlements)},
+                )
     except invoice_service.InvoiceError:
         # A guard refused one of them, so none of them happened. The money
         # stays unexplained, which is the honest outcome — the alternative

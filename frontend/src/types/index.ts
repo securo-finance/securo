@@ -1463,3 +1463,24 @@ export interface ReconciliationSuggestion {
     type: string
   } | null
 }
+
+/** One thing matching did.
+ *
+ *  `linked` means the rules did it on their own; `accepted` means a person
+ *  did, by answering a question. They are never both written for one act —
+ *  the allocation an acceptance produces is its consequence, not a second
+ *  event — because the whole stream is organised around that one line. */
+export interface ReconciliationHistoryEvent {
+  id: string
+  at: string
+  action: 'linked' | 'suggested' | 'accepted' | 'declined' | 'expired' | 'unlinked'
+  expectation_kind: 'invoice' | 'recurring'
+  expectation_id: string
+  expectation_label?: string | null
+  amount: string
+  strategy_id?: string | null
+  /** Null means the rules acted on their own. */
+  user_id?: string | null
+  transaction_id?: string | null
+  transaction_description?: string | null
+}

@@ -39,6 +39,7 @@ from app.services import (
     invoice_document,
     invoice_pdf,
     invoice_service,
+    reconciliation_history_service,
     reconciliation_service,
 )
 from app.services.invoice_service import InvoiceError
@@ -373,9 +374,26 @@ async def create_allocation(
 ):
     invoice = await _load(session, invoice_id, ctx.workspace.id)
     try:
-        await invoice_service.allocate(session, invoice, payload.transaction_id, payload.amount)
+        allocation = await invoice_service.allocate(
+            session, invoice, payload.transaction_id, payload.amount
+        )
     except InvoiceError as exc:
         raise _http(exc)
+    # `linked` with a user is a person doing it by hand; `linked` with none
+    # is the rules acting on their own. One verb, and the column that
+    # already answers the question the history is organised around.
+    # Without this the stream could show an unlink with no link before it.
+    await reconciliation_history_service.record(
+        session,
+        ctx.workspace.id,
+        "linked",
+        expectation_kind="invoice",
+        expectation_id=invoice.id,
+        amount=allocation.amount,
+        transaction_id=payload.transaction_id,
+        strategy_id=allocation.method,
+        user_id=ctx.user_id,
+    )
     await session.commit()
     return _serialize(await _load(session, invoice_id, ctx.workspace.id))
 
@@ -388,10 +406,26 @@ async def remove_allocation(
     session: AsyncSession = Depends(get_async_session),
 ):
     invoice = await _load(session, invoice_id, ctx.workspace.id)
+    # Read before it goes: unallocating deletes the row, so without this
+    # the fact that a match was made and then undone is indistinguishable
+    # from one that was never made at all.
+    undone = next((a for a in invoice.allocations if a.id == allocation_id), None)
     try:
         await invoice_service.unallocate(session, invoice, allocation_id)
     except InvoiceError as exc:
         raise _http(exc)
+    if undone is not None:
+        await reconciliation_history_service.record(
+            session,
+            ctx.workspace.id,
+            "unlinked",
+            expectation_kind="invoice",
+            expectation_id=invoice.id,
+            amount=undone.amount,
+            transaction_id=undone.transaction_id,
+            strategy_id=undone.method,
+            user_id=ctx.user_id,
+        )
     await session.commit()
     return _serialize(await _load(session, invoice_id, ctx.workspace.id))
 

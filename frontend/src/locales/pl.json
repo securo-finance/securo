@@ -2460,6 +2460,22 @@
       "invoice_issuedHint": "Klient zapłacił najpierw, faktura poszła później — patrzymy wstecz, na pieniądze już obecne.",
       "both": "W obu momentach",
       "bothHint": "Reguła obowiązuje w obie strony."
+    },
+    "history": {
+      "title": "Co zrobiło dopasowanie",
+      "hint": "Od najnowszych. Cofnięcie powiązania też jest tu zapisane — nic innego tego nie trzyma.",
+      "byPerson": "przez Ciebie",
+      "byRules": "przez reguły",
+      "more": "Pokaż jeszcze {{count}}",
+      "less": "Pokaż mniej",
+      "action": {
+        "linked": "Powiązano z {{name}}",
+        "accepted": "Powiązałeś z {{name}}",
+        "suggested": "Zaproponowano dla {{name}}",
+        "declined": "Odrzuciłeś {{name}}",
+        "expired": "Wygasło bez odpowiedzi — {{name}}",
+        "unlinked": "Rozłączono z {{name}}"
+      }
     }
   }
 }

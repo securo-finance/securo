@@ -236,6 +236,9 @@ function useSettleMutation(
         : reconciliationApi.decline(id),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['reconciliation-suggestions'] })
+      // Answering a question is itself an event, so the stream below has
+      // to be re-read or it shows a history that stops one act ago.
+      void queryClient.invalidateQueries({ queryKey: ['reconciliation-history'] })
       if (action === 'accept') invalidateFinancialQueries(queryClient)
       toast.success(
         t(action === 'accept' ? 'reconciliation.queue.linked' : 'reconciliation.queue.declined'),

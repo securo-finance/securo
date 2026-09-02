@@ -23,6 +23,7 @@ import { useWorkspace } from '@/contexts/workspace-context'
 import { RuleDialog } from '@/components/rule-dialog'
 import { ReconciliationRules } from '@/components/reconciliation-rules'
 import { ReconciliationQueue } from '@/components/reconciliation-queue'
+import { ReconciliationHistory } from '@/components/reconciliation-history'
 import { findCategoryReference, getRuleCategoryName } from '@/lib/category-reference-utils'
 
 function SectionCard({ children }: { children: React.ReactNode }) {
@@ -473,6 +474,7 @@ export default function RulesPage() {
       <div className="mt-6 space-y-6">
         <ReconciliationRules canWrite={canWrite} />
         <ReconciliationQueue canWrite={canWrite} />
+        <ReconciliationHistory />
       </div>
 
       <DeleteConfirmationDialog

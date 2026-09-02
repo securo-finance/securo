@@ -1529,3 +1529,259 @@ async def test_a_tolerance_wide_enough_to_match_anything_is_refused(
     )
     assert resp.status_code == 400
     assert resp.json()["detail"]["code"] == "set_tolerance_too_wide"
+
+
+# ---------------------------------------------------------------------------
+# What matching did
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_an_automatic_link_is_recorded_with_the_rule_that_made_it(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """And with no user, which is the distinction a reader reaches for
+    first: was this me, or was this the rules?"""
+    invoice = await an_invoice(client, biz_headers, client_payee)
+    await a_payment(client, biz_headers, account, client_payee)
+
+    events = (
+        await client.get("/api/reconciliation/history", headers=biz_headers)
+    ).json()
+    assert len(events) == 1
+    event = events[0]
+    assert event["action"] == "linked"
+    assert event["expectation_id"] == invoice["id"]
+    assert event["strategy_id"] == "same_client_exact"
+    assert event["user_id"] is None, "the rules did this on their own"
+    assert event["transaction_description"] == "PIX RECEBIDO ALPHA"
+
+
+@pytest.mark.asyncio
+async def test_undoing_a_link_leaves_a_trace(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """The event this table exists for. Unallocating **deletes** the
+    allocation, so without a record a match that was made and then undone
+    is indistinguishable from one that was never made."""
+    invoice = await an_invoice(client, biz_headers, client_payee)
+    await a_payment(client, biz_headers, account, client_payee)
+
+    detail = (
+        await client.get(f"/api/invoices/{invoice['id']}", headers=biz_headers)
+    ).json()
+    allocation_id = detail["allocations"][0]["id"]
+    resp = await client.delete(
+        f"/api/invoices/{invoice['id']}/allocations/{allocation_id}",
+        headers=biz_headers,
+    )
+    assert resp.status_code in (200, 204), resp.text
+
+    events = (
+        await client.get("/api/reconciliation/history", headers=biz_headers)
+    ).json()
+    assert events[0]["action"] == "unlinked"
+    assert events[0]["user_id"] is not None, "a person did this one"
+    assert events[0]["strategy_id"] == "same_client_exact", "what it had been"
+
+    # And the invoice really is open again — the history did not replace
+    # the undoing, it recorded it.
+    after = (
+        await client.get(f"/api/invoices/{invoice['id']}", headers=biz_headers)
+    ).json()
+    assert after["allocations"] == []
+
+
+@pytest.mark.asyncio
+async def test_a_question_and_its_answer_both_land_in_the_stream(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact",
+        headers=biz_headers,
+        json={"outcome": "suggest"},
+    )
+    await an_invoice(client, biz_headers, client_payee)
+    await a_payment(client, biz_headers, account, client_payee)
+
+    queue = (
+        await client.get("/api/reconciliation/suggestions", headers=biz_headers)
+    ).json()
+    await client.post(
+        f"/api/reconciliation/suggestions/{queue[0]['id']}/accept", headers=biz_headers
+    )
+
+    events = (
+        await client.get("/api/reconciliation/history", headers=biz_headers)
+    ).json()
+    actions = [e["action"] for e in events]
+
+    # Two rows, not three. Accepting *is* the link — the allocation is its
+    # consequence, not a second event — and the whole stream is organised
+    # around one line: was this me, or was this the rules? `linked` means
+    # the rules; `accepted` means a person. Writing both would blur it.
+    assert actions == ["accepted", "suggested"], "newest first, one row per act"
+    assert events[0]["user_id"] is not None, "a person accepted"
+
+    # And the invoice really was settled by it.
+    detail = (
+        await client.get("/api/invoices", headers=biz_headers)
+    ).json()
+    assert any(inv["state"] == "paid" for inv in detail)
+
+
+@pytest.mark.asyncio
+async def test_a_refusal_is_remembered_as_an_event_too(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact",
+        headers=biz_headers,
+        json={"outcome": "suggest"},
+    )
+    await an_invoice(client, biz_headers, client_payee)
+    await a_payment(client, biz_headers, account, client_payee)
+    queue = (
+        await client.get("/api/reconciliation/suggestions", headers=biz_headers)
+    ).json()
+    await client.post(
+        f"/api/reconciliation/suggestions/{queue[0]['id']}/decline", headers=biz_headers
+    )
+
+    events = (
+        await client.get("/api/reconciliation/history", headers=biz_headers)
+    ).json()
+    assert events[0]["action"] == "declined"
+    assert events[0]["user_id"] is not None
+
+
+@pytest.mark.asyncio
+async def test_the_history_of_one_invoice_can_be_read_on_its_own(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """The second and only other way anybody reads this: everything that
+    ever happened to this promise."""
+    mine = await an_invoice(client, biz_headers, client_payee)
+    await a_payment(client, biz_headers, account, client_payee)
+
+    other_payee_invoice = await an_invoice(
+        client, biz_headers, client_payee, total="4444.00"
+    )
+    await a_payment(client, biz_headers, account, client_payee, amount="4444.00")
+
+    events = (
+        await client.get(
+            f"/api/reconciliation/history?expectation_id={mine['id']}",
+            headers=biz_headers,
+        )
+    ).json()
+    assert len(events) == 1
+    assert events[0]["expectation_id"] == mine["id"]
+    assert other_payee_invoice["id"] != mine["id"]
+
+
+@pytest.mark.asyncio
+async def test_nothing_is_written_for_money_that_matched_nothing(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """The restraint that keeps the history readable. A sync of three
+    hundred transactions where most match nothing must not produce three
+    hundred rows saying so."""
+    await a_payment(client, biz_headers, account, client_payee, amount="77.00")
+    await a_payment(client, biz_headers, account, client_payee, amount="88.00")
+
+    assert (
+        await client.get("/api/reconciliation/history", headers=biz_headers)
+    ).json() == []
+
+
+@pytest.mark.asyncio
+async def test_the_history_stays_inside_its_workspace(
+    client: AsyncClient, auth_headers, biz_headers, session: AsyncSession,
+    account, client_payee,
+):
+    await an_invoice(client, biz_headers, client_payee)
+    await a_payment(client, biz_headers, account, client_payee)
+
+    other = await client.post(
+        "/api/workspaces",
+        headers=auth_headers,
+        json={"name": "Outro", "kind": "business", "self_membership": True},
+    )
+    headers = {**auth_headers, "X-Workspace-Id": other.json()["id"]}
+    assert (
+        await client.get("/api/reconciliation/history", headers=headers)
+    ).json() == []
+
+
+@pytest.mark.asyncio
+async def test_a_grouped_question_is_one_line_in_the_history(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """A payment offered against several invoices is one thing that
+    happened and one thing a person answers. Three rows in the stream
+    would be the same noise the queue collapses, in the one place built
+    for scanning."""
+    for _ in range(3):
+        await an_invoice(client, biz_headers, client_payee, total="1000.00")
+    await a_payment(client, biz_headers, account, client_payee, amount="2000.00")
+
+    events = (
+        await client.get("/api/reconciliation/history", headers=biz_headers)
+    ).json()
+    assert [e["action"] for e in events] == ["suggested"]
+    # And it is worth the whole payment, not one slice of it.
+    assert Decimal(events[0]["amount"]) == Decimal("2000.00")
+
+    queue = (
+        await client.get("/api/reconciliation/suggestions", headers=biz_headers)
+    ).json()
+    await client.post(
+        f"/api/reconciliation/suggestions/{queue[0]['id']}/accept", headers=biz_headers
+    )
+
+    after = (
+        await client.get("/api/reconciliation/history", headers=biz_headers)
+    ).json()
+    assert [e["action"] for e in after] == ["accepted", "suggested"]
+    assert Decimal(after[0]["amount"]) == Decimal("2000.00")
+
+
+@pytest.mark.asyncio
+async def test_declining_a_grouped_question_is_also_one_line(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    for _ in range(3):
+        await an_invoice(client, biz_headers, client_payee, total="1000.00")
+    await a_payment(client, biz_headers, account, client_payee, amount="2000.00")
+
+    queue = (
+        await client.get("/api/reconciliation/suggestions", headers=biz_headers)
+    ).json()
+    await client.post(
+        f"/api/reconciliation/suggestions/{queue[0]['id']}/decline", headers=biz_headers
+    )
+
+    events = (
+        await client.get("/api/reconciliation/history", headers=biz_headers)
+    ).json()
+    assert [e["action"] for e in events] == ["declined", "suggested"]
+
+
+@pytest.mark.asyncio
+async def test_a_payment_settling_several_invoices_records_each_link(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """Links are the exception, and deliberately: each one is a separate
+    write against a separate debt, and the invoice-level history — *what
+    ever happened to this invoice* — has to find its own row."""
+    for total in ("1000.00", "2000.00"):
+        await an_invoice(client, biz_headers, client_payee, total=total)
+    await a_payment(client, biz_headers, account, client_payee, amount="3000.00")
+
+    events = (
+        await client.get("/api/reconciliation/history", headers=biz_headers)
+    ).json()
+    assert [e["action"] for e in events] == ["linked", "linked"]
+    assert sorted(Decimal(e["amount"]) for e in events) == [
+        Decimal("1000.00"),
+        Decimal("2000.00"),
+    ]

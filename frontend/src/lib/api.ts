@@ -81,6 +81,7 @@ import type {
   ReconciliationRuleDraft,
   ReconciliationRulePatch,
   ReconciliationSuggestion,
+  ReconciliationHistoryEvent,
 } from '@/types'
 
 const api = axios.create({
@@ -1027,6 +1028,16 @@ export const reconciliation = {
     await api.delete(
       `/reconciliation/rules/${encodeURIComponent(node)}/${encodeURIComponent(id)}`,
     )
+  },
+  /** What matching did, newest first. `expectationId` narrows it to
+   *  everything that ever happened to one invoice. */
+  history: async (
+    expectationId?: string,
+  ): Promise<ReconciliationHistoryEvent[]> => {
+    const { data } = await api.get('/reconciliation/history', {
+      params: expectationId ? { expectation_id: expectationId } : undefined,
+    })
+    return data
   },
   suggestions: async (): Promise<ReconciliationSuggestion[]> => {
     const { data } = await api.get('/reconciliation/suggestions')

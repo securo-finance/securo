@@ -2359,6 +2359,22 @@
       "invoice_issuedHint": "Der Kunde zahlte zuerst, die Rechnung folgt — wir sehen zurück auf Geld, das schon da war.",
       "both": "Zu beiden Zeitpunkten",
       "bothHint": "Die Regel gilt in beide Richtungen."
+    },
+    "history": {
+      "title": "Was der Abgleich getan hat",
+      "hint": "Neueste zuerst. Auch das Lösen einer Verknüpfung steht hier — sonst hält es nichts fest.",
+      "byPerson": "von Ihnen",
+      "byRules": "von den Regeln",
+      "more": "{{count}} weitere anzeigen",
+      "less": "Weniger anzeigen",
+      "action": {
+        "linked": "Mit {{name}} verknüpft",
+        "accepted": "Sie haben es mit {{name}} verknüpft",
+        "suggested": "Für {{name}} vorgeschlagen",
+        "declined": "Sie haben {{name}} verworfen",
+        "expired": "Unbeantwortet abgelaufen — {{name}}",
+        "unlinked": "Von {{name}} gelöst"
+      }
     }
   }
 }

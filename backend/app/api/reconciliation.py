@@ -27,16 +27,19 @@ from app.core.workspace_context import (
 from app.models.invoice import Invoice
 from app.models.reconciliation import ReconciliationRule
 from app.models.recurring_transaction import RecurringTransaction
+from app.models.transaction import Transaction
 from app.schemas.reconciliation import (
     ReconciliationNodeRead,
     ReconciliationRuleCreate,
     ReconciliationRuleRead,
     ReconciliationRuleUpdate,
+    HistoryEventRead,
     SuggestionCovers,
     SuggestionRead,
 )
 from app.services import (
     invoice_service,
+    reconciliation_history_service as history,
     reconciliation_rule_service as rules,
     reconciliation_suggestion_service as suggestions,
 )
@@ -284,6 +287,8 @@ async def accept_suggestion(
 
     for member in members:
         await suggestions.mark_accepted(session, member, ctx.user_id)
+    # One event for the whole question, written where the whole act is known.
+    await suggestions.answered(session, members, "accepted", ctx.user_id)
     await session.commit()
     return await _with_label(session, row)
 
@@ -336,8 +341,10 @@ async def decline_suggestion(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Suggestion not found"
         )
-    for member in await suggestions.members_of(session, row):
+    members = await suggestions.members_of(session, row)
+    for member in members:
         await suggestions.decline(session, member, ctx.user_id)
+    await suggestions.answered(session, members, "declined", ctx.user_id)
     await session.commit()
     return await _with_label(session, row)
 
@@ -395,3 +402,34 @@ async def _name_of(session: AsyncSession, row) -> Optional[str]:
         return await _invoice_name(session, invoice) if invoice else None
     bill = await session.get(RecurringTransaction, row.expectation_id)
     return bill.description if bill else None
+
+
+# ---------------------------------------------------------------------------
+# What matching did
+# ---------------------------------------------------------------------------
+@router.get("/history", response_model=list[HistoryEventRead])
+async def list_history(
+    limit: int = 50,
+    expectation_id: Optional[uuid.UUID] = None,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """The stream, newest first — or everything that happened to one promise.
+
+    Newest first here and oldest first in the queue, deliberately: a queue
+    is work to get through, so its oldest question is the most urgent,
+    while a history is read to find out what just happened.
+    """
+    events = await history.recent(
+        session, ctx.workspace.id, expectation_id=expectation_id, limit=limit
+    )
+
+    out: list[HistoryEventRead] = []
+    for event in events:
+        read = HistoryEventRead.model_validate(event)
+        read.expectation_label = await _name_of(session, event)
+        if event.transaction_id is not None:
+            transaction = await session.get(Transaction, event.transaction_id)
+            read.transaction_description = transaction.description if transaction else None
+        out.append(read)
+    return out
