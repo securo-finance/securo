@@ -1959,3 +1959,40 @@ class TestBillTotalIgnoresReportingExclusions:
         assert summary is not None
         assert summary["monthly_income"] == 50.0
         assert summary["monthly_expenses"] == 50.0
+
+    @pytest.mark.asyncio
+    async def test_ignored_category_purchase_also_leaves_the_bill(
+        self, session, test_user, test_workspace, cc_account
+    ):
+        """The ignore signal counts from either side. A category the user
+        ignored leaves the account balance exactly like a row-level ignore,
+        so the bill has to drop it too or the card's numbers split apart."""
+        ignored_category = Category(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            name="Reembolsáveis",
+            icon="receipt",
+            color="#94A3B8",
+            is_ignored=True,
+        )
+        session.add(ignored_category)
+        await session.flush()
+
+        await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 3), Decimal("100"), tx_type="debit",
+        )
+        await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 8), Decimal("200"), tx_type="debit",
+            category_id=ignored_category.id,
+        )
+        await session.commit()
+
+        summary = await account_service.get_account_summary(
+            session, cc_account.id, test_workspace.id,
+            date_from=date(2026, 4, 1), date_to=date(2026, 4, 30),
+        )
+
+        assert summary is not None
+        assert summary["monthly_expenses"] == 100.0
