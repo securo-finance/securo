@@ -1125,7 +1125,16 @@ async def handle_oauth_callback(
         transactions_data = await provider.get_transactions(
             connection_data.credentials, acc_data.external_id, None
         )
+        seen_external_ids: set[str] = set()
         for txn_data in transactions_data:
+            # Providers should return each external transaction once, but an
+            # upstream pagination bug can repeat a page. This account was just
+            # created, so batch-local tracking avoids both duplicate inserts
+            # and an unnecessary SELECT for every imported transaction.
+            if txn_data.external_id in seen_external_ids:
+                continue
+            seen_external_ids.add(txn_data.external_id)
+
             await _remember_linked_card(
                 session, account, txn_data.card_masked_number, known_linked_card_numbers
             )
@@ -1187,7 +1196,7 @@ async def handle_oauth_callback(
                 payee=txn_data.payee,
                 payee_id=payee_id,
                 raw_data=txn_data.raw_data,
-                category_id=category_id,
+                category_id=None,
                 installment_number=txn_data.installment_number,
                 total_installments=txn_data.total_installments,
                 installment_total_amount=txn_data.installment_total_amount,
@@ -1202,6 +1211,8 @@ async def handle_oauth_callback(
             await session.flush()
             new_tx_ids.append(transaction.id)
             await apply_rules_to_transaction(session, user_id, transaction)
+            if transaction.category_id is None:
+                transaction.category_id = category_id
 
             # Prefer bank-provided conversion for international transactions
             acct_currency = acc_data.currency or user_currency
@@ -2027,7 +2038,7 @@ async def sync_connection(
                     payee=txn_data.payee,
                     payee_id=sync_payee_id,
                     raw_data=txn_data.raw_data,
-                    category_id=category_id,
+                    category_id=None,
                     installment_number=txn_data.installment_number,
                     total_installments=txn_data.total_installments,
                     installment_total_amount=txn_data.installment_total_amount,
@@ -2076,7 +2087,7 @@ async def sync_connection(
                     # provenance is recorded outright.
                     placeholder.original_description = txn_data.description
                     if placeholder.category_id is None:
-                        placeholder.category_id = preview.category_id
+                        placeholder.category_id = preview.category_id or category_id
                     if txn_data.payee and not placeholder.payee:
                         placeholder.payee = txn_data.payee
                     if placeholder.payee_id is None:
@@ -2112,6 +2123,8 @@ async def sync_connection(
                     )
                 new_tx_ids.append(transaction.id)
                 await apply_rules_to_transaction(session, user_id, transaction)
+                if transaction.category_id is None:
+                    transaction.category_id = category_id
 
                 # Prefer bank-provided conversion for international transactions
                 acct_currency = acc_data.currency or user_currency

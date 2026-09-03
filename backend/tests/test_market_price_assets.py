@@ -130,6 +130,41 @@ async def test_create_market_price_asset_seeds_quote_and_initial_value(
 
 
 @pytest.mark.asyncio
+async def test_create_market_price_asset_is_idempotent_by_external_id(
+    session: AsyncSession, test_user: User, test_workspace
+):
+    provider = FakeMarketProvider({"VOO": _quote("VOO", 625.50)})
+    data = AssetCreate(
+        name="Vanguard S&P 500 ETF",
+        type="investment",
+        valuation_method="market_price",
+        ticker="VOO",
+        units=Decimal("3.5"),
+        external_id="portfolio-voo",
+    )
+
+    first = await asset_service.create_asset(
+        session, test_workspace.id, test_user.id, data, market_provider=provider
+    )
+    second = await asset_service.create_asset(
+        session, test_workspace.id, test_user.id, data, market_provider=provider
+    )
+
+    assert second.id == first.id
+    assert second.external_id == "portfolio-voo"
+    assert second.source == "yfinance"
+    assert second.value_count == 1
+    rows = await session.execute(
+        select(Asset).where(
+            Asset.workspace_id == test_workspace.id,
+            Asset.source == "yfinance",
+            Asset.external_id == "portfolio-voo",
+        )
+    )
+    assert len(rows.scalars().all()) == 1
+
+
+@pytest.mark.asyncio
 async def test_create_market_price_seeds_opening_buy_at_unit_price(
     session: AsyncSession, test_user: User, test_workspace
 ):
