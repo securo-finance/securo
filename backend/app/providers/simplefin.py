@@ -361,11 +361,56 @@ class SimpleFinProvider(BankProvider):
     # ----- account / transaction reads --------------------------------------
 
     @staticmethod
+    def _institutions_by_conn_id(payload: dict) -> dict[str, tuple[str, Optional[str]]]:
+        """conn_id → (institution name, favicon logo URL) from connections[].
+
+        One Setup Token can span several institutions; connections[] has one
+        entry per institution, matched to accounts by conn_id (issue #345).
+        """
+        by_conn_id: dict[str, tuple[str, Optional[str]]] = {}
+        for conn in payload.get("connections") or []:
+            conn_id = conn.get("conn_id")
+            name = conn.get("name")
+            if not conn_id or not name:
+                continue
+            url = conn.get("org_url") or conn.get("url") or conn.get("sfin_url")
+            by_conn_id[str(conn_id)] = (name, favicon_url_for(url) if url else None)
+        return by_conn_id
+
+    @staticmethod
+    def _account_institution_hint(
+        raw_acc: dict, by_conn_id: dict[str, tuple[str, Optional[str]]]
+    ) -> tuple[Optional[str], Optional[str], Optional[str]]:
+        """(external_id, name, logo) of the institution owning one account.
+
+        The Bridge puts institutions in a top-level connections[] matched by
+        conn_id; spec-style servers attach an ``org`` object to each account
+        instead — same fallback _org_website already does. All-None when the
+        payload carries neither.
+        """
+        conn_id = raw_acc.get("conn_id")
+        if conn_id and str(conn_id) in by_conn_id:
+            name, logo = by_conn_id[str(conn_id)]
+            return str(conn_id), name, logo
+        org = raw_acc.get("org") or {}
+        name = org.get("name") or org.get("domain")
+        if not name:
+            return None, None, None
+        url = org.get("url") or org.get("domain") or org.get("sfin-url")
+        ext = org.get("id") or org.get("domain")
+        return (
+            str(ext) if ext else None,
+            name,
+            favicon_url_for(url) if url else None,
+        )
+
+    @staticmethod
     def _parse_accounts(payload: dict) -> tuple[str, list[AccountData]]:
         connections = payload.get("connections") or []
         institution_name = (
             connections[0].get("name") if connections else "SimpleFIN Connection"
         )
+        by_conn_id = SimpleFinProvider._institutions_by_conn_id(payload)
         accounts: list[AccountData] = []
         for raw in payload.get("accounts") or []:
             balance = _to_decimal(raw.get("balance")) or Decimal("0")
@@ -374,6 +419,10 @@ class SimpleFinProvider(BankProvider):
             if not account_id:
                 continue
             name = raw.get("name") or "Account"
+            inst_ext, inst_name, inst_logo = SimpleFinProvider._account_institution_hint(
+                raw, by_conn_id
+            )
+
             accounts.append(
                 AccountData(
                     external_id=account_id,
@@ -381,6 +430,9 @@ class SimpleFinProvider(BankProvider):
                     type="checking",  # SimpleFIN doesn't expose an account type
                     balance=balance,
                     currency=currency,
+                    institution_external_id=inst_ext,
+                    institution_name=inst_name,
+                    institution_logo_url=inst_logo,
                 )
             )
         return institution_name or "SimpleFIN Connection", accounts
@@ -476,6 +528,8 @@ class SimpleFinProvider(BankProvider):
         holdings: list[HoldingData] = []
         for raw_acc in payload.get("accounts") or []:
             acc_currency = raw_acc.get("currency") or "USD"
+            acc_id = str(raw_acc.get("id") or "") or None
+            acc_name = raw_acc.get("name")
             for raw in raw_acc.get("holdings") or []:
                 holding_id = str(raw.get("id") or "")
                 if not holding_id:
@@ -503,6 +557,8 @@ class SimpleFinProvider(BankProvider):
                             if raw.get("cost_basis") is not None
                             else None,
                         },
+                        account_external_id=acc_id,
+                        account_name=acc_name,
                     )
                 )
         return holdings

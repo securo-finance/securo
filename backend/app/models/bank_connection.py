@@ -11,6 +11,7 @@ from app.core.database import Base
 if TYPE_CHECKING:
     from app.models.user import User
     from app.models.account import Account
+    from app.models.institution import Institution
 
 
 class BankConnection(Base):
@@ -37,3 +38,8 @@ class BankConnection(Base):
 
     user: Mapped["User"] = relationship(back_populates="bank_connections")
     accounts: Mapped[list["Account"]] = relationship(back_populates="connection", cascade="all, delete-orphan")
+    # Institutions reached through this link (issue #345). Eager (selectin) so
+    # the connections API can summarize them without async lazy loads.
+    institutions: Mapped[list["Institution"]] = relationship(
+        back_populates="connection", cascade="all, delete-orphan", lazy="selectin"
+    )

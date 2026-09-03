@@ -70,6 +70,13 @@ class AccountData:
     # provider exposes one. Disambiguates accounts a bank reports under an
     # identical name (issue #408). Never the full identifier — see mask_last4.
     masked_number: Optional[str] = None
+    # Per-account institution override (SimpleFIN — issue #345). None = same
+    # as connection. The external id is the provider's stable org id
+    # (SimpleFIN conn_id) so a renamed bank updates its row instead of
+    # minting a new one; name-only hints fall back to name identity.
+    institution_external_id: Optional[str] = None
+    institution_name: Optional[str] = None
+    institution_logo_url: Optional[str] = None
 
 
 @dataclass
@@ -158,6 +165,12 @@ class HoldingData:
     maturity_date: Optional[date] = None
     is_withdrawn: bool = False  # provider signaled the position was sold/transferred
     metadata: Optional[dict] = None
+    # Owning-account hint (SimpleFIN — issue #345): holdings are reported per
+    # account, so each investment account gets its own wallet ("401(k)" apart
+    # from "Rollover IRA"). None = the connection-default wallet, for
+    # providers whose holdings aren't attributable to an account.
+    account_external_id: Optional[str] = None
+    account_name: Optional[str] = None
 
 
 @dataclass

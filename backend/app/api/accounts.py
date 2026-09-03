@@ -165,7 +165,12 @@ async def update_account(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
-    return account_service.serialize_account(account, None, None)
+    # Re-read post-commit so the response resolves the institution/display
+    # name pair exactly like GET (update_account leaves the row expired).
+    account = await account_service.get_account(session, account_id, ctx.workspace.id)
+    if not account:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+    return account_service.serialize_account(account, None, None, account.connection)
 
 
 @router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
