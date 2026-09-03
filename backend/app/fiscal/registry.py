@@ -265,6 +265,45 @@ def pack_for(jurisdiction: str | None) -> JurisdictionPack:
     return _packs().get(jurisdiction.strip().upper(), FALLBACK)
 
 
+def apply_mask(value: str, mask: str | None) -> str:
+    """A stored value formatted for a human to read.
+
+    A mask is a template where `#` takes one digit and every other
+    character is a literal, so `##.###.###/####-##` turns 14 digits into
+    a CNPJ. A kind with no mask is returned untouched, which is what
+    keeps a jurisdiction nobody has described from being mangled.
+
+    This mirrors `applyMask` in `frontend/src/lib/tax-id.ts` deliberately:
+    the frontend needs it to format *as the user types*, and the server
+    needs it because a PDF has no frontend to ask. Same rule, and the
+    tests on both sides assert the same CNPJ.
+    """
+    if not mask:
+        return value
+    digits = [c for c in value if c.isdigit()]
+    # Only a value that fills the mask exactly is formatted. Too few digits
+    # would render a half-masked document ("12.3" for "123"), and too many
+    # would silently drop the tail — both worse than showing what is
+    # stored. Values reaching here are normalised on write, so a mismatch
+    # means an unmasked kind or data from before a pack changed.
+    if len(digits) != mask.count("#"):
+        return value
+    out: list[str] = []
+    index = 0
+    for char in mask:
+        if char == "#":
+            out.append(digits[index])
+            index += 1
+        else:
+            out.append(char)
+    return "".join(out)
+
+
+def format_for_display(kind: TaxIdKind, value: str) -> str:
+    """The document as it should appear on a rendered page."""
+    return apply_mask(value, spec_for(kind).mask)
+
+
 def normalise_and_validate(kind: TaxIdKind, value: str) -> tuple[str, str | None]:
     """Store-ready value, plus a reason when it should be refused.
 

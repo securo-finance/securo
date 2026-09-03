@@ -3,7 +3,7 @@ import { useRegisterPageChatContext } from '@/lib/page-chat-context'
 import { getAccountName } from '@/lib/account-utils'
 import { AccountIcon } from '@/components/account-icon'
 import { currentMonth, monthRange, monthFromRange } from '@/lib/month-utils'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -35,7 +35,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Clock, HelpCircle, Info, Paperclip, Trash2, Users, X, EyeClosed, SlidersHorizontal } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Clock, HelpCircle, Info, Paperclip, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, SlidersHorizontal, Receipt } from 'lucide-react'
 import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload } from '@/types'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { PageHeader } from '@/components/page-header'
@@ -1110,6 +1110,29 @@ export default function TransactionsPage() {
                     })}
               </span>
             )}
+            {/* The invoice this settles. Same badge shape as the split
+                and transfer markers beside it, and absent entirely in a
+                workspace without the invoicing module — the server does
+                not send the field there. */}
+            {/* One badge per invoice this row settles: a payout net of
+                fees settles several, and showing only the last one read
+                as if the others had never been paid. */}
+            {(tx.invoice_links ?? []).map((link) => (
+              <Link
+                key={link.invoice_id}
+                to={`/invoices/${link.invoice_id}`}
+                onClick={(e) => e.stopPropagation()}
+                title={t('transactions.invoiceBadgeTooltip')}
+                className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900 px-1.5 py-0.5 rounded-full hover:bg-emerald-100 dark:hover:bg-emerald-950/70 transition-colors"
+              >
+                <Receipt className="h-3 w-3" />
+                {link.external_number
+                  ? t('transactions.invoiceBadge', { number: link.external_number })
+                  : link.number != null
+                    ? t('transactions.invoiceBadge', { number: link.number })
+                    : t('transactions.invoiceBadgeNoNumber')}
+              </Link>
+            ))}
             {!!tx.transfer_pair_id && (
               <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
                 <ArrowLeftRight className="h-3 w-3" />
@@ -1117,7 +1140,7 @@ export default function TransactionsPage() {
                 <span title={t('transactions.transferTooltip')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
               </span>
             )}
-            {tx.is_ignored && 
+            {tx.is_ignored &&
               (
               <span className="ml-2 inline-flex items-center gap-1 text-xs text-gray-600 font-normal bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5">
                 <EyeClosed className="h-3 w-3" />
@@ -1126,6 +1149,16 @@ export default function TransactionsPage() {
               </span>
                             )
             }
+            {/* Distinct from Ignored on purpose: this row still moves the
+                balance, so its amount keeps its colour and sign and only
+                the badge marks it. Ignored greys the amount out instead. */}
+            {tx.exclude_from_pnl && !tx.is_ignored && (
+              <span className="ml-2 inline-flex items-center gap-1 text-xs text-slate-600 font-normal bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 dark:text-slate-300 dark:bg-slate-500/15 dark:border-slate-500/30">
+                <ChartNoAxesColumn className="h-3 w-3" />
+                {t('transactions.excludedFromReports')}
+                <span title={t('transactions.excludeFromReportsHint')}><HelpCircle className="h-3 w-3 text-blue-400" /></span>
+              </span>
+            )}
             {tx.recurring_transaction_id != null && (
               <span
                 className="text-[10px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1.5 py-0.5 rounded-full"
