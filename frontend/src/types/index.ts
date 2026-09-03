@@ -1343,7 +1343,9 @@ export interface ReconciliationConditions {
   /** Only money coming in, or only money going out. */
   direction?: 'any' | 'credit' | 'debit'
   /** What the statement line has to say, or must not. Case-insensitive. */
-  text?: { contains?: string; not_contains?: string }
+  /** One word, or several meaning *any of them*. Stored as written, so a
+   *  rule naming one gateway stays a string and does not read as changed. */
+  text?: { contains?: string | string[]; not_contains?: string | string[] }
 
   // -- How closely the pair has to fit.
   counterparty?: 'any' | 'same_payee'

@@ -2340,6 +2340,7 @@
       "text": "Text im Kontoauszug",
       "textContains": "muss enthalten …",
       "textExcludes": "darf nicht enthalten …",
+      "textHint": "Mehrere, durch Kommas getrennt, bedeutet eines davon.",
       "trigger": "Wann wir suchen",
       "triggerHint": "Der Abgleich passiert zu zwei Zeitpunkten, und die Indizien sind nicht dieselben.",
       "amountMatch": "Wie genau der Betrag stimmen muss",

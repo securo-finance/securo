@@ -2475,6 +2475,7 @@
       "text": "Text výpisu",
       "textContains": "musí obsahovať…",
       "textExcludes": "nesmie obsahovať…",
+      "textHint": "Viac slov oddelených čiarkami znamená ktorékoľvek z nich.",
       "trigger": "Kedy hľadáme",
       "triggerHint": "Párovanie prebieha v dvoch momentoch a dôkazy nie sú rovnaké.",
       "amountMatch": "Ako presne musí sedieť suma",

@@ -2441,6 +2441,7 @@
       "text": "Treść wyciągu",
       "textContains": "musi zawierać…",
       "textExcludes": "nie może zawierać…",
+      "textHint": "Kilka, oddzielonych przecinkami, oznacza dowolne z nich.",
       "trigger": "Kiedy szukamy",
       "triggerHint": "Dopasowanie dzieje się w dwóch momentach, a dowody nie są takie same.",
       "amountMatch": "Jak blisko musi być kwota",

@@ -2339,6 +2339,7 @@
       "text": "Statement text",
       "textContains": "must contain…",
       "textExcludes": "must not contain…",
+      "textHint": "Several, separated by commas, means any of them.",
       "trigger": "When we look",
       "triggerHint": "Matching happens at two moments, and the evidence is not the same in both.",
       "amountMatch": "How close the amount must be",

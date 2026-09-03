@@ -98,6 +98,68 @@ function SectionCard({ children }: { children: React.ReactNode }) {
  *  Written out rather than shown as a form on the row because the question
  *  a reader arrives with is "why did this match", and a sentence answers it
  *  where a grid of numbers does not. */
+/** Several words mean *any of them*, so they read as a list and are typed
+ *  as one. Commas rather than a repeater: somebody adding a fourth
+ *  acquirer types four more characters instead of finding a button. */
+function joinWords(value: string | string[] | undefined): string {
+  if (!value) return ''
+  return Array.isArray(value) ? value.join(', ') : value
+}
+
+/** A text field whose value is a list.
+ *
+ *  It holds what is being typed, not the split result read back. Splitting
+ *  on every keystroke and re-joining ate the separator: a word followed by
+ *  a comma became one word, which rendered back without the comma, so the
+ *  next letter landed against it and three names arrived as one.
+ */
+function WordsInput({
+  className,
+  placeholder,
+  value,
+  onChange,
+}: {
+  className: string
+  placeholder: string
+  value: string | string[] | undefined
+  onChange: (next: string | string[] | undefined) => void
+}) {
+  const settled = joinWords(value)
+  const [text, setText] = useState(settled)
+  const [seed, setSeed] = useState(settled)
+
+  // Reseeded only when the rule changed underneath, never from our own
+  // keystrokes: what distinguishes the two is whether the text still
+  // splits to what the rule holds.
+  if (seed !== settled) {
+    setSeed(settled)
+    if (joinWords(splitWords(text)) !== settled) setText(settled)
+  }
+
+  return (
+    <input
+      className={className}
+      placeholder={placeholder}
+      value={text}
+      onChange={(event) => {
+        setText(event.target.value)
+        onChange(splitWords(event.target.value))
+      }}
+    />
+  )
+}
+
+function splitWords(raw: string): string | string[] | undefined {
+  const words = raw
+    .split(',')
+    .map((word) => word.trim())
+    .filter(Boolean)
+  if (words.length === 0) return undefined
+  // One word stays a string, so a rule nobody meant to change does not
+  // arrive at the server looking different from what we ship.
+  return words.length === 1 ? words[0] : words
+}
+
 function conditionSummary(
   when: ReconciliationConditions & { trigger?: Trigger },
   t: (key: string, opts?: Record<string, unknown>) => string,
@@ -144,9 +206,9 @@ function conditionSummary(
   if (when.amount?.min) parts.push(t('reconciliation.cond.atLeast', { value: when.amount.min }))
   if (when.amount?.max) parts.push(t('reconciliation.cond.atMost', { value: when.amount.max }))
   if (when.text?.contains)
-    parts.push(t('reconciliation.cond.textContains', { text: when.text.contains }))
+    parts.push(t('reconciliation.cond.textContains', { text: joinWords(when.text.contains) }))
   if (when.text?.not_contains)
-    parts.push(t('reconciliation.cond.textExcludes', { text: when.text.not_contains }))
+    parts.push(t('reconciliation.cond.textExcludes', { text: joinWords(when.text.not_contains) }))
 
   if (when.counterparty === 'same_payee') parts.push(t('reconciliation.cond.samePayee'))
   if (when.same_account) parts.push(t('reconciliation.cond.sameAccount'))
@@ -587,28 +649,25 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
               t('reconciliation.field.text'),
               null,
               <>
-                <input
+                <WordsInput
                   className={inputClass}
                   placeholder={t('reconciliation.field.textContains')}
-                  value={when.text?.contains ?? ''}
-                  onChange={(e) =>
-                    setWhen({
-                      ...when,
-                      text: { ...when.text, contains: e.target.value || undefined },
-                    })
+                  value={when.text?.contains}
+                  onChange={(next) =>
+                    setWhen({ ...when, text: { ...when.text, contains: next } })
                   }
                 />
-                <input
+                <WordsInput
                   className={`${inputClass} mt-1.5`}
                   placeholder={t('reconciliation.field.textExcludes')}
-                  value={when.text?.not_contains ?? ''}
-                  onChange={(e) =>
-                    setWhen({
-                      ...when,
-                      text: { ...when.text, not_contains: e.target.value || undefined },
-                    })
+                  value={when.text?.not_contains}
+                  onChange={(next) =>
+                    setWhen({ ...when, text: { ...when.text, not_contains: next } })
                   }
                 />
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  {t('reconciliation.field.textHint')}
+                </p>
               </>,
             )}
           </Step>

@@ -526,14 +526,34 @@ def _validate_text(rule: Any) -> dict[str, str]:
     """
     if not isinstance(rule, dict):
         raise RuleError("bad_text", "Unknown text condition")
-    checked = {}
+    checked: dict[str, Any] = {}
     for key in ("contains", "not_contains"):
         value = rule.get(key)
-        if value in (None, ""):
+        if value in (None, "", []):
             continue
-        if not isinstance(value, str) or len(value) > 120:
-            raise RuleError("bad_text", "Keep the text short and plain")
-        checked[key] = value.strip()
+        # One word or several. Several means *any of them*, which is how
+        # somebody receiving through three acquirers writes one rule
+        # instead of three that differ by a word.
+        words = [value] if isinstance(value, str) else value
+        if not isinstance(words, list):
+            raise RuleError("bad_text", "Say what the text must contain")
+        cleaned = []
+        for word in words:
+            if not isinstance(word, str) or len(word) > 120:
+                raise RuleError("bad_text", "Keep the text short and plain")
+            word = word.strip()
+            if word:
+                cleaned.append(word)
+        if not cleaned:
+            continue
+        if len(cleaned) > 12:
+            raise RuleError(
+                "too_many_words",
+                "A rule this long is easier to read as two rules",
+            )
+        # Stored as it was written: one word stays a string, so a rule
+        # nobody touched does not show up as changed.
+        checked[key] = cleaned[0] if len(cleaned) == 1 else cleaned
     if not checked:
         raise RuleError("bad_text", "Say what the text must contain")
     return checked

@@ -108,6 +108,10 @@ def _as_movement(transaction: Transaction) -> Movement:
         direction=transaction.type,
         when=transaction.date,
         description=transaction.description,
+        # The raw string the bank sent, not the person we resolved it to.
+        # A rule may need it before any mapping exists, which is the usual
+        # state of a Pix from a client who has not been seen before.
+        counterparty=transaction.payee,
         payee_id=transaction.payee_id,
         account_id=transaction.account_id,
         source=transaction.source,

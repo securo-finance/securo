@@ -2341,6 +2341,7 @@
       "text": "Tekst op het afschrift",
       "textContains": "moet bevatten…",
       "textExcludes": "mag niet bevatten…",
+      "textHint": "Meerdere, gescheiden door komma's, betekent een van deze.",
       "trigger": "Wanneer we zoeken",
       "triggerHint": "Afletteren gebeurt op twee momenten, en het bewijs is niet hetzelfde.",
       "amountMatch": "Hoe nauw het bedrag moet kloppen",

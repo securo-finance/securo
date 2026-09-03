@@ -2340,6 +2340,7 @@
       "text": "Libellé du relevé",
       "textContains": "doit contenir…",
       "textExcludes": "ne doit pas contenir…",
+      "textHint": "Plusieurs, séparés par des virgules, signifie n'importe lequel.",
       "trigger": "Quand nous cherchons",
       "triggerHint": "Le rapprochement a lieu à deux moments, et les indices ne sont pas les mêmes.",
       "amountMatch": "À quel point le montant doit correspondre",

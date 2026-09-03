@@ -2340,6 +2340,7 @@
       "text": "Texto del extracto",
       "textContains": "debe contener…",
       "textExcludes": "no debe contener…",
+      "textHint": "Varios, separados por comas, significa cualquiera de ellos.",
       "trigger": "Cuándo buscamos",
       "triggerHint": "La conciliación ocurre en dos momentos, y la evidencia no es la misma en ambos.",
       "amountMatch": "Cuán cerca debe estar el importe",

@@ -2340,6 +2340,7 @@
       "text": "Testo dell'estratto conto",
       "textContains": "deve contenere…",
       "textExcludes": "non deve contenere…",
+      "textHint": "Più parole separate da virgole significano una qualsiasi di esse.",
       "trigger": "Quando cerchiamo",
       "triggerHint": "La riconciliazione avviene in due momenti, e le prove non sono le stesse.",
       "amountMatch": "Quanto deve avvicinarsi l'importo",

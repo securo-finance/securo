@@ -121,6 +121,14 @@ class Movement:
     direction: str
     when: date
     description: Optional[str] = None
+    #: The counterparty exactly as the bank printed it, before anything of
+    #: ours resolved it to a person. Kept apart from `payee_id` because a
+    #: rule may need it long before the name has been mapped to anybody:
+    #: a Pix description is generic and the payer's name arrives in its
+    #: own field, so a rule that could only read `description` could not
+    #: express "the transfers that come from this company", which is the
+    #: identifying fact on the most common inflow there is.
+    counterparty: Optional[str] = None
     payee_id: Optional[uuid.UUID] = None
     account_id: Optional[uuid.UUID] = None
     #: `sync`, `ofx`, `csv`, `manual`, `recurring`. A policy may ignore
@@ -401,8 +409,8 @@ def _in_scope(
     threshold where you stop trusting an automatic match, a statement line
     whose text you recognise.
 
-    That distinction is what the market converged on independently: Xero
-    and QuickBooks both let a rule name its bank account, its direction
+    That distinction is what the rule tools converged on independently:
+    they let a rule name its bank account, its direction
     and a text fragment before any comparison happens. Without it a rule
     can only say "money like this matches invoices like that", and every
     real request (*only for dollars*, *only above ten thousand*, *only
@@ -446,15 +454,40 @@ def _in_scope(
         return False
 
     text = rule.get("text", {})
-    description = (movement.description or "").lower()
-    contains = text.get("contains")
-    if contains and contains.lower() not in description:
-        return False
-    excludes = text.get("not_contains")
-    if excludes and excludes.lower() in description:
-        return False
+    if text:
+        # Both fields, as one haystack. The identifying words land in
+        # whichever of the two the bank felt like using, and asking a
+        # person which field their bank prefers is asking them to know
+        # something about our data model.
+        printed = " ".join(
+            part.lower()
+            for part in (movement.description, movement.counterparty)
+            if part
+        )
+        wanted = _as_list(text.get("contains"))
+        # Any of them, not all: somebody receiving through three acquirers
+        # wants one rule saying "a payout from any of these", not three
+        # rules that differ by a word.
+        if wanted and not any(word.lower() in printed for word in wanted):
+            return False
+        for word in _as_list(text.get("not_contains")):
+            if word.lower() in printed:
+                return False
 
     return True
+
+
+def _as_list(value: Any) -> list[str]:
+    """One word or several, read the same way.
+
+    Stored as a list once a rule names alternatives; a plain string is
+    still accepted because every rule written before this said one word.
+    """
+    if value in (None, ""):
+        return []
+    if isinstance(value, str):
+        return [value]
+    return [str(item) for item in value if str(item).strip()]
 
 
 def _eligible_for_set(

@@ -2340,6 +2340,7 @@
       "text": "Texto do extrato",
       "textContains": "tem de conter…",
       "textExcludes": "não pode conter…",
+      "textHint": "Vários, separados por vírgula, significa qualquer um deles.",
       "trigger": "Quando procuramos",
       "triggerHint": "A conciliação acontece em dois momentos, e a evidência não é a mesma nos dois.",
       "amountMatch": "Quão perto o valor tem de estar",

@@ -62,6 +62,7 @@ def _as_movement(transaction: Transaction) -> Movement:
         direction=transaction.type,
         when=transaction.date,
         description=transaction.description,
+        counterparty=transaction.payee,
         account_id=transaction.account_id,
         source=transaction.source,
     )

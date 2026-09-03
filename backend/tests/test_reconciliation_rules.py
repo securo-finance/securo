@@ -19,7 +19,11 @@ from app.models.account import Account
 from app.models.payee import Payee
 from app.models.reconciliation import ReconciliationRule, ReconciliationSuggestion
 from app.models.transaction import Transaction
-from app.services import reconciliation_policy, reconciliation_rule_service as rules
+from app.services import (
+    reconciliation_policy,
+    reconciliation_rule_service as rules,
+    reconciliation_service,
+)
 
 TODAY = date.today()
 INVOICE_NODE = reconciliation_policy.MATCH_INVOICE["node"]
@@ -2527,3 +2531,113 @@ async def test_a_rule_this_version_no_longer_ships_is_skipped(
     assert "regra_de_uma_versao_futura" not in ids_in(
         await policy(client, biz_headers), INVOICE_NODE
     )
+
+
+# ---------------------------------------------------------------------------
+# The words on the statement, end to end
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_a_rule_reads_the_name_the_bank_printed_not_only_the_description(
+    client: AsyncClient, biz_headers, session: AsyncSession, account
+):
+    """A Pix description is generic and the payer's name arrives in its own
+    field. Until the engine read that field, a rule could not express "the
+    transfers that come from this company", which is the identifying fact
+    on the most common inflow in Brazil.
+
+    No payee is mapped here on purpose: that is the state a first payment
+    from a new client arrives in, and the whole point is that the rule
+    works before anybody has been mapped to anything.
+    """
+    await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/exact_amount_any_client",
+        headers=biz_headers,
+        json={"when": {"text": {"contains": "ALPHA IND"}}},
+    )
+
+    invoice = await client.post(
+        "/api/invoices",
+        headers=biz_headers,
+        json={"total": "3000.00", "due_date": str(TODAY)},
+    )
+    assert invoice.status_code == 201, invoice.text
+
+    # Built as the bank delivers it rather than through the JSON route:
+    # `Transaction.payee` is written by sync and by import, which is
+    # exactly where a counterparty name comes from. Somebody typing a
+    # transaction by hand writes their own description.
+    tx = Transaction(
+        id=uuid.uuid4(),
+        user_id=account.user_id,
+        workspace_id=account.workspace_id,
+        account_id=account.id,
+        description="PIX RECEBIDO",
+        payee="ALPHA INDUSTRIA LTDA",
+        amount=Decimal("3000.00"),
+        currency="USD",
+        date=TODAY,
+        effective_date=TODAY,
+        type="credit",
+        source="sync",
+    )
+    session.add(tx)
+    await session.commit()
+
+    await reconciliation_service.match_incoming(session, account.workspace_id, [tx])
+    await session.commit()
+
+    detail = await client.get(
+        f"/api/invoices/{invoice.json()['id']}", headers=biz_headers
+    )
+    assert len(detail.json()["allocations"]) == 1, (
+        "the words are in the payee field, not the description"
+    )
+
+
+@pytest.mark.asyncio
+async def test_one_rule_can_name_several_acquirers(client: AsyncClient, biz_headers):
+    """Somebody receiving through three gateways writes one rule rather
+    than three that differ by a word. Stored as a list, and read back as
+    one."""
+    resp = await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/similar_description",
+        headers=biz_headers,
+        json={"when": {"text": {"contains": ["REPASSE", "LIQUIDACAO", "SETTLEMENT"]}}},
+    )
+    assert resp.status_code == 200, resp.text
+
+    rule = find(
+        (await client.get("/api/reconciliation/rules", headers=biz_headers)).json(),
+        INVOICE_NODE,
+        "similar_description",
+    )
+    assert rule["when"]["text"]["contains"] == ["REPASSE", "LIQUIDACAO", "SETTLEMENT"]
+
+
+@pytest.mark.asyncio
+async def test_one_word_is_still_stored_as_one_word(client: AsyncClient, biz_headers):
+    """A rule naming a single word must not start reading as a list, or
+    every rule written before this looks changed."""
+    await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/similar_description",
+        headers=biz_headers,
+        json={"when": {"text": {"contains": ["REPASSE"]}}},
+    )
+
+    rule = find(
+        (await client.get("/api/reconciliation/rules", headers=biz_headers)).json(),
+        INVOICE_NODE,
+        "similar_description",
+    )
+    assert rule["when"]["text"]["contains"] == "REPASSE"
+
+
+@pytest.mark.asyncio
+async def test_a_rule_naming_a_dozen_words_is_refused(client: AsyncClient, biz_headers):
+    """At some length a list stops being a rule somebody can read."""
+    resp = await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/similar_description",
+        headers=biz_headers,
+        json={"when": {"text": {"contains": [f"BANCO {n}" for n in range(15)]}}},
+    )
+    assert resp.status_code == 400
