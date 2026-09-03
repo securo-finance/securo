@@ -85,6 +85,7 @@ export default function PayeesPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [payeesToDelete, setPayeesToDelete] = useState<string[]>([])
   const prevSearchRef = useRef<string | null>(null)
+  const summaryRef = useRef<HTMLDivElement>(null)
 
   // Sync state from URL when navigating
   useEffect(() => {
@@ -131,6 +132,16 @@ export default function PayeesPage() {
     setSelectedIds(new Set())
     setLastSelectedId(null)
   }, [searchQuery, filterType, filterFavorites])
+
+  useEffect(() => {
+    if (!summaryPayee) return
+
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    summaryRef.current?.scrollIntoView({
+      behavior: prefersReducedMotion ? 'auto' : 'smooth',
+      block: 'start',
+    })
+  }, [summaryPayee])
 
   // Form state
   const [formName, setFormName] = useState('')
@@ -561,7 +572,7 @@ export default function PayeesPage() {
           were created by sync has hundreds of rows, and a panel rendered after
           the table opens below the fold, which reads as the click doing nothing. */}
       {summaryPayee && (
-        <div className="bg-card rounded-xl border border-border shadow-sm p-5 mb-4">
+        <div ref={summaryRef} className="scroll-mt-16 bg-card rounded-xl border border-border shadow-sm p-5 mb-4">
           {summaryLoading ? (
             <Skeleton className="h-24 w-full" />
           ) : summaryData ? (
