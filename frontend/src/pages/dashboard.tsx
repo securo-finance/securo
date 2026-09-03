@@ -660,14 +660,14 @@ export default function DashboardPage() {
         <div className="pb-4 mb-4 border-b border-border">
           <p className="text-xs font-semibold text-muted-foreground mb-1">{t('dashboard.availableBalance')}</p>
           {summaryLoading || accountsUnavailable ? (
-            <Skeleton className="h-11 w-40" />
+            <Skeleton className="h-9 w-40" />
           ) : (
             <>
               {/* Neutral while positive. Size and weight carry the headline;
                   colour is left to mean direction (income, expenses) and
                   exception (a negative balance), so it still says something
                   when it does appear. */}
-              <p className={`text-4xl font-bold tabular-nums leading-tight ${availableBalance < 0 ? 'text-rose-500' : 'text-foreground'}`}>
+              <p className={`text-3xl font-bold tabular-nums leading-tight ${availableBalance < 0 ? 'text-rose-500' : 'text-foreground'}`}>
                 {mask(formatCurrency(availableBalance, primaryCurrency, locale))}
               </p>
               {availableBalanceAccounts.length > 0 && (
@@ -728,10 +728,10 @@ export default function DashboardPage() {
           >
             <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center">{t('dashboard.monthlyIncome')}</p>
             {summaryLoading ? (
-              <Skeleton className="h-7 w-20" />
+              <Skeleton className="h-6 w-20" />
             ) : (
               <>
-                <p className="text-2xl font-bold tabular-nums text-emerald-600">
+                <p className="text-xl font-bold tabular-nums text-emerald-600">
                   +{mask(formatCurrency(income, primaryCurrency, locale))}
                 </p>
                 {Math.abs(projectedIncome - income) >= 0.01 && (
@@ -756,10 +756,10 @@ export default function DashboardPage() {
           >
             <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center">{t('dashboard.monthlyExpenses')}</p>
             {summaryLoading ? (
-              <Skeleton className="h-7 w-20" />
+              <Skeleton className="h-6 w-20" />
             ) : (
               <>
-                <p className="text-2xl font-bold tabular-nums text-rose-500">
+                <p className="text-xl font-bold tabular-nums text-rose-500">
                   -{mask(formatCurrency(expenses, primaryCurrency, locale))}
                 </p>
                 {Math.abs(projectedExpenses - expenses) >= 0.01 && (
@@ -817,9 +817,9 @@ export default function DashboardPage() {
                 the headline above it. It is the larger number here; colouring
                 it too pulled the eye away from available balance. */}
             {summaryLoading || accountsUnavailable ? (
-              <Skeleton className="h-7 w-24" />
+              <Skeleton className="h-6 w-24" />
             ) : (
-              <p className={`text-2xl font-bold tabular-nums ${totalBalance < 0 ? 'text-rose-500' : 'text-foreground'}`}>
+              <p className={`text-xl font-bold tabular-nums ${totalBalance < 0 ? 'text-rose-500' : 'text-foreground'}`}>
                 {mask(formatCurrency(totalBalance, primaryCurrency, locale))}
               </p>
             )}
@@ -829,10 +829,10 @@ export default function DashboardPage() {
           <div className="relative min-w-0 before:content-[''] before:hidden sm:before:block before:absolute before:-left-2.5 before:top-1.5 before:bottom-1.5 before:w-px before:bg-border">
             <p className="text-xs font-medium text-muted-foreground mb-1 min-h-[16px] flex items-center">{t('dashboard.savingsRate')}</p>
             {summaryLoading ? (
-              <Skeleton className="h-7 w-16" />
+              <Skeleton className="h-6 w-16" />
             ) : (
               <>
-                <p className={`text-2xl font-bold tabular-nums ${savingsRateColor}`}>
+                <p className={`text-xl font-bold tabular-nums ${savingsRateColor}`}>
                   {savingsRateDisplay}
                 </p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">{t('dashboard.savingsRateCaption')}</p>
