@@ -116,14 +116,21 @@ def _swap(
 
 
 async def export_policy(
-    session: AsyncSession, workspace_id: uuid.UUID
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    nodes: Optional[tuple[str, ...]] = None,
 ) -> dict[str, Any]:
-    """The matching policy this workspace runs, as a portable document."""
+    """The matching policy this workspace runs, as a portable document.
+
+    `nodes` narrows it to the sets this workspace has, so a file carries
+    what its author could actually see. Defaults to every editable set,
+    which is what a caller with no module opinion means.
+    """
     to_name, _ = await _directory(session, workspace_id)
     rows = await rules.overrides_for(session, workspace_id)
 
-    nodes = []
-    for node in rules.EDITABLE_NODES:
+    carried_nodes = []
+    for node in (nodes if nodes is not None else rules.EDITABLE_NODES):
         policy = rules.compose(node, [r for r in rows if r.node == node])
         carried = []
         for strategy in policy["strategies"]:
@@ -144,7 +151,7 @@ async def export_policy(
                     "when": when,
                 }
             )
-        nodes.append(
+        carried_nodes.append(
             {
                 "node": node,
                 "rules": carried,
@@ -158,7 +165,7 @@ async def export_policy(
         # Which shape the rules were written against, so a file from an
         # older Securo can be recognised rather than half-read.
         "policy_version": reconciliation_policy.POLICY_VERSION,
-        "nodes": nodes,
+        "nodes": carried_nodes,
     }
 
 
@@ -169,6 +176,7 @@ async def import_policy(
     payload: dict[str, Any],
     *,
     overwrite: bool = False,
+    nodes: Optional[tuple[str, ...]] = None,
 ) -> dict[str, int]:
     """Make this workspace's matching policy match the file.
 
@@ -192,8 +200,10 @@ async def import_policy(
 
     _, to_id = await _directory(session, workspace_id)
 
+    allowed = nodes if nodes is not None else rules.EDITABLE_NODES
+
     for row in existing:
-        if row.node in rules.EDITABLE_NODES:
+        if row.node in allowed:
             await session.delete(row)
     await session.flush()
 
@@ -202,7 +212,10 @@ async def import_policy(
 
     for node_data in incoming_nodes:
         node = node_data.get("node")
-        if node not in rules.EDITABLE_NODES:
+        # A file may carry a set this workspace does not have. Skipped and
+        # counted rather than written: importing it would store rules the
+        # author cannot see and cannot undo.
+        if node not in allowed:
             skipped += len(node_data.get("rules") or [])
             continue
 

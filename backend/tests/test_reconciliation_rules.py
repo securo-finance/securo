@@ -157,7 +157,7 @@ async def test_the_shipped_rules_are_visible_without_anyone_creating_them(
     assert resp.status_code == 200, resp.text
     nodes = resp.json()
 
-    assert {n["node"] for n in nodes} == {INVOICE_NODE}
+    assert {n["node"] for n in nodes} == {INVOICE_NODE, RECURRING_NODE}
     exact = find(nodes, INVOICE_NODE, "same_client_exact")
     assert exact["enabled"] is True
     assert exact["outcome"] == "link"
@@ -166,43 +166,80 @@ async def test_the_shipped_rules_are_visible_without_anyone_creating_them(
 
 
 @pytest.mark.asyncio
-async def test_a_personal_workspace_cannot_reach_any_of_this(
+async def test_a_personal_workspace_gets_its_own_set_and_not_the_other(
     client: AsyncClient, auth_headers, personal_ws
 ):
-    """Every route, not a sample: one ungated route is the whole hole.
+    """The gate is per set, because the two sets are different modules.
 
-    These rules used to be readable anywhere, because the recurring set
-    was editable here too and that set is real in a personal workspace.
-    Once it left the page, what remained decided whose money settles which
-    invoice, and a workspace without invoicing could still write, reorder
-    and import rules that could never fire: configuration accumulating for
-    a module nobody has.
-
-    404 rather than 403, matching the invoice routes: a workspace without
-    the module should not be able to tell the feature is there.
+    A workspace with recurring bills and no invoicing has real rules here:
+    whether the charge that arrived is the bill it expected. Gating the
+    whole router on invoicing hid that from exactly the people the
+    recurring matcher was written for.
     """
     personal = {**auth_headers, "X-Workspace-Id": str(personal_ws.id)}
-    fake = str(uuid.uuid4())
+
+    listing = await client.get("/api/reconciliation/rules", headers=personal)
+    assert listing.status_code == 200, listing.text
+    assert {n["node"] for n in listing.json()} == {RECURRING_NODE}
+
+    resp = await client.patch(
+        f"/api/reconciliation/rules/{RECURRING_NODE}/same_account_exact",
+        headers=personal,
+        json={"enabled": False},
+    )
+    assert resp.status_code == 200, resp.text
+
+
+@pytest.mark.asyncio
+async def test_a_personal_workspace_cannot_touch_the_invoice_set(
+    client: AsyncClient, auth_headers, personal_ws
+):
+    """Every route addressed at it, not a sample: one ungated route is the
+    whole hole. 404 rather than 403, matching the invoice routes, because
+    a workspace without the module should not learn the feature is there
+    by being told it may not use it.
+    """
+    personal = {**auth_headers, "X-Workspace-Id": str(personal_ws.id)}
     routes = [
-        ("get", "/api/reconciliation/rules", None),
-        ("get", "/api/reconciliation/rules/export", None),
-        ("post", "/api/reconciliation/rules/import", {"payload": {}, "overwrite": True}),
         ("post", "/api/reconciliation/rules", {"node": INVOICE_NODE, "name": "x",
-                                               "outcome": "link", "when": {}}),
+                                               "outcome": "link",
+                                               "when": {"amount": {"match": "exact"}}}),
         ("patch", f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact",
          {"enabled": False}),
         ("delete", f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact", None),
         ("post", f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact/reset", None),
         ("put", f"/api/reconciliation/rules/{INVOICE_NODE}/order", {"order": ["x"]}),
-        ("get", "/api/reconciliation/suggestions", None),
-        ("post", f"/api/reconciliation/suggestions/{fake}/accept", None),
-        ("post", f"/api/reconciliation/suggestions/{fake}/decline", None),
-        ("get", "/api/reconciliation/history", None),
     ]
     for method, url, body in routes:
         call = getattr(client, method)
         resp = await call(url, headers=personal, **({"json": body} if body else {}))
         assert resp.status_code == 404, f"{method.upper()} {url} -> {resp.status_code}"
+
+
+@pytest.mark.asyncio
+async def test_a_file_carrying_a_set_this_workspace_lacks_is_skipped(
+    client: AsyncClient, auth_headers, personal_ws, biz_headers
+):
+    """Importing it would store rules the author can neither see nor
+    undo."""
+    file = (
+        await client.get("/api/reconciliation/rules/export", headers=biz_headers)
+    ).json()
+    assert INVOICE_NODE in {n["node"] for n in file["nodes"]}
+
+    personal = {**auth_headers, "X-Workspace-Id": str(personal_ws.id)}
+    resp = await client.post(
+        "/api/reconciliation/rules/import",
+        headers=personal,
+        json={"payload": file, "overwrite": True},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["skipped"] > 0
+
+    listing = (
+        await client.get("/api/reconciliation/rules", headers=personal)
+    ).json()
+    assert {n["node"] for n in listing} == {RECURRING_NODE}
 
 
 @pytest.mark.asyncio
@@ -220,26 +257,54 @@ async def test_a_business_workspace_still_reaches_all_of_it(
 
 
 @pytest.mark.asyncio
-async def test_the_recurring_rules_are_not_offered(client: AsyncClient, biz_headers):
-    """They were, next to the invoice rules, and the split was the
-    confusing part rather than the rules in it: an invoice can itself be
-    recurring, so asking which of two lists a monthly retainer belongs in
-    has no answer. What is left decides whose money this is; the recurring
-    set is bookkeeping about rows we wrote ourselves."""
+async def test_the_recurring_rules_are_offered_and_editable(
+    client: AsyncClient, biz_headers
+):
+    """They were taken off the page for a while, described as bookkeeping
+    about rows we generate ourselves. That description belongs to the
+    placeholder set, not this one: this decides whether the charge that
+    arrived is the bill you told us to expect, which is a judgement about
+    your money and the personal-workspace counterpart of matching an
+    invoice."""
     listing = (
         await client.get("/api/reconciliation/rules", headers=biz_headers)
     ).json()
-    assert RECURRING_NODE not in {n["node"] for n in listing}
+    assert RECURRING_NODE in {n["node"] for n in listing}
 
-    for method, url, body in (
-        ("patch", f"/api/reconciliation/rules/{RECURRING_NODE}/same_account_exact",
-         {"enabled": False}),
-        ("delete", f"/api/reconciliation/rules/{RECURRING_NODE}/same_account_exact",
-         None),
-    ):
-        call = getattr(client, method)
-        resp = await call(url, headers=biz_headers, **({"json": body} if body else {}))
-        assert resp.status_code == 400, f"{method} {url} -> {resp.status_code}"
+    resp = await client.patch(
+        f"/api/reconciliation/rules/{RECURRING_NODE}/same_account_exact",
+        headers=biz_headers,
+        json={"when": {"date": {"before_days": 8, "after_days": 8}}},
+    )
+    assert resp.status_code == 200, resp.text
+
+    rule = find(
+        (await client.get("/api/reconciliation/rules", headers=biz_headers)).json(),
+        RECURRING_NODE,
+        "same_account_exact",
+    )
+    assert rule["when"]["date"] == {"before_days": 8, "after_days": 8}
+
+
+@pytest.mark.asyncio
+async def test_the_placeholder_set_is_still_nobody_business(
+    client: AsyncClient, biz_headers
+):
+    """That one decides whether an arriving charge is the row we wrote
+    from a schedule. Its only visible effect is a line appearing twice, so
+    it is not a lever to offer."""
+    listing = (
+        await client.get("/api/reconciliation/rules", headers=biz_headers)
+    ).json()
+    assert "reconciliation.match_placeholder" not in {n["node"] for n in listing}
+
+    resp = await client.patch(
+        "/api/reconciliation/rules/reconciliation.match_placeholder/"
+        "placeholder_same_account_exact",
+        headers=biz_headers,
+        json={"enabled": False},
+    )
+    assert resp.status_code == 404
 
 
 @pytest.mark.asyncio

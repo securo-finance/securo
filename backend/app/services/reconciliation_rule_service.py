@@ -31,37 +31,59 @@ import copy
 import re
 import uuid
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Collection, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.reconciliation import ReconciliationRule
 from app.services import reconciliation_policy
+from app.services.module_service import ModuleId
 
-#: The nodes a person is shown and may edit. One, deliberately.
+#: The nodes a person is shown and may edit, and the module each needs.
 #:
-#: `match_placeholder` and `match_recurring` are both absent, for the same
-#: reason: they decide whether an arriving charge is the same event as a
-#: row we generated ourselves. That is bookkeeping about our own
-#: duplicates, not a judgement about whose money this is, and putting it
-#: on the page offers a lever whose only visible effect is rows appearing
-#: twice in a ledger.
+#: `match_placeholder` is absent, and only it. That one decides whether an
+#: arriving charge is the row *we* generated from a schedule: bookkeeping
+#: about our own duplicates, whose only visible effect is a line appearing
+#: twice. Nobody should be offered that lever.
 #:
-#: `match_recurring` was on the page, next to invoice matching, and the
-#: split was the confusing part rather than the rules in it. **An invoice
-#: can itself be recurring**: a monthly retainer is billed on the same
-#: day every month, so "invoices" and "recurring" are not two kinds of
-#: promise anybody distinguishes when they look at their own work. Asking
-#: which of the two lists a monthly service invoice belonged in had no
-#: answer, because the honest one is *both*, and the two lists were
-#: matching against different things entirely: one against a document you
-#: issued and are owed for, the other against a row we wrote in advance
-#: because you told us to expect it.
+#: `match_recurring` was removed alongside it for a while, under the same
+#: description, and the description was wrong. It decides whether the
+#: charge that arrived is the bill you told us to expect, which is a
+#: judgement about your money and the personal-workspace counterpart of
+#: matching an invoice. Its thresholds are exactly what somebody wants to
+#: change: rent that posts anywhere between the 1st and the 8th, a gym
+#: that bills a different amount every month.
 #:
-#: So the page is about the promise a client made. The recurring set keeps
-#: running on what we ship.
-EDITABLE_NODES = (reconciliation_policy.MATCH_INVOICE["node"],)
+#: The confusion that removed it was real but came from the labels. "An
+#: invoice can itself be recurring" made "invoices" and "recurring" read
+#: as two kinds of invoice, and then no answer existed for where a monthly
+#: retainer belonged. The sets are not two kinds of thing: they are what
+#: the money is matched **against**. A document you issued and are owed
+#: for, or a bill you asked us to expect. A monthly retainer's invoice
+#: goes against the invoice; a subscription charge against the bill.
+#:
+#: Each carries the module it needs, because they are not the same
+#: feature: a workspace with recurring bills and no invoicing sees one
+#: set, one with both sees both, and one with neither never reaches the
+#: page.
+EDITABLE_NODES_BY_MODULE: dict[str, ModuleId] = {
+    reconciliation_policy.MATCH_INVOICE["node"]: ModuleId.INVOICES,
+    reconciliation_policy.MATCH_RECURRING["node"]: ModuleId.RECURRING,
+}
+
+#: Every node a rule may be written against, in the order they are shown.
+EDITABLE_NODES = tuple(EDITABLE_NODES_BY_MODULE)
+
+
+def nodes_for(enabled_modules: Collection[str]) -> tuple[str, ...]:
+    """The sets this workspace may see, in shipped order."""
+    return tuple(
+        node
+        for node, module in EDITABLE_NODES_BY_MODULE.items()
+        if module.value in enabled_modules
+    )
+
 
 #: A custom rule's id: what the workspace typed, reduced to something
 #: safe to store, compare and show. Ids are compared against shipped ones,

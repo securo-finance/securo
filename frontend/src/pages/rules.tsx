@@ -407,11 +407,12 @@ export default function RulesPage() {
   // when there is something pending. History is *audit*, visited to find
   // out what happened. Burying work inside a configuration page meant only
   // people who came to configure something ever discovered they had any.
-  // Matching is about invoices, so a workspace without that module has no
-  // queue and no history: the routes behind both answer 404 there. Two
-  // permanently empty tabs would be furniture, and asking for their
-  // contents would be asking for a 404 on every load.
-  const matching = hasModule('invoices')
+  // Matching serves two sets that belong to different modules: invoices,
+  // and the bills you told us to expect. Either one is enough to have a
+  // queue and a history worth showing; without both, the routes behind
+  // them answer 404, so two permanently empty tabs would be furniture and
+  // asking for their contents would be asking for a 404 on every load.
+  const matching = hasModule('invoices') || hasModule('recurring')
 
   // Addressable, because the queue is now linked to from elsewhere: a
   // badge on a transaction row is a promise to land on the question, and

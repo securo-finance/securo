@@ -28,7 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
-from app.core.module_gate import require_module, require_module_write
+from app.core.module_gate import require_any_module, require_any_module_write
 from app.core.workspace_context import WorkspaceContext
 from app.models.invoice import Invoice
 from app.models.reconciliation import ReconciliationRule
@@ -54,12 +54,28 @@ from app.services import (
     reconciliation_rule_service as rules,
     reconciliation_suggestion_service as suggestions,
 )
-from app.services.module_service import ModuleId
+from app.services.module_service import ModuleId, resolve_modules
 
 router = APIRouter(prefix="/api/reconciliation", tags=["reconciliation"])
 
-_read = require_module(ModuleId.INVOICES)
-_write = require_module_write(ModuleId.INVOICES)
+#: Reaching the router at all takes one of the two, because the sets it
+#: serves belong to different modules: a workspace with recurring bills
+#: and no invoicing has real rules here. Which *set* you may touch is a
+#: second question, asked per node by `_assert_node`.
+_MATCHING_MODULES = (ModuleId.INVOICES, ModuleId.RECURRING)
+_read = require_any_module(*_MATCHING_MODULES)
+_write = require_any_module_write(*_MATCHING_MODULES)
+
+
+def _assert_node(ctx: WorkspaceContext, node: str) -> None:
+    """Refuse a set this workspace does not have, the same way as a route.
+
+    404 rather than 403, matching the module gate above: a workspace
+    without invoicing should not learn that invoice matching exists by
+    being told it may not touch it.
+    """
+    if node not in rules.nodes_for(resolve_modules(ctx.workspace)):
+        raise HTTPException(status_code=404, detail="Not found")
 
 
 def _http(error: rules.RuleError) -> HTTPException:
@@ -99,7 +115,7 @@ async def list_rules(
     improve it.
     """
     out: list[ReconciliationNodeRead] = []
-    for node in rules.EDITABLE_NODES:
+    for node in rules.nodes_for(resolve_modules(ctx.workspace)):
         policy = await rules.resolve(session, ctx.workspace.id, node)
         out.append(
             ReconciliationNodeRead(
@@ -130,6 +146,7 @@ async def update_rule(
     session: AsyncSession = Depends(get_async_session),
 ):
     """Change a rule: one we ship, or one the workspace wrote."""
+    _assert_node(ctx, node)
     data = payload.model_dump(exclude_unset=True)
     position = data.pop("position", None)
     existing = await _find_custom(session, ctx.workspace.id, node, strategy_id)
@@ -171,6 +188,7 @@ async def reorder_rules(
     five* is one rule placed above another, with no lower bound written
     anywhere.
     """
+    _assert_node(ctx, node)
     try:
         await rules.reorder(
             session, ctx.workspace.id, ctx.user_id, node, payload.order
@@ -194,6 +212,7 @@ async def create_rule(
     ctx: WorkspaceContext = Depends(_write),
     session: AsyncSession = Depends(get_async_session),
 ):
+    _assert_node(ctx, payload.node)
     try:
         row = await rules.create_custom(
             session,
@@ -230,6 +249,7 @@ async def delete_rule(
     in the image, so a tombstone records that this workspace does not run
     it, but that is our problem, not something to make a person learn.
     """
+    _assert_node(ctx, node)
     try:
         await rules.delete_rule(session, ctx.workspace.id, node, strategy_id)
     except rules.RuleError as exc:
@@ -251,6 +271,7 @@ async def reset_rule(
     somebody deleted all go back together. What comes back is whatever we
     ship *today*, not what shipped the day it was changed.
     """
+    _assert_node(ctx, node)
     await rules.reset(session, ctx.workspace.id, node, strategy_id)
     await session.commit()
 
@@ -264,7 +285,9 @@ async def export_rules(
     session: AsyncSession = Depends(get_async_session),
 ):
     """The matching policy as a file, with ids resolved to names."""
-    payload = await portability.export_policy(session, ctx.workspace.id)
+    payload = await portability.export_policy(
+        session, ctx.workspace.id, rules.nodes_for(resolve_modules(ctx.workspace))
+    )
     return JSONResponse(
         content=payload,
         headers={
@@ -286,6 +309,7 @@ async def import_rules(
             ctx.user_id,
             data.payload,
             overwrite=data.overwrite,
+            nodes=rules.nodes_for(resolve_modules(ctx.workspace)),
         )
     except rules.ExistingPolicyError as exc:
         # 409 rather than 400: nothing is wrong with the file, and the
