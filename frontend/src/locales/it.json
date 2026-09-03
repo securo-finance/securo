@@ -491,6 +491,8 @@
     "monthlyIncome": "Entrate mensili",
     "monthlyExpenses": "Spese mensili",
     "projectedBalance": "Saldo previsto",
+    "projectedIncome": "Entrate previste",
+    "projectedExpenses": "Spese previste",
     "pendingCategorization": "Senza categoria",
     "recentTransactions": "Transazioni recenti",
     "periodTransactions": "Transazioni del periodo",

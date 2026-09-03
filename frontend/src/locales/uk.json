@@ -491,6 +491,8 @@
     "monthlyIncome": "Щомісячний дохід",
     "monthlyExpenses": "Щомісячні витрати",
     "projectedBalance": "Прогнозований баланс",
+    "projectedIncome": "Прогнозований дохід",
+    "projectedExpenses": "Прогнозовані витрати",
     "pendingCategorization": "Без категорії",
     "recentTransactions": "Останні транзакції",
     "periodTransactions": "Транзакції за період",

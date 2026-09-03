@@ -421,6 +421,11 @@ export default function DashboardPage() {
   // Savings rate & projection
   const income = Number(summary?.monthly_income_primary ?? summary?.monthly_income ?? 0)
   const expenses = Number(summary?.monthly_expenses_primary ?? summary?.monthly_expenses ?? 0)
+  // What the month is still expected to close at, once recurring entries that
+  // have not posted yet are counted. Rendered only when it differs from the
+  // realised figure, so a month with nothing pending stays quiet.
+  const projectedIncome = Number(summary?.projected_income_primary ?? summary?.projected_income ?? income)
+  const projectedExpenses = Number(summary?.projected_expenses_primary ?? summary?.projected_expenses ?? expenses)
   const savingsRate = income > 0 ? ((income - expenses) / income) * 100 : 0
   const isCurrentMonth = selectedMonth === currentMonth()
   const daysElapsed = isCurrentMonth ? new Date().getDate() : monthLastDay(selectedMonth)
@@ -725,9 +730,16 @@ export default function DashboardPage() {
             {summaryLoading ? (
               <Skeleton className="h-7 w-20" />
             ) : (
-              <p className="text-2xl font-bold tabular-nums text-emerald-600">
-                +{mask(formatCurrency(income, primaryCurrency, locale))}
-              </p>
+              <>
+                <p className="text-2xl font-bold tabular-nums text-emerald-600">
+                  +{mask(formatCurrency(income, primaryCurrency, locale))}
+                </p>
+                {Math.abs(projectedIncome - income) >= 0.01 && (
+                  <p className="text-xs text-muted-foreground tabular-nums mt-1">
+                    {t('dashboard.projectedIncome')} {mask(formatCurrency(projectedIncome, primaryCurrency, locale))}
+                  </p>
+                )}
+              </>
             )}
           </button>
 
@@ -746,9 +758,16 @@ export default function DashboardPage() {
             {summaryLoading ? (
               <Skeleton className="h-7 w-20" />
             ) : (
-              <p className="text-2xl font-bold tabular-nums text-rose-500">
-                -{mask(formatCurrency(expenses, primaryCurrency, locale))}
-              </p>
+              <>
+                <p className="text-2xl font-bold tabular-nums text-rose-500">
+                  -{mask(formatCurrency(expenses, primaryCurrency, locale))}
+                </p>
+                {Math.abs(projectedExpenses - expenses) >= 0.01 && (
+                  <p className="text-xs text-muted-foreground tabular-nums mt-1">
+                    {t('dashboard.projectedExpenses')} {mask(formatCurrency(projectedExpenses, primaryCurrency, locale))}
+                  </p>
+                )}
+              </>
             )}
           </button>
 

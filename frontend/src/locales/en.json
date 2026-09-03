@@ -491,6 +491,8 @@
     "monthlyIncome": "Monthly Income",
     "monthlyExpenses": "Monthly Expenses",
     "projectedBalance": "Projected Balance",
+    "projectedIncome": "Projected Income",
+    "projectedExpenses": "Projected Expenses",
     "pendingCategorization": "Uncategorized",
     "recentTransactions": "Recent Transactions",
     "periodTransactions": "Period Transactions",

@@ -491,6 +491,8 @@
     "monthlyIncome": "Μηνιαία έσοδα",
     "monthlyExpenses": "Μηνιαία έξοδα",
     "projectedBalance": "Προβλεπόμενο υπόλοιπο",
+    "projectedIncome": "Προβλεπόμενα έσοδα",
+    "projectedExpenses": "Προβλεπόμενα έξοδα",
     "pendingCategorization": "Χωρίς κατηγορία",
     "recentTransactions": "Πρόσφατες συναλλαγές",
     "periodTransactions": "Συναλλαγές περιόδου",

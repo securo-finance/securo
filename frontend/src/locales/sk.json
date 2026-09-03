@@ -491,6 +491,8 @@
     "monthlyIncome": "Mesačný príjem",
     "monthlyExpenses": "Mesačné výdavky",
     "projectedBalance": "Očakávaný zostatok",
+    "projectedIncome": "Očakávaný príjem",
+    "projectedExpenses": "Očakávané výdavky",
     "pendingCategorization": "Bez kategórie",
     "recentTransactions": "Nedávne transakcie",
     "periodTransactions": "Transakcie za obdobie",

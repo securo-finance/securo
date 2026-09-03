@@ -491,6 +491,8 @@
     "monthlyIncome": "Maandelijks inkomen",
     "monthlyExpenses": "Maandelijkse uitgaven",
     "projectedBalance": "Geprojecteerd saldo",
+    "projectedIncome": "Geprojecteerd inkomen",
+    "projectedExpenses": "Geprojecteerde uitgaven",
     "pendingCategorization": "Niet gecategoriseerd",
     "recentTransactions": "Recente transacties",
     "periodTransactions": "Periodieke transacties",

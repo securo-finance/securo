@@ -491,6 +491,8 @@
     "monthlyIncome": "Ingresos mensuales",
     "monthlyExpenses": "Gastos mensuales",
     "projectedBalance": "Saldo proyectado",
+    "projectedIncome": "Ingresos proyectados",
+    "projectedExpenses": "Gastos proyectados",
     "pendingCategorization": "Sin categorizar",
     "recentTransactions": "Transacciones recientes",
     "periodTransactions": "Transacciones del periodo",
