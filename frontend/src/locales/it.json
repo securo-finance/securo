@@ -2261,27 +2261,27 @@
   "reconciliation": {
     "node": {
       "invoices": "Fatture",
-      "invoicesHint": "rispetto alle fatture che hai emesso",
-      "recurring": "Spese ricorrenti",
-      "recurringHint": "rispetto alle spese che già aspettavi",
+      "invoicesHint": "rispetto a ciò che devi incassare e pagare",
+      "recurring": "Ricorrenti",
+      "recurringHint": "rispetto a ciò che già ti aspettavi",
       "inactive": "Non usata qui"
     },
     "rule": {
-      "sameClientExact": "Cliente noto, importo esatto",
-      "netOfWithholding": "Cliente noto, pagato al netto della ritenuta",
-      "exactAmountAnyClient": "Importo esatto, qualsiasi pagatore",
+      "sameClientExact": "Persona conosciuta, importo esatto",
+      "netOfWithholding": "Persona conosciuta, pagato con ritenuta",
+      "exactAmountAnyClient": "Importo esatto, chiunque",
       "similarDescription": "Importo vicino e descrizione simile",
       "sameAccountExact": "Stesso conto, importo esatto",
       "unknown": "Regola",
-      "partPayment": "Cliente noto, parte di quanto deve",
-      "severalInvoices": "Cliente noto, più fatture insieme"
+      "partPayment": "Persona conosciuta, parte dell'importo",
+      "severalInvoices": "Persona conosciuta, più fatture insieme"
     },
     "outcome": {
       "link": "Collega da sola",
       "suggest": "Suggerisce"
     },
     "cond": {
-      "samePayee": "chi paga è un cliente noto",
+      "samePayee": "la persona è quella della fattura",
       "sameAccount": "lo stesso conto",
       "amountExact": "l'importo corrisponde esattamente",
       "amountTolerance": "l'importo rientra nel {{percent}}%",
@@ -2299,7 +2299,7 @@
       "atMost": "fino a {{value}}",
       "textContains": "l'estratto dice “{{text}}”",
       "textExcludes": "l'estratto non dice “{{text}}”",
-      "onArrival": "quando arriva il denaro",
+      "onArrival": "quando il denaro entra o esce",
       "onIssue": "quando si emette una fattura",
       "amountPartial": "l'importo copre parte di quanto è dovuto",
       "amountSet": "fino a {{count}} fatture danno quella somma"
@@ -2312,10 +2312,10 @@
     "yours": "Tua",
     "field": {
       "name": "Nome",
-      "namePlaceholder": "es.: Cliente noto, importo vicino",
+      "namePlaceholder": "es.: Persona conosciuta, importo vicino",
       "outcome": "Cosa fare quando corrisponde",
       "outcomeHint": "Collega salda da sola. Suggerisci la manda nell'elenco qui sotto perché tu la confermi.",
-      "counterparty": "Chi ha pagato",
+      "counterparty": "Chi ha pagato o incassato",
       "amount": "Importo",
       "window": "Distanza consentita tra le date",
       "windowHint": "Il ritardo si conta dalla scadenza, l'anticipo dal giorno in cui la fattura è stata emessa: pagare il giorno dopo l'emissione non è settimane in anticipo.",
@@ -2328,8 +2328,8 @@
       "scopeHint": "Lascia vuoto per applicarla a tutto",
       "accounts": "Conti bancari",
       "anyAccount": "Qualsiasi conto",
-      "payees": "Clienti",
-      "anyPayee": "Qualsiasi cliente",
+      "payees": "Persone",
+      "anyPayee": "Chiunque",
       "direction": "Entrata o uscita",
       "currencyScope": "Solo in queste valute",
       "currencyPlaceholder": "es.: USD, EUR",
@@ -2349,7 +2349,7 @@
     },
     "counterparty": {
       "any": "Chiunque",
-      "samePayee": "Il cliente della fattura"
+      "samePayee": "La persona della fattura"
     },
     "amount": {
       "exact": "Esattamente l'importo dovuto",
@@ -2357,12 +2357,12 @@
       "ratio": "Al netto della ritenuta d'acconto",
       "ratioHint": "Usa le aliquote di ritenuta del tuo paese. Finché non ci sono, la regola non corrisponde a nulla.",
       "partial": "Parte di quanto è dovuto",
-      "partialHint": "Per clienti che pagano a rate. Il resto resta aperto, e il pagamento successivo combacia esattamente.",
+      "partialHint": "Per chi paga a rate. Ciò che resta rimane aperto, e il pagamento successivo combacia esatto.",
       "set": "Più fatture sommate",
       "setHint": "Per un pagamento che copre più di una fattura. Se più di una combinazione torna, chiediamo invece di scegliere.",
       "setMax": "Al massimo queste fatture",
       "setFee": "Ammetti una commissione del",
-      "setFeeHint": "Una quota del valore delle fatture, per un accredito che arriva al netto. Zero significa che il totale deve essere esatto."
+      "setFeeHint": "Una quota del valore delle fatture, per un pagamento che si muove al netto di una commissione. Zero significa che il totale deve essere esatto."
     },
     "queue": {
       "title": "In attesa di te",
@@ -2379,9 +2379,9 @@
     },
     "evidence": {
       "amountExact": "l'importo corrisponde esattamente",
-      "amountOff": "atteso {{expected}}, ricevuto {{moved}}",
-      "knownPayer": "pagatore noto",
-      "unknownPayer": "pagatore non identificato",
+      "amountOff": "atteso {{expected}}, movimentato {{moved}}",
+      "knownPayer": "persona conosciuta",
+      "unknownPayer": "persona non identificata",
       "sameDay": "stesso giorno",
       "daysApart": "{{days}} giorni di differenza"
     },
@@ -2398,10 +2398,10 @@
       "matchHint": "Quanto devono combaciare il pagamento e la promessa"
     },
     "trigger": {
-      "money_arrives": "Quando arriva il denaro",
-      "money_arrivesHint": "Entra un pagamento e cerchiamo la fattura che salda.",
+      "money_arrives": "Quando il denaro entra o esce",
+      "money_arrivesHint": "Il pagamento compare nell'estratto conto e cerchiamo la fattura che salda.",
       "invoice_issued": "Quando si emette una fattura",
-      "invoice_issuedHint": "Il cliente ha pagato prima e la fattura è arrivata dopo: guardiamo indietro, al denaro già presente.",
+      "invoice_issuedHint": "Il pagamento è arrivato prima e la fattura dopo, quindi guardiamo indietro, al denaro che era già lì.",
       "both": "In entrambi i momenti",
       "bothHint": "La regola vale in tutti e due i versi."
     },
@@ -2425,10 +2425,10 @@
     "moveUp": "Provare questa prima",
     "moveDown": "Provare questa dopo",
     "matchingTitle": "Regole di riconciliazione",
-    "matchingHint": "Come il denaro che entra viene legato alle fatture.",
+    "matchingHint": "Come ogni pagamento viene legato a ciò che salda.",
     "pair": {
       "owed": "Quanto è dovuto",
-      "arrived": "Quanto è arrivato",
+      "arrived": "Ciò che si è mosso",
       "draftInvoice": "Fattura in bozza",
       "recurringBill": "Spesa ricorrente",
       "noMoney": "Nessuna transazione qui.",

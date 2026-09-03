@@ -2261,27 +2261,27 @@
   "reconciliation": {
     "node": {
       "invoices": "Facturas",
-      "invoicesHint": "contra las facturas que emitiste",
-      "recurring": "Gastos recurrentes",
-      "recurringHint": "contra los cargos que ya esperabas",
+      "invoicesHint": "contra lo que tienes que cobrar y pagar",
+      "recurring": "Recurrentes",
+      "recurringHint": "contra lo que ya esperabas",
       "inactive": "No se usa aquí"
     },
     "rule": {
-      "sameClientExact": "Cliente conocido, importe exacto",
-      "netOfWithholding": "Cliente conocido, pagado con retención",
-      "exactAmountAnyClient": "Importe exacto, cualquier pagador",
+      "sameClientExact": "Persona conocida, importe exacto",
+      "netOfWithholding": "Persona conocida, pagado con retención",
+      "exactAmountAnyClient": "Importe exacto, cualquier persona",
       "similarDescription": "Importe cercano y descripción parecida",
       "sameAccountExact": "Misma cuenta, importe exacto",
       "unknown": "Regla",
-      "partPayment": "Cliente conocido, parte de lo que debe",
-      "severalInvoices": "Cliente conocido, varias facturas a la vez"
+      "partPayment": "Persona conocida, parte del importe",
+      "severalInvoices": "Persona conocida, varias facturas a la vez"
     },
     "outcome": {
       "link": "Vincula solo",
       "suggest": "Sugiere"
     },
     "cond": {
-      "samePayee": "el pagador es un cliente conocido",
+      "samePayee": "la persona es la misma de la factura",
       "sameAccount": "la misma cuenta",
       "amountExact": "el importe coincide exactamente",
       "amountTolerance": "el importe está dentro del {{percent}}%",
@@ -2299,7 +2299,7 @@
       "atMost": "hasta {{value}}",
       "textContains": "el extracto dice “{{text}}”",
       "textExcludes": "el extracto no dice “{{text}}”",
-      "onArrival": "cuando llega el dinero",
+      "onArrival": "cuando el dinero entra o sale",
       "onIssue": "cuando se emite una factura",
       "amountPartial": "el importe cubre parte de lo que se debe",
       "amountSet": "hasta {{count}} facturas suman ese importe"
@@ -2312,10 +2312,10 @@
     "yours": "Tuya",
     "field": {
       "name": "Nombre",
-      "namePlaceholder": "p. ej.: Cliente conocido, importe cercano",
+      "namePlaceholder": "ej.: Persona conocida, importe cercano",
       "outcome": "Qué hacer cuando coincide",
       "outcomeHint": "Vincular salda por su cuenta. Sugerir lo envía a la lista de abajo para que lo confirmes.",
-      "counterparty": "Quién pagó",
+      "counterparty": "Quién pagó o cobró",
       "amount": "Importe",
       "window": "Distancia permitida entre las fechas",
       "windowHint": "El retraso se cuenta desde el vencimiento; la anticipación, desde el día en que se emitió la factura, así pagar al día siguiente no parece semanas antes.",
@@ -2328,8 +2328,8 @@
       "scopeHint": "Déjalo vacío para que valga para todo",
       "accounts": "Cuentas bancarias",
       "anyAccount": "Cualquier cuenta",
-      "payees": "Clientes",
-      "anyPayee": "Cualquier cliente",
+      "payees": "Personas",
+      "anyPayee": "Cualquier persona",
       "direction": "Entrada o salida",
       "currencyScope": "Solo en estas monedas",
       "currencyPlaceholder": "p. ej.: USD, EUR",
@@ -2349,7 +2349,7 @@
     },
     "counterparty": {
       "any": "Cualquiera",
-      "samePayee": "El cliente de la factura"
+      "samePayee": "La persona de la factura"
     },
     "amount": {
       "exact": "Exactamente el importe adeudado",
@@ -2357,12 +2357,12 @@
       "ratio": "Descontada la retención fiscal",
       "ratioHint": "Usa los tipos de retención de tu país. Mientras no existan, la regla no coincide con nada.",
       "partial": "Parte de lo que se debe",
-      "partialHint": "Para clientes que pagan a plazos. Lo que queda sigue abierto, y el siguiente pago coincide exacto.",
+      "partialHint": "Para quien paga a plazos. Lo que queda sigue abierto, y el siguiente pago cuadra exacto.",
       "set": "Varias facturas sumadas",
       "setHint": "Para un pago que cubre más de una factura. Si más de una combinación cuadra, preguntamos en vez de elegir.",
       "setMax": "Como mucho estas facturas",
       "setFee": "Admitir una comisión de",
-      "setFeeHint": "Una parte del valor de las facturas, para un pago que llega neto. Cero significa que el total debe ser exacto."
+      "setFeeHint": "Una parte del valor de las facturas, para un pago que se mueve neto de comisión. Cero significa que el total debe ser exacto."
     },
     "queue": {
       "title": "Esperándote",
@@ -2379,9 +2379,9 @@
     },
     "evidence": {
       "amountExact": "el importe coincide exactamente",
-      "amountOff": "esperado {{expected}}, recibido {{moved}}",
-      "knownPayer": "pagador conocido",
-      "unknownPayer": "pagador sin identificar",
+      "amountOff": "esperado {{expected}}, movido {{moved}}",
+      "knownPayer": "persona conocida",
+      "unknownPayer": "persona no identificada",
       "sameDay": "mismo día",
       "daysApart": "{{days}} días de diferencia"
     },
@@ -2398,10 +2398,10 @@
       "matchHint": "Cuán cerca deben estar el pago y la promesa"
     },
     "trigger": {
-      "money_arrives": "Cuando llega el dinero",
-      "money_arrivesHint": "Entra un pago y buscamos la factura que salda.",
+      "money_arrives": "Cuando el dinero entra o sale",
+      "money_arrivesHint": "El pago aparece en el extracto y buscamos la factura que salda.",
       "invoice_issued": "Cuando se emite una factura",
-      "invoice_issuedHint": "El cliente pagó antes y la factura vino después: miramos hacia atrás, al dinero que ya estaba.",
+      "invoice_issuedHint": "El pago llegó antes y la factura después, así que miramos atrás, al dinero que ya estaba ahí.",
       "both": "En ambos momentos",
       "bothHint": "La regla vale en los dos sentidos."
     },
@@ -2425,10 +2425,10 @@
     "moveUp": "Probar esta antes",
     "moveDown": "Probar esta después",
     "matchingTitle": "Reglas de conciliación",
-    "matchingHint": "Cómo el dinero que entra se vincula a las facturas.",
+    "matchingHint": "Cómo cada pago se vincula a lo que salda.",
     "pair": {
       "owed": "Lo que se debe",
-      "arrived": "Lo que llegó",
+      "arrived": "Lo que se movió",
       "draftInvoice": "Factura en borrador",
       "recurringBill": "Cuenta recurrente",
       "noMoney": "Sin transacción en esta.",

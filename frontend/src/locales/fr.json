@@ -2261,27 +2261,27 @@
   "reconciliation": {
     "node": {
       "invoices": "Factures",
-      "invoicesHint": "face aux factures que vous avez émises",
-      "recurring": "Charges récurrentes",
-      "recurringHint": "face aux charges que vous attendiez déjà",
+      "invoicesHint": "face à ce que vous avez à encaisser et à payer",
+      "recurring": "Récurrents",
+      "recurringHint": "face à ce que vous attendiez déjà",
       "inactive": "Non utilisée ici"
     },
     "rule": {
-      "sameClientExact": "Client connu, montant exact",
-      "netOfWithholding": "Client connu, payé net de retenue",
-      "exactAmountAnyClient": "Montant exact, n'importe quel payeur",
+      "sameClientExact": "Personne connue, montant exact",
+      "netOfWithholding": "Personne connue, payé net de retenue",
+      "exactAmountAnyClient": "Montant exact, n'importe qui",
       "similarDescription": "Montant proche et libellé semblable",
       "sameAccountExact": "Même compte, montant exact",
       "unknown": "Règle",
-      "partPayment": "Client connu, une partie de ce qu'il doit",
-      "severalInvoices": "Client connu, plusieurs factures à la fois"
+      "partPayment": "Personne connue, une partie du montant",
+      "severalInvoices": "Personne connue, plusieurs factures à la fois"
     },
     "outcome": {
       "link": "Rattache seule",
       "suggest": "Propose"
     },
     "cond": {
-      "samePayee": "le payeur est un client connu",
+      "samePayee": "la personne est celle de la facture",
       "sameAccount": "le même compte",
       "amountExact": "le montant correspond exactement",
       "amountTolerance": "le montant est à {{percent}}% près",
@@ -2299,7 +2299,7 @@
       "atMost": "jusqu'à {{value}}",
       "textContains": "le relevé indique « {{text}} »",
       "textExcludes": "le relevé n'indique pas « {{text}} »",
-      "onArrival": "quand l'argent arrive",
+      "onArrival": "quand l'argent entre ou sort",
       "onIssue": "quand une facture est émise",
       "amountPartial": "le montant couvre une partie de ce qui est dû",
       "amountSet": "jusqu'à {{count}} factures en font le total"
@@ -2312,10 +2312,10 @@
     "yours": "La vôtre",
     "field": {
       "name": "Nom",
-      "namePlaceholder": "ex. : Client connu, montant proche",
+      "namePlaceholder": "ex. : Personne connue, montant proche",
       "outcome": "Ce qu'elle fait quand elle correspond",
       "outcomeHint": "Rattacher règle tout seul. Proposer l'envoie dans la liste ci-dessous, pour que vous confirmiez.",
-      "counterparty": "Qui a payé",
+      "counterparty": "Qui a payé ou été payé",
       "amount": "Montant",
       "window": "Écart autorisé entre les dates",
       "windowHint": "Le retard se compte depuis l'échéance, l'avance depuis le jour d'émission de la facture : payer le lendemain de l'émission n'est pas des semaines en avance.",
@@ -2328,8 +2328,8 @@
       "scopeHint": "Laissez vide pour tout couvrir",
       "accounts": "Comptes bancaires",
       "anyAccount": "N'importe quel compte",
-      "payees": "Clients",
-      "anyPayee": "N'importe quel client",
+      "payees": "Personnes",
+      "anyPayee": "N'importe qui",
       "direction": "Entrée ou sortie",
       "currencyScope": "Uniquement ces devises",
       "currencyPlaceholder": "ex. : USD, EUR",
@@ -2349,7 +2349,7 @@
     },
     "counterparty": {
       "any": "N'importe qui",
-      "samePayee": "Le client de la facture"
+      "samePayee": "La personne de la facture"
     },
     "amount": {
       "exact": "Exactement le montant dû",
@@ -2357,12 +2357,12 @@
       "ratio": "Net de retenue à la source",
       "ratioHint": "Utilise les taux de retenue de votre pays. Tant qu'il n'y en a pas, la règle ne correspond à rien.",
       "partial": "Une partie de ce qui est dû",
-      "partialHint": "Pour les clients qui paient en plusieurs fois. Le reste demeure ouvert, et le paiement suivant correspond exactement.",
+      "partialHint": "Pour qui paie en plusieurs fois. Ce qui reste demeure ouvert, et le paiement suivant tombe juste.",
       "set": "Plusieurs factures additionnées",
       "setHint": "Pour un paiement qui couvre plus d'une facture. Si plusieurs combinaisons tombent juste, nous demandons plutôt que de choisir.",
       "setMax": "Au plus ce nombre de factures",
       "setFee": "Admettre des frais de",
-      "setFeeHint": "Une part de la valeur des factures, pour un versement qui arrive net. Zéro signifie que le total doit être exact."
+      "setFeeHint": "Une part de la valeur des factures, pour un paiement qui circule net de commission. Zéro signifie que le total doit être exact."
     },
     "queue": {
       "title": "En attente de vous",
@@ -2379,9 +2379,9 @@
     },
     "evidence": {
       "amountExact": "le montant correspond exactement",
-      "amountOff": "attendu {{expected}}, reçu {{moved}}",
-      "knownPayer": "payeur connu",
-      "unknownPayer": "payeur non identifié",
+      "amountOff": "attendu {{expected}}, mouvementé {{moved}}",
+      "knownPayer": "personne connue",
+      "unknownPayer": "personne non identifiée",
       "sameDay": "même jour",
       "daysApart": "{{days}} jours d'écart"
     },
@@ -2398,10 +2398,10 @@
       "matchHint": "À quel point le paiement et la promesse doivent correspondre"
     },
     "trigger": {
-      "money_arrives": "Quand l'argent arrive",
-      "money_arrivesHint": "Un paiement tombe et nous cherchons la facture qu'il règle.",
+      "money_arrives": "Quand l'argent entre ou sort",
+      "money_arrivesHint": "Le paiement apparaît sur le relevé et nous cherchons la facture qu'il solde.",
       "invoice_issued": "Quand une facture est émise",
-      "invoice_issuedHint": "Le client a payé d'abord, la facture suit, alors nous regardons en arrière, vers l'argent déjà là.",
+      "invoice_issuedHint": "Le paiement est arrivé avant et la facture après, alors nous regardons en arrière, vers l'argent déjà là.",
       "both": "Aux deux moments",
       "bothHint": "La règle vaut dans les deux sens."
     },
@@ -2425,10 +2425,10 @@
     "moveUp": "Essayer celle-ci plus tôt",
     "moveDown": "Essayer celle-ci plus tard",
     "matchingTitle": "Règles de rapprochement",
-    "matchingHint": "Comment l'argent qui arrive est rattaché aux factures.",
+    "matchingHint": "Comment chaque paiement est rattaché à ce qu'il solde.",
     "pair": {
       "owed": "Ce qui est dû",
-      "arrived": "Ce qui est arrivé",
+      "arrived": "Ce qui a bougé",
       "draftInvoice": "Facture en brouillon",
       "recurringBill": "Dépense récurrente",
       "noMoney": "Aucune opération ici.",

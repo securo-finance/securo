@@ -2262,27 +2262,27 @@
   "reconciliation": {
     "node": {
       "invoices": "Facturen",
-      "invoicesHint": "tegen de facturen die je hebt verstuurd",
-      "recurring": "Terugkerende kosten",
-      "recurringHint": "tegen de kosten die je al verwachtte",
+      "invoicesHint": "tegenover wat je moet ontvangen en betalen",
+      "recurring": "Terugkerend",
+      "recurringHint": "tegenover wat je al verwachtte",
       "inactive": "Hier niet in gebruik"
     },
     "rule": {
-      "sameClientExact": "Bekende klant, exact bedrag",
-      "netOfWithholding": "Bekende klant, betaald na inhouding",
-      "exactAmountAnyClient": "Exact bedrag, willekeurige betaler",
+      "sameClientExact": "Bekende persoon, exact bedrag",
+      "netOfWithholding": "Bekende persoon, betaald na inhouding",
+      "exactAmountAnyClient": "Exact bedrag, iedereen",
       "similarDescription": "Vergelijkbaar bedrag en gelijkende omschrijving",
       "sameAccountExact": "Zelfde rekening, exact bedrag",
       "unknown": "Regel",
-      "partPayment": "Bekende klant, een deel van wat hij openstaat",
-      "severalInvoices": "Bekende klant, meerdere facturen tegelijk"
+      "partPayment": "Bekende persoon, deel van het bedrag",
+      "severalInvoices": "Bekende persoon, meerdere facturen tegelijk"
     },
     "outcome": {
       "link": "Koppelt zelf",
       "suggest": "Stelt voor"
     },
     "cond": {
-      "samePayee": "de betaler is een bekende klant",
+      "samePayee": "de persoon is die van de factuur",
       "sameAccount": "dezelfde rekening",
       "amountExact": "het bedrag klopt precies",
       "amountTolerance": "het bedrag valt binnen {{percent}}%",
@@ -2300,7 +2300,7 @@
       "atMost": "tot {{value}}",
       "textContains": "het afschrift zegt “{{text}}”",
       "textExcludes": "het afschrift zegt niet “{{text}}”",
-      "onArrival": "wanneer geld binnenkomt",
+      "onArrival": "wanneer geld binnenkomt of weggaat",
       "onIssue": "wanneer een factuur wordt opgesteld",
       "amountPartial": "het bedrag dekt een deel van wat openstaat",
       "amountSet": "tot {{count}} facturen tellen op tot dat bedrag"
@@ -2313,10 +2313,10 @@
     "yours": "Van jou",
     "field": {
       "name": "Naam",
-      "namePlaceholder": "bijv.: Bekende klant, bedrag dichtbij",
+      "namePlaceholder": "bijv. Bekende persoon, bedrag dichtbij",
       "outcome": "Wat er gebeurt als hij past",
       "outcomeHint": "Koppelen boekt vanzelf. Voorstellen zet het in de lijst hieronder, zodat jij het bevestigt.",
-      "counterparty": "Wie betaalde",
+      "counterparty": "Wie betaalde of ontving",
       "amount": "Bedrag",
       "window": "Toegestaan verschil tussen de datums",
       "windowHint": "Te laat telt vanaf de vervaldatum, te vroeg vanaf de dag dat de factuur is opgesteld, dus de dag na uitgifte betalen is niet weken te vroeg.",
@@ -2329,8 +2329,8 @@
       "scopeHint": "Laat leeg om voor alles te gelden",
       "accounts": "Bankrekeningen",
       "anyAccount": "Elke rekening",
-      "payees": "Klanten",
-      "anyPayee": "Elke klant",
+      "payees": "Personen",
+      "anyPayee": "Iedereen",
       "direction": "Inkomend of uitgaand",
       "currencyScope": "Alleen in deze valuta",
       "currencyPlaceholder": "bijv. USD, EUR",
@@ -2350,7 +2350,7 @@
     },
     "counterparty": {
       "any": "Iedereen",
-      "samePayee": "De klant op de factuur"
+      "samePayee": "De persoon op de factuur"
     },
     "amount": {
       "exact": "Precies het openstaande bedrag",
@@ -2358,12 +2358,12 @@
       "ratio": "Na inhouding van bronbelasting",
       "ratioHint": "Gebruikt de inhoudingspercentages van jouw land. Zolang die er niet zijn, matcht de regel niets.",
       "partial": "Een deel van wat openstaat",
-      "partialHint": "Voor klanten die in delen betalen. De rest blijft open, en de volgende betaling klopt precies.",
+      "partialHint": "Voor wie in termijnen betaalt. Wat overblijft staat nog open, en de volgende betaling klopt precies.",
       "set": "Meerdere facturen bij elkaar",
       "setHint": "Voor een betaling die meer dan één factuur dekt. Passen er meerdere combinaties, dan vragen we het in plaats van te kiezen.",
       "setMax": "Hoogstens zoveel facturen",
       "setFee": "Sta een kosten toe van",
-      "setFeeHint": "Een deel van de waarde van de facturen, voor een uitbetaling die netto binnenkomt. Nul betekent dat het totaal exact moet kloppen."
+      "setFeeHint": "Een deel van de factuurwaarde, voor een betaling die netto na aftrek loopt. Nul betekent dat het totaal exact moet zijn."
     },
     "queue": {
       "title": "Wacht op jou",
@@ -2380,9 +2380,9 @@
     },
     "evidence": {
       "amountExact": "bedrag klopt precies",
-      "amountOff": "verwacht {{expected}}, ontvangen {{moved}}",
-      "knownPayer": "bekende betaler",
-      "unknownPayer": "betaler niet herkend",
+      "amountOff": "verwacht {{expected}}, bewogen {{moved}}",
+      "knownPayer": "bekende persoon",
+      "unknownPayer": "persoon niet herkend",
       "sameDay": "zelfde dag",
       "daysApart": "{{days}} dagen verschil"
     },
@@ -2399,10 +2399,10 @@
       "matchHint": "Hoe nauw de betaling en de belofte moeten passen"
     },
     "trigger": {
-      "money_arrives": "Wanneer geld binnenkomt",
-      "money_arrivesHint": "Een betaling komt binnen en we zoeken de factuur die hij voldoet.",
+      "money_arrives": "Wanneer geld binnenkomt of weggaat",
+      "money_arrivesHint": "De betaling verschijnt op het afschrift en wij zoeken de factuur die ze afrekent.",
       "invoice_issued": "Wanneer een factuur wordt opgesteld",
-      "invoice_issuedHint": "De klant betaalde eerst en de factuur volgt, dus kijken we terug naar geld dat er al was.",
+      "invoice_issuedHint": "De betaling kwam eerst en de factuur daarna, dus kijken we terug naar geld dat er al was.",
       "both": "Op beide momenten",
       "bothHint": "De regel geldt beide kanten op."
     },
@@ -2426,10 +2426,10 @@
     "moveUp": "Deze eerder proberen",
     "moveDown": "Deze later proberen",
     "matchingTitle": "Afletterregels",
-    "matchingHint": "Hoe binnenkomend geld aan de facturen wordt gekoppeld.",
+    "matchingHint": "Hoe elke betaling wordt gekoppeld aan wat ze afrekent.",
     "pair": {
       "owed": "Wat openstaat",
-      "arrived": "Wat binnenkwam",
+      "arrived": "Wat er bewoog",
       "draftInvoice": "Conceptfactuur",
       "recurringBill": "Terugkerende rekening",
       "noMoney": "Geen transactie hierbij.",

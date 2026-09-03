@@ -2396,27 +2396,27 @@
   "reconciliation": {
     "node": {
       "invoices": "Faktúry",
-      "invoicesHint": "voči faktúram, ktoré ste vystavili",
-      "recurring": "Opakované náklady",
-      "recurringHint": "voči nákladom, ktoré ste už čakali",
+      "invoicesHint": "voči tomu, čo máte dostať a čo zaplatiť",
+      "recurring": "Opakované",
+      "recurringHint": "voči tomu, čo ste už čakali",
       "inactive": "Tu sa nepoužíva"
     },
     "rule": {
-      "sameClientExact": "Známy klient, presná suma",
-      "netOfWithholding": "Známy klient, zaplatené po zrážke dane",
-      "exactAmountAnyClient": "Presná suma, ktokoľvek platí",
+      "sameClientExact": "Známa osoba, presná suma",
+      "netOfWithholding": "Známa osoba, zaplatené so zrážkou",
+      "exactAmountAnyClient": "Presná suma, ktokoľvek",
       "similarDescription": "Blízka suma a podobný popis",
       "sameAccountExact": "Rovnaký účet, presná suma",
       "unknown": "Pravidlo",
-      "partPayment": "Známy klient, časť dlžnej sumy",
-      "severalInvoices": "Známy klient, viac faktúr naraz"
+      "partPayment": "Známa osoba, časť sumy",
+      "severalInvoices": "Známa osoba, viac faktúr naraz"
     },
     "outcome": {
       "link": "Spáruje samo",
       "suggest": "Navrhuje"
     },
     "cond": {
-      "samePayee": "platiteľ je známy klient",
+      "samePayee": "osoba je tá z faktúry",
       "sameAccount": "rovnaký účet",
       "amountExact": "suma sedí presne",
       "amountTolerance": "suma je v rozmedzí {{percent}}%",
@@ -2434,7 +2434,7 @@
       "atMost": "do {{value}}",
       "textContains": "výpis hovorí „{{text}}“",
       "textExcludes": "výpis nehovorí „{{text}}“",
-      "onArrival": "keď prídu peniaze",
+      "onArrival": "keď peniaze prídu alebo odídu",
       "onIssue": "keď sa vystaví faktúra",
       "amountPartial": "suma pokrýva časť dlžnej sumy",
       "amountSet": "až {{count}} faktúr dá túto sumu"
@@ -2447,10 +2447,10 @@
     "yours": "Vaše",
     "field": {
       "name": "Názov",
-      "namePlaceholder": "napr.: Známy klient, blízka suma",
+      "namePlaceholder": "napr.: Známa osoba, blízka suma",
       "outcome": "Čo urobí, keď sadne",
       "outcomeHint": "Spárovať vyrovná samo. Navrhnúť pošle položku do zoznamu nižšie na vaše potvrdenie.",
-      "counterparty": "Kto zaplatil",
+      "counterparty": "Kto zaplatil alebo dostal",
       "amount": "Suma",
       "window": "Povolený rozdiel medzi dátumami",
       "windowHint": "Omeškanie sa počíta od splatnosti, predčasná platba odo dňa vystavenia faktúry, takže zaplatiť deň po vystavení nie sú týždne vopred.",
@@ -2463,8 +2463,8 @@
       "scopeHint": "Nechajte prázdne, aby platilo pre všetko",
       "accounts": "Bankové účty",
       "anyAccount": "Ktorýkoľvek účet",
-      "payees": "Klienti",
-      "anyPayee": "Ktorýkoľvek klient",
+      "payees": "Osoby",
+      "anyPayee": "Ktokoľvek",
       "direction": "Príjem alebo výdaj",
       "currencyScope": "Len v týchto menách",
       "currencyPlaceholder": "napr. USD, EUR",
@@ -2484,7 +2484,7 @@
     },
     "counterparty": {
       "any": "Ktokoľvek",
-      "samePayee": "Klient z faktúry"
+      "samePayee": "Osoba z faktúry"
     },
     "amount": {
       "exact": "Presne dlžná suma",
@@ -2492,12 +2492,12 @@
       "ratio": "Po zrážkovej dani",
       "ratioHint": "Používa sadzby zrážkovej dane vašej krajiny. Kým nie sú, pravidlo nespáruje nič.",
       "partial": "Časť dlžnej sumy",
-      "partialHint": "Pre klientov, ktorí platia po častiach. Zvyšok ostáva otvorený a ďalšia platba sadne presne.",
+      "partialHint": "Pre tých, čo platia po častiach. Zvyšok zostáva otvorený a ďalšia platba sadne presne.",
       "set": "Viac faktúr spolu",
       "setHint": "Pre platbu, ktorá pokrýva viac než jednu faktúru. Ak sedí viac kombinácií, radšej sa spýtame, než by sme vyberali.",
       "setMax": "Najviac toľko faktúr",
       "setFee": "Povoliť poplatok",
-      "setFeeHint": "Podiel z hodnoty faktúr, pre platbu prichádzajúcu v čistom. Nula znamená, že súčet musí sedieť presne."
+      "setFeeHint": "Podiel z hodnoty faktúr, pre platbu, ktorá prechádza po odpočítaní poplatku. Nula znamená, že súčet musí sedieť presne."
     },
     "queue": {
       "title": "Čaká na vás",
@@ -2514,9 +2514,9 @@
     },
     "evidence": {
       "amountExact": "suma sedí presne",
-      "amountOff": "očakávané {{expected}}, prijaté {{moved}}",
-      "knownPayer": "známy platiteľ",
-      "unknownPayer": "platiteľ nerozpoznaný",
+      "amountOff": "očakávané {{expected}}, pohnuté {{moved}}",
+      "knownPayer": "známa osoba",
+      "unknownPayer": "osoba neurčená",
       "sameDay": "rovnaký deň",
       "daysApart": "rozdiel {{days}} dní"
     },
@@ -2533,10 +2533,10 @@
       "matchHint": "Ako presne si musia platba a záväzok sadnúť"
     },
     "trigger": {
-      "money_arrives": "Keď prídu peniaze",
-      "money_arrivesHint": "Príde platba a hľadáme faktúru, ktorú uhrádza.",
+      "money_arrives": "Keď peniaze prídu alebo odídu",
+      "money_arrivesHint": "Platba sa objaví vo výpise a my hľadáme faktúru, ktorú vyrovnáva.",
       "invoice_issued": "Keď sa vystaví faktúra",
-      "invoice_issuedHint": "Klient zaplatil skôr a faktúra prišla potom, takže pozeráme späť na peniaze, ktoré tam už boli.",
+      "invoice_issuedHint": "Platba prišla skôr a faktúra neskôr, preto sa pozeráme späť, na peniaze, ktoré tam už boli.",
       "both": "V oboch momentoch",
       "bothHint": "Pravidlo platí na obe strany."
     },
@@ -2560,10 +2560,10 @@
     "moveUp": "Skúšať túto skôr",
     "moveDown": "Skúšať túto neskôr",
     "matchingTitle": "Pravidlá párovania",
-    "matchingHint": "Ako sa prichádzajúce peniaze viažu na faktúry.",
+    "matchingHint": "Ako sa každá platba viaže na to, čo vyrovnáva.",
     "pair": {
       "owed": "Čo sa dlhuje",
-      "arrived": "Čo prišlo",
+      "arrived": "Čo sa pohlo",
       "draftInvoice": "Faktúra v návrhu",
       "recurringBill": "Opakovaná platba",
       "noMoney": "Bez transakcie.",

@@ -2362,27 +2362,27 @@
   "reconciliation": {
     "node": {
       "invoices": "Faktury",
-      "invoicesHint": "wobec faktur, które wystawiłeś",
-      "recurring": "Wydatki cykliczne",
-      "recurringHint": "wobec kosztów, których już się spodziewałeś",
+      "invoicesHint": "wobec tego, co masz otrzymać i zapłacić",
+      "recurring": "Cykliczne",
+      "recurringHint": "wobec tego, czego już się spodziewałeś",
       "inactive": "Tu nieużywane"
     },
     "rule": {
-      "sameClientExact": "Znany klient, dokładna kwota",
-      "netOfWithholding": "Znany klient, zapłacone po potrąceniu podatku",
-      "exactAmountAnyClient": "Dokładna kwota, dowolny płatnik",
+      "sameClientExact": "Znana osoba, dokładna kwota",
+      "netOfWithholding": "Znana osoba, zapłacone po potrąceniu podatku",
+      "exactAmountAnyClient": "Dokładna kwota, dowolna osoba",
       "similarDescription": "Zbliżona kwota i podobny opis",
       "sameAccountExact": "To samo konto, dokładna kwota",
       "unknown": "Reguła",
-      "partPayment": "Znany klient, część należności",
-      "severalInvoices": "Znany klient, kilka faktur naraz"
+      "partPayment": "Znana osoba, część kwoty",
+      "severalInvoices": "Znana osoba, kilka faktur naraz"
     },
     "outcome": {
       "link": "Wiąże sama",
       "suggest": "Proponuje"
     },
     "cond": {
-      "samePayee": "płatnik jest znanym klientem",
+      "samePayee": "osoba jest tą z faktury",
       "sameAccount": "to samo konto",
       "amountExact": "kwota zgadza się dokładnie",
       "amountTolerance": "kwota mieści się w {{percent}}%",
@@ -2400,7 +2400,7 @@
       "atMost": "do {{value}}",
       "textContains": "wyciąg mówi „{{text}}”",
       "textExcludes": "wyciąg nie mówi „{{text}}”",
-      "onArrival": "gdy wpływają pieniądze",
+      "onArrival": "gdy pieniądze wpływają lub wypływają",
       "onIssue": "gdy wystawiana jest faktura",
       "amountPartial": "kwota pokrywa część należności",
       "amountSet": "do {{count}} faktur daje tę sumę"
@@ -2413,10 +2413,10 @@
     "yours": "Twoja",
     "field": {
       "name": "Nazwa",
-      "namePlaceholder": "np.: Znany klient, zbliżona kwota",
+      "namePlaceholder": "np. Znana osoba, zbliżona kwota",
       "outcome": "Co robi, gdy pasuje",
       "outcomeHint": "Wiązanie rozlicza samo. Propozycja trafia na listę poniżej, do Twojego potwierdzenia.",
-      "counterparty": "Kto zapłacił",
+      "counterparty": "Kto zapłacił lub otrzymał",
       "amount": "Kwota",
       "window": "Dopuszczalna różnica dat",
       "windowHint": "Opóźnienie liczy się od terminu płatności, a przedpłata od dnia wystawienia faktury, więc zapłata dzień po wystawieniu to nie tygodnie przed czasem.",
@@ -2429,8 +2429,8 @@
       "scopeHint": "Zostaw puste, aby dotyczyła wszystkiego",
       "accounts": "Konta bankowe",
       "anyAccount": "Dowolne konto",
-      "payees": "Klienci",
-      "anyPayee": "Dowolny klient",
+      "payees": "Osoby",
+      "anyPayee": "Dowolna osoba",
       "direction": "Wpływ lub wypływ",
       "currencyScope": "Tylko w tych walutach",
       "currencyPlaceholder": "np. USD, EUR",
@@ -2450,7 +2450,7 @@
     },
     "counterparty": {
       "any": "Ktokolwiek",
-      "samePayee": "Klient z faktury"
+      "samePayee": "Osoba z faktury"
     },
     "amount": {
       "exact": "Dokładnie należna kwota",
@@ -2458,12 +2458,12 @@
       "ratio": "Po potrąceniu podatku u źródła",
       "ratioHint": "Używa stawek podatku u źródła Twojego kraju. Dopóki ich nie ma, reguła niczego nie dopasuje.",
       "partial": "Część należności",
-      "partialHint": "Dla klientów płacących w ratach. Reszta pozostaje otwarta, a kolejna płatność pasuje dokładnie.",
+      "partialHint": "Dla płacących w ratach. To, co zostaje, pozostaje otwarte, a kolejna płatność trafia dokładnie.",
       "set": "Kilka faktur razem",
       "setHint": "Dla płatności pokrywającej więcej niż jedną fakturę. Jeśli pasuje więcej niż jedna kombinacja, pytamy zamiast wybierać.",
       "setMax": "Najwyżej tyle faktur",
       "setFee": "Dopuść prowizję",
-      "setFeeHint": "Część wartości faktur, dla wypłaty przychodzącej netto. Zero oznacza, że suma musi się zgadzać dokładnie."
+      "setFeeHint": "Część wartości faktur, dla płatności, która przepływa po potrąceniu prowizji. Zero oznacza, że suma musi być dokładna."
     },
     "queue": {
       "title": "Czeka na Ciebie",
@@ -2480,9 +2480,9 @@
     },
     "evidence": {
       "amountExact": "kwota zgadza się dokładnie",
-      "amountOff": "oczekiwano {{expected}}, otrzymano {{moved}}",
-      "knownPayer": "znany płatnik",
-      "unknownPayer": "płatnik nierozpoznany",
+      "amountOff": "oczekiwano {{expected}}, przepłynęło {{moved}}",
+      "knownPayer": "znana osoba",
+      "unknownPayer": "osoba nierozpoznana",
       "sameDay": "ten sam dzień",
       "daysApart": "różnica {{days}} dni"
     },
@@ -2499,10 +2499,10 @@
       "matchHint": "Jak blisko muszą być płatność i zobowiązanie"
     },
     "trigger": {
-      "money_arrives": "Gdy wpływają pieniądze",
-      "money_arrivesHint": "Wpływa płatność i szukamy faktury, którą opłaca.",
+      "money_arrives": "Gdy pieniądze wpływają lub wypływają",
+      "money_arrivesHint": "Płatność pojawia się na wyciągu, a my szukamy faktury, którą rozlicza.",
       "invoice_issued": "Gdy wystawiana jest faktura",
-      "invoice_issuedHint": "Klient zapłacił najpierw, faktura poszła później, więc patrzymy wstecz, na pieniądze już obecne.",
+      "invoice_issuedHint": "Płatność przyszła pierwsza, a faktura później, więc patrzymy wstecz, na pieniądze, które już tam były.",
       "both": "W obu momentach",
       "bothHint": "Reguła obowiązuje w obie strony."
     },
@@ -2526,10 +2526,10 @@
     "moveUp": "Sprawdzaj tę wcześniej",
     "moveDown": "Sprawdzaj tę później",
     "matchingTitle": "Reguły dopasowania",
-    "matchingHint": "Jak wpływające pieniądze są wiązane z fakturami.",
+    "matchingHint": "Jak każda płatność wiąże się z tym, co rozlicza.",
     "pair": {
       "owed": "Co jest należne",
-      "arrived": "Co wpłynęło",
+      "arrived": "Co się poruszyło",
       "draftInvoice": "Faktura robocza",
       "recurringBill": "Rachunek cykliczny",
       "noMoney": "Brak transakcji.",

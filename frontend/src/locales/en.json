@@ -2260,27 +2260,27 @@
   "reconciliation": {
     "node": {
       "invoices": "Invoices",
-      "invoicesHint": "against the invoices you issued",
-      "recurring": "Recurring bills",
-      "recurringHint": "against the bills you were already expecting",
+      "invoicesHint": "against what you have to receive and to pay",
+      "recurring": "Recurring",
+      "recurringHint": "against what you were already expecting",
       "inactive": "Not in use here"
     },
     "rule": {
-      "sameClientExact": "Known client, exact amount",
-      "netOfWithholding": "Known client, paid net of withholding",
-      "exactAmountAnyClient": "Exact amount, any payer",
+      "sameClientExact": "Known person, exact amount",
+      "netOfWithholding": "Known person, paid net of withholding",
+      "exactAmountAnyClient": "Exact amount, anyone",
       "similarDescription": "Close amount and similar description",
       "sameAccountExact": "Same account, exact amount",
       "unknown": "Rule",
-      "partPayment": "Known client, part of what they owe",
-      "severalInvoices": "Known client, several invoices at once"
+      "partPayment": "Known person, part of the amount",
+      "severalInvoices": "Known person, several invoices at once"
     },
     "outcome": {
       "link": "Links",
       "suggest": "Suggests"
     },
     "cond": {
-      "samePayee": "the payer is a known client",
+      "samePayee": "the person is the one on the invoice",
       "sameAccount": "the same account",
       "amountExact": "the amount matches exactly",
       "amountTolerance": "the amount is within {{percent}}%",
@@ -2298,7 +2298,7 @@
       "atMost": "at most {{value}}",
       "textContains": "the statement says “{{text}}”",
       "textExcludes": "the statement does not say “{{text}}”",
-      "onArrival": "when money arrives",
+      "onArrival": "when money comes in or goes out",
       "onIssue": "when an invoice is issued",
       "amountPartial": "the amount covers part of what is owed",
       "amountSet": "up to {{count}} invoices add up to it"
@@ -2311,10 +2311,10 @@
     "yours": "Yours",
     "field": {
       "name": "Name",
-      "namePlaceholder": "e.g. Known client, close amount",
+      "namePlaceholder": "e.g. Known person, close amount",
       "outcome": "What it does when it matches",
       "outcomeHint": "Link binds the payment on its own. Suggest sends it to the queue below for you to confirm.",
-      "counterparty": "Who paid",
+      "counterparty": "Who paid or was paid",
       "amount": "Amount",
       "window": "How far apart the dates may be",
       "windowHint": "Late is counted from the due date, early from the day the invoice was written, so paying the day after issue is not weeks early.",
@@ -2327,8 +2327,8 @@
       "scopeHint": "Leave empty to apply to everything",
       "accounts": "Bank accounts",
       "anyAccount": "Any account",
-      "payees": "Clients",
-      "anyPayee": "Any client",
+      "payees": "People",
+      "anyPayee": "Anyone",
       "direction": "Money in or out",
       "currencyScope": "Only these currencies",
       "currencyPlaceholder": "e.g. USD, EUR",
@@ -2348,7 +2348,7 @@
     },
     "counterparty": {
       "any": "Anyone",
-      "samePayee": "The client on the invoice"
+      "samePayee": "The person on the invoice"
     },
     "amount": {
       "exact": "Exactly the amount owed",
@@ -2356,12 +2356,12 @@
       "ratio": "Net of withholding tax",
       "ratioHint": "Uses the withholding rates for your country. Nothing matches until those are set.",
       "partial": "Part of what is owed",
-      "partialHint": "For clients who pay in instalments. What is left stays open, and the next payment matches it exactly.",
+      "partialHint": "For payments made in instalments. What is left stays open, and the next payment matches it exactly.",
       "set": "Several invoices added up",
       "setHint": "For a payment that covers more than one invoice. If more than one combination adds up, we ask instead of choosing.",
       "setMax": "At most this many invoices",
       "setFee": "Allow for a fee of",
-      "setFeeHint": "A share of what the invoices are worth, for a payout that arrives net of a cut. Zero means the total must be exact."
+      "setFeeHint": "A share of what the invoices are worth, for a payment that moves net of a cut. Zero means the total must be exact."
     },
     "queue": {
       "title": "Waiting for you",
@@ -2378,9 +2378,9 @@
     },
     "evidence": {
       "amountExact": "amount matches exactly",
-      "amountOff": "expected {{expected}}, received {{moved}}",
-      "knownPayer": "known payer",
-      "unknownPayer": "payer not identified",
+      "amountOff": "expected {{expected}}, moved {{moved}}",
+      "knownPayer": "known person",
+      "unknownPayer": "person not identified",
       "sameDay": "same day",
       "daysApart": "{{days}} days apart"
     },
@@ -2397,10 +2397,10 @@
       "matchHint": "How closely the payment and the promise have to fit"
     },
     "trigger": {
-      "money_arrives": "When money arrives",
-      "money_arrivesHint": "A payment lands and we look for the invoice it settles.",
+      "money_arrives": "When money comes in or goes out",
+      "money_arrivesHint": "The payment shows up on the statement and we look for the invoice it settles.",
       "invoice_issued": "When an invoice is issued",
-      "invoice_issuedHint": "The client paid first and the invoice follows, so we look back at money already there.",
+      "invoice_issuedHint": "The payment came first and the invoice follows, so we look back at money already there.",
       "both": "Both moments",
       "bothHint": "The rule is trusted either way round."
     },
@@ -2424,10 +2424,10 @@
     "moveUp": "Try this one earlier",
     "moveDown": "Try this one later",
     "matchingTitle": "Matching rules",
-    "matchingHint": "How money that arrives is bound to the invoices.",
+    "matchingHint": "How each payment is bound to what it settles.",
     "pair": {
       "owed": "What is owed",
-      "arrived": "What arrived",
+      "arrived": "What moved",
       "draftInvoice": "Draft invoice",
       "recurringBill": "Recurring bill",
       "noMoney": "No transaction on this one.",
