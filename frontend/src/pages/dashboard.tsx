@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { getAccountName } from '@/lib/account-utils'
+import { getAccountLabel, getAccountName } from '@/lib/account-utils'
 import { currentMonth, shiftMonth, monthLastDay, monthLabel, monthRange } from '@/lib/month-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
@@ -38,7 +38,7 @@ import {
   Tooltip as RechartsTooltip,
   ResponsiveContainer,
 } from 'recharts'
-import { CheckCircle2, CalendarIcon, Clock, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed } from 'lucide-react'
+import { CheckCircle2, CalendarIcon, Clock, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed, AlertCircle } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ICON_MAP } from '@/lib/category-icons'
 import { PageHeader } from '@/components/page-header'
@@ -658,19 +658,26 @@ export default function DashboardPage() {
             <Skeleton className="h-11 w-40" />
           ) : (
             <>
-              <p className={`text-4xl font-bold tabular-nums leading-tight ${availableBalance < 0 ? 'text-rose-500' : 'text-emerald-600'}`}>
+              {/* Neutral while positive. Size and weight carry the headline;
+                  colour is left to mean direction (income, expenses) and
+                  exception (a negative balance), so it still says something
+                  when it does appear. */}
+              <p className={`text-4xl font-bold tabular-nums leading-tight ${availableBalance < 0 ? 'text-rose-500' : 'text-foreground'}`}>
                 {mask(formatCurrency(availableBalance, primaryCurrency, locale))}
               </p>
               {availableBalanceAccounts.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-2.5">
+                <div className="flex flex-wrap gap-1.5 mt-3">
                   {availableBalanceAccounts.map((acc) => {
                     const bal = Number(acc.balance_primary ?? acc.current_balance)
                     const balCurrency = acc.balance_primary != null ? primaryCurrency : acc.currency
                     return (
-                      <span key={acc.id} className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full bg-muted text-foreground">
-                        {getAccountName(acc)}
-                        <span className={`font-bold tabular-nums ${bal < 0 ? 'text-rose-500' : 'text-emerald-600'}`}>
-                          {mask(`${bal >= 0 ? '+' : ''}${formatCurrency(bal, balCurrency, locale)}`)}
+                      <span key={acc.id} className="inline-flex items-baseline gap-1.5 text-xs px-2.5 py-1 rounded-full border border-border bg-background">
+                        {/* getAccountLabel, not getAccountName: two accounts can
+                            share a name, and the mask suffix is what tells them
+                            apart in a row of chips. */}
+                        <span className="text-muted-foreground">{getAccountLabel(acc)}</span>
+                        <span className={`font-semibold tabular-nums ${bal < 0 ? 'text-rose-500' : 'text-foreground'}`}>
+                          {mask(formatCurrency(bal, balCurrency, locale))}
                         </span>
                       </span>
                     )
@@ -682,9 +689,7 @@ export default function DashboardPage() {
               {summary && Math.abs(summary.pending_shares_net) >= 0.01 && (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <p className={`text-xs tabular-nums mt-2 inline-block cursor-help underline decoration-dotted underline-offset-2 ${
-                      summary.pending_shares_net < 0 ? 'text-rose-500' : 'text-emerald-600'
-                    }`}>
+                    <p className="text-xs tabular-nums mt-2.5 inline-block cursor-help text-muted-foreground underline decoration-dotted underline-offset-2">
                       {summary.pending_shares_net < 0
                         ? t('dashboard.pendingSharesOwe', {
                             net: mask(formatCurrency(availableBalance + summary.pending_shares_net, primaryCurrency, locale)),
@@ -789,10 +794,13 @@ export default function DashboardPage() {
                 </TooltipContent>
               </Tooltip>
             </p>
+            {/* Net worth stays neutral so the secondary row does not out-shout
+                the headline above it. It is the larger number here; colouring
+                it too pulled the eye away from available balance. */}
             {summaryLoading || accountsUnavailable ? (
               <Skeleton className="h-7 w-24" />
             ) : (
-              <p className={`text-2xl font-bold tabular-nums ${totalBalance < 0 ? 'text-rose-500' : 'text-blue-600'}`}>
+              <p className={`text-2xl font-bold tabular-nums ${totalBalance < 0 ? 'text-rose-500' : 'text-foreground'}`}>
                 {mask(formatCurrency(totalBalance, primaryCurrency, locale))}
               </p>
             )}
@@ -834,11 +842,13 @@ export default function DashboardPage() {
             })}
           >
             <div className="flex items-center gap-2.5 min-w-0">
-              <span className={`shrink-0 inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold text-white ${
-                uncategorizedCount >= 20 ? 'bg-amber-500' : 'bg-amber-400'
-              }`}>
-                {uncategorizedCount}
-              </span>
+              {/* An icon, not the count: the sentence beside it already states
+                  the number, and a fixed 24px circle clipped it from four
+                  digits on. Severity still reads through the tint. */}
+              <AlertCircle
+                size={16}
+                className={`shrink-0 ${uncategorizedCount >= 20 ? 'text-amber-600 dark:text-amber-400' : 'text-amber-500 dark:text-amber-500'}`}
+              />
               <span className="text-sm text-amber-900 dark:text-amber-200 truncate">
                 {t('dashboard.uncategorizedCta', { count: uncategorizedCount })}
                 {uncategorizedAmount > 0 && (
