@@ -86,8 +86,16 @@ def test_description_similarity():
 
 def test_match_window():
     """The windows are policy now rather than a function, and they are the
-    same windows: a weekly bill sits closer to its neighbours, so it gets
-    less room on either side."""
+    same windows.
+
+    Only weekly narrows, and the reason is arithmetic rather than taste: a
+    weekly bill sits seven days from its neighbours, and the shipped
+    window spans eight (three before, five after), so a charge could match
+    the wrong occurrence. Every other frequency is far enough apart that
+    the shipped window cannot reach the next one, which is why they all
+    read the same and why a new frequency needs no entry here unless its
+    occurrences fall closer together than eight days.
+    """
     from app.services import reconciliation_policy
 
     def window(frequency: str) -> tuple[int, int]:
@@ -97,6 +105,9 @@ def test_match_window():
     assert window("weekly") == (2, 2)
     assert window("monthly") == (3, 5)
     assert window("yearly") == (3, 5)
+    # Fourteen and one hundred and eighty days apart: nothing to narrow.
+    assert window("biweekly") == (3, 5)
+    assert window("semiannual") == (3, 5)
 
 
 # ---------------------------------------------------------------------------
@@ -260,6 +271,38 @@ async def test_advance_past_moves_quarterly_pointer(session, test_user, test_wor
     )
     rms.advance_past(bill, date(2025, 1, 31))
     assert bill.next_occurrence == date(2025, 4, 30)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("frequency", "start_date", "day_of_month", "expected_next"),
+    [
+        ("biweekly", date(2026, 1, 5), None, date(2026, 1, 19)),
+        ("semiannual", date(2026, 1, 31), 31, date(2026, 7, 31)),
+    ],
+    ids=["biweekly", "semiannual"],
+)
+async def test_advance_past_new_frequencies(
+    session,
+    test_user,
+    test_workspace,
+    account,
+    frequency,
+    start_date,
+    day_of_month,
+    expected_next,
+):
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        account,
+        frequency=frequency,
+        day_of_month=day_of_month,
+        start_date=start_date,
+    )
+    rms.advance_past(bill, start_date)
+    assert bill.next_occurrence == expected_next
 
 
 @pytest.mark.asyncio

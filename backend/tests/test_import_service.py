@@ -31,7 +31,7 @@ class TestParseCsv:
             "12/02/2026,IFOOD RESTAURANTE,-45.00\n"
             "05/02/2026,SALARIO FEV,8000.00\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 3
 
@@ -60,7 +60,7 @@ class TestParseCsv:
             "2026-02-10,GROCERY STORE,-120.50\n"
             "2026-02-15,SALARY PAYMENT,5000.00\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 2
 
@@ -97,7 +97,7 @@ class TestParseCsv:
             '10/02/2026,MERCADO LIVRE,"R$ -150,99"\n'
             '11/02/2026,PIX RECEBIDO,"R$ 200,00"\n'
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 2
 
@@ -115,7 +115,7 @@ class TestParseCsv:
         """CSV encoded with UTF-8 BOM should be parsed correctly."""
         # Encode with utf-8-sig which prepends BOM bytes; parse_csv decodes with utf-8-sig
         csv_content = "date,description,amount\n2026-01-15,TEST TRANSACTION,-50.00\n"
-        transactions = parse_csv(csv_content.encode("utf-8-sig"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8-sig"))
 
         assert len(transactions) == 1
         assert transactions[0].description == "TEST TRANSACTION"
@@ -128,7 +128,7 @@ class TestParseCsv:
             "not-a-date,BAD ROW,-10.00\n"
             "2026-02-20,GOOD ROW,-30.00\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 1
         assert transactions[0].description == "GOOD ROW"
@@ -140,7 +140,7 @@ class TestParseCsv:
             "2026-02-20,BAD AMOUNT,abc\n"
             "2026-02-21,GOOD AMOUNT,-75.00\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 1
         assert transactions[0].description == "GOOD AMOUNT"
@@ -148,7 +148,7 @@ class TestParseCsv:
     def test_parse_csv_dd_mm_yyyy_format(self):
         """DD/MM/YYYY date format should be correctly parsed."""
         csv_content = "data,descricao,valor\n25/12/2025,NATAL,-500.00\n"
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 1
         assert transactions[0].date == date(2025, 12, 25)
@@ -160,7 +160,7 @@ class TestParseCsv:
             "15/01/2026;Grocery Store;-120.50\n"
             "20/01/2026;Salary Payment;5000.00\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 2
         assert transactions[0].description == "Grocery Store"
@@ -177,7 +177,7 @@ class TestParseCsv:
             "2026-01-15\tGrocery Store\t-120.50\n"
             "2026-01-20\tSalary Payment\t5000.00\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 2
         assert transactions[0].description == "Grocery Store"
@@ -190,7 +190,7 @@ class TestParseCsv:
     def test_parse_csv_empty_file(self):
         """A CSV with only headers and no data rows should return empty list."""
         csv_content = "date,description,amount\n"
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
         assert len(transactions) == 0
 
     def test_parse_csv_explicit_date_format(self):
@@ -200,12 +200,12 @@ class TestParseCsv:
             "03/04/2026,PAYMENT,-100.00\n"
         )
         # With MM/DD/YYYY format, 03/04 = March 4
-        transactions = parse_csv(csv_content.encode("utf-8"), date_format="MM/DD/YYYY")
+        transactions, _ = parse_csv(csv_content.encode("utf-8"), date_format="MM/DD/YYYY")
         assert len(transactions) == 1
         assert transactions[0].date == date(2026, 3, 4)
 
         # With DD/MM/YYYY format, 03/04 = April 3
-        transactions = parse_csv(csv_content.encode("utf-8"), date_format="DD/MM/YYYY")
+        transactions, _ = parse_csv(csv_content.encode("utf-8"), date_format="DD/MM/YYYY")
         assert len(transactions) == 1
         assert transactions[0].date == date(2026, 4, 3)
 
@@ -216,7 +216,7 @@ class TestParseCsv:
             "2026-01-10,EXPENSE,100.00\n"
             "2026-01-11,INCOME,-500.00\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"), flip_amount=True)
+        transactions, _ = parse_csv(csv_content.encode("utf-8"), flip_amount=True)
         assert len(transactions) == 2
         # 100.00 flipped to -100.00 => debit
         assert transactions[0].type == "debit"
@@ -232,7 +232,7 @@ class TestParseCsv:
             "2026-01-10,SALARY,5000.00,\n"
             "2026-01-11,RENT,,1200.00\n"
         )
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             inflow_column="inflow",
             outflow_column="outflow",
@@ -251,7 +251,7 @@ class TestParseCsv:
             "2026-01-11,RENT,1200.00\n"
         )
 
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
         assert len(transactions) == 2
         assert transactions[0].amount == Decimal("5000.00")
         assert transactions[1].amount == Decimal("1200.00")
@@ -262,7 +262,7 @@ class TestParseCsv:
             "date,description,amount,merchant,transaction_id,notes\n"
             "2026-05-01,AMAZON,-25.00,Amazon.com,txn_123,Gift for John\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
         assert len(transactions) == 1
         assert transactions[0].payee_raw == "Amazon.com"
         assert transactions[0].external_id is None
@@ -278,7 +278,7 @@ class TestParseCsvColumnMapping:
             "2026-01-10,COFFEE SHOP,-12.50\n"
             "2026-01-11,PAYCHECK,3000.00\n"
         )
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             column_mapping={
                 "date": "Posted On",
@@ -306,7 +306,7 @@ class TestParseCsvColumnMapping:
             "date,description,details,amount\n"
             "2026-01-10,WRONG,RIGHT,-10.00\n"
         )
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             column_mapping={"description": "details"},
         )
@@ -319,7 +319,7 @@ class TestParseCsvColumnMapping:
             "txn_date,description,amount\n"
             "2026-01-10,GROCERIES,-55.00\n"
         )
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             column_mapping={"date": "txn_date"},
         )
@@ -340,7 +340,7 @@ class TestParseCsvColumnMapping:
     def test_column_mapping_case_insensitive(self):
         """Mapping values are matched case-insensitively against CSV headers."""
         csv_content = "Date,Description,Amount\n2026-01-10,X,-1.00\n"
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             column_mapping={"date": "DATE", "description": "Description", "amount": "amount"},
         )
@@ -354,7 +354,7 @@ class TestParseCsvColumnMapping:
             "2026-01-10,SALARY,5000.00,\n"
             "2026-01-11,RENT,,1200.00\n"
         )
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             column_mapping={
                 "date": "Posted On",
@@ -375,7 +375,7 @@ class TestParseCsvColumnMapping:
             "date,description,amount,ccy,exch\n"
             "2026-01-10,HOTEL,-100.00,EUR,1.08\n"
         )
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             column_mapping={"currency": "ccy", "fx_rate": "exch"},
         )
@@ -386,7 +386,7 @@ class TestParseCsvColumnMapping:
     def test_column_mapping_ignores_empty_values(self):
         """Empty mapping values are ignored and fall back to auto-detection."""
         csv_content = "date,description,amount\n2026-01-10,X,-1.00\n"
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             column_mapping={"date": "", "description": "  "},
         )
@@ -401,7 +401,7 @@ class TestParseCsvColumnMapping:
             "2026-04-01,Whole Foods,55.00,debit\n"
             "2026-04-02,Employer Inc,4200.00,credit\n"
         )
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             column_mapping={
                 "date": "Booking Date",
@@ -422,7 +422,7 @@ class TestParseCsvColumnMapping:
             "Posting Date,Details,Amount\n"
             "22/03/2026,Gym Membership,-60.00\n"
         )
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             date_format="DD/MM/YYYY",
             column_mapping={
@@ -442,7 +442,7 @@ class TestParseCsvColumnMapping:
             "2026-07-02;Nomina;3.500,00\n"
             "2026-07-03;Hotel;-200,00\n"
         )
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             column_mapping={
                 "date": "Fecha",
@@ -462,7 +462,7 @@ class TestParseCsvColumnMapping:
             "Txn Date,Memo,Value,Counterparty,ExtRef,Comment\n"
             "2026-08-01,Purchase,-15.00,Target,ref999,Groceries\n"
         )
-        transactions = parse_csv(
+        transactions, _ = parse_csv(
             csv_content.encode("utf-8"),
             column_mapping={
                 "date": "Txn Date",
@@ -1158,7 +1158,7 @@ class TestCsvCurrencyParsing:
             "2026-01-11,Local Store,-45.00,BRL\n"
             "2026-01-12,Euro Payment,-80.00,EUR\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 3
         assert transactions[0].currency == "USD"
@@ -1172,7 +1172,7 @@ class TestCsvCurrencyParsing:
             "10/01/2026,AMAZON,-120.50,USD\n"
             "11/01/2026,PIX RECEBIDO,500.00,BRL\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 2
         assert transactions[0].currency == "USD"
@@ -1185,7 +1185,7 @@ class TestCsvCurrencyParsing:
             "2026-01-10,Amazon Purchase,-120.50,USD,5.25\n"
             "2026-01-11,Local Store,-45.00,BRL,\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 2
         assert transactions[0].currency == "USD"
@@ -1199,7 +1199,7 @@ class TestCsvCurrencyParsing:
             "data,descricao,valor,moeda,taxa_cambio\n"
             '10/01/2026,COMPRA EXTERIOR,-200.00,USD,"5,30"\n'
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 1
         assert transactions[0].fx_rate == Decimal("5.30")
@@ -1210,7 +1210,7 @@ class TestCsvCurrencyParsing:
             "date,description,amount\n"
             "2026-01-10,GROCERY,-50.00\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 1
         assert transactions[0].currency is None
@@ -1577,7 +1577,7 @@ class TestParseCsvTypeColumn:
             "2026-01-05,Salario Dia 5,13311.00,credit\n"
             "2026-01-01,Financiamento Casa,577.00,debit\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 2
         assert transactions[0].type == "credit"
@@ -1592,7 +1592,7 @@ class TestParseCsvTypeColumn:
             "2026-01-01,Rent,1200.00,debit\n"
             "2026-01-02,Internet,119.00,debit\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert all(t.type == "debit" for t in transactions)
 
@@ -1603,7 +1603,7 @@ class TestParseCsvTypeColumn:
             "2026-01-01,Expense,-100.00\n"
             "2026-01-02,Income,500.00\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert transactions[0].type == "debit"
         assert transactions[1].type == "credit"
@@ -1615,7 +1615,7 @@ class TestParseCsvTypeColumn:
             "2026-01-01,Expense,-100.00,unknown\n"
             "2026-01-02,Income,500.00,invalid\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert transactions[0].type == "debit"
         assert transactions[1].type == "credit"
@@ -1640,7 +1640,7 @@ class TestParseCsvCategoryColumn:
             "2026-01-05,Salario Dia 5,13311.00,credit,BRL,Salário & Renda\n"
             "2026-01-01,Financiamento Casa,577.00,debit,BRL,Moradia\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 2
         assert transactions[0].category_name == "Salário & Renda"
@@ -1652,7 +1652,7 @@ class TestParseCsvCategoryColumn:
             "date,description,amount\n"
             "2026-01-01,Grocery Store,-50.00\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert transactions[0].category_name is None
 
@@ -1662,7 +1662,7 @@ class TestParseCsvCategoryColumn:
             "date,description,amount,type,currency,category\n"
             "2026-01-01,Some Transaction,100.00,credit,BRL,\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert transactions[0].category_name is None
 
@@ -1672,7 +1672,7 @@ class TestParseCsvCategoryColumn:
             "data,descricao,valor,categoria\n"
             "01/01/2026,Supermercado,-150.00,Alimentação\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert len(transactions) == 1
         assert transactions[0].category_name == "Alimentação"
@@ -1752,6 +1752,84 @@ class TestImportTransactionsWithCategory:
             select(Transaction).where(Transaction.description == "Unknown Cat Transaction")
         )).scalar_one()
         assert tx.category_id is None
+
+    @pytest.mark.asyncio
+    @patch("app.services.fx_rate_service._provider")
+    async def test_hidden_category_name_leaves_uncategorized(
+        self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+    ):
+        """A hidden category is withheld on import, as it is in the preview.
+
+        The preview filters hidden categories out of its suggestion map. The
+        final import used to build its own unfiltered map, so a CSV naming a
+        hidden category still got it persisted, and the imported row disagreed
+        with what the preview showed.
+        """
+        from app.models.category import Category
+        from app.models.transaction import Transaction
+        from app.schemas.transaction import TransactionImport
+        from sqlalchemy import select
+
+        hidden = Category(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            name="Categoria Oculta", icon="eye-off", color="#64748B", is_hidden=True,
+        )
+        session.add(hidden)
+        await session.commit()
+
+        txns = [TransactionImport(
+            description="Hidden Cat Transaction",
+            amount=Decimal("42.00"),
+            date=date(2026, 1, 11),
+            type="debit",
+            category_name="Categoria Oculta",
+        )]
+
+        imported, _, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id, txns, "import",
+        )
+
+        assert imported == 1
+        tx = (await session.execute(
+            select(Transaction).where(Transaction.description == "Hidden Cat Transaction")
+        )).scalar_one()
+        assert tx.category_id is None
+
+    @pytest.mark.asyncio
+    @patch("app.services.fx_rate_service._provider")
+    async def test_category_name_matches_case_insensitively(
+        self, mock_provider, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+    ):
+        """Import matches category names the way the preview does."""
+        from app.models.category import Category
+        from app.models.transaction import Transaction
+        from app.schemas.transaction import TransactionImport
+        from sqlalchemy import select
+
+        category = Category(
+            id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+            name="Alimentação", icon="utensils", color="#F97316",
+        )
+        session.add(category)
+        await session.commit()
+
+        txns = [TransactionImport(
+            description="Case Insensitive Cat",
+            amount=Decimal("18.00"),
+            date=date(2026, 1, 12),
+            type="debit",
+            category_name="  alimentação  ",
+        )]
+
+        imported, _, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id, txns, "import",
+        )
+
+        assert imported == 1
+        tx = (await session.execute(
+            select(Transaction).where(Transaction.description == "Case Insensitive Cat")
+        )).scalar_one()
+        assert tx.category_id == category.id
 
     @pytest.mark.asyncio
     @patch("app.services.fx_rate_service._provider")
@@ -1876,7 +1954,7 @@ class TestImportTransactionsWithCategory:
             "2026-01-05,Salario Dia 5,13311.00,credit,BRL,Salário & Renda\n"
             "2026-01-01,Financiamento Casa,577.00,debit,BRL,Moradia\n"
         )
-        transactions = parse_csv(csv_content.encode("utf-8"))
+        transactions, _ = parse_csv(csv_content.encode("utf-8"))
 
         assert transactions[0].type == "credit"
         assert transactions[1].type == "debit"
@@ -2433,3 +2511,61 @@ async def test_import_tolerates_duplicate_external_id_rows(
         )
     )).scalars().all()
     assert len(remaining) == 2
+
+
+def test_normalize_amount_swiss_single_quotes():
+    from app.services.import_service import normalize_amount
+    assert normalize_amount("1'050.45") == "1050.45"
+    assert normalize_amount("-2'416.70") == "-2416.70"
+    assert normalize_amount("5'400") == "5400"
+
+
+def test_parse_csv_returns_failed_rows():
+    from app.services.import_service import parse_csv
+    csv_content = (
+        "date,description,amount,currency\n"
+        "2026-08-01,Valid,-10.00,CHF\n"
+        "invalid_date,Invalid Date,-10.00,CHF\n"
+        "2026-08-03,Invalid Amount,invalid_val,CHF\n"
+    )
+    transactions, failed_rows = parse_csv(csv_content.encode("utf-8"))
+    assert len(transactions) == 1
+    assert len(failed_rows) == 2
+    assert failed_rows[0].line_number == 3
+    assert failed_rows[0].error_reason == "invalid_date"
+    assert failed_rows[0].raw_value == "invalid_date"
+    assert failed_rows[0].description == "Invalid Date"
+    assert failed_rows[1].line_number == 4
+    assert failed_rows[1].error_reason == "invalid_amount"
+    assert failed_rows[1].raw_value == "invalid_val"
+    assert failed_rows[1].description == "Invalid Amount"
+
+
+def test_parse_csv_reports_short_rows_instead_of_raising():
+    """A row with fewer cells than the header is reported, not fatal.
+
+    csv.DictReader leaves the missing cells as None, so every .strip() on them
+    used to raise and the API turned that into a 400 for the whole file. One
+    malformed row is exactly what failed_rows exists to describe.
+    """
+    from app.services.import_service import parse_csv
+    csv_content = (
+        "date,description,amount\n"
+        "2026-08-01,Valid,-10.00\n"
+        "2026-08-02,Missing amount\n"
+        "2026-08-03\n"
+        "invalid_date\n"
+    )
+    transactions, failed_rows = parse_csv(csv_content.encode("utf-8"))
+
+    assert len(transactions) == 1
+    assert len(failed_rows) == 3
+    assert failed_rows[0].line_number == 3
+    assert failed_rows[0].description == "Missing amount"
+    assert failed_rows[0].error_reason == "invalid_amount"
+    # A cell the row never had reads as empty, never as None.
+    assert failed_rows[1].line_number == 4
+    assert failed_rows[1].description == ""
+    assert failed_rows[2].line_number == 5
+    assert failed_rows[2].error_reason == "invalid_date"
+    assert failed_rows[2].raw_value == "invalid_date"
