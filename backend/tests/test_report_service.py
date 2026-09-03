@@ -1709,7 +1709,7 @@ async def test_cash_flow_cash_mode_uses_transaction_date(
     """In cash mode: a CC purchase made today (effective_date in future) is
     already counted in starting balance via the CC liability — and is NOT
     re-projected on its effective_date."""
-    await _set_accounting_mode(session, "cash")
+    await _set_accounting_mode(session, "purchase_date")
 
     bank = await _make_manual_account(session, test_user.id, "CF CashMode Bank")
     cc = await _make_cc_account(session, test_user.id, "CF CashMode CC")
@@ -1750,7 +1750,7 @@ async def test_cash_flow_accrual_mode_projects_cc_on_effective_date(
     """In accrual mode: a CC purchase with effective_date > today is added
     back to starting balance (so it represents 'cash on hand right now') and
     re-projected as an outflow on the bill due date."""
-    await _set_accounting_mode(session, "accrual")
+    await _set_accounting_mode(session, "invoice_due_date")
 
     bank = await _make_manual_account(session, test_user.id, "CF AccrualMode Bank")
     cc = await _make_cc_account(session, test_user.id, "CF AccrualMode CC")
@@ -1800,7 +1800,7 @@ async def test_cash_flow_accrual_mode_no_double_count(
     """Accrual mode: the same CC purchase must not appear in both starting
     balance AND future flows — sum of (starting + inflow - outflow) over the
     window must equal final 'true' total balance (= what cash mode shows)."""
-    await _set_accounting_mode(session, "accrual")
+    await _set_accounting_mode(session, "invoice_due_date")
 
     bank = await _make_manual_account(session, test_user.id, "CF NoDouble Bank")
     cc = await _make_cc_account(session, test_user.id, "CF NoDouble CC")
@@ -1840,7 +1840,7 @@ async def test_cash_flow_accrual_mode_cc_purchase_outside_window_ignored(
 ):
     """A CC purchase whose effective_date falls past the projection window is
     not added back nor projected — its impact remains in starting balance."""
-    await _set_accounting_mode(session, "accrual")
+    await _set_accounting_mode(session, "invoice_due_date")
 
     bank = await _make_manual_account(session, test_user.id, "CF Outside Bank")
     cc = await _make_cc_account(session, test_user.id, "CF Outside CC")

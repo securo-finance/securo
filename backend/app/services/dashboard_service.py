@@ -232,10 +232,9 @@ async def get_summary(
     filtered = account_ids is not None
     acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
 
-    # Reporting mode is a global app setting (admin-controlled). When "accrual",
-    # aggregation queries bucket credit card transactions by the bill's due
-    # date (effective_date) instead of the purchase date — gives a true
-    # cash-flow view.
+    # Reporting mode is a global app setting (admin-controlled). When
+    # "invoice_due_date", aggregation queries bucket credit card transactions
+    # by the bill's due date (effective_date) instead of the purchase date.
     user = await session.get(User, user_id)
     accounting_mode = await get_credit_card_accounting_mode(session)
     report_date = reporting_date_col(accounting_mode)
@@ -754,7 +753,7 @@ async def get_spending_by_category(
         user_id,
         month_start,
         month_end,
-        use_effective_date=accounting_mode == "accrual",
+        use_effective_date=accounting_mode == "invoice_due_date",
         primary_currency=primary_currency,
         workspace_id=workspace_id,
     )
@@ -770,7 +769,7 @@ async def get_spending_by_category(
     # parent transaction.
     shared_by_cat = {} if filtered else await viewer_shared_spending_by_category(
         session, user_id, month_start, month_end,
-        use_effective_date=accounting_mode == "accrual",
+        use_effective_date=accounting_mode == "invoice_due_date",
         primary_currency=primary_currency,
     )
     if shared_by_cat:
@@ -965,7 +964,7 @@ async def get_monthly_trend(
             continue
         tx_report_date = (
             tx.effective_bill_date
-            or (tx.effective_date if accounting_mode == "accrual" else tx.date)
+            or (tx.effective_date if accounting_mode == "invoice_due_date" else tx.date)
         )
         month_key = f"{tx_report_date.year:04d}-{tx_report_date.month:02d}"
         bucket = trend_map.setdefault(month_key, [0.0, 0.0])
@@ -1003,13 +1002,13 @@ async def get_monthly_trend(
         else:
             own_inc, own_exp = await owner_split_offset_pnl(
                 session, user_id, m_start, m_end,
-                use_effective_date=accounting_mode == "accrual",
+                use_effective_date=accounting_mode == "invoice_due_date",
                 primary_currency=primary_currency,
                 workspace_id=workspace_id,
             )
             shared_inc, shared_exp = await viewer_shared_pnl(
                 session, user_id, m_start, m_end,
-                use_effective_date=accounting_mode == "accrual",
+                use_effective_date=accounting_mode == "invoice_due_date",
                 primary_currency=primary_currency,
             )
         adjusted.append(

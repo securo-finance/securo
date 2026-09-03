@@ -77,8 +77,8 @@ def reporting_date_col(accounting_mode: str):
     FIRST — regardless of accounting mode — because that's the whole point
     of the override: the user hand-corrected which invoice a purchase
     belongs to (issue #92). When there's no override, fall back to
-    `effective_date` in accrual mode or the raw purchase `date` in cash
-    mode.
+    `effective_date` in "invoice_due_date" mode or the raw purchase `date`
+    in "purchase_date" mode.
 
     This mirrors the ordering used by the transaction list and the credit
     card bill view, so a transaction lands in the same month everywhere the
@@ -88,7 +88,7 @@ def reporting_date_col(accounting_mode: str):
     """
     base = (
         Transaction.effective_date
-        if accounting_mode == "accrual"
+        if accounting_mode == "invoice_due_date"
         else Transaction.date
     )
     return func.coalesce(Transaction.effective_bill_date, base)

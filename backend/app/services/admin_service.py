@@ -245,14 +245,22 @@ async def is_registration_enabled(session: AsyncSession) -> bool:
 
 
 async def get_credit_card_accounting_mode(session: AsyncSession) -> str:
-    """Return the global CC accounting mode: 'cash' or 'accrual'.
+    """Return the global CC accounting mode: 'purchase_date' or 'invoice_due_date'.
 
     Global app setting — affects how dashboard/reports/budgets bucket credit
-    card transactions. Defaults to 'cash' (current behavior) when unset."""
+    card transactions. Defaults to 'purchase_date' (current behavior) when
+    unset.
+
+    Naming note: the admin UI labels 'purchase_date' as "Regime de
+    competência" (accrual — the expense is recognized when incurred) and
+    'invoice_due_date' as "Regime de caixa" (cash — recognized when the
+    money actually leaves). Deliberately descriptive rather than reusing
+    the cash/accrual jargon here after that jargon was found inverted
+    relative to standard accounting usage (issue #821)."""
     setting = await get_app_setting(session, "credit_card_accounting_mode")
-    if setting and setting.value in ("cash", "accrual"):
+    if setting and setting.value in ("purchase_date", "invoice_due_date"):
         return setting.value
-    return "cash"
+    return "purchase_date"
 
 
 async def get_number_format(session: AsyncSession) -> str:
