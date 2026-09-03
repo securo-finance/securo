@@ -201,6 +201,7 @@ def _counts_as_user_pnl_row(tx: Transaction) -> bool:
     return not (
         tx.transfer_pair_id
         or tx.is_ignored
+        or tx.exclude_from_pnl
         or tx.source == "settlement"
         or (category and (category.treat_as_transfer or category.is_ignored))
     )

@@ -100,6 +100,7 @@ class TransactionUpdate(BaseModel):
     amount_primary: Optional[Decimal] = None
     fx_rate_used: Optional[Decimal] = None
     is_ignored: Optional[bool] = None
+    exclude_from_pnl: Optional[bool] = None
     # Manual status override (posted=settled, pending=not yet settled). Lets the
     # user mark a manually-entered transaction as settled once it clears,
     # or flip a synced row back to pending before the next sync.
@@ -199,6 +200,7 @@ class TransactionRead(TransactionBase):
     # instead of a generic "shared" badge.
     parent_owner_name: Optional[str] = None
     is_ignored: bool = False
+    exclude_from_pnl: bool = False
 
     @model_validator(mode="after")
     def reflect_ignored_category(self):

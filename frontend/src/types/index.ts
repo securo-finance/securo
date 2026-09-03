@@ -282,6 +282,8 @@ export interface Transaction {
   parent_owner_name?: string | null
   // Flag to exclude this transaction from reports and dashboard aggregations
   is_ignored: boolean
+  // Keeps the transaction in the ledger/balance while excluding it from P&L.
+  exclude_from_pnl?: boolean
   virtual?: boolean
 }
 
@@ -636,6 +638,7 @@ export interface TransactionCalendarItem {
   transfer_pair_id: string | null
   is_transfer: boolean
   is_ignored: boolean
+  exclude_from_pnl: boolean
 }
 
 export interface TransactionCalendarDay {
