@@ -12,6 +12,7 @@ from app.models.account import Account
 from app.models.transaction import Transaction
 from app.schemas.recurring_transaction import RecurringTransactionCreate
 from app.services import recurring_match_service as rms
+from app.services.text_similarity import token_overlap
 from app.services.recurring_transaction_service import (
     create_recurring_transaction,
     generate_pending,
@@ -76,12 +77,11 @@ async def _add_tx(session, test_user, test_workspace, account, **kw):
 
 
 def test_description_similarity():
-    """The measure moved into the shared engine; the bar it sets did not."""
-    from app.services.reconciliation_engine import _similar
-
-    assert _similar("Netflix Sub", "netflix sub") == 1.0
-    assert _similar("Netflix", "Spotify") == 0.0
-    assert _similar(None, "x") == 0.0
+    """One implementation now, shared by the matching engine and the
+    bank-sync fuzzy merge. The bar it sets did not move."""
+    assert token_overlap("Netflix Sub", "netflix sub") == 1.0
+    assert token_overlap("Netflix", "Spotify") == 0.0
+    assert token_overlap(None, "x") == 0.0
 
 
 def test_match_window():

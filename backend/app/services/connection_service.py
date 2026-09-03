@@ -37,6 +37,7 @@ from app.providers.base import (
 from app.services import oauth_state
 from app.services import admin_service
 from app.services import reconciliation_service, recurring_match_service
+from app.services.text_similarity import token_overlap
 from app.services.account_service import (
     _simplefin_to_internal_balance,
     sync_opening_balance_for_connected_account,
@@ -1216,18 +1217,6 @@ async def handle_oauth_callback(
     return connection
 
 
-def _description_similarity(a: str | None, b: str | None) -> float:
-    """Token overlap ratio between two descriptions."""
-    if not a or not b:
-        return 0.0
-    tokens_a = set(a.lower().split())
-    tokens_b = set(b.lower().split())
-    if not tokens_a or not tokens_b:
-        return 0.0
-    intersection = tokens_a & tokens_b
-    return len(intersection) / max(len(tokens_a), len(tokens_b))
-
-
 async def _fuzzy_match_manual(
     session: AsyncSession,
     account_id: uuid.UUID,
@@ -1255,7 +1244,7 @@ async def _fuzzy_match_manual(
     best_match = None
     best_score = 0.0
     for candidate in candidates:
-        score = _description_similarity(
+        score = token_overlap(
             candidate.original_description or candidate.description,
             txn_data.description,
         )
@@ -1337,7 +1326,7 @@ async def _find_synced_duplicate(
     for candidate in result.scalars():
         if candidate.external_id and candidate.external_id.startswith("bill_charge:"):
             continue
-        if _description_similarity(
+        if token_overlap(
             candidate.original_description or candidate.description,
             txn_data.description,
         ) >= 0.7:
@@ -1396,7 +1385,7 @@ async def _cleanup_phantom_duplicates(
             )
         )
         for sibling in sibling_result.scalars():
-            if _description_similarity(
+            if token_overlap(
                 sibling.original_description or sibling.description,
                 tx.original_description or tx.description,
             ) >= 0.9:

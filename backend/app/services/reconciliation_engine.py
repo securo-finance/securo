@@ -46,6 +46,8 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any, Literal, Optional
 
+from app.services.text_similarity import token_overlap
+
 #: What the decision came out of. Named rather than boolean so a node
 #: graph can wire each one somewhere different later.
 Port = Literal["linked", "suggested", "unmatched"]
@@ -225,33 +227,6 @@ class Decision:
     #: a real one.
     score: float = 0.0
     trace: list[Consideration] = field(default_factory=list)
-
-
-def _similar(a: Optional[str], b: Optional[str]) -> float:
-    """Description similarity, 0..1.
-
-    Token overlap over the longer side: the measure
-    `recurring_match_service` has run in production since issue #116, and
-    the same bar the bank-sync fuzzy merge tunes against. Reproduced
-    rather than improved on purpose: this lands under thousands of
-    existing recurring bills, and a matcher that starts finding pairs it
-    used to miss is a behaviour change nobody asked for on the day it
-    ships.
-
-    It is deliberately unforgiving. "NETFLIX.COM" against "NETFLIX
-    ASSINATURA" scores zero, because a bank string and a hand-typed one
-    rarely share tokens exactly, which is why the exact-amount signal
-    carries the weight and this only guards against two bills of the same
-    value on one account. A looser measure belongs in the policy as a
-    knob, next to the threshold, not baked in here.
-    """
-    if not a or not b:
-        return 0.0
-    tokens_a = {t for t in a.lower().split() if t}
-    tokens_b = {t for t in b.lower().split() if t}
-    if not tokens_a or not tokens_b:
-        return 0.0
-    return len(tokens_a & tokens_b) / max(len(tokens_a), len(tokens_b))
 
 
 def _amount_verdict(
@@ -751,7 +726,7 @@ def evaluate(
             score = 1.0
             similarity = rule.get("description_similarity")
             if similarity:
-                score = _similar(movement.description, candidate.description)
+                score = token_overlap(movement.description, candidate.description)
                 if score < float(similarity.get("min", 0)):
                     note.rejected_by = Reason.DESCRIPTION
                     note.score = score
