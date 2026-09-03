@@ -42,6 +42,29 @@ async def business_ws(client: AsyncClient, auth_headers) -> dict:
 
 
 @pytest_asyncio.fixture
+async def personal_ws(session: AsyncSession, test_user):
+    """The user's personal workspace, resolved by kind.
+
+    Not the shared `test_workspace` fixture: that one takes the first row
+    with no ORDER BY, so once these tests create a business workspace it
+    can return either. Which workspace is which is the whole subject of
+    the gate test.
+    """
+    from sqlalchemy import select
+
+    from app.models.workspace import Workspace, WorkspaceMember
+
+    result = await session.execute(
+        select(Workspace)
+        .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
+        .where(WorkspaceMember.user_id == test_user.id, Workspace.kind == "personal")
+        .order_by(Workspace.created_at.asc())
+        .limit(1)
+    )
+    return result.scalar_one()
+
+
+@pytest_asyncio.fixture
 async def biz_headers(auth_headers, business_ws) -> dict:
     return {**auth_headers, "X-Workspace-Id": business_ws["id"]}
 
@@ -143,17 +166,57 @@ async def test_the_shipped_rules_are_visible_without_anyone_creating_them(
 
 
 @pytest.mark.asyncio
-async def test_a_personal_workspace_is_told_the_invoice_rules_are_not_live_here(
-    client: AsyncClient, auth_headers
+async def test_a_personal_workspace_cannot_reach_any_of_this(
+    client: AsyncClient, auth_headers, personal_ws
 ):
-    """Shown, but honestly marked. Pretending they were live in a
-    workspace that never issues a document would be a lie the page tells
-    on every load."""
-    resp = await client.get("/api/reconciliation/rules", headers=auth_headers)
-    assert resp.status_code == 200, resp.text
-    by_node = {n["node"]: n for n in resp.json()}
+    """Every route, not a sample: one ungated route is the whole hole.
 
-    assert by_node[INVOICE_NODE]["active"] is False
+    These rules used to be readable anywhere, because the recurring set
+    was editable here too and that set is real in a personal workspace.
+    Once it left the page, what remained decided whose money settles which
+    invoice, and a workspace without invoicing could still write, reorder
+    and import rules that could never fire: configuration accumulating for
+    a module nobody has.
+
+    404 rather than 403, matching the invoice routes: a workspace without
+    the module should not be able to tell the feature is there.
+    """
+    personal = {**auth_headers, "X-Workspace-Id": str(personal_ws.id)}
+    fake = str(uuid.uuid4())
+    routes = [
+        ("get", "/api/reconciliation/rules", None),
+        ("get", "/api/reconciliation/rules/export", None),
+        ("post", "/api/reconciliation/rules/import", {"payload": {}, "overwrite": True}),
+        ("post", "/api/reconciliation/rules", {"node": INVOICE_NODE, "name": "x",
+                                               "outcome": "link", "when": {}}),
+        ("patch", f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact",
+         {"enabled": False}),
+        ("delete", f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact", None),
+        ("post", f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact/reset", None),
+        ("put", f"/api/reconciliation/rules/{INVOICE_NODE}/order", {"order": ["x"]}),
+        ("get", "/api/reconciliation/suggestions", None),
+        ("post", f"/api/reconciliation/suggestions/{fake}/accept", None),
+        ("post", f"/api/reconciliation/suggestions/{fake}/decline", None),
+        ("get", "/api/reconciliation/history", None),
+    ]
+    for method, url, body in routes:
+        call = getattr(client, method)
+        resp = await call(url, headers=personal, **({"json": body} if body else {}))
+        assert resp.status_code == 404, f"{method.upper()} {url} -> {resp.status_code}"
+
+
+@pytest.mark.asyncio
+async def test_a_business_workspace_still_reaches_all_of_it(
+    client: AsyncClient, biz_headers
+):
+    """The other half of the gate, so a mistake in it fails loudly rather
+    than by everybody quietly losing the feature."""
+    assert (
+        await client.get("/api/reconciliation/rules", headers=biz_headers)
+    ).status_code == 200
+    assert (
+        await client.get("/api/reconciliation/history", headers=biz_headers)
+    ).status_code == 200
 
 
 @pytest.mark.asyncio

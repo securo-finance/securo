@@ -5,10 +5,18 @@ where a decision was not confident enough to be made alone. Seeing them
 side by side is the point: somebody staring at a long queue should be
 one click from the rule that keeps sending things there.
 
-Not gated on the invoices module. The recurring rules apply to a personal
-workspace that never issues a document, and gating the whole router would
-hide them from the people the recurring matcher was written for. The
-invoice *set* is marked inactive instead, which is the honest signal.
+Gated on the invoices module, and every route in it answers 404 rather
+than 403: a workspace without the module should not be able to tell the
+feature is there.
+
+It was not always. While the recurring rules were editable here too, the
+router served a personal workspace something real, so it stayed open and
+the invoice set carried an "inactive" flag as the honest signal. Those
+rules left the page (they decide whether an arriving charge is a row we
+generated ourselves, which is bookkeeping about our own duplicates), and
+what is left decides whose money settles which invoice. A personal
+workspace could still write, reorder and import matching rules that could
+never fire, which is configuration accumulating for a module nobody has.
 """
 import uuid
 from decimal import Decimal
@@ -20,11 +28,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
-from app.core.workspace_context import (
-    WorkspaceContext,
-    current_workspace,
-    current_writable_workspace,
-)
+from app.core.module_gate import require_module, require_module_write
+from app.core.workspace_context import WorkspaceContext
 from app.models.invoice import Invoice
 from app.models.reconciliation import ReconciliationRule
 from app.models.recurring_transaction import RecurringTransaction
@@ -49,10 +54,12 @@ from app.services import (
     reconciliation_rule_service as rules,
     reconciliation_suggestion_service as suggestions,
 )
-from app.services.module_service import ModuleId, resolve_modules
-from app.services.reconciliation_policy import MATCH_INVOICE
+from app.services.module_service import ModuleId
 
 router = APIRouter(prefix="/api/reconciliation", tags=["reconciliation"])
+
+_read = require_module(ModuleId.INVOICES)
+_write = require_module_write(ModuleId.INVOICES)
 
 
 def _http(error: rules.RuleError) -> HTTPException:
@@ -82,7 +89,7 @@ def _as_read(node: str, strategy: dict, position: int) -> ReconciliationRuleRead
 # ---------------------------------------------------------------------------
 @router.get("/rules", response_model=list[ReconciliationNodeRead])
 async def list_rules(
-    ctx: WorkspaceContext = Depends(current_workspace),
+    ctx: WorkspaceContext = Depends(_read),
     session: AsyncSession = Depends(get_async_session),
 ):
     """Every rule this workspace runs, in the order they are tried.
@@ -91,18 +98,17 @@ async def list_rules(
     of rules: that is what keeps an untouched rule improving when we
     improve it.
     """
-    enabled_modules = resolve_modules(ctx.workspace)
     out: list[ReconciliationNodeRead] = []
     for node in rules.EDITABLE_NODES:
         policy = await rules.resolve(session, ctx.workspace.id, node)
         out.append(
             ReconciliationNodeRead(
                 node=node,
-                active=(
-                    ModuleId.INVOICES.value in enabled_modules
-                    if node == MATCH_INVOICE["node"]
-                    else True
-                ),
+                # Structural now: reaching this route at all means the
+                # module is on, so a set that is listed is a set that
+                # runs. The flag stays on the wire for the day a node
+                # depends on something else.
+                active=True,
                 rules=[
                     _as_read(node, strategy, index)
                     for index, strategy in enumerate(policy["strategies"])
@@ -120,7 +126,7 @@ async def update_rule(
     node: str,
     strategy_id: str,
     payload: ReconciliationRuleUpdate,
-    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    ctx: WorkspaceContext = Depends(_write),
     session: AsyncSession = Depends(get_async_session),
 ):
     """Change a rule: one we ship, or one the workspace wrote."""
@@ -155,7 +161,7 @@ async def update_rule(
 async def reorder_rules(
     node: str,
     payload: ReconciliationOrder,
-    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    ctx: WorkspaceContext = Depends(_write),
     session: AsyncSession = Depends(get_async_session),
 ):
     """Set the order rules are tried in.
@@ -185,7 +191,7 @@ async def reorder_rules(
 )
 async def create_rule(
     payload: ReconciliationRuleCreate,
-    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    ctx: WorkspaceContext = Depends(_write),
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
@@ -214,7 +220,7 @@ async def create_rule(
 async def delete_rule(
     node: str,
     strategy_id: str,
-    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    ctx: WorkspaceContext = Depends(_write),
     session: AsyncSession = Depends(get_async_session),
 ):
     """Get rid of a rule, including one of ours.
@@ -235,7 +241,7 @@ async def delete_rule(
 async def reset_rule(
     node: str,
     strategy_id: str,
-    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    ctx: WorkspaceContext = Depends(_write),
     session: AsyncSession = Depends(get_async_session),
 ):
     """Forget everything this workspace did to one of our rules.
@@ -254,7 +260,7 @@ async def reset_rule(
 # ---------------------------------------------------------------------------
 @router.get("/rules/export")
 async def export_rules(
-    ctx: WorkspaceContext = Depends(current_workspace),
+    ctx: WorkspaceContext = Depends(_read),
     session: AsyncSession = Depends(get_async_session),
 ):
     """The matching policy as a file, with ids resolved to names."""
@@ -270,7 +276,7 @@ async def export_rules(
 @router.post("/rules/import", response_model=ReconciliationImportResponse)
 async def import_rules(
     data: ReconciliationImportRequest,
-    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    ctx: WorkspaceContext = Depends(_write),
     session: AsyncSession = Depends(get_async_session),
 ):
     try:
@@ -320,7 +326,7 @@ async def _one(
 # ---------------------------------------------------------------------------
 @router.get("/suggestions", response_model=list[SuggestionRead])
 async def list_suggestions(
-    ctx: WorkspaceContext = Depends(current_workspace),
+    ctx: WorkspaceContext = Depends(_read),
     session: AsyncSession = Depends(get_async_session),
 ):
     """Matches nobody has answered yet, oldest first.
@@ -352,7 +358,7 @@ async def list_suggestions(
 @router.post("/suggestions/{suggestion_id}/accept", response_model=SuggestionRead)
 async def accept_suggestion(
     suggestion_id: uuid.UUID,
-    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    ctx: WorkspaceContext = Depends(_write),
     session: AsyncSession = Depends(get_async_session),
 ):
     """Take the match, and write it the way its kind is written.
@@ -433,7 +439,7 @@ async def _settle(
 @router.post("/suggestions/{suggestion_id}/decline", response_model=SuggestionRead)
 async def decline_suggestion(
     suggestion_id: uuid.UUID,
-    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    ctx: WorkspaceContext = Depends(_write),
     session: AsyncSession = Depends(get_async_session),
 ):
     """Say no. The rows stay, so this pair is never offered again.
@@ -515,7 +521,7 @@ async def _name_of(session: AsyncSession, row) -> Optional[str]:
 async def list_history(
     limit: int = 50,
     expectation_id: Optional[uuid.UUID] = None,
-    ctx: WorkspaceContext = Depends(current_workspace),
+    ctx: WorkspaceContext = Depends(_read),
     session: AsyncSession = Depends(get_async_session),
 ):
     """The stream, newest first, or everything that happened to one promise.
