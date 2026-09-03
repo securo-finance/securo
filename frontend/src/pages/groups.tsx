@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/dialog'
 import { GroupForm } from '@/components/group-form'
 import { PageHeader } from '@/components/page-header'
-import { Archive, ChevronRight, Trash2, Users } from 'lucide-react'
+import { Archive, ChevronRight, Plus, Trash2, Users } from 'lucide-react'
 import type { Group, GroupKind } from '@/types'
 
 type StatusFilter = 'active' | 'archived' | 'all'
@@ -142,7 +142,12 @@ export default function GroupsPage() {
         section={t('splitGroups.section')}
         title={t('splitGroups.title')}
         action={
-          canWrite ? <Button onClick={openCreate}>+ {t('splitGroups.add')}</Button> : undefined
+          canWrite ? (
+            <Button size="sm" className="h-8 gap-1.5" onClick={openCreate}>
+              <Plus size={13} />
+              <span className="hidden sm:inline">{t('splitGroups.add')}</span>
+            </Button>
+          ) : undefined
         }
       />
 

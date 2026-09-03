@@ -425,8 +425,9 @@ export default function PayeesPage() {
                   </Button>
                 </div>
               )}
-              <Button onClick={openCreate}>
-                + {t('payees.add')}
+              <Button size="sm" className="h-8 gap-1.5" onClick={openCreate}>
+                <Plus size={13} />
+                <span className="hidden sm:inline">{t('payees.add')}</span>
               </Button>
             </div>
           ) : undefined
