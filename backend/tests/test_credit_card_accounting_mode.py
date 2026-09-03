@@ -364,6 +364,21 @@ class TestGlobalSetting:
         mode = await admin_service.get_credit_card_accounting_mode(session)
         assert mode == "purchase_date"  # falls back to default
 
+    @pytest.mark.asyncio
+    async def test_normalizes_legacy_cash_value(self, session, clean_db):
+        # Rolling deploy: new app code can read the row before migration 086
+        # rewrites it (issue #821 follow-up). Must resolve to the same
+        # behavior the legacy value described, not the bare default.
+        await admin_service.set_app_setting(session, "credit_card_accounting_mode", "cash")
+        mode = await admin_service.get_credit_card_accounting_mode(session)
+        assert mode == "purchase_date"
+
+    @pytest.mark.asyncio
+    async def test_normalizes_legacy_accrual_value(self, session, clean_db):
+        await admin_service.set_app_setting(session, "credit_card_accounting_mode", "accrual")
+        mode = await admin_service.get_credit_card_accounting_mode(session)
+        assert mode == "invoice_due_date"
+
 
 # ---------------------------------------------------------------------------
 # Aggregation queries: dashboard summary — the showcase case.
