@@ -16,6 +16,8 @@ from app.schemas.rule import (
     RuleImportRequest,
     RuleImportResponse,
     RuleMutationResponse,
+    RulePreviewRequest,
+    RulePreviewResponse,
     RuleRead,
     RuleUpdate,
 )
@@ -25,15 +27,28 @@ from app.services.rule_service import DuplicateRuleError
 router = APIRouter(prefix="/api/rules", tags=["rules"])
 
 
-def _normalize_conditions(conditions: list[dict]) -> list[dict]:
-    return [
-        {
-            "field": condition.get("field"),
+def _normalize_condition(condition: dict) -> dict:
+    """Reduce one condition list entry to the keys that decide what it matches.
+
+    A group entry carries its own operator and leaves instead of a field, so it
+    has to be normalized recursively — flattening it to `field: None` would make
+    every group compare equal and hide real edits from the change check below.
+    """
+    nested = condition.get("conditions")
+    if isinstance(nested, list):
+        return {
             "op": condition.get("op"),
-            "value": condition.get("value"),
+            "conditions": [_normalize_condition(c) for c in nested],
         }
-        for condition in conditions
-    ]
+    return {
+        "field": condition.get("field"),
+        "op": condition.get("op"),
+        "value": condition.get("value"),
+    }
+
+
+def _normalize_conditions(conditions: list[dict]) -> list[dict]:
+    return [_normalize_condition(condition) for condition in conditions]
 
 
 def _rule_match_definition_changed(rule: RuleRead, data: RuleUpdate) -> bool:
@@ -93,6 +108,31 @@ async def create_rule(
     response = RuleCreateResponse.model_validate(rule)
     response.applied_count = applied_count
     return response
+
+
+@router.post("/preview", response_model=RulePreviewResponse)
+async def preview_rule(
+    data: RulePreviewRequest,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Show which existing transactions a draft rule would match, and how it
+    would change them, without saving anything."""
+    try:
+        return await rule_service.preview_rule(
+            session,
+            ctx.workspace.id,
+            data.conditions_op,
+            [c.model_dump() for c in data.conditions],
+            [a.model_dump() for a in data.actions],
+            is_active=data.is_active,
+            apply_to_existing=data.apply_to_existing,
+            overwrite_existing_categories=data.overwrite_existing_categories,
+            limit=data.limit,
+            offset=data.offset,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.get("/export")

@@ -50,9 +50,9 @@ class AccountRead(AccountBase):
     # Last 4 chars of the bank's identifier, when the provider exposes one.
     # Read-only: absent from AccountUpdate because sync owns it.
     masked_number: Optional[str] = None
-    # Denormalized from the linked BankConnection so every surface that shows
-    # an account (transactions list, accounts page, dashboard) can render the
-    # bank identity without a separate join. Null for manual accounts.
+    # The account's own institution (issue #345), falling back to the linked
+    # BankConnection's when the provider doesn't distinguish. Null for manual
+    # accounts.
     institution_name: Optional[str] = None
     institution_logo_url: Optional[str] = None
     current_balance: float = 0.0

@@ -19,6 +19,7 @@ from app.models.transaction import Transaction
 from app.schemas.transaction import TransactionImport
 from app.services import recurring_match_service
 from app.services.credit_card_service import apply_effective_date
+from app.services.category_service import get_hidden_category_ids
 from app.services.rule_engine import apply_rule_actions, evaluate_conditions, merge_notes
 from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
 from app.services.fx_rate_service import stamp_primary_amount
@@ -621,6 +622,7 @@ async def enrich_with_category_suggestions(
         select(Category).where(Category.workspace_id == workspace_id)
     )
     category_name_map = {str(c.id): c.name for c in category_result.scalars()}
+    hidden_categories = await get_hidden_category_ids(session, workspace_id)
 
     if not rules:
         return transactions
@@ -641,7 +643,12 @@ async def enrich_with_category_suggestions(
             conditions = rule.conditions or []
             actions = rule.actions or []
             if evaluate_conditions(rule.conditions_op, conditions, proxy):
-                category_set = apply_rule_actions(actions, proxy, category_set)
+                category_set = apply_rule_actions(
+                    actions,
+                    proxy,
+                    category_set,
+                    hidden_category_ids=hidden_categories,
+                )
         if proxy.category_id:
             txn.suggested_category_id = proxy.category_id
             txn.suggested_category_name = category_name_map.get(str(proxy.category_id))

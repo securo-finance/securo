@@ -1,0 +1,4 @@
+# Vietnam. The MST is the only number an invoice carries; a branch adds a
+# three-digit suffix to the parent's ten digits.
+code = "VN"
+kinds = ["vn_mst"]

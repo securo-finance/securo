@@ -11,6 +11,7 @@ from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.bank_connection import BankConnection
+    from app.models.institution import Institution
     from app.models.transaction import Transaction
 
 
@@ -40,8 +41,19 @@ class Account(Base):
     minimum_payment: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
     card_brand: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     card_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    # The institution this account is actually at. One connection can span
+    # several (SimpleFIN — issue #345); null falls back to the connection's
+    # own institution_name/logo_url. Eager (selectin) because serialization
+    # always reads it and lazy loads raise in async sessions.
+    institution_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("institutions.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
     is_closed: Mapped[bool] = mapped_column(Boolean, default=False)
     closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     connection: Mapped[Optional["BankConnection"]] = relationship(back_populates="accounts")
+    institution: Mapped[Optional["Institution"]] = relationship(
+        back_populates="accounts", lazy="selectin"
+    )
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="account", cascade="all, delete-orphan")

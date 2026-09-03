@@ -615,6 +615,85 @@ async def test_register_verify_deletes_challenge_after_failure(
     assert _passkey_redis_store.store == {}
 
 
+async def test_passkey_registration_forbidden_when_local_auth_disabled(
+    client: AsyncClient,
+    auth_headers: dict,
+    oidc_only_settings,
+):
+    options_response = await client.post(
+        "/api/auth/passkeys/register/options",
+        json={"name": "Key"},
+        headers=auth_headers,
+    )
+    assert options_response.status_code == 403
+    assert options_response.json()["detail"] == "LOCAL_AUTH_DISABLED"
+
+    verify_response = await client.post(
+        "/api/auth/passkeys/register/verify",
+        json={"challenge_id": "missing", "name": "Key", "credential": {}},
+        headers=auth_headers,
+    )
+    assert verify_response.status_code == 403
+    assert verify_response.json()["detail"] == "LOCAL_AUTH_DISABLED"
+
+
+async def test_delete_passkey_allowed_when_local_auth_disabled(
+    client: AsyncClient,
+    auth_headers: dict,
+    session: AsyncSession,
+    test_user,
+    oidc_only_settings,
+):
+    passkey = UserPasskey(
+        user_id=test_user.id,
+        credential_id="cleanup-credential",
+        public_key="cleanup-public-key",
+        sign_count=0,
+        name="Cleanup key",
+    )
+    session.add(passkey)
+    await session.commit()
+    await session.refresh(passkey)
+
+    response = await client.delete(f"/api/auth/passkeys/{passkey.id}", headers=auth_headers)
+
+    assert response.status_code == 204
+    result = await session.execute(select(UserPasskey).where(UserPasskey.id == passkey.id))
+    assert result.scalar_one_or_none() is None
+
+
+async def test_passkey_login_forbidden_when_local_auth_disabled(client: AsyncClient, oidc_only_settings):
+    options_response = await client.post(
+        "/api/auth/passkeys/authenticate/options",
+        json={"email": "test@example.com"},
+    )
+    assert options_response.status_code == 403
+    assert options_response.json()["detail"] == "LOCAL_AUTH_DISABLED"
+
+    verify_response = await client.post(
+        "/api/auth/passkeys/authenticate/verify",
+        json={"challenge_id": "missing", "credential": {}},
+    )
+    assert verify_response.status_code == 403
+    assert verify_response.json()["detail"] == "LOCAL_AUTH_DISABLED"
+
+
+async def test_passkey_second_factor_forbidden_when_local_auth_disabled(client: AsyncClient, oidc_only_settings):
+    options_response = await client.post(
+        "/api/auth/passkeys/2fa/options",
+        json={"temp_token": "missing"},
+    )
+    assert options_response.status_code == 403
+    assert options_response.json()["detail"] == "LOCAL_AUTH_DISABLED"
+
+    verify_response = await client.post(
+        "/api/auth/passkeys/2fa/verify",
+        json={"temp_token": "missing", "challenge_id": "missing", "credential": {}},
+    )
+    assert verify_response.status_code == 403
+    assert verify_response.json()["detail"] == "LOCAL_AUTH_DISABLED"
+
+
 # --- Relying-party resolution -------------------------------------------------
 # The RP ID must match the domain the browser is on, or the browser refuses the
 # credential with a SecurityError. See issues #403 and #410.

@@ -6,6 +6,7 @@ from typing import Any, Optional, cast
 
 from fastapi import HTTPException, status
 from sqlalchemy import select, func, desc
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.asset import Asset
@@ -158,6 +159,7 @@ def _asset_to_read(
         gain_loss=gain_loss,
         value_count=value_count,
         source=asset.source,
+        external_id=asset.external_id,
         connection_id=asset.connection_id,
         isin=asset.isin,
         maturity_date=asset.maturity_date,
@@ -446,6 +448,25 @@ async def create_asset(
                 detail=f"Could not fetch quote for {data.ticker}",
             )
 
+    source = (
+        "tesouro_direto"
+        if quote and quote.exchange == "Tesouro Direto"
+        else ("yfinance" if data.valuation_method == "market_price" else "manual")
+    )
+    if data.external_id is not None:
+        existing_result = await session.execute(
+            select(Asset).where(
+                Asset.workspace_id == workspace_id,
+                Asset.source == source,
+                Asset.external_id == data.external_id,
+            )
+        )
+        existing = existing_result.scalar_one_or_none()
+        if existing is not None:
+            existing_read = await get_asset(session, existing.id, workspace_id)
+            assert existing_read is not None
+            return existing_read
+
     asset = Asset(
         user_id=user_id,
         workspace_id=workspace_id,
@@ -474,14 +495,29 @@ async def create_asset(
         last_price=Decimal(str(quote.price)) if quote else None,
         last_price_at=datetime.now(timezone.utc) if quote else None,
         logo_url=quote.logo_url if quote else None,
-        source=(
-            "tesouro_direto"
-            if quote and quote.exchange == "Tesouro Direto"
-            else ("yfinance" if data.valuation_method == "market_price" else "manual")
-        ),
+        external_id=data.external_id,
+        source=source,
     )
     session.add(asset)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        # Return the winner when concurrent requests use the same external ID.
+        await session.rollback()
+        if data.external_id is not None:
+            existing_result = await session.execute(
+                select(Asset).where(
+                    Asset.workspace_id == workspace_id,
+                    Asset.source == source,
+                    Asset.external_id == data.external_id,
+                )
+            )
+            existing = existing_result.scalar_one_or_none()
+            if existing is not None:
+                existing_read = await get_asset(session, existing.id, workspace_id)
+                assert existing_read is not None
+                return existing_read
+        raise
 
     # Seed the first AssetValue from the live quote so the portfolio chart
     # has a starting data point without waiting for the scheduled refresh.

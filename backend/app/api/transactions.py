@@ -24,6 +24,35 @@ from app.services.transaction_calendar_service import get_transaction_calendar
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
 
+async def _attach_invoice_links(session, ctx, items: list) -> None:
+    """Mark the rows on this page that settle an invoice.
+
+    One query for the whole page rather than one per row: this is the
+    hottest list in the product and an N+1 here would be felt.
+
+    Skipped entirely unless the workspace has the invoicing module, so a
+    personal workspace pays nothing — not a query, not a field on the
+    response. The import is local for the same reason the check is: the
+    transaction list must not grow a hard dependency on a module most
+    workspaces never enable.
+    """
+    from app.services.module_service import ModuleId, resolve_modules
+
+    if ModuleId.INVOICES.value not in resolve_modules(ctx.workspace):
+        return
+
+    from app.schemas.transaction import TransactionInvoiceLink
+    from app.services.invoice_service import invoice_links_for_transactions
+
+    links = await invoice_links_for_transactions(
+        session, ctx.workspace.id, [item.id for item in items]
+    )
+    for item in items:
+        item.invoice_links = [
+            TransactionInvoiceLink(**link) for link in links.get(item.id, [])
+        ]
+
+
 def _tag_fx_fallback(tx: TransactionRead, primary_currency: str) -> TransactionRead:
     """Set fx_fallback=True when a cross-currency tx isn't backed by a real rate.
 
@@ -98,6 +127,7 @@ async def list_transactions(
     include_opening_balance: bool = Query(False),
     exclude_transfers: bool = Query(False),
     user_pnl_only: bool = Query(False, description="Return only rows that count toward dashboard/user income/expense totals"),
+    exclude_ignored: bool = Query(False, description="Drop rows the user marked ignored, or whose category is ignored"),
     tags: Optional[List[str]] = Query(None),
     min_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount >= this value (primary currency)."),
     max_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount <= this value (primary currency)."),
@@ -115,6 +145,7 @@ async def list_transactions(
         include_opening_balance=include_opening_balance, search=q, uncategorized=uncategorized,
         txn_type=type, exclude_transfers=exclude_transfers,
         user_pnl_only=user_pnl_only,
+        exclude_ignored=exclude_ignored,
         status=status,
         accounting_mode=accounting_mode,
         tags=tags,
@@ -129,6 +160,7 @@ async def list_transactions(
     )
     primary_currency = ctx.user.primary_currency
     items = [_tag_fx_fallback(TransactionRead.model_validate(tx, from_attributes=True), primary_currency) for tx in transactions]
+    await _attach_invoice_links(session, ctx, items)
     summary_out = (
         TransactionsSummary(**summary, currency=primary_currency)
         if summary is not None
@@ -167,6 +199,7 @@ async def export_transactions(
     uncategorized: bool = Query(False),
     type: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
+    exclude_ignored: bool = Query(False, description="Drop rows the user marked ignored, or whose category is ignored"),
     tags: Optional[List[str]] = Query(None),
     transaction_ids: Optional[List[uuid.UUID]] = Query(None, description="If set, exports exactly these rows (scoped to the workspace); other filters are ignored."),
     ctx: WorkspaceContext = Depends(current_workspace),
@@ -190,6 +223,7 @@ async def export_transactions(
             payee_id=payee_id, from_date=from_date, to_date=to_date,
             search=q, uncategorized=uncategorized, txn_type=type, status=status, skip_pagination=True,
             accounting_mode=accounting_mode,
+            exclude_ignored=exclude_ignored,
             tags=tags,
         )
 

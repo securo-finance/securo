@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { auth as authApi, currencies as currenciesApi, fiscal as fiscalApi, workspaces as workspacesApi } from '@/lib/api'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
+import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -37,6 +38,7 @@ import {
 } from '@/components/ui/dialog'
 import { AlertTriangle, Archive, Plus, Save, Trash2, Users } from 'lucide-react'
 import { WORKSPACE_KIND_LABEL_KEY } from '@/lib/workspace-kinds'
+import { SUPPORTED_LANGS } from '@/lib/i18n'
 import { countryFlag } from '@/lib/country-flag'
 import { countryName } from '@/lib/country-name'
 import type { WorkspaceKind, WorkspaceMember, WorkspaceRole } from '@/types'
@@ -125,6 +127,8 @@ export default function WorkspaceSettingsPage() {
     staleTime: Infinity,
   })
 
+  const localAuthEnabled = useLocalAuthEnabled()
+
   // The server lists codes; the user reads names. Sorted by the name actually
   // shown, in the reader's own collation.
   const sortedJurisdictions = useMemo(
@@ -201,7 +205,7 @@ export default function WorkspaceSettingsPage() {
       return workspacesApi.invite(current.id, {
         email: inviteEmail.trim(),
         role: inviteRole,
-        password: invitePassword || undefined,
+        password: localAuthEnabled ? (invitePassword || undefined) : undefined,
       })
     },
     onSuccess: () => {
@@ -432,16 +436,9 @@ export default function WorkspaceSettingsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">—</SelectItem>
-                  <SelectItem value="ru">Русский</SelectItem>
-                  <SelectItem value="de">Deutsch</SelectItem>
-                  <SelectItem value="uk">Українська</SelectItem>
-                  <SelectItem value="en">English</SelectItem>
-                  <SelectItem value="pt-BR">Português (BR)</SelectItem>
-                  <SelectItem value="pt-PT">Português (PT)</SelectItem>
-                  <SelectItem value="es">Español</SelectItem>
-                  <SelectItem value="pl">Polski</SelectItem>
-                  <SelectItem value="it">Italiano</SelectItem>
-                  <SelectItem value="fr">Français</SelectItem>
+                  {SUPPORTED_LANGS.map(({ code, label }) => (
+                    <SelectItem key={code} value={code}>{label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -610,7 +607,13 @@ export default function WorkspaceSettingsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t('workspace.addMemberTitle')}</DialogTitle>
-            <DialogDescription>{t('workspace.addMemberDescription')}</DialogDescription>
+            <DialogDescription>
+              {t(
+                localAuthEnabled
+                  ? 'workspace.addMemberDescription'
+                  : 'workspace.addMemberDescriptionExistingOnly',
+              )}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-1">
             <div className="space-y-1.5">
@@ -644,22 +647,24 @@ export default function WorkspaceSettingsPage() {
                 ))}
               </select>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="invite-password" className="text-[13px]">
-                {t('workspace.passwordForNewUsers')}
-              </Label>
-              <Input
-                id="invite-password"
-                type="password"
-                value={invitePassword}
-                onChange={(e) => setInvitePassword(e.target.value)}
-                className="h-10 rounded-lg"
-                placeholder=""
-              />
-              <p className="text-[11px] text-muted-foreground leading-relaxed">
-                {t('workspace.passwordHint')}
-              </p>
-            </div>
+            {localAuthEnabled && (
+              <div className="space-y-1.5">
+                <Label htmlFor="invite-password" className="text-[13px]">
+                  {t('workspace.passwordForNewUsers')}
+                </Label>
+                <Input
+                  id="invite-password"
+                  type="password"
+                  value={invitePassword}
+                  onChange={(e) => setInvitePassword(e.target.value)}
+                  className="h-10 rounded-lg"
+                  placeholder=""
+                />
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  {t('workspace.passwordHint')}
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button

@@ -1,5 +1,5 @@
 from pathlib import Path
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 import pytest
 
 from app.core.config import Settings
@@ -110,3 +110,53 @@ def test_multiple_secrets_dirs_merge(tmp_path: Path):
             value = value.get_secret_value()
 
         assert value == expectedValue
+
+
+def test_local_auth_enabled_defaults_true(secrets: Path):
+    settings = Settings(_secrets_dir=str(secrets))
+
+    assert settings.local_auth_enabled is True
+
+
+def test_local_auth_can_be_disabled_when_oidc_is_enabled(secrets: Path):
+    settings = Settings(
+        oidc_enabled=True,
+        oidc_client_id="securo",
+        oidc_discovery_url="https://id.example.com/.well-known/openid-configuration",
+        local_auth_enabled=False,
+        _secrets_dir=str(secrets),
+    )
+
+    assert settings.local_auth_enabled is False
+
+
+def test_local_auth_disabled_requires_oidc(secrets: Path):
+    with pytest.raises(ValidationError, match="LOCAL_AUTH_ENABLED=false requires a complete OIDC configuration"):
+        Settings(local_auth_enabled=False, _secrets_dir=str(secrets))
+
+
+@pytest.mark.parametrize(
+    ("missing_field", "oidc_client_id", "oidc_discovery_url"),
+    [
+        (
+            "OIDC_CLIENT_ID",
+            "",
+            "https://id.example.com/.well-known/openid-configuration",
+        ),
+        ("OIDC_DISCOVERY_URL", "securo", ""),
+    ],
+)
+def test_local_auth_disabled_requires_complete_oidc_configuration(
+    secrets: Path,
+    missing_field: str,
+    oidc_client_id: str,
+    oidc_discovery_url: str,
+):
+    with pytest.raises(ValidationError, match=missing_field):
+        Settings(
+            oidc_enabled=True,
+            oidc_client_id=oidc_client_id,
+            oidc_discovery_url=oidc_discovery_url,
+            local_auth_enabled=False,
+            _secrets_dir=str(secrets),
+        )

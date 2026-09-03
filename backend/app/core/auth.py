@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Optional
 
 from fastapi import Depends, Request
-from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin
+from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin, schemas
 from fastapi_users.authentication import (
     AuthenticationBackend,
     BearerTransport,
@@ -12,6 +12,7 @@ from fastapi_users.authentication import (
 from fastapi_users.db import SQLAlchemyUserDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth_policy import require_local_auth_enabled
 from app.core.config import get_settings
 from app.core.database import get_async_session
 from app.models.user import User
@@ -27,6 +28,17 @@ class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
     user_db: SQLAlchemyUserDatabase
     reset_password_token_secret = settings.secret_key
     verification_token_secret = settings.secret_key
+
+    async def update(
+        self,
+        user_update: schemas.BaseUserUpdate,
+        user: User,
+        safe: bool = False,
+        request: Request | None = None,
+    ) -> User:
+        if user_update.password is not None:
+            require_local_auth_enabled()
+        return await super().update(user_update, user, safe=safe, request=request)
 
     async def on_after_register(self, user: User, request: Optional[Request] = None):
         print(f"User {user.id} has registered.")

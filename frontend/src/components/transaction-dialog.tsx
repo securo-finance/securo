@@ -2,13 +2,15 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { getAccountLabel, getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useDateLocale, useDisplayLocale } from '@/hooks/use-display-locale'
-import { formatCurrency } from '@/lib/format'
+import { formatAmountInput, formatCurrency, parseAmountInput } from '@/lib/format'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
-import { currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi } from '@/lib/api'
+import { currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { normalizeRuleMatchValue } from '@/lib/rule-match-utils'
+import { findCategoryReference, getRuleCategoryId } from '@/lib/category-reference-utils'
+import { flattenConditions, hasConditionGroups } from '@/lib/rule-conditions'
 import { cn, normalizeText } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -61,39 +63,15 @@ type PendingInstallmentEdit = {
   action?: SaveAction
 }
 
-export function extractApiError(error: unknown): string {
-  if (
-    error &&
-    typeof error === 'object' &&
-    'response' in error &&
-    error.response &&
-    typeof error.response === 'object' &&
-    'data' in error.response
-  ) {
-    const data = (error.response as { data: unknown }).data
-    if (data && typeof data === 'object' && 'detail' in data) {
-      const detail = (data as { detail: unknown }).detail
-      if (typeof detail === 'string') return detail
-      if (Array.isArray(detail)) {
-        return detail.map((d: { msg?: string; loc?: string[] }) => {
-          const field = d.loc?.slice(-1)[0] ?? ''
-          return `${field}: ${d.msg ?? 'invalid'}`
-        }).join(', ')
-      }
-    }
-  }
-  return 'An unexpected error occurred'
-}
-
 function isImageType(contentType: string): boolean {
   return contentType.startsWith('image/')
 }
 
-function getRuleCategoryId(rule: Rule): string | null {
-  return rule.actions.find(action => action.op === 'set_category' && action.value)?.value ?? null
-}
-
 function canExtendRuleFromTransaction(rule: Rule): boolean {
+  // Rules that mix AND and OR are left out: appending a top-level condition —
+  // and possibly flipping the rule to OR — would silently change what the
+  // grouped rule matches. Those are edited from the rules page instead.
+  if (hasConditionGroups(rule.conditions)) return false
   return rule.is_active && !!getRuleCategoryId(rule) && (rule.conditions_op === 'or' || rule.conditions.length <= 1)
 }
 
@@ -447,7 +425,13 @@ function TransactionForm({
   })
   const seed = transaction ?? duplicateDraft
   const [description, setDescription] = useState(seed?.description ?? '')
-  const [amount, setAmount] = useState(seed?.amount?.toString() ?? '')
+  // Amount fields hold display-locale strings (comma decimals on dot_comma),
+  // so seeds from stored numbers go through formatAmountInput — a raw
+  // toString() would read back through parseAmountInput with the dot taken
+  // for a thousands separator.
+  const [amount, setAmount] = useState(
+    seed?.amount != null ? formatAmountInput(seed.amount, displayLocale, 8) : ''
+  )
   const [date, setDate] = useState(seed?.date ?? localDateString())
   const [type, setType] = useState<'debit' | 'credit'>(seed?.type ?? 'debit')
   const [status, setStatus] = useState<'posted' | 'pending'>(seed?.status ?? 'posted')
@@ -460,10 +444,10 @@ function TransactionForm({
   // when the selected account is a credit card.
   const [effectiveBillDate, setEffectiveBillDate] = useState(seed?.effective_bill_date ?? '')
   const [convertedAmount, setConvertedAmount] = useState(
-    seed?.amount_primary != null ? seed.amount_primary.toString() : ''
+    seed?.amount_primary != null ? formatAmountInput(seed.amount_primary, displayLocale, 8) : ''
   )
   const [fxRate, setFxRate] = useState(
-    seed?.fx_rate_used != null ? seed.fx_rate_used.toString() : ''
+    seed?.fx_rate_used != null ? formatAmountInput(seed.fx_rate_used, displayLocale, 8) : ''
   )
   const [hadInitialFx] = useState(
     !!transaction && (seed?.amount_primary != null || seed?.fx_rate_used != null)
@@ -529,6 +513,9 @@ function TransactionForm({
     el.style.height = `${el.scrollHeight + border}px`
   }, [description, isSynced])
   const [isIgnored, setIsIgnored] = useState(seed?.is_ignored ?? false)
+  const [excludeFromReports, setExcludeFromReports] = useState(
+    seed?.exclude_from_pnl ?? false,
+  )
   const [togglingIgnore, setTogglingIgnore] = useState(false)
   const [recurringLinked, setRecurringLinked] = useState(seed?.recurring_transaction_id != null)
   const [unlinkingRecurring, setUnlinkingRecurring] = useState(false)
@@ -560,7 +547,7 @@ function TransactionForm({
       rule: Rule
       condition: RuleCondition
     }) => {
-      const duplicate = rule.conditions.some(existing =>
+      const duplicate = flattenConditions(rule.conditions).some(existing =>
         existing.field === condition.field &&
         existing.op === condition.op &&
         normalizeRuleMatchValue(existing.value) === normalizeRuleMatchValue(condition.value)
@@ -678,10 +665,11 @@ function TransactionForm({
 
   const handleConvertedAmountChange = (val: string) => {
     setConvertedAmount(val)
-    const numVal = parseFloat(val)
-    const numAmount = parseFloat(amount)
-    if (numVal && numAmount) {
-      setFxRate((numVal / numAmount).toString())
+    const numVal = parseAmountInput(val, displayLocale)
+    const numAmount = parseAmountInput(amount, displayLocale)
+    // Zero is a valid converted amount; only the divisor must be non-zero.
+    if (numVal != null && numAmount) {
+      setFxRate(formatAmountInput(numVal / numAmount, displayLocale, 6))
     } else if (!val) {
       setFxRate('')
     }
@@ -689,10 +677,10 @@ function TransactionForm({
 
   const handleFxRateChange = (val: string) => {
     setFxRate(val)
-    const numRate = parseFloat(val)
-    const numAmount = parseFloat(amount)
-    if (numRate && numAmount) {
-      setConvertedAmount((numAmount * numRate).toFixed(2))
+    const numRate = parseAmountInput(val, displayLocale)
+    const numAmount = parseAmountInput(amount, displayLocale)
+    if (numRate != null && numAmount != null) {
+      setConvertedAmount(formatAmountInput(numAmount * numRate, displayLocale))
     } else if (!val) {
       setConvertedAmount('')
     }
@@ -700,10 +688,10 @@ function TransactionForm({
 
   const handleAmountChange = (val: string) => {
     setAmount(val)
-    const numAmount = parseFloat(val)
-    const numRate = parseFloat(fxRate)
-    if (numRate && numAmount) {
-      setConvertedAmount((numAmount * numRate).toFixed(2))
+    const numAmount = parseAmountInput(val, displayLocale)
+    const numRate = parseAmountInput(fxRate, displayLocale)
+    if (numRate != null && numAmount != null) {
+      setConvertedAmount(formatAmountInput(numAmount * numRate, displayLocale))
     }
   }
 
@@ -722,12 +710,34 @@ function TransactionForm({
         e.preventDefault()
         const action = pendingActionRef.current
         pendingActionRef.current = 'save'
-        const fxFields: Partial<Transaction> = {}
-        if (showConversion && convertedAmount) {
-          fxFields.amount_primary = parseFloat(convertedAmount)
+        // Amounts are typed under the display locale's separators (comma
+        // decimals on dot_comma), so they must be read back the same way —
+        // parseFloat would stop at the first comma and silently save the
+        // wrong value.
+        const parsedAmount = parseAmountInput(amount, displayLocale)
+        if (!isSynced && parsedAmount == null) {
+          toast.error(t('common.error'))
+          return
         }
-        if (showConversion && fxRate) {
-          fxFields.fx_rate_used = parseFloat(fxRate)
+        const fxFields: Partial<Transaction> = {}
+        const parsedConverted = parseAmountInput(convertedAmount, displayLocale)
+        const parsedFxRate = parseAmountInput(fxRate, displayLocale)
+        // A conversion field left empty is optional, but a non-empty one
+        // that doesn't parse must block the save like the amount does —
+        // silently dropping it would persist a transaction missing the
+        // conversion the user typed.
+        if (
+          showConversion &&
+          ((convertedAmount && parsedConverted == null) || (fxRate && parsedFxRate == null))
+        ) {
+          toast.error(t('common.error'))
+          return
+        }
+        if (showConversion && parsedConverted != null) {
+          fxFields.amount_primary = parsedConverted
+        }
+        if (showConversion && parsedFxRate != null) {
+          fxFields.fx_rate_used = parsedFxRate
         }
         if (showConversion && hadInitialFx && !convertedAmount && !fxRate) {
           fxFields.amount_primary = null
@@ -751,18 +761,22 @@ function TransactionForm({
           : hadInitialSplits
             ? { splits: { share_type: 'equal', splits: [] } }
             : {}
+        const pnlExclusionPayload = transaction
+          ? { exclude_from_pnl: excludeFromReports }
+          : {}
         const txData = isSynced
           ? {
               category_id: categoryId || null,
               payee_id: payeeId || null,
               notes: notes.trim() || null,
               is_ignored: isIgnored,
+              ...pnlExclusionPayload,
               ...overridePayload,
               ...splitsPayload,
             } as TransactionEditPayload
           : {
               description,
-              amount: parseFloat(amount),
+              amount: parsedAmount ?? undefined,
               date,
               type,
               currency,
@@ -771,6 +785,7 @@ function TransactionForm({
               account_id: accountId || undefined,
               notes: notes.trim() || null,
               is_ignored: isIgnored,
+              ...pnlExclusionPayload,
               // Creation defaults to "posted" server-side; the user can
               // override to "pending" right in the form (date & status row).
               status,
@@ -945,8 +960,8 @@ function TransactionForm({
             />
           ) : (
             <Input
-              type="number"
-              step="0.01"
+              type="text"
+              inputMode="decimal"
               value={amount}
               onChange={(e) => handleAmountChange(e.target.value)}
               required
@@ -1017,8 +1032,8 @@ function TransactionForm({
                 />
               ) : (
                 <Input
-                  type="number"
-                  step="0.01"
+                  type="text"
+                  inputMode="decimal"
                   value={convertedAmount}
                   onChange={(e) => handleConvertedAmountChange(e.target.value)}
                   placeholder={t('transactions.autoCalculated')}
@@ -1029,8 +1044,8 @@ function TransactionForm({
             <div className="space-y-1">
               <Label className="text-xs">{t('transactions.exchangeRate')}</Label>
               <Input
-                type="number"
-                step="0.0001"
+                type="text"
+                inputMode="decimal"
                 value={fxRate}
                 onChange={(e) => handleFxRateChange(e.target.value)}
                 placeholder={t('transactions.autoCalculated')}
@@ -1060,6 +1075,7 @@ function TransactionForm({
             onChange={setCategoryId}
             categories={categories}
             groups={categoryGroups}
+            currentCategory={seed?.category}
             allowNone={true}
             className="bg-card"
           />
@@ -1110,6 +1126,25 @@ function TransactionForm({
         />
       </div>
 
+      {transaction && (
+        <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 rounded border-border accent-primary"
+            checked={excludeFromReports}
+            onChange={(event) => setExcludeFromReports(event.target.checked)}
+          />
+          <span>
+            <span className="block text-sm font-medium">
+              {t('transactions.excludeFromReports')}
+            </span>
+            <span className="block text-xs text-muted-foreground">
+              {t('transactions.excludeFromReportsHint')}
+            </span>
+          </span>
+        </label>
+      )}
+
       {/* Manual bill-cycle override (issue #92). CC accounts only. Empty
           input = use auto bucketing (Pluggy bill_id when available, cycle
           math otherwise). Setting the date forces this tx into the bill
@@ -1152,7 +1187,7 @@ function TransactionForm({
           settling). Hide the section entirely in that case. */}
       {transaction?.source !== 'settlement' && (
         <TransactionSplitsSection
-          amount={parseFloat(amount) || 0}
+          amount={parseAmountInput(amount, displayLocale) ?? 0}
           currency={currency}
           value={splits}
           onChange={setSplits}
@@ -1412,6 +1447,16 @@ function AddTransactionToRuleDialog({
   const [openCombobox, setOpenCombobox] = useState(false)
   const [matchOp, setMatchOp] = useState<'contains' | 'starts_with'>('contains')
   const [matchText, setMatchText] = useState(transactionDescription)
+  const { data: allCategories } = useQuery({
+    queryKey: ['categories', 'management'],
+    queryFn: categoriesApi.listIncludingHidden,
+  })
+  const { data: allCategoryGroups } = useQuery({
+    queryKey: ['categoryGroups', 'management'],
+    queryFn: categoryGroupsApi.listIncludingHidden,
+  })
+  const displayCategories = allCategories ?? categories
+  const displayCategoryGroups = allCategoryGroups ?? categoryGroups
 
   const effectiveRuleId = ruleId && rules.some(rule => rule.id === ruleId)
     ? ruleId
@@ -1426,11 +1471,11 @@ function AddTransactionToRuleDialog({
       let categoryName = t('transactions.uncategorized')
 
       if (categoryId !== 'uncategorized') {
-        const category = categories.find(c => c.id === categoryId)
+        const category = findCategoryReference(displayCategories, categoryId)
         if (category) {
           categoryName = category.name
           if (category.group_id) {
-            const group = categoryGroups.find(g => g.id === category.group_id)
+            const group = displayCategoryGroups.find(g => g.id === category.group_id)
             if (group) {
               categoryName = `${group.name} > ${category.name}`
             }
@@ -1453,7 +1498,7 @@ function AddTransactionToRuleDialog({
       categoryId,
       ...data,
     }))
-  }, [rules, categories, categoryGroups, t])
+  }, [rules, displayCategories, displayCategoryGroups, t])
 
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -1545,9 +1590,9 @@ function AddTransactionToRuleDialog({
             )}
           </div>
 
-          <div className="grid grid-cols-[140px_1fr] gap-3">
+          <div className="grid grid-cols-[auto_1fr] gap-3">
             <div className="space-y-2">
-              <Label>{t('transactions.matchOperator')}</Label>
+              <Label className="whitespace-nowrap">{t('transactions.matchOperator')}</Label>
               <Select
                 value={matchOp}
                 onValueChange={(value) => setMatchOp(value as 'contains' | 'starts_with')}
