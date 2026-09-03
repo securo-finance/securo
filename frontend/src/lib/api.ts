@@ -1406,7 +1406,7 @@ export const admin = {
     const { data } = await api.get('/admin/registration-status')
     return data
   },
-  accountingMode: async (): Promise<{ mode: 'cash' | 'accrual' }> => {
+  accountingMode: async (): Promise<{ mode: 'purchase_date' | 'invoice_due_date' }> => {
     const { data } = await api.get('/admin/accounting-mode')
     return data
   },

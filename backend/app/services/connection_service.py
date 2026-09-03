@@ -1516,8 +1516,8 @@ async def _sync_bill_finance_charges(
     (carry-over balance, aggregate of detailed lines) are skipped.
     """
     # date = close (when the bank applied the charge); effective_date stays
-    # at bill.due_date so accrual-mode aggregations bucket the same as
-    # regular CC purchases for this bill.
+    # at bill.due_date so invoice_due_date-mode aggregations bucket the same
+    # as regular CC purchases for this bill.
     charge_date = _compute_bill_close_date(bill.due_date, account.statement_close_day)
 
     desired_external_ids: set[str] = set()

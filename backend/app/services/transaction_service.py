@@ -139,14 +139,14 @@ async def get_transactions(
     is the *viewer* — used for Splitwise projection (linked-member visibility,
     is-shared tagging) which is identity-based, not tenancy-based.
     """
-    # In "accrual" mode, bucket/order by effective_date so list filters
-    # line up with the cash-flow view used by the dashboard and reports.
+    # In "invoice_due_date" mode, bucket/order by effective_date so list
+    # filters line up with the view used by the dashboard and reports.
     # When the user has set a manual cycle override (effective_bill_date)
     # we honor it FIRST regardless of accounting mode — that's the whole
     # point of the override (issue #92, LucasFidelis suggestion). Shared
     # with the dashboard/report/budget aggregations so a transaction lands
     # in the same month everywhere (issue #232).
-    date_col = reporting_date_col(accounting_mode or "cash")
+    date_col = reporting_date_col(accounting_mode or "purchase_date")
 
     # Group-scope visibility: when the caller filters by a group they
     # have access to (owner or linked member), bypass the user-owns-it
@@ -164,8 +164,8 @@ async def get_transactions(
     # CC bill-view date column: when the caller asks "what's in this bill?"
     # (bill_id passed, or in-progress cycle via unbilled_only), the answer
     # is bank-truth — the charges that fell in the cycle by purchase date —
-    # independent of the user's cash/accrual reporting preference. Without
-    # this carve-out, accrual mode would hide a 4/30 charge whose
+    # independent of the user's reporting mode preference. Without this
+    # carve-out, invoice_due_date mode would hide a 4/30 charge whose
     # effective_date points at the next bill's due date because the cycle
     # window [prev_close, this_close-1] doesn't contain the future
     # effective_date (issue #92, abdalanervoso's accrual case).
@@ -485,8 +485,8 @@ async def get_transactions(
     # statement ordering regardless of accounting mode.
     default_order_col = bill_view_date_col if in_bill_view else date_col
     sort_columns = {
-        # `date` is the cycle/accrual-aware column the UI lists use so its
-        # ordering matches the cash-flow & dashboard views.
+        # `date` is the cycle-aware reporting column the UI lists use so its
+        # ordering matches the dashboard & report views.
         "date": default_order_col,
         # `transaction_date` orders strictly by Transaction.date (purchase
         # date), regardless of effective_bill_date. Useful for "what's my

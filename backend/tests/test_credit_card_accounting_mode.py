@@ -343,25 +343,25 @@ class TestGlobalSetting:
     @pytest.mark.asyncio
     async def test_default_is_cash_when_unset(self, session, clean_db):
         mode = await admin_service.get_credit_card_accounting_mode(session)
-        assert mode == "cash"
+        assert mode == "purchase_date"
 
     @pytest.mark.asyncio
     async def test_returns_stored_cash(self, session, clean_db):
-        await admin_service.set_app_setting(session, "credit_card_accounting_mode", "cash")
+        await admin_service.set_app_setting(session, "credit_card_accounting_mode", "purchase_date")
         mode = await admin_service.get_credit_card_accounting_mode(session)
-        assert mode == "cash"
+        assert mode == "purchase_date"
 
     @pytest.mark.asyncio
     async def test_returns_stored_accrual(self, session, clean_db):
-        await admin_service.set_app_setting(session, "credit_card_accounting_mode", "accrual")
+        await admin_service.set_app_setting(session, "credit_card_accounting_mode", "invoice_due_date")
         mode = await admin_service.get_credit_card_accounting_mode(session)
-        assert mode == "accrual"
+        assert mode == "invoice_due_date"
 
     @pytest.mark.asyncio
     async def test_ignores_invalid_value(self, session, clean_db):
         await admin_service.set_app_setting(session, "credit_card_accounting_mode", "bogus")
         mode = await admin_service.get_credit_card_accounting_mode(session)
-        assert mode == "cash"  # falls back to default
+        assert mode == "purchase_date"  # falls back to default
 
 
 # ---------------------------------------------------------------------------
@@ -428,7 +428,7 @@ class TestDashboardSummary:
 
     @pytest.mark.asyncio
     async def test_cash_mode_april_totals(self, session, test_user, test_workspace, seeded):
-        await _set_mode(session, "cash")
+        await _set_mode(session, "purchase_date")
         summary = await dashboard_service.get_summary(
             session, test_workspace.id, test_user.id, month=date(2026, 4, 1)
         )
@@ -437,7 +437,7 @@ class TestDashboardSummary:
 
     @pytest.mark.asyncio
     async def test_accrual_mode_april_totals(self, session, test_user, test_workspace, seeded):
-        await _set_mode(session, "accrual")
+        await _set_mode(session, "invoice_due_date")
         summary = await dashboard_service.get_summary(
             session, test_workspace.id, test_user.id, month=date(2026, 4, 1)
         )
@@ -447,7 +447,7 @@ class TestDashboardSummary:
 
     @pytest.mark.asyncio
     async def test_cash_mode_may_totals(self, session, test_user, test_workspace, seeded):
-        await _set_mode(session, "cash")
+        await _set_mode(session, "purchase_date")
         summary = await dashboard_service.get_summary(
             session, test_workspace.id, test_user.id, month=date(2026, 5, 1)
         )
@@ -456,7 +456,7 @@ class TestDashboardSummary:
 
     @pytest.mark.asyncio
     async def test_accrual_mode_may_totals(self, session, test_user, test_workspace, seeded):
-        await _set_mode(session, "accrual")
+        await _set_mode(session, "invoice_due_date")
         summary = await dashboard_service.get_summary(
             session, test_workspace.id, test_user.id, month=date(2026, 5, 1)
         )
@@ -466,12 +466,12 @@ class TestDashboardSummary:
     @pytest.mark.asyncio
     async def test_total_conserved_across_modes(self, session, test_user, test_workspace, seeded):
         """The grand total across enough months must match regardless of mode."""
-        await _set_mode(session, "cash")
+        await _set_mode(session, "purchase_date")
         cash_total = 0.0
         for m in [date(2026, 3, 1), date(2026, 4, 1), date(2026, 5, 1), date(2026, 6, 1)]:
             s = await dashboard_service.get_summary(session, test_workspace.id, test_user.id, month=m)
             cash_total += s.monthly_expenses
-        await _set_mode(session, "accrual")
+        await _set_mode(session, "invoice_due_date")
         accrual_total = 0.0
         for m in [date(2026, 3, 1), date(2026, 4, 1), date(2026, 5, 1), date(2026, 6, 1)]:
             s = await dashboard_service.get_summary(session, test_workspace.id, test_user.id, month=m)
@@ -488,7 +488,7 @@ class TestDashboardSummary:
 
 class TestSpendingByCategory:
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("mode", ["cash", "accrual"])
+    @pytest.mark.parametrize("mode", ["purchase_date", "invoice_due_date"])
     async def test_pending_credit_card_spend_is_available_in_projected_total(
         self, session, test_user, test_workspace, cc_account, test_categories, mode
     ):
@@ -534,7 +534,7 @@ class TestSpendingByCategory:
         )
         await session.commit()
 
-        await _set_mode(session, "cash")
+        await _set_mode(session, "purchase_date")
         cash = await dashboard_service.get_spending_by_category(
             session, test_workspace.id, test_user.id, month=date(2026, 4, 1)
         )
@@ -543,7 +543,7 @@ class TestSpendingByCategory:
         assert cash_map.get("Transporte", 0) == 40.0
         assert cash_map.get("Alimentação", 0) == 0.0
 
-        await _set_mode(session, "accrual")
+        await _set_mode(session, "invoice_due_date")
         accrual = await dashboard_service.get_spending_by_category(
             session, test_workspace.id, test_user.id, month=date(2026, 4, 1)
         )
@@ -553,7 +553,7 @@ class TestSpendingByCategory:
         assert accrual_map.get("Transporte", 0) == 0.0
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("mode", ["cash", "accrual"])
+    @pytest.mark.parametrize("mode", ["purchase_date", "invoice_due_date"])
     async def test_category_breakdown_honors_effective_bill_date_override(
         self, session, test_user, test_workspace, cc_account, test_categories, mode
     ):
@@ -608,7 +608,7 @@ class TestSpendingByCategory:
         tx.effective_bill_date = date(2026, 6, 1)
         await session.commit()
 
-        await _set_mode(session, "cash")
+        await _set_mode(session, "purchase_date")
         may = await dashboard_service.get_summary(
             session, test_workspace.id, test_user.id, month=date(2026, 5, 1)
         )
@@ -659,7 +659,7 @@ class TestBudgetVsActual:
         )
         await session.commit()
 
-        await _set_mode(session, "cash")
+        await _set_mode(session, "purchase_date")
         cash = await budget_service.get_budget_vs_actual(
             session, test_workspace.id, test_user.id, date(2026, 4, 1)
         )
@@ -668,7 +668,7 @@ class TestBudgetVsActual:
         assert cash_food is not None
         assert float(cash_food.actual_amount) == 50.0
 
-        await _set_mode(session, "accrual")
+        await _set_mode(session, "invoice_due_date")
         accrual = await budget_service.get_budget_vs_actual(
             session, test_workspace.id, test_user.id, date(2026, 4, 1)
         )
@@ -718,12 +718,12 @@ class TestAccountBalanceInvariant:
         )
         await session.commit()
 
-        await _set_mode(session, "cash")
+        await _set_mode(session, "purchase_date")
         cash = await account_service.get_account_balance_history(
             session, test_account.id, test_workspace.id,
             date_from=date(2026, 4, 1), date_to=date(2026, 4, 30),
         )
-        await _set_mode(session, "accrual")
+        await _set_mode(session, "invoice_due_date")
         accrual = await account_service.get_account_balance_history(
             session, test_account.id, test_workspace.id,
             date_from=date(2026, 4, 1), date_to=date(2026, 4, 30),
@@ -821,7 +821,7 @@ class TestEffectiveBillDateFiltersList:
         a May-window query — even in cash mode (where the default filter is
         Transaction.date)."""
         from app.services.transaction_service import get_transactions
-        await _set_mode(session, "cash")
+        await _set_mode(session, "purchase_date")
         tx = await _make_tx(
             session, test_user.id, cc_account.id,
             date(2026, 4, 18), Decimal("55.90"),
@@ -834,7 +834,7 @@ class TestEffectiveBillDateFiltersList:
         march_txs, _, _ = await get_transactions(
             session, test_workspace.id, test_user.id, account_id=cc_account.id,
             from_date=date(2026, 2, 16), to_date=date(2026, 3, 15),
-            accounting_mode="cash",
+            accounting_mode="purchase_date",
         )
         assert any(t.id == tx.id for t in march_txs)
 
@@ -842,7 +842,7 @@ class TestEffectiveBillDateFiltersList:
         may_txs, _, _ = await get_transactions(
             session, test_workspace.id, test_user.id, account_id=cc_account.id,
             from_date=date(2026, 4, 16), to_date=date(2026, 5, 15),
-            accounting_mode="cash",
+            accounting_mode="purchase_date",
         )
         assert not any(t.id == tx.id for t in may_txs)
 
@@ -853,7 +853,7 @@ class TestEffectiveBillDateFiltersList:
         """Same behavior in accrual mode — override must beat both modes'
         default columns."""
         from app.services.transaction_service import get_transactions
-        await _set_mode(session, "accrual")
+        await _set_mode(session, "invoice_due_date")
         tx = await _make_tx(
             session, test_user.id, cc_account.id,
             date(2026, 4, 18), Decimal("55.90"),
@@ -865,7 +865,7 @@ class TestEffectiveBillDateFiltersList:
         march_txs, _, _ = await get_transactions(
             session, test_workspace.id, test_user.id, account_id=cc_account.id,
             from_date=date(2026, 2, 16), to_date=date(2026, 3, 15),
-            accounting_mode="accrual",
+            accounting_mode="invoice_due_date",
         )
         assert any(t.id == tx.id for t in march_txs)
 
@@ -914,7 +914,7 @@ class TestEffectiveBillDateFiltersList:
             session, test_workspace.id, test_user.id, account_id=cc_account.id,
             bill_id=bill.id,
             from_date=date(2026, 3, 17), to_date=date(2026, 4, 16),
-            accounting_mode="cash",
+            accounting_mode="purchase_date",
         )
         ids = {t.id for t in txs}
         assert linked.id in ids
@@ -960,7 +960,7 @@ class TestEffectiveBillDateFiltersList:
             session, test_workspace.id, test_user.id, account_id=cc_account.id,
             bill_id=may_bill.id,
             from_date=date(2026, 4, 11), to_date=date(2026, 5, 10),
-            accounting_mode="cash",
+            accounting_mode="purchase_date",
         )
         assert pending.id in {t.id for t in txs}
 
@@ -991,7 +991,7 @@ class TestEffectiveBillDateFiltersList:
         txs, _, _ = await get_transactions(
             session, test_workspace.id, test_user.id, account_id=cc_account.id,
             from_date=date(2026, 4, 30), to_date=date(2026, 5, 29),
-            accounting_mode="cash",
+            accounting_mode="purchase_date",
         )
         assert pending.id in {t.id for t in txs}
 
@@ -1033,7 +1033,7 @@ class TestEffectiveBillDateFiltersList:
         txs, _, _ = await get_transactions(
             session, test_workspace.id, test_user.id, account_id=cc_account.id,
             from_date=date(2026, 4, 30), to_date=date(2026, 5, 29),
-            accounting_mode="cash",
+            accounting_mode="purchase_date",
             unbilled_only=True,
         )
         assert billed.id not in {t.id for t in txs}
@@ -1043,7 +1043,7 @@ class TestEffectiveBillDateFiltersList:
         txs_unfiltered, _, _ = await get_transactions(
             session, test_workspace.id, test_user.id, account_id=cc_account.id,
             from_date=date(2026, 4, 30), to_date=date(2026, 5, 29),
-            accounting_mode="cash",
+            accounting_mode="purchase_date",
         )
         assert billed.id in {t.id for t in txs_unfiltered}
 
@@ -1071,7 +1071,7 @@ class TestEffectiveBillDateFiltersList:
         pending.status = "pending"
         await session.commit()
 
-        for mode in ("cash", "accrual"):
+        for mode in ("purchase_date", "invoice_due_date"):
             txs, _, _ = await get_transactions(
                 session, test_workspace.id, test_user.id, account_id=cc_account.id,
                 from_date=date(2026, 4, 30), to_date=date(2026, 5, 29),
@@ -1106,7 +1106,7 @@ class TestEffectiveBillDateFiltersList:
         txs_cash_apr, _, _ = await get_transactions(
             session, test_workspace.id, test_user.id, account_id=cc_account.id,
             from_date=date(2026, 4, 1), to_date=date(2026, 4, 30),
-            accounting_mode="cash",
+            accounting_mode="purchase_date",
         )
         assert tx.id in {t.id for t in txs_cash_apr}
 
@@ -1116,14 +1116,14 @@ class TestEffectiveBillDateFiltersList:
         txs_accrual_apr, _, _ = await get_transactions(
             session, test_workspace.id, test_user.id, account_id=cc_account.id,
             from_date=date(2026, 4, 1), to_date=date(2026, 4, 30),
-            accounting_mode="accrual",
+            accounting_mode="invoice_due_date",
         )
         assert tx.id not in {t.id for t in txs_accrual_apr}
 
         txs_accrual_jun, _, _ = await get_transactions(
             session, test_workspace.id, test_user.id, account_id=cc_account.id,
             from_date=date(2026, 6, 1), to_date=date(2026, 6, 30),
-            accounting_mode="accrual",
+            accounting_mode="invoice_due_date",
         )
         assert tx.id in {t.id for t in txs_accrual_jun}
 
@@ -1163,7 +1163,7 @@ class TestEffectiveBillDateFiltersList:
             session, test_workspace.id, test_user.id, account_id=cc_account.id,
             bill_id=april_bill.id,
             from_date=date(2026, 3, 11), to_date=date(2026, 4, 10),
-            accounting_mode="cash",
+            accounting_mode="purchase_date",
         )
         assert pending.id not in {t.id for t in txs}
 
@@ -1224,7 +1224,7 @@ class TestEffectiveBillDateFiltersList:
             session, test_workspace.id, test_user.id, account_id=cc_account.id,
             bill_id=april.id,
             from_date=date(2026, 3, 17), to_date=date(2026, 4, 16),
-            accounting_mode="cash",
+            accounting_mode="purchase_date",
         )
         ids = {t.id for t in txs}
         assert pending.id not in ids, (
@@ -1266,7 +1266,7 @@ class TestEffectiveBillDateFiltersList:
             session, test_workspace.id, test_user.id, account_id=cc_account.id,
             bill_id=bill.id,
             from_date=date(2026, 3, 17), to_date=date(2026, 4, 16),
-            accounting_mode="cash",
+            accounting_mode="purchase_date",
         )
         assert outside.id not in {t.id for t in txs}
 
@@ -1307,7 +1307,7 @@ class TestEffectiveBillDateFiltersList:
             session, test_workspace.id, test_user.id, account_id=cc_account.id,
             bill_id=bill.id,
             from_date=date(2026, 3, 17), to_date=date(2026, 4, 16),
-            accounting_mode="cash",
+            accounting_mode="purchase_date",
         )
         assert tx.id in {t.id for t in txs}
 
@@ -1347,7 +1347,7 @@ class TestEffectiveBillDateFiltersList:
             session, test_workspace.id, test_user.id, account_id=cc_account.id,
             bill_id=bill.id,
             from_date=date(2026, 3, 17), to_date=date(2026, 4, 16),
-            accounting_mode="cash",
+            accounting_mode="purchase_date",
         )
         assert tx.id in {t.id for t in txs}
 
@@ -1384,7 +1384,7 @@ class TestEffectiveBillDateFiltersList:
             session, test_workspace.id, test_user.id, account_id=cc_account.id,
             bill_id=bill.id,
             from_date=date(2026, 3, 17), to_date=date(2026, 4, 16),
-            accounting_mode="cash",
+            accounting_mode="purchase_date",
         )
         assert tx.id in {t.id for t in txs}
 
@@ -1580,7 +1580,7 @@ class TestEffectiveBillDateFiltersList:
         dec_txs, _, _ = await get_transactions(
             session, test_workspace.id, test_user.id, account_id=cc_account.id,
             from_date=date(2025, 12, 1), to_date=date(2025, 12, 31),
-            accounting_mode="cash",
+            accounting_mode="purchase_date",
         )
         assert tx.id not in {t.id for t in dec_txs}
 
@@ -1588,7 +1588,7 @@ class TestEffectiveBillDateFiltersList:
         jan_txs, _, _ = await get_transactions(
             session, test_workspace.id, test_user.id, account_id=cc_account.id,
             from_date=date(2026, 1, 1), to_date=date(2026, 1, 31),
-            accounting_mode="cash",
+            accounting_mode="purchase_date",
         )
         assert tx.id in {t.id for t in jan_txs}
 
@@ -1649,7 +1649,7 @@ class TestEffectiveBillDateFiltersList:
         """Without an override, the configured accounting mode's column
         (date for cash, effective_date for accrual) drives bucketing."""
         from app.services.transaction_service import get_transactions
-        await _set_mode(session, "cash")
+        await _set_mode(session, "purchase_date")
         tx = await _make_tx(
             session, test_user.id, cc_account.id,
             date(2026, 4, 18), Decimal("55.90"),
@@ -1661,7 +1661,7 @@ class TestEffectiveBillDateFiltersList:
         apr_txs, _, _ = await get_transactions(
             session, test_workspace.id, test_user.id, account_id=cc_account.id,
             from_date=date(2026, 4, 1), to_date=date(2026, 4, 30),
-            accounting_mode="cash",
+            accounting_mode="purchase_date",
         )
         assert any(t.id == tx.id for t in apr_txs)
 
@@ -1707,7 +1707,7 @@ class TestEffectiveBillDateFiltersList:
             session, test_workspace.id, test_user.id, account_id=cc_account.id,
             bill_id=may.id,
             from_date=date(2026, 4, 17), to_date=date(2026, 5, 16),
-            accounting_mode="cash",
+            accounting_mode="purchase_date",
         )
         assert any(t.id == tx.id for t in may_txs), (
             "pending sync tx with manual override in window must be "
@@ -1788,7 +1788,7 @@ class TestEffectiveBillDateFiltersList:
             session, test_workspace.id, test_user.id, account_id=cc_account.id,
             from_date=date(2026, 4, 12), to_date=date(2026, 5, 11),
             unbilled_only=True,
-            accounting_mode="cash",
+            accounting_mode="purchase_date",
         )
         assert any(t.id == tx.id for t in in_prog_txs), (
             "tx with override past the in-progress cycle must be visible "
