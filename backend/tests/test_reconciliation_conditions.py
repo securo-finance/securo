@@ -123,7 +123,7 @@ def with_scope(**extra) -> dict:
 class TestAccountScope:
     """"Only for this bank account."
 
-    QuickBooks makes this the first choice on every rule, and the reason
+    The rule tools make this the first choice on every rule, and the reason
     is mundane: a business with a payments account and an operating
     account does not want one account's automation reaching into the
     other's statement.
@@ -199,7 +199,7 @@ class TestPayeeScope:
 class TestDirectionScope:
     """"Only money going out", or only money coming in.
 
-    QuickBooks asks this before anything else. Here the expectation
+    The rule tools ask this before anything else. Here the expectation
     already implies a direction, so this is the narrower statement: a rule
     that exists only for payables, even though invoices come in both
     kinds.
@@ -314,7 +314,8 @@ class TestCurrencyScope:
 class TestAmountBand:
     """"Only under ten thousand", or "only above five hundred".
 
-    Xero's amount operators, and the single most requested guardrail:
+    The amount operators every rule tool offers, and the single most
+    requested guardrail:
     small payments settle themselves, large ones get a human. It is a
     filter on the money, not a comparison with the promise: a rule can
     demand an exact match *and* refuse to act above a ceiling.
@@ -375,8 +376,8 @@ class TestAmountBand:
 class TestStatementText:
     """"Only when the statement says PIX", or "never when it says ESTORNO".
 
-    Bank text is where a payment's real identity hides, and Xero and
-    QuickBooks both put it front and centre. It is also the bridge to
+    Bank text is where a payment's real identity hides, which is why every
+    rule tool puts it front and centre. It is also the bridge to
     something we cannot yet read structurally: a client whose transfers
     always carry their tax number can be recognised by that number today,
     typed in as a fragment.
