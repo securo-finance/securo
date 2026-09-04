@@ -225,11 +225,36 @@ async def count_open(session: AsyncSession, workspace_id: uuid.UUID) -> int:
 async def get(
     session: AsyncSession, workspace_id: uuid.UUID, suggestion_id: uuid.UUID
 ) -> Optional[ReconciliationSuggestion]:
+    """The row, locked for the length of the transaction.
+
+    Both callers read `status` and then write, and a plain read lets two
+    requests pass that check before either commits: a double click, or a
+    phone and a laptop a second apart. The pair that costs something is an
+    accept and a decline, which would settle the invoice and then record
+    the suggestion as dismissed, leaving the queue disagreeing with the
+    ledger. The status guard closes the window; the lock closes what is
+    left of it.
+
+    `with_for_update` renders nothing on SQLite, which the test suite
+    uses, the same trade the invoice numbering lock already makes: the
+    guarantee is real in production, and the status check remains the
+    backstop in both.
+
+    **`of=` is not decoration.** This row eager-loads its transaction, so
+    the statement is a LEFT OUTER JOIN, and Postgres refuses to lock the
+    nullable side of one. A bare `FOR UPDATE` here raises
+    `FeatureNotSupportedError` against Postgres and renders nothing at all
+    against the SQLite the tests run on, which is the worst pair of
+    behaviours available: green suite, broken endpoint. Naming the table
+    locks the row we came for and leaves the join alone.
+    """
     result = await session.execute(
-        select(ReconciliationSuggestion).where(
+        select(ReconciliationSuggestion)
+        .where(
             ReconciliationSuggestion.id == suggestion_id,
             ReconciliationSuggestion.workspace_id == workspace_id,
         )
+        .with_for_update(of=ReconciliationSuggestion)
     )
     return result.unique().scalar_one_or_none()
 
