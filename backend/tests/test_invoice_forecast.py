@@ -344,3 +344,29 @@ async def test_a_bill_to_pay_lands_on_the_other_side_of_the_report(
 
     after = (await client.get(url, headers=biz_headers)).json()
     assert outgoing(after) == pytest.approx(base + 5000.0)
+
+
+@pytest.mark.asyncio
+async def test_a_filter_that_matches_no_account_does_not_carry_claims(
+    client: AsyncClient, biz_headers, session: AsyncSession, account
+):
+    """A collection of wallets and no bank accounts still filters.
+
+    It coerces the account list to empty, and empty means *narrowed to
+    nothing*, not *not narrowed*. Reading it as falsy put every claim in
+    the workspace back into a total whose transactions had all been
+    filtered away: a projected balance built from money the filter had
+    just excluded."""
+    month = TODAY.replace(day=1).isoformat()
+    wallets_only = f"?month={month}&asset_group_ids={uuid.uuid4()}"
+
+    before = (await client.get(f"/api/dashboard/summary{wallets_only}", headers=biz_headers)).json()
+    await an_invoice(client, biz_headers, due_date=str(TODAY + timedelta(days=1)))
+    after = (await client.get(f"/api/dashboard/summary{wallets_only}", headers=biz_headers)).json()
+
+    assert after["projected_balance"] == before["projected_balance"]
+
+    # And unfiltered it does carry, so the guard narrowed the case rather
+    # than switching the feature off.
+    whole = (await client.get(f"/api/dashboard/summary?month={month}", headers=biz_headers)).json()
+    assert float(whole["projected_balance"].get("USD", 0)) > 0

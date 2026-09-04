@@ -162,9 +162,14 @@ async def test_one_payment_never_settles_two_invoices(
     client: AsyncClient, biz_headers, session: AsyncSession, account, test_user
 ):
     """Re-matching money that already carries an allocation is how a
-    ledger starts disagreeing with a bank."""
-    await an_invoice(client, biz_headers)
-    await an_invoice(client, biz_headers)
+    ledger starts disagreeing with a bank.
+
+    **One invoice, not two.** Two identical invoices are ambiguous, so a
+    first pass over them links nothing and a second pass has nothing to
+    re-link: the test would pass with the guard removed. One invoice makes
+    the first pass succeed, which is the only state in which the guard
+    has anything to do."""
+    invoice = await an_invoice(client, biz_headers)
     tx = await a_transaction(session, account, test_user)
 
     first = await reconciliation_service.match_incoming(
@@ -176,11 +181,13 @@ async def test_one_payment_never_settles_two_invoices(
     )
     await session.commit()
 
-    # Two identical invoices are ambiguous, so nothing is linked at all:
-    # and the second pass adds nothing either way.
-    assert first == [] and again == []
+    # The first pass takes it; the second finds the money already spoken
+    # for and leaves it alone.
+    assert len(first) == 1 and again == []
     total = await session.execute(select(InvoiceAllocation))
-    assert total.scalars().all() == []
+    allocations = total.scalars().all()
+    assert len(allocations) == 1
+    assert str(allocations[0].invoice_id) == invoice["id"]
 
 
 @pytest.mark.asyncio

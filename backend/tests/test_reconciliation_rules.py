@@ -1596,7 +1596,15 @@ async def test_a_gateway_fee_can_be_allowed_for(
     """*"The payout is my invoices minus their cut."* Shipped at zero
     because guessing which fee applies is how a wrong split gets written
     confidently, but somebody who knows their gateway's percentage can
-    say so."""
+    say so.
+
+    **The payout is matched; it does not close the invoices in full.**
+    Only 2.940 arrived, so only 2.940 is written, and each invoice keeps
+    its share of the 60 that the gateway kept. That is the same answer
+    the single-invoice path already gives an invoice paid net of
+    withholding, and for the same reason: settling all 3.000 would record
+    money nobody received. Booking the 60 as a fee is what closes them,
+    and that is a deduction, not a match."""
     await client.patch(
         f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_several_invoices",
         headers=biz_headers,
@@ -1607,12 +1615,45 @@ async def test_a_gateway_fee_can_be_allowed_for(
 
     await a_payment(client, biz_headers, account, client_payee, amount="2940.00")
 
-    paid = [
-        inv
-        for inv in (await client.get("/api/invoices", headers=biz_headers)).json()
-        if inv["state"] == "paid"
-    ]
-    assert len(paid) == 2
+    invoices = (await client.get("/api/invoices", headers=biz_headers)).json()
+    settled = {
+        inv["total"]: sum(Decimal(a["amount"]) for a in inv["allocations"])
+        for inv in invoices
+    }
+    # Both matched, both short by their own share of the cut: 2% of each.
+    assert settled == {"1000.00": Decimal("980.00"), "2000.00": Decimal("1960.00")}
+    # And the whole payout is spoken for, to the cent. Never more than it.
+    assert sum(settled.values()) == Decimal("2940.00")
+    assert all(inv["state"] == "partial" for inv in invoices)
+
+
+@pytest.mark.asyncio
+async def test_a_group_never_writes_more_than_the_payment_carried(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """The guard `allocate` cannot provide.
+
+    `allocate` checks the invoice's own remaining balance and knows
+    nothing about how much of the transaction the earlier members of the
+    group already spent, so nothing below the engine would catch a set
+    that hands out more money than arrived. Before this, a tolerance wide
+    enough to match wrote every invoice at its full value: 980 arriving
+    against two invoices of 500 wrote 1.000."""
+    await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_several_invoices",
+        headers=biz_headers,
+        json={"when": {"amount": {"match": "set", "max_invoices": 6, "percent": "5"}}},
+    )
+    for total in ("500.00", "500.00"):
+        await an_invoice(client, biz_headers, client_payee, total=total)
+
+    await a_payment(client, biz_headers, account, client_payee, amount="980.00")
+
+    invoices = (await client.get("/api/invoices", headers=biz_headers)).json()
+    written = sum(
+        Decimal(a["amount"]) for inv in invoices for a in inv["allocations"]
+    )
+    assert written == Decimal("980.00")
 
 
 @pytest.mark.asyncio
@@ -2769,3 +2810,148 @@ async def test_a_rule_naming_a_dozen_words_is_refused(client: AsyncClient, biz_h
         json={"when": {"text": {"contains": [f"BANCO {n}" for n in range(15)]}}},
     )
     assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_a_question_raised_when_the_invoice_is_written_is_kept(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """The client paid first, the nota followed, and the money only
+    covers part of it: a question, not a link.
+
+    The looking-back pass raises it, and the request has to keep it.
+    Committing only when a link was made discarded every suggestion this
+    moment produced, so a rule set to suggest did its job on one trigger
+    and silently nothing on the other, which is the switch the queue
+    exists to prevent."""
+    await a_payment(client, biz_headers, account, client_payee, amount="1500.00")
+    await an_invoice(client, biz_headers, client_payee, total="3000.00")
+
+    waiting = (
+        await client.get("/api/reconciliation/suggestions", headers=biz_headers)
+    ).json()
+    assert len(waiting) == 1
+    assert waiting[0]["strategy_id"] == "same_client_part_payment"
+
+
+@pytest.mark.asyncio
+async def test_a_question_already_answered_cannot_be_answered_again(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """Accepting settles the invoice. A decline arriving afterwards used
+    to mark the row dismissed and write a second line of history while
+    the allocation stayed exactly where it was: the queue saying one
+    thing and the ledger another."""
+    await a_payment(client, biz_headers, account, client_payee, amount="1500.00")
+    await an_invoice(client, biz_headers, client_payee, total="3000.00")
+    waiting = (
+        await client.get("/api/reconciliation/suggestions", headers=biz_headers)
+    ).json()
+
+    accepted = await client.post(
+        f"/api/reconciliation/suggestions/{waiting[0]['id']}/accept",
+        headers=biz_headers,
+    )
+    assert accepted.status_code == 200, accepted.text
+
+    refused = await client.post(
+        f"/api/reconciliation/suggestions/{waiting[0]['id']}/decline",
+        headers=biz_headers,
+    )
+    assert refused.status_code == 409
+    assert refused.json()["detail"]["code"] == "already_answered"
+
+    # And the settlement it made is still there.
+    invoices = (await client.get("/api/invoices", headers=biz_headers)).json()
+    assert sum(Decimal(a["amount"]) for a in invoices[0]["allocations"]) == Decimal(
+        "1500.00"
+    )
+
+
+@pytest.mark.asyncio
+async def test_putting_a_threshold_back_does_not_move_the_rule(
+    client: AsyncClient, biz_headers
+):
+    """Ordering is explicit or it is nothing.
+
+    Reordering writes a position for every rule in the set. Editing one
+    of them back to the shipped value leaves nothing to disagree about,
+    and the row used to be dropped for that reason alone: the rule fell
+    back to its shipped index while its siblings kept the positions the
+    person gave them, and the order rearranged itself."""
+    listing = (await client.get("/api/reconciliation/rules", headers=biz_headers)).json()
+    ids = [r["id"] for r in [r for e in listing if e["node"] == INVOICE_NODE for r in e["rules"]]]
+    reversed_ids = list(reversed(ids))
+
+    await client.put(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/order",
+        headers=biz_headers,
+        json={"order": reversed_ids},
+    )
+    # Change a threshold, then put it back to what we ship.
+    for days in (99, 60):
+        await client.patch(
+            f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact",
+            headers=biz_headers,
+            json={"when": {"date": {"before_days": 10, "after_days": days}}},
+        )
+
+    after = (await client.get("/api/reconciliation/rules", headers=biz_headers)).json()
+    assert [r["id"] for r in [r for e in after if e["node"] == INVOICE_NODE for r in e["rules"]]] == reversed_ids
+
+
+@pytest.mark.asyncio
+async def test_history_says_what_currency_the_amount_is_in(
+    client: AsyncClient, biz_headers, session: AsyncSession, account, client_payee
+):
+    """An amount without its currency is not an amount.
+
+    The row carries a figure and the screen has to render it. Reading a
+    fixed code there told every workspace it had received dollars, so a
+    R$ 1.200,00 settlement came back as $1,200.00: the right number under
+    the wrong sign, which is worse than no number at all."""
+    await an_invoice(client, biz_headers, client_payee)
+    await a_payment(client, biz_headers, account, client_payee)
+
+    events = (
+        await client.get("/api/reconciliation/history", headers=biz_headers)
+    ).json()
+    assert events[0]["currency"] == "USD", "the invoice's own currency"
+
+
+@pytest.mark.asyncio
+async def test_a_broken_file_leaves_the_rules_it_could_not_replace(
+    client: AsyncClient, biz_headers
+):
+    """Replacing means deleting, so the file has to be readable first.
+
+    An entry the importer cannot make sense of used to be discovered
+    after the delete had already run: the workspace was left with no
+    rules at all and a count of what had been skipped, which says nothing
+    about why. Now the whole file is resolved before anything is removed,
+    and a broken one is refused with its reason while what is here stands."""
+    await client.patch(
+        f"/api/reconciliation/rules/{INVOICE_NODE}/same_client_exact",
+        headers=biz_headers,
+        json={"enabled": False},
+    )
+    file = (
+        await client.get("/api/reconciliation/rules/export", headers=biz_headers)
+    ).json()
+    # A rule that says it links or suggests, and says neither.
+    for node in file["nodes"]:
+        for rule in node["rules"]:
+            rule["outcome"] = "perhaps"
+
+    refused = await client.post(
+        "/api/reconciliation/rules/import",
+        headers=biz_headers,
+        json={"payload": file, "overwrite": True},
+    )
+    assert refused.status_code == 400
+    assert refused.json()["detail"]["code"] == "bad_outcome"
+
+    # And the workspace still has what it had: the rule it turned off is
+    # still off, rather than back on because everything was wiped.
+    after = (await client.get("/api/reconciliation/rules", headers=biz_headers)).json()
+    assert find(after, INVOICE_NODE, "same_client_exact")["enabled"] is False
