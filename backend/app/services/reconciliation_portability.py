@@ -184,6 +184,18 @@ async def import_policy(
     happened in numbers, because "12 imported" and "12 imported, 3
     skipped" are different outcomes and only one of them needs looking
     into.
+
+    **Worked out in full before anything is removed.** Replacing means
+    deleting what is here, and a malformed entry discovered after that
+    left the workspace with no rules and a count of what was skipped: the
+    policy erased, and nothing on screen saying why. So the whole file is
+    resolved first and a structurally broken one is refused with its
+    reason, while the rules this workspace has are still standing.
+
+    A skip is not a refusal. A set this workspace does not have, an
+    account or a person the file names and this workspace never had, a
+    rule this version no longer ships: those are things the file can
+    legitimately say that cannot land here, and they are counted.
     """
     if payload.get("format") != FORMAT:
         raise rules.RuleError("bad_format", "That is not a matching-rules file")
@@ -202,13 +214,9 @@ async def import_policy(
 
     allowed = nodes if nodes is not None else rules.EDITABLE_NODES
 
-    for row in existing:
-        if row.node in allowed:
-            await session.delete(row)
-    await session.flush()
-
-    imported = 0
     skipped = 0
+    planned: list[tuple[str, dict[str, Any], dict[str, Any], bool, int]] = []
+    discards: list[tuple[str, str]] = []
 
     for node_data in incoming_nodes:
         node = node_data.get("node")
@@ -239,43 +247,62 @@ async def import_policy(
                 "when": when,
             }
             custom = entry.get("origin") == "custom"
-
-            try:
-                if custom:
-                    await rules.create_custom(
-                        session,
-                        workspace_id,
-                        user_id,
-                        node,
-                        entry.get("name") or entry.get("id") or "",
-                        config,
-                        position=place,
-                    )
-                else:
-                    if entry.get("id") not in shipped:
-                        # A rule this version does not ship. Guessing at
-                        # what it meant is worse than saying it was
-                        # skipped.
-                        skipped += 1
-                        continue
-                    await rules.upsert_override(
-                        session,
-                        workspace_id,
-                        user_id,
-                        node,
-                        entry["id"],
-                        config,
-                        position=place,
-                    )
-            except rules.RuleError:
+            if not custom and entry.get("id") not in shipped:
+                # A rule this version does not ship. Guessing at what it
+                # meant is worse than saying it was skipped.
                 skipped += 1
                 continue
-            imported += 1
+
+            # Raises, and the caller answers with the code and the
+            # message. This is the line that has to run before the delete
+            # below rather than after it.
+            rules.validate_config(config, whole=custom)
+            planned.append((node, entry, config, custom, place))
 
         for strategy_id in node_data.get("discarded") or []:
-            if strategy_id not in shipped:
-                continue
-            await rules.delete_rule(session, workspace_id, node, strategy_id)
+            if strategy_id in shipped:
+                discards.append((node, strategy_id))
+
+    for row in existing:
+        if row.node in allowed:
+            await session.delete(row)
+    await session.flush()
+
+    imported = 0
+
+    for node, entry, config, custom, place in planned:
+        try:
+            if custom:
+                await rules.create_custom(
+                    session,
+                    workspace_id,
+                    user_id,
+                    node,
+                    entry.get("name") or entry.get("id") or "",
+                    config,
+                    position=place,
+                )
+            else:
+                await rules.upsert_override(
+                    session,
+                    workspace_id,
+                    user_id,
+                    node,
+                    entry["id"],
+                    config,
+                    position=place,
+                )
+        except rules.RuleError:
+            # The structural check above already passed, so anything
+            # left is about this workspace rather than the file: a
+            # name colliding with one already here, say. Counted, not
+            # fatal.
+            skipped += 1
+            continue
+        imported += 1
+
+    for node, strategy_id in discards:
+        await rules.delete_rule(session, workspace_id, node, strategy_id)
 
     await session.flush()
     return {"imported": imported, "skipped": skipped}

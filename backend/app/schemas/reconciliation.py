@@ -168,6 +168,10 @@ class HistoryEventRead(BaseModel):
     #: Resolved for display, so a renamed invoice reads correctly.
     expectation_label: Optional[str] = None
     amount: Decimal
+    #: What the amount is denominated in. Resolved for display rather than
+    #: stored: an amount without its currency is not an amount, and a
+    #: reader that assumed one would tell a workspace it received dollars.
+    currency: Optional[str] = None
     strategy_id: Optional[str] = None
     #: Null means the rules did it on their own: the distinction a reader
     #: reaches for first.

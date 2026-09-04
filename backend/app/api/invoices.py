@@ -228,9 +228,17 @@ async def _settle_from_money_already_there(
     Called from the router rather than from `invoice_service`, which
     matching already depends on. Failing to find a match is the ordinary
     outcome and never affects the response.
+
+    **Committed either way.** Looking back can end in a link, in a
+    question for the queue, or in nothing, and only the first of those
+    returns anything. Committing on the return value alone threw away
+    every suggestion this moment raised, which is the outcome that needed
+    saving most: a rule set to suggest would have done nothing here while
+    doing its job on the other trigger, the exact silent switch the queue
+    exists to prevent.
     """
-    if await reconciliation_service.match_for_invoice(session, invoice):
-        await session.commit()
+    await reconciliation_service.match_for_invoice(session, invoice)
+    await session.commit()
 
 
 @router.post("", response_model=InvoiceRead, status_code=status.HTTP_201_CREATED)

@@ -316,7 +316,11 @@ async def import_rules(
         # answer is a question for the person rather than a correction.
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     except rules.RuleError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=exc.message)
+        # The same shape as every other error here, code included: "12
+        # imported, 40 skipped" does not say what was wrong with the file,
+        # and a refusal that cannot name its reason is a refusal nobody
+        # can act on.
+        raise _http(exc)
     await session.commit()
     return ReconciliationImportResponse(**result)
 
@@ -475,6 +479,19 @@ async def decline_suggestion(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Suggestion not found"
         )
+    if row.status != "pending":
+        # The same guard accepting already has. Without it a decline
+        # arriving after an accept would mark the row declined and write
+        # a second history event while `_settle`'s allocation stayed
+        # exactly where it was: a suggestion reading "dismissed" on top of
+        # an invoice it had settled.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "already_answered",
+                "message": "This one is already settled",
+            },
+        )
     members = await suggestions.members_of(session, row)
     for member in members:
         await suggestions.decline(session, member, ctx.user_id)
@@ -538,6 +555,20 @@ async def _name_of(session: AsyncSession, row) -> Optional[str]:
     return bill.description if bill else None
 
 
+async def _currency_of(session: AsyncSession, row) -> Optional[str]:
+    """What the recorded amount is denominated in.
+
+    Taken from the promise rather than from the movement, because the
+    settlement was written in the promise's currency and matching refuses
+    a pair whose currencies disagree, so there is only ever one answer.
+    """
+    if row.expectation_kind == "invoice":
+        invoice = await session.get(Invoice, row.expectation_id)
+        return invoice.currency if invoice else None
+    bill = await session.get(RecurringTransaction, row.expectation_id)
+    return bill.currency if bill else None
+
+
 # ---------------------------------------------------------------------------
 # What matching did
 # ---------------------------------------------------------------------------
@@ -562,6 +593,7 @@ async def list_history(
     for event in events:
         read = HistoryEventRead.model_validate(event)
         read.expectation_label = await _name_of(session, event)
+        read.currency = await _currency_of(session, event)
         if event.transaction_id is not None:
             transaction = await session.get(Transaction, event.transaction_id)
             read.transaction_description = transaction.description if transaction else None
