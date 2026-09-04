@@ -375,10 +375,14 @@
     "draftSaved": "Koncept uložený",
     "suggestions": {
       "title_one": "Platba môže uhradiť túto faktúru",
+      "title_few": "{{count}} platby môžu vyrovnať túto faktúru",
+      "title_many": "{{count}} platieb môže vyrovnať túto faktúru",
       "title_other": "{{count}} platieb môže uhradiť túto faktúru",
-      "wouldApply": "použila by {{amount}}",
       "alsoCovers_one": "pokrýva aj {{count}} ďalšiu faktúru",
-      "alsoCovers_other": "pokrýva aj {{count}} ďalších faktúr"
+      "alsoCovers_few": "a ďalšie {{count}} faktúry",
+      "alsoCovers_many": "a ďalších {{count}} faktúr",
+      "alsoCovers_other": "pokrýva aj {{count}} ďalších faktúr",
+      "wouldApply": "použila by {{amount}}"
     }
   },
   "collections": {

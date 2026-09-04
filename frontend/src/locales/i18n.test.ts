@@ -149,12 +149,16 @@ describe('i18n locale files', () => {
     for (const locale of LOCALES.filter((l: string) => l !== 'en')) {
       it(locale, () => {
         const keys = new Set(flattenKeys(JSON.parse(readRaw(locale))))
-        // A key is valid if it exists in en directly, OR if it is a plural form
-        // of a key that exists in en (e.g. "foo_few" is valid when en has "foo").
+        // A key is valid if it exists in en directly, OR if it is a plural
+        // form of a key en carries. English has two plural categories and
+        // Slavic languages have four, so "title_few" is a translation of
+        // "title_one"/"title_other" rather than an invented key: matching
+        // against the bare base alone would have forced those languages to
+        // choose between reading correctly and passing here.
         const extra = [...keys].filter((k) => {
           if (enKeys.has(k)) return false
           const base = pluralBase(k)
-          return !(base && enKeys.has(base))
+          return !(base && hasKeyOrPluralForms(enKeys, base))
         })
         expect(extra, `Extra keys in ${locale} not in en:`).toEqual([])
       })

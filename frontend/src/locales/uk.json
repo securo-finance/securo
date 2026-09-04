@@ -375,10 +375,14 @@
     "draftSaved": "Чернетку збережено",
     "suggestions": {
       "title_one": "Платіж може закрити цей рахунок",
+      "title_few": "{{count}} платежі можуть закрити цей рахунок",
+      "title_many": "{{count}} платежів можуть закрити цей рахунок",
       "title_other": "{{count}} платежів можуть закрити цей рахунок",
-      "wouldApply": "застосує {{amount}}",
       "alsoCovers_one": "також покриває ще {{count}} рахунок",
-      "alsoCovers_other": "також покриває ще {{count}} рахунків"
+      "alsoCovers_few": "і ще {{count}} рахунки",
+      "alsoCovers_many": "і ще {{count}} рахунків",
+      "alsoCovers_other": "також покриває ще {{count}} рахунків",
+      "wouldApply": "застосує {{amount}}"
     }
   },
   "collections": {
@@ -820,7 +824,7 @@
     "calendarTransfersExcluded": "Перекази не враховуються як надходження чи витрати",
     "invoiceBadge": "Invoice {{number}}",
     "invoiceBadgeNoNumber": "Invoice",
-    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it.",
+    "invoiceBadgeTooltip": "Ця операція закриває рахунок. Відкрити.",
     "suggestionBadge": "Питання",
     "suggestionBadgeTooltip": "Платіж може закрити цей рахунок. Відкрийте чергу, щоб відповісти."
   },

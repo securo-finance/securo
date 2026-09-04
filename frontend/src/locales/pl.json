@@ -375,10 +375,14 @@
     "draftSaved": "Szkic zapisany",
     "suggestions": {
       "title_one": "Płatność może opłacić tę fakturę",
+      "title_few": "{{count}} płatności mogą rozliczyć tę fakturę",
+      "title_many": "{{count}} płatności może rozliczyć tę fakturę",
       "title_other": "{{count}} płatności może opłacić tę fakturę",
-      "wouldApply": "zastosowałaby {{amount}}",
       "alsoCovers_one": "obejmuje też {{count}} inną fakturę",
-      "alsoCovers_other": "obejmuje też {{count}} innych faktur"
+      "alsoCovers_few": "i jeszcze {{count}} faktury",
+      "alsoCovers_many": "i jeszcze {{count}} faktur",
+      "alsoCovers_other": "obejmuje też {{count}} innych faktur",
+      "wouldApply": "zastosowałaby {{amount}}"
     }
   },
   "collections": {
@@ -847,7 +851,7 @@
     "calendarTransfersExcluded": "Transfery nie liczą się jako przychody ani wydatki",
     "invoiceBadge": "Invoice {{number}}",
     "invoiceBadgeNoNumber": "Invoice",
-    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it.",
+    "invoiceBadgeTooltip": "Ta transakcja rozlicza fakturę. Otwórz ją.",
     "suggestionBadge": "Pytanie",
     "suggestionBadgeTooltip": "Płatność może opłacić tę fakturę. Otwórz kolejkę, aby odpowiedzieć."
   },
@@ -1283,12 +1287,12 @@
     "sortBy_category": "Kategoria",
     "export": "Eksportuj",
     "import": "Importuj",
-    "exported": "Rules export downloaded",
-    "imported": "Imported {{imported}} rules ({{skipped}} skipped)",
-    "invalidImportFile": "Invalid rules import file",
-    "importConfirmTitle": "Import categorization rules?",
-    "importConfirmDescription": "File {{file}} contains {{count}} rules.",
-    "importOverwriteWarning": "Importing will overwrite your current categorization rules. This cannot be undone.",
+    "exported": "Pobrano eksport reguł",
+    "imported": "Zaimportowano {{imported}} reguł ({{skipped}} pominięto)",
+    "invalidImportFile": "Nieprawidłowy plik importu reguł",
+    "importConfirmTitle": "Zaimportować reguły kategoryzacji?",
+    "importConfirmDescription": "Plik {{file}} zawiera {{count}} reguł.",
+    "importOverwriteWarning": "Import zastąpi obecne reguły kategoryzacji. Tego nie można cofnąć.",
     "confirmOverwriteImport": "Nadpisz i importuj",
     "tab": {
       "rules": "Reguły",
