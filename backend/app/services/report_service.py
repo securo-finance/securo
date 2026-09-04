@@ -402,7 +402,11 @@ async def get_income_expenses_report(
     acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
     today = date.today()
     start = _report_start_date(
-        today, months, period, days, financial_year_start_month
+        today,
+        months,
+        period=period,
+        days=days,
+        financial_year_start_month=financial_year_start_month,
     )
 
     # Get user's primary currency + global reporting mode
