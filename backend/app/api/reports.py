@@ -12,6 +12,11 @@ from app.services import report_service
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
 
+def _financial_year_start_month(tax_jurisdiction: str | None) -> int:
+    """Return the first month of the workspace's financial year."""
+    return 4 if (tax_jurisdiction or "").upper() == "IN" else 1
+
+
 @router.get("/net-worth", response_model=ReportResponse)
 async def get_net_worth(
     months: int = Query(12, ge=1, le=24),
@@ -25,6 +30,7 @@ async def get_net_worth(
     return await report_service.get_net_worth_report(
         session, ctx.workspace.id, ctx.user_id, months, interval, ctx.user.primary_currency,
         account_ids=account_ids, asset_group_ids=asset_group_ids, period=period,
+        financial_year_start_month=_financial_year_start_month(ctx.workspace.tax_jurisdiction),
     )
 
 
@@ -42,6 +48,7 @@ async def get_income_expenses(
     return await report_service.get_income_expenses_report(
         session, ctx.workspace.id, ctx.user_id, months, interval, ctx.user.primary_currency,
         account_ids=account_ids, period=period, days=days,
+        financial_year_start_month=_financial_year_start_month(ctx.workspace.tax_jurisdiction),
     )
 
 

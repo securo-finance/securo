@@ -179,6 +179,22 @@ def test_report_start_date_ytd_uses_current_year_start():
     assert _report_start_date(date(2025, 6, 15), 24, period="ytd") == date(2025, 1, 1)
 
 
+def test_report_start_date_ytd_uses_april_for_indian_financial_year():
+    assert _report_start_date(
+        date(2026, 3, 31), 12, period="ytd", financial_year_start_month=4
+    ) == date(2025, 4, 1)
+    assert _report_start_date(
+        date(2026, 4, 1), 12, period="ytd", financial_year_start_month=4
+    ) == date(2026, 4, 1)
+
+
+def test_report_start_date_ytd_rejects_invalid_financial_year_month():
+    with pytest.raises(ValueError, match="financial_year_start_month"):
+        _report_start_date(
+            date(2025, 6, 15), 12, period="ytd", financial_year_start_month=13
+        )
+
+
 def test_report_start_date_days_window_is_exact_and_inclusive():
     # 30 days ending today (inclusive), not the month-aligned window months gives.
     assert _report_start_date(date(2025, 7, 7), 1, days=30) == date(2025, 6, 8)
