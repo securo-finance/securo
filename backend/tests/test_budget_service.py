@@ -401,7 +401,7 @@ async def test_budget_vs_actual_includes_prev_month(
     session.add(account)
     await session.commit()
 
-    # Spending in Feb (prev month)
+    # Spending and a refund in Feb (prev month)
     txn_prev = Transaction(
         id=uuid.uuid4(),
         user_id=test_user.id,
@@ -411,6 +411,18 @@ async def test_budget_vs_actual_includes_prev_month(
         amount=Decimal("75"),
         date=date(2025, 2, 15),
         type="debit",
+        source="manual",
+        created_at=datetime.now(timezone.utc),
+    )
+    txn_prev_refund = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=account.id,
+        category_id=test_categories[0].id,
+        description="Feb refund",
+        amount=Decimal("30"),
+        date=date(2025, 2, 20),
+        type="credit",
         source="manual",
         created_at=datetime.now(timezone.utc),
     )
@@ -427,13 +439,13 @@ async def test_budget_vs_actual_includes_prev_month(
         source="manual",
         created_at=datetime.now(timezone.utc),
     )
-    session.add_all([txn_prev, txn_curr])
+    session.add_all([txn_prev, txn_prev_refund, txn_curr])
     await session.commit()
 
     comparisons = await get_budget_vs_actual(session, test_workspace.id, test_user.id, month=date(2025, 3, 1))
     cat0 = [c for c in comparisons if c.category_id == test_categories[0].id]
     if cat0:
-        assert cat0[0].prev_month_amount == Decimal("75")
+        assert cat0[0].prev_month_amount == Decimal("45")
 
 
 @pytest.mark.asyncio
