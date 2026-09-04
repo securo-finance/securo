@@ -44,7 +44,13 @@ const PLURAL_SUFFIXES = ['_zero', '_one', '_two', '_few', '_many', '_other']
 
 function pluralBase(key: string): string | null {
   for (const s of PLURAL_SUFFIXES) {
-    if (key.endsWith(s)) return key.slice(0, -s.length)
+    if (key.endsWith(s)) {
+      const base = key.slice(0, -s.length)
+      // One suffix, not a chain. Without this, "title_one_other" reduces
+      // to "title_one", which en does have, and a malformed key rides in
+      // as though it were a plural form of a real one.
+      return PLURAL_SUFFIXES.some((inner) => base.endsWith(inner)) ? null : base
+    }
   }
   return null
 }
