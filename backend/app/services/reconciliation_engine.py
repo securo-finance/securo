@@ -42,7 +42,7 @@ import uuid
 import itertools
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 from enum import Enum
 from typing import Any, Literal, Optional
 
@@ -491,11 +491,51 @@ def _eligible_for_set(
     return True
 
 
+ZERO = Decimal("0")
+#: Money is stored to two places, so a share of it has to land there too.
+CENTS = Decimal("0.01")
+
+def _share_out(moved: Decimal, chosen: list[Expectation]) -> list[Settlement]:
+    """Split what arrived across the promises it answers.
+
+    The single-candidate path settles `min(what moved, what is owed)`, and
+    this is the same rule for a group: a payment can never write more than
+    it carried. Without it a tolerance-based group was allowed to settle
+    every invoice at its full value, so 980 arriving against two invoices
+    of 500 wrote 1.000 of allocations. `allocate` would not catch it: it
+    guards each invoice's own balance and knows nothing about how much of
+    the transaction earlier members of the group already spent.
+
+    Short payments are shared **in proportion**, because that is what the
+    shortfall usually is: a gateway's cut is a percentage of the gross, so
+    the larger invoice gives up the larger part of it. The rounding
+    residue lands on the last settlement, which keeps the parts summing to
+    exactly what moved rather than to a figure a cent away from it.
+
+    A payment larger than the group (interest, a late fee) is not shared
+    out at all. Each invoice closes at its value and the surplus stays on
+    the transaction, where `difference` names it.
+    """
+    total = sum((c.amount for c in chosen), Decimal("0"))
+    if total <= moved or total <= ZERO:
+        return [Settlement(expectation=c, amount=c.amount) for c in chosen]
+
+    settlements: list[Settlement] = []
+    spent = Decimal("0")
+    for candidate in chosen[:-1]:
+        share = (moved * candidate.amount / total).quantize(CENTS, rounding=ROUND_DOWN)
+        settlements.append(Settlement(expectation=candidate, amount=share))
+        spent += share
+    settlements.append(Settlement(expectation=chosen[-1], amount=moved - spent))
+    return settlements
+
+
 def _evaluate_set(
     movement: Movement,
     candidates: list[Expectation],
     strategy: dict[str, Any],
     rule: dict[str, Any],
+    policy: dict[str, Any],
     base_currency: Optional[str],
     trace: list[Consideration],
 ) -> Optional[Decision]:
@@ -548,7 +588,7 @@ def _evaluate_set(
     if len(groups) > 1:
         # Several combinations fit. Which one is a question about intent,
         # not about arithmetic, so it goes to a person.
-        outcome = policy_ambiguity = "suggest"
+        outcome = policy.get("on_ambiguity", "suggest")
         for candidate in eligible:
             trace.append(
                 Consideration(
@@ -557,11 +597,15 @@ def _evaluate_set(
                     rejected_by=Reason.AMBIGUOUS_SET,
                 )
             )
-        del policy_ambiguity
 
     chosen = groups[0]
-    settlements = [Settlement(expectation=c, amount=c.amount) for c in chosen]
-    total = sum((s.amount for s in settlements), Decimal("0"))
+    settlements = _share_out(moved, chosen)
+    # The gap is measured against what the invoices are **worth**, not
+    # against what was written. Sharing out caps the allocations at what
+    # arrived, so comparing with those would report a gap of zero and the
+    # gateway's cut would go unnamed: the one number a later deduction
+    # has to book.
+    promised = sum((c.amount for c in chosen), Decimal("0"))
 
     for candidate in chosen:
         trace.append(
@@ -580,8 +624,8 @@ def _evaluate_set(
         # gateway fee, a bank charge, a rounding. Named rather than
         # swallowed, so the caller can book it instead of leaving money
         # unexplained.
-        difference=(moved - total) if moved != total else None,
-        difference_kind="set_difference" if moved != total else None,
+        difference=(moved - promised) if moved != promised else None,
+        difference_kind="set_difference" if moved != promised else None,
         score=1.0,
         trace=trace,
     )
@@ -656,7 +700,7 @@ def evaluate(
         # not "which one of you is this" but "which of you, together".
         if rule.get("amount", {}).get("match") == "set":
             decision = _evaluate_set(
-                movement, candidates, strategy, rule, base_currency, trace
+                movement, candidates, strategy, rule, policy, base_currency, trace
             )
             if decision is not None:
                 return decision
