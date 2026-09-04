@@ -766,6 +766,7 @@ async def import_transactions(
             import_payee_id = import_payee_entity.id
 
         user_category_id = txn_data.category_id
+        suggested_category_id = txn_data.suggested_category_id
         csv_category_id = (
             category_map.get(txn_data.category_name)
             if txn_data.category_name
@@ -774,7 +775,7 @@ async def import_transactions(
         category_id = (
             None
             if txn_data.force_uncategorized
-            else user_category_id
+            else user_category_id or suggested_category_id
         )
 
         incoming = Transaction(
