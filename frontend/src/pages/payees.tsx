@@ -409,25 +409,25 @@ export default function PayeesPage() {
         title={t('payees.title')}
         action={
           canWrite ? (
-            <div className="flex items-center gap-2">
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
               {selectedIds.size >= 2 && (
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" onClick={() => { setMergeTargetId(''); setMergeDialogOpen(true) }}>
-                    <Merge size={16} className="mr-1.5" />
+                <>
+                  <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={() => { setMergeTargetId(''); setMergeDialogOpen(true) }}>
+                    <Merge size={13} />
                     {t('payees.merge')} ({selectedIds.size})
                   </Button>
-                  <Button variant="destructive" onClick={() => {
+                  <Button size="sm" variant="destructive" className="h-8 gap-1.5" onClick={() => {
                     setPayeesToDelete(Array.from(selectedIds))
                     setDeleteDialogOpen(true)
                   }} disabled={bulkDeleteMutation.isPending}>
-                    <Trash2 size={16} className="mr-1.5" />
+                    <Trash2 size={13} />
                     {t('common.delete')} ({selectedIds.size})
                   </Button>
-                </div>
+                </>
               )}
               <Button size="sm" className="h-8 gap-1.5" onClick={openCreate}>
                 <Plus size={13} />
-                <span className="hidden sm:inline">{t('payees.add')}</span>
+                <span>{t('payees.add')}</span>
               </Button>
             </div>
           ) : undefined

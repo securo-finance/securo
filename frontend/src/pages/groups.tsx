@@ -143,10 +143,12 @@ export default function GroupsPage() {
         title={t('splitGroups.title')}
         action={
           canWrite ? (
-            <Button size="sm" className="h-8 gap-1.5" onClick={openCreate}>
-              <Plus size={13} />
-              <span className="hidden sm:inline">{t('splitGroups.add')}</span>
-            </Button>
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+              <Button size="sm" className="h-8 gap-1.5" onClick={openCreate}>
+                <Plus size={13} />
+                <span>{t('splitGroups.add')}</span>
+              </Button>
+            </div>
           ) : undefined
         }
       />
