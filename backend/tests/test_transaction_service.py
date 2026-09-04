@@ -65,6 +65,7 @@ async def test_create_transaction_manual(
         type="debit",
         account_id=txn_account.id,
         category_id=test_categories[0].id,
+        external_id="client-tx-service-001",
     )
     txn = await create_transaction(session, test_workspace.id, test_user.id, data)
 
@@ -73,6 +74,7 @@ async def test_create_transaction_manual(
     assert txn.source == "manual"
     assert txn.status == "posted"
     assert txn.category_id == test_categories[0].id
+    assert txn.external_id == "client-tx-service-001"
 
 
 @pytest.mark.asyncio
