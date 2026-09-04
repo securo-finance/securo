@@ -1,6 +1,8 @@
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
@@ -35,6 +37,8 @@ from app.services.report_service import (
     get_net_worth_report,
 )
 from app.models.recurring_transaction import RecurringTransaction
+from app.core.workspace_context import current_workspace
+from app.main import app
 
 
 # ---------------------------------------------------------------------------
@@ -661,6 +665,55 @@ def test_indian_yearly_ytd_reports_are_rejected_until_fiscal_buckets_exist():
     with pytest.raises(HTTPException, match="Yearly YTD reports"):
         _reject_unsupported_fiscal_year_report("ytd", "yearly", 4)
     _reject_unsupported_fiscal_year_report("ytd", "yearly", 1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("tax_jurisdiction", "expected_month"), [("IN", 4), ("BR", 1)])
+async def test_report_api_forwards_workspace_financial_year(
+    client, auth_headers, monkeypatch, tax_jurisdiction, expected_month
+):
+    context = SimpleNamespace(
+        workspace=SimpleNamespace(id=uuid.uuid4(), tax_jurisdiction=tax_jurisdiction),
+        user_id=uuid.uuid4(),
+        user=SimpleNamespace(primary_currency="INR"),
+    )
+
+    async def override_workspace():
+        return context
+
+    empty_report = ReportResponse(
+        summary=ReportSummary(
+            primary_value=0, change_amount=0, change_percent=None, breakdowns=[]
+        ),
+        trend=[],
+        meta=ReportMeta(
+            type="income_expenses",
+            series_keys=["income", "expenses"],
+            currency="INR",
+            interval="monthly",
+        ),
+        composition=[],
+        category_trend=[],
+    )
+    net_worth = AsyncMock(return_value=empty_report)
+    income_expenses = AsyncMock(return_value=empty_report)
+    app.dependency_overrides[current_workspace] = override_workspace
+    monkeypatch.setattr(report_service, "get_net_worth_report", net_worth)
+    monkeypatch.setattr(report_service, "get_income_expenses_report", income_expenses)
+    try:
+        net_response = await client.get(
+            "/api/reports/net-worth", params={"period": "ytd"}, headers=auth_headers
+        )
+        income_response = await client.get(
+            "/api/reports/income-expenses", params={"period": "ytd"}, headers=auth_headers
+        )
+    finally:
+        app.dependency_overrides.pop(current_workspace, None)
+
+    assert net_response.status_code == 200
+    assert income_response.status_code == 200
+    assert net_worth.call_args.kwargs["financial_year_start_month"] == expected_month
+    assert income_expenses.call_args.kwargs["financial_year_start_month"] == expected_month
 
 
 @pytest.mark.asyncio
