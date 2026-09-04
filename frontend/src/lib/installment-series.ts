@@ -23,7 +23,7 @@ export interface InstallmentSeriesFormInput {
   fxFields: Pick<Partial<Transaction>, 'amount_primary' | 'fx_rate_used'>
   splits: TransactionSplitsInput | null
   installmentCount: string
-  installmentFrequency: 'monthly' | 'quarterly' | 'weekly' | 'yearly'
+  installmentFrequency: 'monthly' | 'quarterly' | 'semiannual' | 'weekly' | 'biweekly' | 'yearly'
   status: 'posted' | 'pending'
 }
 

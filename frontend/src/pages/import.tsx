@@ -9,8 +9,9 @@ import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import type { ImportPreviewTransaction, ImportReviewTransaction } from '@/types'
+import type { ImportPreviewTransaction, ImportReviewTransaction, FailedRow } from '@/types'
 import { Upload, FileText, X, CheckCircle2, AlertCircle, Settings2, Download } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { PageHeader } from '@/components/page-header'
 import { AssetImportPanel } from '@/components/asset-import-panel'
 import { ImportSummaryBar } from '@/components/import-summary-bar'
@@ -58,13 +59,14 @@ function TransactionImportPanel() {
   const dateLocale = useDateLocale()
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [previewData, setPreviewData] = useState<{ transactions: ImportPreviewTransaction[]; detected_format: string; csv_columns?: string[]; parse_error?: string | null } | null>(null)
+  const [previewData, setPreviewData] = useState<{ transactions: ImportPreviewTransaction[]; detected_format: string; csv_columns?: string[]; parse_error?: string | null; failed_rows?: FailedRow[] } | null>(null)
   const [reviewTransactions, setReviewTransactions] = useState<ImportReviewTransaction[]>([])
   const [selectedAccount, setSelectedAccount] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const [fileName, setFileName] = useState<string | null>(null)
   const [currentFile, setCurrentFile] = useState<File | null>(null)
   const [csvHeaders, setCsvHeaders] = useState<string[]>([])
+  const [isFailedRowsOpen, setIsFailedRowsOpen] = useState(false)
 
   const [searchQuery, setSearchQuery] = useState('')
   const [filterCategoryIds, setFilterCategoryIds] = useState<string[]>([])
@@ -406,6 +408,24 @@ function TransactionImportPanel() {
                   <span>{t('import.mappingNeeded')}</span>
                 </div>
               )}
+
+              {previewData.failed_rows && previewData.failed_rows.length > 0 && (
+                <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg mb-3">
+                  <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <span>
+                      {t('import.failedRowsWarning', { count: previewData.failed_rows.length })}
+                    </span>
+                    <button
+                      type="button"
+                      className="ml-2 font-semibold underline hover:text-amber-800 focus:outline-none"
+                      onClick={() => setIsFailedRowsOpen(true)}
+                    >
+                      {t('import.viewDetails')}
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div>
                   <Label className="text-xs text-muted-foreground mb-1 block">{t('import.dateFormat')}</Label>
@@ -565,6 +585,44 @@ function TransactionImportPanel() {
 
       <ImportHistory entity="transactions" />
 
+      {/* Unparsed CSV rows dialog */}
+      <Dialog open={isFailedRowsOpen} onOpenChange={setIsFailedRowsOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col p-6">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold">{t('import.failedRowsTitle')}</DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground mt-1">
+              {t('import.failedRowsDesc')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 border border-border rounded-lg overflow-hidden bg-card text-foreground mt-4 max-h-[50vh] overflow-y-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-muted text-muted-foreground border-b border-border sticky top-0">
+                  <th className="px-3 py-2 font-semibold w-16">{t('import.lineNumber')}</th>
+                  <th className="px-3 py-2 font-semibold">{t('import.description')}</th>
+                  <th className="px-3 py-2 font-semibold">{t('import.rawValue')}</th>
+                  <th className="px-3 py-2 font-semibold">{t('import.errorReason')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {previewData?.failed_rows?.map((row, idx) => (
+                  <tr key={idx} className="border-b border-border last:border-0 hover:bg-muted/50">
+                    <td className="px-3 py-2 text-muted-foreground">{row.line_number}</td>
+                    <td className="px-3 py-2 truncate max-w-[200px]" title={row.description}>{row.description || '-'}</td>
+                    <td className="px-3 py-2 font-mono break-all max-w-[150px]">{row.raw_value}</td>
+                    <td className="px-3 py-2 text-amber-600 font-medium">{t(`import.errors.${row.error_reason}`)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <DialogFooter className="mt-4 pt-4 border-t border-border flex justify-end">
+            <Button onClick={() => setIsFailedRowsOpen(false)} size="sm">
+              {t('common.close')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -223,4 +223,16 @@ describe('i18n locale files', () => {
       ).toEqual([])
     }
   })
+
+  it('contains new recurrence labels in every locale', () => {
+    const required = ['recurring.biweekly', 'recurring.semiannual']
+
+    for (const locale of LOCALES) {
+      const keys = new Set(flattenKeys(JSON.parse(readRaw(locale))))
+      expect(
+        required.filter((key) => !keys.has(key)),
+        `Recurrence labels missing in ${locale}:`,
+      ).toEqual([])
+    }
+  })
 })
