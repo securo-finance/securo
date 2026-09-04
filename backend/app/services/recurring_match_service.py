@@ -102,7 +102,10 @@ def _best_movement(
     account are told apart by their description, not refused.
     """
     best: Optional[Transaction] = None
-    best_score = 0.0
+    # Below the range a score can take, not at its floor: a rule whose
+    # similarity threshold is 0 can link a candidate scoring exactly
+    # 0.0, and a strict comparison against 0.0 would drop it.
+    best_score = -1.0
     for candidate in candidates:
         if candidate.is_ignored:
             continue
@@ -235,7 +238,10 @@ async def find_bill_for_incoming(
     )
 
     best: Optional[RecurringTransaction] = None
-    best_score = 0.0
+    # Below the range a score can take, not at its floor: a rule whose
+    # similarity threshold is 0 can link a candidate scoring exactly
+    # 0.0, and a strict comparison against 0.0 would drop it.
+    best_score = -1.0
     # The workspace's rules are fetched once for the batch and then
     # narrowed per bill, rather than queried per candidate: every bill here
     # belongs to one account, so they share a workspace, and the only thing

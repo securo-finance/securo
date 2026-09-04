@@ -607,7 +607,11 @@ def _validate_similarity(rule: Any) -> dict[str, str]:
         raise RuleError("bad_similarity", "Unknown description condition") from None
     if not 0 <= minimum <= 1:
         raise RuleError("similarity_out_of_range", "Similarity runs from 0 to 1")
-    return {"min": str(rule.get("min"))}
+    # The value the check above validated, not a second lookup: a
+    # `description_similarity` carrying no `min` passed on the default
+    # and was then stored as the string "None", which no consumer can
+    # parse.
+    return {"min": str(rule.get("min", 0))}
 
 
 async def upsert_override(
@@ -640,7 +644,13 @@ async def upsert_override(
     )
     pruned = _prune(merged, shipped_strategy)
 
-    if not pruned and position is None and not (row is not None and row.deleted):
+    keeps_position = row is not None and row.position is not None
+    if (
+        not pruned
+        and position is None
+        and not keeps_position
+        and not (row is not None and row.deleted)
+    ):
         # Nothing left to disagree about. Setting a value back to what we
         # ship is the same act as restoring it, so the row goes and the
         # rule returns to the live default rather than lingering as a
@@ -649,7 +659,10 @@ async def upsert_override(
         # Except when the row is a tombstone: "I do not want this rule"
         # is a disagreement even when every threshold matches ours, and
         # dropping the row here would quietly bring back a rule somebody
-        # deleted.
+        # deleted. Or when it carries a position: reordering writes one
+        # for every rule in the node, so deleting the row would drop this
+        # rule back to its shipped index while its siblings kept theirs,
+        # and the order somebody set would rearrange itself.
         if row is not None:
             await session.delete(row)
             await session.flush()
