@@ -20,6 +20,7 @@ import { Link2, Link2Off, HelpCircle, Check, X, Clock } from 'lucide-react'
 import { formatCurrency } from '@/lib/format'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
+import { useAuth } from '@/contexts/auth-context'
 import { cn } from '@/lib/utils'
 import { ReconciliationPair, type PairSide } from '@/components/reconciliation-pair'
 
@@ -61,6 +62,12 @@ export function ReconciliationHistory() {
   // it does not let you check whether it should have.
   const [openId, setOpenId] = useState<string | null>(null)
 
+  // Only the fallback: an event that lost its promise (deleted, or from
+  // before the field existed) still has to render something, and the
+  // viewer's own currency is the least wrong guess available.
+  const { user } = useAuth()
+  const displayCurrency = user?.preferences?.currency_display ?? 'USD'
+
   const { data: events } = useQuery<ReconciliationHistoryEvent[]>({
     queryKey: ['reconciliation-history'],
     queryFn: () => reconciliationApi.history(),
@@ -69,8 +76,11 @@ export function ReconciliationHistory() {
   if (!events) return null
 
   const shown = expanded ? events : events.slice(0, SHOWN_AT_FIRST)
-  const money = (value: string) =>
-    mask(formatCurrency(Number(value ?? 0), 'USD', locale))
+  // The event's own currency, never a guess: a workspace keeping invoices
+  // in more than one is ordinary, and a hardcoded code would have read a
+  // R$ 1.200,00 settlement back as $1,200.00.
+  const money = (value: string, currency?: string | null) =>
+    mask(formatCurrency(Number(value ?? 0), currency || displayCurrency, locale))
   const when = (iso: string) =>
     new Date(iso).toLocaleString(dateLocale, {
       day: 'numeric',
@@ -119,7 +129,7 @@ export function ReconciliationHistory() {
                   })}
                   <span className="text-muted-foreground">
                     {' · '}
-                    {money(event.amount)}
+                    {money(event.amount, event.currency)}
                   </span>
                 </p>
                 <p className="text-xs text-muted-foreground truncate">

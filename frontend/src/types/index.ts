@@ -1517,6 +1517,8 @@ export interface ReconciliationHistoryEvent {
   expectation_id: string
   expectation_label?: string | null
   amount: string
+  /** What `amount` is denominated in, resolved from the promise. */
+  currency?: string | null
   strategy_id?: string | null
   /** Null means the rules acted on their own. */
   user_id?: string | null
