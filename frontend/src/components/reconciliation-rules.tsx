@@ -113,6 +113,57 @@ function joinWords(value: string | string[] | undefined): string {
  *  a comma became one word, which rendered back without the comma, so the
  *  next letter landed against it and three names arrived as one.
  */
+/** The currency list, held as text while it is being typed.
+
+ *  Same problem `WordsInput` solves, and the same shape of answer. A code
+ *  is only a code at three letters, so deriving the field's value from
+ *  the rule meant the first two keystrokes filtered away to nothing and
+ *  the input emptied itself: `BRL` could not be typed at all. What is
+ *  shown is what was typed; what is stored is what parses.
+ */
+function CodesInput({
+  className,
+  placeholder,
+  value,
+  onChange,
+}: {
+  className: string
+  placeholder: string
+  value: string[] | undefined
+  onChange: (next: string[] | undefined) => void
+}) {
+  const settled = (value ?? []).join(', ')
+  const [text, setText] = useState(settled)
+  const [seed, setSeed] = useState(settled)
+
+  const parse = (raw: string) => {
+    const codes = raw
+      .split(',')
+      .map((code) => code.trim().toUpperCase())
+      .filter((code) => code.length === 3)
+    return codes.length ? codes : undefined
+  }
+
+  // Reseeded only when the rule changed underneath, never from our own
+  // keystrokes.
+  if (seed !== settled) {
+    setSeed(settled)
+    if ((parse(text) ?? []).join(', ') !== settled) setText(settled)
+  }
+
+  return (
+    <input
+      className={className}
+      placeholder={placeholder}
+      value={text}
+      onChange={(event) => {
+        setText(event.target.value)
+        onChange(parse(event.target.value))
+      }}
+    />
+  )
+}
+
 function WordsInput({
   className,
   placeholder,
@@ -567,25 +618,21 @@ function RuleEditor({ open, node, rule, onClose }: EditorProps) {
               t('reconciliation.field.currencyScope'),
               null,
               <>
-                <input
+                <CodesInput
                   // Only what was typed is shouted. Uppercasing the
                   // placeholder too turns a hint into an instruction.
                   className={`${inputClass} [&:not(:placeholder-shown)]:uppercase`}
                   placeholder={t('reconciliation.field.currencyPlaceholder')}
-                  value={(when.currency?.in ?? []).join(', ')}
-                  onChange={(e) => {
-                    const codes = e.target.value
-                      .split(',')
-                      .map((code) => code.trim().toUpperCase())
-                      .filter((code) => code.length === 3)
+                  value={when.currency?.in}
+                  onChange={(codes) =>
                     setWhen({
                       ...when,
                       currency: {
                         ...(when.currency ?? { conversion: 'reject' }),
-                        in: codes.length ? codes : undefined,
+                        in: codes,
                       },
                     })
-                  }}
+                  }
                 />
                 <label className="flex items-center gap-2 mt-1.5 text-xs text-muted-foreground cursor-pointer">
                   <input
