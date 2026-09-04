@@ -444,8 +444,8 @@ async def test_budget_vs_actual_includes_prev_month(
 
     comparisons = await get_budget_vs_actual(session, test_workspace.id, test_user.id, month=date(2025, 3, 1))
     cat0 = [c for c in comparisons if c.category_id == test_categories[0].id]
-    if cat0:
-        assert cat0[0].prev_month_amount == Decimal("45")
+    assert len(cat0) == 1
+    assert cat0[0].prev_month_amount == Decimal("45")
 
 
 @pytest.mark.asyncio
