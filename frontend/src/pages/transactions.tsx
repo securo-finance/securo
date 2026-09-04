@@ -494,12 +494,14 @@ export default function TransactionsPage() {
   // and if it ever is not, that is the rules wanting changing rather than
   // this needing pagination.
   //
-  // Skipped entirely where invoicing is off, so a personal workspace pays
-  // nothing for a surface it cannot reach.
+  // Skipped entirely where neither set is on, so a workspace pays nothing
+  // for a surface it cannot reach. Either one is enough: the recurring
+  // matcher records its questions against a transaction exactly as the
+  // invoice one does, and a personal workspace has only that one.
   const { data: openQuestions } = useQuery<ReconciliationSuggestion[]>({
     queryKey: ['reconciliation-suggestions'],
     queryFn: reconciliationApi.suggestions,
-    enabled: hasModule('invoices'),
+    enabled: hasModule('invoices') || hasModule('recurring'),
   })
   const suggestionsByTransaction = useMemo(
     () =>
