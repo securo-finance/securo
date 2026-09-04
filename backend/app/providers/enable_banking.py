@@ -133,6 +133,14 @@ def _join_remittance(value: Any) -> str:
     return (value or "").strip() if isinstance(value, str) else ""
 
 
+def _counterparty_name(raw: dict, party: str) -> str:
+    party_obj = raw.get(party)
+    name = party_obj.get("name") if isinstance(party_obj, dict) else None
+    if not isinstance(name, str) or not name.strip():
+        name = raw.get(f"{party}_name")
+    return name.strip() if isinstance(name, str) else ""
+
+
 def _txn_fingerprint(account_uid: str, raw: dict) -> str:
     """Stable id for a booked transaction.
 
@@ -145,13 +153,13 @@ def _txn_fingerprint(account_uid: str, raw: dict) -> str:
     creditor_acc = raw.get("creditor_account")
     debtor_acc = raw.get("debtor_account")
     parts = [
-        account_uid,
-        raw.get("booking_date") or "",
-        raw.get("value_date") or "",
-        raw.get("transaction_date") or "",
-        str(amount.get("amount") or ""),
-        str(amount.get("currency") or ""),
-        raw.get("credit_debit_indicator") or "",
+        str(account_uid),
+        str(raw.get("booking_date") or ""),
+        str(raw.get("value_date") or ""),
+        str(raw.get("transaction_date") or ""),
+        str(amount.get("amount") or "") if isinstance(amount, dict) else "",
+        str(amount.get("currency") or "") if isinstance(amount, dict) else "",
+        str(raw.get("credit_debit_indicator") or ""),
         _join_remittance(raw.get("remittance_information"))[:80],
         (creditor_acc.get("iban") or "") if isinstance(creditor_acc, dict) else "",
         (debtor_acc.get("iban") or "") if isinstance(debtor_acc, dict) else "",
@@ -168,14 +176,8 @@ def _extract_payee(raw: dict, indicator: str, source: str) -> Optional[str]:
     """
     if source == "none":
         return None
-    creditor_obj = raw.get("creditor")
-    creditor = (
-        creditor_obj.get("name") if isinstance(creditor_obj, dict) else None
-    ) or raw.get("creditor_name")
-    debtor_obj = raw.get("debtor")
-    debtor = (
-        debtor_obj.get("name") if isinstance(debtor_obj, dict) else None
-    ) or raw.get("debtor_name")
+    creditor = _counterparty_name(raw, "creditor")
+    debtor = _counterparty_name(raw, "debtor")
     if source == "description":
         return None  # let description carry the info
     if indicator == "DBIT":
@@ -598,6 +600,8 @@ class EnableBankingProvider(BankProvider):
         payee_source: str,
     ) -> Optional[TransactionData]:
         amount_obj = raw.get("transaction_amount") or {}
+        if not isinstance(amount_obj, dict):
+            return None
         try:
             amount = Decimal(str(amount_obj.get("amount", "0")))
         except InvalidOperation:
@@ -611,17 +615,12 @@ class EnableBankingProvider(BankProvider):
         txn_date = booking or value or _parse_iso_date(raw.get("transaction_date"))
         if not txn_date:
             return None
-        additional = (raw.get("additional_information") or "").strip()
+        additional_value = raw.get("additional_information")
+        additional = additional_value.strip() if isinstance(additional_value, str) else ""
         description = _join_remittance(raw.get("remittance_information")) or additional
         if not description:
-            creditor_obj = raw.get("creditor")
-            creditor = (
-                creditor_obj.get("name") if isinstance(creditor_obj, dict) else None
-            ) or raw.get("creditor_name")
-            debtor_obj = raw.get("debtor")
-            debtor = (
-                debtor_obj.get("name") if isinstance(debtor_obj, dict) else None
-            ) or raw.get("debtor_name")
+            creditor = _counterparty_name(raw, "creditor")
+            debtor = _counterparty_name(raw, "debtor")
             if indicator == "DBIT":
                 description = creditor or debtor or ""
             else:
