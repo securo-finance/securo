@@ -322,7 +322,10 @@ async def get_summary(
         # Filtered by account? No. A claim has no account until it is
         # paid, so narrowing the dashboard to one account cannot include
         # it without inventing where the money will land.
-        if not account_ids:
+        # `is None`, not falsy: a collection holding only wallets narrows
+        # the report to an empty set of bank accounts, and an empty list
+        # means filtered to nothing rather than not filtered at all.
+        if account_ids is None:
             for claim in await invoice_forecast_service.claims_in_range(
                 session, workspace_id, projection_start, month_end
             ):

@@ -622,7 +622,10 @@ async def get_income_expenses_report(
         # settles it never both land in the same month. Skipped when the
         # report is narrowed to particular accounts: a claim has no
         # account until somebody pays it.
-        if not account_ids:
+        # `is None`, not falsy: a collection holding only wallets narrows
+        # the report to an empty set of bank accounts, and an empty list
+        # means filtered to nothing rather than not filtered at all.
+        if account_ids is None:
             for claim in await invoice_forecast_service.claims_in_range(
                 session, workspace_id, max(m_start, start), m_end
             ):
@@ -1505,7 +1508,10 @@ async def get_cash_flow_report(
     #     payment that settles it never both appear. Skipped when the
     #     chart is narrowed to particular accounts: a claim has no account
     #     until somebody pays it.
-    if not account_ids:
+    # `is None`, not falsy: a collection holding only wallets narrows
+    # the report to an empty set of bank accounts, and an empty list
+    # means filtered to nothing rather than not filtered at all.
+    if account_ids is None:
         for claim in await invoice_forecast_service.claims_in_range(
             session, workspace_id, today + timedelta(days=1), end + timedelta(days=1)
         ):
