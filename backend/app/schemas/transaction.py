@@ -130,7 +130,7 @@ class InstallmentSeriesCreate(BaseModel):
     # Period between installments. Defaults to monthly. Matches the
     # recurring-transaction frequencies so "repeat as installments" offers
     # the same cadence choices as a recurring bill.
-    frequency: Literal["monthly", "quarterly", "weekly", "yearly"] = "monthly"
+    frequency: Literal["monthly", "quarterly", "semiannual", "weekly", "biweekly", "yearly"] = "monthly"
 
     @model_validator(mode="after")
     def validate_amounts(self):
@@ -284,6 +284,13 @@ class TransactionImport(TransactionBase):
     notes: Optional[str] = None
 
 
+class FailedRow(BaseModel):
+    line_number: int
+    description: str
+    raw_value: str
+    error_reason: str
+
+
 class TransactionImportPreview(BaseModel):
     transactions: list[TransactionImport]
     detected_format: str
@@ -293,6 +300,7 @@ class TransactionImportPreview(BaseModel):
     # Set when a CSV's columns could not be auto-detected. The preview still
     # succeeds (with no transactions) so the UI can show the mapping dropdowns.
     parse_error: Optional[str] = None
+    failed_rows: list[FailedRow] = []
 
 
 class TransactionImportRequest(BaseModel):
