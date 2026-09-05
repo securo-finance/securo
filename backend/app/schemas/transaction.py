@@ -100,6 +100,7 @@ class TransactionUpdate(BaseModel):
     amount_primary: Optional[Decimal] = None
     fx_rate_used: Optional[Decimal] = None
     is_ignored: Optional[bool] = None
+    exclude_from_pnl: Optional[bool] = None
     # Manual status override (posted=settled, pending=not yet settled). Lets the
     # user mark a manually-entered transaction as settled once it clears,
     # or flip a synced row back to pending before the next sync.
@@ -129,7 +130,7 @@ class InstallmentSeriesCreate(BaseModel):
     # Period between installments. Defaults to monthly. Matches the
     # recurring-transaction frequencies so "repeat as installments" offers
     # the same cadence choices as a recurring bill.
-    frequency: Literal["monthly", "quarterly", "weekly", "yearly"] = "monthly"
+    frequency: Literal["monthly", "quarterly", "semiannual", "weekly", "biweekly", "yearly"] = "monthly"
 
     @model_validator(mode="after")
     def validate_amounts(self):
@@ -199,6 +200,7 @@ class TransactionRead(TransactionBase):
     # instead of a generic "shared" badge.
     parent_owner_name: Optional[str] = None
     is_ignored: bool = False
+    exclude_from_pnl: bool = False
 
     @model_validator(mode="after")
     def reflect_ignored_category(self):
@@ -282,6 +284,13 @@ class TransactionImport(TransactionBase):
     notes: Optional[str] = None
 
 
+class FailedRow(BaseModel):
+    line_number: int
+    description: str
+    raw_value: str
+    error_reason: str
+
+
 class TransactionImportPreview(BaseModel):
     transactions: list[TransactionImport]
     detected_format: str
@@ -291,6 +300,7 @@ class TransactionImportPreview(BaseModel):
     # Set when a CSV's columns could not be auto-detected. The preview still
     # succeeds (with no transactions) so the UI can show the mapping dropdowns.
     parse_error: Optional[str] = None
+    failed_rows: list[FailedRow] = []
 
 
 class TransactionImportRequest(BaseModel):
