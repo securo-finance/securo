@@ -8,6 +8,7 @@ import type {
   PasskeyOptionsResponse,
   AppSetting,
   Category,
+  CategoryRuleUsage,
   CategoryGroup,
   BankConnection,
   ConnectionSettings,
@@ -18,22 +19,41 @@ import type {
   Transaction,
   Payee,
   PayeeSummary,
+  Invoice,
+  InvoiceDirection,
+  InvoiceDocumentPayload,
+  InvoiceFacets,
+  InvoiceLineInput,
+  InvoiceShareLink,
+  IssuerProfile,
+  IssuerTaxId,
+  InvoiceSettings,
+  InvoiceSummary,
   RecurringTransaction,
   ProjectedTransaction,
   TransactionCalendarResponse,
   Budget,
   BudgetVsActual,
   Rule,
+  RuleAction,
+  RuleConditionNode,
   RuleExportPayload,
   RuleImportResponse,
+  RulePreviewResponse,
   ImportLog,
   ImportPreviewTransaction,
+  FailedRow,
+  PayeeTaxId,
+  TaxIdKindOption,
   Workspace,
   WorkspaceKind,
   WorkspaceMember,
   WorkspaceRole,
   Asset,
   AssetGroup,
+  AssetImportPreview,
+  AssetImportResult,
+  AssetOrderImport,
   AssetTransaction,
   AssetValue,
   MarketSymbolMatch,
@@ -53,6 +73,10 @@ import type {
   GroupSettlement,
   GroupBalances,
   TransactionSplitsInput,
+  TransactionEditPayload,
+  InstallmentSeriesInput,
+  TransactionApplyScope,
+  InvoiceAttachment,
 } from '@/types'
 
 const api = axios.create({
@@ -104,6 +128,7 @@ export const workspaces = {
     kind?: WorkspaceKind
     default_currency?: string
     locale?: string
+    tax_jurisdiction?: string | null
     icon?: string
     color?: string
     self_membership?: boolean
@@ -112,7 +137,12 @@ export const workspaces = {
     return data
   },
   // `kind` is absent on purpose: it is fixed when the workspace is created.
-  update: async (id: string, payload: Partial<Pick<Workspace, 'name' | 'icon' | 'color' | 'default_currency' | 'locale'>>): Promise<Workspace> => {
+  update: async (
+    id: string,
+    payload: Partial<
+      Pick<Workspace, 'name' | 'icon' | 'color' | 'default_currency' | 'locale'>
+    > & { tax_jurisdiction?: string | null },
+  ): Promise<Workspace> => {
     const { data } = await api.patch(`/workspaces/${id}`, payload)
     return data
   },
@@ -247,8 +277,11 @@ export const auth = {
     })
     return data
   },
-  oidcConfig: async (): Promise<{ enabled: boolean; provider_name: string }> => {
-    const { data } = await api.get('/auth/oidc/config')
+  oidcConfig: async (): Promise<{ enabled: boolean; provider_name: string; local_auth_enabled: boolean }> => {
+    // The login card blocks on this call while it decides which sign-in
+    // methods to offer, so a hung request must fail fast and let the caller
+    // fall back instead of leaving the page stuck on its loading state.
+    const { data } = await api.get('/auth/oidc/config', { timeout: 5000 })
     return data
   },
 }
@@ -259,12 +292,26 @@ export const categories = {
     const { data } = await api.get('/categories')
     return data
   },
+  listIncludingHidden: async (): Promise<Category[]> => {
+    const { data } = await api.get('/categories', { params: { include_hidden: true } })
+    return data
+  },
   create: async (category: Partial<Category>): Promise<Category> => {
     const { data } = await api.post('/categories', category)
     return data
   },
-  update: async (id: string, category: Partial<Category>): Promise<Category> => {
-    const { data } = await api.patch(`/categories/${id}`, category)
+  update: async (
+    id: string,
+    category: Partial<Category>,
+    options?: { deactivateRules?: boolean },
+  ): Promise<Category> => {
+    const { data } = await api.patch(`/categories/${id}`, category, {
+      params: options?.deactivateRules ? { deactivate_rules: true } : undefined,
+    })
+    return data
+  },
+  ruleUsage: async (id: string): Promise<CategoryRuleUsage> => {
+    const { data } = await api.get(`/categories/${id}/rule-usage`)
     return data
   },
   delete: async (id: string): Promise<void> => {
@@ -276,6 +323,10 @@ export const categories = {
 export const categoryGroups = {
   list: async (): Promise<CategoryGroup[]> => {
     const { data } = await api.get('/category-groups')
+    return data
+  },
+  listIncludingHidden: async (): Promise<CategoryGroup[]> => {
+    const { data } = await api.get('/category-groups', { params: { include_hidden: true } })
     return data
   },
   create: async (group: Partial<CategoryGroup>): Promise<CategoryGroup> => {
@@ -444,6 +495,7 @@ export const transactions = {
     include_opening_balance?: boolean
     exclude_transfers?: boolean
     user_pnl_only?: boolean
+    exclude_ignored?: boolean
     tags?: string[]
     min_amount?: number
     max_amount?: number
@@ -471,19 +523,26 @@ export const transactions = {
     const { data } = await api.get(`/transactions/${id}`)
     return data
   },
-  create: async (transaction: Partial<Transaction>): Promise<Transaction> => {
+  create: async (transaction: TransactionEditPayload): Promise<Transaction> => {
     const { data } = await api.post('/transactions', transaction)
+    return data
+  },
+  createInstallments: async (payload: InstallmentSeriesInput): Promise<Transaction[]> => {
+    const { data } = await api.post('/transactions/installments', payload)
     return data
   },
   update: async (
     id: string,
-    transaction: Partial<Transaction> & { apply_to_transfer_pair?: boolean },
+    transaction: TransactionEditPayload & {
+      apply_to_transfer_pair?: boolean
+      apply_to?: TransactionApplyScope
+    },
   ): Promise<Transaction> => {
     const { data } = await api.patch(`/transactions/${id}`, transaction)
     return data
   },
-  delete: async (id: string): Promise<void> => {
-    await api.delete(`/transactions/${id}`)
+  delete: async (id: string, applyTo: TransactionApplyScope = 'this'): Promise<void> => {
+    await api.delete(`/transactions/${id}`, { params: { apply_to: applyTo } })
   },
   toggleIgnore: async (id: string): Promise<Transaction> => {
     const { data } = await api.patch(`/transactions/${id}/ignore`)
@@ -580,7 +639,7 @@ export const transactions = {
     inflow_column?: string
     outflow_column?: string
     column_mapping?: Record<string, string>
-  }): Promise<{ transactions: ImportPreviewTransaction[]; detected_format: string; csv_columns?: string[]; parse_error?: string | null }> => {
+  }): Promise<{ transactions: ImportPreviewTransaction[]; detected_format: string; csv_columns?: string[]; parse_error?: string | null; failed_rows?: FailedRow[] }> => {
     const formData = new FormData()
     formData.append('file', file)
     if (options?.date_format) formData.append('date_format', options.date_format)
@@ -628,6 +687,7 @@ export const transactions = {
     to?: string
     q?: string
     tags?: string[]
+    exclude_ignored?: boolean
     transaction_ids?: string[]
   }): Promise<void> => {
     const { data } = await api.get('/transactions/export', {
@@ -673,6 +733,38 @@ export const transactions = {
 }
 
 // Payees
+/** Jurisdiction metadata. Labels, masks and ordering come from the server so
+ *  the browser cannot disagree with it about what a document looks like. */
+export const fiscal = {
+  jurisdictions: async (): Promise<string[]> => {
+    const { data } = await api.get('/fiscal/jurisdictions')
+    return data.jurisdictions
+  },
+  taxIdKinds: async (): Promise<{
+    jurisdiction: string | null
+    kinds: TaxIdKindOption[]
+    /** Country to documents, for grouping and searching the picker by country. */
+    jurisdictions: { code: string; kinds: string[] }[]
+  }> => {
+    const { data } = await api.get('/fiscal/tax-id-kinds')
+    return data
+  },
+}
+
+export interface PayeeWritePayload {
+  name?: string
+  /** Null clears the legal nature. `source` is never writable. */
+  type?: 'person' | 'company' | null
+  notes?: string
+  email?: string | null
+  phone?: string | null
+  address?: string | null
+  website?: string | null
+  is_favorite?: boolean
+  /** Replaces the whole set. Omit to leave documents untouched. */
+  tax_ids?: PayeeTaxId[]
+}
+
 export const payees = {
   list: async (params?: { q?: string; type?: string; is_favorite?: boolean } | Record<string, unknown>): Promise<Payee[]> => {
     const cleanParams = params && !('queryKey' in params) ? params : undefined
@@ -687,11 +779,11 @@ export const payees = {
     const { data } = await api.get(`/payees/${id}/summary`, { params: { from, to } })
     return data
   },
-  create: async (payee: { name: string; type?: string; notes?: string }): Promise<Payee> => {
+  create: async (payee: PayeeWritePayload & { name: string }): Promise<Payee> => {
     const { data } = await api.post('/payees', payee)
     return data
   },
-  update: async (id: string, payee: Partial<Payee>): Promise<Payee> => {
+  update: async (id: string, payee: PayeeWritePayload): Promise<Payee> => {
     const { data } = await api.patch(`/payees/${id}`, payee)
     return data
   },
@@ -851,6 +943,21 @@ export const rules = {
   delete: async (id: string): Promise<void> => {
     await api.delete(`/rules/${id}`)
   },
+  preview: async (draft: {
+    conditions_op: 'and' | 'or'
+    conditions: RuleConditionNode[]
+    actions: RuleAction[]
+    is_active?: boolean
+    apply_to_existing?: boolean
+    overwrite_existing_categories?: boolean
+    /** One window of the matches: `limit` of them starting at `offset`,
+     * newest first. The counts are exact whatever the window is. */
+    limit?: number
+    offset?: number
+  }): Promise<RulePreviewResponse> => {
+    const { data } = await api.post('/rules/preview', draft)
+    return data
+  },
   applyAll: async (): Promise<{ applied: number }> => {
     const { data } = await api.post('/rules/apply-all')
     return data
@@ -990,8 +1097,8 @@ export const dashboard = {
     const { data } = await api.get('/dashboard/monthly-trend', { params: { months, ...(extra.params ?? {}) }, ...(extra.paramsSerializer ? { paramsSerializer: extra.paramsSerializer } : {}) })
     return data
   },
-  projectedTransactions: async (month?: string): Promise<ProjectedTransaction[]> => {
-    const { data } = await api.get('/dashboard/projected-transactions', { params: { month } })
+  projectedTransactions: async (params?: { month?: string; account_id?: string; from?: string; to?: string }): Promise<ProjectedTransaction[]> => {
+    const { data } = await api.get('/dashboard/projected-transactions', { params })
     return data
   },
   balanceHistory: async (month?: string, accountIds?: string[]): Promise<BalanceHistory> => {
@@ -1087,6 +1194,39 @@ export const assets = {
   ): Promise<Asset> => {
     const { data } = await api.post('/assets/buy', tx)
     return data
+  },
+  previewImport: async (
+    file: File,
+    options?: { column_mapping?: Record<string, string>; date_format?: string; group_id?: string | null },
+  ): Promise<AssetImportPreview> => {
+    const formData = new FormData()
+    formData.append('file', file)
+    if (options?.date_format) formData.append('date_format', options.date_format)
+    if (options?.group_id) formData.append('group_id', options.group_id)
+    if (options?.column_mapping && Object.keys(options.column_mapping).length > 0) {
+      formData.append('column_mapping', JSON.stringify(options.column_mapping))
+    }
+    const { data } = await api.post('/assets/import/preview', formData)
+    return data
+  },
+  importOrders: async (
+    orders: AssetOrderImport[],
+    group_id?: string | null,
+    filename?: string,
+  ): Promise<AssetImportResult> => {
+    const { data } = await api.post('/assets/import', { orders, group_id: group_id || null, filename })
+    return data
+  },
+  importTemplate: async (): Promise<void> => {
+    const { data } = await api.get('/assets/import/template', { responseType: 'blob' })
+    const url = URL.createObjectURL(new Blob([data], { type: 'text/csv;charset=utf-8;' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'securo-asset-orders.csv'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   },
 }
 
@@ -1197,8 +1337,17 @@ export const settings = {
 
 // Backup
 export const backup = {
-  download: async (): Promise<void> => {
-    const { data } = await api.get('/export/backup', { responseType: 'blob' })
+  /**
+   * Download the workspace archive, encrypted with AES-256 when a password is
+   * given. POST rather than GET so the password stays out of browser history
+   * and proxy logs.
+   */
+  download: async (password?: string): Promise<void> => {
+    const { data } = await api.post(
+      '/export/backup',
+      password ? { password } : {},
+      { responseType: 'blob' },
+    )
     const blob = new Blob([data], { type: 'application/zip' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -1540,3 +1689,202 @@ export const agents = {
 }
 
 export default api
+
+// Invoices — business workspaces only. Every route 404s for a workspace
+// without the module, so these are never called from a personal one.
+export interface InvoiceWritePayload {
+  direction?: InvoiceDirection
+  /** Keep it a draft even where the workspace would open it on creation.
+   *  Not a status field — only the difference between "still writing
+   *  this" and "this is owed". Ignored on update. */
+  as_draft?: boolean
+  /** Provenance, for anything that did not originate here: a gateway
+   *  sync, a forwarded email, a photographed supplier invoice. */
+  origin?: 'local' | 'imported'
+  external_source?: string
+  external_id?: string
+  payee_id?: string | null
+  issue_date?: string
+  due_date?: string
+  competence_date?: string | null
+  currency?: string
+  total?: string
+  discount?: string
+  notes?: string | null
+  internal_notes?: string | null
+  custom_fields?: Record<string, string> | null
+  lines?: InvoiceLineInput[]
+}
+
+export const invoices = {
+  facets: async (year?: number, direction?: InvoiceDirection): Promise<InvoiceFacets> => {
+    const { data } = await api.get('/invoices/facets', {
+      params: { ...(year ? { year } : {}), ...(direction ? { direction } : {}) },
+    })
+    return data
+  },
+  list: async (params?: { state?: string; year?: number; direction?: InvoiceDirection; payee_id?: string; q?: string } | Record<string, unknown>): Promise<Invoice[]> => {
+    const cleanParams = params && !('queryKey' in params) ? params : undefined
+    const { data } = await api.get('/invoices', { params: cleanParams })
+    return data
+  },
+  get: async (id: string): Promise<Invoice> => {
+    const { data } = await api.get(`/invoices/${id}`)
+    return data
+  },
+  summary: async (direction?: InvoiceDirection): Promise<InvoiceSummary> => {
+    const { data } = await api.get('/invoices/summary', {
+      params: direction ? { direction } : undefined,
+    })
+    return data
+  },
+  create: async (payload: InvoiceWritePayload): Promise<Invoice> => {
+    const { data } = await api.post('/invoices', payload)
+    return data
+  },
+  update: async (id: string, payload: InvoiceWritePayload): Promise<Invoice> => {
+    const { data } = await api.patch(`/invoices/${id}`, payload)
+    return data
+  },
+  remove: async (id: string): Promise<void> => {
+    await api.delete(`/invoices/${id}`)
+  },
+  // The decisions. Each is its own call for the same reason it is its own
+  // route on the server: a status change always has a cause.
+  issue: async (id: string): Promise<Invoice> => {
+    const { data } = await api.post(`/invoices/${id}/issue`)
+    return data
+  },
+  void: async (id: string): Promise<Invoice> => {
+    const { data } = await api.post(`/invoices/${id}/void`)
+    return data
+  },
+  writeOff: async (id: string): Promise<Invoice> => {
+    const { data } = await api.post(`/invoices/${id}/uncollectible`)
+    return data
+  },
+  reopen: async (id: string): Promise<Invoice> => {
+    const { data } = await api.post(`/invoices/${id}/reopen`)
+    return data
+  },
+  allocate: async (id: string, transactionId: string, amount?: string): Promise<Invoice> => {
+    const { data } = await api.post(`/invoices/${id}/allocations`, {
+      transaction_id: transactionId,
+      ...(amount ? { amount } : {}),
+    })
+    return data
+  },
+  unallocate: async (id: string, allocationId: string): Promise<Invoice> => {
+    const { data } = await api.delete(`/invoices/${id}/allocations/${allocationId}`)
+    return data
+  },
+  settings: async (): Promise<InvoiceSettings> => {
+    const { data } = await api.get('/invoices/settings')
+    return data
+  },
+  updateSettings: async (payload: Partial<InvoiceSettings>): Promise<InvoiceSettings> => {
+    const { data } = await api.patch('/invoices/settings', payload)
+    return data
+  },
+  issuer: async (): Promise<IssuerProfile> => {
+    const { data } = await api.get('/invoices/issuer')
+    return data
+  },
+  updateIssuer: async (payload: {
+    legal_name?: string | null
+    address?: string | null
+    tax_ids?: IssuerTaxId[]
+  }): Promise<IssuerProfile> => {
+    const { data } = await api.patch('/invoices/issuer', payload)
+    return data
+  },
+  document: async (id: string): Promise<InvoiceDocumentPayload> => {
+    const { data } = await api.get(`/invoices/${id}/document`)
+    return data
+  },
+  /** Fetched as a blob rather than linked directly: the PDF route needs
+   *  the Authorization header and the workspace header the interceptor
+   *  adds, which a plain <a href> would not carry. */
+  pdf: async (id: string): Promise<Blob> => {
+    const { data } = await api.get(`/invoices/${id}/pdf`, { responseType: 'blob' })
+    return data
+  },
+  share: async (id: string): Promise<InvoiceShareLink> => {
+    const { data } = await api.post(`/invoices/${id}/share`)
+    return data
+  },
+  unshare: async (id: string): Promise<void> => {
+    await api.delete(`/invoices/${id}/share`)
+  },
+  /** The workspace's mark. Uploaded rather than linked, so a rendered
+   *  document never fetches an image from somebody else's host. */
+  uploadLogo: async (file: File): Promise<InvoiceSettings> => {
+    const form = new FormData()
+    form.append('file', file)
+    const { data } = await api.post('/invoices/settings/logo', form)
+    return data
+  },
+  removeLogo: async (): Promise<InvoiceSettings> => {
+    const { data } = await api.delete('/invoices/settings/logo')
+    return data
+  },
+  /** By id, not "the current one": a document issued under an older mark
+   *  froze that id, and asking for the current logo would repaint it. */
+  logoUrl: async (logoId: string): Promise<string> => {
+    const { data } = await api.get(`/invoices/logo/${logoId}`, { responseType: 'blob' })
+    return URL.createObjectURL(data)
+  },
+  /** The paper gathered under an invoice: the bill, the fiscal document,
+   *  a receipt, the contract behind it. */
+  attachments: {
+    list: async (invoiceId: string): Promise<InvoiceAttachment[]> => {
+      const { data } = await api.get(`/invoices/${invoiceId}/attachments`)
+      return data
+    },
+    upload: async (
+      invoiceId: string,
+      file: File,
+      fields: { kind?: string; document_number?: string; issued_at?: string; is_primary?: boolean } = {},
+    ): Promise<InvoiceAttachment> => {
+      const form = new FormData()
+      form.append('file', file)
+      Object.entries(fields).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') form.append(key, String(value))
+      })
+      const { data } = await api.post(`/invoices/${invoiceId}/attachments`, form)
+      return data
+    },
+    /** Same reason as `pdf` above: the route needs headers a plain
+     *  <a href> would not carry, so the bytes come back as a blob. */
+    blobUrl: async (invoiceId: string, attachmentId: string): Promise<string> => {
+      const { data } = await api.get(`/invoices/${invoiceId}/attachments/${attachmentId}`, {
+        responseType: 'blob',
+      })
+      return URL.createObjectURL(data)
+    },
+    update: async (
+      invoiceId: string,
+      attachmentId: string,
+      payload: Partial<Pick<InvoiceAttachment, 'kind' | 'document_number' | 'issued_at' | 'is_primary'>>,
+    ): Promise<InvoiceAttachment> => {
+      const { data } = await api.patch(`/invoices/${invoiceId}/attachments/${attachmentId}`, payload)
+      return data
+    },
+    remove: async (invoiceId: string, attachmentId: string): Promise<void> => {
+      await api.delete(`/invoices/${invoiceId}/attachments/${attachmentId}`)
+    },
+  },
+}
+
+/** The shared invoice. Unauthenticated by design — the token is the whole
+ *  credential — so these bypass the api instance and its interceptors. */
+export const publicInvoices = {
+  get: async (token: string): Promise<InvoiceDocumentPayload> => {
+    // Bare axios, not the shared instance: the interceptors would attach
+    // an Authorization header and a workspace id, and this route must
+    // work for someone who has neither.
+    const { data } = await axios.get(`/api/public/invoices/${token}`)
+    return data
+  },
+  pdfUrl: (token: string): string => `/api/public/invoices/${token}/pdf`,
+}

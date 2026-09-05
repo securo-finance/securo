@@ -105,7 +105,7 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@v5
         with:
-          version: v4.2.3
+          version: v4.2.4
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4

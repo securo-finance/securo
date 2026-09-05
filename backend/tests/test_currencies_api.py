@@ -70,3 +70,52 @@ async def test_currencies_include_nzd_with_metadata(client: AsyncClient):
     assert nzd["symbol"] == "NZ$"
     assert nzd["name"] == "New Zealand Dollar"
     assert nzd["flag"] == "🇳🇿"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_vnd_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    vnd = next((currency for currency in data if currency["code"] == "VND"), None)
+
+    assert vnd is not None
+    assert vnd["symbol"] == "₫"
+    assert vnd["name"] == "Vietnamese Dong"
+    assert vnd["flag"] == "🇻🇳"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_sgd_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    sgd = next((currency for currency in data if currency["code"] == "SGD"), None)
+
+    assert sgd is not None
+    assert sgd["symbol"] == "S$"
+    assert sgd["name"] == "Singapore Dollar"
+    assert sgd["flag"] == "🇸🇬"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_azn_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    
+    azn = next((currency for currency in data if currency["code"] == "AZN"), None)
+    
+    assert azn is not None
+    assert azn["symbol"] == "₼"
+    assert azn["name"] == "Azerbaijani Manat"
+    assert azn["flag"] == "🇦🇿"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_try_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    turkish_lira = next((currency for currency in data if currency["code"] == "TRY"), None)
+
+    assert turkish_lira is not None
+    assert turkish_lira["symbol"] == "₺"
+    assert turkish_lira["name"] == "Turkish Lira"
+    assert turkish_lira["flag"] == "🇹🇷"

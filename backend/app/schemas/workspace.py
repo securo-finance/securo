@@ -16,6 +16,9 @@ class WorkspaceRead(BaseModel):
     is_archived: bool
     default_currency: str
     locale: Optional[str] = None
+    # Where the workspace operates fiscally. Never the UI language: see
+    # `models.workspace.Workspace.tax_jurisdiction`.
+    tax_jurisdiction: Optional[str] = None
     icon: Optional[str] = None
     color: Optional[str] = None
     created_at: datetime
@@ -40,6 +43,9 @@ class WorkspaceCreate(BaseModel):
     kind: WorkspaceKind = "personal"
     default_currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
     locale: Optional[str] = Field(default=None, max_length=10)
+    # Configuration, unlike `kind`: a business can move, and a workspace set
+    # up before packs existed needs a way to say where it files.
+    tax_jurisdiction: Optional[str] = Field(default=None, max_length=10)
     icon: Optional[str] = Field(default=None, max_length=50)
     color: Optional[str] = Field(default=None, max_length=7)
     # When True, also add the creator as an `owner` member. When False
@@ -57,6 +63,9 @@ class WorkspaceUpdate(BaseModel):
     color: Optional[str] = Field(default=None, max_length=7)
     default_currency: Optional[str] = Field(default=None, min_length=3, max_length=3)
     locale: Optional[str] = Field(default=None, max_length=10)
+    # Editable, unlike `kind`: a business relocates, and every workspace that
+    # existed before jurisdictions did needs a way to say where it files.
+    tax_jurisdiction: Optional[str] = Field(default=None, max_length=10)
 
 
 class MemberRead(BaseModel):

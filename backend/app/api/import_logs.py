@@ -12,6 +12,7 @@ from app.core.workspace_context import (
 from app.models.import_log import ImportLog
 from app.models.transaction import Transaction
 from app.schemas.import_log import ImportLogRead
+from app.services import asset_import_service
 
 router = APIRouter(prefix="/api/import-logs", tags=["import-logs"])
 
@@ -34,6 +35,7 @@ async def list_import_logs(
             user_id=log.user_id,
             account_id=log.account_id,
             account_name=log.account.name if log.account else None,
+            entity=log.entity,
             filename=log.filename,
             format=log.format,
             transaction_count=log.transaction_count,
@@ -62,6 +64,13 @@ async def delete_import_log(
     log = result.scalar_one_or_none()
     if not log:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Import log not found")
+
+    if log.entity == "asset_orders":
+        # Orders derive a position, so undoing them is more than a delete:
+        # the service recomputes what is left and drops holdings the import
+        # itself created.
+        await asset_import_service.undo_import(session, ctx.workspace.id, log)
+        return
 
     # Clean up attachment files before deleting transactions
     from app.services.attachment_service import cleanup_attachment_files

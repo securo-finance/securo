@@ -1,4 +1,9 @@
-import type { TransactionCalendarDay } from '../types'
+import type { TransactionCalendarDay, TransactionCalendarItem } from '../types'
+
+/** Persisted forecast rows remain editable; only virtual occurrences lack an id. */
+export function isCalendarItemInteractive(item: TransactionCalendarItem): boolean {
+  return item.id != null
+}
 
 export interface CalendarDayActivity {
   date: string

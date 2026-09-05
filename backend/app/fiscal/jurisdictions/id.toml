@@ -1,0 +1,4 @@
+# Indonesia. The NPWP moved to sixteen digits with the NIK migration, so
+# both lengths are in circulation.
+code = "ID"
+kinds = ["npwp"]

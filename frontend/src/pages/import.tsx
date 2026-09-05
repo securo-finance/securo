@@ -1,20 +1,22 @@
 import { useState, useRef, useCallback } from 'react'
-import { getAccountName } from '@/lib/account-utils'
+import { useSearchParams } from 'react-router-dom'
+import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { transactions as transactionsApi, accounts as accountsApi, importLogs as importLogsApi, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
+import { transactions as transactionsApi, accounts as accountsApi, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
-import { formatCurrency } from '@/lib/format'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import type { ImportPreviewTransaction, ImportReviewTransaction, ImportLog } from '@/types'
-import { Upload, FileText, X, CheckCircle2, AlertCircle, History, Trash2, Settings2, Download } from 'lucide-react'
+import type { ImportPreviewTransaction, ImportReviewTransaction, FailedRow } from '@/types'
+import { Upload, FileText, X, CheckCircle2, AlertCircle, Settings2, Download } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { PageHeader } from '@/components/page-header'
+import { AssetImportPanel } from '@/components/asset-import-panel'
 import { ImportSummaryBar } from '@/components/import-summary-bar'
 import { ImportReviewTable } from '@/components/import-review-table'
+import { ImportHistory } from '@/components/import-history'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 
@@ -48,7 +50,7 @@ function toReviewTransactions(txns: ImportPreviewTransaction[]): ImportReviewTra
   }))
 }
 
-export default function ImportPage() {
+function TransactionImportPanel() {
   const { t } = useTranslation()
   const { user } = useAuth()
   const { canWrite } = useWorkspace()
@@ -57,14 +59,14 @@ export default function ImportPage() {
   const dateLocale = useDateLocale()
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [previewData, setPreviewData] = useState<{ transactions: ImportPreviewTransaction[]; detected_format: string; csv_columns?: string[]; parse_error?: string | null } | null>(null)
+  const [previewData, setPreviewData] = useState<{ transactions: ImportPreviewTransaction[]; detected_format: string; csv_columns?: string[]; parse_error?: string | null; failed_rows?: FailedRow[] } | null>(null)
   const [reviewTransactions, setReviewTransactions] = useState<ImportReviewTransaction[]>([])
   const [selectedAccount, setSelectedAccount] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const [fileName, setFileName] = useState<string | null>(null)
   const [currentFile, setCurrentFile] = useState<File | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<ImportLog | null>(null)
   const [csvHeaders, setCsvHeaders] = useState<string[]>([])
+  const [isFailedRowsOpen, setIsFailedRowsOpen] = useState(false)
 
   const [searchQuery, setSearchQuery] = useState('')
   const [filterCategoryIds, setFilterCategoryIds] = useState<string[]>([])
@@ -93,11 +95,6 @@ export default function ImportPage() {
   const { data: categoryGroupsList = [] } = useQuery({
     queryKey: ['category-groups'],
     queryFn: categoryGroupsApi.list,
-  })
-
-  const { data: importHistory = [] } = useQuery({
-    queryKey: ['import-logs'],
-    queryFn: importLogsApi.list,
   })
 
   const previewMutation = useMutation({
@@ -167,15 +164,6 @@ export default function ImportPage() {
     onError: (error: unknown) => {
       const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       toast.error(detail || t('import.importError'))
-    },
-  })
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => importLogsApi.delete(id),
-    onSuccess: () => {
-      invalidateFinancialQueries(queryClient)
-      queryClient.invalidateQueries({ queryKey: ['import-logs'] })
-      setDeleteTarget(null)
     },
   })
 
@@ -285,8 +273,6 @@ export default function ImportPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader section={t('import.title')} title={t('import.subtitle')} />
-
       {/* Upload zone */}
       {canWrite && <div
         className={`bg-card rounded-xl border-2 border-dashed transition-all cursor-pointer ${
@@ -393,7 +379,7 @@ export default function ImportPage() {
                 onChange={(e) => setSelectedAccount(e.target.value)}
               >
                 <option value="">{t('import.selectAccount')}</option>
-                {accountsList?.map((acc) => (
+                {sortAccountsByDisplayName(accountsList ?? []).map((acc) => (
                   <option key={acc.id} value={acc.id}>{getAccountName(acc)} ({t(TYPE_LABELS[acc.type] || acc.type)})</option>
                 ))}
               </select>
@@ -420,6 +406,24 @@ export default function ImportPage() {
                 <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg mb-3">
                   <AlertCircle size={14} className="shrink-0 mt-0.5" />
                   <span>{t('import.mappingNeeded')}</span>
+                </div>
+              )}
+
+              {previewData.failed_rows && previewData.failed_rows.length > 0 && (
+                <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg mb-3">
+                  <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <span>
+                      {t('import.failedRowsWarning', { count: previewData.failed_rows.length })}
+                    </span>
+                    <button
+                      type="button"
+                      className="ml-2 font-semibold underline hover:text-amber-800 focus:outline-none"
+                      onClick={() => setIsFailedRowsOpen(true)}
+                    >
+                      {t('import.viewDetails')}
+                    </button>
+                  </div>
                 </div>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -579,98 +583,89 @@ export default function ImportPage() {
         </div>
       )}
 
-      {/* Import History */}
-      <div className="mt-8">
-        <div className="flex items-center gap-2 mb-4">
-          <History className="w-5 h-5 text-muted-foreground" />
-          <h2 className="text-lg font-semibold text-foreground">{t('import.history')}</h2>
-        </div>
+      <ImportHistory entity="transactions" />
 
-        {importHistory.length === 0 ? (
-          <div className="bg-card rounded-xl border border-border p-8 text-center text-muted-foreground">
-            {t('import.noHistory')}
-          </div>
-        ) : (
-          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
-            <table className="w-full text-sm">
+      {/* Unparsed CSV rows dialog */}
+      <Dialog open={isFailedRowsOpen} onOpenChange={setIsFailedRowsOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col p-6">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold">{t('import.failedRowsTitle')}</DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground mt-1">
+              {t('import.failedRowsDesc')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 border border-border rounded-lg overflow-hidden bg-card text-foreground mt-4 max-h-[50vh] overflow-y-auto">
+            <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left px-3 sm:px-4 py-3 font-medium text-muted-foreground">{t('import.historyDate')}</th>
-                  <th className="text-left px-3 sm:px-4 py-3 font-medium text-muted-foreground">{t('import.historyFile')}</th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">{t('import.historyFormat')}</th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">{t('import.historyAccount')}</th>
-                  <th className="text-right px-3 sm:px-4 py-3 font-medium text-muted-foreground">{t('import.historyCount')}</th>
-                  <th className="text-right px-4 py-3 font-medium text-muted-foreground hidden sm:table-cell">{t('import.historyCredit')}</th>
-                  <th className="text-right px-4 py-3 font-medium text-muted-foreground hidden sm:table-cell">{t('import.historyDebit')}</th>
-                  <th className="px-3 sm:px-4 py-3" aria-label={t('common.more')}></th>
+                <tr className="bg-muted text-muted-foreground border-b border-border sticky top-0">
+                  <th className="px-3 py-2 font-semibold w-16">{t('import.lineNumber')}</th>
+                  <th className="px-3 py-2 font-semibold">{t('import.description')}</th>
+                  <th className="px-3 py-2 font-semibold">{t('import.rawValue')}</th>
+                  <th className="px-3 py-2 font-semibold">{t('import.errorReason')}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
-                {importHistory.map((log) => (
-                  <tr key={log.id} className="hover:bg-muted">
-                    <td className="px-3 sm:px-4 py-3 text-xs sm:text-sm text-muted-foreground whitespace-nowrap">
-                      {new Date(log.created_at).toLocaleString(dateLocale, { dateStyle: 'short', timeStyle: 'short' })}
-                    </td>
-                    <td className="px-3 sm:px-4 py-3 font-mono text-xs text-foreground max-w-[120px] sm:max-w-none truncate">{log.filename || '—'}</td>
-                    <td className="px-4 py-3 hidden lg:table-cell">
-                      <span className="bg-muted text-muted-foreground text-xs px-2 py-0.5 rounded font-mono uppercase">
-                        {log.format || '—'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground hidden md:table-cell">{log.account_name || '—'}</td>
-                    <td className="px-3 sm:px-4 py-3 text-right text-foreground">{log.transaction_count}</td>
-                    <td className="px-4 py-3 text-right text-emerald-600 font-medium hidden sm:table-cell">
-                      {formatCurrency(log.total_credit, userCurrency, locale)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-rose-600 font-medium hidden sm:table-cell">
-                      {formatCurrency(log.total_debit, userCurrency, locale)}
-                    </td>
-                    <td className="px-3 sm:px-4 py-3 text-right">
-                      {canWrite && (
-                        <button
-                          onClick={() => setDeleteTarget(log)}
-                          className="text-muted-foreground hover:text-rose-500 transition-colors"
-                          aria-label={t('import.undoImport')}
-                          title={t('import.undoImport')}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </td>
+              <tbody>
+                {previewData?.failed_rows?.map((row, idx) => (
+                  <tr key={idx} className="border-b border-border last:border-0 hover:bg-muted/50">
+                    <td className="px-3 py-2 text-muted-foreground">{row.line_number}</td>
+                    <td className="px-3 py-2 truncate max-w-[200px]" title={row.description}>{row.description || '-'}</td>
+                    <td className="px-3 py-2 font-mono break-all max-w-[150px]">{row.raw_value}</td>
+                    <td className="px-3 py-2 text-amber-600 font-medium">{t(`import.errors.${row.error_reason}`)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        )}
-      </div>
-
-      {/* Delete confirmation dialog */}
-      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('import.undoImport')}</DialogTitle>
-            <DialogDescription>
-              {t('import.undoDescription', { count: deleteTarget?.transaction_count, filename: deleteTarget?.filename || '—' })}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <button
-              onClick={() => setDeleteTarget(null)}
-              className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
-            >
-              {t('common.cancel')}
-            </button>
-            <button
-              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
-              disabled={deleteMutation.isPending}
-              className="px-4 py-2 text-sm bg-rose-500 text-white rounded-lg hover:bg-rose-600 disabled:opacity-50"
-            >
-              {deleteMutation.isPending ? t('import.deleting') : t('import.deleteAll')}
-            </button>
+          <DialogFooter className="mt-4 pt-4 border-t border-border flex justify-end">
+            <Button onClick={() => setIsFailedRowsOpen(false)} size="sm">
+              {t('common.close')}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+/** Both importers live behind one menu entry: someone with a file to upload
+    should not have to know first whether it holds transactions or orders. */
+export default function ImportPage() {
+  const { t } = useTranslation()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = searchParams.get('tab') === 'investments' ? 'investments' : 'transactions'
+
+  function selectTab(next: 'transactions' | 'investments') {
+    const params = new URLSearchParams(searchParams)
+    if (next === 'transactions') params.delete('tab')
+    else params.set('tab', next)
+    setSearchParams(params, { replace: true })
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* The title follows the tab: "Bank statement" is about the file you
+          are uploading, and an order file is not one. */}
+      <PageHeader
+        section={t('import.title')}
+        title={tab === 'investments' ? t('assetImport.title') : t('import.subtitle')}
+      />
+
+      <div className="inline-flex items-center rounded-lg border border-border bg-muted/40 p-0.5">
+        {(['transactions', 'investments'] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => selectTab(value)}
+            className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+              tab === value ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {t(value === 'transactions' ? 'import.tabTransactions' : 'import.tabInvestments')}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'investments' ? <AssetImportPanel /> : <TransactionImportPanel />}
     </div>
   )
 }

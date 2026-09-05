@@ -61,7 +61,7 @@ jobs:
           # the lock) and hand it to pip with hash checking, so CI installs
           # exactly the audited versions.
           # renovate: datasource=pypi depName=uv
-          pip install -q uv==0.12.1
+          pip install -q uv==0.12.5
           uv export --frozen --all-extras --no-emit-project -o /tmp/requirements-dev.txt
           pip install --require-hashes -r /tmp/requirements-dev.txt
           pip install --no-deps -e .
@@ -101,8 +101,8 @@ jobs:
           echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
 
       - name: Update coverage badge
-        if: github.ref == 'refs/heads/main' && steps.backend-changes.outputs.run_backend == 'true'
-        uses: schneegans/dynamic-badges-action@v1.7.0
+        if: github.repository == 'securo-finance/securo' && github.ref == 'refs/heads/main' && steps.backend-changes.outputs.run_backend == 'true'
+        uses: schneegans/dynamic-badges-action@v1.9.0
         with:
           auth: ${{ secrets.GIST_TOKEN }}
           gistID: ae627b744aaa2ba89d850ea541c311be
@@ -112,6 +112,19 @@ jobs:
           valColorRange: ${{ steps.coverage.outputs.percentage }}
           minColorRange: 50
           maxColorRange: 90
+
+  migration-chain:
+    name: Migration Chain
+    runs-on: ubuntu-latest
+
+    steps:
+      # No `ref:` override, so on a pull request this is the merge with the
+      # base branch. That is the whole point: a revision id that only clashes
+      # once both sides are together is visible here and nowhere else.
+      - uses: actions/checkout@v7
+
+      - name: Check the Alembic revision chain
+        run: python3 backend/scripts/check_migration_chain.py
 
   frontend-checks:
     name: Frontend Checks
@@ -176,7 +189,7 @@ jobs:
         if: steps.helm-changes.outputs.run_helm == 'true'
         uses: azure/setup-helm@v5
         with:
-          version: v4.2.3
+          version: v4.2.4
 
       - name: Lint Helm Chart
         if: steps.helm-changes.outputs.run_helm == 'true'

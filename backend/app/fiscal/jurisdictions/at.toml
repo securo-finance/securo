@@ -1,0 +1,4 @@
+# Austria. The UID-Nummer is the VAT number; the domestic Steuernummer
+# does not go on an invoice.
+code = "AT"
+kinds = ["vat"]

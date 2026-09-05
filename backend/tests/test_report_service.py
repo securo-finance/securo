@@ -454,7 +454,9 @@ async def test_income_expenses_api_endpoint(client, auth_headers, test_transacti
     data = response.json()
 
     assert data["meta"]["type"] == "income_expenses"
-    assert data["meta"]["series_keys"] == ["income", "expenses"]
+    assert data["meta"]["series_keys"] == [
+        "income", "expenses", "projectedIncome", "projectedExpenses"
+    ]
     assert "summary" in data
     assert "trend" in data
 
@@ -559,7 +561,7 @@ async def test_income_expenses_api_accepts_ytd_period(client, auth_headers, monk
             trend=[],
             meta=ReportMeta(
                 type="income_expenses",
-                series_keys=["income", "expenses"],
+                series_keys=["income", "expenses", "projectedIncome", "projectedExpenses"],
                 currency=currency,
                 interval=interval,
             ),
@@ -594,7 +596,7 @@ async def test_income_expenses_api_forwards_days_window(client, auth_headers, mo
             trend=[],
             meta=ReportMeta(
                 type="income_expenses",
-                series_keys=["income", "expenses"],
+                series_keys=["income", "expenses", "projectedIncome", "projectedExpenses"],
                 currency=currency,
                 interval=interval,
             ),
@@ -1227,11 +1229,16 @@ async def test_cash_flow_recurring_credit_increases_balance(
     )
 
     today = date.today()
-    salary_day = date(today.year + (today.month // 12), (today.month % 12) + 1, today.day)
+    # Anchored to the 1st rather than today's day-of-month: building next
+    # month's date from `today.day` raises on the 31st whenever the month
+    # that follows has 30 days, which made this test fail seven times a
+    # year for reasons that had nothing to do with cash flow.
+    next_month = date(today.year + (today.month // 12), (today.month % 12) + 1, 1)
+    salary_day = next_month
     await _make_recurring(
         session, test_user.id, account.id,
         amount=3000, txn_type="credit", frequency="monthly",
-        day_of_month=today.day, next_occurrence=salary_day,
+        day_of_month=1, next_occurrence=salary_day,
     )
 
     report = await get_cash_flow_report(session, test_workspace.id, test_user.id, months=3, interval="daily")

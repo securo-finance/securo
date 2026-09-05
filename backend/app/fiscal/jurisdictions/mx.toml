@@ -1,0 +1,4 @@
+# Mexico. The RFC covers companies and individuals, the trailing homoclave
+# being what distinguishes two taxpayers with the same name and birth date.
+code = "MX"
+kinds = ["rfc"]

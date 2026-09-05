@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Coins,
+  EyeClosed,
   ListChecks,
   Store,
   Tag,
@@ -34,6 +35,7 @@ export type MobileFilterView =
   | 'group'
   | 'type'
   | 'status'
+  | 'ignored'
   | 'date'
   | 'amount'
 
@@ -60,6 +62,7 @@ interface MobileTransactionsFilterMenuProps {
   groupId: string
   type: string
   status: string
+  hideIgnored: boolean
   from: string
   to: string
   minAmount: string
@@ -78,6 +81,7 @@ interface MobileTransactionsFilterMenuProps {
   onGroupIdChange: (value: string) => void
   onTypeChange: (value: string) => void
   onStatusChange: (value: string) => void
+  onHideIgnoredChange: (value: boolean) => void
   onDateRangeChange: (from: string, to: string) => void
   onAmountRangeChange: (min: string, max: string) => void
   onApplyAmountRange: () => void
@@ -438,6 +442,7 @@ function buildRootOptions(
     { view: 'group', icon: Users, label: labels.group, summary: summaries.group },
     { view: 'type', icon: ArrowUpDown, label: labels.type, summary: summaries.type },
     { view: 'status', icon: ListChecks, label: labels.status, summary: summaries.status },
+    { view: 'ignored', icon: EyeClosed, label: labels.ignored, summary: summaries.ignored },
     { view: 'date', icon: CalendarIcon, label: labels.date, summary: summaries.date },
     { view: 'amount', icon: Coins, label: labels.amount, summary: summaries.amount },
   ]
@@ -453,6 +458,7 @@ function buildLabels(
     group: t('splitGroups.group'),
     type: t('transactions.type'),
     status: t('transactions.status'),
+    ignored: t('transactions.ignoredRows'),
     date: t('transactions.filtersBar.date'),
     amount: t('transactions.filtersBar.amount'),
   }
@@ -486,6 +492,13 @@ function MobileFilterDetail({
   if (menu.view === 'status') {
     const options = [allOption, { value: 'pending', label: t('transactions.statusPending') }, { value: 'posted', label: t('transactions.statusPosted') }]
     return <MobileSelectionView options={options} selectedValue={menu.status} onChange={menu.onStatusChange} />
+  }
+  if (menu.view === 'ignored') {
+    const options = [
+      { value: 'show', label: t('transactions.ignoredShow') },
+      { value: 'hide', label: t('transactions.ignoredHide') },
+    ]
+    return <MobileSelectionView options={options} selectedValue={menu.hideIgnored ? 'hide' : 'show'} onChange={(value) => menu.onHideIgnoredChange(value === 'hide')} />
   }
   if (menu.view === 'date') {
     return <MobileDateView from={menu.from} to={menu.to} presets={menu.datePresets} onChange={menu.onDateRangeChange} onOpenCustomRange={menu.onOpenCustomRange} />

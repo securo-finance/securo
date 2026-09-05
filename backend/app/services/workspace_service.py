@@ -215,6 +215,7 @@ async def create_workspace(
     kind: str = "personal",
     default_currency: Optional[str] = None,
     locale: Optional[str] = None,
+    tax_jurisdiction: Optional[str] = None,
     icon: Optional[str] = None,
     color: Optional[str] = None,
     self_membership: bool = False,
@@ -241,6 +242,7 @@ async def create_workspace(
         managed_by_user_id=creator.id,
         default_currency=default_currency or prefs.get("currency_display", "USD"),
         locale=workspace_locale,
+        tax_jurisdiction=tax_jurisdiction,
         icon=icon,
         color=color,
     )

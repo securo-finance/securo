@@ -1,0 +1,4 @@
+# Italy. Partita IVA for businesses, Codice Fiscale for individuals, and the
+# SDI destination code that e-invoicing routes on.
+code = "IT"
+kinds = ["partita_iva", "codice_fiscale", "sdi", "vat"]

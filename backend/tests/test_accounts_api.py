@@ -103,6 +103,33 @@ async def test_update_bank_connected_account_rejected(
 
 
 @pytest.mark.asyncio
+async def test_update_response_resolves_institution_like_get(
+    client: AsyncClient, auth_headers, session, test_account: Account, test_connection
+):
+    """PATCH must serialize with the connection the way GET does: on a
+    single-institution link a connection rename outranks the institution
+    row's name (review round 5 on #654)."""
+    from app.models.institution import Institution
+
+    inst = Institution(
+        connection_id=test_connection.id, external_id="org-1", name="First Bank",
+    )
+    session.add(inst)
+    await session.flush()
+    test_account.institution_id = inst.id
+    test_connection.display_name = "My Bank"
+    await session.commit()
+
+    response = await client.patch(
+        f"/api/accounts/{test_account.id}",
+        headers=auth_headers,
+        json={"display_name": "Everyday Checking"},
+    )
+    assert response.status_code == 200
+    assert response.json()["institution_name"] == "My Bank"
+
+
+@pytest.mark.asyncio
 async def test_delete_manual_account(client: AsyncClient, auth_headers):
     # Create a manual account
     create_resp = await client.post(

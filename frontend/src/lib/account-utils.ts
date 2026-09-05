@@ -3,6 +3,21 @@ export function getAccountName(account: { name: string; display_name?: string | 
 }
 
 /**
+ * Return a presentation-only copy ordered by the name users see.
+ * The input is never mutated, which keeps React Query's cached account list intact.
+ */
+export function sortAccountsByDisplayName<
+  T extends { name: string; display_name?: string | null },
+>(accounts: readonly T[]): T[] {
+  return [...accounts].sort((left, right) =>
+    getAccountName(left).localeCompare(getAccountName(right), undefined, {
+      numeric: true,
+      sensitivity: 'base',
+    }),
+  )
+}
+
+/**
  * The bank's identifier for an account, masked to its last 4 chars, e.g. "•••• 1234".
  *
  * Banks commonly report every account under the same label (often the holder's

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { getAccountName } from '@/lib/account-utils'
+import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery } from '@tanstack/react-query'
@@ -158,8 +158,8 @@ export function LinkTransferDialog({
     // Manual accounts (no bank connection) where we can auto-create the
     // counterpart, since a synced account would already have a real
     // transaction showing in the candidates list above.
-    const manualCounterpartAccounts = accounts.filter(
-      (a) => a.connection_id == null && a.id !== anchor!.account_id,
+    const manualCounterpartAccounts = sortAccountsByDisplayName(
+      accounts.filter((a) => a.connection_id == null && a.id !== anchor!.account_id),
     )
 
     return (

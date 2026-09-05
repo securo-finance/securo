@@ -10,15 +10,19 @@ from app.models.category_group import CategoryGroup
 from app.schemas.category_group import CategoryGroupCreate, CategoryGroupUpdate
 
 
+class CategoryGroupVisibilityError(ValueError):
+    """Raised when visibility is changed for a user-created category group."""
+
+
 # Language-keyed translations for default groups
 # Keys are internal identifiers, values are {lang: display_name}
 DEFAULT_GROUPS_I18N = {
-    "housing":   {"ru": "Жильё", "uk": "Житло", "de": "Wohnen", "fr": "Logement", "it": "Casa", "pl": "Mieszkanie", "es": "Alojamiento", "en": "Housing",       "pt-BR": "Moradia",         "pt-PT": "Habitação",       "icon": "house",            "color": "#8B5CF6", "position": 0},
-    "food":      {"ru": "Еда и рестораны", "uk": "Їжа та ресторани", "de": "Essen & Trinken", "fr": "Alimentation & Restaurants", "it": "Cibo e Ristoranti", "pl": "Jedzenie", "es": "Comida y Cena", "en": "Food & Dining", "pt-BR": "Alimentação",     "pt-PT": "Alimentação",     "icon": "utensils-crossed", "color": "#F59E0B", "position": 1},
-    "transport":  {"ru": "Транспорт", "uk": "Транспорт", "de": "Transport", "fr": "Transport", "it": "Trasporti", "pl": "Transport", "es": "Transporte",     "en": "Transport",     "pt-BR": "Transporte",      "pt-PT": "Transportes",     "icon": "car",              "color": "#3B82F6", "position": 2},
-    "lifestyle": {"ru": "Образ жизни", "uk": "Спосіб життя", "de": "Lifestyle", "fr": "Style de vie", "it": "Stile di Vita", "pl": "Styl życia", "es": "Estilo de Vida", "en": "Lifestyle",     "pt-BR": "Estilo de Vida",  "pt-PT": "Estilo de Vida",  "icon": "sparkles",         "color": "#EC4899", "position": 3},
-    "income":    {"ru": "Доходы", "uk": "Доходи", "de": "Einkommen", "fr": "Revenus", "it": "Entrate", "pl": "Przychody", "es": "Ingresos",        "en": "Income",        "pt-BR": "Renda",           "pt-PT": "Rendimentos",     "icon": "trending-up",      "color": "#16A34A", "position": 5},
-    "other":     {"ru": "Другое", "uk": "Інше", "de": "Sonstiges", "fr": "Autres", "it": "Altro", "pl": "Inne", "es": "Otros",            "en": "Other",         "pt-BR": "Outros",          "pt-PT": "Outros",          "icon": "circle-help",      "color": "#64748B", "position": 4},
+    "housing":   {"ru": "Жильё", "uk": "Житло", "de": "Wohnen", "fr": "Logement", "it": "Casa", "pl": "Mieszkanie", "es": "Alojamiento", "sk": "Bývanie", "en": "Housing",       "pt-BR": "Moradia",         "pt-PT": "Habitação",       "icon": "house",            "color": "#8B5CF6", "position": 0},
+    "food":      {"ru": "Еда и рестораны", "uk": "Їжа та ресторани", "de": "Essen & Trinken", "fr": "Alimentation & Restaurants", "it": "Cibo e Ristoranti", "pl": "Jedzenie", "es": "Comida y Cena", "sk": "Jedlo a reštaurácie", "en": "Food & Dining", "pt-BR": "Alimentação",     "pt-PT": "Alimentação",     "icon": "utensils-crossed", "color": "#F59E0B", "position": 1},
+    "transport":  {"ru": "Транспорт", "uk": "Транспорт", "de": "Transport", "fr": "Transport", "it": "Trasporti", "pl": "Transport", "es": "Transporte",     "sk": "Doprava", "en": "Transport",     "pt-BR": "Transporte",      "pt-PT": "Transportes",     "icon": "car",              "color": "#3B82F6", "position": 2},
+    "lifestyle": {"ru": "Образ жизни", "uk": "Спосіб життя", "de": "Lifestyle", "fr": "Style de vie", "it": "Stile di Vita", "pl": "Styl życia", "es": "Estilo de Vida", "sk": "Životný štýl", "en": "Lifestyle",     "pt-BR": "Estilo de Vida",  "pt-PT": "Estilo de Vida",  "icon": "sparkles",         "color": "#EC4899", "position": 3},
+    "income":    {"ru": "Доходы", "uk": "Доходи", "de": "Einkommen", "fr": "Revenus", "it": "Entrate", "pl": "Przychody", "es": "Ingresos",        "sk": "Príjmy", "en": "Income",        "pt-BR": "Renda",           "pt-PT": "Rendimentos",     "icon": "trending-up",      "color": "#16A34A", "position": 5},
+    "other":     {"ru": "Другое", "uk": "Інше", "de": "Sonstiges", "fr": "Autres", "it": "Altro", "pl": "Inne", "es": "Otros",            "sk": "Ostatné", "en": "Other",         "pt-BR": "Outros",          "pt-PT": "Outros",          "icon": "circle-help",      "color": "#64748B", "position": 4},
 }
 
 # Maps category internal key -> group internal key
@@ -72,12 +76,25 @@ async def create_default_groups(
     return groups
 
 
-async def get_groups(session: AsyncSession, workspace_id: uuid.UUID) -> list[CategoryGroup]:
+async def get_groups(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    *,
+    include_hidden: bool = False,
+) -> list[CategoryGroup]:
+    filters = [CategoryGroup.workspace_id == workspace_id]
+    if not include_hidden:
+        filters.append(CategoryGroup.is_hidden.is_(False))
+
+    category_loader = selectinload(CategoryGroup.categories)
+    if not include_hidden:
+        category_loader = selectinload(CategoryGroup.categories.and_(Category.is_hidden.is_(False)))
+
     result = await session.execute(
         select(CategoryGroup)
-        .where(CategoryGroup.workspace_id == workspace_id)
-        .options(selectinload(CategoryGroup.categories))
-        .order_by(CategoryGroup.position)
+        .where(*filters)
+        .options(category_loader)
+        .order_by(CategoryGroup.is_hidden.asc(), CategoryGroup.position)
     )
     return list(result.scalars().all())
 
@@ -113,7 +130,11 @@ async def update_group(
     if not group:
         return None
 
-    for key, value in data.model_dump(exclude_unset=True).items():
+    changes = data.model_dump(exclude_unset=True)
+    if changes.get("is_hidden") is True and not group.is_system:
+        raise CategoryGroupVisibilityError("Only system category groups can be hidden")
+
+    for key, value in changes.items():
         setattr(group, key, value)
 
     await session.commit()

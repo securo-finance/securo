@@ -22,12 +22,14 @@ class CategoryGroupUpdate(BaseModel):
     icon: Optional[str] = None
     color: Optional[str] = None
     position: Optional[int] = None
+    is_hidden: Optional[bool] = None
 
 
 class CategoryGroupRead(CategoryGroupBase):
     id: uuid.UUID
     user_id: uuid.UUID
     is_system: bool
+    is_hidden: bool = False
     categories: list[CategoryRead] = []
 
     model_config = ConfigDict(from_attributes=True)

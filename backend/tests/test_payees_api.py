@@ -80,7 +80,7 @@ async def test_list_payees(client: AsyncClient, auth_headers):
 
 @pytest.mark.asyncio
 async def test_list_payees_filters(client: AsyncClient, auth_headers):
-    mcd = await _create_payee(client, auth_headers, "McDonalds", type="merchant", notes="Burgers")
+    mcd = await _create_payee(client, auth_headers, "McDonalds", type="company", notes="Burgers")
     # Toggle favorite via PATCH since PayeeCreate doesn't take is_favorite
     patch_resp = await client.patch(f"/api/payees/{mcd['id']}", headers=auth_headers, json={"is_favorite": True})
     assert patch_resp.status_code == 200
@@ -132,12 +132,13 @@ async def test_list_payees_filters(client: AsyncClient, auth_headers):
 async def test_create_payee(client: AsyncClient, auth_headers):
     resp = await client.post(
         "/api/payees", headers=auth_headers,
-        json={"name": "Starbucks", "type": "merchant", "notes": "Coffee"},
+        json={"name": "Starbucks", "type": "company", "notes": "Coffee"},
     )
     assert resp.status_code == 201
     data = resp.json()
     assert data["name"] == "Starbucks"
-    assert data["type"] == "merchant"
+    assert data["type"] == "company"
+    assert data["source"] == "manual"
     assert data["notes"] == "Coffee"
     assert data["is_favorite"] is False
     assert data["transaction_count"] == 0
@@ -152,6 +153,21 @@ async def test_create_payee_duplicate(client: AsyncClient, auth_headers):
         json={"name": "unique"},  # case-insensitive duplicate
     )
     assert resp.status_code == 400
+    # A code, not prose: the client owns the wording and the language.
+    assert resp.json()["detail"] == "duplicate_payee_name"
+
+
+@pytest.mark.asyncio
+async def test_rename_payee_onto_existing_name_rejected(client: AsyncClient, auth_headers):
+    await _create_payee(client, auth_headers, "Taken")
+    other = await _create_payee(client, auth_headers, "Free")
+
+    resp = await client.patch(
+        f"/api/payees/{other['id']}", headers=auth_headers,
+        json={"name": "taken"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "duplicate_payee_name"
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +207,7 @@ async def test_update_payee(client: AsyncClient, auth_headers):
     data = resp.json()
     assert data["name"] == "NewName"
     assert data["is_favorite"] is True
-    assert data["type"] == "merchant"  # unchanged
+    assert data["type"] is None  # unchanged, and never stated
 
 
 @pytest.mark.asyncio

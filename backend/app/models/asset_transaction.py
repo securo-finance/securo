@@ -40,6 +40,11 @@ class AssetTransaction(Base):
     source: Mapped[str] = mapped_column(String(20), default="manual")  # manual, import, pluggy
     external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    #: The import that wrote this row, so deleting that import can take it
+    #: back out again.
+    import_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("import_logs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     asset: Mapped["Asset"] = relationship(back_populates="transactions")

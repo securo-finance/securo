@@ -32,6 +32,10 @@ class Transaction(Base):
     category_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("categories.id"), nullable=True)
     external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Provider's transaction ID
     description: Mapped[str] = mapped_column(String(500))
+    original_description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    description_is_rule_managed: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     amount: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2))
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     date: Mapped[_date] = mapped_column(Date)
@@ -68,6 +72,12 @@ class Transaction(Base):
         Numeric(precision=15, scale=2), nullable=True
     )
     installment_purchase_date: Mapped[Optional[_date]] = mapped_column(Date, nullable=True)
+    # Stable identity for rows created by the manual installment-series
+    # endpoint. Provider-synced installment rows leave this null because their
+    # metadata is only a deduplication fingerprint, not a series identifier.
+    installment_series_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
     # User-set manual override for which bill cycle this tx belongs to. Null
     # by default; only meaningful for credit-card accounts. When set, beats
     # both Pluggy's billId and the cycle-math fallback (issue #92, the
@@ -84,9 +94,17 @@ class Transaction(Base):
         nullable=True,
         index=True,
     )
-    # Flag to exclude this transaction from reports and dashboard aggregations.
-    # When set to True, the transaction is ignored for income/expense calculations.
+    # Ignore the row everywhere monetary totals are calculated, including the
+    # account balance. The row remains stored and can still be shown in ledger
+    # views unless the caller explicitly hides ignored transactions.
     is_ignored: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Keep the row in the ledger and current balance, but leave it out of P&L
+    # reports. This differs from is_ignored, which also removes the row from
+    # balance calculations. Balance adjustments use this distinction so the
+    # reconciled balance stays exact without looking like income or spending.
+    exclude_from_pnl: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     # Link to the recurring bill this transaction fulfills (issue #116). Set when
     # a synced/imported/manual charge is matched to a recurring bill, or stamped
     # onto the placeholder generate_pending materializes. ON DELETE SET NULL: if

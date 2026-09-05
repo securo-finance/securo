@@ -1,6 +1,3 @@
-import io
-import json
-import zipfile
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import UUID
@@ -22,6 +19,8 @@ from app.models.import_log import ImportLog
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.rule import Rule
 from app.models.transaction import Transaction
+from app.schemas.export import BackupRequest
+from app.services.backup_service import build_backup_archive
 
 router = APIRouter(prefix="/api/export", tags=["export"])
 
@@ -41,17 +40,8 @@ def _serialize(obj) -> dict:
     return d
 
 
-@router.get("/backup")
-async def backup(
-    ctx: WorkspaceContext = Depends(current_workspace),
-    session: AsyncSession = Depends(get_async_session),
-):
-    """Export every entity in the current workspace as a JSON zip.
-
-    Backup is scoped to one workspace at a time — users with multiple
-    workspaces back each one up separately. AssetValue inherits its
-    workspace from its Asset and is filtered transitively.
-    """
+async def _collect(ctx: WorkspaceContext, session: AsyncSession) -> dict[str, object]:
+    """Every entity in the workspace, keyed by the file it becomes."""
     ws_id = ctx.workspace.id
 
     accounts = (await session.execute(select(Account).where(Account.workspace_id == ws_id))).scalars().all()
@@ -83,27 +73,57 @@ async def backup(
         "import_logs": import_logs,
     }
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        entity_counts = {}
-        for name, rows in entities.items():
-            serialized = [_serialize(r) for r in rows]
-            entity_counts[name] = len(serialized)
-            zf.writestr(f"{name}.json", json.dumps(serialized, indent=2, ensure_ascii=False))
+    files: dict[str, object] = {}
+    entity_counts = {}
+    for name, rows in entities.items():
+        serialized = [_serialize(r) for r in rows]
+        entity_counts[name] = len(serialized)
+        files[f"{name}.json"] = serialized
 
-        metadata = {
-            "export_date": datetime.now(timezone.utc).isoformat(),
-            "format_version": "1.0",
-            "workspace_id": str(ws_id),
-            "workspace_name": ctx.workspace.name,
-            "entity_counts": entity_counts,
-        }
-        zf.writestr("metadata.json", json.dumps(metadata, indent=2, ensure_ascii=False))
+    files["metadata.json"] = {
+        "export_date": datetime.now(timezone.utc).isoformat(),
+        "format_version": "1.0",
+        "workspace_id": str(ws_id),
+        "workspace_name": ctx.workspace.name,
+        "entity_counts": entity_counts,
+    }
+    return files
 
-    buf.seek(0)
+
+def _as_download(archive: bytes) -> StreamingResponse:
     today = date.today().isoformat()
     return StreamingResponse(
-        iter([buf.getvalue()]),
+        iter([archive]),
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="securo-backup-{today}.zip"'},
     )
+
+
+@router.get("/backup")
+async def backup(
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Export every entity in the current workspace as a JSON zip.
+
+    Backup is scoped to one workspace at a time — users with multiple
+    workspaces back each one up separately. AssetValue inherits its
+    workspace from its Asset and is filtered transitively.
+    """
+    return _as_download(build_backup_archive(await _collect(ctx, session)))
+
+
+@router.post("/backup")
+async def backup_protected(
+    body: BackupRequest,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """The same archive, encrypted with AES-256 when a password is given.
+
+    A POST because the password belongs in a body: a query string is written
+    to browser history, proxy logs and server access logs. Securo never stores
+    the password and cannot recover the archive without it.
+    """
+    password = body.password.get_secret_value() if body.password else None
+    return _as_download(build_backup_archive(await _collect(ctx, session), password))

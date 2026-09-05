@@ -4,13 +4,30 @@ from typing import Any, Optional, cast
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
 from app.models.rule import Rule
 from app.models.category import Category
 from app.models.payee import Payee
 from app.models.transaction import Transaction
-from app.schemas.rule import RuleCreate, RuleExportPayload, RuleImportResponse, RuleUpdate
-from app.services.rule_engine import evaluate_conditions, apply_rule_actions
+
+from app.schemas.rule import (
+    RuleCreate,
+    RuleExportPayload,
+    RuleImportResponse,
+    RulePreviewItem,
+    RulePreviewResponse,
+    RuleUpdate,
+)
+
+from app.services.category_service import get_hidden_category_ids
+
+from app.services.rule_engine import (
+    apply_rule_actions,
+    compile_rule_regex,
+    evaluate_conditions,
+)
+
 from app.services.category_service import DEFAULT_CATEGORIES_I18N
 
 
@@ -20,17 +37,36 @@ class DuplicateRuleError(Exception):
 
 
 _ALLOWED_CONDITION_FIELDS = {
-    "description", "notes", "amount", "type", "account_id", "payee_id", "date",
+    "description", "payee", "notes", "amount", "type", "account_id", "payee_id", "date",
 }
 _ALLOWED_CONDITION_OPS = {
     "contains", "not_contains", "equals", "not_equals", "starts_with",
     "ends_with", "regex", "gt", "gte", "lt", "lte",
 }
-_ALLOWED_ACTION_OPS = {"set_category", "set_payee", "append_notes", "ignore"}
+_ALLOWED_ACTION_OPS = {
+    "set_category", "set_payee", "set_description", "append_notes", "ignore",
+}
 
 
 def _rule_item_value(item, key: str):
     return item.get(key) if isinstance(item, dict) else getattr(item, key, None)
+
+
+def _flatten_conditions(conditions: list) -> list:
+    """Return every leaf condition, unwrapping one level of AND/OR groups.
+
+    A rule's condition list mixes leaves with groups that hold their own leaves
+    (see `rule_engine.evaluate_conditions`). Field/operator checks apply to the
+    leaves either way, and the schema caps nesting at one level.
+    """
+    leaves = []
+    for node in conditions or []:
+        nested = _rule_item_value(node, "conditions")
+        if isinstance(nested, list):
+            leaves.extend(nested)
+        else:
+            leaves.append(node)
+    return leaves
 
 
 async def _validate_rule_definition(
@@ -39,11 +75,13 @@ async def _validate_rule_definition(
     conditions: list,
     actions: list,
 ) -> None:
-    for condition in conditions or []:
+    for condition in _flatten_conditions(conditions):
         field = _rule_item_value(condition, "field")
         op = _rule_item_value(condition, "op")
         if field not in _ALLOWED_CONDITION_FIELDS or op not in _ALLOWED_CONDITION_OPS:
             raise ValueError("Invalid rule condition")
+        if op == "regex":
+            compile_rule_regex(str(_rule_item_value(condition, "value") or ""))
 
     for action in actions or []:
         op = _rule_item_value(action, "op")
@@ -76,6 +114,11 @@ async def _validate_rule_definition(
             )
             if exists_result.scalar_one_or_none() is None:
                 raise ValueError("Payee not found")
+        elif op == "set_description":
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError("Description cannot be blank")
+            if len(value.strip()) > 500:
+                raise ValueError("Description cannot exceed 500 characters")
 
 
 # ─── Universal rules (work for any language/country) ───
@@ -1064,6 +1107,85 @@ async def _get_existing_rule_names_for_workspace(
     return {row[0] for row in result.all()}
 
 
+# Exactly the columns `_rule_preview` copies. Anything reading a column that is
+# not here off a transaction loaded with `load_only(*_PREVIEW_COLUMNS)` would
+# trigger a lazy refresh — which raises under async — so the two lists move
+# together.
+_PREVIEW_COLUMNS = (
+    Transaction.user_id,
+    Transaction.workspace_id,
+    Transaction.account_id,
+    Transaction.category_id,
+    Transaction.description,
+    Transaction.original_description,
+    Transaction.description_is_rule_managed,
+    Transaction.amount,
+    Transaction.currency,
+    Transaction.date,
+    Transaction.type,
+    Transaction.source,
+    Transaction.status,
+    Transaction.payee,
+    Transaction.payee_id,
+    Transaction.notes,
+    Transaction.is_ignored,
+)
+
+
+def _rule_preview(transaction: Transaction) -> Transaction:
+    """Build a detached transaction-shaped object for side-effect-free rule evaluation."""
+    return Transaction(
+        user_id=transaction.user_id,
+        workspace_id=transaction.workspace_id,
+        account_id=transaction.account_id,
+        category_id=transaction.category_id,
+        description=transaction.description,
+        original_description=transaction.original_description,
+        description_is_rule_managed=bool(transaction.description_is_rule_managed),
+        amount=transaction.amount,
+        currency=transaction.currency,
+        date=transaction.date,
+        type=transaction.type,
+        source=transaction.source,
+        status=transaction.status,
+        payee=transaction.payee,
+        payee_id=transaction.payee_id,
+        notes=transaction.notes,
+        is_ignored=transaction.is_ignored,
+    )
+
+
+def _has_manual_description(transaction: Transaction) -> bool:
+    """True when the displayed description is the user's own text.
+
+    An imported row whose description drifted from its raw provenance without a
+    rule having done it was edited by hand. Rules may still run every other
+    matching action on it, but they must not replace that text.
+    """
+    return (
+        not transaction.description_is_rule_managed
+        and transaction.original_description is not None
+        and transaction.description != transaction.original_description
+    )
+
+
+async def preview_rules_for_transaction(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    transaction: Transaction,
+    skip_category_rules: bool = False,
+) -> Transaction:
+    """Apply active rules to a detached preview and return it without persistence."""
+    preview = _rule_preview(transaction)
+    await apply_rules_to_transaction(
+        session,
+        user_id,
+        preview,
+        skip_category_rules=skip_category_rules,
+    )
+    return preview
+
+
 async def apply_rules_to_transaction(
     session: AsyncSession, user_id: uuid.UUID, transaction: Transaction,
     skip_category_rules: bool = False,
@@ -1086,12 +1208,157 @@ async def apply_rules_to_transaction(
     rules = result.scalars().all()
 
     category_set = transaction.category_id is not None or skip_category_rules
+    hidden_categories = (
+        await get_hidden_category_ids(session, transaction.workspace_id)
+        if getattr(transaction, "workspace_id", None) is not None
+        else set()
+    )
 
     for rule in rules:
         conditions = rule.conditions or []
         actions = rule.actions or []
         if evaluate_conditions(rule.conditions_op, conditions, transaction):
-            category_set = apply_rule_actions(actions, transaction, category_set)
+            category_set = apply_rule_actions(
+                actions,
+                transaction,
+                category_set,
+                hidden_category_ids=hidden_categories,
+            )
+
+
+def _rule_effect_state(tx: Transaction) -> tuple:
+    """Everything rule actions can write, for a before/after comparison.
+
+    Mirrors the tuple `apply_single_rule` compares, so a preview counts a
+    transaction as changed exactly when saving the rule would change it.
+    """
+    return (
+        tx.category_id,
+        tx.payee_id,
+        tx.description,
+        tx.original_description,
+        tx.description_is_rule_managed,
+        tx.notes,
+        tx.is_ignored,
+    )
+
+
+async def preview_rule(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    conditions_op: str,
+    conditions: list,
+    actions: list,
+    is_active: bool = True,
+    apply_to_existing: bool = True,
+    overwrite_existing_categories: bool = False,
+    limit: int = 20,
+    offset: int = 0,
+) -> RulePreviewResponse:
+    """Report which existing transactions an unsaved rule would match.
+
+    Read-only counterpart of `apply_single_rule`: same transaction scope, same
+    engine, same overwrite semantics — so the table the editor shows is exactly
+    what saving the rule would produce. Returns the full match/change counts
+    plus one window of the matches — `limit` of them from `offset`, newest
+    first — so a rule matching thousands of rows can be paged through rather
+    than judged by its first screenful. Every match is evaluated whatever the
+    window is, which is what keeps the counts exact.
+
+    That means honouring the two gates the save path applies before any rule
+    touches history: `apply_single_rule` does nothing for an inactive rule, and
+    the create/update endpoints only call it when `apply_to_existing` is set.
+    With either off, the matches are still listed — they are what the
+    conditions select, which is worth seeing — but nothing is reported as
+    changing, because saving would change nothing.
+    """
+    will_apply = is_active and apply_to_existing
+    await _validate_rule_definition(session, workspace_id, conditions, actions or [])
+
+    # Every transaction is evaluated in Python, so only the columns the engine
+    # reads and `_rule_preview` copies are worth fetching — notably not
+    # `raw_data`, whose provider payloads dwarf the rest of the row and which
+    # no condition or action can see.
+    result = await session.execute(
+        select(Transaction)
+        .options(load_only(*_PREVIEW_COLUMNS))
+        .where(
+            Transaction.workspace_id == workspace_id,
+            Transaction.source != "opening_balance",
+        )
+        # `id` breaks date ties, so the match list is in the same order for
+        # every window: without a total order two rows sharing a date could
+        # swap between requests and be shown twice, or skipped, while paging.
+        .order_by(Transaction.date.desc(), Transaction.id.desc())
+    )
+    transactions = result.scalars().all()
+
+    category_rows = await session.execute(
+        select(Category.id, Category.name).where(Category.workspace_id == workspace_id)
+    )
+    category_names = {row.id: row.name for row in category_rows}
+
+    action_dicts = [
+        action if isinstance(action, dict) else action.model_dump() for action in actions or []
+    ]
+
+    matched = 0
+    changed = 0
+    sample: list[RulePreviewItem] = []
+
+    for tx in transactions:
+        matches = evaluate_conditions(conditions_op, conditions or [], tx)
+        # A rule that renamed this row before should still recognise it, so a
+        # miss is retried against the original text — same as apply_single_rule.
+        if not matches and tx.original_description is not None:
+            original_target = _rule_preview(tx)
+            original_target.description = tx.original_description
+            matches = evaluate_conditions(conditions_op, conditions or [], original_target)
+        if not matches:
+            continue
+        matched += 1
+        # An untouched copy when nothing is applied, so `new_category_*` below
+        # simply mirrors what the transaction already has.
+        draft = _rule_preview(tx)
+        will_change = False
+        if will_apply:
+            before = _rule_effect_state(draft)
+            apply_rule_actions(
+                action_dicts,
+                draft,
+                category_already_set=tx.category_id is not None
+                and not overwrite_existing_categories,
+                skip_description=_has_manual_description(tx),
+            )
+            will_change = _rule_effect_state(draft) != before
+            if will_change:
+                changed += 1
+        # `matched` has just counted this row, so `matched - 1` is its index
+        # in the match list the window is cut from.
+        if offset <= matched - 1 < offset + limit:
+            sample.append(
+                RulePreviewItem(
+                    id=tx.id,
+                    date=tx.date,
+                    description=tx.description,
+                    amount=tx.amount,
+                    currency=tx.currency,
+                    type=tx.type,
+                    current_category_id=tx.category_id,
+                    current_category_name=category_names.get(tx.category_id),
+                    new_category_id=draft.category_id,
+                    new_category_name=category_names.get(draft.category_id),
+                    will_change=will_change,
+                )
+            )
+
+    return RulePreviewResponse(
+        matched=matched,
+        will_change=changed,
+        will_apply=will_apply,
+        sample=sample,
+        offset=offset,
+    )
 
 
 async def apply_single_rule(
@@ -1100,15 +1367,16 @@ async def apply_single_rule(
     rule: Rule,
     overwrite_existing_categories: bool = False,
 ) -> int:
-    """Apply one rule to all existing workspace transactions. Returns the number
-    of transactions actually modified.
+    """Apply one rule to existing workspace transactions and count modifications.
 
-    Used right after a rule is created so it takes effect on history without the
-    user having to hit "Reapply all". Unlike `apply_all_rules` this is
-    non-destructive by default: a transaction that already has a category keeps
-    it unless the caller explicitly opts into replacing existing categories.
-    Payee/notes/ignore actions still apply on a match. Only transactions whose
-    fields actually change are counted.
+    Used after rule creation or editing so it can affect history without the
+    destructive reset performed by `apply_all_rules`. Existing categories are
+    protected unless the caller opts into replacement; other actions still
+    apply. Conditions first inspect the current transaction state so rules can
+    depend on earlier normalization. If that does not match, the preserved
+    imported description is tried as a fallback so edited normalization rules
+    can still find transactions they previously changed. A description the user
+    typed themselves is left alone, exactly as `apply_all_rules` leaves it.
     """
     if not rule.is_active:
         return 0
@@ -1120,22 +1388,49 @@ async def apply_single_rule(
         )
     )
     transactions = result.scalars().all()
-
     conditions = rule.conditions or []
     actions = rule.actions or []
 
+    hidden_categories = await get_hidden_category_ids(session, workspace_id)
     count = 0
     for tx in transactions:
-        if not evaluate_conditions(rule.conditions_op, conditions, tx):
+        matches = evaluate_conditions(rule.conditions_op, conditions, tx)
+        if not matches and tx.original_description is not None:
+            original_target = _rule_preview(tx)
+            original_target.description = tx.original_description
+            matches = evaluate_conditions(
+                rule.conditions_op, conditions, original_target
+            )
+        if not matches:
             continue
-        before = (tx.category_id, tx.payee_id, tx.notes, tx.is_ignored)
+
+        before = (
+            tx.category_id,
+            tx.payee_id,
+            tx.description,
+            tx.original_description,
+            tx.description_is_rule_managed,
+            tx.notes,
+            tx.is_ignored,
+        )
         apply_rule_actions(
             actions,
             tx,
             category_already_set=tx.category_id is not None
             and not overwrite_existing_categories,
+            skip_description=_has_manual_description(tx),
+            hidden_category_ids=hidden_categories,
         )
-        if before != (tx.category_id, tx.payee_id, tx.notes, tx.is_ignored):
+        after = (
+            tx.category_id,
+            tx.payee_id,
+            tx.description,
+            tx.original_description,
+            tx.description_is_rule_managed,
+            tx.notes,
+            tx.is_ignored,
+        )
+        if before != after:
             count += 1
 
     await session.commit()
@@ -1143,15 +1438,9 @@ async def apply_single_rule(
 
 
 async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int:
-    """Re-apply all active rules to all workspace transactions. Returns count of affected transactions."""
-    from app.models.account import Account
-    from app.models.bank_connection import BankConnection
-
+    """Reset rule-managed fields and reapply active rules in priority order."""
     result = await session.execute(
-        select(Transaction)
-        .outerjoin(Account)
-        .outerjoin(BankConnection)
-        .where(
+        select(Transaction).where(
             Transaction.workspace_id == workspace_id,
             Transaction.source != "opening_balance",
         )
@@ -1165,23 +1454,51 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
     )
     rules = rules_result.scalars().all()
 
+    hidden_categories = await get_hidden_category_ids(session, workspace_id)
     count = 0
     for tx in transactions:
+        preserve_manual_description = _has_manual_description(tx)
+        before = (
+            tx.category_id,
+            tx.payee_id,
+            tx.description,
+            tx.original_description,
+            tx.description_is_rule_managed,
+            tx.notes,
+            tx.is_ignored,
+        )
+        if tx.description_is_rule_managed:
+            if tx.original_description is not None:
+                tx.description = tx.original_description
+            tx.description_is_rule_managed = False
         matched = False
         category_set = False
-
         for rule in rules:
             conditions = rule.conditions or []
             actions = rule.actions or []
             if evaluate_conditions(rule.conditions_op, conditions, tx):
                 if not matched:
-                    # First match: reset so rules are applied from scratch
                     tx.category_id = None
                     tx.notes = None
                     matched = True
-                category_set = apply_rule_actions(actions, tx, category_set)
+                category_set = apply_rule_actions(
+                    actions,
+                    tx,
+                    category_set,
+                    skip_description=preserve_manual_description,
+                    hidden_category_ids=hidden_categories,
+                )
 
-        if matched:
+        after = (
+            tx.category_id,
+            tx.payee_id,
+            tx.description,
+            tx.original_description,
+            tx.description_is_rule_managed,
+            tx.notes,
+            tx.is_ignored,
+        )
+        if matched or before != after:
             count += 1
 
     await session.commit()

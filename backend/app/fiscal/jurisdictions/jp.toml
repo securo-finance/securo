@@ -1,0 +1,4 @@
+# Japan. The corporate number is issued to registered entities; sole
+# proprietors have none and invoice under their qualified invoice number.
+code = "JP"
+kinds = ["jp_corporate"]

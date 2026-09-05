@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { collections as collectionsApi, accounts as accountsApi, assetGroups as assetGroupsApi } from '@/lib/api'
-import { getAccountName } from '@/lib/account-utils'
+import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { PageHeader } from '@/components/page-header'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -124,7 +124,7 @@ export default function CollectionsPage() {
         open={dialogOpen}
         onClose={() => { setDialogOpen(false); setEditing(null) }}
         collection={editing}
-        accounts={(accounts ?? []).map((a) => ({ id: a.id, label: accountName.get(a.id) ?? a.name, currency: a.currency }))}
+        accounts={sortAccountsByDisplayName(accounts ?? []).map((a) => ({ id: a.id, label: accountName.get(a.id) ?? a.name, currency: a.currency }))}
         wallets={(wallets ?? []).map((w) => ({ id: w.id, label: w.name }))}
         loading={createMutation.isPending || updateMutation.isPending}
         onSave={(payload) => {

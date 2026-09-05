@@ -601,6 +601,58 @@ async def test_get_projected_transactions_no_category(session: AsyncSession, tes
 
 
 @pytest.mark.asyncio
+async def test_get_projected_transactions_shows_transfer_like_but_not_ignored_categories(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Transfer/investment rows are visible projections without becoming P&L."""
+    month_start = date.today().replace(day=1)
+    transfer_like = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Investments",
+        icon="trending-up",
+        color="#0EA5E9",
+        treat_as_transfer=True,
+    )
+    ignored = Category(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Ignored",
+        is_ignored=True,
+    )
+    session.add_all([transfer_like, ignored])
+    for description, category_id in (
+        ("Monthly investment", transfer_like.id),
+        ("Hidden recurring", ignored.id),
+    ):
+        session.add(RecurringTransaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            description=description,
+            amount=Decimal("100"),
+            currency="BRL",
+            type="debit",
+            frequency="monthly",
+            start_date=month_start,
+            next_occurrence=month_start,
+            is_active=True,
+            category_id=category_id,
+        ))
+    await session.commit()
+
+    projections = await get_projected_transactions(
+        session, test_workspace.id, test_user.id, month=month_start
+    )
+
+    by_description = {p.description: p for p in projections}
+    assert by_description["Monthly investment"].category_name == "Investments"
+    assert "Hidden recurring" not in by_description
+
+
+@pytest.mark.asyncio
 async def test_account_balance_manual_future_date(session, test_user):
     acct = Account(
         id=uuid.uuid4(), user_id=test_user.id, name="FutDate",
@@ -740,7 +792,7 @@ async def test_get_recurring_projections(session, test_user, test_workspace):
 
 
 @pytest.mark.asyncio
-async def test_get_recurring_projections_excludes_ignored_categories(
+async def test_get_recurring_projections_filters_non_pnl_categories_by_default(
     session, test_user, test_workspace
 ):
     month_start = date.today().replace(day=1)
@@ -789,8 +841,16 @@ async def test_get_recurring_projections_excludes_ignored_categories(
     projections = await _get_recurring_projections(
         session, test_workspace.id, month_start, month_end
     )
+    balance_projections = await _get_recurring_projections(
+        session,
+        test_workspace.id,
+        month_start,
+        month_end,
+        include_transfer_like=True,
+    )
 
     assert [p["amount"] for p in projections] == [100.0]
+    assert {p["amount"] for p in balance_projections} == {100.0, 300.0}
 
 
 @pytest.mark.asyncio
@@ -814,6 +874,38 @@ async def test_balance_history_basic(session, test_user, test_workspace):
     history = await get_balance_history(session, test_workspace.id, test_user.id)
     assert len(history.current) > 0
     assert len(history.previous) > 0
+
+
+@pytest.mark.asyncio
+async def test_future_balance_history_carries_pending_into_projected_opening(
+    session: AsyncSession, test_user, test_workspace
+):
+    account = Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        name="Future balance", type="checking", balance=Decimal("0"), currency="BRL",
+    )
+    opening = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=account.id, description="Opening", amount=Decimal("1000"),
+        currency="BRL", date=date.today(), type="credit", source="opening_balance",
+        status="posted",
+    )
+    pending = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        account_id=account.id, description="Pending bill", amount=Decimal("100"),
+        currency="BRL", date=date.today(), type="debit", source="sync",
+        status="pending",
+    )
+    session.add_all([account, opening, pending])
+    await session.commit()
+
+    next_month = (date.today().replace(day=1) + timedelta(days=32)).replace(day=1)
+    history = await get_balance_history(
+        session, test_workspace.id, test_user.id,
+        month=next_month, account_ids=[account.id],
+    )
+
+    assert history.current[0].balance == 900.0
 
 
 @pytest.mark.asyncio
@@ -993,7 +1085,8 @@ async def test_get_summary_includes_recurring_projections(session, test_user, te
     await session.commit()
 
     summary = await get_summary(session, test_workspace.id, test_user.id, month=month_start)
-    assert summary.monthly_income >= 10000.0
+    assert summary.monthly_income == pytest.approx(0.0)
+    assert summary.projected_income >= 10000.0
 
 
 # ---------------------------------------------------------------------------
@@ -1032,7 +1125,10 @@ async def test_spending_by_category_includes_recurring(session, test_user, test_
     assert len(spending) >= 1
     transport = next((s for s in spending if s.category_name == "Transport"), None)
     assert transport is not None
-    assert transport.total >= 200.0
+    # Recurring projections are forecast: they live in projected_total so the
+    # posted-only `total` keeps matching the expenses card.
+    assert transport.total == 0.0
+    assert transport.projected_total >= 200.0
 
 
 # ---------------------------------------------------------------------------
