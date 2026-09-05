@@ -85,6 +85,8 @@ def test_match_window():
     assert rms._match_window("weekly") == (2, 2)
     assert rms._match_window("monthly") == (3, 5)
     assert rms._match_window("yearly") == (3, 5)
+    assert rms._match_window("biweekly") == (3, 5)
+    assert rms._match_window("semiannual") == (3, 5)
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +250,38 @@ async def test_advance_past_moves_quarterly_pointer(session, test_user, test_wor
     )
     rms.advance_past(bill, date(2025, 1, 31))
     assert bill.next_occurrence == date(2025, 4, 30)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("frequency", "start_date", "day_of_month", "expected_next"),
+    [
+        ("biweekly", date(2026, 1, 5), None, date(2026, 1, 19)),
+        ("semiannual", date(2026, 1, 31), 31, date(2026, 7, 31)),
+    ],
+    ids=["biweekly", "semiannual"],
+)
+async def test_advance_past_new_frequencies(
+    session,
+    test_user,
+    test_workspace,
+    account,
+    frequency,
+    start_date,
+    day_of_month,
+    expected_next,
+):
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        account,
+        frequency=frequency,
+        day_of_month=day_of_month,
+        start_date=start_date,
+    )
+    rms.advance_past(bill, start_date)
+    assert bill.next_occurrence == expected_next
 
 
 @pytest.mark.asyncio
