@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  formatAmountInput,
   formatCurrency,
+  parseAmountInput,
   resolveDateLocale,
   resolveDateOrder,
   resolveDisplayLocale,
@@ -156,5 +158,72 @@ describe('formatCurrency', () => {
 
   it('formats zero without a sign', () => {
     expect(normalize(formatCurrency(0, 'USD', 'en-US'))).toBe('$0.00')
+  })
+})
+
+describe('parseAmountInput', () => {
+  it('reads comma decimals under a dot_comma locale', () => {
+    expect(parseAmountInput('1,50', 'de-DE')).toBe(1.5)
+    expect(parseAmountInput('1.234,56', 'de-DE')).toBe(1234.56)
+    expect(parseAmountInput('1.500', 'de-DE')).toBe(1500)
+  })
+
+  it('reads dot decimals under a comma_dot locale', () => {
+    expect(parseAmountInput('1.5', 'en-US')).toBe(1.5)
+    expect(parseAmountInput('1,234.56', 'en-US')).toBe(1234.56)
+  })
+
+  it('reads space grouping under a space_comma locale', () => {
+    expect(parseAmountInput('1 234,56', 'fr-FR')).toBe(1234.56)
+    // Intl renders the group as NBSP/narrow-NBSP; typed input round-trips.
+    expect(parseAmountInput('1\u00a0234,56', 'fr-FR')).toBe(1234.56)
+    expect(parseAmountInput('1\u202f234,56', 'fr-FR')).toBe(1234.56)
+  })
+
+  it('keeps sign and defaults to en-US', () => {
+    expect(parseAmountInput('-2.50')).toBe(-2.5)
+    expect(parseAmountInput('-1.234,56', 'de-DE')).toBe(-1234.56)
+  })
+
+  it('accepts a bare fraction and a bare integer', () => {
+    expect(parseAmountInput(',5', 'de-DE')).toBe(0.5)
+    expect(parseAmountInput('.5', 'en-US')).toBe(0.5)
+    expect(parseAmountInput('42', 'de-DE')).toBe(42)
+  })
+
+  it('rejects empty and non-numeric input with null, never NaN', () => {
+    expect(parseAmountInput('', 'en-US')).toBeNull()
+    expect(parseAmountInput('   ', 'en-US')).toBeNull()
+    expect(parseAmountInput('abc', 'en-US')).toBeNull()
+    expect(parseAmountInput('12abc', 'en-US')).toBeNull()
+    expect(parseAmountInput('1.2.3', 'en-US')).toBeNull()
+    expect(parseAmountInput('-', 'en-US')).toBeNull()
+  })
+
+  it('survives a malformed locale', () => {
+    expect(parseAmountInput('1.5', 'not a locale')).toBe(1.5)
+  })
+})
+
+describe('formatAmountInput', () => {
+  it('writes the locale decimal separator without grouping', () => {
+    expect(formatAmountInput(1234.56, 'de-DE')).toBe('1234,56')
+    expect(formatAmountInput(1234.56, 'en-US')).toBe('1234.56')
+    expect(formatAmountInput(1234.56, 'fr-FR')).toBe('1234,56')
+  })
+
+  it('round-trips through parseAmountInput', () => {
+    for (const locale of ['en-US', 'de-DE', 'fr-FR']) {
+      expect(parseAmountInput(formatAmountInput(9876.54, locale), locale)).toBe(9876.54)
+    }
+  })
+
+  it('honours the fraction-digit cap', () => {
+    expect(formatAmountInput(1 / 3, 'en-US', 6)).toBe('0.333333')
+    expect(formatAmountInput(2, 'en-US')).toBe('2')
+  })
+
+  it('falls back to a dot format on a malformed locale', () => {
+    expect(formatAmountInput(1.5, 'not a locale')).toBe('1.50')
   })
 })
