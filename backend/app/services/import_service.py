@@ -16,7 +16,7 @@ from app.models.account import Account
 from app.models.category import Category
 from app.models.rule import Rule
 from app.models.transaction import Transaction
-from app.schemas.transaction import TransactionImport
+from app.schemas.transaction import TransactionImport, FailedRow
 from app.services import recurring_match_service
 from app.services.credit_card_service import apply_effective_date
 from app.services.category_service import get_hidden_category_ids
@@ -412,7 +412,7 @@ def parse_csv(
     inflow_column: str | None = None,
     outflow_column: str | None = None,
     column_mapping: dict[str, str] | None = None,
-) -> list[TransactionImport]:
+    ) -> tuple[list[TransactionImport], list[FailedRow]]:
     """Parse CSV file content and return transactions.
 
     Attempts to detect common column formats:
@@ -516,9 +516,18 @@ def parse_csv(
         date_formats = ['%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y', '%m/%d/%Y', '%d.%m.%Y']
 
     transactions = []
+    failed_rows = []
     for row in reader:
-        # Normalize row keys
-        row = {k.lower().strip() if k is not None else "": v for k, v in row.items()}
+        # Normalize row keys, and missing cells along with them. A row with
+        # fewer cells than the header leaves the rest as None, which every
+        # .strip() below raises on and which FailedRow.raw_value rejects. That
+        # turned a single short row into a 400 for the whole file, which is
+        # exactly the case this parser is meant to report row by row. An
+        # absent cell reads as an empty one.
+        row = {
+            k.lower().strip() if k is not None else "": ("" if v is None else v)
+            for k, v in row.items()
+        }
 
         # Parse date
         date_str = row[date_col].strip()
@@ -531,6 +540,7 @@ def parse_csv(
                 continue
 
         if not txn_date:
+            failed_rows.append(FailedRow(line_number=reader.line_num, description=row.get(desc_col, "").strip(), raw_value=date_str, error_reason="invalid_date"))
             continue  # Skip invalid dates
 
         # Parse amount
@@ -554,6 +564,8 @@ def parse_csv(
                 amount = outflow
                 txn_type = "debit"
             else:
+                raw_val = f"inflow: {row.get(inflow_col, '')}, outflow: {row.get(outflow_col, '')}"
+                failed_rows.append(FailedRow(line_number=reader.line_num, description=row.get(desc_col, "").strip(), raw_value=raw_val, error_reason="no_amount"))
                 continue  # Skip rows with no amount
         else:
             amount_str = normalize_amount(row[amount_col])
@@ -561,6 +573,7 @@ def parse_csv(
             try:
                 amount = Decimal(amount_str)
             except Exception:
+                failed_rows.append(FailedRow(line_number=reader.line_num, description=row.get(desc_col, "").strip(), raw_value=row[amount_col], error_reason="invalid_amount"))
                 continue  # Skip invalid amounts
 
             if flip_amount:
@@ -603,7 +616,7 @@ def parse_csv(
             notes=txn_notes,
         ))
 
-    return transactions
+    return transactions, failed_rows
 
 
 async def enrich_with_category_suggestions(
@@ -621,10 +634,16 @@ async def enrich_with_category_suggestions(
     category_result = await session.execute(
         select(Category).where(Category.workspace_id == workspace_id)
     )
-    category_name_map = {str(c.id): c.name for c in category_result.scalars()}
+    categories = category_result.scalars().all()
     hidden_categories = await get_hidden_category_ids(session, workspace_id)
+    category_name_map = {str(c.id): c.name for c in categories}
+    category_name_to_id = {
+        c.name.strip().lower(): c.id 
+        for c in categories 
+        if c.id not in hidden_categories
+    }
 
-    if not rules:
+    if not rules and not category_name_to_id:
         return transactions
 
     for txn in transactions:
@@ -639,6 +658,7 @@ async def enrich_with_category_suggestions(
             category_id=None,
         )
         category_set = False
+        
         for rule in rules:
             conditions = rule.conditions or []
             actions = rule.actions or []
@@ -649,6 +669,13 @@ async def enrich_with_category_suggestions(
                     category_set,
                     hidden_category_ids=hidden_categories,
                 )
+        
+        # If rules did not set a category, apply the CSV category if found
+        if not category_set and txn.category_name:
+            csv_cat_id = category_name_to_id.get(txn.category_name.strip().lower())
+            if csv_cat_id:
+                proxy.category_id = csv_cat_id
+                category_set = True
         if proxy.category_id:
             txn.suggested_category_id = proxy.category_id
             txn.suggested_category_name = category_name_map.get(str(proxy.category_id))
@@ -702,11 +729,20 @@ async def import_transactions(
     account = account_result.scalar_one_or_none()
     account_currency = account.currency if account else get_settings().default_currency
 
-    # Build category name → id map scoped to the workspace.
+    # Build category name → id map scoped to the workspace, on the same terms
+    # the preview used: hidden categories excluded, names matched
+    # case-insensitively. Diverging here meant a CSV category the preview
+    # deliberately withheld was still persisted on the imported row, and that
+    # "Food" matched in the preview but not on import.
     category_result = await session.execute(
         select(Category).where(Category.workspace_id == workspace_id)
     )
-    category_map = {c.name: c.id for c in category_result.scalars()}
+    hidden_categories = await get_hidden_category_ids(session, workspace_id)
+    category_map = {
+        c.name.strip().lower(): c.id
+        for c in category_result.scalars()
+        if c.id not in hidden_categories
+    }
 
     imported = 0
     skipped = 0
@@ -762,7 +798,7 @@ async def import_transactions(
         user_category_id = txn_data.category_id
         suggested_cat_id = txn_data.suggested_category_id
         csv_category_id = (
-            category_map.get(txn_data.category_name)
+            category_map.get(txn_data.category_name.strip().lower())
             if txn_data.category_name
             else None
         )
@@ -886,7 +922,8 @@ def normalize_amount(amount_str: str | None) -> str:
     if not amount_str:
         return ""
 
-    amount_str = str(amount_str).replace('R$', '').strip()
+    # Strip currency prefix and Swiss thousands separators (single quote)
+    amount_str = str(amount_str).replace('R$', '').replace("'", "").strip()
 
     if ',' in amount_str and '.' in amount_str:
         if amount_str.rfind(',') > amount_str.rfind('.'):

@@ -23,6 +23,7 @@ import pytest_asyncio
 from sqlalchemy import select
 
 from app.models.account import Account
+from app.models.category import Category
 from app.models.transaction import Transaction
 from app.services import (
     account_service,
@@ -487,6 +488,35 @@ class TestDashboardSummary:
 
 
 class TestSpendingByCategory:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode", ["cash", "accrual"])
+    async def test_pending_credit_card_spend_is_available_in_projected_total(
+        self, session, test_user, test_workspace, cc_account, test_categories, mode
+    ):
+        """The dashboard category widget can include pending card spend.
+
+        ``total`` remains the settled-only value used by the actual/forecast
+        split, while ``projected_total`` is the all-in value that must match
+        the dashboard drill-down.
+        """
+        food = test_categories[0]
+        today = date.today()
+        pending = await _make_tx(
+            session, test_user.id, cc_account.id, today,
+            Decimal("100"), effective_date=today, category_id=food.id,
+        )
+        pending.status = "pending"
+        await session.commit()
+        await _set_mode(session, mode)
+
+        spending = await dashboard_service.get_spending_by_category(
+            session, test_workspace.id, test_user.id, month=today.replace(day=1)
+        )
+        food_row = next(row for row in spending if row.category_id == str(food.id))
+
+        assert food_row.total == 0.0
+        assert food_row.projected_total == 100.0
+
     @pytest.mark.asyncio
     async def test_category_breakdown_follows_mode(
         self, session, test_user, test_workspace, cc_account, test_categories
@@ -1774,3 +1804,222 @@ class TestEffectiveBillDateFiltersList:
 
         assert summary is not None
         assert summary["monthly_expenses"] == 59.90
+
+
+# ---------------------------------------------------------------------------
+# Bill totals answer to the bank, not to the reporting filters.
+# ---------------------------------------------------------------------------
+
+
+class TestBillTotalIgnoresReportingExclusions:
+    """A credit-card bill total is an amount *owed*, so it does not inherit
+    the judgments `counts_as_pnl` makes about what counts as spending.
+
+    The card's own numbers used to disagree: a purchase in a
+    `treat_as_transfer` category (Investimentos ships as one) dropped out
+    of the cycle total while still moving the card's balance, so the bill
+    card matched neither the bank's statement nor the running balance
+    rendered beside it.
+    """
+
+    @pytest_asyncio.fixture
+    async def transfer_category(self, session, test_user):
+        cat = Category(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            name="Investimentos",
+            icon="trending-up",
+            color="#0EA5E9",
+            treat_as_transfer=True,
+        )
+        session.add(cat)
+        await session.commit()
+        await session.refresh(cat)
+        return cat
+
+    @pytest.mark.asyncio
+    async def test_treat_as_transfer_purchase_stays_on_the_bill(
+        self, session, test_user, test_workspace, cc_account, transfer_category
+    ):
+        """The bank billed for it, so the cycle total has to show it."""
+        await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 3), Decimal("100"), tx_type="debit",
+        )
+        await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 8), Decimal("200"), tx_type="debit",
+            category_id=transfer_category.id,
+        )
+        await session.commit()
+
+        summary = await account_service.get_account_summary(
+            session, cc_account.id, test_workspace.id,
+            date_from=date(2026, 4, 1), date_to=date(2026, 4, 30),
+        )
+
+        assert summary is not None
+        assert summary["monthly_expenses"] == 300.0
+
+    @pytest.mark.asyncio
+    async def test_treat_as_transfer_still_leaves_pnl_on_a_regular_account(
+        self, session, test_user, test_workspace, test_account, transfer_category
+    ):
+        """The contrast that makes the rule readable: the same category on a
+        checking account is still a transfer-like flow, not spending."""
+        await _make_tx(
+            session, test_user.id, test_account.id,
+            date(2026, 4, 3), Decimal("100"), tx_type="debit",
+        )
+        await _make_tx(
+            session, test_user.id, test_account.id,
+            date(2026, 4, 8), Decimal("200"), tx_type="debit",
+            category_id=transfer_category.id,
+        )
+        await session.commit()
+
+        summary = await account_service.get_account_summary(
+            session, test_account.id, test_workspace.id,
+            date_from=date(2026, 4, 1), date_to=date(2026, 4, 30),
+        )
+
+        assert summary is not None
+        assert summary["monthly_expenses"] == 100.0
+
+    @pytest.mark.asyncio
+    async def test_treat_as_transfer_purchase_stays_in_the_forecast_total(
+        self, session, test_user, test_workspace, cc_account, transfer_category
+    ):
+        """The payable shown on the bill card follows the same rule."""
+        pending = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 8), Decimal("200"), tx_type="debit",
+            category_id=transfer_category.id,
+        )
+        pending.status = "pending"
+        await session.commit()
+
+        summary = await account_service.get_account_summary(
+            session, cc_account.id, test_workspace.id,
+            date_from=date(2026, 4, 1), date_to=date(2026, 4, 30),
+        )
+
+        assert summary is not None
+        assert summary["projected_expenses"] == 200.0
+
+    @pytest.mark.asyncio
+    async def test_ignored_purchase_still_leaves_the_bill(
+        self, session, test_user, test_workspace, cc_account
+    ):
+        """Regression guard on the clause that must NOT change: `is_ignored`
+        leaves the account balance too, so dropping it from the bill keeps
+        the card's two numbers telling one story."""
+        await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 3), Decimal("100"), tx_type="debit",
+        )
+        ignored = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 8), Decimal("200"), tx_type="debit",
+        )
+        ignored.is_ignored = True
+        await session.commit()
+
+        summary = await account_service.get_account_summary(
+            session, cc_account.id, test_workspace.id,
+            date_from=date(2026, 4, 1), date_to=date(2026, 4, 30),
+        )
+
+        assert summary is not None
+        assert summary["monthly_expenses"] == 100.0
+
+    @pytest.mark.asyncio
+    async def test_transfer_like_refund_shows_in_both_card_numbers(
+        self, session, test_user, test_workspace, cc_account, transfer_category
+    ):
+        """The card's four totals answer to one rule, so a refund the bank
+        credited nets against the bill *and* surfaces as income. Splitting
+        the rule between them would let the two disagree."""
+        await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 3), Decimal("100"), tx_type="debit",
+        )
+        await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 8), Decimal("50"), tx_type="credit",
+            category_id=transfer_category.id,
+        )
+        await session.commit()
+
+        summary = await account_service.get_account_summary(
+            session, cc_account.id, test_workspace.id,
+            date_from=date(2026, 4, 1), date_to=date(2026, 4, 30),
+        )
+
+        assert summary is not None
+        assert summary["monthly_income"] == 50.0
+        assert summary["monthly_expenses"] == 50.0
+
+    @pytest.mark.asyncio
+    async def test_ignored_category_purchase_also_leaves_the_bill(
+        self, session, test_user, test_workspace, cc_account
+    ):
+        """The ignore signal counts from either side. A category the user
+        ignored leaves the account balance exactly like a row-level ignore,
+        so the bill has to drop it too or the card's numbers split apart."""
+        ignored_category = Category(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            name="Reembolsáveis",
+            icon="receipt",
+            color="#94A3B8",
+            is_ignored=True,
+        )
+        session.add(ignored_category)
+        await session.flush()
+
+        await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 3), Decimal("100"), tx_type="debit",
+        )
+        await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 8), Decimal("200"), tx_type="debit",
+            category_id=ignored_category.id,
+        )
+        await session.commit()
+
+        summary = await account_service.get_account_summary(
+            session, cc_account.id, test_workspace.id,
+            date_from=date(2026, 4, 1), date_to=date(2026, 4, 30),
+        )
+
+        assert summary is not None
+        assert summary["monthly_expenses"] == 100.0
+
+    @pytest.mark.asyncio
+    async def test_exclude_from_pnl_purchase_stays_on_the_bill(
+        self, session, test_user, test_workspace, cc_account
+    ):
+        """`exclude_from_pnl` says "do not report this as spending", not
+        "the bank did not bill me". Its canonical use — a work expense on a
+        personal card, reimbursed later — is a card case, so the bill total
+        has to stay whole or the card's own numbers split apart."""
+        await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 3), Decimal("100"), tx_type="debit",
+        )
+        reimbursed = await _make_tx(
+            session, test_user.id, cc_account.id,
+            date(2026, 4, 8), Decimal("200"), tx_type="debit",
+        )
+        reimbursed.exclude_from_pnl = True
+        await session.commit()
+
+        summary = await account_service.get_account_summary(
+            session, cc_account.id, test_workspace.id,
+            date_from=date(2026, 4, 1), date_to=date(2026, 4, 30),
+        )
+
+        assert summary is not None
+        assert summary["monthly_expenses"] == 300.0

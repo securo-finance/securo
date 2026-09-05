@@ -31,7 +31,7 @@ jobs:
   label:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/github-script@v7
+      - uses: actions/github-script@v9
         with:
           script: |
             // --- risk: a direct translation of the label descriptions ------
@@ -137,9 +137,17 @@ jobs:
             const requires = level === 'high'
               ? 'It needs two approvals, an agreed design on the issue, and a rollback plan.'
               : 'It needs a review from the area owner and tests on the changed path.';
+            // Name the source that decided. When the diff came out riskier
+            // than triage expected, that gap is worth reading rather than
+            // silently overwriting.
+            const why = fromIssue
+              ? `inherited from #${issueRef}`
+              : (pathFile ? `this PR touches \`${pathFile}\`` : 'the changed paths');
+            const gap = (!fromIssue && issueLevel
+                         && ORDER.indexOf(pathLevel) > ORDER.indexOf(issueLevel))
+              ? ` This came out riskier than #${issueRef} estimated (risk: ${issueLevel}).` : '';
             const note = skipped
               ? ` (${skipped} lines in generated files were not counted for size.)` : '';
             await github.rest.issues.createComment({ ...repo, issue_number: pr.number,
               body: `Labelled \`risk: ${level}\` and \`size: ${size}\` automatically: ` +
-                    `this PR touches \`${trigger}\` and changes ${lines} reviewable lines. ` +
-                    `${requires}${note}` });
+                    `${why}, ${lines} reviewable lines. ${requires}${gap}${note}` });
