@@ -793,6 +793,7 @@ async def get_income_expenses_report(
             Transaction.status == "posted",
             Transaction.transfer_pair_id.is_(None),
             Transaction.is_ignored.is_(False),
+            Transaction.exclude_from_pnl.is_(False),
             Category.treat_as_transfer.is_(True),
             Category.is_ignored.is_(False),
             *acct_filter,

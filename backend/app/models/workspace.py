@@ -79,6 +79,12 @@ class Workspace(Base):
     # Nullable, and null is a working configuration: the pack registry falls
     # back to free-text documents with no mask, so a country nobody has
     # contributed a pack for is usable on day one.
+    # The workspace describing itself, for the issuer block on a document
+    # and for the fiscal documents that will want the same two fields.
+    # Null forever in a personal workspace, which is the expected end
+    # state and not an incomplete row.
+    legal_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    address: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     tax_jurisdiction: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     icon: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     color: Mapped[Optional[str]] = mapped_column(String(7), nullable=True)
@@ -88,6 +94,38 @@ class Workspace(Base):
 
     members: Mapped[list["WorkspaceMember"]] = relationship(
         back_populates="workspace", cascade="all, delete-orphan"
+    )
+
+
+class WorkspaceTaxId(Base):
+    """A fiscal document the workspace itself holds.
+
+    The issuer side of the same pack that describes counterparties. A
+    separate table from `payee_tax_ids` on purpose: the cardinality
+    differs by orders of magnitude, and one table with a discriminator
+    would put a filter on every read to save a `CREATE TABLE`.
+
+    Which kinds a workspace is *offered* comes from its own
+    `tax_jurisdiction`; which kinds it may *store* is not restricted,
+    because a company can legitimately hold a document its country's
+    pack never anticipated.
+    """
+
+    __tablename__ = "workspace_tax_ids"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "kind", name="uq_workspace_tax_id_kind"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(30))
+    #: Normalised per kind on write by the same validators the payee side
+    #: uses. Display formatting is the frontend's job, from the pack mask.
+    value: Mapped[str] = mapped_column(String(60))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
 

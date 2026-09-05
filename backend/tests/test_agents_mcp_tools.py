@@ -74,6 +74,21 @@ def test_each_tool_has_input_schema():
         assert "properties" in spec.parameters
 
 
+@pytest.mark.parametrize(
+    "tool_name",
+    [
+        "propose_create_recurring_transaction",
+        "propose_update_recurring_transaction",
+    ],
+    ids=["create", "update"],
+)
+def test_recurring_proposal_frequency_schema_includes_new_values(tool_name):
+    advertised = set(
+        REGISTRY[tool_name].parameters["properties"]["frequency"]["enum"]
+    )
+    assert {"biweekly", "semiannual"} <= advertised
+
+
 # --- Read tools (with real seeded data) -----------------------------------
 
 async def test_list_transactions_returns_seeded_data(
@@ -462,6 +477,22 @@ async def test_propose_create_recurring_monthly_requires_day(
         frequency="monthly", account_id=str(test_account.id),
     )
     assert "day_of_month" in r.get("error", "")
+
+
+async def test_propose_create_recurring_semiannual_requires_day(
+    session: AsyncSession, ctx: CallContext, test_account
+):
+    handler = REGISTRY["propose_create_recurring_transaction"].handler
+    result = await handler(
+        session=session,
+        ctx=ctx,
+        description="Insurance",
+        amount=600.0,
+        type="debit",
+        frequency="semiannual",
+        account_id=str(test_account.id),
+    )
+    assert "day_of_month" in result.get("error", "")
 
 
 async def test_propose_create_recurring_monthly_full(
