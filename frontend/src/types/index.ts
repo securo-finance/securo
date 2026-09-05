@@ -282,6 +282,8 @@ export interface Transaction {
   parent_owner_name?: string | null
   // Flag to exclude this transaction from reports and dashboard aggregations
   is_ignored: boolean
+  // Keeps the transaction in the ledger/balance while excluding it from P&L.
+  exclude_from_pnl?: boolean
   virtual?: boolean
 }
 
@@ -313,7 +315,7 @@ export interface InstallmentSeriesInput {
   }
   installments: number
   first_installment_status?: 'posted' | 'pending'
-  frequency?: 'monthly' | 'quarterly' | 'weekly' | 'yearly'
+  frequency?: 'monthly' | 'quarterly' | 'semiannual' | 'weekly' | 'biweekly' | 'yearly'
 }
 
 export type ShareType = 'equal' | 'exact' | 'percent'
@@ -579,6 +581,13 @@ export interface ImportReviewTransaction extends ImportPreviewTransaction {
   selected_category_id?: string | null
 }
 
+export interface FailedRow {
+  line_number: number
+  description: string
+  raw_value: string
+  error_reason: string
+}
+
 export interface RecurringTransaction {
   id: string
   user_id: string
@@ -588,7 +597,7 @@ export interface RecurringTransaction {
   amount: number
   currency: string
   type: 'debit' | 'credit'
-  frequency: 'monthly' | 'quarterly' | 'weekly' | 'yearly'
+  frequency: 'monthly' | 'quarterly' | 'semiannual' | 'weekly' | 'biweekly' | 'yearly'
   weekend_adjustment: 'none' | 'previous_friday' | 'next_monday'
   day_of_month: number | null
   start_date: string
@@ -636,6 +645,7 @@ export interface TransactionCalendarItem {
   transfer_pair_id: string | null
   is_transfer: boolean
   is_ignored: boolean
+  exclude_from_pnl: boolean
 }
 
 export interface TransactionCalendarDay {
