@@ -18,7 +18,8 @@ import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Cl
 import { MobileTransactionRow } from '@/components/mobile-transaction-row'
 import { CategoryIcon } from '@/components/category-icon'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
-import { TransactionDialog, extractApiError, type TransactionSavePayload } from '@/components/transaction-dialog'
+import { TransactionDialog, type TransactionSavePayload } from '@/components/transaction-dialog'
+import { extractApiError } from '@/lib/api-errors'
 import { TransferDialog } from '@/components/transfer-dialog'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -652,6 +653,7 @@ export default function AccountDetailPage() {
             icon: p.category_icon ?? '',
             color: p.category_color ?? '',
             is_system: false,
+            is_hidden: false,
             treat_as_transfer: false,
             is_ignored: false,
           }

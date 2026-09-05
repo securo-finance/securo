@@ -4,10 +4,12 @@ import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { categories as categoriesApi, categoryGroups as categoryGroupsApi, recurring as recurringApi, accounts as accountsApi, currencies as currenciesApi } from '@/lib/api'
+import { extractApiError } from '@/lib/api-errors'
 import { localDateString } from '@/lib/date-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -69,6 +71,7 @@ function RecurringTab() {
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<RecurringTransaction | null>(null)
+  const [deletingRecurring, setDeletingRecurring] = useState<RecurringTransaction | null>(null)
 
   const { data: recurringList } = useQuery({
     queryKey: ['recurring'],
@@ -78,6 +81,12 @@ function RecurringTab() {
   const { data: categoriesList } = useQuery({
     queryKey: ['categories'],
     queryFn: categoriesApi.list,
+  })
+
+  const { data: allCategoriesList } = useQuery({
+    queryKey: ['categories', 'management'],
+    queryFn: categoriesApi.listIncludingHidden,
+    enabled: Boolean(editing?.category_id),
   })
 
   const { data: categoryGroupsList } = useQuery({
@@ -119,7 +128,11 @@ function RecurringTab() {
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
       queryClient.invalidateQueries({ queryKey: ['recurring'] })
+      setDeletingRecurring(null)
       toast.success(t('recurring.deleted'))
+    },
+    onError: (err: unknown) => {
+      toast.error(extractApiError(err, t('common.error')))
     },
   })
 
@@ -134,7 +147,14 @@ function RecurringTab() {
   })
 
   const frequencyLabel = (f: string) => {
-    const map: Record<string, string> = { monthly: t('recurring.monthly'), quarterly: t('recurring.quarterly'), weekly: t('recurring.weekly'), yearly: t('recurring.yearly') }
+    const map: Record<string, string> = {
+      monthly: t('recurring.monthly'),
+      quarterly: t('recurring.quarterly'),
+      semiannual: t('recurring.semiannual'),
+      weekly: t('recurring.weekly'),
+      biweekly: t('recurring.biweekly'),
+      yearly: t('recurring.yearly'),
+    }
     return map[f] ?? f
   }
 
@@ -221,7 +241,7 @@ function RecurringTab() {
                         </button>
                         <button
                           className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
-                          onClick={() => deleteMutation.mutate(rt.id)}
+                          onClick={() => setDeletingRecurring(rt)}
                           disabled={deleteMutation.isPending}
                           aria-label={t('common.delete')}
                           title={t('common.delete')}
@@ -250,6 +270,9 @@ function RecurringTab() {
             recurring={editing}
             categories={categoriesList ?? []}
             categoryGroups={categoryGroupsList ?? []}
+            currentCategory={allCategoriesList?.find(
+              (category) => category.id === editing?.category_id
+            )}
             accounts={accountsList ?? []}
             onSave={(data) => {
               if (editing) {
@@ -263,6 +286,15 @@ function RecurringTab() {
           />
         </DialogContent>
       </Dialog>
+
+      <DeleteConfirmationDialog
+        open={!!deletingRecurring}
+        title={t('recurring.confirmDeleteTitle')}
+        description={t('recurring.confirmDeleteDescription', { description: deletingRecurring?.description })}
+        isPending={deleteMutation.isPending}
+        onClose={() => setDeletingRecurring(null)}
+        onConfirm={() => deletingRecurring && deleteMutation.mutate(deletingRecurring.id)}
+      />
     </>
   )
 }
@@ -271,6 +303,7 @@ function RecurringForm({
   recurring,
   categories,
   categoryGroups,
+  currentCategory,
   accounts,
   onSave,
   onCancel,
@@ -279,6 +312,7 @@ function RecurringForm({
   recurring: RecurringTransaction | null
   categories: Category[]
   categoryGroups: CategoryGroup[]
+  currentCategory?: Category
   accounts: { id: string; name: string; display_name?: string | null }[]
   onSave: (data: Partial<RecurringTransaction>) => void
   onCancel: () => void
@@ -364,11 +398,13 @@ function RecurringForm({
           <select className={selectClass} value={frequency} onChange={(e) => setFrequency(e.target.value as RecurringTransaction['frequency'])}>
             <option value="monthly">{t('recurring.monthly')}</option>
             <option value="quarterly">{t('recurring.quarterly')}</option>
+            <option value="semiannual">{t('recurring.semiannual')}</option>
             <option value="weekly">{t('recurring.weekly')}</option>
+            <option value="biweekly">{t('recurring.biweekly')}</option>
             <option value="yearly">{t('recurring.yearly')}</option>
           </select>
         </div>
-        {(frequency === 'monthly' || frequency === 'quarterly') && (
+        {(frequency === 'monthly' || frequency === 'quarterly' || frequency === 'semiannual') && (
           <div className="space-y-2">
             <Label>{t('recurring.dayOfMonth')}</Label>
             <Input type="number" min="1" max="31" value={dayOfMonth} onChange={(e) => setDayOfMonth(e.target.value)} />
@@ -405,6 +441,7 @@ function RecurringForm({
             onChange={setCategoryId}
             categories={categories}
             groups={categoryGroups}
+            currentCategory={currentCategory}
             allowNone={true}
             className={selectClass}
           />

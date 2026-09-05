@@ -4,7 +4,7 @@ import { useTheme } from 'next-themes'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { admin as adminApi, currencies as currenciesApi } from '@/lib/api'
 import { resolveDisplayLocale, resolveDateLocale, type NumberFormat, type DateFormat } from '@/lib/format'
-import { resolveSupportedLang } from '@/lib/i18n'
+import { resolveSupportedLang, SUPPORTED_LANGS } from '@/lib/i18n'
 import { useAuth } from '@/contexts/auth-context'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
 import { setThemeBasedOnSystem } from '@/lib/theme-utils'
+import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
 import { Search, Plus, Trash2, Shield, ShieldOff, UserCog, Users, Scale, Tag, Palette, Save, Hash, CalendarDays } from 'lucide-react'
 import type { AdminUser } from '@/types'
 
@@ -65,6 +66,7 @@ export default function AdminSettingsPage() {
     queryKey: ['admin', 'users', search],
     queryFn: () => adminApi.listUsers({ search: search || undefined }),
   })
+  const localAuthEnabled = useLocalAuthEnabled()
 
   const createMutation = useMutation({
     mutationFn: (data: { email: string; password: string; is_superuser: boolean; preferences: Record<string, unknown> }) =>
@@ -282,10 +284,12 @@ export default function AdminSettingsPage() {
         section={t('nav.groupAdmin')}
         title={t('admin.settings.title')}
         action={
-          <Button onClick={() => { resetCreateForm(); setCreateOpen(true) }}>
-            <Plus size={16} className="mr-1.5" />
-            {t('admin.users.add')}
-          </Button>
+          localAuthEnabled ? (
+            <Button onClick={() => { resetCreateForm(); setCreateOpen(true) }}>
+              <Plus size={16} className="mr-1.5" />
+              {t('admin.users.add')}
+            </Button>
+          ) : undefined
         }
       />
 
@@ -653,16 +657,9 @@ export default function AdminSettingsPage() {
                     onChange={(e) => setFormLanguage(e.target.value)}
                     className="w-full h-10 rounded-lg border border-input bg-card px-3 text-sm"
                   >
-                    <option value="en">English</option>
-                    <option value="de">Deutsch</option>
-                    <option value="ru">Русский</option>
-                    <option value="uk">Українська</option>
-                    <option value="pt-BR">Português (BR)</option>
-                    <option value="pt-PT">Português (PT)</option>
-                    <option value="es">Español</option>
-                    <option value="pl">Polski</option>
-                    <option value="it">Italiano</option>
-                    <option value="fr">Français</option>
+                    {SUPPORTED_LANGS.map(({ code, label }) => (
+                      <option key={code} value={code}>{label}</option>
+                    ))}
                   </select>
                 </div>
                 <div className="space-y-1.5">
@@ -741,7 +738,7 @@ export default function AdminSettingsPage() {
                   <Label className="text-[13px]">{t('admin.users.email')}</Label>
                   <Input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} required autoComplete="off" className="h-10 rounded-lg" />
                 </div>
-                {showPasswordField ? (
+                {localAuthEnabled && (showPasswordField ? (
                   <div className="space-y-1.5">
                     <Label className="text-[13px]">{t('admin.users.resetPassword')}</Label>
                     <Input
@@ -765,7 +762,7 @@ export default function AdminSettingsPage() {
                   >
                     {t('admin.users.resetPassword')}
                   </Button>
-                )}
+                ))}
 
                 <div className="flex items-center gap-2">
                   <button

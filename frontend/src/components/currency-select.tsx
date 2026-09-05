@@ -13,6 +13,7 @@ export const CURRENCIES = [
   { code: 'USD', flag: '\u{1F1FA}\u{1F1F8}', symbol: '$' },
   { code: 'EUR', flag: '\u{1F1EA}\u{1F1FA}', symbol: '€' },
   { code: 'GBP', flag: '\u{1F1EC}\u{1F1E7}', symbol: '£' },
+  { code: 'AZN', flag: '\u{1F1E6}\u{1F1FF}', symbol: '₼' },
   { code: 'BRL', flag: '\u{1F1E7}\u{1F1F7}', symbol: 'R$' },
   { code: 'CAD', flag: '\u{1F1E8}\u{1F1E6}', symbol: 'C$' },
   { code: 'AUD', flag: '\u{1F1E6}\u{1F1FA}', symbol: 'A$' },
@@ -40,6 +41,7 @@ export const CURRENCIES = [
   { code: 'NZD', flag: '\u{1F1F3}\u{1F1FF}', symbol: 'NZ$' },
   { code: 'VND', flag: '\u{1F1FB}\u{1F1F3}', symbol: '₫' },
   { code: 'SGD', flag: '\u{1F1F8}\u{1F1EC}', symbol: 'S$' },
+  { code: 'TRY', flag: '\u{1F1F9}\u{1F1F7}', symbol: '₺' },
 ] as const
 
 interface CurrencySelectProps {

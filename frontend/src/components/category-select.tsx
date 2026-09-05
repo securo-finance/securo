@@ -5,12 +5,17 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import type { Category, CategoryGroup } from '@/types'
 import { cn, normalizeText } from '@/lib/utils'
+import {
+  isCategoryHiddenFromSelection,
+  resolveSelectedCategory,
+} from '@/lib/category-selection-utils'
 
 interface CategorySelectProps {
   value: string
   onChange: (value: string) => void
   categories: Category[]
   groups: CategoryGroup[]
+  currentCategory?: Category | null
   placeholder?: string
   disabled?: boolean
   className?: string
@@ -24,6 +29,7 @@ export function CategorySelect({
   onChange,
   categories,
   groups,
+  currentCategory,
   placeholder,
   disabled = false,
   className,
@@ -50,8 +56,12 @@ export function CategorySelect({
   }, [categories, groups, t])
 
   const selectedCategory = useMemo(() => {
-    return (categories ?? []).find((c) => c.id === value)
-  }, [categories, value])
+    return resolveSelectedCategory(categories ?? [], value, currentCategory)
+  }, [categories, currentCategory, value])
+  const selectedCategoryIsHidden = isCategoryHiddenFromSelection(
+    categories ?? [],
+    selectedCategory
+  )
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -74,6 +84,11 @@ export function CategorySelect({
                   />
                 ) : null}
                 <span className="truncate">{selectedCategory.name}</span>
+                {selectedCategoryIsHidden && (
+                  <span className="shrink-0 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    {t('categories.hiddenBadge')}
+                  </span>
+                )}
               </>
             ) : value === '' && allowNone ? (
               <span className="italic text-muted-foreground truncate">{t('transactions.noCategory')}</span>

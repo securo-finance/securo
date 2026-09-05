@@ -17,6 +17,7 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/common/configmap.yaml") . | sha256sum }}
+        checksum/nginx-config: {{ include (print $.Template.BasePath "/frontend/configmap-nginx.yaml") . | sha256sum }}
       labels:
         {{- include "securo.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: frontend
