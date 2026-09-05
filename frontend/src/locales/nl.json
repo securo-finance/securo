@@ -481,9 +481,10 @@
     "greetingMorning": "Goedemorgen",
     "greetingAfternoon": "Goedemiddag",
     "greetingEvening": "Goedenavond",
-    "totalBalance": "Totaal saldo",
-    "byCurrency": "Per valuta:",
-    "totalBalanceTooltip": "Het hoofdcijfer somt alle rekeningen op die zijn omgerekend naar de valuta van uw voorkeur. Op de regel 'Per valuta' worden de totalen weergegeven, gegroepeerd op de eigen valuta van elke account, niet omgerekend. De component in de valuta van uw voorkeur komt dus mogelijk niet overeen met het totaal (de rest komt door het omrekenen van de andere valuta's). \"Netto\" past het totaal aan voor wat u verschuldigd bent of verschuldigd bent in groepssplitsingen.",
+    "availableBalance": "Beschikbaar saldo op rekeningen",
+    "netWorth": "Nettovermogen",
+    "netWorthTooltip": "Rekeningen + beleggingen, min openstaande creditcardafschriften.",
+    "creditCardBalance": "Openstaande creditcardafschriften",
     "pendingSharesOwe": "Netto {{net}} na groepsschulden ({{owed}} in behandeling)",
     "pendingSharesOwed": "Netto {{net}} inclusief {{owed}} aan u verschuldigd",
     "pendingSharesTooltip": "Geeft weer wat u verschuldigd bent/is aan al uw groepen, vóór enige schikking.",
@@ -521,10 +522,14 @@
     "drillDownUncategorized": "Niet-gecategoriseerde transacties",
     "drillDownDay": "Transacties — {{date}}",
     "drillDownTotal": "{{count}} transacties · {{total}}",
+    "drillDownSettledTotal": "Geboekt · samenvattingstotaal",
+    "drillDownPendingTotal": "In afwachting van afrekening",
+    "drillDownShownTotal": "Weergegeven totaal",
     "drillDownEmpty": "Geen transacties gevonden",
     "drillDownClose": "Sluiten",
     "accrualNote": "Creditcardtransacties worden gegroepeerd op vervaldatum van de factuur (toerekeningsmodus).",
     "savingsRate": "Spaarquote",
+    "savingsRateCaption": "van het inkomen deze maand gespaard",
     "spendingProjection": "In dit tempo geeft u aan het einde van de maand {{amount}} uit",
     "uncategorizedCta": "{{count}} transacties moeten worden gecategoriseerd",
     "uncategorizedTotal": "{{amount}} in totaal",
@@ -735,6 +740,9 @@
     "confirmTransferCategoryBoth": "Beide bijwerken",
     "ignoreTransfer": "Negeer deze transactie",
     "ignoreTransferHint": "Genegeerde transacties worden niet weergegeven in rapporten en saldo",
+    "excludeFromReports": "Uitsluiten van rapporten",
+    "excludeFromReportsHint": "Deze transactie wordt niet als inkomen of uitgave meegerekend, maar heeft nog steeds invloed op het rekeningsaldo en blijft zichtbaar in de transactiegeschiedenis.",
+    "excludedFromReports": "Niet in rapporten",
     "ignored": "Genegeerd",
     "ignoreAction": "Negeer",
     "unignoreAction": "Herstellen",
@@ -945,7 +953,8 @@
         "description": "Amerikaanse en internationale banken via SimpleFIN Bridge"
       }
     },
-    "reconnected": "Bank heeft opnieuw verbinding gemaakt"
+    "reconnected": "Bank heeft opnieuw verbinding gemaakt",
+    "multiInstitutionLink": "{{provider}} · {{count}} institutions"
   },
   "connections": {
     "settings": "Verbindingsinstellingen",
@@ -1068,7 +1077,9 @@
     "frequency": "Frequentie",
     "monthly": "Maandelijks",
     "quarterly": "Driemaandelijks",
+    "semiannual": "Elke 6 maanden",
     "weekly": "Wekelijks",
+    "biweekly": "Elke 2 weken",
     "yearly": "Jaarlijks",
     "dayOfMonth": "Dag van de maand",
     "weekendAdjustment": "Weekendaanpassing",
@@ -1098,6 +1109,13 @@
     "confirmDeleteDescription": "De terugkerende definitie \"{{description}}\" wordt permanent verwijderd. Bestaande transacties blijven bestaan, maar verliezen hun koppeling met de terugkerende transactie. Deze actie kan niet ongedaan worden gemaakt."
   },
   "rules": {
+    "searchPlaceholder": "Regels zoeken...",
+    "filterAllCategories": "Alle categorieën",
+    "filterAllStatuses": "Alle statussen",
+    "filterActiveOnly": "Alleen actief",
+    "filterInactiveOnly": "Alleen inactief",
+    "filterAllActions": "Alle acties",
+    "noFilterResults": "Geen regel voldoet aan deze filters",
     "preview": "Voorbeeld",
     "previewMatched": "{{matched}} overeenkomsten",
     "previewSummary": "{{matched}} overeenkomende transacties · {{changed}} zouden wijzigen",
@@ -1326,7 +1344,20 @@
     "page": "Pagina {{current}} van {{total}}",
     "mapPayee": "Kolom begunstigde",
     "mapExternalId": "Kolom Transactie-ID",
-    "mapNotes": "Kolom Opmerkingen"
+    "mapNotes": "Kolom Opmerkingen",
+    "failedRowsWarning": "{{count}} row(s) in this file could not be parsed and were skipped.",
+    "viewDetails": "View details",
+    "failedRowsTitle": "Unparsed CSV Rows",
+    "failedRowsDesc": "The following rows in the CSV file were skipped because their date or amount format could not be recognized.",
+    "lineNumber": "Line",
+    "rawValue": "Value",
+    "errorReason": "Reason",
+    "description": "Omschrijving",
+    "errors": {
+      "invalid_date": "Ongeldige datumformaat",
+      "no_amount": "Geen in- of uitstroombedrag",
+      "invalid_amount": "Ongeldig bedragformaat"
+    }
   },
   "assetImport": {
     "title": "Investeringsorders importeren",

@@ -766,7 +766,7 @@ async def create_installment_series(
 
     Repeats ``data.base`` ``data.installments`` times: every parcel stores
     the base amount, date advanced by the given frequency (monthly/quarterly/
-    weekly/yearly, matching recurring transactions), and the shared
+    semiannual/weekly/biweekly/yearly, matching recurring transactions), and the shared
     installment fingerprint (account, installment_purchase_date,
     total_installments, installment_total_amount = amount * installments)
     plus its 1-based installment_number, so the existing sync dedup matches

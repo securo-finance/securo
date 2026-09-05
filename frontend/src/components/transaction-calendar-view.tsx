@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeftRight, CalendarDays, CircleDot, Clock, EyeClosed, Minus } from 'lucide-react'
+import { ArrowLeftRight, CalendarDays, ChartNoAxesColumn, CircleDot, Clock, EyeClosed, Minus } from 'lucide-react'
 import type { Account, TransactionCalendarDay, TransactionCalendarItem, TransactionCalendarResponse } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { AccountIcon } from '@/components/account-icon'
@@ -1245,6 +1245,12 @@ function CalendarItemRow({
           )}
           {item.is_ignored && (
             <EyeClosed className="h-3 w-3 text-gray-500 shrink-0" />
+          )}
+          {item.exclude_from_pnl && !item.is_ignored && (
+            <ChartNoAxesColumn
+              className="h-3 w-3 text-slate-500 shrink-0"
+              aria-label={t('transactions.excludedFromReports')}
+            />
           )}
           {shouldShowPendingBadge(item) && (
             <span
