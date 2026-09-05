@@ -127,6 +127,8 @@ def counts_as_pnl():
         movements like investment applications where the counterpart is
         an Asset/Holding, not another Account),
       - transactions flagged `is_ignored=True` (user-marked as not to be reported),
+      - transactions flagged `exclude_from_pnl=True` (kept in balance,
+        omitted from income and expense calculations),
       - transactions in categories flagged `is_ignored=True` (user-marked as not to be reported).
 
     Does NOT exclude `source='opening_balance'` — callers that already
@@ -136,6 +138,7 @@ def counts_as_pnl():
     return and_(
         Transaction.transfer_pair_id.is_(None),
         Transaction.is_ignored.is_(False),
+        Transaction.exclude_from_pnl.is_(False),
         # Settlement *debits* are repayments of debts that were already
         # booked as an expense via the share. Counting them would
         # double-count. Settlement *credits*, however, represent the
@@ -152,6 +155,53 @@ def counts_as_pnl():
                         Category.is_ignored.is_(True),
                     )
                 )
+            ),
+        ),
+    )
+
+
+def counts_on_bill():
+    """SQL filter: True when a transaction belongs on a credit-card bill.
+
+    A bill total is an *amount owed*, not a reporting figure, and the two
+    answer to different authorities: the bill has to match what the bank
+    says you owe, while P/L answers to how the user chose to categorize
+    their spending. So the card's cycle total cannot reuse
+    `counts_as_pnl` — every judgment that helper makes about what counts
+    as *spending* is a judgment the bank never made.
+
+    Kept out, because they are genuinely not charges on this bill:
+      - paired transfers (the bill *payment* is not a purchase),
+      - settlement debits (a repayment of a share already booked),
+      - rows the user flagged `is_ignored`, on the transaction or its
+        category — those leave the account balance too, so dropping them
+        from the bill keeps the card's two numbers telling one story.
+
+    Kept in, and this is the whole point of the helper:
+      - `treat_as_transfer` categories. Buying an investment with the
+        card still lands on the statement; the category says how to
+        report the purchase, not whether the bank billed for it.
+      - rows flagged `exclude_from_pnl`. Its canonical use is a work
+        expense paid on a personal card and reimbursed later — and the
+        bank bills the whole card either way.
+
+    The rule both share: a bill honors "make this disappear" and
+    ignores "report this differently".
+
+    Deliberately spelled out rather than defined as "`counts_as_pnl`
+    minus a clause": a filter for what a *report* excludes will keep
+    growing as the product learns new ways to say "don't count this",
+    and a bill total must not inherit those. Every clause here is one
+    somebody chose for the bill.
+    """
+    return and_(
+        Transaction.transfer_pair_id.is_(None),
+        Transaction.is_ignored.is_(False),
+        ~and_(Transaction.source == "settlement", Transaction.type == "debit"),
+        or_(
+            Transaction.category_id.is_(None),
+            Transaction.category_id.not_in(
+                select(Category.id).where(Category.is_ignored.is_(True))
             ),
         ),
     )

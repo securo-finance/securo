@@ -946,6 +946,185 @@ async def test_sync_keeps_provider_category_while_normalizing_description(
     assert transaction.raw_data == {"merchant": {"name": "IFOOD.COM"}}
     assert transaction.notes == "#delivery"
 
+
+@pytest.mark.asyncio
+async def test_sync_rule_category_wins_over_provider_category(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A rule matching the description is more specific than the provider's
+    generic category, so it should categorize the transaction instead of the
+    provider guess — not merely fill in what the provider left blank."""
+    conn = await _make_connection(session, test_user.id, "Rule Precedence Bank")
+    await _make_category(session, test_user.id, "Alimentação")
+    consorcio_category = await _make_category(session, test_user.id, "Patrimônio / Consórcios")
+    await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Consórcio imóvel",
+            conditions=[
+                RuleCondition(field="description", op="contains", value="PORTO CONSORCIO")
+            ],
+            actions=[RuleAction(op="set_category", value=str(consorcio_category.id))],
+            apply_to_existing=False,
+        ),
+    )
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="rule-precedence-acc-1", name="Checking",
+            type="checking", balance=Decimal("100"), currency="BRL",
+        ),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="rule-precedence-tx-1", description="PORTO CONSORCIO",
+            amount=Decimal("2880"), date=date.today(), type="debit",
+            currency="BRL", pluggy_category="Eating out",
+        ),
+    ])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    transaction = (
+        await session.execute(
+            select(Transaction).where(Transaction.external_id == "rule-precedence-tx-1")
+        )
+    ).scalar_one()
+    assert transaction.category_id == consorcio_category.id
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_rule_category_wins_over_provider_category(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Same precedence guarantee as
+    `test_sync_rule_category_wins_over_provider_category`, but for the
+    incremental-sync branch (account already exists from a prior sync),
+    which builds and persists the `Transaction` through a separate code
+    path than the initial-import branch."""
+    conn = await _make_connection(session, test_user.id, "Rule Precedence Bank Incremental")
+    await _make_category(session, test_user.id, "Alimentação")
+    consorcio_category = await _make_category(session, test_user.id, "Patrimônio / Consórcios")
+    await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Consórcio imóvel (incremental)",
+            conditions=[
+                RuleCondition(field="description", op="contains", value="PORTO CONSORCIO")
+            ],
+            actions=[RuleAction(op="set_category", value=str(consorcio_category.id))],
+            apply_to_existing=False,
+        ),
+    )
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "t"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        AccountData(
+            external_id="rule-precedence-inc-acc-1", name="Checking",
+            type="checking", balance=Decimal("100"), currency="BRL",
+        ),
+    ])
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    # Second sync: the account already exists, so this transaction is
+    # ingested through the incremental branch, not the initial-import one.
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="rule-precedence-inc-tx-1", description="PORTO CONSORCIO",
+            amount=Decimal("2880"), date=date.today(), type="debit",
+            currency="BRL", pluggy_category="Eating out",
+        ),
+    ])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    transaction = (
+        await session.execute(
+            select(Transaction).where(Transaction.external_id == "rule-precedence-inc-tx-1")
+        )
+    ).scalar_one()
+    assert transaction.category_id == consorcio_category.id
+
+
+@pytest.mark.asyncio
+async def test_oauth_callback_rule_category_wins_over_provider_category(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Same precedence guarantee as
+    `test_sync_rule_category_wins_over_provider_category`, but for the
+    initial-import branch exercised by `handle_oauth_callback` (new
+    connection setup), which builds and persists the `Transaction` through a
+    separate code path than `sync_connection`."""
+    await _make_category(session, test_user.id, "Alimentação")
+    consorcio_category = await _make_category(session, test_user.id, "Patrimônio / Consórcios")
+    await create_rule(
+        session,
+        test_workspace.id,
+        test_user.id,
+        RuleCreate(
+            name="Consórcio imóvel (oauth callback)",
+            conditions=[
+                RuleCondition(field="description", op="contains", value="PORTO CONSORCIO")
+            ],
+            actions=[RuleAction(op="set_category", value=str(consorcio_category.id))],
+            apply_to_existing=False,
+        ),
+    )
+
+    mock_provider = AsyncMock()
+    mock_provider.handle_oauth_callback = AsyncMock(return_value=ConnectionData(
+        external_id="ext-oauth-rule-precedence",
+        institution_name="Rule Precedence OAuth Bank",
+        credentials={"token": "abc"},
+        accounts=[
+            AccountData(
+                external_id="rule-precedence-oauth-acc-1", name="Checking",
+                type="checking", balance=Decimal("100"), currency="BRL",
+            ),
+        ],
+    ))
+    mock_provider.get_transactions = AsyncMock(return_value=[
+        TransactionData(
+            external_id="rule-precedence-oauth-tx-1", description="PORTO CONSORCIO",
+            amount=Decimal("2880"), date=date.today(), type="debit",
+            currency="BRL", pluggy_category="Eating out",
+        ),
+    ])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock):
+        await handle_oauth_callback(
+            session, test_workspace.id, test_user.id, "auth-code", "pluggy"
+        )
+
+    transaction = (
+        await session.execute(
+            select(Transaction).where(Transaction.external_id == "rule-precedence-oauth-tx-1")
+        )
+    ).scalar_one()
+    assert transaction.category_id == consorcio_category.id
+
+
 @pytest.mark.asyncio
 async def test_sync_connection_error_raises(session: AsyncSession, test_user, test_workspace):
     conn = await _make_connection(session, test_user.id, "Error Bank")
