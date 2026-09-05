@@ -1258,7 +1258,9 @@ function TransactionForm({
                 >
                   <option value="monthly">{t('recurring.monthly')}</option>
                   <option value="quarterly">{t('recurring.quarterly')}</option>
+                  <option value="semiannual">{t('recurring.semiannual')}</option>
                   <option value="weekly">{t('recurring.weekly')}</option>
+                  <option value="biweekly">{t('recurring.biweekly')}</option>
                   <option value="yearly">{t('recurring.yearly')}</option>
                 </select>
               </div>
@@ -1284,7 +1286,9 @@ function TransactionForm({
                 >
                   <option value="monthly">{t('recurring.monthly')}</option>
                   <option value="quarterly">{t('recurring.quarterly')}</option>
+                  <option value="semiannual">{t('recurring.semiannual')}</option>
                   <option value="weekly">{t('recurring.weekly')}</option>
+                  <option value="biweekly">{t('recurring.biweekly')}</option>
                   <option value="yearly">{t('recurring.yearly')}</option>
                 </select>
               </div>
