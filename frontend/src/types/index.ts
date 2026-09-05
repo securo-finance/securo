@@ -591,6 +591,13 @@ export interface ImportReviewTransaction extends ImportPreviewTransaction {
   selected_category_id?: string | null
 }
 
+export interface FailedRow {
+  line_number: number
+  description: string
+  raw_value: string
+  error_reason: string
+}
+
 export interface RecurringTransaction {
   id: string
   user_id: string

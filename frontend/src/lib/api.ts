@@ -43,6 +43,7 @@ import type {
   RulePreviewResponse,
   ImportLog,
   ImportPreviewTransaction,
+  FailedRow,
   PayeeTaxId,
   TaxIdKindOption,
   Workspace,
@@ -651,7 +652,7 @@ export const transactions = {
     inflow_column?: string
     outflow_column?: string
     column_mapping?: Record<string, string>
-  }): Promise<{ transactions: ImportPreviewTransaction[]; detected_format: string; csv_columns?: string[]; parse_error?: string | null }> => {
+  }): Promise<{ transactions: ImportPreviewTransaction[]; detected_format: string; csv_columns?: string[]; parse_error?: string | null; failed_rows?: FailedRow[] }> => {
     const formData = new FormData()
     formData.append('file', file)
     if (options?.date_format) formData.append('date_format', options.date_format)

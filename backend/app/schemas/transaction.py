@@ -285,6 +285,13 @@ class TransactionImport(TransactionBase):
     notes: Optional[str] = None
 
 
+class FailedRow(BaseModel):
+    line_number: int
+    description: str
+    raw_value: str
+    error_reason: str
+
+
 class TransactionImportPreview(BaseModel):
     transactions: list[TransactionImport]
     detected_format: str
@@ -294,6 +301,7 @@ class TransactionImportPreview(BaseModel):
     # Set when a CSV's columns could not be auto-detected. The preview still
     # succeeds (with no transactions) so the UI can show the mapping dropdowns.
     parse_error: Optional[str] = None
+    failed_rows: list[FailedRow] = []
 
 
 class TransactionImportRequest(BaseModel):
