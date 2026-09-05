@@ -143,8 +143,12 @@ check_podman_compose_version() {
   pc_version=$(podman-compose --version 2>&1 | grep -i 'podman-compose version' | awk '{print $NF}' || true)
   info "podman-compose ${pc_version:-unknown} found"
 
-  if [ -n "$pc_version" ] && ! version_at_least "$pc_version" "1.0.6"; then
-    warn "podman-compose $pc_version is old. Upgrade to >= 1.0.6 (ideally 1.5+) for reliable healthcheck support."
+  # 1.6.0 is the first release that resolves nested ${VAR:-${OTHER:-x}}
+  # interpolation. Below it, FRONTEND_URL is handed to the containers with the
+  # inner ${FRONTEND_PORT:-3000} left as literal text, which silently breaks
+  # CORS, passkeys, and the OAuth callbacks.
+  if [ -n "$pc_version" ] && ! version_at_least "$pc_version" "1.6.0"; then
+    warn "podman-compose $pc_version is old. Upgrade to >= 1.6.0: earlier versions leave FRONTEND_URL unresolved and break login callbacks."
   fi
 }
 

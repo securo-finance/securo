@@ -3,7 +3,7 @@ from datetime import date as _Date
 from decimal import Decimal
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.category import CategoryRead
 from app.schemas.transaction_split import (
@@ -34,6 +34,57 @@ class TransactionCreate(TransactionBase):
     fx_rate_used: Optional[Decimal] = None
     effective_bill_date: Optional[_Date] = None
     splits: Optional[TransactionSplitsInput] = None
+    # Manual status override. When omitted the transaction is created as
+    # "posted" (settled), matching the model default. Pass "pending"
+    # (not yet settled) to record an entry that isn't settled yet. Only
+    # posted/pending are valid.
+    status: Optional[Literal["posted", "pending"]] = None
+    # Manual installment metadata. When present, this transaction is one
+    # installment of a manually-created series (created via the regular
+    # endpoint, e.g. a single installment, or via the series endpoint
+    # which fans out a payload into N rows). All four fields must be set
+    # together (validated below).
+    installment_number: Optional[int] = Field(default=None, ge=1)
+    total_installments: Optional[int] = Field(default=None, ge=1)
+    installment_total_amount: Optional[Decimal] = None
+    installment_purchase_date: Optional[_Date] = None
+
+    @model_validator(mode="after")
+    def validate_installment_fields(self):
+        installment_number = self.installment_number
+        total_installments = self.total_installments
+        installment_total_amount = self.installment_total_amount
+        installment_purchase_date = self.installment_purchase_date
+        provided = [
+            installment_number is not None,
+            total_installments is not None,
+            installment_total_amount is not None,
+            installment_purchase_date is not None,
+        ]
+        if any(provided) and not all(provided):
+            raise ValueError(
+                "installment_number, total_installments, installment_total_amount and "
+                "installment_purchase_date must be provided together"
+            )
+        if (
+            installment_number is not None
+            and total_installments is not None
+            and installment_total_amount is not None
+            and installment_purchase_date is not None
+        ):
+            if installment_number > total_installments:
+                raise ValueError(
+                    "installment_number must be between 1 and total_installments"
+                )
+            if installment_total_amount <= 0:
+                raise ValueError("installment_total_amount must be positive")
+            # The purchase date is the date of the first installment, so a
+            # given installment can never predate it.
+            if installment_purchase_date > self.date:
+                raise ValueError(
+                    "installment_purchase_date cannot be after the transaction date"
+                )
+        return self
 
 
 class TransactionUpdate(BaseModel):
@@ -49,6 +100,11 @@ class TransactionUpdate(BaseModel):
     amount_primary: Optional[Decimal] = None
     fx_rate_used: Optional[Decimal] = None
     is_ignored: Optional[bool] = None
+    exclude_from_pnl: Optional[bool] = None
+    # Manual status override (posted=settled, pending=not yet settled). Lets the
+    # user mark a manually-entered transaction as settled once it clears,
+    # or flip a synced row back to pending before the next sync.
+    status: Optional[Literal["posted", "pending"]] = None
     apply_to_transfer_pair: bool = False
     # CC bucketing override (issue #92). Empty string / explicit null clears
     # it back to auto. Only meaningful for credit-card accounts.
@@ -56,6 +112,48 @@ class TransactionUpdate(BaseModel):
     # When provided, replaces the transaction's splits wholesale. Pass
     # an object with an empty `splits` list to clear them.
     splits: Optional[TransactionSplitsInput] = None
+    # Installment-series scope for edits. "this" (default) only touches the
+    # target row; "future" touches it plus all later installments of the
+    # same series; "all" touches every row in the series. Ignored when the
+    # transaction has no installment fingerprint.
+    apply_to: Literal["this", "future", "all"] = "this"
+
+
+class InstallmentSeriesCreate(BaseModel):
+    """Payload for POST /api/transactions/installments — repeats a purchase
+    as ``installments`` equal payments."""
+
+    base: TransactionCreate
+    installments: int = Field(ge=2, le=360, description="Number of parcels (>= 2)")
+    # Status of the first installment; subsequent ones are created "pending".
+    first_installment_status: Literal["posted", "pending"] = "posted"
+    # Period between installments. Defaults to monthly. Matches the
+    # recurring-transaction frequencies so "repeat as installments" offers
+    # the same cadence choices as a recurring bill.
+    frequency: Literal["monthly", "quarterly", "semiannual", "weekly", "biweekly", "yearly"] = "monthly"
+
+    @model_validator(mode="after")
+    def validate_amounts(self):
+        if self.base.amount <= 0:
+            raise ValueError("amount must be positive")
+        return self
+
+
+class TransactionInvoiceLink(BaseModel):
+    """The invoice this transaction settles, when it settles one.
+
+    Present only for workspaces with the invoicing module, and only on
+    rows that carry an allocation — a personal workspace never sees this
+    field at all, because the query that fills it is not run there.
+    """
+
+    invoice_id: uuid.UUID
+    number: Optional[int] = None
+    series: Optional[str] = None
+    #: The name an imported invoice arrived with. Without it the badge for
+    #: one has nothing to show, since it carries no number of ours.
+    external_number: Optional[str] = None
+    amount: Decimal
 
 
 class TransactionRead(TransactionBase):
@@ -64,10 +162,15 @@ class TransactionRead(TransactionBase):
     account_id: Optional[uuid.UUID] = None
     category_id: Optional[uuid.UUID] = None
     category: Optional[CategoryRead] = None
+    #: Every invoice this transaction settles. A list because one
+    #: payment can settle several — a payout net of fees is the
+    #: ordinary case, not the exotic one.
+    invoice_links: list[TransactionInvoiceLink] = []
     currency: str = "USD"
     source: str
     status: str = "posted"
     payee: Optional[str] = None
+    original_description: Optional[str] = None
     payee_id: Optional[uuid.UUID] = None
     payee_name: Optional[str] = None
     notes: Optional[str] = None
@@ -80,6 +183,7 @@ class TransactionRead(TransactionBase):
     total_installments: Optional[int] = None
     installment_total_amount: Optional[float] = None
     installment_purchase_date: Optional[_Date] = None
+    installment_series_id: Optional[uuid.UUID] = None
     bill_id: Optional[uuid.UUID] = None
     effective_bill_date: Optional[_Date] = None
     recurring_transaction_id: Optional[uuid.UUID] = None
@@ -96,6 +200,13 @@ class TransactionRead(TransactionBase):
     # instead of a generic "shared" badge.
     parent_owner_name: Optional[str] = None
     is_ignored: bool = False
+    exclude_from_pnl: bool = False
+
+    @model_validator(mode="after")
+    def reflect_ignored_category(self):
+        if self.category and self.category.is_ignored:
+            self.is_ignored = True
+        return self
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -103,6 +214,10 @@ class TransactionRead(TransactionBase):
 class BulkCategorizeRequest(BaseModel):
     transaction_ids: list[uuid.UUID]
     category_id: Optional[uuid.UUID] = None
+
+
+class TransactionBulkDeleteRequest(BaseModel):
+    transaction_ids: list[uuid.UUID]
 
 
 class BulkAddToGroupRequest(BaseModel):
@@ -118,13 +233,22 @@ class BulkAddToGroupRequest(BaseModel):
 
 
 class TransferCreate(BaseModel):
+    # `extra="forbid"` so the removed `fx_rate` field fails loudly instead of
+    # being dropped silently: a client still sending a rate would otherwise get
+    # a transfer converted at the market rate without any hint that its input
+    # was ignored.
+    model_config = ConfigDict(extra="forbid")
+
     from_account_id: uuid.UUID
     to_account_id: uuid.UUID
     amount: Decimal
+    # Amount that actually landed on the destination account, for
+    # cross-currency transfers. Left blank, the destination is converted at the
+    # market rate for `date`.
+    destination_amount: Optional[Decimal] = Field(default=None, gt=0)
     date: _Date
     description: str
     notes: Optional[str] = None
-    fx_rate: Optional[Decimal] = None
 
 
 class LinkTransferRequest(BaseModel):
@@ -157,6 +281,14 @@ class TransactionImport(TransactionBase):
     excluded: bool = False
     category_id: Optional[uuid.UUID] = None
     force_uncategorized: bool = False
+    notes: Optional[str] = None
+
+
+class FailedRow(BaseModel):
+    line_number: int
+    description: str
+    raw_value: str
+    error_reason: str
 
 
 class TransactionImportPreview(BaseModel):
@@ -168,6 +300,7 @@ class TransactionImportPreview(BaseModel):
     # Set when a CSV's columns could not be auto-detected. The preview still
     # succeeds (with no transactions) so the UI can show the mapping dropdowns.
     parse_error: Optional[str] = None
+    failed_rows: list[FailedRow] = []
 
 
 class TransactionImportRequest(BaseModel):

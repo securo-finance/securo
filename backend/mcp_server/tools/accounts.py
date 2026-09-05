@@ -44,7 +44,7 @@ async def list_accounts(
             "balance": num(r.get("balance")),
             "balance_primary": num(r.get("balance_primary")),
             "is_closed": bool(r.get("is_closed", False)),
-            "institution": r.get("institution"),
+            "institution": r.get("institution_name"),
         })
     return {"items": items, "total": len(items)}
 
@@ -76,9 +76,13 @@ async def get_account_summary(
     to_date: str | None = None,
 ) -> dict[str, Any]:
     ws_id = await resolve_workspace_id(session, ctx)
+    account_uuid = parse_uuid(account_id)
+    if account_uuid is None:
+        return dict(error="account not found")
+
     summary = await account_service.get_account_summary(
         session,
-        parse_uuid(account_id),
+        account_uuid,
         ws_id,
         date_from=parse_date(from_date),
         date_to=parse_date(to_date),

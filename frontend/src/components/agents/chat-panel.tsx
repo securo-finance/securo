@@ -312,7 +312,7 @@ export function ChatPanel({ agent, conversationId, onConversationCreated, focusS
           // h-10 matches the default Button height so the input + send
           // button line up when empty. Auto-grow above lifts it as the
           // user types more lines.
-          className="flex-1 h-10 max-h-[200px] rounded-md border bg-background px-3 py-2 text-sm resize-none leading-5 overflow-y-auto"
+          className="flex-1 h-10 max-h-[200px] rounded-md border bg-card px-3 py-2 text-sm resize-none leading-5 overflow-y-auto"
           onKeyDown={(e) => {
             // Enter sends; Shift+Enter inserts a newline. IME composition
             // (e.g. accented chars on Mac, CJK input) must not be hijacked.
@@ -440,25 +440,27 @@ function ChatEmptyState({ agent, onPick }: { agent: Agent; onPick: (text: string
     return null
   }, [agent.connection_id, agent.provider, agent.model, connections])
 
-  // Pull the localized prompt pool. Each locale ships ~10 short tips;
-  // we shuffle and take the first 6 so reopening a fresh chat doesn't
-  // always show the same chips.
+  // Pull the localized prompt pool. Each locale ships ~10 short tips.
   const allPrompts = useMemo<string[]>(() => {
     const raw = t('agents.emptyState.suggestions', { returnObjects: true })
     return Array.isArray(raw) ? (raw as string[]) : []
-    // Re-randomize each time the agent changes so switching agents
-    // refreshes the suggestion set too.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [t, agent.id])
+  }, [t])
 
+  // Each agent gets its own slice of the pool, taken by rotating the list
+  // from an offset derived from its id. Deriving instead of shuffling keeps
+  // the render pure, so the chips stay put instead of swapping themselves
+  // out on an unrelated re-render.
   const picks = useMemo(() => {
-    const pool = [...allPrompts]
-    for (let i = pool.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      ;[pool[i], pool[j]] = [pool[j], pool[i]]
+    if (allPrompts.length === 0) return []
+    let hash = 0
+    for (let i = 0; i < agent.id.length; i++) {
+      hash = (hash * 31 + agent.id.charCodeAt(i)) | 0
     }
-    return pool.slice(0, 3)
-  }, [allPrompts])
+    const start = Math.abs(hash) % allPrompts.length
+    return Array.from({ length: Math.min(3, allPrompts.length) }, (_, i) =>
+      allPrompts[(start + i) % allPrompts.length],
+    )
+  }, [allPrompts, agent.id])
 
   return (
     <div className="flex flex-col items-center justify-center text-center gap-5 py-12 min-h-[65vh]">

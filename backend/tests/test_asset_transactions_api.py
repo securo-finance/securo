@@ -104,6 +104,39 @@ async def test_update_and_delete_transaction_via_api(
 
 
 @pytest.mark.asyncio
+async def test_update_transaction_all_fields_via_api(
+    client: AsyncClient, auth_headers: dict, market_asset_api: Asset
+):
+    r = await client.post(
+        f"/api/assets/{market_asset_api.id}/transactions",
+        headers=auth_headers,
+        json={"kind": "buy", "quantity": 10, "price": 20, "date": "2026-01-01"},
+    )
+    assert r.status_code == 201
+    tx_id = (
+        await client.get(f"/api/assets/{market_asset_api.id}/transactions", headers=auth_headers)
+    ).json()[0]["id"]
+
+    r = await client.patch(
+        f"/api/assets/transactions/{tx_id}",
+        headers=auth_headers,
+        json={"kind": "buy", "quantity": 119, "price": 43.47, "fee": 0, "date": "2025-04-15"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["units"] == 119
+    assert round(body["average_price"], 2) == 43.47
+
+    r = await client.get(f"/api/assets/{market_asset_api.id}/transactions", headers=auth_headers)
+    tx = r.json()[0]
+    assert tx["kind"] == "buy"
+    assert tx["quantity"] == 119
+    assert round(tx["price"], 2) == 43.47
+    assert tx["fee"] == 0
+    assert tx["date"] == "2025-04-15"
+
+
+@pytest.mark.asyncio
 async def test_buy_consolidates_existing_ticker_via_api(
     client: AsyncClient, auth_headers: dict, session: AsyncSession, market_asset_api: Asset
 ):

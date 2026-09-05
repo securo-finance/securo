@@ -3,7 +3,7 @@ import uuid
 from datetime import date, timedelta
 from typing import Optional
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -79,6 +79,7 @@ async def create_recurring_transaction(
         currency=data.currency,
         type=data.type,
         frequency=data.frequency,
+        weekend_adjustment=data.weekend_adjustment,
         day_of_month=data.day_of_month,
         start_date=data.start_date,
         end_date=data.end_date,
@@ -104,6 +105,12 @@ async def update_recurring_transaction(
         return None
 
     update_data = data.model_dump(exclude_unset=True)
+
+    if (
+        "weekend_adjustment" in update_data
+        and update_data["weekend_adjustment"] is None
+    ):
+        raise ValueError("weekend_adjustment is required")
 
     # A recurring transaction must always have an account — reject an explicit
     # null, and verify ownership of any new account_id.
@@ -134,54 +141,90 @@ async def delete_recurring_transaction(
     return True
 
 
+def _advance_months(current: date, months: int, intended_day: int) -> date:
+    """Advance by calendar months, clamping only in a shorter target month."""
+    month_index = current.month - 1 + months
+    year = current.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(intended_day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
 def _advance_date(
     current: date, frequency: str, intended_day: Optional[int] = None,
 ) -> date:
     """Advance a date by the given frequency.
 
-    For monthly/yearly, ``intended_day`` is the day the user actually wants
-    (e.g. 31). We cap it to the target month's length so Feb clamps to 28/29,
-    but subsequent months recover to 31/30 instead of sticking at 28.
-    Falls back to ``current.day`` when not provided."""
+    For monthly, quarterly, semiannual, and yearly recurrences, ``intended_day`` is the day
+    the user actually wants (e.g. 31). We cap it to the target month's length
+    so short months clamp, but subsequent occurrences recover to the intended
+    day when it exists again. Falls back to ``current.day`` when not provided.
+    """
     if frequency == "weekly":
         return current + timedelta(weeks=1)
+    if frequency == "biweekly":
+        return current + timedelta(weeks=2)
+
     target_day = intended_day if intended_day else current.day
+    if frequency == "monthly":
+        return _advance_months(current, 1, target_day)
+    if frequency == "quarterly":
+        return _advance_months(current, 3, target_day)
+    if frequency == "semiannual":
+        return _advance_months(current, 6, target_day)
     if frequency == "yearly":
         year = current.year + 1
         day = min(target_day, calendar.monthrange(year, current.month)[1])
         return date(year, current.month, day)
-    # monthly (default)
-    month = current.month + 1
-    year = current.year
-    if month > 12:
-        month = 1
-        year += 1
-    day = min(target_day, calendar.monthrange(year, month)[1])
-    return date(year, month, day)
+
+    # Preserve the existing monthly fallback for unknown legacy values.
+    return _advance_months(current, 1, target_day)
+
+
+def adjust_weekend_date(
+    nominal_date: date, weekend_adjustment: str = "none"
+) -> date:
+    """Return the effective date without changing the nominal schedule date."""
+    if weekend_adjustment not in ("none", "previous_friday", "next_monday"):
+        raise ValueError(f"Unsupported weekend adjustment: {weekend_adjustment}")
+
+    weekday = nominal_date.weekday()
+    if weekend_adjustment == "none" or weekday < calendar.SATURDAY:
+        return nominal_date
+    if weekend_adjustment == "previous_friday":
+        return nominal_date - timedelta(days=weekday - calendar.FRIDAY)
+    return nominal_date + timedelta(days=7 - weekday)
 
 
 def get_occurrences_in_range(
     start: date, frequency: str, end_date: Optional[date],
     range_start: date, range_end: date,
     intended_day: Optional[int] = None,
+    weekend_adjustment: str = "none",
 ) -> list[date]:
-    """Compute all occurrence dates for a recurring pattern within [range_start, range_end).
-    Pure date math — no DB writes. Used by dashboard for virtual projections."""
+    """Compute effective occurrence dates within ``[range_start, range_end)``.
+
+    Schedule advancement and end-date checks use nominal dates. The two-day
+    scan margin captures nominal weekend occurrences that move across a range
+    boundary; filtering happens only after calculating each effective date.
+    """
     day = intended_day if intended_day else start.day
+    nominal_range_start = range_start - timedelta(days=2)
+    nominal_range_end = range_end + timedelta(days=2)
     occurrences: list[date] = []
     current = start
-    # Advance to range_start without collecting
-    while current < range_start:
+    while current < nominal_range_start:
         if end_date and current > end_date:
             return occurrences
         current = _advance_date(current, frequency, intended_day=day)
-    # Collect occurrences within range
-    while current < range_end:
+    while current < nominal_range_end:
         if end_date and current > end_date:
             break
-        occurrences.append(current)
+        effective_date = adjust_weekend_date(current, weekend_adjustment)
+        if range_start <= effective_date < range_end:
+            occurrences.append(effective_date)
         current = _advance_date(current, frequency, intended_day=day)
-        if len(occurrences) > 200:  # safety limit
+        if len(occurrences) > 200:
             break
     return occurrences
 
@@ -201,7 +244,16 @@ async def generate_pending(
             RecurringTransaction.user_id == user_id,
             RecurringTransaction.is_active == True,
             RecurringTransaction.auto_generate == True,
-            RecurringTransaction.next_occurrence <= cutoff,
+            or_(
+                and_(
+                    RecurringTransaction.weekend_adjustment == "previous_friday",
+                    RecurringTransaction.next_occurrence <= cutoff + timedelta(days=2),
+                ),
+                and_(
+                    RecurringTransaction.weekend_adjustment != "previous_friday",
+                    RecurringTransaction.next_occurrence <= cutoff,
+                ),
+            ),
         )
     )
     recurring_list = list(result.scalars().all())
@@ -213,9 +265,15 @@ async def generate_pending(
         # constraint — the user should edit the recurring to fix it.
         if recurring.account_id is None:
             continue
-        # Generate transactions until next_occurrence is past the cutoff
-        while recurring.next_occurrence <= cutoff:
-            # Check if past end_date
+        # Generate while the effective date is due. The nominal pointer remains
+        # authoritative and is the only date used for schedule advancement and
+        # end-date evaluation.
+        while True:
+            effective_occurrence = adjust_weekend_date(
+                recurring.next_occurrence, recurring.weekend_adjustment
+            )
+            if effective_occurrence > cutoff:
+                break
             if recurring.end_date and recurring.next_occurrence > recurring.end_date:
                 recurring.is_active = False
                 break
@@ -226,11 +284,30 @@ async def generate_pending(
             # stamped with the recurring link so a later synced charge merges
             # into it rather than duplicating.
             existing_real = await recurring_match_service.find_real_tx_for_occurrence(
-                session, recurring, recurring.next_occurrence
+                session, recurring, effective_occurrence
             )
             if existing_real is not None:
                 existing_real.recurring_transaction_id = recurring.id
             else:
+                account = await session.get(Account, recurring.account_id)
+                # Only occurrences that already came due reach this point, so
+                # the row is a charge that happened rather than a forecast.
+                # Whether to trust that depends on who else writes to the
+                # account:
+                #
+                # Bank-synced: the incoming charge often fails to match this
+                # placeholder, and two posted rows for one charge inflate the
+                # balance silently. Holding the placeholder as pending keeps
+                # it out of the actuals until something confirms it, so a
+                # missed match costs a visible stale row instead of a wrong
+                # number. Improving the match itself is the real fix (#588);
+                # this is the guard until then.
+                #
+                # Manual: nothing else ever writes to the account, so there is
+                # no charge to duplicate against and nothing that would ever
+                # post the row. Pending there buys no safety and stops the
+                # balance from moving.
+                is_synced_account = account is not None and account.connection_id is not None
                 transaction = Transaction(
                     user_id=user_id,
                     account_id=recurring.account_id,
@@ -238,12 +315,12 @@ async def generate_pending(
                     description=recurring.description,
                     amount=recurring.amount,
                     currency=recurring.currency,
-                    date=recurring.next_occurrence,
+                    date=effective_occurrence,
                     type=recurring.type,
                     source="recurring",
+                    status="pending" if is_synced_account else "posted",
                     recurring_transaction_id=recurring.id,
                 )
-                account = await session.get(Account, recurring.account_id)
                 apply_effective_date(transaction, account)
                 session.add(transaction)
                 await session.flush()

@@ -103,12 +103,16 @@ async def test_update_title_if_empty_only_writes_when_blank(session, test_user, 
     # First call: title is None → should fill in.
     await svc.update_title_if_empty(session, conv.id, "Auto generated")
     refreshed = await svc.get_conversation(session, conv.id, test_workspace.id)
+
+    assert refreshed is not None
     await session.refresh(refreshed)
     assert refreshed.title == "Auto generated"
 
     # Second call: title already set → should NOT overwrite.
     await svc.update_title_if_empty(session, conv.id, "Different title")
     refreshed = await svc.get_conversation(session, conv.id, test_workspace.id)
+
+    assert refreshed is not None
     await session.refresh(refreshed)
     assert refreshed.title == "Auto generated"
 
@@ -126,7 +130,9 @@ async def test_update_title_truncates_to_200_chars(session, test_user, test_work
     )
     long_title = "x" * 500
     out = await svc.update_title(session, conv.id, test_workspace.id,long_title)
+
     assert out is not None
+    assert out.title is not None
     assert len(out.title) == 200
 
 

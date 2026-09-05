@@ -141,7 +141,7 @@ async def aggregate(
 
     q = q.group_by(bucket_id).order_by(value_expr.desc().nulls_last()).limit(int(limit))
 
-    rows = (await session.execute(q)).all()
+    rows = (await session.execute(q)).mappings().all()
     label_map: dict[Any, str] = {}
     if label_q is not None:
         for cid, cname in (await session.execute(label_q)).all():
@@ -149,10 +149,10 @@ async def aggregate(
 
     items = [
         {
-            "bucket": str(r.bucket) if r.bucket is not None else None,
-            "label": label_map.get(r.bucket),
-            "value": num(r.value),
-            "count": int(r.count or 0),
+            "bucket": str(r["bucket"]) if r["bucket"] is not None else None,
+            "label": label_map.get(r["bucket"]),
+            "value": num(r["value"]),
+            "count": int(r.get("count", 0)),
         }
         for r in rows
     ]

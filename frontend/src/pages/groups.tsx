@@ -4,12 +4,11 @@ import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 
-import { groups as groupsApi, currencies as currenciesApi, type GroupCreatePayload } from '@/lib/api'
+import { groups as groupsApi, type GroupCreatePayload } from '@/lib/api'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
@@ -18,19 +17,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { GroupForm } from '@/components/group-form'
 import { PageHeader } from '@/components/page-header'
 import { Archive, ChevronRight, Trash2, Users } from 'lucide-react'
 import type { Group, GroupKind } from '@/types'
 
 type StatusFilter = 'active' | 'archived' | 'all'
 
-const KIND_OPTIONS: { value: GroupKind; tKey: string }[] = [
-  { value: 'social', tKey: 'splitGroups.kind.social' },
-  { value: 'cost_center', tKey: 'splitGroups.kind.cost_center' },
-  { value: 'project', tKey: 'splitGroups.kind.project' },
-  { value: 'client', tKey: 'splitGroups.kind.client' },
-  { value: 'other', tKey: 'splitGroups.kind.other' },
-]
 
 export default function GroupsPage() {
   const { t } = useTranslation()
@@ -42,6 +35,7 @@ export default function GroupsPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Group | null>(null)
+  const [deletingGroup, setDeletingGroup] = useState<Group | null>(null)
   const includeArchived = statusFilter !== 'active'
 
   const [name, setName] = useState('')
@@ -49,11 +43,6 @@ export default function GroupsPage() {
   const [defaultCurrency, setDefaultCurrency] = useState(userCurrency)
   const [notes, setNotes] = useState('')
 
-  const { data: supportedCurrencies } = useQuery({
-    queryKey: ['currencies'],
-    queryFn: currenciesApi.list,
-    staleTime: Infinity,
-  })
 
   const { data: list, isLoading } = useQuery({
     queryKey: ['groups', { includeArchived }],
@@ -88,6 +77,7 @@ export default function GroupsPage() {
       queryClient.invalidateQueries({ queryKey: ['groups'] })
       setDialogOpen(false)
       setEditing(null)
+      setDeletingGroup(null)
       toast.success(t('splitGroups.deleted'))
     },
     onError: (err: unknown) => {
@@ -114,6 +104,13 @@ export default function GroupsPage() {
     setKind(group.kind)
     setDefaultCurrency(group.default_currency)
     setNotes(group.notes ?? '')
+    setDialogOpen(true)
+  }
+
+  // Dismissing the confirmation (cancel, Esc, X, overlay) puts the user back in
+  // the edit dialog they opened it from, instead of dropping them on the list.
+  const returnToEditDialog = () => {
+    setDeletingGroup(null)
     setDialogOpen(true)
   }
 
@@ -242,46 +239,16 @@ export default function GroupsPage() {
             <DialogTitle>{editing ? t('splitGroups.edit') : t('splitGroups.add')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>{t('splitGroups.name')}</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('splitGroups.kindLabel')}</Label>
-              <select
-                className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background"
-                value={kind}
-                onChange={(e) => setKind(e.target.value as GroupKind)}
-              >
-                {KIND_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {t(opt.tKey)}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-muted-foreground">{t('splitGroups.kindHint')}</p>
-            </div>
-            <div className="space-y-2">
-              <Label>{t('splitGroups.defaultCurrency')}</Label>
-              <select
-                className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background h-9 focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
-                value={defaultCurrency}
-                onChange={(e) => setDefaultCurrency(e.target.value)}
-              >
-                {(supportedCurrencies ?? [{ code: defaultCurrency, symbol: defaultCurrency, name: defaultCurrency, flag: '' }]).map((c) => (
-                  <option key={c.code} value={c.code}>{c.flag} {c.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label>{t('splitGroups.notes')}</Label>
-              <textarea
-                className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background resize-none"
-                rows={2}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-              />
-            </div>
+            <GroupForm
+              name={name}
+              onChangeName={setName}
+              kind={kind}
+              onChangeKind={setKind}
+              defaultCurrency={defaultCurrency}
+              onChangeDefaultCurrency={setDefaultCurrency}
+              notes={notes}
+              onChangeNotes={setNotes}
+            />
             {editing && (
               <label className="text-sm text-muted-foreground inline-flex items-center gap-2 cursor-pointer">
                 <input
@@ -303,7 +270,10 @@ export default function GroupsPage() {
             {editing && (
               <Button
                 variant="destructive"
-                onClick={() => deleteMutation.mutate(editing.id)}
+                onClick={() => {
+                  setDialogOpen(false)
+                  setDeletingGroup(editing)
+                }}
                 disabled={deleteMutation.isPending}
               >
                 <Trash2 size={14} className="mr-1" />
@@ -324,6 +294,15 @@ export default function GroupsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <DeleteConfirmationDialog
+        open={!!deletingGroup}
+        title={t('splitGroups.confirmDeleteTitle')}
+        description={t('splitGroups.confirmDeleteDescription', { name: deletingGroup?.name })}
+        isPending={deleteMutation.isPending}
+        onClose={returnToEditDialog}
+        onConfirm={() => deletingGroup && deleteMutation.mutate(deletingGroup.id)}
+      />
     </div>
   )
 }

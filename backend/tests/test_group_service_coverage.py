@@ -98,8 +98,10 @@ async def test_update_member_resolves_email_link(session: AsyncSession, test_use
         session, test_workspace.id, test_user.id, GroupCreate(name="G")
     )
     m = await group_service.create_member(
-        session, group.id, test_workspace.id, GroupMemberCreate(name="Friend")
+        session, group.id, test_workspace.id,         GroupMemberCreate(name="Friend")
     )
+
+    assert m is not None
     assert m.linked_user_id is None
 
     updated = await group_service.update_member(
@@ -119,8 +121,10 @@ async def test_update_member_name_clash(session: AsyncSession, test_user, test_w
         session, group.id, test_workspace.id, GroupMemberCreate(name="Alice")
     )
     bob = await group_service.create_member(
-        session, group.id, test_workspace.id, GroupMemberCreate(name="Bob")
+        session, group.id, test_workspace.id,         GroupMemberCreate(name="Bob")
     )
+
+    assert bob is not None
     with pytest.raises(ValueError, match="already exists"):
         await group_service.update_member(
             session, group.id, bob.id, test_workspace.id,
@@ -155,8 +159,10 @@ async def test_delete_member(session: AsyncSession, test_user, test_workspace):
         session, test_workspace.id, test_user.id, GroupCreate(name="G")
     )
     m = await group_service.create_member(
-        session, group.id, test_workspace.id, GroupMemberCreate(name="Temp")
+        session, group.id, test_workspace.id,         GroupMemberCreate(name="Temp")
     )
+
+    assert m is not None
     assert await group_service.delete_member(session, group.id, m.id, test_workspace.id) is True
     # Now gone.
     assert await group_service.delete_member(session, group.id, m.id, test_workspace.id) is False
@@ -180,8 +186,10 @@ async def test_delete_member_integrity_error_translated(session: AsyncSession, t
         session, test_workspace.id, test_user.id, GroupCreate(name="G")
     )
     member = await group_service.create_member(
-        session, group.id, test_workspace.id, GroupMemberCreate(name="Alice")
+        session, group.id, test_workspace.id,         GroupMemberCreate(name="Alice")
     )
+
+    assert member is not None
 
     async def _boom():
         raise IntegrityError("DELETE", {}, Exception("FK RESTRICT"))
@@ -209,7 +217,7 @@ async def test_get_group_visible_cross_workspace(session: AsyncSession, test_use
         session, group.id, other_ws.id, other.id
     )
     assert visible is not None
-    assert visible.is_owner is False  # type: ignore[attr-defined]
+    assert visible.is_owner is False
 
     # And via list_groups too.
     listed = await group_service.list_groups(session, other_ws.id, other.id)
@@ -224,6 +232,7 @@ async def test_list_transactions(session: AsyncSession, test_user, test_workspac
     member = await group_service.create_member(
         session, group.id, test_workspace.id, GroupMemberCreate(name="Alice")
     )
+    assert member is not None
     tx = Transaction(
         id=uuid.uuid4(),
         user_id=test_user.id,
@@ -341,6 +350,10 @@ async def test_create_member_self_demotes_prior_self(session: AsyncSession, test
     members = await group_service.list_members(
         session, group.id, test_workspace.id, test_user.id
     )
+
+    assert m1 is not None
+    assert m2 is not None
+    assert members is not None
     by_id = {m.id: m for m in members}
     assert by_id[m1.id].is_self is False
     assert by_id[m2.id].is_self is True
@@ -357,12 +370,16 @@ async def test_update_member_promote_self_demotes_existing(session: AsyncSession
     m2 = await group_service.create_member(
         session, group.id, test_workspace.id, GroupMemberCreate(name="B")
     )
+
+    assert m1 is not None
+    assert m2 is not None
     await group_service.update_member(
         session, group.id, m2.id, test_workspace.id, GroupMemberUpdate(is_self=True)
     )
     members = await group_service.list_members(
         session, group.id, test_workspace.id, test_user.id
     )
+    assert members is not None
     by_id = {m.id: m for m in members}
     assert by_id[m1.id].is_self is False
     assert by_id[m2.id].is_self is True

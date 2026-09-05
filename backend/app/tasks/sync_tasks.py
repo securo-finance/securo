@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.worker import celery_app
 from app.core.config import get_settings
 from app.models.bank_connection import BankConnection
+from app.providers.base import ProviderNotConfiguredError
 from app.services import connection_service
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,10 @@ async def _sync_all() -> int:
                 logger.info("Syncing connection %s (last_sync=%s)", conn_id, last_sync)
                 await _sync_one(session_maker, conn_id, user_id)
                 synced += 1
+            except ProviderNotConfiguredError as exc:
+                # Actionable one-liner instead of a buried traceback: this
+                # means THIS process is missing the provider's configuration.
+                logger.error("Skipping connection %s: %s", conn_id, exc)
             except Exception:
                 logger.exception("Background sync failed for connection %s", conn_id)
 

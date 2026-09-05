@@ -66,3 +66,19 @@ async def test_login_rate_limit(client: AsyncClient, test_user):
     )
     assert response.status_code == 429
     assert "Retry-After" in response.headers
+
+
+async def test_totp_verify_rate_limit(client: AsyncClient):
+    for i in range(5):
+        response = await client.post(
+            "/api/auth/2fa/verify",
+            json={"temp_token": "invalid", "code": "000000"},
+        )
+        assert response.status_code == 401, f"Request {i + 1} got {response.status_code}"
+
+    response = await client.post(
+        "/api/auth/2fa/verify",
+        json={"temp_token": "invalid", "code": "000000"},
+    )
+    assert response.status_code == 429
+    assert "Retry-After" in response.headers

@@ -1,10 +1,11 @@
 import json
+import logging
 import secrets
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,10 +26,12 @@ from webauthn.helpers.structs import (
 )
 
 from app.core.auth import current_active_user, get_jwt_strategy
+from app.core.auth_policy import require_local_auth_enabled
 from app.core.config import get_settings
 from app.core.database import get_async_session
 from app.core.rate_limit import login_rate_limit
 from app.core.redis import get_redis
+from app.core.webauthn import resolve_webauthn_context
 from app.api.two_factor import _parse_temp_token_payload
 from app.models.passkey import UserPasskey
 from app.models.user import User
@@ -42,6 +45,8 @@ from app.schemas.passkey import (
     PasskeySecondFactorOptionsRequest,
     PasskeySecondFactorVerifyRequest,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -123,6 +128,9 @@ async def _pop_challenge(prefix: str, challenge_id: str) -> dict[str, Any] | Non
         return None
     if not isinstance(payload, dict):
         return None
+    # Challenges issued before the ceremony was bound to an origin cannot be verified.
+    if not payload.get("rp_id") or not payload.get("origin"):
+        return None
     return payload
 
 
@@ -144,18 +152,24 @@ async def _verify_passkey_credential(
     passkey: UserPasskey,
     session: AsyncSession,
 ) -> User:
-    settings = get_settings()
     try:
         verification = verify_authentication_response(
             credential=_credential_json(credential),
             expected_challenge=base64url_to_bytes(challenge["challenge"]),
-            expected_origin=settings.resolved_webauthn_origin,
-            expected_rp_id=settings.resolved_webauthn_rp_id,
+            expected_origin=challenge["origin"],
+            expected_rp_id=challenge["rp_id"],
             credential_public_key=base64url_to_bytes(passkey.public_key),
-            credential_current_sign_count=passkey.sign_count,
+            # Synced passkeys (1Password, iCloud Keychain, Google Password
+            # Manager) legitimately report a stale counter when used from
+            # another device, so the anti-clone regression check only applies
+            # to device-bound credentials.
+            credential_current_sign_count=0 if passkey.backed_up else passkey.sign_count,
             require_user_verification=True,
         )
     except Exception as exc:
+        logger.warning(
+            "Passkey verification failed for credential %s: %s", passkey.credential_id, exc
+        )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid passkey") from exc
 
     verified_credential_id = _as_base64url(verification.credential_id)
@@ -186,13 +200,19 @@ async def list_passkeys(
     return result.scalars().all()
 
 
-@router.post("/passkeys/register/options", response_model=PasskeyOptionsResponse)
+@router.post(
+    "/passkeys/register/options",
+    response_model=PasskeyOptionsResponse,
+    dependencies=[Depends(require_local_auth_enabled)],
+)
 async def passkey_registration_options(
+    request: Request,
     body: PasskeyRegisterOptionsRequest,
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
 ):
     settings = get_settings()
+    context = resolve_webauthn_context(request)
     existing = await session.execute(select(UserPasskey).where(UserPasskey.user_id == user.id))
     exclude_credentials = [
         PublicKeyCredentialDescriptor(id=base64url_to_bytes(passkey.credential_id))
@@ -200,7 +220,7 @@ async def passkey_registration_options(
     ]
 
     options = generate_registration_options(
-        rp_id=settings.resolved_webauthn_rp_id,
+        rp_id=context.rp_id,
         rp_name=settings.webauthn_rp_name,
         user_id=str(user.id).encode("utf-8"),
         user_name=user.email,
@@ -219,18 +239,23 @@ async def passkey_registration_options(
             "challenge": bytes_to_base64url(options.challenge),
             "user_id": str(user.id),
             "name": body.name,
+            "rp_id": context.rp_id,
+            "origin": context.origin,
         },
     )
     return PasskeyOptionsResponse(challenge_id=challenge_id, options=_options_dict(options))
 
 
-@router.post("/passkeys/register/verify", response_model=PasskeyRead)
+@router.post(
+    "/passkeys/register/verify",
+    response_model=PasskeyRead,
+    dependencies=[Depends(require_local_auth_enabled)],
+)
 async def verify_passkey_registration(
     body: PasskeyRegisterVerifyRequest,
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
 ):
-    settings = get_settings()
     challenge = await _pop_challenge(REGISTER_CHALLENGE_PREFIX, body.challenge_id)
     if not challenge or challenge.get("user_id") != str(user.id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired challenge")
@@ -239,8 +264,8 @@ async def verify_passkey_registration(
         verification = verify_registration_response(
             credential=_credential_json(body.credential),
             expected_challenge=base64url_to_bytes(challenge["challenge"]),
-            expected_origin=settings.resolved_webauthn_origin,
-            expected_rp_id=settings.resolved_webauthn_rp_id,
+            expected_origin=challenge["origin"],
+            expected_rp_id=challenge["rp_id"],
             require_user_verification=True,
         )
     except Exception as exc:
@@ -288,25 +313,42 @@ async def delete_passkey(
 @router.post(
     "/passkeys/authenticate/options",
     response_model=PasskeyOptionsResponse,
-    dependencies=[Depends(login_rate_limit)],
+    dependencies=[Depends(require_local_auth_enabled), Depends(login_rate_limit)],
 )
 async def passkey_authentication_options(
+    request: Request,
     body: PasskeyAuthenticateOptionsRequest,
     session: AsyncSession = Depends(get_async_session),
 ):
-    settings = get_settings()
+    context = resolve_webauthn_context(request)
     email = body.email.strip().lower() if body.email else None
     expected_user_id: str | None = None
+    allow_credentials: list[PublicKeyCredentialDescriptor] | None = None
 
     if email:
         user_result = await session.execute(select(User).where(func.lower(User.email) == email))
         login_user = user_result.scalar_one_or_none()
         if login_user is not None:
             expected_user_id = str(login_user.id)
+            # Listing the user's credentials lets password managers surface
+            # the matching passkey even when they can't take part in a pure
+            # discoverable-credential ceremony (e.g. 1Password with a locked
+            # vault shows an empty picker otherwise). The endpoint is
+            # rate-limited, which bounds credential enumeration.
+            passkeys_result = await session.execute(
+                select(UserPasskey)
+                .where(UserPasskey.user_id == login_user.id)
+                .order_by(UserPasskey.created_at.asc())
+            )
+            allow_credentials = [
+                PublicKeyCredentialDescriptor(id=base64url_to_bytes(pk.credential_id))
+                for pk in passkeys_result.scalars().all()
+            ] or None
 
     options = generate_authentication_options(
-        rp_id=settings.resolved_webauthn_rp_id,
+        rp_id=context.rp_id,
         user_verification=UserVerificationRequirement.REQUIRED,
+        allow_credentials=allow_credentials,
     )
     challenge_id = await _store_challenge(
         AUTHENTICATE_CHALLENGE_PREFIX,
@@ -314,12 +356,17 @@ async def passkey_authentication_options(
             "challenge": bytes_to_base64url(options.challenge),
             "email_bound": email is not None,
             "expected_user_id": expected_user_id,
+            "rp_id": context.rp_id,
+            "origin": context.origin,
         },
     )
     return PasskeyOptionsResponse(challenge_id=challenge_id, options=_options_dict(options))
 
 
-@router.post("/passkeys/authenticate/verify", dependencies=[Depends(login_rate_limit)])
+@router.post(
+    "/passkeys/authenticate/verify",
+    dependencies=[Depends(require_local_auth_enabled), Depends(login_rate_limit)],
+)
 async def verify_passkey_authentication(
     body: PasskeyAuthenticateVerifyRequest,
     session: AsyncSession = Depends(get_async_session),
@@ -354,12 +401,17 @@ async def verify_passkey_authentication(
     return {"access_token": token, "token_type": "bearer"}
 
 
-@router.post("/passkeys/2fa/options", response_model=PasskeyOptionsResponse, dependencies=[Depends(login_rate_limit)])
+@router.post(
+    "/passkeys/2fa/options",
+    response_model=PasskeyOptionsResponse,
+    dependencies=[Depends(require_local_auth_enabled), Depends(login_rate_limit)],
+)
 async def passkey_second_factor_options(
+    request: Request,
     body: PasskeySecondFactorOptionsRequest,
     session: AsyncSession = Depends(get_async_session),
 ):
-    settings = get_settings()
+    context = resolve_webauthn_context(request)
     user_id = await _get_second_factor_user_id(body.temp_token)
     result = await session.execute(
         select(UserPasskey).where(UserPasskey.user_id == uuid.UUID(user_id)).order_by(UserPasskey.created_at.asc())
@@ -369,7 +421,7 @@ async def passkey_second_factor_options(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
     options = generate_authentication_options(
-        rp_id=settings.resolved_webauthn_rp_id,
+        rp_id=context.rp_id,
         user_verification=UserVerificationRequirement.REQUIRED,
         allow_credentials=[
             PublicKeyCredentialDescriptor(id=base64url_to_bytes(passkey.credential_id))
@@ -378,12 +430,20 @@ async def passkey_second_factor_options(
     )
     challenge_id = await _store_challenge(
         SECOND_FACTOR_CHALLENGE_PREFIX,
-        {"challenge": bytes_to_base64url(options.challenge), "user_id": user_id},
+        {
+            "challenge": bytes_to_base64url(options.challenge),
+            "user_id": user_id,
+            "rp_id": context.rp_id,
+            "origin": context.origin,
+        },
     )
     return PasskeyOptionsResponse(challenge_id=challenge_id, options=_options_dict(options))
 
 
-@router.post("/passkeys/2fa/verify", dependencies=[Depends(login_rate_limit)])
+@router.post(
+    "/passkeys/2fa/verify",
+    dependencies=[Depends(require_local_auth_enabled), Depends(login_rate_limit)],
+)
 async def verify_passkey_second_factor(
     body: PasskeySecondFactorVerifyRequest,
     session: AsyncSession = Depends(get_async_session),

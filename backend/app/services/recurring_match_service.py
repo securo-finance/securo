@@ -154,12 +154,17 @@ async def find_bill_for_incoming(
             RecurringTransaction.type == tx_type,
         )
     )
+    from app.services.recurring_transaction_service import adjust_weekend_date
+
     best: Optional[RecurringTransaction] = None
     best_score = 0.0
     for rec in result.scalars():
         before, after = _match_window(rec.frequency)
-        lo = rec.next_occurrence - timedelta(days=before)
-        hi = rec.next_occurrence + timedelta(days=after)
+        effective_occurrence = adjust_weekend_date(
+            rec.next_occurrence, rec.weekend_adjustment
+        )
+        lo = effective_occurrence - timedelta(days=before)
+        hi = effective_occurrence + timedelta(days=after)
         if not (lo <= tx_date <= hi):
             continue
         score = _description_similarity(rec.description, description)

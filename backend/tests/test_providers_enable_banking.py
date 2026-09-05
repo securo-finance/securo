@@ -16,9 +16,14 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jose import jwt
 
-from app.providers.base import ProviderUserActionRequired, SessionExpiredError
+from app.providers.base import (
+    ProviderUserActionRequired,
+    SessionExpiredError,
+    mask_last4,
+)
 from app.providers.enable_banking import (
     EnableBankingProvider,
+    _account_identifier,
     _map_cash_account_type,
     _txn_fingerprint,
 )
@@ -162,7 +167,7 @@ async def test_list_institutions_maps_and_dedupes_countries(eb_keys):
                         "logo": "https://l/revolut.png",
                         "bic": "REVOLT21",
                         "psu_types": ["personal"],
-                        "maximum_consent_validity": 180,
+                        "maximum_consent_validity": 15552000,
                     },
                     {"name": "Sparkasse", "country": "DE"},
                     {"name": "BNP Paribas", "country": "FR"},
@@ -376,6 +381,44 @@ async def test_get_transactions_parses_nested_and_flat_shapes(eb_keys):
 
 
 @pytest.mark.asyncio
+async def test_get_transactions_stops_on_repeated_continuation_key(eb_keys, caplog):
+    """A provider cursor loop must not duplicate a page up to the safety cap."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+    page = {
+        "transactions": [
+            {
+                "entry_reference": "looped-tx-1",
+                "status": "BOOK",
+                "transaction_amount": {"amount": "10.00", "currency": "EUR"},
+                "credit_debit_indicator": "DBIT",
+                "booking_date": "2026-05-10",
+            }
+        ],
+        "continuation_key": "cursor-a",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=page)
+
+    credentials = {
+        "session_id": "sess-x",
+        "valid_until": "2099-01-01T00:00:00Z",
+    }
+    with _patch_client(provider, handler), caplog.at_level("WARNING"):
+        transactions = await provider.get_transactions(
+            credentials, "acc-1", date(2026, 5, 1)
+        )
+
+    assert len(requests) == 2
+    assert requests[0].url.params.get("continuation_key") is None
+    assert requests[1].url.params["continuation_key"] == "cursor-a"
+    assert [transaction.external_id for transaction in transactions] == ["looped-tx-1"]
+    assert "pagination loop detected" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_refresh_credentials_expired_raises(eb_keys):
     provider = EnableBankingProvider()
     expired = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat().replace(
@@ -394,3 +437,53 @@ async def test_refresh_credentials_valid_passes(eb_keys):
     creds = {"valid_until": future, "session_id_enc": "enc"}
     out = await provider.refresh_credentials(creds)
     assert out is creds
+
+
+# ----- account identifier / masking (issue #408) -----
+
+
+def test_account_identifier_prefers_iban():
+    raw = {
+        "account_id": {"iban": "NL91ABNA0417164300", "other": {"identification": "999"}},
+        "all_account_ids": [{"identification": "888", "scheme_name": "BBAN"}],
+    }
+    assert _account_identifier(raw) == "NL91ABNA0417164300"
+
+
+def test_account_identifier_falls_back_to_other_scheme():
+    """Banks outside SEPA report no IBAN; we must still find an identifier."""
+    raw = {"account_id": {"other": {"identification": "12345678", "scheme_name": "BBAN"}}}
+    assert _account_identifier(raw) == "12345678"
+
+
+def test_account_identifier_falls_back_to_all_account_ids():
+    raw = {"all_account_ids": [{"identification": "87654321", "scheme_name": "BBAN"}]}
+    assert _account_identifier(raw) == "87654321"
+
+
+def test_account_identifier_returns_none_when_absent():
+    assert _account_identifier({"uid": "abc", "product": "Girokonto"}) is None
+    assert _account_identifier({"account_id": {}, "all_account_ids": []}) is None
+
+
+def test_mask_last4_keeps_only_the_tail():
+    # The whole point: the full IBAN never reaches the database.
+    assert mask_last4("NL91ABNA0417164300") == "4300"
+
+
+def test_mask_last4_ignores_separators():
+    """IBANs are commonly formatted in groups of four."""
+    assert mask_last4("NL91 ABNA 0417 1643 00") == "4300"
+    assert mask_last4("1234-5678") == "5678"
+
+
+def test_mask_last4_returns_none_when_unusable():
+    assert mask_last4(None) is None
+    assert mask_last4("") is None
+    # Too short to mask: render nothing rather than a partial identifier.
+    assert mask_last4("12") is None
+    assert mask_last4("- -") is None
+
+
+def test_mask_last4_handles_exactly_four():
+    assert mask_last4("1234") == "1234"

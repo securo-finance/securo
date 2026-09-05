@@ -178,7 +178,7 @@ async def test_openai_parser_handles_index_keyed_tool_call_chunks():
         def stream(self, *_a, **_kw): return _StreamResp()
 
     p = OpenAIProvider(api_key="x", base_url="http://lmstudio:1234")
-    chunks = []
+    chunks: list[ChatChunk] = []
     with patch("httpx.AsyncClient", return_value=_Client()):
         async for c in p.chat_stream([ChatMessage(role="user", content="hi")], model="m"):
             chunks.append(c)
@@ -188,7 +188,11 @@ async def test_openai_parser_handles_index_keyed_tool_call_chunks():
     assert starts[0].tool_name == "propose_categorize"
     assert starts[0].tool_call_id == "call_abc"
 
-    arg_deltas = [c.args_delta for c in chunks if c.type == "tool_call_args_delta"]
+    arg_deltas = [
+        c.args_delta for c in chunks
+        if c.type == "tool_call_args_delta"
+        and c.args_delta is not None
+    ]
     assert "".join(arg_deltas) == '{"transaction_ids":["abc"],"category_id":"def"}'
 
     ends = [c for c in chunks if c.type == "tool_call_end"]

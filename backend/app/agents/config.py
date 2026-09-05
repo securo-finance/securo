@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -63,7 +64,14 @@ class AgentSettings(BaseSettings):
     knowledge_storage_path: str = "/app/data/agent_knowledge"
     knowledge_max_file_size_mb: int = 25
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="AGENTS_", extra="ignore")
+    # Same env_file pair as the main Settings: the CWD-relative ".env" for
+    # backward compatibility plus the anchored backend/.env, so the API and the
+    # Celery worker/beat read the same file whatever directory they start from.
+    model_config = SettingsConfigDict(
+        env_file=(".env", Path(__file__).resolve().parents[2] / ".env"),
+        env_prefix="AGENTS_",
+        extra="ignore",
+    )
 
 
 @lru_cache

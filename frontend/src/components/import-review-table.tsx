@@ -21,6 +21,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
+const ISO_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/
+
+function formatLocalDate(date: string, locale: string) {
+  const match = ISO_DATE_RE.exec(date)
+  if (!match) return new Date(date).toLocaleDateString(locale)
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).toLocaleDateString(locale)
+}
+
 interface ImportReviewTableProps {
   transactions: ImportReviewTransaction[]
   categories: Category[]
@@ -108,7 +116,7 @@ export function ImportReviewTable({
           placeholder={t('import.searchTransactions')}
           value={searchQuery}
           onChange={(e) => { onSearchChange(e.target.value); onPageChange(1) }}
-          className="max-w-xs h-8 text-sm border border-border rounded-md px-3 bg-background focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+          className="max-w-xs h-8 text-sm border border-border rounded-md px-3 bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
         />
         <CategoryFilterDropdown
           categoryIds={filterCategoryIds}
@@ -120,7 +128,7 @@ export function ImportReviewTable({
           label={t('import.filterCategory')}
         />
         <select
-          className="border border-border rounded-md px-3 py-1.5 text-sm bg-background focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+          className="border border-border rounded-md px-3 py-1.5 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
           value={statusFilter}
           onChange={(e) => { onStatusFilterChange(e.target.value as 'all' | 'included' | 'excluded'); onPageChange(1) }}
         >
@@ -171,7 +179,7 @@ export function ImportReviewTable({
                     />
                   </TableCell>
                   <TableCell className="py-2.5 text-xs text-muted-foreground whitespace-nowrap">
-                    {new Date(tx.date).toLocaleDateString(dateLocale)}
+                    {formatLocalDate(tx.date, dateLocale)}
                   </TableCell>
                   <TableCell className={`py-2.5 text-sm ${tx.excluded ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
                     {tx.description}
@@ -189,7 +197,7 @@ export function ImportReviewTable({
                       groups={groups}
                       placeholder={t('import.noCategory')}
                       allowNone
-                      className="w-full border border-border rounded-md px-2 py-1 text-xs bg-background focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+                      className="w-full border border-border rounded-md px-2 py-1 text-xs bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
                     />
                   </TableCell>
                   <TableCell className="py-2.5 pr-4">

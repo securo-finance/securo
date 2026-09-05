@@ -28,18 +28,24 @@ async def list_agents(
     if rows:
         ids = [a.id for a in rows]
         conv_counts = dict(
-            (await session.execute(
-                select(Conversation.agent_id, func.count(Conversation.id))
-                .where(Conversation.agent_id.in_(ids))
-                .group_by(Conversation.agent_id)
-            )).all()
+            (r[0], r[1])
+            for r in (
+                await session.execute(
+                    select(Conversation.agent_id, func.count(Conversation.id))
+                    .where(Conversation.agent_id.in_(ids))
+                    .group_by(Conversation.agent_id)
+                )
+            ).all()
         )
         kb_counts = dict(
-            (await session.execute(
-                select(KnowledgeDoc.agent_id, func.count(KnowledgeDoc.id))
-                .where(KnowledgeDoc.agent_id.in_(ids))
-                .group_by(KnowledgeDoc.agent_id)
-            )).all()
+            (r[0], r[1])
+            for r in (
+                await session.execute(
+                    select(KnowledgeDoc.agent_id, func.count(KnowledgeDoc.id))
+                    .where(KnowledgeDoc.agent_id.in_(ids))
+                    .group_by(KnowledgeDoc.agent_id)
+                )
+            ).all()
         )
         # Stash on the model instances; pydantic AgentRead reads them.
         for a in rows:

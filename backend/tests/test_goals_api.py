@@ -231,6 +231,73 @@ async def test_update_goal_status(client: AsyncClient, auth_headers: dict, test_
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("from_status", ["completed", "archived"])
+async def test_reactivate_goal(
+    client: AsyncClient, auth_headers: dict, test_user: User, from_status: str
+):
+    """A completed or archived goal can be sent back to active."""
+    resp = await client.post(
+        "/api/goals",
+        json={"name": "Revivable Goal", "target_amount": "1000.00", "tracking_type": "manual"},
+        headers=auth_headers,
+    )
+    goal_id = resp.json()["id"]
+
+    response = await client.patch(
+        f"/api/goals/{goal_id}",
+        json={"status": from_status},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == from_status
+
+    response = await client.patch(
+        f"/api/goals/{goal_id}",
+        json={"status": "active"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_reactivate_goal_preserves_account_tracking(
+    client: AsyncClient, auth_headers: dict, test_user: User, test_account: Account
+):
+    """Archiving and reactivating must not drop the goal's tracking link."""
+    resp = await client.post(
+        "/api/goals",
+        json={
+            "name": "Tracked Goal",
+            "target_amount": "5000.00",
+            "currency": "BRL",
+            "tracking_type": "account",
+            "account_id": str(test_account.id),
+        },
+        headers=auth_headers,
+    )
+    goal_id = resp.json()["id"]
+
+    await client.patch(
+        f"/api/goals/{goal_id}",
+        json={"status": "archived"},
+        headers=auth_headers,
+    )
+    response = await client.patch(
+        f"/api/goals/{goal_id}",
+        json={"status": "active"},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "active"
+    assert data["tracking_type"] == "account"
+    assert data["account_id"] == str(test_account.id)
+    assert float(data["current_amount"]) == 1500.00
+
+
+@pytest.mark.asyncio
 async def test_update_goal_tracking_type(client: AsyncClient, auth_headers: dict, test_user: User):
     resp = await client.post(
         "/api/goals",

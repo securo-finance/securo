@@ -1,8 +1,8 @@
 from functools import lru_cache
 from os import getenv
 from pathlib import Path
-from urllib.parse import urlparse
 
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Use the same environment variable that systemd uses: https://systemd.io/CREDENTIALS/
@@ -21,21 +21,25 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/securo"
 
     # Auth
-    secret_key: str = "change-me-in-production"
+    secret_key: SecretStr = SecretStr("change-me-in-production")
+    local_auth_enabled: bool = True
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24  # 24 hours
 
     # Pluggy
     pluggy_client_id: str = ""
-    pluggy_client_secret: str = ""
-    pluggy_oauth_redirect_uri: str = "http://localhost:5173/oauth/callback"
+    pluggy_client_secret: SecretStr = SecretStr("")
+    # Empty means "derive from FRONTEND_URL" (see BankProvider.redirect_uri).
+    # Set explicitly only when the URL registered in the provider dashboard
+    # differs from where the app is served.
+    pluggy_oauth_redirect_uri: str = ""
 
     # Enable Banking (European PSD2 banks)
     enable_banking_app_id: str = ""
-    enable_banking_private_key: str = ""  # raw PEM; supports \n-escaped envs
+    enable_banking_private_key: SecretStr = SecretStr("")  # raw PEM; supports \n-escaped envs
     enable_banking_private_key_file: str = ""  # path to PEM file; takes precedence
     enable_banking_api_url: str = "https://api.enablebanking.com"
-    enable_banking_oauth_redirect_uri: str = "http://localhost:5173/oauth/callback"
+    enable_banking_oauth_redirect_uri: str = ""  # empty derives from FRONTEND_URL
 
     # SimpleFIN Bridge (US/intl banks, paste-a-token flow). Off by default.
     # The bridge URL defaults to the beta/sandbox host so users can test with
@@ -48,29 +52,21 @@ class Settings(BaseSettings):
 
     # WebAuthn / passkeys
     webauthn_rp_name: str = "Securo"
-    # Empty means derive from frontend_url host, e.g. localhost for http://localhost:5173.
+    # Empty means the RP ID follows the domain the browser is on, which is what
+    # most deployments want. Set it to pin passkeys to one domain (e.g.
+    # securo.example.com); requests from other origins are then rejected.
     webauthn_rp_id: str = ""
-    # Empty means use frontend_url. Must match the browser origin exactly.
+    # Empty means the expected origin follows the browser. Only set this when the
+    # app is reached at exactly one origin and you want it enforced.
     webauthn_origin: str = ""
     webauthn_challenge_ttl_seconds: int = 300
-
-    @property
-    def resolved_webauthn_origin(self) -> str:
-        return self.webauthn_origin or self.frontend_url
-
-    @property
-    def resolved_webauthn_rp_id(self) -> str:
-        if self.webauthn_rp_id:
-            return self.webauthn_rp_id
-        parsed = urlparse(self.frontend_url)
-        return parsed.hostname or "localhost"
 
     # Defaults
     default_currency: str = "USD"  # fallback currency when user preference is unavailable
 
     # FX Rates
     openexchangerates_app_id: str = ""
-    supported_currencies: str = "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,CLP,DOP,RUB,GTQ,PHP"  # comma-separated list
+    supported_currencies: str = "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,CLP,DOP,RUB,GTQ,PHP,UAH,NZD,VND,SGD,AZN,TRY"  # comma-separated list
     fx_sync_mode: str = "on_demand"  # "on_demand" or "scheduled"
 
     # Storage
@@ -79,12 +75,16 @@ class Settings(BaseSettings):
     storage_max_file_size_mb: int = 10
     storage_allowed_extensions: str = "jpg,jpeg,png,webp,gif,heic,pdf"
     storage_max_attachments_per_transaction: int = 10
+    # An invoice gathers more paper than a transaction does: the bill, the
+    # fiscal document, a receipt, the contract behind it, and a correction
+    # of any of them.
+    storage_max_attachments_per_invoice: int = 20
 
     # S3 Storage (for future use)
     storage_s3_bucket: str = ""
     storage_s3_region: str = ""
-    storage_s3_access_key: str = ""
-    storage_s3_secret_key: str = ""
+    storage_s3_access_key: SecretStr = SecretStr("")
+    storage_s3_secret_key: SecretStr = SecretStr("")
     storage_s3_endpoint_url: str = ""  # for S3-compatible services (MinIO, DigitalOcean Spaces)
 
     # Registration
@@ -97,7 +97,7 @@ class Settings(BaseSettings):
         ""  # e.g. https://auth.example.com/application/o/securo/.well-known/openid-configuration
     )
     oidc_client_id: str = ""
-    oidc_client_secret: str = ""
+    oidc_client_secret: SecretStr = SecretStr("")
     oidc_redirect_uri: str = ""  # defaults to {FRONTEND_URL}/api/auth/oidc/callback
     oidc_scopes: str = "openid email profile"
     oidc_auto_register: bool = True
@@ -125,7 +125,43 @@ class Settings(BaseSettings):
     # external dependency on the Brazilian government endpoint).
     tesouro_direto_enabled: bool = True
 
-    model_config = SettingsConfigDict(env_file=".env", secrets_dir=CREDENTIALS_DIRECTORY)
+    @property
+    def oidc_login_available(self) -> bool:
+        return bool(self.oidc_enabled and self.oidc_client_id and self.oidc_discovery_url)
+
+    @model_validator(mode="after")
+    def validate_auth_settings(self) -> "Settings":
+        if not self.local_auth_enabled and not self.oidc_login_available:
+            missing = []
+            if not self.oidc_enabled:
+                missing.append("OIDC_ENABLED=true")
+            if not self.oidc_client_id:
+                missing.append("OIDC_CLIENT_ID")
+            if not self.oidc_discovery_url:
+                missing.append("OIDC_DISCOVERY_URL")
+            raise ValueError(
+                "LOCAL_AUTH_ENABLED=false requires a complete OIDC configuration; "
+                f"missing: {', '.join(missing)}"
+            )
+        return self
+
+    # The CWD-relative ".env" is kept for backward compatibility; the anchored
+    # backend/.env guarantees the API and the Celery worker/beat resolve the
+    # same file no matter which working directory each service is launched
+    # from (a systemd unit without WorkingDirectory= used to leave the worker
+    # with default settings, silently disabling every bank-sync provider).
+    #
+    # extra="ignore" because the same .env is shared with Docker Compose and with
+    # the optional modules: it legitimately holds keys this model doesn't declare
+    # (COMPOSE_PROFILES, FRONTEND_PORT, AGENTS_*, ...). Unknown keys coming from
+    # the process environment are ignored by pydantic-settings anyway; without
+    # this, the very same key written into the .env file aborted startup with
+    # "Extra inputs are not permitted".
+    model_config = SettingsConfigDict(
+        env_file=(".env", Path(__file__).resolve().parents[2] / ".env"),
+        secrets_dir=CREDENTIALS_DIRECTORY,
+        extra="ignore",
+    )
 
 
 @lru_cache

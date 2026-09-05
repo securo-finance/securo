@@ -32,7 +32,12 @@ from app.schemas.report import (
     ReportResponse,
     ReportSummary,
 )
-from app.services.dashboard_service import _get_open_accounts, _account_balance_at
+from app.services.dashboard_service import (
+    _account_balance_at,
+    _counts_as_user_pnl_row,
+    _get_forecast_transactions,
+    _get_open_accounts,
+)
 
 CATEGORY_TREND_TOP_N = 11
 
@@ -52,8 +57,17 @@ _ASSET_TYPE_COLORS: dict[str, str] = {
 }
 
 
-def _report_start_date(today: date, months: int, period: str | None = None) -> date:
-    """Resolve historical report start date."""
+def _report_start_date(
+    today: date, months: int, period: str | None = None, days: int | None = None
+) -> date:
+    """Resolve historical report start date.
+
+    `days` requests an exact rolling window ending today (inclusive), instead of
+    the month-aligned window the `months` ranges use.
+    """
+    if days:
+        return today - timedelta(days=days - 1)
+
     if period == "ytd":
         return date(today.year, 1, 1)
 
@@ -370,12 +384,13 @@ async def get_income_expenses_report(
     currency: str = "USD",
     account_ids: Optional[list[uuid.UUID]] = None,
     period: str | None = None,
+    days: int | None = None,
 ) -> ReportResponse:
     """Build a ReportResponse for income vs expenses over time."""
     filtered = account_ids is not None
     acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
     today = date.today()
-    start = _report_start_date(today, months, period)
+    start = _report_start_date(today, months, period, days)
 
     # Get user's primary currency + global reporting mode
     user = await session.get(User, user_id)
@@ -401,6 +416,7 @@ async def get_income_expenses_report(
             report_date >= start,
             report_date <= today,
             Transaction.source != "opening_balance",
+            Transaction.status == "posted",
             counts_as_user_pnl(),
             *acct_filter,
         )
@@ -408,7 +424,9 @@ async def get_income_expenses_report(
         .order_by(label_expr)
     )
 
-    # Build data map from query results
+    # Build the actual (posted-only) data map. Forecast rows are kept in a
+    # separate map below so the report can expose the same distinction as
+    # balances: actual income/expenses never silently absorb pending entries.
     data_map: dict[str, tuple[float, float]] = {}
     for row in result.all():
         income = float(row[1] or 0)
@@ -458,6 +476,7 @@ async def get_income_expenses_report(
             report_date >= start,
             report_date <= today,
             Transaction.source != "opening_balance",
+            Transaction.status == "posted",
             counts_as_user_pnl(),
         )
         .group_by(label_expr, Transaction.currency)
@@ -521,6 +540,7 @@ async def get_income_expenses_report(
             report_date >= start,
             report_date <= today,
             Transaction.source != "opening_balance",
+            Transaction.status == "posted",
             counts_as_user_pnl(),
         )
         .group_by(label_expr, Transaction.currency)
@@ -546,13 +566,19 @@ async def get_income_expenses_report(
             existing_expenses + share_expenses_pri,
         )
 
+    forecast_map: dict[str, tuple[float, float]] = {}
+
     # Add recurring projections for each month in the range (consistent with dashboard)
     from app.services.dashboard_service import _month_range, _get_recurring_projections
 
     cursor = start
     while cursor <= today:
         m_start, m_end = _month_range(cursor)
-        projections = await _get_recurring_projections(session, workspace_id, m_start, m_end, account_ids)
+        # A day-window range can start mid-month: only project occurrences that
+        # fall inside the requested window.
+        projections = await _get_recurring_projections(
+            session, workspace_id, max(m_start, start), m_end, account_ids
+        )
         for proj in projections:
             # Convert to primary currency
             converted, _ = await fx_convert(
@@ -560,11 +586,35 @@ async def get_income_expenses_report(
             )
             proj_amount = float(converted)
             label = _format_date_label(cursor, interval)
-            existing_income, existing_expenses = data_map.get(label, (0.0, 0.0))
+            existing_income, existing_expenses = forecast_map.get(label, (0.0, 0.0))
             if proj["type"] == "credit":
-                data_map[label] = (existing_income + proj_amount, existing_expenses)
+                forecast_map[label] = (existing_income + proj_amount, existing_expenses)
             else:
-                data_map[label] = (existing_income, existing_expenses + proj_amount)
+                forecast_map[label] = (existing_income, existing_expenses + proj_amount)
+        forecast_transactions = await _get_forecast_transactions(
+            session, workspace_id, max(m_start, start), m_end, account_ids,
+            range_date_col=report_date,
+        )
+        for tx in forecast_transactions:
+            if not _counts_as_user_pnl_row(tx):
+                continue
+            if tx.amount_primary is not None:
+                amount = abs(float(tx.amount_primary))
+            else:
+                converted, _ = await fx_convert(
+                    session, Decimal(str(abs(tx.amount))), tx.currency, primary_currency,
+                )
+                amount = abs(float(converted))
+            tx_report_date = (
+                tx.effective_bill_date
+                or (tx.effective_date if accounting_mode == "accrual" else tx.date)
+            )
+            label = _format_date_label(tx_report_date, interval)
+            existing_income, existing_expenses = forecast_map.get(label, (0.0, 0.0))
+            if tx.type == "credit":
+                forecast_map[label] = (existing_income + amount, existing_expenses)
+            else:
+                forecast_map[label] = (existing_income, existing_expenses + amount)
         # Advance to next month
         if cursor.month == 12:
             cursor = date(cursor.year + 1, 1, 1)
@@ -576,10 +626,10 @@ async def get_income_expenses_report(
     trend: list[ReportDataPoint] = []
     total_income = 0.0
     total_expenses = 0.0
-
     for point in points:
         label = _format_date_label(point, interval)
         income, expenses = data_map.get(label, (0.0, 0.0))
+        forecast_income, forecast_expenses = forecast_map.get(label, (0.0, 0.0))
         net = round(income - expenses, 2)
         total_income += income
         total_expenses += expenses
@@ -589,8 +639,17 @@ async def get_income_expenses_report(
             breakdowns={
                 "income": round(income, 2),
                 "expenses": round(expenses, 2),
+                "projectedIncome": round(forecast_income, 2),
+                "projectedExpenses": round(forecast_expenses, 2),
             },
         ))
+
+    # A daily report's visible axis ends today, but the monthly forecast query
+    # can still contain future installments/generate-ahead rows in the current
+    # month. Keep those rows in the projected summary even when they have no
+    # historical point to render yet.
+    projected_income = sum(income for income, _ in forecast_map.values())
+    projected_expenses = sum(expenses for _, expenses in forecast_map.values())
 
     total_net = round(total_income - total_expenses, 2)
 
@@ -622,6 +681,18 @@ async def get_income_expenses_report(
                 color="#F43F5E",
             ),
             ReportBreakdown(
+                key="projectedIncome",
+                label="Projected Income",
+                value=round(projected_income, 2),
+                color="#34D399",
+            ),
+            ReportBreakdown(
+                key="projectedExpenses",
+                label="Projected Expenses",
+                value=round(projected_expenses, 2),
+                color="#FB7185",
+            ),
+            ReportBreakdown(
                 key="netIncome",
                 label="Net Income",
                 value=total_net,
@@ -632,7 +703,7 @@ async def get_income_expenses_report(
 
     meta = ReportMeta(
         type="income_expenses",
-        series_keys=["income", "expenses"],
+        series_keys=["income", "expenses", "projectedIncome", "projectedExpenses"],
         currency=primary_currency,
         interval=interval,
     )
@@ -655,6 +726,7 @@ async def get_income_expenses_report(
             report_date >= start,
             report_date <= today,
             Transaction.source != "opening_balance",
+            Transaction.status == "posted",
             counts_as_user_pnl(),
             *acct_filter,
         )
@@ -718,8 +790,10 @@ async def get_income_expenses_report(
             report_date <= today,
             Transaction.source != "opening_balance",
             Transaction.type == "debit",
+            Transaction.status == "posted",
             Transaction.transfer_pair_id.is_(None),
             Transaction.is_ignored.is_(False),
+            Transaction.exclude_from_pnl.is_(False),
             Category.treat_as_transfer.is_(True),
             Category.is_ignored.is_(False),
             *acct_filter,
@@ -755,6 +829,7 @@ async def get_income_expenses_report(
             report_date >= start,
             report_date <= today,
             Transaction.source != "opening_balance",
+            Transaction.status == "posted",
             counts_as_user_pnl(),
             *acct_filter,
         )
@@ -802,6 +877,7 @@ async def get_income_expenses_report(
             report_date >= start,
             report_date <= today,
             Transaction.source != "opening_balance",
+            Transaction.status == "posted",
             counts_as_user_pnl(),
         )
         .group_by(label_expr, Transaction.category_id, Transaction.currency)
@@ -880,6 +956,61 @@ async def get_income_expenses_report(
             cat_trend_map[comp_key]["total"] += proj_amount
             cat_trend_map[comp_key]["periods"][period_label] = (
                 cat_trend_map[comp_key]["periods"].get(period_label, 0.0) + proj_amount
+            )
+
+        forecast_transactions = await _get_forecast_transactions(
+            session, workspace_id, m_start, m_end, account_ids,
+            range_date_col=report_date,
+        )
+        for tx in forecast_transactions:
+            if not _counts_as_user_pnl_row(tx):
+                continue
+            cat_id_str = str(tx.category_id) if tx.category_id else "uncategorized"
+            group = "income" if tx.type == "credit" else "expenses"
+            tx_report_date = (
+                tx.effective_bill_date
+                or (tx.effective_date if accounting_mode == "accrual" else tx.date)
+            )
+            forecast_period_label = _format_date_label(tx_report_date, interval)
+            if cat_id_str != "uncategorized" and cat_id_str not in cat_cache:
+                cat_row = await session.execute(
+                    select(Category.name, Category.color).where(Category.id == tx.category_id)
+                )
+                row = cat_row.one_or_none()
+                cat_cache[cat_id_str] = {
+                    "label": row[0] if row else "Uncategorized",
+                    "color": row[1] if row else "#6B7280",
+                }
+            info = cat_cache.get(
+                cat_id_str, {"label": "Uncategorized", "color": "#6B7280"}
+            )
+            if tx.amount_primary is not None:
+                forecast_amount = abs(float(tx.amount_primary))
+            else:
+                converted, _ = await fx_convert(
+                    session, Decimal(str(abs(tx.amount))), tx.currency, primary_currency,
+                )
+                forecast_amount = abs(float(converted))
+            comp_key = (cat_id_str, group)
+            if comp_key in comp_map:
+                comp_map[comp_key]["value"] += forecast_amount
+            else:
+                comp_map[comp_key] = {
+                    "label": info["label"],
+                    "color": info["color"],
+                    "value": forecast_amount,
+                }
+            if comp_key not in cat_trend_map:
+                cat_trend_map[comp_key] = {
+                    "label": info["label"],
+                    "color": info["color"],
+                    "total": 0.0,
+                    "periods": {},
+                }
+            cat_trend_map[comp_key]["total"] += forecast_amount
+            cat_trend_map[comp_key]["periods"][forecast_period_label] = (
+                cat_trend_map[comp_key]["periods"].get(forecast_period_label, 0.0)
+                + forecast_amount
             )
 
         if cursor2.month == 12:
@@ -1028,6 +1159,7 @@ async def _get_baseline_projection(
             Account.is_closed == False,
             Transaction.date <= today,
             Transaction.source != "opening_balance",
+            Transaction.status == "posted",
             counts_as_pnl(),
             *acct_filter,
         )
@@ -1051,6 +1183,7 @@ async def _get_baseline_projection(
             Transaction.date >= window_start,
             Transaction.date <= today,
             Transaction.source != "opening_balance",
+            Transaction.status == "posted",
             counts_as_pnl(),
             *acct_filter,
         )
@@ -1187,6 +1320,7 @@ async def get_cash_flow_report(
             flow_date_col > chart_start,
             flow_date_col <= today,
             Transaction.source != "opening_balance",
+            Transaction.status == "posted",
             counts_as_pnl(),
             *acct_filter,
         )
@@ -1216,6 +1350,7 @@ async def get_cash_flow_report(
             flow_date_col > today,
             flow_date_col <= end,
             Transaction.source != "opening_balance",
+            Transaction.status == "posted",
             counts_as_pnl(),
             *acct_filter,
         )
@@ -1230,42 +1365,60 @@ async def get_cash_flow_report(
             continue
         _add_flow(flow_date, abs(amount_primary), tx_type == "credit")
 
-    # 2. Accrual mode: pending CC purchases (purchase date <= today, due
-    #    date in the forward window) already reduced today's balance via the
-    #    CC liability. We re-project them as outflows on their effective_date,
-    #    so add them back to both balance snapshots to avoid double-counting.
+    # 2. Pending rows are forecast rows. They never enter the past/actual
+    # section, including pending credit-card purchases in accrual mode.
+    # Use the effective bill date when cash leaves on the card's due date.
+    # Pending rows whose forecast date is already past still belong to the
+    # payable position today, so carry them into the forward projected walk
+    # instead of silently dropping them.
+    pending_current_delta = 0.0
+    pending_forecast = await _get_forecast_transactions(
+        session, workspace_id, date.min, end + timedelta(days=1), account_ids,
+        range_date_col=flow_date_col,
+    )
+    for tx in pending_forecast:
+        if tx.status != "pending" or not _counts_as_user_pnl_row(tx):
+            continue
+        flow_date = tx.effective_bill_date or (tx.effective_date if accrual else tx.date)
+        if flow_date > end:
+            continue
+        if tx.amount_primary is not None:
+            amount_primary = abs(float(tx.amount_primary))
+        else:
+            amount_primary = await _to_primary(Decimal(str(abs(tx.amount))), tx.currency)
+        if amount_primary:
+            if flow_date <= today:
+                # A connected account's provider number is authoritative and
+                # may already include this pending row. Keep provider parity
+                # rather than guessing whether it was included.
+                if not (tx.account and tx.account.connection_id):
+                    pending_current_delta += amount_primary if tx.type == "credit" else -amount_primary
+            else:
+                _add_flow(flow_date, amount_primary, tx.type == "credit")
+
+    # In accrual mode, a posted card purchase made today is already part of a
+    # manual card's liability, while its cash impact belongs on the future bill
+    # date. Move that posted amount back into the projected starting position
+    # before the booked future flow is applied. Pending rows intentionally do
+    # not use this adjustment: their posted-only current balance has excluded
+    # them and the generic pending handling above is sufficient.
     if accrual:
-        pending_cc = await session.execute(
-            select(
-                Transaction.type,
-                Transaction.amount,
-                Transaction.amount_primary,
-                Transaction.currency,
-            )
-            .join(Account, Transaction.account_id == Account.id)
-            .where(
-                Transaction.workspace_id == workspace_id,
-                Account.is_closed == False,
-                Account.type == "credit_card",
-                Transaction.date <= today,
-                Transaction.effective_date > today,
-                Transaction.effective_date <= end,
-                Transaction.source != "opening_balance",
-                counts_as_pnl(),
-                *acct_filter,
-            )
-        )
-        for tx_type, amt, amt_primary, ccy in pending_cc.all():
-            if amt_primary is not None:
-                amount_primary = float(amt_primary)
-            else:
-                amount_primary = await _to_primary(Decimal(str(amt or 0)), ccy)
-            if amount_primary == 0:
+        for tx in pending_forecast:
+            if tx.status != "posted" or not _counts_as_user_pnl_row(tx):
                 continue
-            if tx_type == "debit":
-                current_balance += abs(amount_primary)
+            if not tx.account or tx.account.type != "credit_card" or tx.date > today:
+                continue
+            flow_date = tx.effective_bill_date or tx.effective_date
+            if flow_date <= today or flow_date > end:
+                continue
+            if tx.amount_primary is not None:
+                amount_primary = abs(float(tx.amount_primary))
             else:
-                current_balance -= abs(amount_primary)
+                amount_primary = await _to_primary(Decimal(str(abs(tx.amount))), tx.currency)
+            if tx.type == "debit":
+                current_balance += amount_primary
+            else:
+                current_balance -= amount_primary
 
     # 3. Forward projection. Default: deterministic recurring rules.
     #    Baseline mode: replace them with a historical-mean estimate so the
@@ -1320,7 +1473,9 @@ async def get_cash_flow_report(
             cat_totals[key] = {"label": info["label"], "color": info["color"], "value": 0.0}
         cat_totals[key]["value"] += amount_primary
 
-    # 4. Walk day-by-day. The walk is anchored at today's authoritative
+    # 4. Walk day-by-day. The actual section is anchored at today's
+    # authoritative balance. The forward projected section starts from that
+    # balance plus pending payables already dated today or earlier.
     #    balance (``current_balance`` from ``_balance_at``) rather than at
     #    ``chart_starting_balance``: opening-balance transactions are excluded
     #    from the past-actuals query, so a forward walk seeded from
@@ -1350,8 +1505,10 @@ async def get_cash_flow_report(
         daily_inflow[cursor_d] = prev_bucket["inflow"]
         daily_outflow[cursor_d] = prev_bucket["outflow"]
 
-    # Forward walk: balance(d+1) = balance(d) + net_flow(d+1).
-    running = current_balance
+    # Forward walk: balance(d+1) = balance(d) + net_flow(d+1). Pending rows
+    # already due are part of the projected starting position, not a second
+    # dated flow in the future.
+    running = current_balance + pending_current_delta
     cursor_d = today
     while cursor_d < end:
         cursor_d = cursor_d + timedelta(days=1)

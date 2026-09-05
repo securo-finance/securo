@@ -1,0 +1,4 @@
+# Brazil. CNPJ for companies, CPF for people, plus the state and municipal
+# registrations that NFS-e asks for.
+code = "BR"
+kinds = ["cnpj", "cpf", "ie", "im"]

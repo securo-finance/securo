@@ -18,6 +18,41 @@ from typing import Literal, Optional
 RefreshOutcome = Literal["refreshed", "skipped", "needs_user_action", "failed"]
 
 
+def default_oauth_redirect_uri() -> str:
+    """The OAuth callback URL implied by where the frontend is served.
+
+    Providers fall back to this when their own ``*_OAUTH_REDIRECT_URI`` is
+    unset, so a deployment on a custom port or domain works without setting one
+    variable per provider. Deriving it here rather than in Compose also keeps
+    the compose files free of nested ``${VAR:-${OTHER:-x}}`` interpolation,
+    which podman-compose cannot parse (containers/podman-compose#1064).
+    """
+    from app.core.config import get_settings
+
+    return f"{get_settings().frontend_url.rstrip('/')}/oauth/callback"
+
+
+def mask_last4(value: Optional[str]) -> Optional[str]:
+    """Reduce a bank-assigned account identifier to its last four characters.
+
+    Providers expose different identifiers for the same purpose: an IBAN
+    (Enable Banking), a branch/account number (Pluggy), a card number. They all
+    serve one job here, telling two same-named accounts apart, so we normalize
+    them to a single shape and deliberately keep only the tail. Storing the full
+    identifier would put a payable bank reference in the database for no gain.
+
+    Separators (spaces, dashes) are stripped first, since IBANs are commonly
+    formatted in groups of four. Returns None when the source is missing or too
+    short to mask, so callers never render a partial identifier.
+    """
+    if not value:
+        return None
+    cleaned = "".join(ch for ch in str(value) if ch.isalnum())
+    if len(cleaned) < 4:
+        return None
+    return cleaned[-4:]
+
+
 @dataclass
 class AccountData:
     external_id: str
@@ -31,6 +66,17 @@ class AccountData:
     minimum_payment: Optional[Decimal] = None
     card_brand: Optional[str] = None
     card_level: Optional[str] = None
+    # Last 4 chars of the bank's own identifier for the account, when the
+    # provider exposes one. Disambiguates accounts a bank reports under an
+    # identical name (issue #408). Never the full identifier — see mask_last4.
+    masked_number: Optional[str] = None
+    # Per-account institution override (SimpleFIN — issue #345). None = same
+    # as connection. The external id is the provider's stable org id
+    # (SimpleFIN conn_id) so a renamed bank updates its row instead of
+    # minting a new one; name-only hints fall back to name identity.
+    institution_external_id: Optional[str] = None
+    institution_name: Optional[str] = None
+    institution_logo_url: Optional[str] = None
 
 
 @dataclass
@@ -111,9 +157,20 @@ class HoldingData:
     purchase_price: Optional[Decimal] = None
     purchase_date: Optional[date] = None
     isin: Optional[str] = None
+    # Exchange/asset symbol (e.g. "AAPL", "DOGE") for the dedicated
+    # `assets.ticker` column. Kept separate from `currency`: connectors that
+    # report a crypto position put the ticker in both, and only one of them
+    # belongs in a 3-char ISO currency field.
+    ticker: Optional[str] = None
     maturity_date: Optional[date] = None
     is_withdrawn: bool = False  # provider signaled the position was sold/transferred
     metadata: Optional[dict] = None
+    # Owning-account hint (SimpleFIN — issue #345): holdings are reported per
+    # account, so each investment account gets its own wallet ("401(k)" apart
+    # from "Rollover IRA"). None = the connection-default wallet, for
+    # providers whose holdings aren't attributable to an account.
+    account_external_id: Optional[str] = None
+    account_name: Optional[str] = None
 
 
 @dataclass
@@ -165,6 +222,17 @@ class ProviderRateLimited(Exception):
     """
 
 
+class ProviderNotConfiguredError(Exception):
+    """Raised when a connection references a provider missing from the registry.
+
+    This is a server configuration problem, not a bank problem — typically one
+    process (e.g. the Celery worker) is not loading the environment that
+    enables the provider while the API process is. The credentials are fine,
+    so callers must not flip the connection to "error": the reconnect banner
+    would send the user chasing the wrong fix (and burning setup tokens).
+    """
+
+
 class FxRateProvider(ABC):
     """Abstract interface for FX rate providers."""
 
@@ -210,11 +278,13 @@ class BankProvider(ABC):
         Each provider reads its own env var (e.g.
         ``PLUGGY_OAUTH_REDIRECT_URI``, ``ENABLE_BANKING_OAUTH_REDIRECT_URI``)
         so different providers can register different URLs in their
-        respective dashboards.
+        respective dashboards. When unset the URL is derived from
+        ``FRONTEND_URL`` so a non-default port or domain works out of the box.
         """
         from app.core.config import get_settings
 
-        return get_settings().pluggy_oauth_redirect_uri
+        settings = get_settings()
+        return settings.pluggy_oauth_redirect_uri or default_oauth_redirect_uri()
 
     async def create_connect_token(
         self, client_user_id: str, item_id: str | None = None
@@ -280,7 +350,7 @@ class BankProvider(ABC):
         """Refresh access token if needed."""
         ...
 
-    async def trigger_refresh(self, credentials: dict) -> RefreshOutcome:
+    async def trigger_refresh(self, credentials: dict | None) -> RefreshOutcome:
         """Ask the provider to pull fresh data from the underlying institution.
 
         Some aggregator providers cache the bank's data on their own side and

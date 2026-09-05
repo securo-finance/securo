@@ -229,7 +229,7 @@ async def test_anthropic_chat_stream_parses_text_block_sequence():
 
     text = "".join(c.text or "" for c in chunks if c.type == "text_delta")
     assert text == "Hi!"
-    assert any(c.type == "usage" and c.usage.output_tokens == 2 for c in chunks)
+    assert any(c.type == "usage" and c.usage is not None and c.usage.output_tokens == 2 for c in chunks)
     assert any(c.type == "finish" and c.finish_reason == "end_turn" for c in chunks)
 
 

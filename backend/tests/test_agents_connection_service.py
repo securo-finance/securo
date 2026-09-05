@@ -61,9 +61,13 @@ async def test_default_is_unique_per_user(session, test_user):
     )
     # Re-fetch a — its default flag should be cleared.
     refreshed_a = await cs.get_connection(session, a.id, test_user.id)
+
+    assert refreshed_a is not None
     await session.refresh(refreshed_a)
     assert refreshed_a.is_default is False
     refreshed_b = await cs.get_connection(session, b.id, test_user.id)
+
+    assert refreshed_b is not None
     await session.refresh(refreshed_b)
     assert refreshed_b.is_default is True
 
@@ -90,6 +94,8 @@ async def test_update_connection_handles_partial_and_default_swap(session, test_
 
     # a should be demoted.
     refreshed_a = await cs.get_connection(session, a.id, test_user.id)
+
+    assert refreshed_a is not None
     await session.refresh(refreshed_a)
     assert refreshed_a.is_default is False
 
@@ -110,9 +116,11 @@ async def test_update_connection_can_clear_api_key(session, test_user):
     conn = await cs.create_connection(
         session, test_user.id, name="x", kind="openai", api_key="sk-old",
     )
+
     assert conn.api_key_encrypted is not None
 
     out = await cs.update_connection(session, conn.id, test_user.id, api_key="")
+    assert out is not None
     assert out.api_key_encrypted is None
 
 
@@ -301,3 +309,42 @@ async def test_probe_swallows_httpx_errors(monkeypatch):
     out = await cs.test_connection(_conn(kind="ollama"))
     assert out["ok"] is False
     assert "unreachable" in out["detail"]
+
+
+@pytest.mark.asyncio
+async def test_probe_names_the_error_when_it_stringifies_empty(monkeypatch):
+    """httpx connect timeouts carry no message, which used to render as a
+    bare 'unreachable:' with no reason and no address in the UI."""
+    import httpx
+
+    class _TimesOut:
+        def __init__(self, *_, **__):
+            pass
+
+        async def __aenter__(self):
+            raise httpx.ConnectTimeout("")
+
+        async def __aexit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(httpx, "AsyncClient", _TimesOut)
+    out = await cs.test_connection(
+        _conn(kind="openai_compatible", base_url="http://192.168.1.152:1234")
+    )
+    assert out["ok"] is False
+    assert "ConnectTimeout" in out["detail"]
+    assert "192.168.1.152:1234" in out["detail"]
+
+
+def test_routing_hint_only_fires_inside_a_container(monkeypatch):
+    """A LAN or loopback address the browser can reach is often unroutable
+    from the container, so suggest the host gateway. Bare-metal installs
+    reach those addresses fine and must not get the hint."""
+    monkeypatch.setattr(cs, "_in_container", lambda: True)
+    assert "host.docker.internal:1234" in cs._routing_hint("http://192.168.1.152:1234")
+    assert "host.docker.internal:11434" in cs._routing_hint("http://localhost:11434")
+    # Public hosts are reachable from anywhere; nothing to suggest.
+    assert cs._routing_hint("https://api.openai.com/v1") == ""
+
+    monkeypatch.setattr(cs, "_in_container", lambda: False)
+    assert cs._routing_hint("http://192.168.1.152:1234") == ""

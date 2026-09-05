@@ -34,6 +34,7 @@ OIDC_STATE_TTL = 600
 class OIDCConfigResponse(BaseModel):
     enabled: bool
     provider_name: str = "OIDC"
+    local_auth_enabled: bool = True
 
 
 async def _discover() -> dict[str, Any]:
@@ -57,8 +58,9 @@ def _redirect_uri() -> str:
 async def oidc_config():
     settings = get_settings()
     return OIDCConfigResponse(
-        enabled=bool(settings.oidc_enabled and settings.oidc_client_id and settings.oidc_discovery_url),
+        enabled=settings.oidc_login_available,
         provider_name=settings.oidc_provider_name or "OIDC",
+        local_auth_enabled=settings.local_auth_enabled,
     )
 
 
@@ -106,7 +108,7 @@ async def _exchange_code(discovery: dict[str, Any], code: str, code_verifier: st
     data = {
         "grant_type": "authorization_code",
         "client_id": settings.oidc_client_id,
-        "client_secret": settings.oidc_client_secret,
+        "client_secret": settings.oidc_client_secret.get_secret_value(),
         "code": code,
         "redirect_uri": _redirect_uri(),
         "code_verifier": code_verifier,

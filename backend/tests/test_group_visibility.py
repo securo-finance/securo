@@ -61,6 +61,8 @@ async def test_email_auto_resolves_to_linked_user(
         test_workspace.id,
         GroupMemberCreate(name="Friend", email="friend@example.com"),
     )
+
+    assert member is not None
     assert member.linked_user_id == other.id
 
 
@@ -77,6 +79,8 @@ async def test_email_unknown_creates_shadow(
         test_workspace.id,
         GroupMemberCreate(name="Stranger", email="nobody@example.org"),
     )
+
+    assert member is not None
     assert member.linked_user_id is None
     assert member.email == "nobody@example.org"
 
@@ -232,6 +236,9 @@ async def test_linked_member_can_settle_own_debt(
         GroupMemberCreate(name="A", email="viewer@example.com"),
     )
 
+    assert self_m is not None
+    assert a is not None
+
     settlement = await settlement_service.create_settlement(
         session,
         group.id,
@@ -265,8 +272,11 @@ async def test_linked_member_cannot_settle_someone_elses_debt(
         GroupMemberCreate(name="A", email="viewer@example.com"),
     )
     b = await group_service.create_member(
-        session, group.id, test_workspace.id, GroupMemberCreate(name="B")
+        session, group.id, test_workspace.id,         GroupMemberCreate(name="B")
     )
+
+    assert a is not None
+    assert b is not None
 
     with pytest.raises(PermissionError):
         await settlement_service.create_settlement(

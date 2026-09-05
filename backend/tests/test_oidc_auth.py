@@ -4,6 +4,7 @@ import json
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from pydantic import SecretStr
 from httpx import AsyncClient
 from sqlalchemy import select
 
@@ -35,7 +36,7 @@ def oidc_settings(monkeypatch):
     settings.oidc_provider_name = "Pocket ID"
     settings.oidc_discovery_url = "https://id.example.com/.well-known/openid-configuration"
     settings.oidc_client_id = "securo"
-    settings.oidc_client_secret = "secret"
+    settings.oidc_client_secret = SecretStr("secret")
     settings.frontend_url = "http://test"
     settings.oidc_sync_roles = False
     settings.oidc_roles_claim = "groups"
@@ -115,7 +116,22 @@ async def test_decode_id_token_accepts_google_style_at_hash(monkeypatch, oidc_se
 async def test_oidc_config_disabled_by_default(client: AsyncClient, clean_db):
     response = await client.get("/api/auth/oidc/config")
     assert response.status_code == 200
-    assert response.json()["enabled"] is False
+    data = response.json()
+    assert data["enabled"] is False
+    assert data["local_auth_enabled"] is True
+
+
+@pytest.mark.asyncio
+async def test_oidc_config_exposes_local_auth_disabled(client: AsyncClient, clean_db, oidc_settings):
+    oidc_settings.local_auth_enabled = False
+
+    response = await client.get("/api/auth/oidc/config")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["enabled"] is True
+    assert data["provider_name"] == "Pocket ID"
+    assert data["local_auth_enabled"] is False
 
 
 @pytest.mark.asyncio

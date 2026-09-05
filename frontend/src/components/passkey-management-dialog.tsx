@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { Fingerprint, Trash2 } from 'lucide-react'
+import { Fingerprint, Loader2, TriangleAlert, X } from 'lucide-react'
 import { auth } from '@/lib/api'
-import { isPasskeySupported, startPasskeyRegistration } from '@/lib/webauthn'
+import { passkeyBlocker, passkeyFailure, startPasskeyRegistration } from '@/lib/webauthn'
+import type { PasskeyFailure } from '@/lib/webauthn'
 import type { Passkey } from '@/types'
 import {
   Dialog,
@@ -21,6 +22,17 @@ interface PasskeyManagementDialogProps {
   onClose: () => void
 }
 
+const FAILURE_KEYS: Record<PasskeyFailure, string> = {
+  cancelled: 'auth.passkeyCancelled',
+  duplicate: 'auth.passkeyDuplicate',
+  domain: 'auth.passkeyDomainError',
+  mismatch: 'auth.passkeyDomainMismatch',
+  ip: 'auth.passkeyIpAddress',
+  insecure: 'auth.passkeyInsecureContext',
+  unsupported: 'auth.passkeyUnsupported',
+  unknown: 'auth.passkeyRegisterError',
+}
+
 export function PasskeyManagementDialog({ open, onClose }: PasskeyManagementDialogProps) {
   const { t } = useTranslation()
   const [passkeys, setPasskeys] = useState<Passkey[]>([])
@@ -28,20 +40,21 @@ export function PasskeyManagementDialog({ open, onClose }: PasskeyManagementDial
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [error, setError] = useState('')
-  const supported = isPasskeySupported()
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [loadFailed, setLoadFailed] = useState(false)
+  const blocker = passkeyBlocker()
 
   const loadPasskeys = useCallback(async () => {
     setLoading(true)
-    setError('')
+    setLoadFailed(false)
     try {
       setPasskeys(await auth.listPasskeys())
     } catch {
-      setError(t('auth.passkeyLoadError'))
+      setLoadFailed(true)
     } finally {
       setLoading(false)
     }
-  }, [t])
+  }, [])
 
   useEffect(() => {
     if (open) void loadPasskeys()
@@ -54,7 +67,7 @@ export function PasskeyManagementDialog({ open, onClose }: PasskeyManagementDial
 
   const handleClose = () => {
     setName('')
-    setError('')
+    setConfirmDeleteId(null)
     onClose()
   }
 
@@ -62,7 +75,6 @@ export function PasskeyManagementDialog({ open, onClose }: PasskeyManagementDial
     event.preventDefault()
     const passkeyName = name.trim() || t('auth.defaultPasskeyName')
     setSaving(true)
-    setError('')
     try {
       const options = await auth.registerPasskeyOptions(passkeyName)
       const credential = await startPasskeyRegistration(options.options)
@@ -71,26 +83,21 @@ export function PasskeyManagementDialog({ open, onClose }: PasskeyManagementDial
       setName('')
       toast.success(t('auth.passkeyAdded'))
     } catch (err) {
-      const domError = err as { name?: string }
-      const message = domError?.name === 'NotAllowedError'
-        ? t('auth.passkeyCancelled')
-        : t('auth.passkeyRegisterError')
-      setError(message)
+      toast.error(t(FAILURE_KEYS[passkeyFailure(err)]))
     } finally {
       setSaving(false)
     }
   }
 
   const handleDelete = async (passkey: Passkey) => {
-    if (!window.confirm(t('auth.passkeyDeleteConfirm', { name: passkey.name }))) return
     setDeletingId(passkey.id)
-    setError('')
     try {
       await auth.deletePasskey(passkey.id)
       setPasskeys((current) => current.filter((item) => item.id !== passkey.id))
+      setConfirmDeleteId(null)
       toast.success(t('auth.passkeyDeleted'))
     } catch {
-      setError(t('auth.passkeyDeleteError'))
+      toast.error(t('auth.passkeyDeleteError'))
     } finally {
       setDeletingId(null)
     }
@@ -106,13 +113,12 @@ export function PasskeyManagementDialog({ open, onClose }: PasskeyManagementDial
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">{t('auth.passkeysDescription')}</p>
 
-          {!supported && (
-            <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
-              {t('auth.passkeyUnsupported')}
+          {blocker && (
+            <div className="flex items-start gap-2.5 rounded-lg bg-amber-500/10 px-3 py-2.5 text-sm text-amber-700 dark:text-amber-300">
+              <TriangleAlert size={16} className="mt-0.5 shrink-0" />
+              <p>{t(FAILURE_KEYS[blocker])}</p>
             </div>
           )}
-
-          {error && <p className="text-sm text-destructive">{error}</p>}
 
           <form onSubmit={handleRegister} className="space-y-3 rounded-lg border p-3">
             <div className="space-y-1.5">
@@ -123,46 +129,86 @@ export function PasskeyManagementDialog({ open, onClose }: PasskeyManagementDial
                 onChange={(event) => setName(event.target.value)}
                 placeholder={t('auth.passkeyNamePlaceholder')}
                 maxLength={100}
-                disabled={saving}
+                disabled={saving || !!blocker}
               />
             </div>
-            <Button type="submit" disabled={!supported || saving} className="w-full">
-              {saving ? t('common.loading') : t('auth.addPasskey')}
+            <Button type="submit" disabled={!!blocker || saving} className="w-full">
+              {saving && <Loader2 size={15} className="animate-spin" />}
+              {saving ? t('auth.passkeyWaiting') : t('auth.addPasskey')}
             </Button>
           </form>
 
           <div className="space-y-2">
             {loading ? (
               <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+            ) : loadFailed ? (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 p-3">
+                <p className="text-sm text-destructive">{t('auth.passkeyLoadError')}</p>
+                <Button type="button" variant="outline" size="sm" onClick={() => void loadPasskeys()}>
+                  {t('common.retry')}
+                </Button>
+              </div>
             ) : passkeys.length === 0 ? (
-              <p className="text-sm text-muted-foreground">{t('auth.noPasskeys')}</p>
+              <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed px-3 py-6 text-center">
+                <Fingerprint size={20} className="text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">{t('auth.noPasskeys')}</p>
+              </div>
             ) : (
-              passkeys.map((passkey) => (
-                <div key={passkey.id} className="flex items-start gap-3 rounded-lg border p-3">
-                  <div className="mt-0.5 rounded-full bg-primary/10 p-2 text-primary">
-                    <Fingerprint size={16} />
+              passkeys.map((passkey) => {
+                const isConfirming = confirmDeleteId === passkey.id
+                const isDeleting = deletingId === passkey.id
+
+                return (
+                  <div key={passkey.id} className="flex items-start gap-3 rounded-lg border p-3">
+                    <div className="mt-0.5 rounded-full bg-primary/10 p-2 text-primary">
+                      <Fingerprint size={16} />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{passkey.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {t('auth.passkeyCreated')}: {formatDate(passkey.created_at)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {t('auth.passkeyLastUsed')}: {formatDate(passkey.last_used_at)}
+                      </p>
+                    </div>
+                    {isConfirming ? (
+                      <div className="flex shrink-0 items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => void handleDelete(passkey)}
+                          disabled={isDeleting}
+                        >
+                          {isDeleting ? <Loader2 size={13} className="animate-spin" /> : t('common.delete')}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setConfirmDeleteId(null)}
+                          disabled={isDeleting}
+                          aria-label={t('common.cancel')}
+                        >
+                          <X size={14} />
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="shrink-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => setConfirmDeleteId(passkey.id)}
+                        aria-label={t('auth.deletePasskey')}
+                      >
+                        {t('common.delete')}
+                      </Button>
+                    )}
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{passkey.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {t('auth.passkeyCreated')}: {formatDate(passkey.created_at)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {t('auth.passkeyLastUsed')}: {formatDate(passkey.last_used_at)}
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => void handleDelete(passkey)}
-                    disabled={deletingId === passkey.id}
-                    aria-label={t('auth.deletePasskey')}
-                  >
-                    <Trash2 size={15} />
-                  </Button>
-                </div>
-              ))
+                )
+              })
             )}
           </div>
         </div>

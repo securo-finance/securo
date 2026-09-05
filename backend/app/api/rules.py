@@ -16,6 +16,8 @@ from app.schemas.rule import (
     RuleImportRequest,
     RuleImportResponse,
     RuleMutationResponse,
+    RulePreviewRequest,
+    RulePreviewResponse,
     RuleRead,
     RuleUpdate,
 )
@@ -25,29 +27,47 @@ from app.services.rule_service import DuplicateRuleError
 router = APIRouter(prefix="/api/rules", tags=["rules"])
 
 
-def _normalize_conditions(conditions: list[dict]) -> list[dict]:
-    return [
-        {
-            "field": condition.get("field"),
+def _normalize_condition(condition: dict) -> dict:
+    """Reduce one condition list entry to the keys that decide what it matches.
+
+    A group entry carries its own operator and leaves instead of a field, so it
+    has to be normalized recursively — flattening it to `field: None` would make
+    every group compare equal and hide real edits from the change check below.
+    """
+    nested = condition.get("conditions")
+    if isinstance(nested, list):
+        return {
             "op": condition.get("op"),
-            "value": condition.get("value"),
+            "conditions": [_normalize_condition(c) for c in nested],
         }
-        for condition in conditions
-    ]
+    return {
+        "field": condition.get("field"),
+        "op": condition.get("op"),
+        "value": condition.get("value"),
+    }
+
+
+def _normalize_conditions(conditions: list[dict]) -> list[dict]:
+    return [_normalize_condition(condition) for condition in conditions]
 
 
 def _rule_match_definition_changed(rule: RuleRead, data: RuleUpdate) -> bool:
     update_data = data.model_dump(exclude_unset=True)
+    if update_data.get("is_active") is True and not rule.is_active:
+        return True
     if (
         "conditions_op" in update_data
         and update_data["conditions_op"] != rule.conditions_op
     ):
         return True
-    if "conditions" not in update_data:
-        return False
-    return _normalize_conditions(update_data["conditions"] or []) != _normalize_conditions(
-        rule.conditions or []
-    )
+    if "conditions" in update_data:
+        if _normalize_conditions(update_data["conditions"] or []) != _normalize_conditions(
+            rule.conditions or []
+        ):
+            return True
+    if "actions" in update_data:
+        return [a.model_dump() for a in data.actions or []] != (rule.actions or [])
+    return False
 
 
 @router.get("", response_model=list[RuleRead])
@@ -71,12 +91,48 @@ async def create_rule(
             status_code=status.HTTP_409_CONFLICT,
             detail="A rule with this name already exists",
         )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     # Apply the new rule to existing transactions so it takes effect on history
     # immediately, and report how many were touched for a transparent toast.
-    applied_count = await rule_service.apply_single_rule(session, ctx.workspace.id, rule)
+    applied_count = (
+        await rule_service.apply_single_rule(
+            session,
+            ctx.workspace.id,
+            rule,
+            overwrite_existing_categories=data.overwrite_existing_categories,
+        )
+        if data.apply_to_existing
+        else 0
+    )
     response = RuleCreateResponse.model_validate(rule)
     response.applied_count = applied_count
     return response
+
+
+@router.post("/preview", response_model=RulePreviewResponse)
+async def preview_rule(
+    data: RulePreviewRequest,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Show which existing transactions a draft rule would match, and how it
+    would change them, without saving anything."""
+    try:
+        return await rule_service.preview_rule(
+            session,
+            ctx.workspace.id,
+            data.conditions_op,
+            [c.model_dump() for c in data.conditions],
+            [a.model_dump() for a in data.actions],
+            is_active=data.is_active,
+            apply_to_existing=data.apply_to_existing,
+            overwrite_existing_categories=data.overwrite_existing_categories,
+            limit=data.limit,
+            offset=data.offset,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.get("/export")
@@ -112,6 +168,8 @@ async def import_rules(
             status_code=status.HTTP_409_CONFLICT,
             detail="Import would overwrite existing rules. Confirm overwrite to continue.",
         )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.patch("/{rule_id}", response_model=RuleMutationResponse)
@@ -124,7 +182,10 @@ async def update_rule(
     current_rule = await rule_service.get_rule(session, rule_id, ctx.workspace.id)
     if not current_rule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
-    should_apply = _rule_match_definition_changed(current_rule, data)
+    if data.apply_to_existing is None:
+        should_apply = _rule_match_definition_changed(RuleRead.model_validate(current_rule), data)
+    else:
+        should_apply = data.apply_to_existing
 
     try:
         rule = await rule_service.update_rule(session, rule_id, ctx.workspace.id, data)
@@ -133,10 +194,17 @@ async def update_rule(
             status_code=status.HTTP_409_CONFLICT,
             detail="A rule with this name already exists",
         )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not rule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rule not found")
     applied_count = (
-        await rule_service.apply_single_rule(session, ctx.workspace.id, rule)
+        await rule_service.apply_single_rule(
+            session,
+            ctx.workspace.id,
+            rule,
+            overwrite_existing_categories=data.overwrite_existing_categories,
+        )
         if should_apply
         else 0
     )
@@ -162,7 +230,9 @@ async def list_rule_packs(
     session: AsyncSession = Depends(get_async_session),
 ):
     """List available country-specific rule packs with installed status."""
-    installed_map = await rule_service.get_installed_packs(session, ctx.user_id)
+    installed_map = await rule_service.get_installed_packs(
+        session, ctx.workspace.id, ctx.user_id
+    )
     packs = []
     for code, pack in rule_service.RULE_PACKS.items():
         packs.append({
@@ -192,6 +262,7 @@ async def install_rule_pack(
     lang = (ctx.user.preferences or {}).get("language", "pt-BR")
     result = await rule_service.install_rule_pack(
         session,
+        ctx.workspace.id,
         ctx.user_id,
         pack_code,
         lang,

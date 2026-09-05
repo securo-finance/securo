@@ -24,7 +24,13 @@ If your storage only supports `ReadWriteOnce` (RWO), you must restrict all Secur
 
 ## Quickstart
 
-If you are installing locally from the source repository:
+If you want to install the latest official release from the GitHub Container Registry (GHCR):
+
+```bash
+helm install securo oci://ghcr.io/securo-finance/charts/securo --version <VERSION>
+```
+
+If you are developing locally and want to install from the source repository:
 
 ```bash
 helm install securo ./charts/securo

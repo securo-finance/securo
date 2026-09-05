@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
 import { workspaces as workspacesApi, WORKSPACE_STORAGE_KEY } from '@/lib/api'
+import type { ModuleId } from '@/lib/modules'
 import type { Workspace, WorkspaceRole } from '@/types'
 
 interface WorkspaceContextType {
@@ -18,12 +19,19 @@ interface WorkspaceContextType {
   canManage: boolean
   /** True for owner, manager, OR editor — anyone allowed to mutate financial data. */
   canWrite: boolean
+  /** Modules the active workspace shows, as resolved by the server. */
+  enabledModules: ModuleId[]
+  /**
+   * The single question the UI asks about modules. False while the
+   * workspace list is still loading, so nothing renders on a guess.
+   */
+  hasModule: (id: ModuleId) => boolean
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | null>(null)
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const { user, token } = useAuth()
+  const { user, token, isLoading: authLoading } = useAuth()
   const [list, setList] = useState<Workspace[]>([])
   const [currentId, setCurrentId] = useState<string | null>(() => localStorage.getItem(WORKSPACE_STORAGE_KEY))
   const [isLoading, setIsLoading] = useState(true)
@@ -59,6 +67,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
+    // Stay in the loading state until auth has settled. Reporting "done,
+    // no workspaces" while the token is still being restored is a lie
+    // that lasts one render — long enough for anything gated on
+    // `hasModule` to decide the module is off and redirect away.
+    if (authLoading) return
     if (!user || !token) {
       setList([])
       setCurrentId(null)
@@ -66,7 +79,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return
     }
     void loadWorkspaces()
-  }, [user, token, loadWorkspaces])
+  }, [authLoading, user, token, loadWorkspaces])
 
   const switchWorkspace = useCallback(
     async (id: string) => {
@@ -94,6 +107,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const canManage = role === 'owner' || role === 'manager'
   const canWrite = role === 'owner' || role === 'manager' || role === 'editor'
 
+  const enabledModules = useMemo(
+    () => (current?.enabled_modules ?? []) as ModuleId[],
+    [current],
+  )
+  const hasModule = useCallback(
+    (id: ModuleId) => enabledModules.includes(id),
+    [enabledModules],
+  )
+
   return (
     <WorkspaceContext.Provider
       value={{
@@ -105,6 +127,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         role,
         canManage,
         canWrite,
+        enabledModules,
+        hasModule,
       }}
     >
       {children}

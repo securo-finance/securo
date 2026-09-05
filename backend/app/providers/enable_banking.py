@@ -34,6 +34,8 @@ from app.providers.base import (
     ProviderUserActionRequired,
     SessionExpiredError,
     TransactionData,
+    default_oauth_redirect_uri,
+    mask_last4,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,7 +45,8 @@ JWT_AUDIENCE = "api.enablebanking.com"
 JWT_LIFETIME_SECONDS = 3500  # under EB's 1h cap; refresh well before
 JWT_CACHE_REFRESH_BEFORE = 600  # re-mint with 10 min buffer
 
-DEFAULT_VALID_UNTIL_DAYS = 180
+MAX_VALID_UNTIL_DAYS = 179
+DEFAULT_VALID_UNTIL_DAYS = MAX_VALID_UNTIL_DAYS
 DEFAULT_PSU_TYPE = "personal"
 DEFAULT_HISTORY_DAYS = 90
 TRANSACTION_PAGE_LIMIT = 50  # safety cap
@@ -62,6 +65,28 @@ def _map_cash_account_type(eb_type: Optional[str]) -> str:
         "OTHR": "checking",
     }
     return mapping.get(eb_type.upper(), "checking")
+
+
+def _account_identifier(raw: dict) -> Optional[str]:
+    """Pull the bank's own identifier for an account out of an EB details payload.
+
+    EB reports it in three places, in descending order of usefulness: the IBAN
+    on `account_id`, a non-IBAN scheme (BBAN, sort-code-and-account) on
+    `account_id.other`, and the `all_account_ids` list. Banks outside SEPA only
+    populate the latter two, so we fall through rather than assuming an IBAN.
+    """
+    account_id = raw.get("account_id") or {}
+    if isinstance(account_id, dict):
+        iban = account_id.get("iban")
+        if iban:
+            return str(iban)
+        other = account_id.get("other") or {}
+        if isinstance(other, dict) and other.get("identification"):
+            return str(other["identification"])
+    for entry in raw.get("all_account_ids") or []:
+        if isinstance(entry, dict) and entry.get("identification"):
+            return str(entry["identification"])
+    return None
 
 
 def _pick_balance(balances: list[dict]) -> Optional[dict]:
@@ -167,7 +192,10 @@ class EnableBankingProvider(BankProvider):
 
     @property
     def redirect_uri(self) -> str:
-        return get_settings().enable_banking_oauth_redirect_uri
+        return (
+            get_settings().enable_banking_oauth_redirect_uri
+            or default_oauth_redirect_uri()
+        )
 
     # ----- credentials -----
 
@@ -180,7 +208,7 @@ class EnableBankingProvider(BankProvider):
         if key_file:
             cls._cached_private_key = Path(key_file).read_text(encoding="utf-8")
             return cls._cached_private_key
-        raw = settings.enable_banking_private_key or ""
+        raw = settings.enable_banking_private_key.get_secret_value() or ""
         if "\\n" in raw and "\n" not in raw:
             raw = raw.replace("\\n", "\n")
         cls._cached_private_key = raw
@@ -276,6 +304,9 @@ class EnableBankingProvider(BankProvider):
             inst_country = (item.get("country") or "").upper()
             if inst_country:
                 countries.add(inst_country)
+            if (maximum_consent_validity := item.get("maximum_consent_validity", None)) is not None:
+                maximum_consent_validity = timedelta(seconds=maximum_consent_validity).days
+
             institutions.append(
                 InstitutionData(
                     name=item.get("name") or "",
@@ -284,7 +315,7 @@ class EnableBankingProvider(BankProvider):
                     logo=item.get("logo"),
                     bic=item.get("bic"),
                     psu_types=list(item.get("psu_types") or []),
-                    max_consent_days=item.get("maximum_consent_validity"),
+                    max_consent_days=maximum_consent_validity,
                 )
             )
         institutions.sort(key=lambda i: (i.country, i.display_name.lower()))
@@ -305,6 +336,7 @@ class EnableBankingProvider(BankProvider):
         psu_type: str,
         valid_until_days: int,
     ) -> dict:
+        valid_until_days = min(valid_until_days, MAX_VALID_UNTIL_DAYS)
         valid_until_dt = datetime.now(timezone.utc) + timedelta(days=valid_until_days)
         # EB wants RFC3339 with a trailing 'Z' for UTC.
         valid_until = valid_until_dt.replace(microsecond=0).isoformat().replace(
@@ -448,6 +480,7 @@ class EnableBankingProvider(BankProvider):
             type=_map_cash_account_type(raw.get("cash_account_type")),
             balance=balance,
             currency=currency,
+            masked_number=mask_last4(_account_identifier(raw)),
         )
 
     # ----- account / transaction fetches -----
@@ -514,6 +547,8 @@ class EnableBankingProvider(BankProvider):
         date_to = date.today().isoformat()
         transactions: list[TransactionData] = []
         continuation_key: Optional[str] = None
+        seen_continuation_keys: set[str] = set()
+        seen_transaction_ids: set[str] = set()
         for _ in range(TRANSACTION_PAGE_LIMIT):
             params: dict[str, Any] = {"date_from": date_from, "date_to": date_to}
             if continuation_key:
@@ -527,11 +562,25 @@ class EnableBankingProvider(BankProvider):
                 parsed = self._build_transaction(
                     account_external_id, raw_txn, status, payee_source
                 )
-                if parsed:
+                # A broken pagination cursor can make Enable Banking return a
+                # page we have already consumed. Keep the result idempotent
+                # even before the repeated cursor is detected below.
+                if parsed and parsed.external_id not in seen_transaction_ids:
                     transactions.append(parsed)
-            continuation_key = page.get("continuation_key") or None
-            if not continuation_key:
+                    seen_transaction_ids.add(parsed.external_id)
+
+            next_continuation_key = page.get("continuation_key") or None
+            if not next_continuation_key:
                 break
+            if next_continuation_key in seen_continuation_keys:
+                logger.warning(
+                    "Enable Banking pagination loop detected for account %s "
+                    "(repeated continuation key); stopping pagination",
+                    account_external_id,
+                )
+                break
+            seen_continuation_keys.add(next_continuation_key)
+            continuation_key = next_continuation_key
         return transactions
 
     @staticmethod

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
+import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -26,12 +27,13 @@ import {
 
 import {
   groups as groupsApi,
-  users as usersApi,
   accounts as accountsApi,
   transactions as transactionsApi,
   type GroupMemberPayload,
   type GroupSettlementPayload,
 } from '@/lib/api'
+import { localDateString } from '@/lib/date-utils'
+import { MemberForm } from '@/components/member-form'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { Button } from '@/components/ui/button'
@@ -49,10 +51,7 @@ import { CategoryIcon } from '@/components/category-icon'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { PageHeader } from '@/components/page-header'
 import type { GroupMember, GroupSettlement, Transaction } from '@/types'
-
-function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
-}
+import { formatCurrency } from '@/lib/format'
 
 function SectionCard({ children }: { children: React.ReactNode }) {
   return (
@@ -281,34 +280,13 @@ export default function GroupDetailPage() {
     })
   }
 
-  // Directory of all Securo users on the instance — populates the
-  // member-picker dropdown so the host can pick an existing account
-  // rather than typing its email.
-  const { data: userDirectory } = useQuery({
-    queryKey: ['users', 'directory'],
-    queryFn: () => usersApi.directory(),
-    enabled: memberDialogOpen,
-    staleTime: 60_000,
-  })
-
-  // Resolve a typed email to an existing Securo user, kept as a
-  // fallback for the "I know their email but they aren't in my list
-  // for some reason" path.
-  const trimmedEmail = memberEmail.trim()
-  const { data: lookupResult } = useQuery({
-    queryKey: ['users', 'lookup', trimmedEmail.toLowerCase()],
-    queryFn: () => usersApi.lookupByEmail(trimmedEmail),
-    enabled: trimmedEmail.length >= 3 && trimmedEmail.includes('@'),
-    staleTime: 60_000,
-    retry: false,
-  })
 
   // ── Settle-up ────────────────────────────────────────────────
   const [settleOpen, setSettleOpen] = useState(false)
   const [settleFrom, setSettleFrom] = useState('')
   const [settleTo, setSettleTo] = useState('')
   const [settleAmount, setSettleAmount] = useState('')
-  const [settleDate, setSettleDate] = useState(new Date().toISOString().split('T')[0])
+  const [settleDate, setSettleDate] = useState(localDateString)
   const [settleNotes, setSettleNotes] = useState('')
   const [settleCurrency, setSettleCurrency] = useState('USD')
   // Optional ledger integration for the payer: 'none' records the
@@ -389,7 +367,7 @@ export default function GroupDetailPage() {
     setSettleFrom(from ?? '')
     setSettleTo(to ?? '')
     setSettleAmount(amount != null ? amount.toFixed(2) : '')
-    setSettleDate(new Date().toISOString().split('T')[0])
+    setSettleDate(localDateString())
     setSettleNotes('')
     // Use the line's currency when settling a specific debt, falling
     // back to the group's default for free-form settlements. This
@@ -952,6 +930,8 @@ export default function GroupDetailPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => deleteSettlementMutation.mutate(s.id)}
+                      title={t('common.delete')}
+                      aria-label={t('common.delete')}
                     >
                       <Trash2 size={14} />
                     </Button>
@@ -977,76 +957,14 @@ export default function GroupDetailPage() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            {/* Pick an existing Securo user, or leave as "non-user" to
-                add someone without an account (the most common case for
-                roommates/relatives who don't use the app yet). When a
-                user is picked, name+email come from their account and
-                the inputs are locked — switch back to "Sem vínculo" to
-                edit them by hand. */}
-            <div className="space-y-2">
-              <Label>{t('splitGroups.linkedUser')}</Label>
-              <select
-                className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background h-9 focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
-                value={memberLinkedUserId ?? ''}
-                onChange={(e) => {
-                  const id = e.target.value || null
-                  setMemberLinkedUserId(id)
-                  if (id) {
-                    const picked = userDirectory?.find((u) => u.id === id)
-                    if (picked) {
-                      // Always reflect the currently picked user — the
-                      // inputs are locked, so the source of truth is
-                      // whatever account is selected here.
-                      setMemberEmail(picked.email)
-                      setMemberName(picked.email.split('@')[0])
-                    }
-                  }
-                }}
-              >
-                <option value="">{t('splitGroups.linkedUserNone')}</option>
-                {(userDirectory ?? []).map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.email}
-                    {u.id === user?.id ? ` (${t('splitGroups.you')})` : ''}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-muted-foreground">
-                {t('splitGroups.linkedUserHint')}
-              </p>
-            </div>
-            <div className="space-y-2">
-              <Label>{t('splitGroups.memberName')}</Label>
-              <Input
-                value={memberName}
-                onChange={(e) => setMemberName(e.target.value)}
-                disabled={memberLinkedUserId !== null}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('splitGroups.memberEmail')}</Label>
-              <Input
-                type="email"
-                value={memberEmail}
-                onChange={(e) => setMemberEmail(e.target.value)}
-                disabled={memberLinkedUserId !== null}
-              />
-              {memberLinkedUserId !== null ? (
-                <p className="text-xs text-emerald-600 inline-flex items-center gap-1">
-                  <Link2 size={11} />
-                  {t('splitGroups.willLinkToUser', { email: memberEmail })}
-                </p>
-              ) : lookupResult ? (
-                <p className="text-xs text-emerald-600 inline-flex items-center gap-1">
-                  <Link2 size={11} />
-                  {t('splitGroups.willLinkToUser', { email: lookupResult.email })}
-                </p>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  {t('splitGroups.memberEmailHint')}
-                </p>
-              )}
-            </div>
+            <MemberForm
+              name={memberName}
+              onChangeName={setMemberName}
+              email={memberEmail}
+              onChangeEmail={setMemberEmail}
+              linkedUserId={memberLinkedUserId}
+              onChangeLinkedUserId={setMemberLinkedUserId}
+            />
           </div>
           <DialogFooter className={editingMember ? 'flex justify-between sm:justify-between' : ''}>
             {editingMember && (
@@ -1088,7 +1006,7 @@ export default function GroupDetailPage() {
             <div className="space-y-2">
               <Label>{t('splitGroups.from')}</Label>
               <select
-                className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background"
+                className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card"
                 value={settleFrom}
                 onChange={(e) => {
                   setSettleFrom(e.target.value)
@@ -1111,7 +1029,7 @@ export default function GroupDetailPage() {
             <div className="space-y-2">
               <Label>{t('splitGroups.to')}</Label>
               <select
-                className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background"
+                className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card"
                 value={settleTo}
                 onChange={(e) => setSettleTo(e.target.value)}
               >
@@ -1132,7 +1050,7 @@ export default function GroupDetailPage() {
                 <div className="space-y-2">
                   <Label>{t('splitGroups.txAction')}</Label>
                   <select
-                    className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background"
+                    className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card"
                     value={settleTxMode}
                     onChange={(e) => {
                       setSettleTxMode(e.target.value as 'none' | 'create' | 'existing')
@@ -1148,14 +1066,14 @@ export default function GroupDetailPage() {
                   {settleTxMode === 'create' && (
                     <div className="space-y-1">
                       <select
-                        className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background"
+                        className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card"
                         value={settleAccountId}
                         onChange={(e) => setSettleAccountId(e.target.value)}
                       >
                         <option value="">{t('splitGroups.selectAccount')}</option>
-                        {(accountsList ?? []).map((a) => (
+                        {sortAccountsByDisplayName(accountsList ?? []).map((a) => (
                           <option key={a.id} value={a.id}>
-                            {a.display_name || a.name}
+                            {getAccountName(a)}
                           </option>
                         ))}
                       </select>
@@ -1252,7 +1170,7 @@ export default function GroupDetailPage() {
             <div className="space-y-2">
               <Label>{t('splitGroups.notes')}</Label>
               <textarea
-                className="w-full border border-input rounded-md px-3 py-2 text-sm bg-background resize-none"
+                className="w-full border border-input rounded-md px-3 py-2 text-sm bg-card resize-none"
                 rows={2}
                 value={settleNotes}
                 onChange={(e) => setSettleNotes(e.target.value)}

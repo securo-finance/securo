@@ -81,6 +81,8 @@ async def test_upload_doc_sanitizes_disk_filename(session, test_agent, test_user
         mime="text/plain",
         payload=b"x",
     )
+
+    assert doc.storage_path is not None
     assert "../" not in doc.storage_path.split("/", 5)[-1]  # no traversal in stored basename
     assert os.path.dirname(doc.storage_path) == os.path.abspath(os.path.dirname(doc.storage_path))
 
@@ -128,6 +130,8 @@ async def test_delete_doc_removes_row_and_file(session, test_agent, test_user):
         filename="delete-me.txt", mime="text/plain", payload=b"hi",
     )
     path = doc.storage_path
+
+    assert path is not None
     assert os.path.exists(path)
     ok = await knowledge_service.delete_doc(session, doc.id, test_user.id)
     assert ok is True
@@ -143,6 +147,8 @@ async def test_delete_doc_swallows_missing_file_on_disk(session, test_agent, tes
         session, agent_id=test_agent.id, user_id=test_user.id,
         filename="ghost.txt", mime="text/plain", payload=b"x",
     )
+
+    assert doc.storage_path is not None
     os.remove(doc.storage_path)
     assert await knowledge_service.delete_doc(session, doc.id, test_user.id) is True
 
@@ -176,11 +182,15 @@ async def test_mark_status_ready_clears_prior_error(session, test_agent, test_us
     # Initial failure → error message stored.
     await knowledge_service.mark_status(session, doc.id, status="failed", error="embed failed: 500")
     refreshed = await knowledge_service.get_doc(session, doc.id, test_user.id)
+
+    assert refreshed is not None
     assert refreshed.status == "failed"
     assert "embed failed" in (refreshed.error or "")
     # Subsequent success → status flips AND prior error cleared.
     await knowledge_service.mark_status(session, doc.id, status="ready", chunk_count=4)
     refreshed = await knowledge_service.get_doc(session, doc.id, test_user.id)
+
+    assert refreshed is not None
     assert refreshed.status == "ready"
     assert refreshed.error is None
     assert refreshed.chunk_count == 4
@@ -195,6 +205,8 @@ async def test_mark_status_failed_preserves_prior_status_metadata(session, test_
     await knowledge_service.mark_status(session, doc.id, status="processing")
     await knowledge_service.mark_status(session, doc.id, status="failed", error="parse failed")
     refreshed = await knowledge_service.get_doc(session, doc.id, test_user.id)
+
+    assert refreshed is not None
     assert refreshed.status == "failed"
     assert "parse failed" in (refreshed.error or "")
 

@@ -1,0 +1,39 @@
+# Runs the same backend checks as CI, before you push. Optional.
+#
+#   cd backend && uv sync --all-extras      # installs ruff + ty (from uv.lock)
+#   prek install                            # or: pip install pre-commit && pre-commit install
+#
+# Run by hand: prek run --all-files
+#
+# The hooks call the ruff and ty from backend/.[dev], so they always match the
+# versions CI uses. If ty reports errors CI doesn't, your venv is behind
+# pyproject.toml — re-run the install above.
+
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff (backend)
+        entry: bash -c 'cd backend && ruff check .'
+        language: system
+        types: [python]
+        files: ^backend/
+        pass_filenames: false
+
+      - id: migration-chain
+        name: alembic chain (backend)
+        entry: python3 backend/scripts/check_migration_chain.py
+        language: system
+        files: ^backend/alembic/versions/
+        # The chain is a property of the whole directory, not of one file.
+        pass_filenames: false
+
+      - id: ty
+        name: ty (backend)
+        entry: bash -c 'cd backend && ty check .'
+        language: system
+        types: [python]
+        files: ^backend/
+        # Type errors propagate: editing b.py can break a.py, so check the
+        # whole project rather than just the staged files.
+        pass_filenames: false

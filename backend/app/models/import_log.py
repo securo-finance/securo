@@ -22,9 +22,15 @@ class ImportLog(Base):
     workspace_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
     )
-    account_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"))
+    #: Null for an order import: those land on holdings, not on an account.
+    account_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=True
+    )
+    #: What was imported: "transactions" (a bank statement) or "asset_orders".
+    entity: Mapped[str] = mapped_column(String(20), default="transactions", server_default="transactions")
     filename: Mapped[str] = mapped_column(String(255))
     format: Mapped[str] = mapped_column(String(10))
+    #: Rows written by this import, whichever kind they are.
     transaction_count: Mapped[int] = mapped_column(Integer)
     total_credit: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2), default=Decimal("0"))
     total_debit: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2), default=Decimal("0"))

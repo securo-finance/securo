@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { getAccountName } from '@/lib/account-utils'
+import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery } from '@tanstack/react-query'
@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -15,10 +16,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ArrowRight, AlertTriangle, Info, ArrowLeft, Search, Sparkles } from 'lucide-react'
 import { transactions as transactionsApi } from '@/lib/api'
 import type { Account, Transaction } from '@/types'
-
-function formatCurrency(value: number, currency = 'USD', locale = 'en-US') {
-  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value)
-}
+import { formatCurrency } from '@/lib/format'
 
 type CounterpartCardProps = {
   label: string
@@ -35,7 +33,7 @@ type CounterpartCardProps = {
 function CounterpartCard({ label, description, account, date, amount, currency, sign, locale, dateLocale }: CounterpartCardProps) {
   const colorClass = sign === '+' ? 'text-emerald-600' : 'text-rose-500'
   return (
-    <div className="rounded-lg border border-border bg-muted/30 p-3">
+    <div className="min-w-0 rounded-lg border border-border bg-muted/30 p-3">
       <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
         {label}
       </p>
@@ -160,21 +158,21 @@ export function LinkTransferDialog({
     // Manual accounts (no bank connection) where we can auto-create the
     // counterpart, since a synced account would already have a real
     // transaction showing in the candidates list above.
-    const manualCounterpartAccounts = accounts.filter(
-      (a) => a.connection_id == null && a.id !== anchor!.account_id,
+    const manualCounterpartAccounts = sortAccountsByDisplayName(
+      accounts.filter((a) => a.connection_id == null && a.id !== anchor!.account_id),
     )
 
     return (
       <Dialog open={open} onOpenChange={onClose}>
-        <DialogContent className="sm:max-w-xl overflow-hidden">
+        <DialogContent className="max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden p-4 sm:max-w-xl sm:p-6">
           <DialogHeader>
             <DialogTitle>{t('transactions.linkTransferPickerTitle')}</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4 min-w-0">
-            <p className="text-sm text-muted-foreground">
+          <div className="min-h-0 min-w-0 space-y-4 overflow-y-auto overscroll-contain pr-1">
+            <DialogDescription>
               {t('transactions.linkTransferPickerDescription')}
-            </p>
+            </DialogDescription>
 
             <CounterpartCard
               label={t('transactions.linkTransferAnchor')}
@@ -291,7 +289,7 @@ export function LinkTransferDialog({
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0">
             <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
               {t('common.cancel')}
             </Button>
@@ -313,17 +311,17 @@ export function LinkTransferDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden p-4 sm:max-w-lg sm:p-6">
         <DialogHeader>
           <DialogTitle>{t('transactions.linkTransferTitle')}</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">
+        <div className="min-h-0 space-y-4 overflow-y-auto overscroll-contain pr-1">
+          <DialogDescription>
             {t('transactions.linkTransferDescription')}
-          </p>
+          </DialogDescription>
 
-          <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-3">
+          <div className="grid grid-cols-1 items-stretch gap-2 sm:grid-cols-[1fr_auto_1fr] sm:gap-3">
             <CounterpartCard
               label={t('transactions.linkTransferFrom')}
               description={effectiveDebit.description}
@@ -335,8 +333,8 @@ export function LinkTransferDialog({
               locale={locale}
               dateLocale={dateLocale}
             />
-            <div className="flex items-center">
-              <ArrowRight size={18} className="text-muted-foreground" />
+            <div className="flex items-center justify-center">
+              <ArrowRight size={18} className="rotate-90 text-muted-foreground sm:rotate-0" />
             </div>
             <CounterpartCard
               label={t('transactions.linkTransferTo')}
@@ -364,7 +362,7 @@ export function LinkTransferDialog({
           </div>
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-2">
+        <DialogFooter className="shrink-0 gap-2 sm:gap-2">
           {isPickerMode && (
             <Button
               type="button"

@@ -138,6 +138,7 @@ export default function AgentConnectionsPage() {
                         type="button"
                         onClick={() => setEditing(c)}
                         className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
+                        title={t('common.edit')}
                       >
                         <Edit2 className="h-4 w-4" />
                       </button>
@@ -149,6 +150,7 @@ export default function AgentConnectionsPage() {
                           }
                         }}
                         className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
+                        title={t('common.delete')}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>

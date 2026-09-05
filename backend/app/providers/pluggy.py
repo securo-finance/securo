@@ -18,6 +18,7 @@ from app.providers.base import (
     HoldingData,
     RefreshOutcome,
     TransactionData,
+    mask_last4,
 )
 from app.providers.pluggy_constants import pluggy_icon_for_compe
 
@@ -193,7 +194,7 @@ def _build_bill_data(raw: dict) -> Optional[BillData]:
 
 def _build_account_data(acc: dict, type_mapper) -> AccountData:
     """Map a Pluggy account payload to AccountData, including creditData when present."""
-    account_type = type_mapper(acc.get("type", ""))
+    account_type = type_mapper(acc.get("type", ""), acc.get("subtype"))
     credit_data = acc.get("creditData") or {}
 
     credit_limit: Optional[Decimal] = None
@@ -227,6 +228,9 @@ def _build_account_data(acc: dict, type_mapper) -> AccountData:
         minimum_payment=minimum_payment,
         card_brand=card_brand,
         card_level=card_level,
+        # Brazil has no IBAN; Pluggy's `number` is the branch/account number
+        # (or the card number for credit cards), which serves the same purpose.
+        masked_number=mask_last4(acc.get("number")),
     )
 
 
@@ -262,7 +266,7 @@ class PluggyProvider(BankProvider):
                 f"{PLUGGY_API_BASE}/auth",
                 json={
                     "clientId": settings.pluggy_client_id,
-                    "clientSecret": settings.pluggy_client_secret,
+                    "clientSecret": settings.pluggy_client_secret.get_secret_value(),
                 },
             )
             resp.raise_for_status()
@@ -526,7 +530,7 @@ class PluggyProvider(BankProvider):
         # Pluggy manages API keys at the provider level, not per-connection
         return credentials
 
-    async def trigger_refresh(self, credentials: dict) -> RefreshOutcome:
+    async def trigger_refresh(self, credentials: dict | None) -> RefreshOutcome:
         """Trigger ``PATCH /items/{id}`` and poll the item until it leaves
         the ``UPDATING`` state.
 
@@ -755,7 +759,12 @@ class PluggyProvider(BankProvider):
         return None
 
     @staticmethod
-    def _map_account_type(pluggy_type: str) -> str:
+    def _map_account_type(pluggy_type: str, pluggy_subtype: Optional[str] = None) -> str:
+        # Pluggy reports both checking and savings accounts as BANK, with the
+        # distinction carried in subtype (e.g. SAVINGS_ACCOUNT). Prefer the
+        # subtype so a savings account is not displayed as checking.
+        if (pluggy_subtype or "").upper() in {"SAVINGS", "SAVINGS_ACCOUNT"}:
+            return "savings"
         mapping = {
             "BANK": "checking",
             "CREDIT": "credit_card",

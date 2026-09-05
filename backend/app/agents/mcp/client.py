@@ -5,6 +5,7 @@ Per call, mints a short-lived JWT scoped to (user_id, conversation_id).
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -14,6 +15,8 @@ import httpx
 from app.agents.config import get_agent_settings
 from app.agents.mcp.auth import mint_token
 from app.agents.providers.base import ToolDefinition
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -146,7 +149,18 @@ class MCPRegistry:
         for client in self._servers.values():
             try:
                 tools = await client.list_tools(token=token)
-            except Exception:
+            except Exception as exc:
+                # A server that can't be reached costs the agent every tool it
+                # exposes, and the chat still answers, just without any data.
+                # Say so in the log: otherwise the only symptom is an assistant
+                # claiming it can't see anything.
+                logger.warning(
+                    "MCP server %r unreachable at %s (%s). Its tools are "
+                    "unavailable for this conversation.",
+                    client.name,
+                    client.url,
+                    exc,
+                )
                 continue
             out.extend(tools)
         return out
@@ -203,7 +217,14 @@ class MCPRegistry:
         for server_name, client in self._servers.items():
             try:
                 handles = await client.list_tools(token=token)
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    "MCP server %r unreachable at %s (%s) while resolving tool %r.",
+                    server_name,
+                    client.url,
+                    exc,
+                    wire_name,
+                )
                 continue
             if any(h.name == bare for h in handles):
                 return await client.call_tool(name=bare, arguments=arguments, token=token)

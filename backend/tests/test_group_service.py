@@ -98,6 +98,8 @@ async def test_create_member_and_unique_name(
         test_workspace.id,
         GroupMemberCreate(name="Alice", is_self=True),
     )
+
+    assert member is not None
     assert member.name == "Alice"
     assert member.is_self is True
 
@@ -115,18 +117,24 @@ async def test_only_one_self_member_allowed(
         session, test_workspace.id, test_user.id, GroupCreate(name="G")
     )
     m1 = await group_service.create_member(
-        session, group.id, test_workspace.id, GroupMemberCreate(name="Me", is_self=True)
+        session, group.id, test_workspace.id,         GroupMemberCreate(name="Me", is_self=True)
     )
+
+    assert m1 is not None
     m2 = await group_service.create_member(
         session,
         group.id,
         test_workspace.id,
         GroupMemberCreate(name="Also Me", is_self=True),
     )
+
+    assert m2 is not None
     # m1 should have been demoted automatically.
     refreshed = await group_service.list_members(
         session, group.id, test_workspace.id, test_user.id
     )
+
+    assert refreshed is not None
     by_id = {m.id: m for m in refreshed}
     assert by_id[m1.id].is_self is False
     assert by_id[m2.id].is_self is True
@@ -142,9 +150,12 @@ async def test_update_member_promotes_to_self_demotes_others(
     m1 = await group_service.create_member(
         session, group.id, test_workspace.id, GroupMemberCreate(name="A", is_self=True)
     )
+    assert m1 is not None
     m2 = await group_service.create_member(
         session, group.id, test_workspace.id, GroupMemberCreate(name="B")
     )
+
+    assert m2 is not None
 
     await group_service.update_member(
         session,
@@ -156,6 +167,8 @@ async def test_update_member_promotes_to_self_demotes_others(
     refreshed = await group_service.list_members(
         session, group.id, test_workspace.id, test_user.id
     )
+
+    assert refreshed is not None
     by_id = {m.id: m for m in refreshed}
     assert by_id[m1.id].is_self is False
     assert by_id[m2.id].is_self is True

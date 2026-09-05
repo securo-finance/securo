@@ -1,0 +1,4 @@
+# Artifact Hub repository metadata file.
+# Pushed to the chart's own OCI path on release, which is where Artifact Hub
+# looks for it to confirm we control the repository and grant Verified Publisher.
+repositoryID: aa1216ae-b8b8-4352-908f-21a55d9829a0

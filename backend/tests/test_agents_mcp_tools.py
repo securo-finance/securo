@@ -21,7 +21,7 @@ pytestmark = pytest.mark.asyncio
 
 
 @pytest_asyncio.fixture
-def ctx(test_user) -> CallContext:
+async def ctx(test_user) -> CallContext:
     return CallContext(user_id=test_user.id, conversation_id=uuid.uuid4())
 
 
@@ -72,6 +72,21 @@ def test_each_tool_has_input_schema():
     for name, spec in REGISTRY.items():
         assert spec.parameters.get("type") == "object", f"{name} schema must be object"
         assert "properties" in spec.parameters
+
+
+@pytest.mark.parametrize(
+    "tool_name",
+    [
+        "propose_create_recurring_transaction",
+        "propose_update_recurring_transaction",
+    ],
+    ids=["create", "update"],
+)
+def test_recurring_proposal_frequency_schema_includes_new_values(tool_name):
+    advertised = set(
+        REGISTRY[tool_name].parameters["properties"]["frequency"]["enum"]
+    )
+    assert {"biweekly", "semiannual"} <= advertised
 
 
 # --- Read tools (with real seeded data) -----------------------------------
@@ -464,6 +479,22 @@ async def test_propose_create_recurring_monthly_requires_day(
     assert "day_of_month" in r.get("error", "")
 
 
+async def test_propose_create_recurring_semiannual_requires_day(
+    session: AsyncSession, ctx: CallContext, test_account
+):
+    handler = REGISTRY["propose_create_recurring_transaction"].handler
+    result = await handler(
+        session=session,
+        ctx=ctx,
+        description="Insurance",
+        amount=600.0,
+        type="debit",
+        frequency="semiannual",
+        account_id=str(test_account.id),
+    )
+    assert "day_of_month" in result.get("error", "")
+
+
 async def test_propose_create_recurring_monthly_full(
     session: AsyncSession, ctx: CallContext, test_account
 ):
@@ -472,11 +503,13 @@ async def test_propose_create_recurring_monthly_full(
         session=session, ctx=ctx,
         description="Netflix", amount=55.0, type="debit",
         frequency="monthly", day_of_month=10,
+        weekend_adjustment="previous_friday",
         account_id=str(test_account.id),
     )
     assert r["kind"] == "create_recurring_transaction"
     assert r["proposed"]["day_of_month"] == 10
     assert r["proposed"]["frequency"] == "monthly"
+    assert r["proposed"]["weekend_adjustment"] == "previous_friday"
 
 
 async def test_propose_update_recurring_no_changes(
@@ -827,6 +860,7 @@ async def test_propose_create_recurring_transaction_external_apply_writes(
         frequency="monthly",
         day_of_month=10,
         account_id=str(test_account.id),
+        weekend_adjustment="next_monday",
         apply=True,
     )
     assert result.get("applied") is True
@@ -839,6 +873,7 @@ async def test_propose_create_recurring_transaction_external_apply_writes(
     assert row.description == "Netflix"
     assert row.frequency == "monthly"
     assert row.day_of_month == 10
+    assert row.weekend_adjustment == "next_monday"
 
 
 async def test_propose_update_recurring_transaction_external_apply_writes(
@@ -873,12 +908,14 @@ async def test_propose_update_recurring_transaction_external_apply_writes(
         session=session, ctx=ctx,
         recurring_id=str(rt.id),
         amount=27.90,
+        weekend_adjustment="previous_friday",
         apply=True,
     )
     assert result.get("applied") is True
 
     await session.refresh(rt)
     assert float(rt.amount) == 27.90
+    assert rt.weekend_adjustment == "previous_friday"
 
 
 async def test_propose_cancel_recurring_transaction_deactivate_apply(

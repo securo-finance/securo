@@ -179,6 +179,16 @@ def test_report_start_date_ytd_uses_current_year_start():
     assert _report_start_date(date(2025, 6, 15), 24, period="ytd") == date(2025, 1, 1)
 
 
+def test_report_start_date_days_window_is_exact_and_inclusive():
+    # 30 days ending today (inclusive), not the month-aligned window months gives.
+    assert _report_start_date(date(2025, 7, 7), 1, days=30) == date(2025, 6, 8)
+    assert _report_start_date(date(2025, 3, 1), 1, days=30) == date(2025, 1, 31)
+
+
+def test_report_start_date_days_overrides_months_and_period():
+    assert _report_start_date(date(2025, 6, 15), 24, period="ytd", days=7) == date(2025, 6, 9)
+
+
 # ---------------------------------------------------------------------------
 # Service-level tests: get_net_worth_report (works with SQLite)
 # ---------------------------------------------------------------------------
@@ -444,7 +454,9 @@ async def test_income_expenses_api_endpoint(client, auth_headers, test_transacti
     data = response.json()
 
     assert data["meta"]["type"] == "income_expenses"
-    assert data["meta"]["series_keys"] == ["income", "expenses"]
+    assert data["meta"]["series_keys"] == [
+        "income", "expenses", "projectedIncome", "projectedExpenses"
+    ]
     assert "summary" in data
     assert "trend" in data
 
@@ -534,10 +546,11 @@ async def test_income_expenses_api_validation(client, auth_headers):
 async def test_income_expenses_api_accepts_ytd_period(client, auth_headers, monkeypatch):
     """GET /reports/income-expenses passes period=ytd to service."""
 
-    async def fake_report(session, workspace_id, user_id, months, interval, currency, account_ids=None, period=None):
+    async def fake_report(session, workspace_id, user_id, months, interval, currency, account_ids=None, period=None, days=None):
         assert months == 12
         assert interval == "monthly"
         assert period == "ytd"
+        assert days is None
         return ReportResponse(
             summary=ReportSummary(
                 primary_value=0,
@@ -548,7 +561,7 @@ async def test_income_expenses_api_accepts_ytd_period(client, auth_headers, monk
             trend=[],
             meta=ReportMeta(
                 type="income_expenses",
-                series_keys=["income", "expenses"],
+                series_keys=["income", "expenses", "projectedIncome", "projectedExpenses"],
                 currency=currency,
                 interval=interval,
             ),
@@ -564,6 +577,49 @@ async def test_income_expenses_api_accepts_ytd_period(client, auth_headers, monk
         headers=auth_headers,
     )
     assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_income_expenses_api_forwards_days_window(client, auth_headers, monkeypatch):
+    """GET /reports/income-expenses passes the exact day window to the service."""
+    seen: dict = {}
+
+    async def fake_report(session, workspace_id, user_id, months, interval, currency, account_ids=None, period=None, days=None):
+        seen["days"] = days
+        return ReportResponse(
+            summary=ReportSummary(
+                primary_value=0,
+                change_amount=0,
+                change_percent=None,
+                breakdowns=[],
+            ),
+            trend=[],
+            meta=ReportMeta(
+                type="income_expenses",
+                series_keys=["income", "expenses", "projectedIncome", "projectedExpenses"],
+                currency=currency,
+                interval=interval,
+            ),
+            composition=[],
+            category_trend=[],
+        )
+
+    monkeypatch.setattr(report_service, "get_income_expenses_report", fake_report)
+
+    resp = await client.get(
+        "/api/reports/income-expenses",
+        params={"months": 1, "interval": "monthly", "days": 30},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert seen["days"] == 30
+
+    resp = await client.get(
+        "/api/reports/income-expenses",
+        params={"days": 0},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -1173,11 +1229,16 @@ async def test_cash_flow_recurring_credit_increases_balance(
     )
 
     today = date.today()
-    salary_day = date(today.year + (today.month // 12), (today.month % 12) + 1, today.day)
+    # Anchored to the 1st rather than today's day-of-month: building next
+    # month's date from `today.day` raises on the 31st whenever the month
+    # that follows has 30 days, which made this test fail seven times a
+    # year for reasons that had nothing to do with cash flow.
+    next_month = date(today.year + (today.month // 12), (today.month % 12) + 1, 1)
+    salary_day = next_month
     await _make_recurring(
         session, test_user.id, account.id,
         amount=3000, txn_type="credit", frequency="monthly",
-        day_of_month=today.day, next_occurrence=salary_day,
+        day_of_month=1, next_occurrence=salary_day,
     )
 
     report = await get_cash_flow_report(session, test_workspace.id, test_user.id, months=3, interval="daily")

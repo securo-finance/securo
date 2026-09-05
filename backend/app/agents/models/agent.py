@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional, cast
 
 from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
@@ -8,6 +8,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
+
+if TYPE_CHECKING:
+    from app.agents.models.conversation import Conversation
+    from app.agents.models.knowledge import KnowledgeDoc
 
 
 class Agent(Base):
@@ -61,8 +65,12 @@ class Agent(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     tools: Mapped[list["AgentTool"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
-    conversations: Mapped[list["Conversation"]] = relationship(back_populates="agent", cascade="all, delete-orphan")  # noqa: F821
-    knowledge_docs: Mapped[list["KnowledgeDoc"]] = relationship(back_populates="agent", cascade="all, delete-orphan")  # noqa: F821
+    conversations: Mapped[list["Conversation"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
+    knowledge_docs: Mapped[list["KnowledgeDoc"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
+
+    # Virtual attributes populated by agent_service queries (not DB columns).
+    conversation_count = cast(int, 0)
+    knowledge_count = cast(int, 0)
 
 
 class AgentTool(Base):

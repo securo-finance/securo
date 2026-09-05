@@ -22,7 +22,7 @@ import os
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any, AsyncIterator, Literal, Optional
+from typing import Any, AsyncIterator, Literal, Optional, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,6 +37,7 @@ from app.agents.providers.base import (
     LLMNotSupportedError,
     LLMRateLimitError,
     LLMUnavailableError,
+    Role,
     ToolCall,
 )
 from app.agents.providers.registry import build_provider
@@ -393,7 +394,7 @@ class AgentExecutor:
                 tr = m.tool_result or {}
                 content = tr.get("text") or _safe_json(tr.get("data"))
             messages.append(ChatMessage(
-                role=m.role,  # type: ignore[arg-type]
+                role=cast(Role, m.role),
                 content=content,
                 tool_calls=tcs,
                 tool_call_id=tool_call_id,

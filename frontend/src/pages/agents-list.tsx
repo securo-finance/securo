@@ -166,6 +166,8 @@ export default function AgentsListPage() {
                 <Link
                   to={`/agents/${a.id}`}
                   className="shrink-0 text-muted-foreground/60 hover:text-muted-foreground"
+                  aria-label={t('common.view')}
+                  title={t('common.view')}
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Link>

@@ -3,6 +3,7 @@ import { CircleHelp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const SIZES = {
+  xs: { box: 'w-4 h-4 rounded', icon: 10 },
   sm: { box: 'w-6 h-6 rounded-md', icon: 14 },
   md: { box: 'w-8 h-8 rounded-lg', icon: 16 },
   lg: { box: 'w-10 h-10 rounded-xl', icon: 20 },

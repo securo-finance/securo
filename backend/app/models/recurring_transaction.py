@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -21,6 +21,10 @@ class RecurringTransaction(Base):
     __tablename__ = "recurring_transactions"
     __table_args__ = (
         UniqueConstraint("user_id", "description", "frequency", "start_date", name="uq_recurring_tx"),
+        CheckConstraint(
+            "weekend_adjustment IN ('none', 'previous_friday', 'next_monday')",
+            name="ck_recurring_transactions_weekend_adjustment",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -34,7 +38,10 @@ class RecurringTransaction(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2))
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     type: Mapped[str] = mapped_column(String(10))  # debit, credit
-    frequency: Mapped[str] = mapped_column(String(20))  # monthly, weekly, yearly
+    frequency: Mapped[str] = mapped_column(String(20))  # weekly, biweekly, monthly, quarterly, semiannual, yearly
+    weekend_adjustment: Mapped[str] = mapped_column(
+        String(20), default="none", server_default="none"
+    )
     day_of_month: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     start_date: Mapped[date] = mapped_column(Date)
     end_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)

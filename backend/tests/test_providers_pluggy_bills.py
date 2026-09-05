@@ -338,7 +338,7 @@ async def test_default_get_bills_returns_empty_list():
         def name(self) -> str:
             return "stub"
 
-        def get_oauth_url(self, redirect_uri, state):
+        async def get_oauth_url(self, redirect_uri: str, state: str, flow_params: dict | None = None) -> str:
             return ""
 
         async def handle_oauth_callback(self, code):

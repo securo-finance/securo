@@ -7,7 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import current_active_user, get_jwt_strategy
+from app.core.auth_policy import require_local_auth_enabled
 from app.core.database import get_async_session
+from app.core.rate_limit import login_rate_limit
 from app.core.redis import get_redis
 from app.models.user import User
 from app.schemas.two_factor import (
@@ -18,6 +20,11 @@ from app.schemas.two_factor import (
 )
 
 router = APIRouter()
+TOTP_VALID_WINDOW = 1
+
+
+def _verify_totp(secret: str, code: str) -> bool:
+    return pyotp.TOTP(secret).verify(code, valid_window=TOTP_VALID_WINDOW)
 
 
 def _parse_temp_token_payload(raw: str | bytes) -> dict[str, object] | None:
@@ -33,7 +40,11 @@ def _parse_temp_token_payload(raw: str | bytes) -> dict[str, object] | None:
     return payload
 
 
-@router.post("/2fa/setup", response_model=TwoFactorSetupResponse)
+@router.post(
+    "/2fa/setup",
+    response_model=TwoFactorSetupResponse,
+    dependencies=[Depends(require_local_auth_enabled)],
+)
 async def setup_2fa(
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
@@ -49,7 +60,7 @@ async def setup_2fa(
     return TwoFactorSetupResponse(secret=secret, otpauth_uri=otpauth_uri)
 
 
-@router.post("/2fa/enable")
+@router.post("/2fa/enable", dependencies=[Depends(require_local_auth_enabled)])
 async def enable_2fa(
     body: TwoFactorEnableRequest,
     user: User = Depends(current_active_user),
@@ -58,8 +69,7 @@ async def enable_2fa(
     if not user.totp_secret:
         raise HTTPException(status_code=400, detail="Call /2fa/setup first")
 
-    totp = pyotp.TOTP(user.totp_secret)
-    if not totp.verify(body.code):
+    if not _verify_totp(user.totp_secret, body.code):
         raise HTTPException(status_code=400, detail="Invalid 2FA code")
 
     user.is_2fa_enabled = True
@@ -91,8 +101,7 @@ async def disable_2fa(
     if not user.totp_secret:
         raise HTTPException(status_code=400, detail="2FA is not set up")
 
-    totp = pyotp.TOTP(user.totp_secret)
-    if not totp.verify(body.code):
+    if not _verify_totp(user.totp_secret, body.code):
         raise HTTPException(status_code=400, detail="Invalid 2FA code")
 
     user.totp_secret = None
@@ -102,7 +111,7 @@ async def disable_2fa(
     return {"detail": "2FA disabled"}
 
 
-@router.post("/2fa/verify")
+@router.post("/2fa/verify", dependencies=[Depends(login_rate_limit)])
 async def verify_2fa(
     body: TwoFactorVerifyRequest,
     session: AsyncSession = Depends(get_async_session),
@@ -126,8 +135,7 @@ async def verify_2fa(
         raise HTTPException(status_code=401, detail="Invalid token")
 
     # Verify TOTP
-    totp = pyotp.TOTP(user.totp_secret)
-    if not totp.verify(body.code):
+    if not _verify_totp(user.totp_secret, body.code):
         raise HTTPException(status_code=400, detail="Invalid 2FA code")
 
     # Delete temp token

@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useTheme } from 'next-themes'
 import { useAuth } from '@/contexts/auth-context'
-import { admin as adminApi } from '@/lib/api'
+import { admin as adminApi, auth as authApi } from '@/lib/api'
 import { resolveSupportedLang } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,14 +26,29 @@ export default function RegisterPage() {
   const [currency, setCurrency] = useState('USD')
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [checking, setChecking] = useState(true)
 
   useEffect(() => {
-    adminApi.registrationStatus().then(({ enabled }) => {
-      if (!enabled) navigate('/login', { replace: true })
-    }).catch(() => {})
-  adminApi.defaultColors().then(({ light, dark }) => {
+    let active = true
+    Promise.all([
+      adminApi.registrationStatus(),
+      authApi.oidcConfig().catch(() => null),
+    ]).then(([registration, authConfig]) => {
+      if (!active) return
+      if (!registration.enabled || authConfig?.local_auth_enabled === false) {
+        navigate('/login', { replace: true })
+        return
+      }
+      setChecking(false)
+    }).catch(() => {
+      if (active) setChecking(false)
+    })
+    adminApi.defaultColors().then(({ light, dark }) => {
       setThemeBasedOnSystem(light, dark, resolvedTheme)
     }).catch(() => {})
+    return () => {
+      active = false
+    }
   }, [navigate, resolvedTheme])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -70,6 +85,14 @@ export default function RegisterPage() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  if (checking) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    )
   }
 
   return (

@@ -85,6 +85,8 @@ def test_match_window():
     assert rms._match_window("weekly") == (2, 2)
     assert rms._match_window("monthly") == (3, 5)
     assert rms._match_window("yearly") == (3, 5)
+    assert rms._match_window("biweekly") == (3, 5)
+    assert rms._match_window("semiannual") == (3, 5)
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +150,44 @@ async def test_find_bill_rejects_low_similarity(session, test_user, test_workspa
     assert match is None
 
 
+@pytest.mark.asyncio
+async def test_find_bill_centers_existing_tolerance_on_effective_date(
+    session, test_user, test_workspace, account
+):
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        account,
+        start_date=date(2026, 8, 2),
+        weekend_adjustment="next_monday",
+    )
+
+    match = await rms.find_bill_for_incoming(
+        session,
+        test_user.id,
+        account.id,
+        Decimal("39.90"),
+        "BRL",
+        "debit",
+        date(2026, 8, 8),
+        "NETFLIX SUBSCRIPTION",
+    )
+    outside = await rms.find_bill_for_incoming(
+        session,
+        test_user.id,
+        account.id,
+        Decimal("39.90"),
+        "BRL",
+        "debit",
+        date(2026, 8, 9),
+        "NETFLIX SUBSCRIPTION",
+    )
+
+    assert match is not None and match.id == bill.id
+    assert outside is None
+
+
 # ---------------------------------------------------------------------------
 # find_placeholder_for_incoming (placeholder-first path)
 # ---------------------------------------------------------------------------
@@ -198,6 +238,53 @@ async def test_advance_past_moves_pointer(session, test_user, test_workspace, ac
 
 
 @pytest.mark.asyncio
+async def test_advance_past_moves_quarterly_pointer(session, test_user, test_workspace, account):
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        account,
+        frequency="quarterly",
+        day_of_month=31,
+        start_date=date(2025, 1, 31),
+    )
+    rms.advance_past(bill, date(2025, 1, 31))
+    assert bill.next_occurrence == date(2025, 4, 30)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("frequency", "start_date", "day_of_month", "expected_next"),
+    [
+        ("biweekly", date(2026, 1, 5), None, date(2026, 1, 19)),
+        ("semiannual", date(2026, 1, 31), 31, date(2026, 7, 31)),
+    ],
+    ids=["biweekly", "semiannual"],
+)
+async def test_advance_past_new_frequencies(
+    session,
+    test_user,
+    test_workspace,
+    account,
+    frequency,
+    start_date,
+    day_of_month,
+    expected_next,
+):
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        account,
+        frequency=frequency,
+        day_of_month=day_of_month,
+        start_date=start_date,
+    )
+    rms.advance_past(bill, start_date)
+    assert bill.next_occurrence == expected_next
+
+
+@pytest.mark.asyncio
 async def test_advance_past_deactivates_past_end_date(session, test_user, test_workspace, account):
     bill = await _make_bill(
         session, test_workspace, test_user, account, end_date=date(2025, 1, 31),
@@ -244,6 +331,37 @@ async def test_generate_pending_links_existing_real_tx(session, test_user, test_
 
 
 @pytest.mark.asyncio
+async def test_generate_pending_matches_real_transaction_on_effective_date(
+    session, test_user, test_workspace, account
+):
+    bill = await _make_bill(
+        session,
+        test_workspace,
+        test_user,
+        account,
+        start_date=date(2026, 8, 1),
+        weekend_adjustment="previous_friday",
+    )
+    real = await _add_tx(
+        session,
+        test_user,
+        test_workspace,
+        account,
+        date=date(2026, 7, 31),
+        source="sync",
+        external_id="effective-date",
+    )
+
+    count = await generate_pending(session, test_user.id, up_to=date(2026, 7, 31))
+
+    assert count == 0
+    await session.refresh(real)
+    assert real.recurring_transaction_id == bill.id
+    await session.refresh(bill)
+    assert bill.next_occurrence == date(2026, 9, 1)
+
+
+@pytest.mark.asyncio
 async def test_generate_pending_stamps_placeholder_link(session, test_user, test_workspace, account):
     bill = await _make_bill(session, test_workspace, test_user, account)
     count = await generate_pending(session, test_user.id, up_to=date(2025, 1, 20))
@@ -253,6 +371,8 @@ async def test_generate_pending_stamps_placeholder_link(session, test_user, test
     )
     tx = result.scalar_one()
     assert tx.recurring_transaction_id == bill.id
+    # Due occurrences are actuals; forecast lives in the projection layer.
+    assert tx.status == "posted"
 
 
 @pytest.mark.asyncio

@@ -12,6 +12,7 @@ the preview as usual; a follow-up call with `apply=true` performs the
 write directly. Internal callers never set `apply`, so behavior is
 unchanged for Securo's own UI.
 """
+
 from __future__ import annotations
 
 from datetime import date
@@ -32,6 +33,7 @@ from app.schemas.goal import GoalCreate
 from app.schemas.recurring_transaction import (
     RecurringTransactionCreate,
     RecurringTransactionUpdate,
+    WeekendAdjustment,
 )
 from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
 from app.schemas.transaction import TransactionCreate
@@ -46,7 +48,13 @@ from app.services import (
 )
 from mcp_server.auth import CallContext
 from mcp_server.registry import tool
-from mcp_server.tools._helpers import num, parse_date, parse_uuid, parse_uuid_list, resolve_workspace_id
+from mcp_server.tools._helpers import (
+    num,
+    parse_date,
+    parse_uuid,
+    parse_uuid_list,
+    resolve_workspace_id,
+)
 
 
 # Repeated in EVERY propose_* tool description. The LLM reads these when
@@ -86,14 +94,19 @@ def _can_apply(ctx: CallContext, apply: bool) -> bool:
 
 @tool(
     name="propose_categorize",
-    description=_PROPOSAL_PREFACE + (
+    description=_PROPOSAL_PREFACE
+    + (
         "Build a preview for re-categorizing one or more transactions. "
         "Returns a summary of what would change and the resolved category."
     ),
     parameters={
         "type": "object",
         "properties": {
-            "transaction_ids": {"type": "array", "items": {"type": "string", "format": "uuid"}, "minItems": 1},
+            "transaction_ids": {
+                "type": "array",
+                "items": {"type": "string", "format": "uuid"},
+                "minItems": 1,
+            },
             "category_id": {"type": "string", "format": "uuid"},
             "apply": _APPLY_FIELD,
         },
@@ -113,20 +126,35 @@ async def propose_categorize(
 ) -> dict[str, Any]:
     ws_id = await resolve_workspace_id(session, ctx)
     cat_id = parse_uuid(category_id)
-    cat = (await session.execute(
-        select(Category).where(Category.id == cat_id, Category.workspace_id == ws_id)
-    )).scalar_one_or_none()
+    cat = (
+        await session.execute(
+            select(Category).where(Category.id == cat_id, Category.workspace_id == ws_id)
+        )
+    ).scalar_one_or_none()
     if cat is None:
         return {"error": "category not found"}
 
     tx_ids = parse_uuid_list(transaction_ids) or []
-    txs = (await session.execute(
-        select(Transaction).where(Transaction.id.in_(tx_ids), Transaction.workspace_id == ws_id)
-    )).scalars().all()
+    txs = (
+        (
+            await session.execute(
+                select(Transaction).where(
+                    Transaction.id.in_(tx_ids), Transaction.workspace_id == ws_id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
 
     affected = [
-        {"id": str(t.id), "description": t.description, "amount": num(t.amount), "currency": t.currency,
-         "current_category_id": str(t.category_id) if t.category_id else None}
+        {
+            "id": str(t.id),
+            "description": t.description,
+            "amount": num(t.amount),
+            "currency": t.currency,
+            "current_category_id": str(t.category_id) if t.category_id else None,
+        }
         for t in txs
     ]
     preview = {
@@ -141,8 +169,9 @@ async def propose_categorize(
     if _can_apply(ctx, apply):
         if not affected:
             return {**preview, "error": "no matching transactions to update"}
+        tx_uuids = [u for a in affected if (u := parse_uuid(a["id"])) is not None]
         updated = await transaction_service.bulk_update_category(
-            session, ws_id, [parse_uuid(a["id"]) for a in affected], cat.id
+            session, ws_id, tx_uuids, cat.id
         )
         return {**preview, "applied": True, "updated_count": updated}
 
@@ -151,7 +180,8 @@ async def propose_categorize(
 
 @tool(
     name="propose_create_category",
-    description=_PROPOSAL_PREFACE + (
+    description=_PROPOSAL_PREFACE
+    + (
         "Preview the creation of a new category. Returns the proposed shape "
         "and any name collision detected."
     ),
@@ -181,12 +211,14 @@ async def propose_create_category(
     apply: bool = False,
 ) -> dict[str, Any]:
     ws_id = await resolve_workspace_id(session, ctx)
-    existing = (await session.execute(
-        select(Category.id, Category.name).where(
-            Category.workspace_id == ws_id,
-            Category.name.ilike(name.strip()),
+    existing = (
+        await session.execute(
+            select(Category.id, Category.name).where(
+                Category.workspace_id == ws_id,
+                Category.name.ilike(name.strip()),
+            )
         )
-    )).first()
+    ).first()
     preview = {
         "kind": "create_category",
         "proposed": {
@@ -220,7 +252,8 @@ async def propose_create_category(
 
 @tool(
     name="propose_create_budget",
-    description=_PROPOSAL_PREFACE + (
+    description=_PROPOSAL_PREFACE
+    + (
         "Preview a budget creation for a category and month. Returns the "
         "proposal plus any existing budget for the same category/month. "
         "STRICT: if the user mentions a category that does NOT match an "
@@ -260,9 +293,11 @@ async def propose_create_budget(
     cat_id = parse_uuid(category_id)
     target_month = (parse_date(month) or date.today()).replace(day=1)
 
-    cat = (await session.execute(
-        select(Category).where(Category.id == cat_id, Category.workspace_id == ws_id)
-    )).scalar_one_or_none()
+    cat = (
+        await session.execute(
+            select(Category).where(Category.id == cat_id, Category.workspace_id == ws_id)
+        )
+    ).scalar_one_or_none()
     if cat is None:
         return {"error": "category not found"}
 
@@ -298,7 +333,8 @@ async def propose_create_budget(
 
 @tool(
     name="propose_create_transaction",
-    description=_PROPOSAL_PREFACE + (
+    description=_PROPOSAL_PREFACE
+    + (
         "Build a preview for adding a one-off transaction (e.g. 'add a "
         "R$50 lunch today'). Validates the account/category exist; "
         "leaves currency to the account's default when not provided.\n\n"
@@ -314,14 +350,26 @@ async def propose_create_budget(
         "type": "object",
         "properties": {
             "description": {"type": "string", "minLength": 1, "maxLength": 500},
-            "amount": {"type": "number", "exclusiveMinimum": 0, "description": "Absolute value, always positive — direction comes from `type`"},
-            "type": {"type": "string", "enum": ["debit", "credit"], "description": "debit = expense, credit = income"},
+            "amount": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Absolute value, always positive — direction comes from `type`",
+            },
+            "type": {
+                "type": "string",
+                "enum": ["debit", "credit"],
+                "description": "debit = expense, credit = income",
+            },
             "account_id": {"type": "string", "format": "uuid"},
             "category_id": {"type": "string", "format": "uuid"},
             "date": {"type": "string", "format": "date", "description": "Defaults to today"},
             "currency": {"type": "string", "description": "Defaults to the account's currency"},
             "notes": {"type": "string"},
-            "group_id": {"type": "string", "format": "uuid", "description": "Optional: attach to an expense-sharing group"},
+            "group_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "Optional: attach to an expense-sharing group",
+            },
             "splits": {
                 "type": "object",
                 "description": "Required when `group_id` is set. Defines how the amount is split among group members.",
@@ -334,8 +382,14 @@ async def propose_create_budget(
                             "type": "object",
                             "properties": {
                                 "member_id": {"type": "string", "format": "uuid"},
-                                "share_amount": {"type": "number", "description": "Required for share_type='exact' (sum must equal `amount`)"},
-                                "share_pct": {"type": "number", "description": "Required for share_type='percent' (must sum to 100)"},
+                                "share_amount": {
+                                    "type": "number",
+                                    "description": "Required for share_type='exact' (sum must equal `amount`)",
+                                },
+                                "share_pct": {
+                                    "type": "number",
+                                    "description": "Required for share_type='percent' (must sum to 100)",
+                                },
                             },
                             "required": ["member_id"],
                             "additionalProperties": False,
@@ -371,17 +425,23 @@ async def propose_create_transaction(
 ) -> dict[str, Any]:
     ws_id = await resolve_workspace_id(session, ctx)
     acc_id = parse_uuid(account_id)
-    acc = (await session.execute(
-        select(Account).where(Account.id == acc_id, Account.workspace_id == ws_id)
-    )).scalar_one_or_none()
+    acc = (
+        await session.execute(
+            select(Account).where(Account.id == acc_id, Account.workspace_id == ws_id)
+        )
+    ).scalar_one_or_none()
     if acc is None:
         return {"error": "account not found"}
 
     cat = None
     if category_id:
-        cat = (await session.execute(
-            select(Category).where(Category.id == parse_uuid(category_id), Category.workspace_id == ws_id)
-        )).scalar_one_or_none()
+        cat = (
+            await session.execute(
+                select(Category).where(
+                    Category.id == parse_uuid(category_id), Category.workspace_id == ws_id
+                )
+            )
+        ).scalar_one_or_none()
         if cat is None:
             return {"error": "category not found"}
 
@@ -395,9 +455,11 @@ async def propose_create_transaction(
         # Group ownership stays user-scoped (Splitwise authorship check) —
         # the user_id column on `groups` represents the owner, not a
         # tenant filter.
-        group = (await session.execute(
-            select(Group).where(Group.id == gid, Group.user_id == ctx.user_id)
-        )).scalar_one_or_none()
+        group = (
+            await session.execute(
+                select(Group).where(Group.id == gid, Group.user_id == ctx.user_id)
+            )
+        ).scalar_one_or_none()
         if group is None:
             return {"error": "group not found"}
         group_name = group.name
@@ -409,9 +471,17 @@ async def propose_create_transaction(
         if not members_in:
             return {"error": "splits.members must not be empty"}
         member_ids = [parse_uuid(m["member_id"]) for m in members_in]
-        rows = (await session.execute(
-            select(GroupMember).where(GroupMember.id.in_(member_ids), GroupMember.group_id == gid)
-        )).scalars().all()
+        rows = (
+            (
+                await session.execute(
+                    select(GroupMember).where(
+                        GroupMember.id.in_(member_ids), GroupMember.group_id == gid
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
         if len(rows) != len(set(member_ids)):
             return {"error": "one or more members do not belong to the given group"}
         name_by_id = {m.id: m.name for m in rows}
@@ -455,12 +525,14 @@ async def propose_create_transaction(
                 else:
                     share = round(amt * float(m.get("share_pct") or 0) / 100.0, 2)
                     running += share
-                splits_preview.append({
-                    "member_id": str(m["member_id"]),
-                    "member_name": name_by_id.get(parse_uuid(m["member_id"]), "?"),
-                    "share_amount": share,
-                    "share_pct": float(m.get("share_pct") or 0),
-                })
+                splits_preview.append(
+                    {
+                        "member_id": str(m["member_id"]),
+                        "member_name": name_by_id.get(parse_uuid(m["member_id"]), "?"),
+                        "share_amount": share,
+                        "share_pct": float(m.get("share_pct") or 0),
+                    }
+                )
 
     target_date = parse_date(date) or _today()
     proposed: dict[str, Any] = {
@@ -476,6 +548,7 @@ async def propose_create_transaction(
         "notes": (notes or None),
     }
     if splits_preview is not None:
+        assert splits is not None
         proposed["group_id"] = group_id
         proposed["group_name"] = group_name
         proposed["splits"] = {
@@ -497,11 +570,16 @@ async def propose_create_transaction(
                 share_type=splits["share_type"],
                 splits=[
                     TransactionSplitInput(
-                        group_member_id=parse_uuid(m["member_id"]),
-                        share_amount=Decimal(str(m["share_amount"])) if m.get("share_amount") is not None else None,
-                        share_pct=Decimal(str(m["share_pct"])) if m.get("share_pct") is not None else None,
+                        group_member_id=mid,
+                        share_amount=Decimal(str(m["share_amount"]))
+                        if m.get("share_amount") is not None
+                        else None,
+                        share_pct=Decimal(str(m["share_pct"]))
+                        if m.get("share_pct") is not None
+                        else None,
                     )
                     for m in splits["members"]
+                    if (mid := parse_uuid(m["member_id"])) is not None
                 ],
             )
         try:
@@ -530,10 +608,12 @@ async def propose_create_transaction(
 
 @tool(
     name="propose_create_recurring_transaction",
-    description=_PROPOSAL_PREFACE + (
+    description=_PROPOSAL_PREFACE
+    + (
         "Build a preview for adding a recurring transaction / subscription "
         "(e.g. 'Netflix R$55 every month on the 10th'). Frequency is one "
-        "of weekly/monthly/yearly. For monthly use day_of_month (1-31)."
+        "of weekly/biweekly/monthly/quarterly/semiannual/yearly. For monthly, "
+        "quarterly, or semiannual use day_of_month (1-31)."
     ),
     parameters={
         "type": "object",
@@ -541,8 +621,13 @@ async def propose_create_transaction(
             "description": {"type": "string", "minLength": 1, "maxLength": 500},
             "amount": {"type": "number", "exclusiveMinimum": 0},
             "type": {"type": "string", "enum": ["debit", "credit"]},
-            "frequency": {"type": "string", "enum": ["weekly", "monthly", "yearly"]},
-            "day_of_month": {"type": "integer", "minimum": 1, "maximum": 31, "description": "Required for monthly"},
+            "frequency": {"type": "string", "enum": ["weekly", "biweekly", "monthly", "quarterly", "semiannual", "yearly"]},
+            "weekend_adjustment": {
+                "type": "string",
+                "enum": ["none", "previous_friday", "next_monday"],
+                "default": "none",
+            },
+            "day_of_month": {"type": "integer", "minimum": 1, "maximum": 31, "description": "Required for monthly, quarterly, or semiannual"},
             "start_date": {"type": "string", "format": "date", "description": "Defaults to today"},
             "end_date": {"type": "string", "format": "date"},
             "account_id": {"type": "string", "format": "uuid"},
@@ -565,6 +650,7 @@ async def propose_create_recurring_transaction(
     type: str,
     frequency: str,
     account_id: str,
+    weekend_adjustment: WeekendAdjustment = "none",
     day_of_month: int | None = None,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -572,19 +658,27 @@ async def propose_create_recurring_transaction(
     currency: str | None = None,
     apply: bool = False,
 ) -> dict[str, Any]:
-    if frequency == "monthly" and not day_of_month:
-        return {"error": "day_of_month is required for monthly frequency"}
+    if frequency in ("monthly", "quarterly", "semiannual") and not day_of_month:
+        return {"error": "day_of_month is required for monthly, quarterly, or semiannual frequency"}
     ws_id = await resolve_workspace_id(session, ctx)
-    acc = (await session.execute(
-        select(Account).where(Account.id == parse_uuid(account_id), Account.workspace_id == ws_id)
-    )).scalar_one_or_none()
+    acc = (
+        await session.execute(
+            select(Account).where(
+                Account.id == parse_uuid(account_id), Account.workspace_id == ws_id
+            )
+        )
+    ).scalar_one_or_none()
     if acc is None:
         return {"error": "account not found"}
     cat = None
     if category_id:
-        cat = (await session.execute(
-            select(Category).where(Category.id == parse_uuid(category_id), Category.workspace_id == ws_id)
-        )).scalar_one_or_none()
+        cat = (
+            await session.execute(
+                select(Category).where(
+                    Category.id == parse_uuid(category_id), Category.workspace_id == ws_id
+                )
+            )
+        ).scalar_one_or_none()
         if cat is None:
             return {"error": "category not found"}
 
@@ -599,6 +693,7 @@ async def propose_create_recurring_transaction(
             "currency": resolved_currency,
             "type": type,
             "frequency": frequency,
+            "weekend_adjustment": weekend_adjustment,
             "day_of_month": int(day_of_month) if day_of_month else None,
             "start_date": target_start.isoformat(),
             "end_date": target_end.isoformat() if target_end else None,
@@ -621,6 +716,7 @@ async def propose_create_recurring_transaction(
                 currency=resolved_currency,
                 type=type,
                 frequency=frequency,
+                weekend_adjustment=weekend_adjustment,
                 day_of_month=int(day_of_month) if day_of_month else None,
                 start_date=target_start,
                 end_date=target_end,
@@ -635,7 +731,8 @@ async def propose_create_recurring_transaction(
 
 @tool(
     name="propose_update_recurring_transaction",
-    description=_PROPOSAL_PREFACE + (
+    description=_PROPOSAL_PREFACE
+    + (
         "Build a preview for editing an existing recurring transaction "
         "(e.g. 'update my salary to R$8,000', 'change Netflix to R$60'). "
         "Pass the recurring_id and only the fields you want to change. "
@@ -648,7 +745,11 @@ async def propose_create_recurring_transaction(
             "recurring_id": {"type": "string", "format": "uuid"},
             "description": {"type": "string", "minLength": 1, "maxLength": 500},
             "amount": {"type": "number", "exclusiveMinimum": 0},
-            "frequency": {"type": "string", "enum": ["weekly", "monthly", "yearly"]},
+            "frequency": {"type": "string", "enum": ["weekly", "biweekly", "monthly", "quarterly", "semiannual", "yearly"]},
+            "weekend_adjustment": {
+                "type": "string",
+                "enum": ["none", "previous_friday", "next_monday"],
+            },
             "day_of_month": {"type": "integer", "minimum": 1, "maximum": 31},
             "end_date": {"type": "string", "format": "date"},
             "category_id": {"type": "string", "format": "uuid"},
@@ -669,6 +770,7 @@ async def propose_update_recurring_transaction(
     description: str | None = None,
     amount: float | None = None,
     frequency: str | None = None,
+    weekend_adjustment: str | None = None,
     day_of_month: int | None = None,
     end_date: str | None = None,
     category_id: str | None = None,
@@ -677,19 +779,25 @@ async def propose_update_recurring_transaction(
 ) -> dict[str, Any]:
     ws_id = await resolve_workspace_id(session, ctx)
     rid = parse_uuid(recurring_id)
-    rt = (await session.execute(
-        select(RecurringTransaction).where(
-            RecurringTransaction.id == rid, RecurringTransaction.workspace_id == ws_id
+    rt = (
+        await session.execute(
+            select(RecurringTransaction).where(
+                RecurringTransaction.id == rid, RecurringTransaction.workspace_id == ws_id
+            )
         )
-    )).scalar_one_or_none()
+    ).scalar_one_or_none()
     if rt is None:
         return {"error": "recurring transaction not found"}
 
     cat = None
     if category_id:
-        cat = (await session.execute(
-            select(Category).where(Category.id == parse_uuid(category_id), Category.workspace_id == ws_id)
-        )).scalar_one_or_none()
+        cat = (
+            await session.execute(
+                select(Category).where(
+                    Category.id == parse_uuid(category_id), Category.workspace_id == ws_id
+                )
+            )
+        ).scalar_one_or_none()
         if cat is None:
             return {"error": "category not found"}
 
@@ -700,10 +808,13 @@ async def propose_update_recurring_transaction(
         changes["amount"] = float(amount)
     if frequency is not None:
         changes["frequency"] = frequency
+    if weekend_adjustment is not None:
+        changes["weekend_adjustment"] = weekend_adjustment
     if day_of_month is not None:
         changes["day_of_month"] = int(day_of_month)
     if end_date is not None:
-        changes["end_date"] = parse_date(end_date).isoformat() if end_date else None
+        parsed_end = parse_date(end_date)
+        changes["end_date"] = parsed_end.isoformat() if parsed_end else None
     if cat is not None:
         changes["category_id"] = str(cat.id)
     if is_active is not None:
@@ -720,6 +831,7 @@ async def propose_update_recurring_transaction(
             "amount": num(rt.amount),
             "currency": rt.currency,
             "frequency": rt.frequency,
+            "weekend_adjustment": rt.weekend_adjustment,
             "day_of_month": rt.day_of_month,
             "is_active": bool(getattr(rt, "is_active", True)),
         },
@@ -735,10 +847,14 @@ async def propose_update_recurring_transaction(
             update_data["amount"] = Decimal(str(changes["amount"]))
         if "frequency" in changes:
             update_data["frequency"] = changes["frequency"]
+        if "weekend_adjustment" in changes:
+            update_data["weekend_adjustment"] = changes["weekend_adjustment"]
         if "day_of_month" in changes:
             update_data["day_of_month"] = changes["day_of_month"]
         if "end_date" in changes:
-            update_data["end_date"] = parse_date(changes["end_date"]) if changes["end_date"] else None
+            update_data["end_date"] = (
+                parse_date(changes["end_date"]) if changes["end_date"] else None
+            )
         if "category_id" in changes:
             update_data["category_id"] = parse_uuid(changes["category_id"])
         if "is_active" in changes:
@@ -755,7 +871,8 @@ async def propose_update_recurring_transaction(
 
 @tool(
     name="propose_cancel_recurring_transaction",
-    description=_PROPOSAL_PREFACE + (
+    description=_PROPOSAL_PREFACE
+    + (
         "Build a preview for cancelling a recurring transaction (e.g. "
         "'cancel that subscription'). Two modes: 'deactivate' keeps the "
         "history but stops future occurrences (recommended); 'delete' "
@@ -783,12 +900,14 @@ async def propose_cancel_recurring_transaction(
     apply: bool = False,
 ) -> dict[str, Any]:
     ws_id = await resolve_workspace_id(session, ctx)
-    rt = (await session.execute(
-        select(RecurringTransaction).where(
-            RecurringTransaction.id == parse_uuid(recurring_id),
-            RecurringTransaction.workspace_id == ws_id,
+    rt = (
+        await session.execute(
+            select(RecurringTransaction).where(
+                RecurringTransaction.id == parse_uuid(recurring_id),
+                RecurringTransaction.workspace_id == ws_id,
+            )
         )
-    )).scalar_one_or_none()
+    ).scalar_one_or_none()
     if rt is None:
         return {"error": "recurring transaction not found"}
 
@@ -832,7 +951,8 @@ async def propose_cancel_recurring_transaction(
 
 @tool(
     name="propose_create_goal",
-    description=_PROPOSAL_PREFACE + (
+    description=_PROPOSAL_PREFACE
+    + (
         "Build a preview for creating a savings/financial goal (e.g. "
         "'set a R$10k goal for travel')."
     ),
@@ -843,7 +963,11 @@ async def propose_cancel_recurring_transaction(
             "target_amount": {"type": "number", "exclusiveMinimum": 0},
             "currency": {"type": "string", "description": "Defaults to user's primary currency"},
             "deadline": {"type": "string", "format": "date"},
-            "initial_amount": {"type": "number", "minimum": 0, "description": "How much you've already saved"},
+            "initial_amount": {
+                "type": "number",
+                "minimum": 0,
+                "description": "How much you've already saved",
+            },
             "icon": {"type": "string"},
             "color": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},
             "apply": _APPLY_FIELD,
@@ -907,19 +1031,24 @@ async def propose_create_goal(
 
 def _today():
     from datetime import date as _d
+
     return _d.today()
 
 
 @tool(
     name="propose_create_payee_rule",
-    description=_PROPOSAL_PREFACE + (
+    description=_PROPOSAL_PREFACE
+    + (
         "Preview a rule that auto-categorizes future transactions matching "
         "a description pattern. Returns the proposed rule shape."
     ),
     parameters={
         "type": "object",
         "properties": {
-            "match_pattern": {"type": "string", "description": "Substring to match in transaction description (case-insensitive)"},
+            "match_pattern": {
+                "type": "string",
+                "description": "Substring to match in transaction description (case-insensitive)",
+            },
             "category_id": {"type": "string", "format": "uuid"},
             "apply": _APPLY_FIELD,
         },
@@ -939,9 +1068,11 @@ async def propose_create_payee_rule(
 ) -> dict[str, Any]:
     ws_id = await resolve_workspace_id(session, ctx)
     cat_id = parse_uuid(category_id)
-    cat = (await session.execute(
-        select(Category).where(Category.id == cat_id, Category.workspace_id == ws_id)
-    )).scalar_one_or_none()
+    cat = (
+        await session.execute(
+            select(Category).where(Category.id == cat_id, Category.workspace_id == ws_id)
+        )
+    ).scalar_one_or_none()
     if cat is None:
         return {"error": "category not found"}
 

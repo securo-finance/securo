@@ -154,8 +154,12 @@ async def test_add_buys_sets_units_average_and_cost_basis(session, test_workspac
         AssetTransactionCreate(kind="buy", quantity=Decimal("5"), price=Decimal("26"), date=date(2026, 2, 1)),
     )
     # avg = (200 + 130) / 15 = 22.00
+    assert read is not None
     assert read.units == 15
+
+    assert read.average_price is not None
     assert round(read.average_price, 2) == 22.00
+    assert read.total_invested is not None
     assert round(read.total_invested, 2) == 330.00
     assert read.transaction_count == 2
 
@@ -170,8 +174,11 @@ async def test_sell_records_realized_gain(session, test_workspace, market_asset)
         session, market_asset.id, test_workspace.id,
         AssetTransactionCreate(kind="sell", quantity=Decimal("4"), price=Decimal("30"), date=date(2026, 3, 1)),
     )
+    assert read is not None
     assert read.units == 6
+    assert read.average_price is not None
     assert round(read.average_price, 2) == 20.00  # average unchanged by sell
+    assert read.realized_gain is not None
     assert round(read.realized_gain, 2) == 40.00  # (30 - 20) * 4
 
 
@@ -182,7 +189,9 @@ async def test_delete_transaction_recomputes(session, test_workspace, market_ass
         AssetTransactionCreate(kind="buy", quantity=Decimal("10"), price=Decimal("20"), date=date(2026, 1, 1)),
     )
     txs = await asset_transaction_service.list_asset_transactions(session, market_asset.id, test_workspace.id)
+    assert txs is not None
     read = await asset_transaction_service.delete_transaction(session, txs[0].id, test_workspace.id)
+    assert read is not None
     assert read.units == 0
     assert read.average_price is None
 
@@ -194,10 +203,13 @@ async def test_update_transaction_recomputes(session, test_workspace, market_ass
         AssetTransactionCreate(kind="buy", quantity=Decimal("10"), price=Decimal("20"), date=date(2026, 1, 1)),
     )
     txs = await asset_transaction_service.list_asset_transactions(session, market_asset.id, test_workspace.id)
+    assert txs is not None
     read = await asset_transaction_service.update_transaction(
         session, txs[0].id, test_workspace.id, AssetTransactionUpdate(quantity=Decimal("20")),
     )
+    assert read is not None
     assert read.units == 20
+    assert read.average_price is not None
     assert round(read.average_price, 2) == 20.00
 
 
@@ -217,6 +229,7 @@ async def test_oversell_is_rejected(session, test_workspace, market_asset):
     assert exc.value.status_code == 422
     # The rejected sell must not have changed the position.
     txs = await asset_transaction_service.list_asset_transactions(session, market_asset.id, test_workspace.id)
+    assert txs is not None
     assert len(txs) == 1
 
 
@@ -230,6 +243,7 @@ async def test_sell_exact_holding_is_allowed(session, test_workspace, market_ass
         session, market_asset.id, test_workspace.id,
         AssetTransactionCreate(kind="sell", quantity=Decimal("10"), price=Decimal("30"), date=date(2026, 2, 1)),
     )
+    assert read is not None
     assert read.units == 0
 
 
@@ -255,9 +269,11 @@ async def test_full_exit_marks_sold(session, test_workspace, market_asset):
         session, market_asset.id, test_workspace.id,
         AssetTransactionCreate(kind="sell", quantity=Decimal("10"), price=Decimal("30"), date=date(2026, 6, 1)),
     )
+    assert read is not None
     assert read.units == 0
     assert read.average_price is None
     assert read.sell_date == date(2026, 6, 1)  # drops out of the active portfolio
+    assert read.realized_gain is not None
     assert round(read.realized_gain, 2) == 100.00
 
 
@@ -275,10 +291,13 @@ async def test_rebuy_after_full_exit_resets_position(session, test_workspace, ma
         session, market_asset.id, test_workspace.id,
         AssetTransactionCreate(kind="buy", quantity=Decimal("5"), price=Decimal("40"), date=date(2026, 3, 1)),
     )
+    assert read is not None
     assert read.units == 5
+    assert read.average_price is not None
     assert round(read.average_price, 2) == 40.00
     assert read.sell_date is None  # re-entered → no longer "sold"
     # Realized gain from the earlier round-trip is retained.
+    assert read.realized_gain is not None
     assert round(read.realized_gain, 2) == 100.00
 
 
@@ -297,7 +316,9 @@ async def test_multiple_sells_accumulate_realized_gain(session, test_workspace, 
         AssetTransactionCreate(kind="sell", quantity=Decimal("2"), price=Decimal("25"), date=date(2026, 3, 1)),
     )
     # (30-20)*3 + (25-20)*2 = 30 + 10 = 40
+    assert read is not None
     assert read.units == 5
+    assert read.realized_gain is not None
     assert round(read.realized_gain, 2) == 40.00
 
 
@@ -348,7 +369,9 @@ async def test_buy_into_holding_consolidates_by_ticker(session, test_workspace, 
     )
     # Same logical holding — not two assets.
     assert first.id == second.id
+    assert second is not None
     assert second.units == 20
+    assert second.average_price is not None
     assert round(second.average_price, 2) == 60.00
 
     all_vale = (

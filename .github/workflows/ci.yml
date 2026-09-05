@@ -15,42 +15,94 @@ jobs:
         working-directory: backend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - name: Detect backend-relevant changes
+        id: backend-changes
+        working-directory: .
+        run: |
+          set -euo pipefail
+
+          # Keep the required Backend Tests check fast for PRs that only touch
+          # frontend/docs files. Pushes to main still run the full backend suite.
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run_backend=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed_files="$(git diff --name-only HEAD^1 HEAD)"
+          printf '%s\n' "$changed_files"
+
+          if printf '%s\n' "$changed_files" | grep -Eq '^(backend/.*|\.github/workflows/ci\.yml)$'; then
+            echo "run_backend=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_backend=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip backend tests
+        if: steps.backend-changes.outputs.run_backend != 'true'
+        run: echo "No backend-relevant changes; skipping backend test suite."
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        if: steps.backend-changes.outputs.run_backend == 'true'
+        uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          # Single source of truth with the Docker image: CI must test the
+          # same interpreter the backend ships with.
+          python-version-file: backend/.python-version
           cache: pip
 
       - name: Install dependencies
+        if: steps.backend-changes.outputs.run_backend == 'true'
         run: |
-          pip install -e ".[dev]"
+          # Everything comes from uv.lock: export it (--frozen never touches
+          # the lock) and hand it to pip with hash checking, so CI installs
+          # exactly the audited versions.
+          # renovate: datasource=pypi depName=uv
+          pip install -q uv==0.12.5
+          uv export --frozen --all-extras --no-emit-project -o /tmp/requirements-dev.txt
+          pip install --require-hashes -r /tmp/requirements-dev.txt
+          pip install --no-deps -e .
+
+      - name: Verify lockfile is in sync
+        if: steps.backend-changes.outputs.run_backend == 'true'
+        run: |
+          # Fails if pyproject.toml changed without regenerating uv.lock
+          # (someone edited deps without running scripts/lock.sh).
+          uv lock --check
 
       - name: Lint with Ruff
+        if: steps.backend-changes.outputs.run_backend == 'true'
         run: ruff check .
 
+      - name: Type check with ty
+        if: steps.backend-changes.outputs.run_backend == 'true'
+        run: ty check .
+
       - name: Run tests with coverage
+        if: steps.backend-changes.outputs.run_backend == 'true'
         run: |
-          pytest --cov=app --cov-report=xml --cov-report=term-missing --cov-fail-under=60
+          pytest -n auto --dist loadfile --cov=app --cov-report=xml --cov-report=term-missing --cov-fail-under=60
 
       - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@v4
+        if: ${{ always() && steps.backend-changes.outputs.run_backend == 'true' }}
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-report
           path: backend/coverage.xml
 
       - name: Extract coverage percentage
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && steps.backend-changes.outputs.run_backend == 'true'
         id: coverage
         run: |
           COVERAGE=$(python -c "import xml.etree.ElementTree as ET; print(round(float(ET.parse('coverage.xml').getroot().attrib['line-rate']) * 100))")
           echo "percentage=$COVERAGE" >> $GITHUB_OUTPUT
 
       - name: Update coverage badge
-        if: github.ref == 'refs/heads/main'
-        uses: schneegans/dynamic-badges-action@v1.7.0
+        if: github.repository == 'securo-finance/securo' && github.ref == 'refs/heads/main' && steps.backend-changes.outputs.run_backend == 'true'
+        uses: schneegans/dynamic-badges-action@v1.9.0
         with:
           auth: ${{ secrets.GIST_TOKEN }}
           gistID: ae627b744aaa2ba89d850ea541c311be
@@ -61,6 +113,19 @@ jobs:
           minColorRange: 50
           maxColorRange: 90
 
+  migration-chain:
+    name: Migration Chain
+    runs-on: ubuntu-latest
+
+    steps:
+      # No `ref:` override, so on a pull request this is the merge with the
+      # base branch. That is the whole point: a revision id that only clashes
+      # once both sides are together is visible here and nowhere else.
+      - uses: actions/checkout@v7
+
+      - name: Check the Alembic revision chain
+        run: python3 backend/scripts/check_migration_chain.py
+
   frontend-checks:
     name: Frontend Checks
     runs-on: ubuntu-latest
@@ -69,10 +134,10 @@ jobs:
         working-directory: frontend
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -89,3 +154,51 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+  helm-checks:
+    name: Helm Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - name: Detect helm-relevant changes
+        id: helm-changes
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "run_helm=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed_files="$(git diff --name-only HEAD^1 HEAD)"
+
+          if echo "$changed_files" | grep -Eq '^(charts/securo/.*|\.github/workflows/ci\.yml)$'; then
+            echo "run_helm=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_helm=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip helm checks
+        if: steps.helm-changes.outputs.run_helm != 'true'
+        run: echo "No helm-relevant changes; skipping helm lint."
+
+      - name: Set up Helm
+        if: steps.helm-changes.outputs.run_helm == 'true'
+        uses: azure/setup-helm@v5
+        with:
+          version: v4.2.4
+
+      - name: Lint Helm Chart
+        if: steps.helm-changes.outputs.run_helm == 'true'
+        run: helm lint charts/securo
+
+      - name: Validate Helm Chart with Kubeconform
+        if: steps.helm-changes.outputs.run_helm == 'true'
+        run: |
+          curl -sL https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz | tar -xz
+          sudo mv kubeconform /usr/local/bin/
+
+          helm template securo-test charts/securo | kubeconform -summary -strict

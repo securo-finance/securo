@@ -81,6 +81,8 @@ def upgrade() -> None:
             ),
             {"acc_id": acc_id, "acc_currency": currency},
         ).fetchone()
+        if row is None:
+            continue
 
         tx_sum = Decimal(str(row[0] or 0))
         oldest_date = row[1]

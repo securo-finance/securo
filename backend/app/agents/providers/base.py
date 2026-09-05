@@ -107,11 +107,11 @@ class LLMProvider(ABC):
 
     def __init__(self, *, api_key: str = "", base_url: Optional[str] = None, model: Optional[str] = None):
         self.api_key = api_key
-        self.base_url = base_url
+        self.base_url: str = base_url or ""
         self.default_model = model
 
     @abstractmethod
-    async def chat_stream(
+    def chat_stream(
         self,
         messages: list[ChatMessage],
         *,
