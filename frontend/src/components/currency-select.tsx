@@ -41,6 +41,7 @@ export const CURRENCIES = [
   { code: 'NZD', flag: '\u{1F1F3}\u{1F1FF}', symbol: 'NZ$' },
   { code: 'VND', flag: '\u{1F1FB}\u{1F1F3}', symbol: '₫' },
   { code: 'SGD', flag: '\u{1F1F8}\u{1F1EC}', symbol: 'S$' },
+  { code: 'TRY', flag: '\u{1F1F9}\u{1F1F7}', symbol: '₺' },
 ] as const
 
 interface CurrencySelectProps {

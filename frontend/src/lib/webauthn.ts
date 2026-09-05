@@ -66,6 +66,22 @@ export function isPasskeySupported(): boolean {
   return passkeyBlocker() === null
 }
 
+/** Whether this browser can surface passkeys through form autofill. */
+export async function isConditionalPasskeySupported(): Promise<boolean> {
+  if (!isPasskeySupported()) return false
+
+  const credentialType = PublicKeyCredential as typeof PublicKeyCredential & {
+    isConditionalMediationAvailable?: () => Promise<boolean>
+  }
+  if (!credentialType.isConditionalMediationAvailable) return false
+
+  try {
+    return await credentialType.isConditionalMediationAvailable()
+  } catch {
+    return false
+  }
+}
+
 const SERVER_FAILURES: Record<string, PasskeyFailure> = {
   passkey_origin_ip: 'ip',
   passkey_origin_insecure: 'insecure',
@@ -166,13 +182,17 @@ export async function startPasskeyRegistration(options: Record<string, unknown>)
   }
 }
 
-export async function startPasskeyAuthentication(options: Record<string, unknown>): Promise<AuthenticationCredentialJSON> {
+async function getPasskeyAuthentication(
+  options: Record<string, unknown>,
+  request: Pick<CredentialRequestOptions, 'mediation' | 'signal'> = {},
+): Promise<AuthenticationCredentialJSON> {
   if (!isPasskeySupported()) {
     throw new Error('Passkeys are not supported in this browser or context')
   }
 
   const credential = await navigator.credentials.get({
     publicKey: requestOptionsFromJSON(options as PublicKeyCredentialRequestOptionsJSON),
+    ...request,
   })
 
   if (!(credential instanceof PublicKeyCredential)) {
@@ -193,4 +213,15 @@ export async function startPasskeyAuthentication(options: Record<string, unknown
     },
     clientExtensionResults: credential.getClientExtensionResults(),
   }
+}
+
+export async function startPasskeyAuthentication(options: Record<string, unknown>): Promise<AuthenticationCredentialJSON> {
+  return getPasskeyAuthentication(options)
+}
+
+export async function startConditionalPasskeyAuthentication(
+  options: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<AuthenticationCredentialJSON> {
+  return getPasskeyAuthentication(options, { mediation: 'conditional', signal })
 }
