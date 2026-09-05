@@ -99,7 +99,7 @@ def test_the_currencies_the_product_supports_have_a_pack():
     # the dollar are shared by many, so they are covered by their members'
     # own packs rather than mapped here.
     country_of = {
-        "BRL": "BR", "GBP": "GB", "JPY": "JP", "CAD": "CA", "AUD": "AU",
+        "AZN": "AZ", "BRL": "BR", "GBP": "GB", "JPY": "JP", "CAD": "CA", "AUD": "AU",
         "CHF": "CH", "CNY": "CN", "ARS": "AR", "MXN": "MX", "CLP": "CL",
         "COP": "CO", "PEN": "PE", "UYU": "UY", "INR": "IN", "SEK": "SE",
         "DKK": "DK", "NOK": "NO", "PLN": "PL", "CZK": "CZ", "HUF": "HU",
