@@ -15,6 +15,7 @@ import fr from '@/locales/fr.json'
 import nl from '@/locales/nl.json'
 import sk from '@/locales/sk.json'
 import el from '@/locales/el.json'
+import hi from '@/locales/hi.json'
 import ja from '@/locales/ja.json'
 
 function syncHtmlLang(lng: string) {
@@ -39,6 +40,7 @@ i18n
       nl: { translation: nl },
       sk: { translation: sk },
       el: { translation: el },
+      hi: { translation: hi },
       ja: { translation: ja },
     },
     fallbackLng: 'en',
@@ -72,6 +74,7 @@ export type SupportedLang =
   | 'nl'
   | 'sk'
   | 'el'
+  | 'hi'
   | 'ja'
 
 // Single source of truth for language pickers. When adding a locale, register
@@ -92,6 +95,7 @@ export const SUPPORTED_LANGS: { code: SupportedLang; label: string }[] = [
   { code: 'nl', label: 'Nederlands' },
   { code: 'sk', label: 'Slovenčina' },
   { code: 'el', label: 'Ελληνικά' },
+  { code: 'hi', label: 'हिन्दी' },
   { code: 'ja', label: '日本語' },
 ]
 
@@ -117,6 +121,7 @@ export function resolveSupportedLang(lng?: string | null): SupportedLang {
   if (tag.startsWith('nl')) return 'nl'
   if (tag.startsWith('sk')) return 'sk'
   if (tag.startsWith('el')) return 'el'
+  if (tag.startsWith('hi')) return 'hi'
   if (tag.startsWith('ja')) return 'ja'
   return 'en'
 }
