@@ -381,6 +381,44 @@ async def test_get_transactions_parses_nested_and_flat_shapes(eb_keys):
 
 
 @pytest.mark.asyncio
+async def test_get_transactions_stops_on_repeated_continuation_key(eb_keys, caplog):
+    """A provider cursor loop must not duplicate a page up to the safety cap."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+    page = {
+        "transactions": [
+            {
+                "entry_reference": "looped-tx-1",
+                "status": "BOOK",
+                "transaction_amount": {"amount": "10.00", "currency": "EUR"},
+                "credit_debit_indicator": "DBIT",
+                "booking_date": "2026-05-10",
+            }
+        ],
+        "continuation_key": "cursor-a",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json=page)
+
+    credentials = {
+        "session_id": "sess-x",
+        "valid_until": "2099-01-01T00:00:00Z",
+    }
+    with _patch_client(provider, handler), caplog.at_level("WARNING"):
+        transactions = await provider.get_transactions(
+            credentials, "acc-1", date(2026, 5, 1)
+        )
+
+    assert len(requests) == 2
+    assert requests[0].url.params.get("continuation_key") is None
+    assert requests[1].url.params["continuation_key"] == "cursor-a"
+    assert [transaction.external_id for transaction in transactions] == ["looped-tx-1"]
+    assert "pagination loop detected" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_refresh_credentials_expired_raises(eb_keys):
     provider = EnableBankingProvider()
     expired = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat().replace(
