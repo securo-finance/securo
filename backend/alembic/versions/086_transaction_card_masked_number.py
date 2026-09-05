@@ -1,12 +1,16 @@
 """store the masked card number on credit-card transactions
 
-Revision ID: 078
-Revises: 077
+Revision ID: 086
+Revises: 085
 Create Date: 2026-08-30
 
 Only the provider-normalized final four characters are persisted. A card
 account can represent several physical or virtual cards, so Account's own
 masked number cannot answer which card made a transaction.
+
+Numbering note: renumbered to chain off `085`
+(`transaction_exclude_from_pnl`), which landed on `main` while this branch
+was open.
 """
 
 from typing import Sequence, Union
@@ -14,8 +18,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "078"
-down_revision: Union[str, None] = "077"
+revision: str = "086"
+down_revision: Union[str, None] = "085"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
