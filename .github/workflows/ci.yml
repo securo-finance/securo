@@ -61,7 +61,7 @@ jobs:
           # the lock) and hand it to pip with hash checking, so CI installs
           # exactly the audited versions.
           # renovate: datasource=pypi depName=uv
-          pip install -q uv==0.12.5
+          pip install -q uv==0.12.7
           uv export --frozen --all-extras --no-emit-project -o /tmp/requirements-dev.txt
           pip install --require-hashes -r /tmp/requirements-dev.txt
           pip install --no-deps -e .
