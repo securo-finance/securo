@@ -14,6 +14,9 @@ import de from '@/locales/de.json'
 import fr from '@/locales/fr.json'
 import nl from '@/locales/nl.json'
 import sk from '@/locales/sk.json'
+import el from '@/locales/el.json'
+import hi from '@/locales/hi.json'
+import ja from '@/locales/ja.json'
 
 function syncHtmlLang(lng: string) {
   document.documentElement.lang = lng
@@ -36,6 +39,9 @@ i18n
       fr: { translation: fr },
       nl: { translation: nl },
       sk: { translation: sk },
+      el: { translation: el },
+      hi: { translation: hi },
+      ja: { translation: ja },
     },
     fallbackLng: 'en',
     // English is the default. Honour an explicit, persisted choice
@@ -67,6 +73,9 @@ export type SupportedLang =
   | 'fr'
   | 'nl'
   | 'sk'
+  | 'el'
+  | 'hi'
+  | 'ja'
 
 // Single source of truth for language pickers. When adding a locale, register
 // the bundle above and add one entry here; every picker stays in sync instead
@@ -85,6 +94,9 @@ export const SUPPORTED_LANGS: { code: SupportedLang; label: string }[] = [
   { code: 'uk', label: 'Українська' },
   { code: 'nl', label: 'Nederlands' },
   { code: 'sk', label: 'Slovenčina' },
+  { code: 'el', label: 'Ελληνικά' },
+  { code: 'hi', label: 'हिन्दी' },
+  { code: 'ja', label: '日本語' },
 ]
 
 // Normalise any browser/i18n language tag to one of our supported keys. The
@@ -108,6 +120,9 @@ export function resolveSupportedLang(lng?: string | null): SupportedLang {
   if (tag.startsWith('fr')) return 'fr'
   if (tag.startsWith('nl')) return 'nl'
   if (tag.startsWith('sk')) return 'sk'
+  if (tag.startsWith('el')) return 'el'
+  if (tag.startsWith('hi')) return 'hi'
+  if (tag.startsWith('ja')) return 'ja'
   return 'en'
 }
 
