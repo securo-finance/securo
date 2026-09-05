@@ -1537,6 +1537,7 @@
     "syncedFromHint": "Originally synced from {{source}} — you can rename freely, sync matching uses the connection ID.",
     "chartByWallet": "By Wallet",
     "chartByAsset": "By Asset",
+    "chartSelectHint": "Click a legend item to view it alone. Click again to show all.",
     "chartGroupMode": "Chart grouping",
     "chartDrawMode": "Chart drawing",
     "chartStacked": "Stacked",

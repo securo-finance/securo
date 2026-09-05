@@ -1538,6 +1538,7 @@
     "syncedFromHint": "Originariamente sincronizzato da {{source}} — puoi rinominarlo liberamente, la corrispondenza di sincronizzazione usa l'ID della connessione.",
     "chartByWallet": "Per portafoglio",
     "chartByAsset": "Per bene",
+    "chartSelectHint": "Fai clic su una voce della legenda per visualizzarla da sola. Fai di nuovo clic per mostrarle tutte.",
     "chartGroupMode": "Raggruppamento grafico",
     "chartDrawMode": "Visualizzazione grafico",
     "chartStacked": "Impilato",

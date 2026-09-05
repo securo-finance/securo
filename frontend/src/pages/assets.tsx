@@ -1710,6 +1710,7 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
   // cumulative total.
   const [mode, setMode] = useState<'wallet' | 'asset'>('wallet')
   const [drawMode, setDrawMode] = useState<'stacked' | 'lines'>('stacked')
+  const [selectedSeriesKey, setSelectedSeriesKey] = useState<string | null>(null)
   const isStacked = drawMode === 'stacked'
 
   const formatCompact = (v: number) => {
@@ -1801,6 +1802,18 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
       return bv - av || a.name.localeCompare(b.name)
     })
   }, [series, displayTrend])
+  const selectedSeries = sortedSeries.find(s => s.key === selectedSeriesKey)
+  const visibleSeries = selectedSeries ? [selectedSeries] : sortedSeries
+  const visibleTrend = useMemo(() => selectedSeries
+    ? displayTrend.map(row => ({
+        date: row.date,
+        [selectedSeries.key]: row[selectedSeries.key] ?? 0,
+        _total: row[selectedSeries.key] ?? 0,
+      }))
+    : displayTrend, [displayTrend, selectedSeries])
+  const visibleTotal = selectedSeries
+    ? Number(visibleTrend[visibleTrend.length - 1]?._total ?? 0)
+    : data.total
 
   return (
     <div className="border border-border rounded-xl bg-card shadow-sm p-5">
@@ -1812,7 +1825,7 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
               <button
                 type="button"
                 aria-pressed={mode === 'wallet'}
-                onClick={() => setMode('wallet')}
+                onClick={() => { setMode('wallet'); setSelectedSeriesKey(null) }}
                 className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${mode === 'wallet' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 {t('assets.chartByWallet')}
@@ -1820,7 +1833,7 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
               <button
                 type="button"
                 aria-pressed={mode === 'asset'}
-                onClick={() => setMode('asset')}
+                onClick={() => { setMode('asset'); setSelectedSeriesKey(null) }}
                 className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${mode === 'asset' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 {t('assets.chartByAsset')}
@@ -1847,17 +1860,17 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
           </div>
         </div>
         <div className="text-left sm:text-right">
-          <span className="text-xs text-muted-foreground">{t('assets.total')}</span>
+          <span className="text-xs text-muted-foreground">{selectedSeries?.name ?? t('assets.total')}</span>
           <p className="text-lg font-bold tabular-nums text-foreground">
-            {mask(formatCurrency(data.total, currency, loc))}
+            {mask(formatCurrency(visibleTotal, currency, loc))}
           </p>
         </div>
       </div>
       <div className="h-56">
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={displayTrend} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+          <AreaChart data={visibleTrend} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
             <defs>
-              {isStacked && sortedSeries.map(s => (
+              {isStacked && visibleSeries.map(s => (
                 <linearGradient key={s.key} id={`portfolio-grad-${s.key}`} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor={s.color} stopOpacity={0.5} />
                   <stop offset="100%" stopColor={s.color} stopOpacity={0.1} />
@@ -1882,9 +1895,9 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
             <RechartsTooltip
               content={({ active, payload, label }) => {
                 if (!active || !payload?.length) return null
-                const row = displayTrend.find(r => r.date === label)
+                const row = visibleTrend.find(r => r.date === label)
                 const dateTotal = row ? ((row._total as number) ?? 0) : 0
-                const items = sortedSeries
+                const items = visibleSeries
                   .map(s => {
                     const val = row ? ((row[s.key] as number) ?? 0) : 0
                     return { key: s.key, name: s.name, value: val, color: s.color }
@@ -1914,7 +1927,7 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
               }}
             />
             {/* Stacked mode shows cumulative bands; line mode plots each series' own value. */}
-            {sortedSeries.map(s => (
+            {visibleSeries.map(s => (
               <Area
                 key={s.key}
                 type="monotone"
@@ -1934,13 +1947,20 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
           </AreaChart>
         </ResponsiveContainer>
       </div>
-      {/* Legend */}
-      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 px-1">
+      {/* Keep every legend item available so users can switch the isolated series. */}
+      <p className="text-[11px] text-muted-foreground mt-3 px-1">{t('assets.chartSelectHint')}</p>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1 px-1">
         {sortedSeries.map(s => (
-          <div key={s.key} className="flex items-center gap-1.5">
-            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: s.color }} />
-            <span className="text-[11px] text-muted-foreground">{s.name}</span>
-          </div>
+          <button
+            key={s.key}
+            type="button"
+            aria-pressed={selectedSeries?.key === s.key}
+            onClick={() => setSelectedSeriesKey(selectedSeries?.key === s.key ? null : s.key)}
+            className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${selectedSeries?.key === s.key ? 'bg-muted text-foreground font-semibold' : selectedSeries ? 'text-muted-foreground opacity-50 hover:opacity-100' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`}
+          >
+            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+            <span>{s.name}</span>
+          </button>
         ))}
       </div>
     </div>

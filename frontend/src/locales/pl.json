@@ -1618,6 +1618,7 @@
     "syncedFromHint": "Pierwotnie zsynchronizowane z {{source}} — możesz dowolnie zmieniać nazwę, dopasowanie przy synchronizacji korzysta z identyfikatora połączenia.",
     "chartByWallet": "Wg portfela",
     "chartByAsset": "Wg aktywa",
+    "chartSelectHint": "Kliknij element legendy, aby wyświetlić go osobno. Kliknij ponownie, aby pokazać wszystkie.",
     "chartGroupMode": "Grupowanie wykresu",
     "chartDrawMode": "Sposób rysowania wykresu",
     "chartStacked": "Skumulowany",

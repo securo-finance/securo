@@ -1538,6 +1538,7 @@
     "syncedFromHint": "Ursprünglich synchronisiert aus {{source}} — du kannst den Namen frei anpassen, die Synchronisierung verwendet die Verbindungs-ID.",
     "chartByWallet": "Nach Portfolio",
     "chartByAsset": "Nach Vermögenswert",
+    "chartSelectHint": "Klicke auf einen Legendeneintrag, um ihn einzeln anzuzeigen. Klicke erneut, um alle anzuzeigen.",
     "chartGroupMode": "Diagrammgruppierung",
     "chartDrawMode": "Diagrammdarstellung",
     "chartStacked": "Gestapelt",

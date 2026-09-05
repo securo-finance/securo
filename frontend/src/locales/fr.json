@@ -1538,6 +1538,7 @@
     "syncedFromHint": "Initialement synchronisé depuis {{source}} — vous pouvez renommer librement, la correspondance de synchronisation utilise l'identifiant de la connexion.",
     "chartByWallet": "Par portefeuille",
     "chartByAsset": "Par actif",
+    "chartSelectHint": "Cliquez sur un élément de la légende pour le voir seul. Cliquez à nouveau pour tout afficher.",
     "chartGroupMode": "Regroupement du graphique",
     "chartDrawMode": "Tracé du graphique",
     "chartStacked": "Empilé",

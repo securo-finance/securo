@@ -1537,6 +1537,7 @@
     "syncedFromHint": "元は{{source}}から同期 — 名前は自由に変更できます。同期の照合には接続IDを使います。",
     "chartByWallet": "ウォレット別",
     "chartByAsset": "資産別",
+    "chartSelectHint": "凡例の項目をクリックすると、その項目だけを表示します。もう一度クリックすると、すべて表示します。",
     "chartGroupMode": "チャートのグループ化",
     "chartDrawMode": "チャートの描画",
     "chartStacked": "積み上げ",

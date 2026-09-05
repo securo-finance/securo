@@ -1538,6 +1538,7 @@
     "syncedFromHint": "Sincronizado originalmente desde {{source}} — puedes renombrarlo libremente, la coincidencia de sincronización usa el ID de conexión.",
     "chartByWallet": "Por cartera",
     "chartByAsset": "Por activo",
+    "chartSelectHint": "Haz clic en un elemento de la leyenda para verlo por separado. Haz clic de nuevo para mostrar todos.",
     "chartGroupMode": "Agrupación del gráfico",
     "chartDrawMode": "Trazado del gráfico",
     "chartStacked": "Apilado",

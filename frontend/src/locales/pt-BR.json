@@ -1538,6 +1538,7 @@
     "syncedFromHint": "Sincronizada originalmente de {{source}} — pode renomear livremente, a sincronização não usa o nome.",
     "chartByWallet": "Por Carteira",
     "chartByAsset": "Por Ativo",
+    "chartSelectHint": "Clique em um item da legenda para vê-lo isoladamente. Clique novamente para mostrar todos.",
     "chartGroupMode": "Agrupamento do gráfico",
     "chartDrawMode": "Desenho do gráfico",
     "chartStacked": "Empilhado",

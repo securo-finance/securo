@@ -1645,6 +1645,7 @@
     "syncedFromHint": "Pôvodne synchronizované z {{source}} — môžeš voľne premenovať, párovanie pri synchronizácii používa ID pripojenia.",
     "chartByWallet": "Podľa peňaženky",
     "chartByAsset": "Podľa aktíva",
+    "chartSelectHint": "Kliknite na položku legendy a zobrazte ju samostatne. Opätovným kliknutím zobrazíte všetky.",
     "chartGroupMode": "Zoskupenie grafu",
     "chartDrawMode": "Vykreslenie grafu",
     "chartStacked": "Skladané",

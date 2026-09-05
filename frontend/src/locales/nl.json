@@ -1539,6 +1539,7 @@
     "syncedFromHint": "Oorspronkelijk gesynchroniseerd vanuit {{source}} - u kunt de naam vrijelijk wijzigen, synchronisatiematching gebruikt de verbindings-ID.",
     "chartByWallet": "Via portemonnee",
     "chartByAsset": "Op activa",
+    "chartSelectHint": "Klik op een legenda-item om het afzonderlijk te bekijken. Klik opnieuw om alles te tonen.",
     "chartGroupMode": "Grafiekgroepering",
     "chartDrawMode": "Grafiek tekenen",
     "chartStacked": "Gestapeld",
