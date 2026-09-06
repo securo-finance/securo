@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
+from app.providers import gocardless as gocardless_module
 from app.providers.base import (
     ProviderRateLimited,
     ProviderUserActionRequired,
@@ -119,6 +120,32 @@ async def test_list_institutions_maps_fields_and_countries():
     assert institution.country == "GB"
     assert institution.max_history_days == 730
     assert institution.max_consent_days == 90
+
+
+@pytest.mark.asyncio
+async def test_list_institutions_skips_entries_missing_id_or_name():
+    provider = GoCardlessProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "id": "MONZO_MONZGB2L",
+                    "name": "Monzo",
+                    "countries": ["GB"],
+                },
+                {"id": "X_NONAME", "countries": ["GB"]},
+                {"id": "", "name": "Blank", "countries": ["FR"]},
+            ],
+        )
+
+    with _patch_client(provider, handler):
+        result = await provider.list_institutions()
+
+    assert result.countries == ["GB"]
+    assert len(result.institutions) == 1
+    assert result.institutions[0].name == "MONZO_MONZGB2L"
 
 
 @pytest.mark.asyncio
@@ -413,6 +440,40 @@ async def test_build_account_propagates_access_failures(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("amount", [None, "not-a-number"])
+async def test_build_account_skips_unparseable_balance(amount):
+    provider = GoCardlessProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/accounts/X/"):
+            return httpx.Response(200, json={"status": "READY"})
+        if path.endswith("/accounts/X/details/"):
+            return httpx.Response(
+                200,
+                json={"account": {"name": "Account", "currency": "GBP"}},
+            )
+        if path.endswith("/accounts/X/balances/"):
+            return httpx.Response(
+                200,
+                json={
+                    "balances": [
+                        {
+                            "balanceType": "closingBooked",
+                            "balanceAmount": {"amount": amount, "currency": "GBP"},
+                        }
+                    ]
+                },
+            )
+        raise AssertionError(request.url)
+
+    with _patch_client(provider, handler):
+        account = await provider._build_account("X")
+
+    assert account is None
+
+
+@pytest.mark.asyncio
 async def test_get_transactions_maps_booked_pending_and_drops_dateless():
     provider = GoCardlessProvider()
 
@@ -507,9 +568,10 @@ async def test_get_transactions_maps_booked_pending_and_drops_dateless():
 
 
 @pytest.mark.asyncio
-async def test_nationwide_quirks_clamp_date_and_discard_malformed_ids():
+async def test_nationwide_quirks_clamp_date_and_discard_malformed_ids(monkeypatch):
     provider = GoCardlessProvider()
-    future = date.today() + timedelta(days=7)
+    base_today = date.today()
+    future = base_today + timedelta(days=7)
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -528,7 +590,7 @@ async def test_nationwide_quirks_clamp_date_and_discard_malformed_ids():
                         },
                         {
                             "transactionId": "short-id",
-                            "bookingDate": date.today().isoformat(),
+                            "bookingDate": base_today.isoformat(),
                             "transactionAmount": {
                                 "amount": "-6.00",
                                 "currency": "GBP",
@@ -545,10 +607,30 @@ async def test_nationwide_quirks_clamp_date_and_discard_malformed_ids():
         )
 
     assert len(transactions) == 2
-    assert transactions[0].date == date.today()
+    assert transactions[0].date == base_today
     for transaction in transactions:
         assert transaction.raw_data is not None
-        assert transaction.external_id == _txn_fingerprint("X", transaction.raw_data)
+        assert "_fingerprintBookingDate" not in transaction.raw_data
+    non_future = transactions[1]
+    assert non_future.raw_data is not None
+    assert non_future.external_id == _txn_fingerprint("X", non_future.raw_data)
+
+    class FakeDate(date):
+        @classmethod
+        def today(cls):
+            return base_today + timedelta(days=1)
+
+    monkeypatch.setattr(gocardless_module, "date", FakeDate)
+    with _patch_client(provider, handler):
+        later_transactions = await provider.get_transactions(
+            {"institution_id": "NATIONWIDE_NAIAGB21"}, "X"
+        )
+
+    assert later_transactions[0].date == base_today + timedelta(days=1)
+    assert later_transactions[0].external_id == transactions[0].external_id
+    for transaction in later_transactions:
+        assert transaction.raw_data is not None
+        assert "_fingerprintBookingDate" not in transaction.raw_data
 
 
 @pytest.mark.asyncio

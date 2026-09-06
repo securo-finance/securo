@@ -90,7 +90,7 @@ def _txn_fingerprint(account_uid: str, raw: dict) -> str:
     amount = raw.get("transactionAmount") or {}
     parts = [
         account_uid,
-        raw.get("bookingDate") or "",
+        raw.get("_fingerprintBookingDate") or raw.get("bookingDate") or "",
         raw.get("valueDate") or "",
         str(amount.get("amount") or ""),
         str(amount.get("currency") or ""),
@@ -117,7 +117,10 @@ QuirkFn = Callable[[dict, str], Optional[dict]]
 
 def _nationwide_quirks(raw: dict, status: str) -> Optional[dict]:
     if status == "pending" and (booking := _parse_iso_date(raw.get("bookingDate"))):
-        raw["bookingDate"] = min(booking, date.today()).isoformat()
+        clamped = min(booking, date.today())
+        if clamped != booking:
+            raw["_fingerprintBookingDate"] = raw["bookingDate"]
+            raw["bookingDate"] = clamped.isoformat()
 
     transaction_id = raw.get("transactionId")
     if transaction_id and (
@@ -238,6 +241,11 @@ class GoCardlessProvider(BankProvider):
         institutions: list[InstitutionData] = []
         countries: set[str] = set()
         for item in raw_list:
+            institution_id = item.get("id")
+            display_name = item.get("name")
+            if not institution_id or not display_name:
+                logger.warning("Skipping GoCardless institution with missing id/name: %s", item)
+                continue
             item_countries = [str(value).upper() for value in item.get("countries") or []]
             countries.update(item_countries)
             institution_country = country.upper() if country else (item_countries or [""])[0]
@@ -245,8 +253,8 @@ class GoCardlessProvider(BankProvider):
             max_history = item.get("transaction_total_days")
             institutions.append(
                 InstitutionData(
-                    name=item["id"],
-                    display_name=item["name"],
+                    name=institution_id,
+                    display_name=display_name,
                     country=institution_country,
                     logo=item.get("logo"),
                     bic=item.get("bic"),
@@ -433,7 +441,15 @@ class GoCardlessProvider(BankProvider):
         )
         if picked:
             amount = picked.get("balanceAmount") or {}
-            balance = Decimal(str(amount.get("amount", "0")))
+            try:
+                balance = Decimal(str(amount.get("amount", "0")))
+            except InvalidOperation:
+                logger.warning(
+                    "Skipping account %s: unparseable balance amount %r",
+                    account_id,
+                    amount.get("amount"),
+                )
+                return None
             currency = amount.get("currency") or currency
 
         name = merged.get("name") or merged.get("product") or merged.get("ownerName") or "Account"
@@ -536,6 +552,7 @@ class GoCardlessProvider(BankProvider):
             )
         else:
             external_id = raw.get("transactionId") or _txn_fingerprint(account_uid, raw)
+        raw.pop("_fingerprintBookingDate", None)
         return TransactionData(
             external_id=str(external_id),
             description=description,
