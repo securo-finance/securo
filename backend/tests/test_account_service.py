@@ -17,6 +17,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.category import Category
 from app.models.goal import Goal
 from app.models.import_log import ImportLog
 from app.models.recurring_transaction import RecurringTransaction
@@ -69,7 +70,7 @@ async def _add_txn(
     session: AsyncSession, user_id: uuid.UUID, account_id: uuid.UUID,
     amount: float, txn_type: str, txn_date: date,
     source: str = "manual", transfer_pair_id: uuid.UUID | None = None,
-    status: str = "posted",
+    status: str = "posted", category_id: uuid.UUID | None = None,
 ) -> Transaction:
     from datetime import datetime, timezone
     txn = Transaction(
@@ -84,12 +85,30 @@ async def _add_txn(
         status=status,
         currency="BRL",
         transfer_pair_id=transfer_pair_id,
+        category_id=category_id,
         created_at=datetime.now(timezone.utc),
     )
     session.add(txn)
     await session.commit()
     await session.refresh(txn)
     return txn
+
+
+async def _make_category(
+    session: AsyncSession, user_id: uuid.UUID,
+    treat_as_transfer: bool = False, is_ignored: bool = False,
+) -> Category:
+    category = Category(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        name="Test Category",
+        treat_as_transfer=treat_as_transfer,
+        is_ignored=is_ignored,
+    )
+    session.add(category)
+    await session.commit()
+    await session.refresh(category)
+    return category
 
 
 # ---------------------------------------------------------------------------
@@ -840,6 +859,87 @@ async def test_get_account_summary_keeps_pending_for_credit_card(session: AsyncS
     # P&L still waits for the charge to settle.
     assert summary["monthly_expenses"] == pytest.approx(0.0)
     assert summary["projected_expenses"] == pytest.approx(20.0)
+
+
+@pytest.mark.asyncio
+async def test_get_account_summary_bill_charge_ignores_transfer_category(session: AsyncSession, test_user, test_workspace):
+    """A charge tagged `treat_as_transfer` for budgeting purposes still
+    counts toward the bill total: the bank doesn't care how the user
+    categorized it later (issue #647)."""
+    account = await _make_account(session, test_user.id, "CC Bill Debit", acc_type="credit_card")
+    today = date.today()
+    transfer_cat = await _make_category(session, test_user.id, treat_as_transfer=True)
+
+    await _add_txn(session, test_user.id, account.id, 100, "debit", today)
+    await _add_txn(session, test_user.id, account.id, 300, "debit", today, category_id=transfer_cat.id)
+
+    summary = await get_account_summary(session, account.id, test_workspace.id)
+    assert summary is not None
+    assert summary["monthly_expenses"] == pytest.approx(400.0)
+
+
+@pytest.mark.asyncio
+async def test_get_account_summary_bill_pending_charge_with_transfer_category_counts(
+    session: AsyncSession, test_user, test_workspace
+):
+    """The in-progress cycle's projected bill total must also stop
+    excluding transfer-tagged charges while they're still pending, not
+    just once they post — otherwise the total jumps the moment the charge
+    settles."""
+    account = await _make_account(session, test_user.id, "CC Bill Pending", acc_type="credit_card")
+    today = date.today()
+    transfer_cat = await _make_category(session, test_user.id, treat_as_transfer=True)
+
+    await _add_txn(session, test_user.id, account.id, 100, "debit", today)
+    await _add_txn(
+        session, test_user.id, account.id, 300, "debit", today,
+        status="pending", category_id=transfer_cat.id,
+    )
+
+    summary = await get_account_summary(session, account.id, test_workspace.id)
+    assert summary is not None
+    assert summary["projected_expenses"] == pytest.approx(400.0)
+
+
+@pytest.mark.asyncio
+async def test_get_account_summary_bill_unpaired_payment_credit_still_nets_out(
+    session: AsyncSession, test_user, test_workspace
+):
+    """An unpaired card payment (no matching transfer leg — the paying
+    account isn't connected, or the amount doesn't match exactly) is
+    normally filed under a transfer-like category. That category tag must
+    keep netting it against the bill, or a real repayment would count as
+    new debt."""
+    account = await _make_account(session, test_user.id, "CC Bill Payment", acc_type="credit_card")
+    today = date.today()
+    transfer_cat = await _make_category(session, test_user.id, treat_as_transfer=True)
+
+    await _add_txn(session, test_user.id, account.id, 100, "debit", today)
+    await _add_txn(session, test_user.id, account.id, 80, "credit", today, category_id=transfer_cat.id)
+
+    summary = await get_account_summary(session, account.id, test_workspace.id)
+    assert summary is not None
+    assert summary["monthly_expenses"] == pytest.approx(100.0)
+
+
+@pytest.mark.asyncio
+async def test_get_account_summary_bill_excludes_ignored_category_charge(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Unlike `treat_as_transfer`, a category the user explicitly marked
+    `is_ignored` is a direct "don't count this" — those rows still render
+    with an ignored badge elsewhere, so they should keep shrinking the
+    bill total too."""
+    account = await _make_account(session, test_user.id, "CC Bill Ignored", acc_type="credit_card")
+    today = date.today()
+    ignored_cat = await _make_category(session, test_user.id, is_ignored=True)
+
+    await _add_txn(session, test_user.id, account.id, 100, "debit", today)
+    await _add_txn(session, test_user.id, account.id, 50, "debit", today, category_id=ignored_cat.id)
+
+    summary = await get_account_summary(session, account.id, test_workspace.id)
+    assert summary is not None
+    assert summary["monthly_expenses"] == pytest.approx(100.0)
 
 
 @pytest.mark.asyncio

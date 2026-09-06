@@ -177,16 +177,25 @@ def counts_on_bill():
         category — those leave the account balance too, so dropping them
         from the bill keeps the card's two numbers telling one story.
 
-    Kept in, and this is the whole point of the helper:
-      - `treat_as_transfer` categories. Buying an investment with the
-        card still lands on the statement; the category says how to
-        report the purchase, not whether the bank billed for it.
-      - rows flagged `exclude_from_pnl`. Its canonical use is a work
-        expense paid on a personal card and reimbursed later — and the
-        bank bills the whole card either way.
+    `treat_as_transfer` categories are handled asymmetrically, and this is
+    the whole point of the helper:
+      - kept in for *debits*: buying an investment or paying a consortium
+        installment with the card still lands on the statement, so a
+        charge doesn't stop being owed to the bank because of how it was
+        tagged afterwards (issue #647).
+      - dropped for *credits*: an unpaired card payment (the payer's
+        account isn't connected, the amount doesn't match exactly, or it
+        was a partial payment) is normally filed under a transfer-like
+        category, and letting it through here would net it against new
+        debt instead of being a repayment of it.
 
-    The rule both share: a bill honors "make this disappear" and
-    ignores "report this differently".
+    Neither reading is exactly right — there's no field today that tells
+    a genuine merchant refund apart from an unpaired bill payment once
+    both land as a credit in a transfer-like category, so this is a
+    judgment call, not a derived fact. Dropping transfer-tagged credits
+    errs toward the more common case (an unmatched payment silently
+    shrinking the bill every cycle) over the rarer one (a refund of a
+    transfer-tagged purchase failing to shrink it back).
 
     Deliberately spelled out rather than defined as "`counts_as_pnl`
     minus a clause": a filter for what a *report* excludes will keep
@@ -194,16 +203,18 @@ def counts_on_bill():
     and a bill total must not inherit those. Every clause here is one
     somebody chose for the bill.
     """
+    ignored_category = Transaction.category_id.in_(
+        select(Category.id).where(Category.is_ignored.is_(True))
+    )
+    transfer_category = Transaction.category_id.in_(
+        select(Category.id).where(Category.treat_as_transfer.is_(True))
+    )
     return and_(
         Transaction.transfer_pair_id.is_(None),
         Transaction.is_ignored.is_(False),
         ~and_(Transaction.source == "settlement", Transaction.type == "debit"),
-        or_(
-            Transaction.category_id.is_(None),
-            Transaction.category_id.not_in(
-                select(Category.id).where(Category.is_ignored.is_(True))
-            ),
-        ),
+        or_(Transaction.category_id.is_(None), ~ignored_category),
+        or_(Transaction.type == "debit", Transaction.category_id.is_(None), ~transfer_category),
     )
 
 
