@@ -30,7 +30,7 @@ At default settings the script creates the following data for one user:
 | Categories | 30 (22 debit + 8 income) | `--categories` |
 | Assets | 15 | `--assets` |
 | Asset values | one per asset per day in range | `--start-date` |
-| Transactions | 100,000 | `--scale` |
+| Transactions | 100,000 random + 1 manual balance adjustment | `--scale` |
 | Recurring transactions | 20 | `--scale` |
 | FX rates (EUR + BRL) | one per day in range | `--start-date` |
 

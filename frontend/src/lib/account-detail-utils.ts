@@ -7,6 +7,8 @@ type BalanceTransaction = Pick<
 
 type MaterializedTransaction = Pick<Transaction, 'date' | 'recurring_transaction_id'>
 
+type DatedTransaction = { id: string; date: string }
+
 /** Return the usable amount in the selected currency, or null if FX is unknown. */
 export function transactionAmountForBalance(
   transaction: BalanceTransaction,
@@ -38,6 +40,22 @@ export function applyTransactionToBalance(
   const amount = transactionAmountForBalance(transaction, usePrimary, displayCurrency)
   if (amount == null) return balance
   return balance + (transaction.type === 'credit' ? amount : -amount)
+}
+
+/**
+ * Merge newest-first API rows with projections into the oldest-first order
+ * required by the running-balance walk.
+ */
+export function mergeTransactionsForRunningBalance<T extends DatedTransaction>(
+  transactions: T[],
+  projectedTransactions: T[],
+): T[] {
+  const transactionIndex = new Map(transactions.map((transaction, index) => [transaction.id, index]))
+
+  return [...transactions, ...projectedTransactions].sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+      || (transactionIndex.get(b.id) ?? -1) - (transactionIndex.get(a.id) ?? -1),
+  )
 }
 
 /**

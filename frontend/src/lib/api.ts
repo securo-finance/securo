@@ -13,6 +13,7 @@ import type {
   BankConnection,
   ConnectionSettings,
   Account,
+  BalanceAdjustmentResult,
   AccountSummary,
   Collection,
   CreditCardBill,
@@ -446,6 +447,13 @@ export const accounts = {
   },
   update: async (id: string, account: Partial<Account>): Promise<Account> => {
     const { data } = await api.patch(`/accounts/${id}`, account)
+    return data
+  },
+  adjustBalance: async (
+    id: string,
+    input: { balance: number; exclude_from_pnl: boolean },
+  ): Promise<BalanceAdjustmentResult> => {
+    const { data } = await api.post(`/accounts/${id}/adjust-balance`, input)
     return data
   },
   delete: async (id: string): Promise<void> => {

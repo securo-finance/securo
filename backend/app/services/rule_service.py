@@ -1385,6 +1385,7 @@ async def apply_single_rule(
         select(Transaction).where(
             Transaction.workspace_id == workspace_id,
             Transaction.source != "opening_balance",
+            Transaction.source != "balance_adjustment",
         )
     )
     transactions = result.scalars().all()
@@ -1443,6 +1444,7 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
         select(Transaction).where(
             Transaction.workspace_id == workspace_id,
             Transaction.source != "opening_balance",
+            Transaction.source != "balance_adjustment",
         )
     )
     transactions = result.scalars().all()

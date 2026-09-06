@@ -7,20 +7,21 @@ import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/rea
 import { format, addDays, addMonths, parseISO } from 'date-fns'
 import { accounts, dashboard, transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
-import { applyTransactionToBalance, excludeMaterializedProjections, transactionAmountForBalance } from '@/lib/account-detail-utils'
+import { applyTransactionToBalance, excludeMaterializedProjections, mergeTransactionsForRunningBalance, transactionAmountForBalance } from '@/lib/account-detail-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { toast } from 'sonner'
 import type { CreditCardBill, ProjectedTransaction, Transaction } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, EyeClosed, HelpCircle, Paperclip, Pencil, X } from 'lucide-react'
+import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, EyeClosed, HelpCircle, Paperclip, Pencil, PencilLine, X } from 'lucide-react'
 import { MobileTransactionRow } from '@/components/mobile-transaction-row'
 import { CategoryIcon } from '@/components/category-icon'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
 import { TransactionDialog, type TransactionSavePayload } from '@/components/transaction-dialog'
 import { extractApiError } from '@/lib/api-errors'
 import { TransferDialog } from '@/components/transfer-dialog'
+import { BalanceAdjustmentDialog } from '@/components/balance-adjustment-dialog'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -283,6 +284,7 @@ export default function AccountDetailPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingTx, setEditingTx] = useState<Transaction | null>(null)
   const [transferDialogOpen, setTransferDialogOpen] = useState(false)
+  const [balanceAdjustmentOpen, setBalanceAdjustmentOpen] = useState(false)
   const [filterFrom, setFilterFrom] = useState(defaultFrom)
   const [filterTo, setFilterTo] = useState(defaultTo)
   const [showPrimary, setShowPrimary] = useState(false)
@@ -624,6 +626,17 @@ export default function AccountDetailPage() {
     },
   })
 
+  const balanceAdjustmentMutation = useMutation({
+    mutationFn: (data: { balance: number; exclude_from_pnl: boolean }) =>
+      accounts.adjustBalance(id!, data),
+    onSuccess: () => {
+      invalidateFinancialQueries(queryClient)
+      setBalanceAdjustmentOpen(false)
+      toast.success(t('accounts.balanceAdjusted'))
+    },
+    onError: (error) => toast.error(extractApiError(error)),
+  })
+
   // Whether to use primary currency amounts (for foreign-currency accounts with toggle, or domestic accounts with foreign txs)
   const isCreditCard = account?.type === 'credit_card'
   const isForeignCurrency = account ? account.currency !== userCurrency : false
@@ -792,13 +805,7 @@ export default function AccountDetailPage() {
     if (isCreditCard) return ccRunningTotal
     if (!txData?.items || summary === undefined) return []
 
-    // Secondary sort by the original index in txData.items preserves the
-    // API's insertion order for same-day transactions (creation sequence).
-    const txIndex = new Map(txData.items.map((t, i) => [t.id, i]))
-    const merged = [...txData.items, ...projectedRows].sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-        || (txIndex.get(a.id) ?? Infinity) - (txIndex.get(b.id) ?? Infinity),
-    )
+    const merged = mergeTransactionsForRunningBalance(txData.items, projectedRows)
 
     let balance = openingBalance
     const withBalance = merged.map((tx) => ({
@@ -922,15 +929,24 @@ export default function AccountDetailPage() {
             </div>
           </div>
           {!account.is_closed && canWrite && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="shrink-0"
-              onClick={() => setTransferDialogOpen(true)}
-            >
-              <ArrowLeftRight className="h-4 w-4 mr-1" />
-              {t('transactions.transfer')}
-            </Button>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setBalanceAdjustmentOpen(true)}
+              >
+                <PencilLine className="mr-1 h-4 w-4" />
+                {t('accounts.adjustBalance')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setTransferDialogOpen(true)}
+              >
+                <ArrowLeftRight className="mr-1 h-4 w-4" />
+                {t('transactions.transfer')}
+              </Button>
+            </div>
           )}
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
@@ -1609,7 +1625,14 @@ export default function AccountDetailPage() {
                         </td>
                         <td className="px-3 sm:px-4 py-3 w-full max-w-0">
                           <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="font-semibold text-foreground text-sm truncate">{tx.description}</span>
+                            <span className="font-semibold text-foreground text-sm truncate">
+                              {tx.source === 'balance_adjustment' && tx.description === 'Manual balance adjustment'
+                                ? t('accounts.manualBalanceAdjustment')
+                                : tx.description}
+                            </span>
+                            {tx.source === 'balance_adjustment' && (
+                              <PencilLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                            )}
                             <div className="flex items-center gap-1 shrink-0">
                             {isOpening && (
                               <span className="ml-2 text-xs text-muted-foreground font-normal border border-border rounded px-1.5 py-0.5">
@@ -1735,6 +1758,17 @@ export default function AccountDetailPage() {
         loading={transferMutation.isPending}
         defaultFromAccountId={id}
       />
+
+      {account && balanceAdjustmentOpen && (
+        <BalanceAdjustmentDialog
+          open={balanceAdjustmentOpen}
+          account={account}
+          currentBalance={summary?.current_balance ?? account.current_balance}
+          loading={balanceAdjustmentMutation.isPending}
+          onClose={() => setBalanceAdjustmentOpen(false)}
+          onSave={(data) => balanceAdjustmentMutation.mutate(data)}
+        />
+      )}
 
       {account && (
         <CreditCardSettingsDialog

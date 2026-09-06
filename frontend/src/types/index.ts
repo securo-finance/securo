@@ -229,6 +229,13 @@ export interface TransactionInvoiceLink {
   amount: string
 }
 
+export interface BalanceAdjustmentResult {
+  previous_balance: number
+  target_balance: number
+  adjustment_amount: number
+  transaction: Transaction
+}
+
 export interface Transaction {
   /** Every invoice this transaction settles — a payout net of fees
    *  settles several. Absent in a workspace without the module. */

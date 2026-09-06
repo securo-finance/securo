@@ -179,6 +179,28 @@ async def test_account_balance_at_bank_connected(session: AsyncSession, test_use
 
 
 @pytest.mark.asyncio
+async def test_account_balance_at_bank_connected_layers_manual_adjustment(
+    session: AsyncSession, test_user, test_connection
+):
+    account = await _make_account(
+        session, test_user.id, "Connected adjusted", balance="5000.00",
+        connection_id=test_connection.id,
+    )
+    today = date.today()
+    adjustment = await _add_txn(
+        session, test_user.id, account.id, 300, "debit", today,
+        source="balance_adjustment",
+    )
+    adjustment.exclude_from_pnl = True
+    await session.commit()
+
+    assert await _account_balance_at(session, account, today) == pytest.approx(4700.0)
+    assert await _account_balance_at(
+        session, account, today - timedelta(days=1)
+    ) == pytest.approx(5000.0)
+
+
+@pytest.mark.asyncio
 async def test_account_balance_at_manual_excludes_ignored_categories(
     session: AsyncSession, test_user
 ):
