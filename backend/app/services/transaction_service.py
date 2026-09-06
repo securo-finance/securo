@@ -715,6 +715,7 @@ async def create_transaction(
         account_id=data.account_id,
         category_id=data.category_id,  # use provided category if given
         payee_id=data.payee_id,
+        external_id=data.external_id,
         description=data.description,
         amount=data.amount,
         currency=currency,
