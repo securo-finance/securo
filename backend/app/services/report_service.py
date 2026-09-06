@@ -607,7 +607,7 @@ async def get_income_expenses_report(
                 amount = abs(float(converted))
             tx_report_date = (
                 tx.effective_bill_date
-                or (tx.effective_date if accounting_mode == "accrual" else tx.date)
+                or (tx.effective_date if accounting_mode == "invoice_due_date" else tx.date)
             )
             label = _format_date_label(tx_report_date, interval)
             existing_income, existing_expenses = forecast_map.get(label, (0.0, 0.0))
@@ -754,7 +754,7 @@ async def get_income_expenses_report(
     # composition consistent with summary totals under share-only model.
     full_range_offset = {} if filtered else await owner_split_offset_by_category(
         session, user_id, start, today + timedelta(days=1),
-        use_effective_date=accounting_mode == "accrual",
+        use_effective_date=accounting_mode == "invoice_due_date",
         primary_currency=primary_currency,
     )
     for cat_uuid, offset_total in full_range_offset.items():
@@ -969,7 +969,7 @@ async def get_income_expenses_report(
             group = "income" if tx.type == "credit" else "expenses"
             tx_report_date = (
                 tx.effective_bill_date
-                or (tx.effective_date if accounting_mode == "accrual" else tx.date)
+                or (tx.effective_date if accounting_mode == "invoice_due_date" else tx.date)
             )
             forecast_period_label = _format_date_label(tx_report_date, interval)
             if cat_id_str != "uncategorized" and cat_id_str not in cat_cache:
@@ -1252,9 +1252,9 @@ async def get_cash_flow_report(
     ``_get_baseline_projection`` for the latter.
 
     Respects the global ``credit_card_accounting_mode`` setting:
-      - **cash**: flows queried by ``Transaction.date``.
-      - **accrual**: flows queried by ``Transaction.effective_date`` so CC
-        purchases show up as cash leaving on their bill due date. The
+      - **purchase_date**: flows queried by ``Transaction.date``.
+      - **invoice_due_date**: flows queried by ``Transaction.effective_date``
+        so CC purchases show up as cash leaving on their bill due date. The
         balance at past-history start is also adjusted to add back any
         pending CC purchases whose effective_date is in the future window,
         avoiding double-counting against ``_balance_at``.
@@ -1271,7 +1271,7 @@ async def get_cash_flow_report(
     primary_currency = user.primary_currency if user else get_settings().default_currency
 
     accounting_mode = await get_credit_card_accounting_mode(session)
-    accrual = accounting_mode == "accrual"
+    bucket_by_due_date = accounting_mode == "invoice_due_date"
 
     # "Saldo Atual" shown in the hero card. The walk is anchored at this
     # value (not at balance-at-chart_start) so opening-balance transactions
@@ -1301,7 +1301,7 @@ async def get_cash_flow_report(
         else:
             bucket["outflow"] += amount
 
-    flow_date_col = Transaction.effective_date if accrual else Transaction.date
+    flow_date_col = Transaction.effective_date if bucket_by_due_date else Transaction.date
 
     # 1a. Past actual transactions (chart_start, today]. Gives the chart a
     #     "real" section before the forecast so the today-marker has meaning.
@@ -1366,8 +1366,9 @@ async def get_cash_flow_report(
         _add_flow(flow_date, abs(amount_primary), tx_type == "credit")
 
     # 2. Pending rows are forecast rows. They never enter the past/actual
-    # section, including pending credit-card purchases in accrual mode.
-    # Use the effective bill date when cash leaves on the card's due date.
+    # section, including pending credit-card purchases in invoice_due_date
+    # mode. Use the effective bill date when cash leaves on the card's due
+    # date.
     # Pending rows whose forecast date is already past still belong to the
     # payable position today, so carry them into the forward projected walk
     # instead of silently dropping them.
@@ -1379,7 +1380,7 @@ async def get_cash_flow_report(
     for tx in pending_forecast:
         if tx.status != "pending" or not _counts_as_user_pnl_row(tx):
             continue
-        flow_date = tx.effective_bill_date or (tx.effective_date if accrual else tx.date)
+        flow_date = tx.effective_bill_date or (tx.effective_date if bucket_by_due_date else tx.date)
         if flow_date > end:
             continue
         if tx.amount_primary is not None:
@@ -1396,13 +1397,13 @@ async def get_cash_flow_report(
             else:
                 _add_flow(flow_date, amount_primary, tx.type == "credit")
 
-    # In accrual mode, a posted card purchase made today is already part of a
+    # In invoice_due_date mode, a posted card purchase made today is already part of a
     # manual card's liability, while its cash impact belongs on the future bill
     # date. Move that posted amount back into the projected starting position
     # before the booked future flow is applied. Pending rows intentionally do
     # not use this adjustment: their posted-only current balance has excluded
     # them and the generic pending handling above is sufficient.
-    if accrual:
+    if bucket_by_due_date:
         for tx in pending_forecast:
             if tx.status != "posted" or not _counts_as_user_pnl_row(tx):
                 continue

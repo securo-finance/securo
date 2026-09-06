@@ -90,7 +90,7 @@ export function TransactionDrillDown({
     queryFn: () => admin.accountingMode(),
     staleTime: 5 * 60 * 1000,
   })
-  const isAccrual = accountingModeData?.mode === 'accrual'
+  const isInvoiceDueDateMode = accountingModeData?.mode === 'invoice_due_date'
 
   // Merge real + projected transactions, filtering projected by drill-down criteria
   const displayItems = useMemo((): DisplayItem[] => {
@@ -216,10 +216,10 @@ export function TransactionDrillDown({
           </button>
         </div>
 
-        {isAccrual && filter?.from && (
+        {isInvoiceDueDateMode && filter?.from && (
           <div className="flex items-start gap-2 px-5 py-2.5 bg-muted/40 border-b border-border text-[11px] text-muted-foreground shrink-0">
             <Info size={12} className="mt-0.5 shrink-0" />
-            <span>{t('dashboard.accrualNote')}</span>
+            <span>{t('dashboard.invoiceDueDateNote')}</span>
           </div>
         )}
 

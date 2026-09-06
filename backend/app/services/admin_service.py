@@ -244,15 +244,35 @@ async def is_registration_enabled(session: AsyncSession) -> bool:
     return get_settings().registration_enabled
 
 
+_LEGACY_ACCOUNTING_MODE_ALIASES = {"cash": "purchase_date", "accrual": "invoice_due_date"}
+
+
 async def get_credit_card_accounting_mode(session: AsyncSession) -> str:
-    """Return the global CC accounting mode: 'cash' or 'accrual'.
+    """Return the global CC accounting mode: 'purchase_date' or 'invoice_due_date'.
 
     Global app setting — affects how dashboard/reports/budgets bucket credit
-    card transactions. Defaults to 'cash' (current behavior) when unset."""
+    card transactions. Defaults to 'purchase_date' (current behavior) when
+    unset.
+
+    Naming note: the admin UI labels 'purchase_date' as "Regime de
+    competência" (accrual — the expense is recognized when incurred) and
+    'invoice_due_date' as "Regime de caixa" (cash — recognized when the
+    money actually leaves). Deliberately descriptive rather than reusing
+    the cash/accrual jargon here after that jargon was found inverted
+    relative to standard accounting usage (issue #821).
+
+    Also accepts the pre-#821 'cash'/'accrual' values, normalizing them to
+    their new equivalents. Migration 086 rewrites the stored row, but a
+    rolling deploy can run new application code against the old row for a
+    window (e.g. the Helm chart's Alembic Job runs as a post-upgrade hook,
+    after new pods already serve traffic) — without this, a stored 'accrual'
+    row would silently read back as the 'purchase_date' default until the
+    migration lands."""
     setting = await get_app_setting(session, "credit_card_accounting_mode")
-    if setting and setting.value in ("cash", "accrual"):
-        return setting.value
-    return "cash"
+    value = _LEGACY_ACCOUNTING_MODE_ALIASES.get(setting.value, setting.value) if setting else None
+    if value in ("purchase_date", "invoice_due_date"):
+        return value
+    return "purchase_date"
 
 
 async def get_number_format(session: AsyncSession) -> str:

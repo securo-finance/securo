@@ -494,7 +494,7 @@ export default function TransactionsPage() {
     queryFn: () => admin.accountingMode(),
     staleTime: 5 * 60 * 1000,
   })
-  const isAccrual = accountingModeData?.mode === 'accrual'
+  const isInvoiceDueDateMode = accountingModeData?.mode === 'invoice_due_date'
 
   const invalidateAfterTxMutation = () => invalidateFinancialQueries(queryClient)
 
@@ -1477,10 +1477,10 @@ export default function TransactionsPage() {
           ))}
         </div>
       )}
-      {isAccrual && (filterFrom || filterTo) && (
+      {isInvoiceDueDateMode && (filterFrom || filterTo) && (
         <div className="mb-4 flex items-start gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
           <Info size={12} className="mt-0.5 shrink-0" />
-          <span>{t('dashboard.accrualNote')}</span>
+          <span>{t('dashboard.invoiceDueDateNote')}</span>
         </div>
       )}
 
