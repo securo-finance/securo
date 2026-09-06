@@ -8,8 +8,9 @@ data:
   FRONTEND_URL: {{ include "securo.frontendUrl" . | quote }}
   PLUGGY_OAUTH_REDIRECT_URI: {{ default (include "securo.oauthRedirectUri" .) .Values.config.pluggyOauthRedirectUri | quote }}
   ENABLE_BANKING_OAUTH_REDIRECT_URI: {{ default (include "securo.oauthRedirectUri" .) .Values.config.enableBankingOauthRedirectUri | quote }}
+  GOCARDLESS_OAUTH_REDIRECT_URI: {{ default (include "securo.oauthRedirectUri" .) .Values.config.gocardlessOauthRedirectUri | quote }}
   {{- range $key, $value := .Values.config }}
-  {{- if and (ne $key "pluggyOauthRedirectUri") (ne $key "enableBankingOauthRedirectUri") }}
+  {{- if and (ne $key "pluggyOauthRedirectUri") (ne $key "enableBankingOauthRedirectUri") (ne $key "gocardlessOauthRedirectUri") }}
   {{ $key | snakecase | upper }}: {{ tpl (print $value) $ | quote }}
   {{- end }}
   {{- end }}

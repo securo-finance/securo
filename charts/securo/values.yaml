@@ -27,6 +27,10 @@ secret:
   enableBankingAppId: ""
   enableBankingPrivateKey: "" # Content of the PEM file
 
+  # GoCardless Bank Account Data
+  gocardlessSecretId: ""
+  gocardlessSecretKey: ""
+
   # OIDC
   oidcClientId: ""
   oidcClientSecret: ""
@@ -50,6 +54,9 @@ config:
   enableBankingApiUrl: "https://api.enablebanking.com"
   # Leave empty to auto-compute from global.domain
   enableBankingOauthRedirectUri: ""
+  gocardlessApiUrl: "https://bankaccountdata.gocardless.com/api/v2"
+  # Leave empty to auto-compute from global.domain
+  gocardlessOauthRedirectUri: ""
   simplefinEnabled: "false"
   simplefinApiUrl: "https://beta-bridge.simplefin.org"
   oidcEnabled: "false"

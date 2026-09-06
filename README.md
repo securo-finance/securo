@@ -51,7 +51,7 @@ Open [http://localhost:3000](http://localhost:3000) and create an account. That'
 - Goals and savings targets with progress tracking
 - Asset management with valuation tracking and growth rules
 - Reports: Net Worth and Income vs Expenses with category sparklines
-- Bank sync via providers (Pluggy for Brazilian banks, Enable Banking for ~2500 European PSD2 banks, SimpleFIN for US and international banks, extensible)
+- Bank sync via providers (Pluggy for Brazilian banks, Enable Banking for ~2500 European PSD2 banks, GoCardless Bank Account Data for UK and European banks, SimpleFIN for US and international banks, extensible)
 - Multi-currency support with automatic FX conversion
 - Multi-user support with admin panel and registration controls
 - Two-factor authentication (TOTP) with brute-force protection
@@ -60,7 +60,7 @@ Open [http://localhost:3000](http://localhost:3000) and create an account. That'
 
 ## Bank Sync (Optional)
 
-Add credentials for any of the supported providers to `.env`, then restart with `docker compose up`. Configure one or both — each provider auto-registers when its credentials are present.
+Add credentials for any supported provider to `.env`, then restart with `docker compose up`. Configure one or more providers — each auto-registers when its credentials are present.
 
 ### Pluggy — Brazilian banks
 
@@ -84,6 +84,17 @@ ENABLE_BANKING_OAUTH_REDIRECT_URI=https://your-host/oauth/callback
 The redirect URI must match exactly one of the Allowed Redirect URLs in your EB application. Production EB requires HTTPS — for local development, expose your frontend via a tunnel (ngrok, cloudflared) or use the EB sandbox.
 
 > **Free tier — restricted mode.** Enable Banking's free plan requires you to pre-link the accounts you want to import inside the EB portal *before* connecting from Securo. If you skip that step, the connection returns no accounts and Securo will surface a banner with a link to the portal.
+
+### GoCardless Bank Account Data — UK and European banks
+
+Create a Bank Account Data account at [bankaccountdata.gocardless.com](https://bankaccountdata.gocardless.com), obtain its secret ID and secret key, then add:
+
+```
+GOCARDLESS_SECRET_ID=your-secret-id
+GOCARDLESS_SECRET_KEY=your-secret-key
+```
+
+GoCardless's free tier applies daily per-account API limits. Securo therefore schedules GoCardless connections at most once every 24 hours; manual **Sync now** remains available.
 
 ### SimpleFIN — US and international banks
 

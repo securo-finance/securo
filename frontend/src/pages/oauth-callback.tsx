@@ -20,8 +20,9 @@ export default function OAuthCallbackPage() {
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const code = params.get('code')
-  const state = params.get('state')
+  const ref = params.get('ref')
+  const code = params.get('code') ?? ref
+  const state = params.get('state') ?? ref
   const errorParam = params.get('error')
   const errorDescription = params.get('error_description')
   const [restricted, setRestricted] = useState<RestrictedDetail | null>(null)
