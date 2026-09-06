@@ -180,7 +180,11 @@ export function TransactionDrillDown({
   const { absTotal, postedTotal, pendingTotal, projectedTotal } =
     sumDrillDownTotals(displayItems, userCurrency)
 
-  const hasPendingTransactions = displayItems.some((item) => item.isPending)
+  // Break the total down whenever some of it is money that has not settled,
+  // whether it is pending or still only projected. Gating on pending alone
+  // hid the projected line from a panel that happened to have no pending row,
+  // even though the total it sits under already counted the projection.
+  const hasUnsettledTotal = pendingTotal > 0 || projectedTotal > 0
 
   return (
     <>
@@ -302,7 +306,7 @@ export function TransactionDrillDown({
         {/* Footer */}
         {displayItems.length > 0 && (
           <div className="px-5 py-3 border-t border-border bg-muted/50 shrink-0">
-            {hasPendingTransactions ? (
+            {hasUnsettledTotal ? (
               <div className="space-y-1">
                 <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
                   <span>{t('dashboard.drillDownSettledTotal')}</span>
