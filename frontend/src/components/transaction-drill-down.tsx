@@ -6,6 +6,7 @@ import { transactions as transactionsApi, dashboard, admin } from '@/lib/api'
 import { AlertTriangle, Clock, Info, Paperclip, X } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
+import { sumDrillDownTotals } from '@/lib/drill-down-totals'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuth } from '@/contexts/auth-context'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -176,23 +177,8 @@ export function TransactionDrillDown({
   // amount_primary; if it's missing we can't convert, so skip the row
   // instead of adding a raw foreign amount as if it were primary. This
   // matches how get_summary computes monthly_*_primary on the backend.
-  const { absTotal, postedTotal, pendingTotal } = displayItems.reduce(
-    (totals, item) => {
-      // For foreign-currency rows, skip missing conversions rather than
-      // treating the raw amount as the user's primary currency.
-      const amount = item.currency === userCurrency
-        ? Math.abs(item.amount)
-        : item.amountPrimary != null
-          ? Math.abs(item.amountPrimary)
-          : 0
-
-      totals.absTotal += amount
-      if (item.isPending) totals.pendingTotal += amount
-      if (item.transaction?.status === 'posted') totals.postedTotal += amount
-      return totals
-    },
-    { absTotal: 0, postedTotal: 0, pendingTotal: 0 },
-  )
+  const { absTotal, postedTotal, pendingTotal, projectedTotal } =
+    sumDrillDownTotals(displayItems, userCurrency)
 
   const hasPendingTransactions = displayItems.some((item) => item.isPending)
 
@@ -326,9 +312,15 @@ export function TransactionDrillDown({
                   <span>{t('dashboard.drillDownPendingTotal')}</span>
                   <span className="tabular-nums text-foreground">{mask(formatCurrency(pendingTotal, userCurrency, locale))}</span>
                 </div>
+                {projectedTotal > 0 && (
+                  <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
+                    <span>{t('transactions.projected')}</span>
+                    <span className="tabular-nums text-foreground">{mask(formatCurrency(projectedTotal, userCurrency, locale))}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-4 border-t border-border pt-2 mt-2">
                   <span className="text-xs font-medium text-muted-foreground">{t('dashboard.drillDownShownTotal')}</span>
-                  <span className="text-sm font-bold tabular-nums text-foreground">{mask(formatCurrency(postedTotal + pendingTotal, userCurrency, locale))}</span>
+                  <span className="text-sm font-bold tabular-nums text-foreground">{mask(formatCurrency(absTotal, userCurrency, locale))}</span>
                 </div>
               </div>
             ) : (
