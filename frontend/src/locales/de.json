@@ -372,7 +372,14 @@
       "fromSystem": "Von {{source}} · {{date}}",
       "fromUpload": "Hochgeladen · {{date}}"
     },
-    "draftSaved": "Entwurf gespeichert"
+    "draftSaved": "Entwurf gespeichert",
+    "suggestions": {
+      "title_one": "Eine Zahlung könnte diese Rechnung begleichen",
+      "title_other": "{{count}} Zahlungen könnten diese Rechnung begleichen",
+      "wouldApply": "würde {{amount}} anrechnen",
+      "alsoCovers_one": "deckt auch {{count}} weitere Rechnung",
+      "alsoCovers_other": "deckt auch {{count}} weitere Rechnungen"
+    }
   },
   "collections": {
     "title": "Sammlungen",
@@ -807,7 +814,9 @@
     "calendarTransfersExcluded": "Umbuchungen zählen nicht als Einnahmen oder Ausgaben",
     "invoiceBadge": "Invoice {{number}}",
     "invoiceBadgeNoNumber": "Invoice",
-    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it."
+    "invoiceBadgeTooltip": "Diese Transaktion begleicht eine Rechnung. Öffnen.",
+    "suggestionBadge": "Frage",
+    "suggestionBadgeTooltip": "Eine Zahlung könnte diese Rechnung begleichen. Öffnen Sie die Warteschlange."
   },
   "accounts": {
     "title": "Konten",
@@ -1137,6 +1146,7 @@
     "createMissingCategories": "Auch die benötigten Standardkategorien erstellen",
     "duplicateName": "Eine Regel mit diesem Namen existiert bereits",
     "sectionTitle": "Kategorisierungsregeln",
+    "sectionHint": "Wie Transaktionen kategorisiert werden.",
     "resetAndReapplyAll": "Zurücksetzen und erneut anwenden",
     "confirmResetAndReapplyAll": "Kategorien, Notizen und durch Regeln geänderte Beschreibungen übereinstimmender Transaktionen zurücksetzen und anschließend alle aktiven Regeln erneut anwenden?",
     "add": "Hinzufügen",
@@ -1179,7 +1189,10 @@
     "ignoreActionHint": "(kein Wert erforderlich)",
     "selectCategory": "Kategorie auswählen...",
     "selectAccount": "Konto auswählen...",
-    "ruleActive": "Regel aktiv",
+    "turnOn": "Einschalten",
+    "turnOff": "Ausschalten",
+    "turnedOn": "Regel aktiviert",
+    "turnedOff": "Regel deaktiviert",
     "noConditions": "(keine Bedingungen)",
     "noActions": "(keine Aktionen)",
     "fieldDescription": "Beschreibung",
@@ -1214,7 +1227,12 @@
     "importConfirmTitle": "Kategorisierungsregeln importieren?",
     "importConfirmDescription": "Die Datei {{file}} enthält {{count}} Regeln.",
     "importOverwriteWarning": "Der Import überschreibt deine aktuellen Kategorisierungsregeln. Dies kann nicht rückgängig gemacht werden.",
-    "confirmOverwriteImport": "Überschreiben und importieren"
+    "confirmOverwriteImport": "Überschreiben und importieren",
+    "tab": {
+      "rules": "Regeln",
+      "queue": "Wartet auf Sie",
+      "history": "Verlauf"
+    }
   },
   "categories": {
     "title": "Kategorien",
@@ -2239,5 +2257,200 @@
         "subtitle": "Füge eine Verbindung hinzu, um Securo auf dein lokales Ollama, OpenAI, Anthropic oder einen OpenAI-kompatiblen Endpunkt zu verweisen."
       }
     }
+  },
+  "reconciliation": {
+    "node": {
+      "invoices": "Rechnungen",
+      "invoicesHint": "gegen das, was Sie einnehmen und zahlen müssen",
+      "recurring": "Wiederkehrend",
+      "recurringHint": "gegen das, was Sie ohnehin erwartet haben",
+      "inactive": "Hier nicht in Gebrauch"
+    },
+    "rule": {
+      "sameClientExact": "Bekannte Person, exakter Betrag",
+      "netOfWithholding": "Bekannte Person, mit Quellensteuer gezahlt",
+      "exactAmountAnyClient": "Exakter Betrag, beliebige Person",
+      "similarDescription": "Ähnlicher Betrag und ähnlicher Text",
+      "sameAccountExact": "Gleiches Konto, exakter Betrag",
+      "unknown": "Regel",
+      "partPayment": "Bekannte Person, Teil des Betrags",
+      "severalInvoices": "Bekannte Person, mehrere Rechnungen auf einmal"
+    },
+    "outcome": {
+      "link": "Verknüpft selbst",
+      "suggest": "Schlägt vor"
+    },
+    "cond": {
+      "samePayee": "die Person ist die auf der Rechnung",
+      "sameAccount": "dasselbe Konto",
+      "amountExact": "der Betrag stimmt genau",
+      "amountTolerance": "der Betrag liegt innerhalb von {{percent}}%",
+      "amountRatio": "der Betrag stimmt abzüglich Quellensteuer",
+      "window": "bis zu {{before}} Tage früher, {{after}} Tage später",
+      "similarity": "der Text ist mindestens {{min}} ähnlich",
+      "none": "keine Bedingungen",
+      "accounts": "auf {{names}}",
+      "payees": "für {{names}}",
+      "moneyIn": "eingehendes Geld",
+      "moneyOut": "ausgehendes Geld",
+      "foreign": "in Fremdwährung",
+      "currencyIn": "in {{codes}}",
+      "atLeast": "ab {{value}}",
+      "atMost": "bis {{value}}",
+      "textContains": "im Auszug steht „{{text}}“",
+      "textExcludes": "im Auszug steht nicht „{{text}}“",
+      "onArrival": "wenn Geld eingeht oder abgeht",
+      "onIssue": "wenn eine Rechnung gestellt wird",
+      "amountPartial": "der Betrag deckt einen Teil des Offenen",
+      "amountSet": "bis zu {{count}} Rechnungen ergeben die Summe"
+    },
+    "newRule": "Neue Abgleichregel",
+    "saved": "Regel gespeichert",
+    "reset": "Regel zurückgesetzt",
+    "restore": "Auf Standard zurücksetzen",
+    "changed": "Geändert",
+    "yours": "Ihre",
+    "field": {
+      "name": "Name",
+      "namePlaceholder": "z. B. Bekannte Person, ähnlicher Betrag",
+      "outcome": "Was passiert, wenn sie zutrifft",
+      "outcomeHint": "Verknüpfen bucht von selbst. Vorschlagen schickt es in die Liste unten, damit Sie es bestätigen.",
+      "counterparty": "Wer gezahlt oder erhalten hat",
+      "amount": "Betrag",
+      "window": "Zulässiger Abstand zwischen den Daten",
+      "windowHint": "Verspätung zählt ab dem Fälligkeitstag, Vorauszahlung ab dem Tag der Rechnungsstellung, wer also einen Tag nach Ausstellung zahlt, ist nicht Wochen zu früh.",
+      "beforeDays": "Tage früher",
+      "afterDays": "Tage später",
+      "similarity": "Textähnlichkeit",
+      "similarityHint": "Von 0 bis 1. Leer lassen, um den Text zu ignorieren.",
+      "similarityOff": "aus",
+      "scope": "Wann diese Regel gilt",
+      "scopeHint": "Leer lassen, damit sie für alles gilt",
+      "accounts": "Bankkonten",
+      "anyAccount": "Beliebiges Konto",
+      "payees": "Personen",
+      "anyPayee": "Beliebige Person",
+      "direction": "Ein- oder Ausgang",
+      "currencyScope": "Nur in diesen Währungen",
+      "currencyPlaceholder": "z. B. USD, EUR",
+      "foreignOnly": "Nur Währungen außer der dieses Arbeitsbereichs",
+      "amountBand": "Nur Beträge in diesem Bereich",
+      "noMinimum": "kein Minimum",
+      "noMaximum": "kein Maximum",
+      "text": "Text im Kontoauszug",
+      "textContains": "muss enthalten …",
+      "textExcludes": "darf nicht enthalten …",
+      "textHint": "Mehrere, durch Kommas getrennt, bedeutet eines davon.",
+      "trigger": "Wann wir suchen",
+      "triggerHint": "Der Abgleich passiert zu zwei Zeitpunkten, und die Indizien sind nicht dieselben.",
+      "amountMatch": "Wie genau der Betrag stimmen muss",
+      "amountMatchHint": "Verglichen mit dem noch offenen Betrag, nicht mit der ursprünglichen Summe.",
+      "amountBandHint": "Über die Zahlung selbst: eine Größe, die diese Regel behandeln soll oder eben nicht."
+    },
+    "counterparty": {
+      "any": "Beliebig",
+      "samePayee": "Die Person auf der Rechnung"
+    },
+    "amount": {
+      "exact": "Genau der offene Betrag",
+      "tolerance": "Innerhalb einer Toleranz",
+      "ratio": "Abzüglich Quellensteuer",
+      "ratioHint": "Nutzt die Quellensteuersätze Ihres Landes. Solange es keine gibt, trifft die Regel auf nichts zu.",
+      "partial": "Ein Teil des offenen Betrags",
+      "partialHint": "Für alle, die in Raten zahlen. Was übrig bleibt, bleibt offen, und die nächste Zahlung passt genau.",
+      "set": "Mehrere Rechnungen zusammen",
+      "setHint": "Für eine Zahlung, die mehr als eine Rechnung deckt. Passt mehr als eine Kombination, fragen wir, statt zu wählen.",
+      "setMax": "Höchstens so viele Rechnungen",
+      "setFee": "Gebühr zulassen von",
+      "setFeeHint": "Ein Anteil am Rechnungswert, für eine Zahlung, die netto nach Abzug fließt. Null bedeutet, die Summe muss exakt sein."
+    },
+    "queue": {
+      "title": "Wartet auf Sie",
+      "hint": "Zuordnungen, die Ihre Bestätigung brauchen.",
+      "empty": "Nichts zu prüfen. Alles hat von selbst gepasst.",
+      "aPayment": "Eine Zahlung",
+      "maySettle": "begleicht vielleicht {{name}}",
+      "mayBe": "ist vielleicht {{name}}",
+      "accept": "Verknüpfen",
+      "declineHint": "Passt nicht. Dieses Paar wird nicht erneut vorgeschlagen.",
+      "linked": "Verknüpft",
+      "declined": "Verworfen. Wir fragen nicht noch einmal",
+      "covers": "deckt"
+    },
+    "evidence": {
+      "amountExact": "Betrag stimmt genau",
+      "amountOff": "erwartet {{expected}}, bewegt {{moved}}",
+      "knownPayer": "bekannte Person",
+      "unknownPayer": "Person nicht erkannt",
+      "sameDay": "gleicher Tag",
+      "daysApart": "{{days}} Tage Abstand"
+    },
+    "direction": {
+      "any": "Egal",
+      "in": "Eingehendes Geld",
+      "out": "Ausgehendes Geld"
+    },
+    "step": {
+      "what": "Was diese Regel ist",
+      "which": "Welches Geld sie ansieht",
+      "whichHint": "Alles leer lassen, dann sieht sie alles an",
+      "match": "Wann es als Treffer gilt",
+      "matchHint": "Wie genau Zahlung und Versprechen zusammenpassen müssen"
+    },
+    "trigger": {
+      "money_arrives": "Wenn Geld eingeht oder abgeht",
+      "money_arrivesHint": "Die Zahlung taucht im Kontoauszug auf und wir suchen die Rechnung, die sie begleicht.",
+      "invoice_issued": "Wenn eine Rechnung gestellt wird",
+      "invoice_issuedHint": "Die Zahlung kam zuerst und die Rechnung danach, also schauen wir zurück auf Geld, das schon da war.",
+      "both": "Zu beiden Zeitpunkten",
+      "bothHint": "Die Regel gilt in beide Richtungen."
+    },
+    "history": {
+      "title": "Was der Abgleich getan hat",
+      "hint": "Neueste zuerst.",
+      "byPerson": "von Ihnen",
+      "byRules": "von den Regeln",
+      "more": "{{count}} weitere anzeigen",
+      "less": "Weniger anzeigen",
+      "action": {
+        "linked": "Mit {{name}} verknüpft",
+        "accepted": "Vorschlag für {{name}} angenommen",
+        "suggested": "Für {{name}} vorgeschlagen",
+        "declined": "Vorschlag für {{name}} verworfen",
+        "expired": "Vorschlag abgelaufen: {{name}}",
+        "unlinked": "Von {{name}} getrennt"
+      },
+      "empty": "Noch nichts. Das füllt sich, während der Abgleich verknüpft, fragt und beantwortet wird."
+    },
+    "moveUp": "Diese früher prüfen",
+    "moveDown": "Diese später prüfen",
+    "matchingTitle": "Abgleichregeln",
+    "matchingHint": "Wie jede Zahlung mit dem verknüpft wird, was sie begleicht.",
+    "pair": {
+      "owed": "Was offen ist",
+      "arrived": "Was sich bewegt hat",
+      "draftInvoice": "Rechnungsentwurf",
+      "recurringBill": "Wiederkehrende Rechnung",
+      "noMoney": "Keine Buchung dazu.",
+      "stillOpen": "noch offen",
+      "thisPayment": "diese Zahlung",
+      "wasApplied": "angerechnet",
+      "wouldRemain": "bliebe offen",
+      "wouldClose": "gleicht sie aus",
+      "thePayment": "die Zahlung",
+      "acrossInvoices": "auf {{count}} Rechnungen",
+      "dueOn": "fällig {{date}}",
+      "totalOf": "Gesamt {{amount}}"
+    },
+    "discarded": "Aus diesem Arbeitsbereich gelöscht:",
+    "noneLeft": "Keine Abgleichsregeln mehr in dieser Gruppe. Hier wird nichts automatisch zugeordnet.",
+    "confirmDeleteTitle": "Diese Regel löschen?",
+    "confirmDeleteDescription": "„{{name}}“ entscheidet nichts mehr. Wenn es eine unserer Regeln ist, können Sie sie später zurückholen.",
+    "exported": "Abgleichsregeln heruntergeladen",
+    "imported": "{{imported}} Regeln importiert ({{skipped}} übersprungen)",
+    "invalidImportFile": "Das ist keine Datei mit Abgleichsregeln",
+    "importConfirmTitle": "Abgleichsregeln importieren?",
+    "importConfirmDescription": "Die Datei {{file}} enthält {{count}} Regeln.",
+    "importOverwriteWarning": "Der Import ersetzt die Abgleichsregeln dieses Arbeitsbereichs samt ihrer Reihenfolge. Das lässt sich nicht rückgängig machen."
   }
 }

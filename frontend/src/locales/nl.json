@@ -372,7 +372,14 @@
       "fromSystem": "Van {{source}} · {{date}}",
       "fromUpload": "Geüpload · {{date}}"
     },
-    "draftSaved": "Concept opgeslagen"
+    "draftSaved": "Concept opgeslagen",
+    "suggestions": {
+      "title_one": "Een betaling kan deze factuur voldoen",
+      "title_other": "{{count}} betalingen kunnen deze factuur voldoen",
+      "wouldApply": "zou {{amount}} toepassen",
+      "alsoCovers_one": "dekt ook {{count}} andere factuur",
+      "alsoCovers_other": "dekt ook {{count}} andere facturen"
+    }
   },
   "collections": {
     "title": "Collecties",
@@ -807,7 +814,9 @@
     "calendarTransfersExcluded": "Overdrachten worden niet meegeteld als inkomsten of uitgaven",
     "invoiceBadge": "Invoice {{number}}",
     "invoiceBadgeNoNumber": "Invoice",
-    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it."
+    "invoiceBadgeTooltip": "Deze transactie rekent een factuur af. Openen.",
+    "suggestionBadge": "Vraag",
+    "suggestionBadgeTooltip": "Een betaling kan deze factuur voldoen. Open de wachtrij om te antwoorden."
   },
   "accounts": {
     "title": "Rekeningen",
@@ -1138,6 +1147,7 @@
     "createMissingCategories": "Maak ook standaardcategorieën aan die het pakket nodig heeft",
     "duplicateName": "Er bestaat al een regel met deze naam",
     "sectionTitle": "Categorisatieregels",
+    "sectionHint": "Hoe transacties worden gecategoriseerd.",
     "resetAndReapplyAll": "Resetten en opnieuw aanvragen",
     "confirmResetAndReapplyAll": "Overeenkomende transactiecategorieën, notities en door regels beheerde beschrijvingen resetten en vervolgens alle actieve regels opnieuw toepassen?",
     "add": "Toevoegen",
@@ -1178,7 +1188,10 @@
     "ignoreActionHint": "(geen waarde nodig)",
     "selectCategory": "Categorie selecteren...",
     "selectAccount": "Account selecteren...",
-    "ruleActive": "Actieve regel",
+    "turnOn": "Aanzetten",
+    "turnOff": "Uitzetten",
+    "turnedOn": "Regel ingeschakeld",
+    "turnedOff": "Regel uitgeschakeld",
     "noConditions": "(geen voorwaarden)",
     "noActions": "(geen acties)",
     "fieldDescription": "Beschrijving",
@@ -1215,7 +1228,12 @@
     "importOverwriteWarning": "Als u importeert, worden uw huidige categorisatieregels overschreven. Dit kan niet ongedaan worden gemaakt.",
     "confirmOverwriteImport": "Overschrijven en importeren",
     "confirmDeleteTitle": "Regel verwijderen?",
-    "confirmDeleteDescription": "De regel \"{{name}}\" wordt permanent verwijderd en wordt niet meer uitgevoerd. Wijzigingen die al op bestaande transacties zijn toegepast, blijven behouden. Deze actie kan niet ongedaan worden gemaakt."
+    "confirmDeleteDescription": "De regel \"{{name}}\" wordt permanent verwijderd en wordt niet meer uitgevoerd. Wijzigingen die al op bestaande transacties zijn toegepast, blijven behouden. Deze actie kan niet ongedaan worden gemaakt.",
+    "tab": {
+      "rules": "Regels",
+      "queue": "Wacht op jou",
+      "history": "Geschiedenis"
+    }
   },
   "categories": {
     "title": "Categorieën",
@@ -2240,5 +2258,200 @@
         "subtitle": "Voeg een verbinding toe om Securo te richten op uw lokale Ollama, OpenAI, Anthropic of een ander OpenAI-compatibel endpoint."
       }
     }
+  },
+  "reconciliation": {
+    "node": {
+      "invoices": "Facturen",
+      "invoicesHint": "tegenover wat je moet ontvangen en betalen",
+      "recurring": "Terugkerend",
+      "recurringHint": "tegenover wat je al verwachtte",
+      "inactive": "Hier niet in gebruik"
+    },
+    "rule": {
+      "sameClientExact": "Bekende persoon, exact bedrag",
+      "netOfWithholding": "Bekende persoon, betaald na inhouding",
+      "exactAmountAnyClient": "Exact bedrag, iedereen",
+      "similarDescription": "Vergelijkbaar bedrag en gelijkende omschrijving",
+      "sameAccountExact": "Zelfde rekening, exact bedrag",
+      "unknown": "Regel",
+      "partPayment": "Bekende persoon, deel van het bedrag",
+      "severalInvoices": "Bekende persoon, meerdere facturen tegelijk"
+    },
+    "outcome": {
+      "link": "Koppelt zelf",
+      "suggest": "Stelt voor"
+    },
+    "cond": {
+      "samePayee": "de persoon is die van de factuur",
+      "sameAccount": "dezelfde rekening",
+      "amountExact": "het bedrag klopt precies",
+      "amountTolerance": "het bedrag valt binnen {{percent}}%",
+      "amountRatio": "het bedrag klopt na inhouding",
+      "window": "tot {{before}} dagen te vroeg, {{after}} dagen te laat",
+      "similarity": "de omschrijving lijkt minstens {{min}}",
+      "none": "geen voorwaarden",
+      "accounts": "op {{names}}",
+      "payees": "voor {{names}}",
+      "moneyIn": "inkomend geld",
+      "moneyOut": "uitgaand geld",
+      "foreign": "in vreemde valuta",
+      "currencyIn": "in {{codes}}",
+      "atLeast": "vanaf {{value}}",
+      "atMost": "tot {{value}}",
+      "textContains": "het afschrift zegt “{{text}}”",
+      "textExcludes": "het afschrift zegt niet “{{text}}”",
+      "onArrival": "wanneer geld binnenkomt of weggaat",
+      "onIssue": "wanneer een factuur wordt opgesteld",
+      "amountPartial": "het bedrag dekt een deel van wat openstaat",
+      "amountSet": "tot {{count}} facturen tellen op tot dat bedrag"
+    },
+    "newRule": "Nieuwe afletterregel",
+    "saved": "Regel opgeslagen",
+    "reset": "Regel hersteld",
+    "restore": "Terug naar de standaard",
+    "changed": "Gewijzigd",
+    "yours": "Van jou",
+    "field": {
+      "name": "Naam",
+      "namePlaceholder": "bijv. Bekende persoon, bedrag dichtbij",
+      "outcome": "Wat er gebeurt als hij past",
+      "outcomeHint": "Koppelen boekt vanzelf. Voorstellen zet het in de lijst hieronder, zodat jij het bevestigt.",
+      "counterparty": "Wie betaalde of ontving",
+      "amount": "Bedrag",
+      "window": "Toegestaan verschil tussen de datums",
+      "windowHint": "Te laat telt vanaf de vervaldatum, te vroeg vanaf de dag dat de factuur is opgesteld, dus de dag na uitgifte betalen is niet weken te vroeg.",
+      "beforeDays": "Dagen te vroeg",
+      "afterDays": "Dagen te laat",
+      "similarity": "Gelijkenis van de omschrijving",
+      "similarityHint": "Van 0 tot 1. Laat leeg om de omschrijving te negeren.",
+      "similarityOff": "uit",
+      "scope": "Wanneer deze regel geldt",
+      "scopeHint": "Laat leeg om voor alles te gelden",
+      "accounts": "Bankrekeningen",
+      "anyAccount": "Elke rekening",
+      "payees": "Personen",
+      "anyPayee": "Iedereen",
+      "direction": "Inkomend of uitgaand",
+      "currencyScope": "Alleen in deze valuta",
+      "currencyPlaceholder": "bijv. USD, EUR",
+      "foreignOnly": "Alleen valuta anders dan die van deze werkruimte",
+      "amountBand": "Alleen bedragen in dit bereik",
+      "noMinimum": "geen minimum",
+      "noMaximum": "geen maximum",
+      "text": "Tekst op het afschrift",
+      "textContains": "moet bevatten…",
+      "textExcludes": "mag niet bevatten…",
+      "textHint": "Meerdere, gescheiden door komma's, betekent een van deze.",
+      "trigger": "Wanneer we zoeken",
+      "triggerHint": "Afletteren gebeurt op twee momenten, en het bewijs is niet hetzelfde.",
+      "amountMatch": "Hoe nauw het bedrag moet kloppen",
+      "amountMatchHint": "Vergeleken met wat nog openstaat, niet met het oorspronkelijke totaal.",
+      "amountBandHint": "Over de betaling zelf: een omvang die je deze regel wel of niet wilt laten behandelen."
+    },
+    "counterparty": {
+      "any": "Iedereen",
+      "samePayee": "De persoon op de factuur"
+    },
+    "amount": {
+      "exact": "Precies het openstaande bedrag",
+      "tolerance": "Binnen een marge",
+      "ratio": "Na inhouding van bronbelasting",
+      "ratioHint": "Gebruikt de inhoudingspercentages van jouw land. Zolang die er niet zijn, matcht de regel niets.",
+      "partial": "Een deel van wat openstaat",
+      "partialHint": "Voor wie in termijnen betaalt. Wat overblijft staat nog open, en de volgende betaling klopt precies.",
+      "set": "Meerdere facturen bij elkaar",
+      "setHint": "Voor een betaling die meer dan één factuur dekt. Passen er meerdere combinaties, dan vragen we het in plaats van te kiezen.",
+      "setMax": "Hoogstens zoveel facturen",
+      "setFee": "Sta een kosten toe van",
+      "setFeeHint": "Een deel van de factuurwaarde, voor een betaling die netto na aftrek loopt. Nul betekent dat het totaal exact moet zijn."
+    },
+    "queue": {
+      "title": "Wacht op jou",
+      "hint": "Koppelingen die je bevestiging nodig hebben.",
+      "empty": "Niets te beoordelen. Alles is vanzelf gekoppeld.",
+      "aPayment": "Een betaling",
+      "maySettle": "voldoet mogelijk {{name}}",
+      "mayBe": "is mogelijk {{name}}",
+      "accept": "Koppelen",
+      "declineHint": "Dit is het niet. Dit paar wordt niet opnieuw voorgesteld.",
+      "linked": "Gekoppeld",
+      "declined": "Afgewezen. We vragen het niet nog eens",
+      "covers": "dekt"
+    },
+    "evidence": {
+      "amountExact": "bedrag klopt precies",
+      "amountOff": "verwacht {{expected}}, bewogen {{moved}}",
+      "knownPayer": "bekende persoon",
+      "unknownPayer": "persoon niet herkend",
+      "sameDay": "zelfde dag",
+      "daysApart": "{{days}} dagen verschil"
+    },
+    "direction": {
+      "any": "Maakt niet uit",
+      "in": "Inkomend geld",
+      "out": "Uitgaand geld"
+    },
+    "step": {
+      "what": "Wat deze regel is",
+      "which": "Naar welk geld hij kijkt",
+      "whichHint": "Laat alles leeg en hij kijkt naar al het geld",
+      "match": "Wanneer het als match telt",
+      "matchHint": "Hoe nauw de betaling en de belofte moeten passen"
+    },
+    "trigger": {
+      "money_arrives": "Wanneer geld binnenkomt of weggaat",
+      "money_arrivesHint": "De betaling verschijnt op het afschrift en wij zoeken de factuur die ze afrekent.",
+      "invoice_issued": "Wanneer een factuur wordt opgesteld",
+      "invoice_issuedHint": "De betaling kwam eerst en de factuur daarna, dus kijken we terug naar geld dat er al was.",
+      "both": "Op beide momenten",
+      "bothHint": "De regel geldt beide kanten op."
+    },
+    "history": {
+      "title": "Wat het afletteren deed",
+      "hint": "Nieuwste eerst.",
+      "byPerson": "door jou",
+      "byRules": "door de regels",
+      "more": "Toon {{count}} meer",
+      "less": "Toon minder",
+      "action": {
+        "linked": "Gekoppeld aan {{name}}",
+        "accepted": "Voorstel voor {{name}} geaccepteerd",
+        "suggested": "Voorgesteld voor {{name}}",
+        "declined": "Voorstel voor {{name}} afgewezen",
+        "expired": "Voorstel verlopen: {{name}}",
+        "unlinked": "Ontkoppeld van {{name}}"
+      },
+      "empty": "Nog niets. Dit vult zich terwijl het afletteren koppelt, vraagt en antwoord krijgt."
+    },
+    "moveUp": "Deze eerder proberen",
+    "moveDown": "Deze later proberen",
+    "matchingTitle": "Afletterregels",
+    "matchingHint": "Hoe elke betaling wordt gekoppeld aan wat ze afrekent.",
+    "pair": {
+      "owed": "Wat openstaat",
+      "arrived": "Wat er bewoog",
+      "draftInvoice": "Conceptfactuur",
+      "recurringBill": "Terugkerende rekening",
+      "noMoney": "Geen transactie hierbij.",
+      "stillOpen": "nog open",
+      "thisPayment": "deze betaling",
+      "wasApplied": "toegepast",
+      "wouldRemain": "blijft open",
+      "wouldClose": "voldoet hem",
+      "thePayment": "de betaling",
+      "acrossInvoices": "over {{count}} facturen",
+      "dueOn": "vervalt {{date}}",
+      "totalOf": "totaal {{amount}}"
+    },
+    "discarded": "Verwijderd uit deze werkruimte:",
+    "noneLeft": "Geen koppelregels meer in deze set. Hier wordt niets automatisch gekoppeld.",
+    "confirmDeleteTitle": "Deze regel verwijderen?",
+    "confirmDeleteDescription": "“{{name}}” beslist niets meer. Als het een van onze regels is, kun je hem later terughalen.",
+    "exported": "Koppelregels gedownload",
+    "imported": "{{imported}} regels geïmporteerd ({{skipped}} overgeslagen)",
+    "invalidImportFile": "Dit is geen bestand met koppelregels",
+    "importConfirmTitle": "Koppelregels importeren?",
+    "importConfirmDescription": "Bestand {{file}} bevat {{count}} regels.",
+    "importOverwriteWarning": "Importeren vervangt de koppelregels van deze werkruimte, inclusief hun volgorde. Dit kan niet ongedaan worden gemaakt."
   }
 }

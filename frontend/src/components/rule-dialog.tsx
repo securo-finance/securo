@@ -440,7 +440,10 @@ export function RuleDialog({
     defaultActions.length ? defaultActions : [{ op: 'set_category', value: '' }]
   )
   const [priority, setPriority] = useState(String(rule?.priority ?? 0))
-  const [isActive, setIsActive] = useState(rule?.is_active ?? true)
+  // Read, never written here: the row owns the switch. Kept so an edit
+  // preserves the rule's own state instead of resetting it to on, and so
+  // the preview can still say "this will match, but the rule is off".
+  const [isActive] = useState(rule?.is_active ?? true)
   const [applyToExisting, setApplyToExisting] = useState(!rule)
   const [overwriteExistingCategories, setOverwriteExistingCategories] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
@@ -740,16 +743,14 @@ export function RuleDialog({
             </div>
           </div>
 
-          {/* Active toggle */}
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={isActive}
-              onChange={(e) => setIsActive(e.target.checked)}
-              className="h-4 w-4 rounded border-border"
-            />
-            <span className="text-sm text-foreground">{t('rules.ruleActive')}</span>
-          </label>
+          {/* No "rule is active" box here any more. Whether a rule runs
+              is a property of the rule as it sits in the list, not of
+              the form you edit it in, and having it here meant turning
+              one off was: open it, scroll, find a checkbox, save a form
+              you did not otherwise want to touch. It is a switch on the
+              row now. `isActive` is still carried and sent back
+              untouched, so editing a stopped rule does not quietly
+              restart it. */}
 
           <label className="flex items-center gap-2 cursor-pointer">
             <input

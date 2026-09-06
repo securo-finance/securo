@@ -23,6 +23,16 @@ const paths = Object.keys(modules)
   .filter((path) => !path.includes('.test.'))
   .sort()
 
+// First evaluation of a module compiles its whole transitive graph through
+// Vite, which is slow and varies with how much else is running in parallel.
+// The default 5s is a budget for a *test*, not for a compile, and the page
+// with the heaviest graph sits right on it, so adding one component
+// anywhere in the tree can fail a page test that has nothing to do with it.
+//
+// A generous ceiling hides nothing: a module that fails to evaluate rejects
+// immediately, and only a genuine hang reaches this number.
+const EVALUATION_BUDGET_MS = 20_000
+
 describe('page modules', () => {
   it('finds the page tree', () => {
     // If a refactor moves pages elsewhere, this suite would otherwise pass
@@ -46,6 +56,6 @@ describe('page modules', () => {
             component !== null &&
             '$$typeof' in component),
       ).toBe(true)
-    })
+    }, EVALUATION_BUDGET_MS)
   }
 })

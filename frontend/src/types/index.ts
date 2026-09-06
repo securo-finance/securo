@@ -1311,3 +1311,217 @@ export interface InvoiceFacets {
     draft: number
   }
 }
+
+// ---------------------------------------------------------------------------
+// Reconciliation
+// ---------------------------------------------------------------------------
+
+/** The signals matching consults, as the API sends them.
+ *
+ *  Deliberately not an open-ended condition tree like the categorization
+ *  rules: matching runs on a fixed set of signals, and a form over exactly
+ *  those is honest about what the engine can actually look at. */
+/** Which moment a rule runs at.
+ *
+ *  `money_arrives`: a payment lands and we look for the promise it
+ *  answers; the promise came first and was waiting.
+ *  `invoice_issued`: a document is written and we look back at money that
+ *  arrived before it existed, the client who pays and lets the nota
+ *  follow. Weaker evidence: that money already had a life of its own.
+ *  `both`: the rule trusts either. */
+export type Trigger = 'money_arrives' | 'invoice_issued' | 'both'
+
+export interface ReconciliationConditions {
+  // -- Which money the rule is written for. Every one of these decides
+  //    whether the rule is consulted at all, before any comparison. Absent
+  //    means "no limit", never "none".
+  /** Only money in these bank accounts. */
+  accounts?: { in: string[] }
+  /** Only money from these clients. Different from `counterparty`, which
+   *  asks whether the payer is the one named on the invoice. */
+  payees?: { in: string[] }
+  /** Only money coming in, or only money going out. */
+  direction?: 'any' | 'credit' | 'debit'
+  /** What the statement line has to say, or must not. Case-insensitive. */
+  /** One word, or several meaning *any of them*. Stored as written, so a
+   *  rule naming one gateway stays a string and does not read as changed. */
+  text?: { contains?: string | string[]; not_contains?: string | string[] }
+
+  // -- How closely the pair has to fit.
+  counterparty?: 'any' | 'same_payee'
+  amount?: {
+    /** `partial` is what makes two transactions on one invoice reachable:
+     *  every other mode compares against the whole outstanding balance,
+     *  and half of it is simply not that. */
+    match: 'exact' | 'tolerance' | 'ratio' | 'partial' | 'set'
+    percent?: string
+    /** For `set`: how many invoices one payment may cover. */
+    max_invoices?: number
+    epsilon?: string
+    ratios?: string
+    difference_kind?: string
+    /** For `partial`: the smallest fraction of the balance worth
+     *  offering, so a token payment is not proposed as an instalment. */
+    min_ratio?: string
+    /** For `partial`: the largest, above which the gap is a fee or a
+     *  withholding rather than an instalment. */
+    max_ratio?: string
+    /** Bounds on the movement itself, not on how close it is to the
+     *  promise: "never link anything over ten thousand on its own". */
+    min?: string
+    max?: string
+  }
+  /** Asymmetric on purpose: late is measured from the due date, early from
+   *  the day the promise was written. */
+  date?: { before_days: number; after_days: number }
+  description_similarity?: { min: string }
+  currency?: {
+    /** Whether a movement may settle a promise held in another currency. */
+    conversion: 'reject' | 'allow'
+    /** Only these currency codes. */
+    in?: string[]
+    /** Only currencies other than the workspace's own: what somebody
+     *  means by "check anything that is not in our money". */
+    foreign?: boolean
+  }
+  same_account?: boolean
+  unique_candidate?: boolean
+}
+
+export interface ReconciliationRule {
+  id: string
+  node: string
+  /** Set only for a rule the workspace wrote. A shipped rule keeps its
+   *  translated name, which would otherwise freeze in one language the day
+   *  somebody edited a threshold. */
+  name?: string | null
+  origin: 'default' | 'custom'
+  /** Whether this workspace departed from what we ship. Drives the "you
+   *  changed this" mark and the offer to put it back. */
+  customised: boolean
+  enabled: boolean
+  outcome: 'link' | 'suggest'
+  trigger: Trigger
+  when: ReconciliationConditions
+  position: number
+}
+
+export interface ReconciliationNode {
+  node: string
+  /** Whether the set is reachable for this workspace at all. The invoice
+   *  rules mean nothing where the module is off. */
+  active: boolean
+  rules: ReconciliationRule[]
+  /** Rules we ship that this workspace threw away. Sent so the page can
+   *  offer them back: a shipped rule leaves a tombstone rather than a
+   *  hole, so we still know its name, and without this the delete is a
+   *  trap, because the row is gone and there is nothing left to click. */
+  discarded: { id: string; node: string }[]
+}
+
+/** A matching policy as a file. Ids are resolved to names on the way out
+ *  and looked up again on the way in: a UUID means nothing in another
+ *  database. */
+export interface ReconciliationPolicyFile {
+  format: string
+  version: number
+  policy_version: number
+  nodes: {
+    node: string
+    rules: {
+      id: string
+      origin: string
+      name: string | null
+      enabled: boolean
+      outcome: string
+      trigger: string
+      when: Record<string, unknown>
+    }[]
+    discarded: string[]
+  }[]
+}
+
+export interface ReconciliationRulePatch {
+  enabled?: boolean
+  outcome?: 'link' | 'suggest'
+  trigger?: Trigger
+  when?: ReconciliationConditions
+  position?: number
+}
+
+export interface ReconciliationRuleDraft {
+  node: string
+  name: string
+  outcome: 'link' | 'suggest'
+  trigger?: Trigger
+  when: ReconciliationConditions
+  enabled?: boolean
+  position?: number | null
+}
+
+/** One match the engine was not confident enough to make on its own.
+ *
+ *  `scores` is a per-signal breakdown rather than one number: "78% sure" is
+ *  not something anyone can check, while "the amount is exact and the date
+ *  is four days out" tells a person exactly where to look. */
+export interface ReconciliationSuggestion {
+  id: string
+  node: string
+  strategy_id: string
+  expectation_kind: 'invoice' | 'recurring'
+  expectation_id: string
+  expectation_label?: string | null
+  amount: string
+  scores: {
+    strategy?: string
+    description?: number
+    amount_expected?: string
+    amount_moved?: string
+    amount_exact?: boolean
+    days_apart?: number
+    same_counterparty?: boolean
+    currency?: string
+  }
+  status: 'pending' | 'accepted' | 'declined' | 'expired'
+  created_at: string
+  /** Everything this one question covers. A single entry for the ordinary
+   *  case; several when one payment is offered against several invoices,
+   *  which is answered whole or not at all. */
+  covers: {
+    expectation_kind: 'invoice' | 'recurring'
+    expectation_id: string
+    label?: string | null
+    amount: string
+  }[]
+  transaction?: {
+    id: string
+    description?: string | null
+    amount: string
+    currency?: string | null
+    date: string
+    type: string
+  } | null
+}
+
+/** One thing matching did.
+ *
+ *  `linked` means the rules did it on their own; `accepted` means a person
+ *  did, by answering a question. They are never both written for one act:
+ *  the allocation an acceptance produces is its consequence, not a second
+ *  event, because the whole stream is organised around that one line. */
+export interface ReconciliationHistoryEvent {
+  id: string
+  at: string
+  action: 'linked' | 'suggested' | 'accepted' | 'declined' | 'expired' | 'unlinked'
+  expectation_kind: 'invoice' | 'recurring'
+  expectation_id: string
+  expectation_label?: string | null
+  amount: string
+  /** What `amount` is denominated in, resolved from the promise. */
+  currency?: string | null
+  strategy_id?: string | null
+  /** Null means the rules acted on their own. */
+  user_id?: string | null
+  transaction_id?: string | null
+  transaction_description?: string | null
+}

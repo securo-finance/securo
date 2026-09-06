@@ -372,7 +372,14 @@
       "fromSystem": "De {{source}} · {{date}}",
       "fromUpload": "Importé · {{date}}"
     },
-    "draftSaved": "Brouillon enregistré"
+    "draftSaved": "Brouillon enregistré",
+    "suggestions": {
+      "title_one": "Un paiement peut solder cette facture",
+      "title_other": "{{count}} paiements peuvent solder cette facture",
+      "wouldApply": "appliquerait {{amount}}",
+      "alsoCovers_one": "couvre aussi {{count}} autre facture",
+      "alsoCovers_other": "couvre aussi {{count}} autres factures"
+    }
   },
   "collections": {
     "title": "Collections",
@@ -807,7 +814,9 @@
     "calendarTransfersExcluded": "Les virements ne comptent pas comme revenus ou dépenses",
     "invoiceBadge": "Invoice {{number}}",
     "invoiceBadgeNoNumber": "Invoice",
-    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it."
+    "invoiceBadgeTooltip": "Cette transaction solde une facture. Ouvrir.",
+    "suggestionBadge": "Question",
+    "suggestionBadgeTooltip": "Un paiement peut solder cette facture. Ouvrez la file pour répondre."
   },
   "accounts": {
     "title": "Comptes",
@@ -1137,6 +1146,7 @@
     "createMissingCategories": "Créer aussi les catégories par défaut dont le pack a besoin",
     "duplicateName": "Une règle portant ce nom existe déjà",
     "sectionTitle": "Règles de catégorisation",
+    "sectionHint": "Comment catégoriser les transactions.",
     "resetAndReapplyAll": "Réinitialiser et réappliquer",
     "confirmResetAndReapplyAll": "Réinitialiser les catégories, les notes et les descriptions gérées par des règles des transactions correspondantes, puis réappliquer toutes les règles actives ?",
     "add": "Ajouter",
@@ -1179,7 +1189,10 @@
     "ignoreActionHint": "(aucune valeur requise)",
     "selectCategory": "Sélectionner une catégorie...",
     "selectAccount": "Sélectionner un compte...",
-    "ruleActive": "Règle active",
+    "turnOn": "Activer",
+    "turnOff": "Désactiver",
+    "turnedOn": "Règle activée",
+    "turnedOff": "Règle désactivée",
     "noConditions": "(aucune condition)",
     "noActions": "(aucune action)",
     "fieldDescription": "Description",
@@ -1214,7 +1227,12 @@
     "importConfirmTitle": "Importer les règles de catégorisation ?",
     "importConfirmDescription": "Le fichier {{file}} contient {{count}} règles.",
     "importOverwriteWarning": "L'importation écrasera vos règles de catégorisation actuelles. Cette action est irréversible.",
-    "confirmOverwriteImport": "Écraser et importer"
+    "confirmOverwriteImport": "Écraser et importer",
+    "tab": {
+      "rules": "Règles",
+      "queue": "En attente de vous",
+      "history": "Historique"
+    }
   },
   "categories": {
     "title": "Catégories",
@@ -2239,5 +2257,200 @@
         "subtitle": "Ajoutez une connexion pour pointer Securo vers votre Ollama local, OpenAI, Anthropic, ou tout point de terminaison compatible OpenAI."
       }
     }
+  },
+  "reconciliation": {
+    "node": {
+      "invoices": "Factures",
+      "invoicesHint": "face à ce que vous avez à encaisser et à payer",
+      "recurring": "Récurrents",
+      "recurringHint": "face à ce que vous attendiez déjà",
+      "inactive": "Non utilisée ici"
+    },
+    "rule": {
+      "sameClientExact": "Personne connue, montant exact",
+      "netOfWithholding": "Personne connue, payé net de retenue",
+      "exactAmountAnyClient": "Montant exact, n'importe qui",
+      "similarDescription": "Montant proche et libellé semblable",
+      "sameAccountExact": "Même compte, montant exact",
+      "unknown": "Règle",
+      "partPayment": "Personne connue, une partie du montant",
+      "severalInvoices": "Personne connue, plusieurs factures à la fois"
+    },
+    "outcome": {
+      "link": "Rattache seule",
+      "suggest": "Propose"
+    },
+    "cond": {
+      "samePayee": "la personne est celle de la facture",
+      "sameAccount": "le même compte",
+      "amountExact": "le montant correspond exactement",
+      "amountTolerance": "le montant est à {{percent}}% près",
+      "amountRatio": "le montant correspond net de retenue",
+      "window": "jusqu'à {{before}} jours en avance, {{after}} en retard",
+      "similarity": "le libellé se ressemble au moins de {{min}}",
+      "none": "aucune condition",
+      "accounts": "sur {{names}}",
+      "payees": "pour {{names}}",
+      "moneyIn": "argent entrant",
+      "moneyOut": "argent sortant",
+      "foreign": "en devise étrangère",
+      "currencyIn": "en {{codes}}",
+      "atLeast": "à partir de {{value}}",
+      "atMost": "jusqu'à {{value}}",
+      "textContains": "le relevé indique « {{text}} »",
+      "textExcludes": "le relevé n'indique pas « {{text}} »",
+      "onArrival": "quand l'argent entre ou sort",
+      "onIssue": "quand une facture est émise",
+      "amountPartial": "le montant couvre une partie de ce qui est dû",
+      "amountSet": "jusqu'à {{count}} factures en font le total"
+    },
+    "newRule": "Nouvelle règle de rapprochement",
+    "saved": "Règle enregistrée",
+    "reset": "Règle rétablie",
+    "restore": "Revenir au réglage par défaut",
+    "changed": "Modifiée",
+    "yours": "La vôtre",
+    "field": {
+      "name": "Nom",
+      "namePlaceholder": "ex. : Personne connue, montant proche",
+      "outcome": "Ce qu'elle fait quand elle correspond",
+      "outcomeHint": "Rattacher règle tout seul. Proposer l'envoie dans la liste ci-dessous, pour que vous confirmiez.",
+      "counterparty": "Qui a payé ou été payé",
+      "amount": "Montant",
+      "window": "Écart autorisé entre les dates",
+      "windowHint": "Le retard se compte depuis l'échéance, l'avance depuis le jour d'émission de la facture : payer le lendemain de l'émission n'est pas des semaines en avance.",
+      "beforeDays": "Jours en avance",
+      "afterDays": "Jours en retard",
+      "similarity": "Ressemblance du libellé",
+      "similarityHint": "De 0 à 1. Laissez vide pour ignorer le libellé.",
+      "similarityOff": "désactivé",
+      "scope": "Quand cette règle s'applique",
+      "scopeHint": "Laissez vide pour tout couvrir",
+      "accounts": "Comptes bancaires",
+      "anyAccount": "N'importe quel compte",
+      "payees": "Personnes",
+      "anyPayee": "N'importe qui",
+      "direction": "Entrée ou sortie",
+      "currencyScope": "Uniquement ces devises",
+      "currencyPlaceholder": "ex. : USD, EUR",
+      "foreignOnly": "Uniquement les devises autres que celle de cet espace",
+      "amountBand": "Uniquement les montants dans cette plage",
+      "noMinimum": "pas de minimum",
+      "noMaximum": "pas de maximum",
+      "text": "Libellé du relevé",
+      "textContains": "doit contenir…",
+      "textExcludes": "ne doit pas contenir…",
+      "textHint": "Plusieurs, séparés par des virgules, signifie n'importe lequel.",
+      "trigger": "Quand nous cherchons",
+      "triggerHint": "Le rapprochement a lieu à deux moments, et les indices ne sont pas les mêmes.",
+      "amountMatch": "À quel point le montant doit correspondre",
+      "amountMatchHint": "Comparé à ce qui reste dû, pas au total d'origine.",
+      "amountBandHint": "À propos du paiement lui-même : une taille que vous voulez, ou non, voir traitée par cette règle."
+    },
+    "counterparty": {
+      "any": "N'importe qui",
+      "samePayee": "La personne de la facture"
+    },
+    "amount": {
+      "exact": "Exactement le montant dû",
+      "tolerance": "Dans une marge",
+      "ratio": "Net de retenue à la source",
+      "ratioHint": "Utilise les taux de retenue de votre pays. Tant qu'il n'y en a pas, la règle ne correspond à rien.",
+      "partial": "Une partie de ce qui est dû",
+      "partialHint": "Pour qui paie en plusieurs fois. Ce qui reste demeure ouvert, et le paiement suivant tombe juste.",
+      "set": "Plusieurs factures additionnées",
+      "setHint": "Pour un paiement qui couvre plus d'une facture. Si plusieurs combinaisons tombent juste, nous demandons plutôt que de choisir.",
+      "setMax": "Au plus ce nombre de factures",
+      "setFee": "Admettre des frais de",
+      "setFeeHint": "Une part de la valeur des factures, pour un paiement qui circule net de commission. Zéro signifie que le total doit être exact."
+    },
+    "queue": {
+      "title": "En attente de vous",
+      "hint": "Rapprochements qui attendent votre confirmation.",
+      "empty": "Rien à vérifier. Tout a été rapproché tout seul.",
+      "aPayment": "Un paiement",
+      "maySettle": "règle peut-être {{name}}",
+      "mayBe": "est peut-être {{name}}",
+      "accept": "Rattacher",
+      "declineHint": "Ce n'est pas ça. Cette paire ne sera plus proposée.",
+      "linked": "Rattaché",
+      "declined": "Écarté. Nous ne redemanderons pas",
+      "covers": "couvre"
+    },
+    "evidence": {
+      "amountExact": "le montant correspond exactement",
+      "amountOff": "attendu {{expected}}, mouvementé {{moved}}",
+      "knownPayer": "personne connue",
+      "unknownPayer": "personne non identifiée",
+      "sameDay": "même jour",
+      "daysApart": "{{days}} jours d'écart"
+    },
+    "direction": {
+      "any": "Peu importe",
+      "in": "Argent entrant",
+      "out": "Argent sortant"
+    },
+    "step": {
+      "what": "Ce qu'est cette règle",
+      "which": "Quel argent elle regarde",
+      "whichHint": "Laissez tout vide et elle regarde tout l'argent",
+      "match": "Quand cela compte comme un rapprochement",
+      "matchHint": "À quel point le paiement et la promesse doivent correspondre"
+    },
+    "trigger": {
+      "money_arrives": "Quand l'argent entre ou sort",
+      "money_arrivesHint": "Le paiement apparaît sur le relevé et nous cherchons la facture qu'il solde.",
+      "invoice_issued": "Quand une facture est émise",
+      "invoice_issuedHint": "Le paiement est arrivé avant et la facture après, alors nous regardons en arrière, vers l'argent déjà là.",
+      "both": "Aux deux moments",
+      "bothHint": "La règle vaut dans les deux sens."
+    },
+    "history": {
+      "title": "Ce que le rapprochement a fait",
+      "hint": "Du plus récent.",
+      "byPerson": "par vous",
+      "byRules": "par les règles",
+      "more": "Afficher {{count}} de plus",
+      "less": "Afficher moins",
+      "action": {
+        "linked": "Rattaché à {{name}}",
+        "accepted": "Suggestion acceptée pour {{name}}",
+        "suggested": "Proposé pour {{name}}",
+        "declined": "Suggestion écartée pour {{name}}",
+        "expired": "Suggestion expirée : {{name}}",
+        "unlinked": "Détaché de {{name}}"
+      },
+      "empty": "Rien pour l'instant. Cela se remplit à mesure que le rapprochement rattache, demande et reçoit une réponse."
+    },
+    "moveUp": "Essayer celle-ci plus tôt",
+    "moveDown": "Essayer celle-ci plus tard",
+    "matchingTitle": "Règles de rapprochement",
+    "matchingHint": "Comment chaque paiement est rattaché à ce qu'il solde.",
+    "pair": {
+      "owed": "Ce qui est dû",
+      "arrived": "Ce qui a bougé",
+      "draftInvoice": "Facture en brouillon",
+      "recurringBill": "Dépense récurrente",
+      "noMoney": "Aucune opération ici.",
+      "stillOpen": "reste dû",
+      "thisPayment": "ce paiement",
+      "wasApplied": "appliqué",
+      "wouldRemain": "resterait",
+      "wouldClose": "la solde",
+      "thePayment": "le paiement",
+      "acrossInvoices": "sur {{count}} factures",
+      "dueOn": "échéance {{date}}",
+      "totalOf": "total de {{amount}}"
+    },
+    "discarded": "Supprimées de cet espace :",
+    "noneLeft": "Plus aucune règle de rapprochement dans cet ensemble. Rien n'est rapproché automatiquement ici.",
+    "confirmDeleteTitle": "Supprimer cette règle ?",
+    "confirmDeleteDescription": "« {{name}} » ne décide plus rien. S'il s'agit d'une des nôtres, vous pourrez la rétablir plus tard.",
+    "exported": "Règles de rapprochement téléchargées",
+    "imported": "{{imported}} règles importées ({{skipped}} ignorées)",
+    "invalidImportFile": "Ce n'est pas un fichier de règles de rapprochement",
+    "importConfirmTitle": "Importer les règles de rapprochement ?",
+    "importConfirmDescription": "Le fichier {{file}} contient {{count}} règles.",
+    "importOverwriteWarning": "L'import remplace les règles de rapprochement de cet espace, y compris leur ordre. C'est irréversible."
   }
 }

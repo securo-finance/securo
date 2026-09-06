@@ -53,3 +53,43 @@ def require_module_write(module: ModuleId) -> Callable[..., Awaitable[WorkspaceC
         return ctx
 
     return dependency
+
+
+def require_any_module(*modules: ModuleId) -> Callable[..., Awaitable[WorkspaceContext]]:
+    """Read access to routes that serve more than one module.
+
+    Matching is the case this exists for: its rules cover invoices and
+    recurring bills, which are separate modules a workspace may have one
+    of, both, or neither. Gating the router on either one alone would
+    have hidden a real feature from the workspaces it was written for.
+    A route reached this way still has to check the module of whatever it
+    is addressed at.
+    """
+
+    async def dependency(
+        ctx: WorkspaceContext = Depends(current_workspace),
+    ) -> WorkspaceContext:
+        _assert_any_enabled(ctx, modules)
+        return ctx
+
+    return dependency
+
+
+def require_any_module_write(
+    *modules: ModuleId,
+) -> Callable[..., Awaitable[WorkspaceContext]]:
+    """The same, for writes: any of the modules, and a role that may write."""
+
+    async def dependency(
+        ctx: WorkspaceContext = Depends(current_writable_workspace),
+    ) -> WorkspaceContext:
+        _assert_any_enabled(ctx, modules)
+        return ctx
+
+    return dependency
+
+
+def _assert_any_enabled(ctx: WorkspaceContext, modules: tuple[ModuleId, ...]) -> None:
+    enabled = resolve_modules(ctx.workspace)
+    if not any(module.value in enabled for module in modules):
+        raise HTTPException(status_code=404, detail="Not found")

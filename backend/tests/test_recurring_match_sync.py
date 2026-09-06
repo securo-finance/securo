@@ -28,7 +28,8 @@ from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.schemas.recurring_transaction import RecurringTransactionCreate
 from app.schemas.rule import RuleAction, RuleCondition, RuleCreate
-from app.services.connection_service import _description_similarity, sync_connection
+from app.services.connection_service import sync_connection
+from app.services.text_similarity import token_overlap
 from app.services.recurring_transaction_service import (
     create_recurring_transaction,
     generate_pending,
@@ -205,7 +206,7 @@ async def test_sync_normalizes_before_active_recurring_match(
         ),
     )
     raw_description = "D01-1234567 AMZNPrime DE changing-token"
-    assert _description_similarity(raw_description, "Amazon Prime") < 0.6
+    assert token_overlap(raw_description, "Amazon Prime") < 0.6
     provider = _provider(
         [
             _tx(

@@ -372,7 +372,14 @@
       "fromSystem": "From {{source}} · {{date}}",
       "fromUpload": "Uploaded · {{date}}"
     },
-    "draftSaved": "Draft saved"
+    "draftSaved": "Draft saved",
+    "suggestions": {
+      "title_one": "A payment may settle this invoice",
+      "title_other": "{{count}} payments may settle this invoice",
+      "wouldApply": "would apply {{amount}}",
+      "alsoCovers_one": "also covers {{count}} other invoice",
+      "alsoCovers_other": "also covers {{count}} other invoices"
+    }
   },
   "collections": {
     "title": "Collections",
@@ -807,7 +814,9 @@
     "calendarTransfersExcluded": "Transfers are not counted as income or expenses",
     "invoiceBadge": "Invoice {{number}}",
     "invoiceBadgeNoNumber": "Invoice",
-    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it."
+    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it.",
+    "suggestionBadge": "Question",
+    "suggestionBadgeTooltip": "A payment may settle this. Open the queue to answer."
   },
   "accounts": {
     "title": "Accounts",
@@ -1136,6 +1145,7 @@
     "createMissingCategories": "Also create default categories the pack needs",
     "duplicateName": "A rule with this name already exists",
     "sectionTitle": "Categorization Rules",
+    "sectionHint": "How to categorize transactions.",
     "resetAndReapplyAll": "Reset and reapply",
     "confirmResetAndReapplyAll": "Reset matching transaction categories, notes, and rule-managed descriptions, then reapply all active rules?",
     "add": "Add",
@@ -1178,7 +1188,10 @@
     "ignoreActionHint": "(no value needed)",
     "selectCategory": "Select category...",
     "selectAccount": "Select account...",
-    "ruleActive": "Active rule",
+    "turnOn": "Turn on",
+    "turnOff": "Turn off",
+    "turnedOn": "Rule turned on",
+    "turnedOff": "Rule turned off",
     "noConditions": "(no conditions)",
     "noActions": "(no actions)",
     "fieldDescription": "Description",
@@ -1213,7 +1226,12 @@
     "importConfirmTitle": "Import categorization rules?",
     "importConfirmDescription": "File {{file}} contains {{count}} rules.",
     "importOverwriteWarning": "Importing will overwrite your current categorization rules. This cannot be undone.",
-    "confirmOverwriteImport": "Overwrite and import"
+    "confirmOverwriteImport": "Overwrite and import",
+    "tab": {
+      "rules": "Rules",
+      "queue": "Waiting for you",
+      "history": "History"
+    }
   },
   "categories": {
     "title": "Categories",
@@ -2238,5 +2256,200 @@
         "subtitle": "Add a connection to point Securo at your local Ollama, OpenAI, Anthropic, or any OpenAI-compatible endpoint."
       }
     }
+  },
+  "reconciliation": {
+    "node": {
+      "invoices": "Invoices",
+      "invoicesHint": "against what you have to receive and to pay",
+      "recurring": "Recurring",
+      "recurringHint": "against what you were already expecting",
+      "inactive": "Not in use here"
+    },
+    "rule": {
+      "sameClientExact": "Known person, exact amount",
+      "netOfWithholding": "Known person, paid net of withholding",
+      "exactAmountAnyClient": "Exact amount, anyone",
+      "similarDescription": "Close amount and similar description",
+      "sameAccountExact": "Same account, exact amount",
+      "unknown": "Rule",
+      "partPayment": "Known person, part of the amount",
+      "severalInvoices": "Known person, several invoices at once"
+    },
+    "outcome": {
+      "link": "Links",
+      "suggest": "Suggests"
+    },
+    "cond": {
+      "samePayee": "the person is the one on the invoice",
+      "sameAccount": "the same account",
+      "amountExact": "the amount matches exactly",
+      "amountTolerance": "the amount is within {{percent}}%",
+      "amountRatio": "the amount matches net of withholding",
+      "window": "up to {{before}} days early, {{after}} days late",
+      "similarity": "the description is at least {{min}} similar",
+      "none": "no conditions",
+      "accounts": "in {{names}}",
+      "payees": "for {{names}}",
+      "moneyIn": "money coming in",
+      "moneyOut": "money going out",
+      "foreign": "in a foreign currency",
+      "currencyIn": "in {{codes}}",
+      "atLeast": "at least {{value}}",
+      "atMost": "at most {{value}}",
+      "textContains": "the statement says “{{text}}”",
+      "textExcludes": "the statement does not say “{{text}}”",
+      "onArrival": "when money comes in or goes out",
+      "onIssue": "when an invoice is issued",
+      "amountPartial": "the amount covers part of what is owed",
+      "amountSet": "up to {{count}} invoices add up to it"
+    },
+    "newRule": "New matching rule",
+    "saved": "Rule saved",
+    "reset": "Rule restored",
+    "restore": "Restore what we ship",
+    "changed": "Changed",
+    "yours": "Yours",
+    "field": {
+      "name": "Name",
+      "namePlaceholder": "e.g. Known person, close amount",
+      "outcome": "What it does when it matches",
+      "outcomeHint": "Link binds the payment on its own. Suggest sends it to the queue below for you to confirm.",
+      "counterparty": "Who paid or was paid",
+      "amount": "Amount",
+      "window": "How far apart the dates may be",
+      "windowHint": "Late is counted from the due date, early from the day the invoice was written, so paying the day after issue is not weeks early.",
+      "beforeDays": "Days early",
+      "afterDays": "Days late",
+      "similarity": "Description similarity",
+      "similarityHint": "From 0 to 1. Leave empty to ignore the description entirely.",
+      "similarityOff": "off",
+      "scope": "When this rule applies",
+      "scopeHint": "Leave empty to apply to everything",
+      "accounts": "Bank accounts",
+      "anyAccount": "Any account",
+      "payees": "People",
+      "anyPayee": "Anyone",
+      "direction": "Money in or out",
+      "currencyScope": "Only these currencies",
+      "currencyPlaceholder": "e.g. USD, EUR",
+      "foreignOnly": "Only currencies other than the one this workspace uses",
+      "amountBand": "Only amounts in this range",
+      "noMinimum": "no minimum",
+      "noMaximum": "no maximum",
+      "text": "Statement text",
+      "textContains": "must contain…",
+      "textExcludes": "must not contain…",
+      "textHint": "Several, separated by commas, means any of them.",
+      "trigger": "When we look",
+      "triggerHint": "Matching happens at two moments, and the evidence is not the same in both.",
+      "amountMatch": "How close the amount must be",
+      "amountMatchHint": "Compared against what is still owed, not the original total.",
+      "amountBandHint": "About the payment itself: a size you do or do not want this rule handling."
+    },
+    "counterparty": {
+      "any": "Anyone",
+      "samePayee": "The person on the invoice"
+    },
+    "amount": {
+      "exact": "Exactly the amount owed",
+      "tolerance": "Within a margin",
+      "ratio": "Net of withholding tax",
+      "ratioHint": "Uses the withholding rates for your country. Nothing matches until those are set.",
+      "partial": "Part of what is owed",
+      "partialHint": "For payments made in instalments. What is left stays open, and the next payment matches it exactly.",
+      "set": "Several invoices added up",
+      "setHint": "For a payment that covers more than one invoice. If more than one combination adds up, we ask instead of choosing.",
+      "setMax": "At most this many invoices",
+      "setFee": "Allow for a fee of",
+      "setFeeHint": "A share of what the invoices are worth, for a payment that moves net of a cut. Zero means the total must be exact."
+    },
+    "queue": {
+      "title": "Waiting for you",
+      "hint": "Matches that need your confirmation.",
+      "empty": "Nothing to review. Everything matched on its own.",
+      "aPayment": "A payment",
+      "maySettle": "may settle {{name}}",
+      "mayBe": "may be {{name}}",
+      "accept": "Link",
+      "declineHint": "Not a match. This pair will not be suggested again.",
+      "linked": "Linked",
+      "declined": "Dismissed. We will not ask again",
+      "covers": "covers"
+    },
+    "evidence": {
+      "amountExact": "amount matches exactly",
+      "amountOff": "expected {{expected}}, moved {{moved}}",
+      "knownPayer": "known person",
+      "unknownPayer": "person not identified",
+      "sameDay": "same day",
+      "daysApart": "{{days}} days apart"
+    },
+    "direction": {
+      "any": "Either",
+      "in": "Money coming in",
+      "out": "Money going out"
+    },
+    "step": {
+      "what": "What this rule is",
+      "which": "Which money it looks at",
+      "whichHint": "Leave everything empty and it looks at all of it",
+      "match": "When it counts as a match",
+      "matchHint": "How closely the payment and the promise have to fit"
+    },
+    "trigger": {
+      "money_arrives": "When money comes in or goes out",
+      "money_arrivesHint": "The payment shows up on the statement and we look for the invoice it settles.",
+      "invoice_issued": "When an invoice is issued",
+      "invoice_issuedHint": "The payment came first and the invoice follows, so we look back at money already there.",
+      "both": "Both moments",
+      "bothHint": "The rule is trusted either way round."
+    },
+    "history": {
+      "title": "What matching did",
+      "hint": "Newest first.",
+      "byPerson": "by you",
+      "byRules": "by the rules",
+      "more": "Show {{count}} more",
+      "less": "Show fewer",
+      "action": {
+        "linked": "Linked to {{name}}",
+        "accepted": "Suggestion accepted for {{name}}",
+        "suggested": "Offered against {{name}}",
+        "declined": "Suggestion dismissed for {{name}}",
+        "expired": "Suggestion expired: {{name}}",
+        "unlinked": "Unlinked from {{name}}"
+      },
+      "empty": "Nothing yet. This fills in as matching links, asks and is answered."
+    },
+    "moveUp": "Try this one earlier",
+    "moveDown": "Try this one later",
+    "matchingTitle": "Matching rules",
+    "matchingHint": "How each payment is bound to what it settles.",
+    "pair": {
+      "owed": "What is owed",
+      "arrived": "What moved",
+      "draftInvoice": "Draft invoice",
+      "recurringBill": "Recurring bill",
+      "noMoney": "No transaction on this one.",
+      "stillOpen": "still open",
+      "thisPayment": "this payment",
+      "wasApplied": "applied",
+      "wouldRemain": "would remain",
+      "wouldClose": "closes it",
+      "thePayment": "the payment",
+      "acrossInvoices": "across {{count}} invoices",
+      "dueOn": "due {{date}}",
+      "totalOf": "{{amount}} total"
+    },
+    "discarded": "Deleted from this workspace:",
+    "noneLeft": "No matching rules left in this set. Nothing here is matched automatically.",
+    "confirmDeleteTitle": "Delete this rule?",
+    "confirmDeleteDescription": "\"{{name}}\" stops deciding anything. You can bring it back later if it is one of ours.",
+    "exported": "Matching rules downloaded",
+    "imported": "Imported {{imported}} rules ({{skipped}} skipped)",
+    "invalidImportFile": "That is not a matching-rules file",
+    "importConfirmTitle": "Import matching rules?",
+    "importConfirmDescription": "File {{file}} contains {{count}} rules.",
+    "importOverwriteWarning": "Importing replaces the matching rules this workspace has now, including their order. This cannot be undone."
   }
 }

@@ -32,6 +32,7 @@ from app.schemas.report import (
     ReportResponse,
     ReportSummary,
 )
+from app.services import invoice_forecast_service
 from app.services.dashboard_service import (
     _account_balance_at,
     _counts_as_user_pnl_row,
@@ -615,6 +616,30 @@ async def get_income_expenses_report(
                 forecast_map[label] = (existing_income + amount, existing_expenses)
             else:
                 forecast_map[label] = (existing_income, existing_expenses + amount)
+
+        # Invoices still owed, at the date they were promised for. Only
+        # the unallocated balance, so a claim and the payment that
+        # settles it never both land in the same month. Skipped when the
+        # report is narrowed to particular accounts: a claim has no
+        # account until somebody pays it.
+        # `is None`, not falsy: a collection holding only wallets narrows
+        # the report to an empty set of bank accounts, and an empty list
+        # means filtered to nothing rather than not filtered at all.
+        if account_ids is None:
+            for claim in await invoice_forecast_service.claims_in_range(
+                session, workspace_id, max(m_start, start), m_end
+            ):
+                converted, _ = await fx_convert(
+                    session, claim.amount, claim.currency, primary_currency,
+                )
+                claim_amount = abs(float(converted))
+                label = _format_date_label(claim.due_date, interval)
+                existing_income, existing_expenses = forecast_map.get(label, (0.0, 0.0))
+                if claim.direction == "receivable":
+                    forecast_map[label] = (existing_income + claim_amount, existing_expenses)
+                else:
+                    forecast_map[label] = (existing_income, existing_expenses + claim_amount)
+
         # Advance to next month
         if cursor.month == 12:
             cursor = date(cursor.year + 1, 1, 1)
@@ -1472,6 +1497,28 @@ async def get_cash_flow_report(
         if key not in cat_totals:
             cat_totals[key] = {"label": info["label"], "color": info["color"], "value": 0.0}
         cat_totals[key]["value"] += amount_primary
+
+    # 3b. Invoices still owed, on the day they were promised for. An
+    #     invoice is a claim rather than a movement, which is why it never
+    #     reached this chart before: until matching could say that an open
+    #     invoice and a pending bank credit were the same money, adding
+    #     both would have inflated every projection in the product.
+    #
+    #     Only the unallocated balance is carried, so a claim and the
+    #     payment that settles it never both appear. Skipped when the
+    #     chart is narrowed to particular accounts: a claim has no account
+    #     until somebody pays it.
+    # `is None`, not falsy: a collection holding only wallets narrows
+    # the report to an empty set of bank accounts, and an empty list
+    # means filtered to nothing rather than not filtered at all.
+    if account_ids is None:
+        for claim in await invoice_forecast_service.claims_in_range(
+            session, workspace_id, today + timedelta(days=1), end + timedelta(days=1)
+        ):
+            claim_primary = await _to_primary(claim.amount, claim.currency)
+            if claim_primary == 0:
+                continue
+            _add_flow(claim.due_date, abs(claim_primary), claim.direction == "receivable")
 
     # 4. Walk day-by-day. The actual section is anchored at today's
     # authoritative balance. The forward projected section starts from that

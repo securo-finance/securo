@@ -7,7 +7,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, recurring, payees as payeesApi, admin, groups as groupsApi, rules as rulesApi } from '@/lib/api'
+import { transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, recurring, payees as payeesApi, admin, groups as groupsApi, rules as rulesApi, reconciliation as reconciliationApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -36,7 +36,7 @@ import {
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
 import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Clock, HelpCircle, Info, Paperclip, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, SlidersHorizontal, Receipt } from 'lucide-react'
-import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload } from '@/types'
+import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload, ReconciliationSuggestion } from '@/types'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { PageHeader } from '@/components/page-header'
 import { calculateRangeSelection } from '@/lib/selection-utils'
@@ -91,7 +91,7 @@ export default function TransactionsPage() {
   const isMobile = useIsMobile()
   const { user } = useAuth()
   const { activeAccountIds } = useCollectionFilter()
-  const { canWrite } = useWorkspace()
+  const { canWrite, hasModule } = useWorkspace()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
   const [page, setPage] = useState(1)
@@ -487,6 +487,30 @@ export default function TransactionsPage() {
   const recurringById = useMemo(
     () => new Map((recurringList ?? []).map(item => [item.id, item])),
     [recurringList],
+  )
+
+  // Every open question, indexed by the money it is about. One request
+  // for the page rather than one per row: the queue is small by design,
+  // and if it ever is not, that is the rules wanting changing rather than
+  // this needing pagination.
+  //
+  // Skipped entirely where neither set is on, so a workspace pays nothing
+  // for a surface it cannot reach. Either one is enough: the recurring
+  // matcher records its questions against a transaction exactly as the
+  // invoice one does, and a personal workspace has only that one.
+  const { data: openQuestions } = useQuery<ReconciliationSuggestion[]>({
+    queryKey: ['reconciliation-suggestions'],
+    queryFn: reconciliationApi.suggestions,
+    enabled: hasModule('invoices') || hasModule('recurring'),
+  })
+  const suggestionsByTransaction = useMemo(
+    () =>
+      new Map(
+        (openQuestions ?? [])
+          .filter((s) => s.transaction?.id)
+          .map((s) => [s.transaction!.id, s]),
+      ),
+    [openQuestions],
   )
 
   const { data: accountingModeData } = useQuery({
@@ -1117,6 +1141,22 @@ export default function TransactionsPage() {
             {/* One badge per invoice this row settles: a payout net of
                 fees settles several, and showing only the last one read
                 as if the others had never been paid. */}
+            {/* A question waiting on this row. The confirmed link above
+                is green and settled; this is amber and open, because it
+                is not a fact yet. It lived only in a tab on the rules
+                page, which meant you found out a question existed by
+                going somewhere you had no reason to go. */}
+            {suggestionsByTransaction.get(tx.id) && (
+              <Link
+                to="/rules?tab=queue"
+                onClick={(e) => e.stopPropagation()}
+                title={t('transactions.suggestionBadgeTooltip')}
+                className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900 px-1.5 py-0.5 rounded-full hover:bg-amber-100 dark:hover:bg-amber-950/70 transition-colors"
+              >
+                <HelpCircle className="h-3 w-3" />
+                {t('transactions.suggestionBadge')}
+              </Link>
+            )}
             {(tx.invoice_links ?? []).map((link) => (
               <Link
                 key={link.invoice_id}

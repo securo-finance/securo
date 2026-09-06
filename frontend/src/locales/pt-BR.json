@@ -372,7 +372,14 @@
       "fromSystem": "De {{source}} · {{date}}",
       "fromUpload": "Enviado · {{date}}"
     },
-    "draftSaved": "Rascunho salvo"
+    "draftSaved": "Rascunho salvo",
+    "suggestions": {
+      "title_one": "Um pagamento pode quitar esta cobrança",
+      "title_other": "{{count}} pagamentos podem quitar esta cobrança",
+      "wouldApply": "aplicaria {{amount}}",
+      "alsoCovers_one": "cobre também outra {{count}} cobrança",
+      "alsoCovers_other": "cobre também outras {{count}} cobranças"
+    }
   },
   "collections": {
     "title": "Coleções",
@@ -807,7 +814,9 @@
     "calendarTransfersExcluded": "Transferências não contam como receitas ou despesas",
     "invoiceBadge": "Cobrança {{number}}",
     "invoiceBadgeNoNumber": "Cobrança",
-    "invoiceBadgeTooltip": "Esta transação quita uma cobrança. Abrir."
+    "invoiceBadgeTooltip": "Esta transação quita uma cobrança. Abrir.",
+    "suggestionBadge": "Pergunta",
+    "suggestionBadgeTooltip": "Um pagamento pode quitar esta cobrança. Abra a fila para responder."
   },
   "accounts": {
     "title": "Contas",
@@ -1137,6 +1146,7 @@
     "createMissingCategories": "Criar também as categorias padrão que o pacote precisa",
     "duplicateName": "Já existe uma regra com este nome",
     "sectionTitle": "Regras de Categorização",
+    "sectionHint": "Como categorizar as transações.",
     "resetAndReapplyAll": "Redefinir e reaplicar",
     "confirmResetAndReapplyAll": "Redefinir categorias, notas e descrições gerenciadas por regras das transações correspondentes e reaplicar todas as regras ativas?",
     "add": "Adicionar",
@@ -1179,7 +1189,10 @@
     "ignoreActionHint": "(sem valor necessário)",
     "selectCategory": "Selecionar categoria...",
     "selectAccount": "Selecionar conta...",
-    "ruleActive": "Regra ativa",
+    "turnOn": "Ativar",
+    "turnOff": "Desativar",
+    "turnedOn": "Regra ativada",
+    "turnedOff": "Regra desativada",
     "noConditions": "(sem condições)",
     "noActions": "(sem ações)",
     "fieldDescription": "Descrição",
@@ -1206,15 +1219,20 @@
     "sortBy_priority": "Prioridade",
     "sortBy_name": "Nome",
     "sortBy_category": "Categoria",
-    "export": "Export",
-    "import": "Import",
-    "exported": "Rules export downloaded",
-    "imported": "Imported {{imported}} rules ({{skipped}} skipped)",
-    "invalidImportFile": "Invalid rules import file",
-    "importConfirmTitle": "Import categorization rules?",
-    "importConfirmDescription": "File {{file}} contains {{count}} rules.",
-    "importOverwriteWarning": "Importing will overwrite your current categorization rules. This cannot be undone.",
-    "confirmOverwriteImport": "Overwrite and import"
+    "export": "Exportar",
+    "import": "Importar",
+    "exported": "Exportação de regras baixada",
+    "imported": "{{imported}} regras importadas ({{skipped}} ignoradas)",
+    "invalidImportFile": "Arquivo de importação de regras inválido",
+    "importConfirmTitle": "Importar regras de categorização?",
+    "importConfirmDescription": "O arquivo {{file}} contém {{count}} regras.",
+    "importOverwriteWarning": "Importar vai substituir as suas regras de categorização atuais. Isso não pode ser desfeito.",
+    "confirmOverwriteImport": "Substituir e importar",
+    "tab": {
+      "rules": "Regras",
+      "queue": "Esperando você",
+      "history": "Histórico"
+    }
   },
   "categories": {
     "title": "Categorias",
@@ -2239,5 +2257,200 @@
         "openai": "OpenAI Responses API"
       }
     }
+  },
+  "reconciliation": {
+    "node": {
+      "invoices": "Faturas",
+      "invoicesHint": "contra o que você tem a receber e a pagar",
+      "recurring": "Recorrentes",
+      "recurringHint": "contra o que você já esperava",
+      "inactive": "Não usada aqui"
+    },
+    "rule": {
+      "sameClientExact": "Pessoa conhecida, valor exato",
+      "netOfWithholding": "Pessoa conhecida, pago com retenção",
+      "exactAmountAnyClient": "Valor exato, qualquer pessoa",
+      "similarDescription": "Valor próximo e descrição parecida",
+      "sameAccountExact": "Mesma conta, valor exato",
+      "unknown": "Regra",
+      "partPayment": "Pessoa conhecida, parte do valor",
+      "severalInvoices": "Pessoa conhecida, várias faturas de uma vez"
+    },
+    "outcome": {
+      "link": "Liga sozinho",
+      "suggest": "Sugere"
+    },
+    "cond": {
+      "samePayee": "a pessoa é a mesma da fatura",
+      "sameAccount": "a mesma conta",
+      "amountExact": "o valor bate exatamente",
+      "amountTolerance": "o valor está dentro de {{percent}}%",
+      "amountRatio": "o valor bate descontada a retenção",
+      "window": "até {{before}} dias adiantado, {{after}} dias atrasado",
+      "similarity": "a descrição é ao menos {{min}} parecida",
+      "none": "sem condições",
+      "accounts": "em {{names}}",
+      "payees": "para {{names}}",
+      "moneyIn": "dinheiro entrando",
+      "moneyOut": "dinheiro saindo",
+      "foreign": "em moeda estrangeira",
+      "currencyIn": "em {{codes}}",
+      "atLeast": "a partir de {{value}}",
+      "atMost": "até {{value}}",
+      "textContains": "o extrato diz “{{text}}”",
+      "textExcludes": "o extrato não diz “{{text}}”",
+      "onArrival": "quando o dinheiro entra ou sai",
+      "onIssue": "quando a fatura é emitida",
+      "amountPartial": "o valor cobre parte do que se deve",
+      "amountSet": "até {{count}} faturas somam esse valor"
+    },
+    "newRule": "Nova regra de conciliação",
+    "saved": "Regra salva",
+    "reset": "Regra restaurada",
+    "restore": "Voltar ao padrão",
+    "changed": "Alterada",
+    "yours": "Sua",
+    "field": {
+      "name": "Nome",
+      "namePlaceholder": "ex.: Pessoa conhecida, valor próximo",
+      "outcome": "O que fazer quando casar",
+      "outcomeHint": "Ligar liquida sozinho. Sugerir manda para a fila abaixo, para você confirmar.",
+      "counterparty": "Quem pagou ou recebeu",
+      "amount": "Valor",
+      "window": "Distância permitida entre as datas",
+      "windowHint": "O atraso conta do vencimento; a antecipação conta do dia em que a fatura foi emitida, então pagar no dia seguinte à emissão não é semanas adiantado.",
+      "beforeDays": "Dias adiantado",
+      "afterDays": "Dias atrasado",
+      "similarity": "Semelhança da descrição",
+      "similarityHint": "De 0 a 1. Deixe vazio para ignorar a descrição.",
+      "similarityOff": "desligado",
+      "scope": "Quando esta regra se aplica",
+      "scopeHint": "Deixe vazio para valer para tudo",
+      "accounts": "Contas bancárias",
+      "anyAccount": "Qualquer conta",
+      "payees": "Pessoas",
+      "anyPayee": "Qualquer pessoa",
+      "direction": "Entrada ou saída",
+      "currencyScope": "Somente nestas moedas",
+      "currencyPlaceholder": "ex.: USD, EUR",
+      "foreignOnly": "Somente moedas diferentes da que este workspace usa",
+      "amountBand": "Somente valores nesta faixa",
+      "noMinimum": "sem mínimo",
+      "noMaximum": "sem máximo",
+      "text": "Texto do extrato",
+      "textContains": "precisa conter…",
+      "textExcludes": "não pode conter…",
+      "textHint": "Vários, separados por vírgula, significa qualquer um deles.",
+      "trigger": "Quando procuramos",
+      "triggerHint": "A conciliação acontece em dois momentos, e a evidência não é a mesma nos dois.",
+      "amountMatch": "O quão perto o valor precisa estar",
+      "amountMatchHint": "Comparado com o que ainda se deve, não com o total original.",
+      "amountBandHint": "Sobre o pagamento em si: um tamanho que você quer, ou não quer, que esta regra trate."
+    },
+    "counterparty": {
+      "any": "Qualquer um",
+      "samePayee": "A pessoa da fatura"
+    },
+    "amount": {
+      "exact": "Exatamente o valor devido",
+      "tolerance": "Dentro de uma margem",
+      "ratio": "Descontado o imposto retido",
+      "ratioHint": "Usa as alíquotas de retenção do seu país. Enquanto não houver, a regra não casa nada.",
+      "partial": "Parte do que se deve",
+      "partialHint": "Para quem paga parcelado. O que sobra continua em aberto, e o próximo pagamento casa exato.",
+      "set": "Várias faturas somadas",
+      "setHint": "Para um pagamento que cobre mais de uma fatura. Se mais de uma combinação fechar, perguntamos em vez de escolher.",
+      "setMax": "No máximo estas faturas",
+      "setFee": "Admitir taxa de",
+      "setFeeHint": "Uma parcela do valor das faturas, para pagamento que se move líquido de taxa. Zero significa que o total tem de ser exato."
+    },
+    "queue": {
+      "title": "Esperando você",
+      "hint": "Conciliações que precisam da sua confirmação.",
+      "empty": "Nada para revisar. Tudo casou sozinho.",
+      "aPayment": "Um pagamento",
+      "maySettle": "pode quitar {{name}}",
+      "mayBe": "pode ser {{name}}",
+      "accept": "Ligar",
+      "declineHint": "Não é isso. Este par não será sugerido de novo.",
+      "linked": "Ligado",
+      "declined": "Descartado. Não perguntamos de novo",
+      "covers": "cobre"
+    },
+    "evidence": {
+      "amountExact": "valor bate exatamente",
+      "amountOff": "esperado {{expected}}, movimentado {{moved}}",
+      "knownPayer": "pessoa conhecida",
+      "unknownPayer": "pessoa não identificada",
+      "sameDay": "mesmo dia",
+      "daysApart": "{{days}} dias de diferença"
+    },
+    "direction": {
+      "any": "Tanto faz",
+      "in": "Dinheiro entrando",
+      "out": "Dinheiro saindo"
+    },
+    "step": {
+      "what": "O que é esta regra",
+      "which": "Que dinheiro ela olha",
+      "whichHint": "Deixe tudo vazio e ela olha todo o dinheiro",
+      "match": "Quando conta como casamento",
+      "matchHint": "O quão perto o pagamento e a promessa precisam estar"
+    },
+    "trigger": {
+      "money_arrives": "Quando o dinheiro entra ou sai",
+      "money_arrivesHint": "O pagamento aparece no extrato e procuramos a fatura que ele quita.",
+      "invoice_issued": "Quando a fatura é emitida",
+      "invoice_issuedHint": "O pagamento veio antes e a nota depois, então olhamos para trás, no dinheiro que já estava lá.",
+      "both": "Nos dois momentos",
+      "bothHint": "A regra vale nos dois sentidos."
+    },
+    "history": {
+      "title": "O que a conciliação fez",
+      "hint": "Mais recentes primeiro.",
+      "byPerson": "por você",
+      "byRules": "pelas regras",
+      "more": "Ver mais {{count}}",
+      "less": "Ver menos",
+      "action": {
+        "linked": "Vinculado a {{name}}",
+        "accepted": "Sugestão aceita para {{name}}",
+        "suggested": "Sugerido para {{name}}",
+        "declined": "Sugestão recusada para {{name}}",
+        "expired": "Sugestão expirou: {{name}}",
+        "unlinked": "Vínculo desfeito com {{name}}"
+      },
+      "empty": "Nada ainda. Isto se preenche conforme a conciliação liga, pergunta e é respondida."
+    },
+    "moveUp": "Tentar esta antes",
+    "moveDown": "Tentar esta depois",
+    "matchingTitle": "Regras de conciliação",
+    "matchingHint": "Como cada pagamento é ligado ao que ele quita.",
+    "pair": {
+      "owed": "O que se deve",
+      "arrived": "O que se moveu",
+      "draftInvoice": "Fatura em rascunho",
+      "recurringBill": "Conta recorrente",
+      "noMoney": "Sem transação nesta.",
+      "stillOpen": "em aberto",
+      "thisPayment": "este pagamento",
+      "wasApplied": "aplicado",
+      "wouldRemain": "ficaria",
+      "wouldClose": "quita",
+      "thePayment": "o pagamento",
+      "acrossInvoices": "em {{count}} faturas",
+      "dueOn": "vence {{date}}",
+      "totalOf": "total de {{amount}}"
+    },
+    "discarded": "Excluídas deste espaço:",
+    "noneLeft": "Nenhuma regra de conciliação neste conjunto. Nada aqui é conciliado automaticamente.",
+    "confirmDeleteTitle": "Excluir esta regra?",
+    "confirmDeleteDescription": "\"{{name}}\" para de decidir qualquer coisa. Se for uma das nossas, você pode trazê-la de volta depois.",
+    "exported": "Regras de conciliação baixadas",
+    "imported": "{{imported}} regras importadas ({{skipped}} ignoradas)",
+    "invalidImportFile": "Este não é um arquivo de regras de conciliação",
+    "importConfirmTitle": "Importar regras de conciliação?",
+    "importConfirmDescription": "O arquivo {{file}} contém {{count}} regras.",
+    "importOverwriteWarning": "A importação substitui as regras de conciliação deste espaço, inclusive a ordem delas. Não dá para desfazer."
   }
 }

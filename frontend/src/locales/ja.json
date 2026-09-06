@@ -372,7 +372,14 @@
       "fromSystem": "{{source}}から · {{date}}",
       "fromUpload": "アップロード · {{date}}"
     },
-    "draftSaved": "下書きを保存しました"
+    "draftSaved": "下書きを保存しました",
+    "suggestions": {
+      "title_one": "この請求書を消し込める支払いがあります",
+      "title_other": "この請求書を消し込める支払いが{{count}}件あります",
+      "wouldApply": "{{amount}}を充当します",
+      "alsoCovers_one": "他に{{count}}件の請求書もカバーします",
+      "alsoCovers_other": "他に{{count}}件の請求書もカバーします"
+    }
   },
   "collections": {
     "title": "コレクション",
@@ -807,7 +814,9 @@
     "calendarTransfersExcluded": "振替は収入・支出にカウントされません",
     "invoiceBadge": "請求書 {{number}}",
     "invoiceBadgeNoNumber": "請求書",
-    "invoiceBadgeTooltip": "この取引は請求書を決済しています。開く。"
+    "invoiceBadgeTooltip": "この取引は請求書を決済しています。開く。",
+    "suggestionBadge": "要確認",
+    "suggestionBadgeTooltip": "これが何かを消し込む可能性があります。キューを開いて回答してください。"
   },
   "accounts": {
     "title": "口座",
@@ -1178,7 +1187,6 @@
     "ignoreActionHint": "(値は不要)",
     "selectCategory": "カテゴリを選択...",
     "selectAccount": "口座を選択...",
-    "ruleActive": "有効なルール",
     "noConditions": "(条件なし)",
     "noActions": "(操作なし)",
     "fieldDescription": "摘要",
@@ -1213,7 +1221,17 @@
     "importConfirmTitle": "分類ルールをインポートしますか?",
     "importConfirmDescription": "ファイル{{file}}には{{count}}件のルールが含まれています。",
     "importOverwriteWarning": "インポートすると現在の分類ルールを上書きします。この操作は取り消せません。",
-    "confirmOverwriteImport": "上書きしてインポート"
+    "confirmOverwriteImport": "上書きしてインポート",
+    "sectionHint": "取引を分類する方法です。",
+    "turnOn": "有効にする",
+    "turnOff": "無効にする",
+    "turnedOn": "ルールを有効にしました",
+    "turnedOff": "ルールを無効にしました",
+    "tab": {
+      "rules": "ルール",
+      "queue": "要対応",
+      "history": "履歴"
+    }
   },
   "categories": {
     "title": "カテゴリ",
@@ -2238,5 +2256,200 @@
         "subtitle": "接続を追加して、ローカルのOllama、OpenAI、Anthropic、任意のOpenAI互換エンドポイントをSecuroに指し示してください。"
       }
     }
+  },
+  "reconciliation": {
+    "node": {
+      "invoices": "請求書",
+      "invoicesHint": "受け取る分と支払う分に対して",
+      "recurring": "定期取引",
+      "recurringHint": "すでに予定していたものに対して",
+      "inactive": "ここでは使いません"
+    },
+    "rule": {
+      "sameClientExact": "既知の相手、金額が一致",
+      "netOfWithholding": "既知の相手、源泉徴収後の入金",
+      "exactAmountAnyClient": "金額が一致、相手は問わない",
+      "similarDescription": "金額が近く摘要も類似",
+      "sameAccountExact": "同じ口座、金額が一致",
+      "unknown": "ルール",
+      "partPayment": "既知の相手、金額の一部",
+      "severalInvoices": "既知の相手、複数の請求書をまとめて"
+    },
+    "outcome": {
+      "link": "自動連結",
+      "suggest": "提案"
+    },
+    "cond": {
+      "samePayee": "取引相手が請求書と同じ",
+      "sameAccount": "同じ口座",
+      "amountExact": "金額が完全に一致",
+      "amountTolerance": "金額が{{percent}}%以内",
+      "amountRatio": "源泉徴収を差し引いた金額が一致",
+      "window": "{{before}}日前から{{after}}日後まで",
+      "similarity": "摘要が{{min}}以上類似",
+      "none": "条件なし",
+      "accounts": "{{names}}で",
+      "payees": "{{names}}向け",
+      "moneyIn": "入金",
+      "moneyOut": "出金",
+      "foreign": "外貨で",
+      "currencyIn": "{{codes}}で",
+      "atLeast": "{{value}}以上",
+      "atMost": "{{value}}以下",
+      "textContains": "明細に「{{text}}」を含む",
+      "textExcludes": "明細に「{{text}}」を含まない",
+      "onArrival": "入金または出金があったとき",
+      "onIssue": "請求書を発行したとき",
+      "amountPartial": "金額が未回収分の一部を満たす",
+      "amountSet": "最大{{count}}件の請求書の合計が一致"
+    },
+    "newRule": "新しい照合ルール",
+    "saved": "ルールを保存しました",
+    "reset": "ルールを元に戻しました",
+    "restore": "標準の内容に戻す",
+    "changed": "変更済み",
+    "yours": "独自",
+    "field": {
+      "name": "名前",
+      "namePlaceholder": "例: 既知の相手、金額が近い",
+      "outcome": "一致したときの動作",
+      "outcomeHint": "自動連結はその場で消し込みます。提案は下のキューに送り、確認を求めます。",
+      "counterparty": "支払った側、または受け取った側",
+      "amount": "金額",
+      "window": "日付のずれをどこまで許すか",
+      "windowHint": "遅れは支払期日から、早さは請求書を作成した日から数えます。発行の翌日に支払われても数週間早いことにはなりません。",
+      "beforeDays": "何日前まで",
+      "afterDays": "何日後まで",
+      "similarity": "摘要の類似度",
+      "similarityHint": "0から1まで。空欄にすると摘要を見ません。",
+      "similarityOff": "無効",
+      "scope": "このルールを適用する範囲",
+      "scopeHint": "空欄ならすべてに適用します",
+      "accounts": "銀行口座",
+      "anyAccount": "すべての口座",
+      "payees": "取引相手",
+      "anyPayee": "すべての相手",
+      "direction": "入金か出金か",
+      "currencyScope": "これらの通貨のみ",
+      "currencyPlaceholder": "例: USD, EUR",
+      "foreignOnly": "このワークスペースの通貨以外のみ",
+      "amountBand": "この範囲の金額のみ",
+      "noMinimum": "下限なし",
+      "noMaximum": "上限なし",
+      "text": "明細の摘要",
+      "textContains": "含む必要がある…",
+      "textExcludes": "含んではいけない…",
+      "textHint": "カンマで区切ると、そのいずれかという意味になります。",
+      "trigger": "照合するタイミング",
+      "triggerHint": "照合は2つの場面で行われ、手がかりはそれぞれ異なります。",
+      "amountMatch": "金額がどれだけ近い必要があるか",
+      "amountMatchHint": "元の合計ではなく、未回収の残額と比べます。",
+      "amountBandHint": "支払いそのものについて。このルールに扱わせたい、あるいは扱わせたくない金額の大きさです。"
+    },
+    "counterparty": {
+      "any": "誰でも",
+      "samePayee": "請求書の取引相手"
+    },
+    "amount": {
+      "exact": "未回収額とちょうど同じ",
+      "tolerance": "一定の範囲内",
+      "ratio": "源泉徴収を差し引いた額",
+      "ratioHint": "お使いの国の源泉徴収率を使います。設定されるまで何も一致しません。",
+      "partial": "未回収額の一部",
+      "partialHint": "分割で支払われる場合に使います。残りは未回収のまま残り、次の支払いがちょうど一致します。",
+      "set": "複数の請求書の合計",
+      "setHint": "複数の請求書をまとめて支払う場合に使います。合計の合う組み合わせが2通り以上あるときは、選ばずに確認します。",
+      "setMax": "請求書は最大でこの件数",
+      "setFee": "手数料の許容",
+      "setFeeHint": "請求書の金額に対する割合です。手数料を差し引いて入出金される支払い向け。0なら合計がぴったり一致する必要があります。"
+    },
+    "queue": {
+      "title": "要対応",
+      "hint": "確認が必要な照合です。",
+      "empty": "確認するものはありません。すべて自動で照合されました。",
+      "aPayment": "ある支払い",
+      "maySettle": "が{{name}}を消し込む可能性があります",
+      "mayBe": "が{{name}}である可能性があります",
+      "accept": "結びつける",
+      "declineHint": "一致しません。この組み合わせは二度と提案されません。",
+      "linked": "結びつけました",
+      "declined": "却下しました。二度と確認しません",
+      "covers": "がカバーする範囲"
+    },
+    "evidence": {
+      "amountExact": "金額が完全に一致",
+      "amountOff": "想定{{expected}}、実際{{moved}}",
+      "knownPayer": "既知の相手",
+      "unknownPayer": "相手を特定できず",
+      "sameDay": "同じ日",
+      "daysApart": "{{days}}日差"
+    },
+    "direction": {
+      "any": "どちらでも",
+      "in": "入金",
+      "out": "出金"
+    },
+    "step": {
+      "what": "このルールの内容",
+      "which": "どの入出金を見るか",
+      "whichHint": "すべて空欄にすると、すべてを見ます",
+      "match": "一致とみなす条件",
+      "matchHint": "支払いと請求がどれだけ近い必要があるか"
+    },
+    "trigger": {
+      "money_arrives": "入金または出金があったとき",
+      "money_arrivesHint": "支払いが明細に現れた時点で、それが消し込む請求書を探します。",
+      "invoice_issued": "請求書を発行したとき",
+      "invoice_issuedHint": "支払いが先で請求書が後の場合です。すでにあった入出金をさかのぼって探します。",
+      "both": "どちらの場面でも",
+      "bothHint": "このルールはどちらの向きでも使います。"
+    },
+    "history": {
+      "title": "照合が行ったこと",
+      "hint": "新しい順。",
+      "byPerson": "あなたの操作",
+      "byRules": "ルールによる",
+      "more": "さらに{{count}}件表示",
+      "less": "表示を減らす",
+      "action": {
+        "linked": "{{name}}と結びつけました",
+        "accepted": "{{name}}への提案を承認しました",
+        "suggested": "{{name}}に対して提案しました",
+        "declined": "{{name}}への提案を却下しました",
+        "expired": "提案が期限切れになりました: {{name}}",
+        "unlinked": "{{name}}との結びつきを解除しました"
+      },
+      "empty": "まだ何もありません。照合が結びつけ、確認を求め、回答されるにつれて埋まります。"
+    },
+    "moveUp": "これをもっと先に試す",
+    "moveDown": "これをもっと後に試す",
+    "matchingTitle": "照合ルール",
+    "matchingHint": "各支払いが何を消し込むかを結びつける方法です。",
+    "pair": {
+      "owed": "未回収の内容",
+      "arrived": "動いたお金",
+      "draftInvoice": "下書きの請求書",
+      "recurringBill": "定期の支払い",
+      "noMoney": "これに対応する取引はありません。",
+      "stillOpen": "未回収",
+      "thisPayment": "この支払い",
+      "wasApplied": "充当済み",
+      "wouldRemain": "残る金額",
+      "wouldClose": "消し込みます",
+      "thePayment": "その支払い",
+      "acrossInvoices": "請求書{{count}}件にわたって",
+      "dueOn": "期日 {{date}}",
+      "totalOf": "合計 {{amount}}"
+    },
+    "discarded": "このワークスペースで削除済み:",
+    "noneLeft": "このセットに照合ルールは残っていません。ここでは自動で照合されません。",
+    "confirmDeleteTitle": "このルールを削除しますか?",
+    "confirmDeleteDescription": "「{{name}}」は何も判断しなくなります。標準のルールであれば後で戻せます。",
+    "exported": "照合ルールをダウンロードしました",
+    "imported": "{{imported}}件のルールをインポートしました({{skipped}}件スキップ)",
+    "invalidImportFile": "照合ルールのファイルではありません",
+    "importConfirmTitle": "照合ルールをインポートしますか?",
+    "importConfirmDescription": "ファイル{{file}}には{{count}}件のルールが含まれています。",
+    "importOverwriteWarning": "インポートすると、このワークスペースの現在の照合ルールが順序ごと置き換わります。この操作は取り消せません。"
   }
 }

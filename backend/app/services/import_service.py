@@ -17,7 +17,7 @@ from app.models.category import Category
 from app.models.rule import Rule
 from app.models.transaction import Transaction
 from app.schemas.transaction import TransactionImport, FailedRow
-from app.services import recurring_match_service
+from app.services import reconciliation_service, recurring_match_service
 from app.services.credit_card_service import apply_effective_date
 from app.services.category_service import get_hidden_category_ids
 from app.services.rule_engine import apply_rule_actions, evaluate_conditions, merge_notes
@@ -745,6 +745,7 @@ async def import_transactions(
     }
 
     imported = 0
+    landed: list[Transaction] = []
     skipped = 0
     effective_format = (detected_format or source or "").lower()
     should_detect_duplicates = detect_duplicates if effective_format == "csv" else True
@@ -904,9 +905,16 @@ async def import_transactions(
             await stamp_primary_amount(session, user_id, incoming)
 
         imported += 1
+        landed.append(incoming)
 
     # Update import log with actual imported count
     import_log.transaction_count = imported
+
+    # Invoices last, and as one batch. Unlike the recurring match above:
+    # which upgrades a placeholder in place and so must happen before the
+    # row is written: settling an invoice creates an allocation pointing
+    # at a transaction, which has to exist first.
+    await reconciliation_service.match_incoming(session, workspace_id, landed)
 
     await session.commit()
     return imported, skipped, excluded_count, import_log.id
