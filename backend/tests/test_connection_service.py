@@ -415,7 +415,9 @@ async def test_token_reconnect_updates_existing_connection_without_deleting_acco
         await session.execute(select(Account).where(Account.connection_id == existing.id))
     ).scalars().all()
     assert [a.external_id for a in remaining_accounts] == ["existing-account"]
-    mock_provider.handle_oauth_callback.assert_awaited_once_with("fresh-setup-token")
+    mock_provider.handle_oauth_callback.assert_awaited_once_with(
+        "fresh-setup-token", state=None
+    )
 
 
 @pytest.mark.asyncio

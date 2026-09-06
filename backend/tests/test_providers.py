@@ -33,7 +33,7 @@ class FakeProvider(BankProvider):
     ) -> str:
         return "https://fake.example.com"
 
-    async def handle_oauth_callback(self, code: str):
+    async def handle_oauth_callback(self, code: str, state: Optional[str] = None):
         pass
 
     async def get_accounts(self, credentials: dict):

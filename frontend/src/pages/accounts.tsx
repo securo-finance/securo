@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { formatAccountMask, getAccountLabel, getAccountName } from '@/lib/account-utils'
-import { getConnectionName } from '@/lib/connection-utils'
+import { getConnectionName, rememberOAuthStateFromUrl } from '@/lib/connection-utils'
 import { Link, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
@@ -107,6 +107,7 @@ export default function AccountsPage() {
     if (providerInfo?.flow_type === 'oauth') {
       try {
         const url = await connections.getReauthUrl(conn.id)
+        rememberOAuthStateFromUrl(url)
         window.location.assign(url)
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e)

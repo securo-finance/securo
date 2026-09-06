@@ -328,8 +328,12 @@ class BankProvider(ABC):
         raise NotImplementedError(f"{self.name} does not support reauth_url")
 
     @abstractmethod
-    async def handle_oauth_callback(self, code: str) -> ConnectionData:
-        """Exchange OAuth code for access token and fetch initial data."""
+    async def handle_oauth_callback(self, code: str, state: Optional[str] = None) -> ConnectionData:
+        """Exchange OAuth code for access token and fetch initial data.
+
+        ``state`` is the Securo-issued OAuth token (and, for Wealth Reader,
+        the fallback ``nonce``). Providers that do not need it can ignore it.
+        """
         ...
 
     @abstractmethod

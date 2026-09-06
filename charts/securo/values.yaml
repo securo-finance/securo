@@ -27,6 +27,9 @@ secret:
   enableBankingAppId: ""
   enableBankingPrivateKey: "" # Content of the PEM file
 
+  # Wealth Reader
+  wealthreaderApiKey: ""
+
   # OIDC
   oidcClientId: ""
   oidcClientSecret: ""
@@ -50,6 +53,10 @@ config:
   enableBankingApiUrl: "https://api.enablebanking.com"
   # Leave empty to auto-compute from global.domain
   enableBankingOauthRedirectUri: ""
+  wealthreaderApiUrl: "https://api.wealthreader.com"
+  wealthreaderOauthUrl: "https://oauth.wealthreader.com"
+  # Leave empty to auto-compute from global.domain
+  wealthreaderOauthRedirectUri: ""
   simplefinEnabled: "false"
   simplefinApiUrl: "https://beta-bridge.simplefin.org"
   oidcEnabled: "false"

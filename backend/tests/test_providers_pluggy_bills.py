@@ -341,7 +341,7 @@ async def test_default_get_bills_returns_empty_list():
         async def get_oauth_url(self, redirect_uri: str, state: str, flow_params: dict | None = None) -> str:
             return ""
 
-        async def handle_oauth_callback(self, code):
+        async def handle_oauth_callback(self, code, state=None):
             raise NotImplementedError
 
         async def get_accounts(self, credentials):

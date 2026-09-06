@@ -33,8 +33,34 @@ async def store_state(payload: dict[str, Any]) -> str:
     return state
 
 
+async def alias_state(canonical: str, alias: str) -> None:
+    """Copy an existing state payload under a second key.
+
+    Wealth Reader's callback documents ``?nonce=&code=`` and may omit
+    ``state``. The provider stashes PKCE under both tokens and aliases
+    the Securo state so ``consume_state(nonce)`` still resolves the
+    workspace/user/provider payload. Both keys share one consumable
+    token: consuming either deletes the sibling.
+    """
+    if not canonical or not alias or canonical == alias:
+        return
+    redis = await get_redis()
+    raw = await redis.get(f"{STATE_KEY_PREFIX}{canonical}")
+    if raw is None:
+        return
+    try:
+        body = json.loads(raw)
+    except json.JSONDecodeError:
+        return
+    siblings = {canonical, alias, *body.get("_oauth_siblings", [])}
+    body["_oauth_siblings"] = sorted(siblings)
+    blob = json.dumps(body)
+    for key in siblings:
+        await redis.set(f"{STATE_KEY_PREFIX}{key}", blob, ex=STATE_TTL_SECONDS)
+
+
 async def consume_state(state: str) -> Optional[dict[str, Any]]:
-    """One-shot retrieval — deletes the key in the same round trip."""
+    """One-shot retrieval — deletes this key and any sibling aliases."""
     if not state:
         return None
     redis = await get_redis()
@@ -43,6 +69,10 @@ async def consume_state(state: str) -> Optional[dict[str, Any]]:
     if raw is None:
         return None
     try:
-        return json.loads(raw)
+        payload = json.loads(raw)
     except json.JSONDecodeError:
         return None
+    for sibling in payload.pop("_oauth_siblings", []):
+        if sibling and sibling != state:
+            await redis.delete(f"{STATE_KEY_PREFIX}{sibling}")
+    return payload
