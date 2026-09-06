@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     simplefin_enabled: bool = False
     simplefin_api_url: str = "https://beta-bridge.simplefin.org"
 
+    # Up Bank (Australian bank, PAT-based flow). Off by default.
+    # Users generate a Personal Access Token from Up's app settings.
+    up_enabled: bool = False
+
     # Frontend
     frontend_url: str = "http://localhost:5173"
 
