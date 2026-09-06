@@ -30,9 +30,9 @@ Supabase will act as your cloud PostgreSQL server to store your transactions sec
 * Select the **Pooler** tab and set the Mode to **Session** (This prevents `Network is unreachable` errors on cloud environments like Render).
 * Copy the connection string provided.
 * ⚠️ **Important Formatting Notice:** This string will look like `postgresql://postgres.[your-project-id]:[YOUR-PASSWORD]@...`. Before pasting it into Render, you must:
-1. Replace `[YOUR-PASSWORD]` with the actual password you saved in **Step 2**.
+1. Replace `[YOUR-PASSWORD]` with the actual password you saved in **Step 2**. 
+If your password contains special characters (like `@`, `#`, `/`, `?`, or `%`), ensure it is percent-encoded (URL-encoded, e.g., `@` becomes `%40`) so SQLAlchemy parses the URL correctly.
 2. Add `+asyncpg` right after `postgresql` to match the application's required asynchronous driver format (transforming it into `postgresql+asyncpg://postgres...`).
-
 
 
 
