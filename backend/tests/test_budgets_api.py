@@ -311,3 +311,114 @@ async def test_delete_recurring_previous_takes_effect(client, auth_headers, test
     cat_budgets2 = [b for b in list_resp2.json() if b["category_id"] == str(cat.id)]
     assert len(cat_budgets2) == 1
     assert float(cat_budgets2[0]["amount"]) == 100.0
+
+
+@pytest.mark.asyncio
+async def test_copy_budgets_from_previous_month(client, auth_headers, test_categories):
+    """Test copying budgets from previous month to current month."""
+    cat1 = test_categories[0]
+    cat2 = test_categories[1]
+    prev_month = _prev_month_str()
+    curr_month = _current_month_str()
+
+    # Create budgets in previous month
+    await client.post(
+        "/api/budgets",
+        json={"category_id": str(cat1.id), "amount": 350, "month": prev_month, "is_recurring": False},
+        headers=auth_headers,
+    )
+    await client.post(
+        "/api/budgets",
+        json={"category_id": str(cat2.id), "amount": 450, "month": prev_month, "is_recurring": False},
+        headers=auth_headers,
+    )
+
+    # Copy to current month
+    copy_resp = await client.post(
+        "/api/budgets/copy",
+        json={
+            "source_month": prev_month,
+            "target_month": curr_month,
+            "overwrite_existing": True,
+        },
+        headers=auth_headers,
+    )
+    assert copy_resp.status_code == 200
+    data = copy_resp.json()
+    assert data["copied_count"] == 2
+    assert float(data["total_amount"]) == 800.0
+
+    # Verify budgets in current month
+    list_resp = await client.get("/api/budgets", params={"month": curr_month}, headers=auth_headers)
+    assert list_resp.status_code == 200
+    curr_budgets = list_resp.json()
+    b_map = {b["category_id"]: float(b["amount"]) for b in curr_budgets}
+    assert b_map.get(str(cat1.id)) == 350.0
+    assert b_map.get(str(cat2.id)) == 450.0
+
+
+@pytest.mark.asyncio
+async def test_copy_budgets_overwrite_false(client, auth_headers, test_categories):
+    """Test copying budgets with overwrite_existing=False does not overwrite existing target budgets."""
+    cat1 = test_categories[0]
+    cat2 = test_categories[1]
+    prev_month = _prev_month_str()
+    next_month = _next_month_str()
+
+    # Create budgets in previous month
+    await client.post(
+        "/api/budgets",
+        json={"category_id": str(cat1.id), "amount": 100, "month": prev_month, "is_recurring": False},
+        headers=auth_headers,
+    )
+    await client.post(
+        "/api/budgets",
+        json={"category_id": str(cat2.id), "amount": 200, "month": prev_month, "is_recurring": False},
+        headers=auth_headers,
+    )
+
+    # Pre-existing budget in next_month for cat1
+    await client.post(
+        "/api/budgets",
+        json={"category_id": str(cat1.id), "amount": 999, "month": next_month, "is_recurring": False},
+        headers=auth_headers,
+    )
+
+    # Copy with overwrite_existing=False
+    copy_resp = await client.post(
+        "/api/budgets/copy",
+        json={
+            "source_month": prev_month,
+            "target_month": next_month,
+            "overwrite_existing": False,
+        },
+        headers=auth_headers,
+    )
+    assert copy_resp.status_code == 200
+    data = copy_resp.json()
+    assert data["copied_count"] == 1  # Only cat2 was added
+    assert float(data["total_amount"]) == 200.0
+
+    # Verify cat1 remained 999 and cat2 was added as 200
+    list_resp = await client.get("/api/budgets", params={"month": next_month}, headers=auth_headers)
+    curr_budgets = list_resp.json()
+    b_map = {b["category_id"]: float(b["amount"]) for b in curr_budgets}
+    assert b_map.get(str(cat1.id)) == 999.0
+    assert b_map.get(str(cat2.id)) == 200.0
+
+
+@pytest.mark.asyncio
+async def test_copy_budgets_same_month_validation(client, auth_headers):
+    """Test that copying to the same month returns 400."""
+    curr_month = _current_month_str()
+    copy_resp = await client.post(
+        "/api/budgets/copy",
+        json={
+            "source_month": curr_month,
+            "target_month": curr_month,
+            "overwrite_existing": True,
+        },
+        headers=auth_headers,
+    )
+    assert copy_resp.status_code == 400
+

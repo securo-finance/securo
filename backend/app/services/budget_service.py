@@ -11,7 +11,14 @@ from app.models.category import Category
 from app.models.category_group import CategoryGroup
 from app.models.transaction import Transaction
 from app.models.user import User
-from app.schemas.budget import BudgetCreate, BudgetUpdate, BudgetVsActual
+from app.schemas.budget import (
+    BudgetCopyRequest,
+    BudgetCopyResponse,
+    BudgetCreate,
+    BudgetRead,
+    BudgetUpdate,
+    BudgetVsActual,
+)
 from app.services._query_filters import (
     counts_as_user_pnl,
     owner_split_offset_by_category,
@@ -467,3 +474,70 @@ async def get_budget_vs_actual(
         ))
 
     return sorted(comparisons, key=lambda x: float(x.actual_amount), reverse=True)
+
+
+async def copy_budgets(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    data: BudgetCopyRequest,
+) -> BudgetCopyResponse:
+    source_month = data.source_month.replace(day=1)
+    target_month = data.target_month.replace(day=1)
+
+    if source_month == target_month:
+        raise ValueError("Source month and target month cannot be the same")
+
+    # Get effective budgets for source month
+    source_budget_map = await _build_budget_map(session, workspace_id, source_month)
+    if not source_budget_map:
+        return BudgetCopyResponse(copied_count=0, total_amount=Decimal("0"), budgets=[])
+
+    # Find existing budgets explicitly configured for target month
+    existing_result = await session.execute(
+        select(Budget).where(
+            Budget.workspace_id == workspace_id,
+            Budget.month == target_month,
+        )
+    )
+    existing_budgets = {str(b.category_id): b for b in existing_result.scalars().all()}
+
+    copied_budgets: list[Budget] = []
+
+    for cat_id_str, (amount, _) in source_budget_map.items():
+        if amount is None or amount <= Decimal("0"):
+            continue
+
+        cat_id = uuid.UUID(cat_id_str)
+        existing = existing_budgets.get(cat_id_str)
+
+        if existing:
+            if data.overwrite_existing:
+                existing.amount = amount
+                existing.is_recurring = False
+                copied_budgets.append(existing)
+        else:
+            new_budget = Budget(
+                user_id=user_id,
+                workspace_id=workspace_id,
+                category_id=cat_id,
+                amount=amount,
+                month=target_month,
+                is_recurring=False,
+            )
+            session.add(new_budget)
+            copied_budgets.append(new_budget)
+
+    if copied_budgets:
+        await session.commit()
+        for b in copied_budgets:
+            await session.refresh(b)
+
+    total_amount = sum((b.amount for b in copied_budgets), Decimal("0"))
+    budget_reads = [BudgetRead.model_validate(b) for b in copied_budgets]
+
+    return BudgetCopyResponse(
+        copied_count=len(budget_reads),
+        total_amount=total_amount,
+        budgets=budget_reads,
+    )

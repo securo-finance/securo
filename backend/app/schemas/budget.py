@@ -43,3 +43,15 @@ class BudgetVsActual(BaseModel):
     projected_prev_month_amount: Decimal = Decimal("0")
     percentage_used: Optional[float] = None
     is_recurring: bool = False
+
+
+class BudgetCopyRequest(BaseModel):
+    source_month: _Date
+    target_month: _Date
+    overwrite_existing: bool = True
+
+
+class BudgetCopyResponse(BaseModel):
+    copied_count: int
+    total_amount: Decimal
+    budgets: list[BudgetRead]
