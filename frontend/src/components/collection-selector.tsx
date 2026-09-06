@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { appliesCollectionFilter } from '@/lib/collection-filter-scope'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,12 +27,17 @@ import { Check, ChevronsUpDown, Layers, Settings2, X } from 'lucide-react'
 export function CollectionSelector({ variant = 'sidebar' }: { variant?: 'sidebar' | 'header' }) {
   const { t } = useTranslation()
   const nav = useNavigate()
+  const { pathname } = useLocation()
   const { collections, activeCollection, setActiveCollectionId } = useCollectionFilter()
 
   if (collections.length === 0) return null
+  // The header bar states what the page below it is scoped to, so it only
+  // belongs on pages the filter actually scopes. The sidebar placement is
+  // part of the nav and stays put.
+  if (variant === 'header' && !appliesCollectionFilter(pathname)) return null
 
   const menu = (
-    <DropdownMenuContent align={variant === 'header' ? 'start' : 'start'} className="w-60">
+    <DropdownMenuContent align={variant === 'header' ? 'start' : 'start'} className="w-72">
       <DropdownMenuItem onClick={() => setActiveCollectionId(null)} className="flex items-center gap-2">
         <Layers size={14} className="text-muted-foreground" />
         <span className="flex-1">{t('collections.allAccounts')}</span>
@@ -41,13 +47,16 @@ export function CollectionSelector({ variant = 'sidebar' }: { variant?: 'sidebar
       {collections.map((c) => (
         <DropdownMenuItem key={c.id} onClick={() => setActiveCollectionId(c.id)} className="flex items-center gap-2">
           <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: c.color }} />
-          <span className="flex-1 truncate">{c.name}</span>
-          <span className="text-[10.5px] tabular-nums text-muted-foreground/70">
-            {c.account_count > 0 && `${c.account_count}a`}
-            {c.account_count > 0 && c.wallet_count > 0 && ' · '}
-            {c.wallet_count > 0 && `${c.wallet_count}w`}
+          <span className="min-w-0 flex-1 truncate">{c.name}</span>
+          {/* Spelled out and translated: "8a · 3w" read as cropped text, and the
+              a/w abbreviations were English-only in a ten-locale UI. */}
+          <span className="shrink-0 whitespace-nowrap text-[11px] tabular-nums text-muted-foreground/70">
+            {[
+              c.account_count > 0 && t('collections.accountCount', { count: c.account_count }),
+              c.wallet_count > 0 && t('collections.walletCount', { count: c.wallet_count }),
+            ].filter(Boolean).join(' · ')}
           </span>
-          {activeCollection?.id === c.id && <Check size={14} className="text-primary" />}
+          {activeCollection?.id === c.id && <Check size={14} className="shrink-0 text-primary" />}
         </DropdownMenuItem>
       ))}
       <DropdownMenuSeparator />
@@ -62,7 +71,9 @@ export function CollectionSelector({ variant = 'sidebar' }: { variant?: 'sidebar
   if (variant === 'sidebar') {
     return (
       <div className="px-3 pt-2">
-        <DropdownMenu>
+        {/* Non-modal: the default locks body scroll while open, which hides the
+            page scrollbar and shifts the layout under the sticky bar. */}
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <button className="flex items-center gap-2 w-full rounded-lg border border-sidebar-border/60 bg-sidebar-accent/30 px-2.5 py-1.5 text-left hover:bg-sidebar-accent/50 transition-colors">
               {activeCollection ? (
@@ -92,7 +103,9 @@ export function CollectionSelector({ variant = 'sidebar' }: { variant?: 'sidebar
         <span className="text-[11px] font-medium uppercase tracking-[0.1em] text-muted-foreground/70">
           {t('collections.viewing')}
         </span>
-        <DropdownMenu>
+        {/* Non-modal: the default locks body scroll while open, which hides the
+            page scrollbar and shifts the layout under the sticky bar. */}
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <button
               className="group inline-flex items-center gap-2 rounded-full border border-border/60 px-3 py-1.5 text-[13px] transition-colors hover:bg-muted/50"
