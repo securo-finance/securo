@@ -112,9 +112,11 @@ async def _resolve_institution(
     Matched by the provider's stable org id when it sends one, so a bank
     renamed on the provider side updates its row in place instead of minting
     a new one (review on #654); name identity is the fallback for servers
-    that only send a name. Providers without per-account hints
-    (Pluggy/Enable — one institution per connection) return None, and
-    serialization falls back to the connection's own fields.
+    that only send a name. Most Pluggy/Enable connections are one
+    institution and never send this hint (returns None, serialization falls
+    back to the connection's own fields) — the exception is a Pluggy
+    connection spanning a banking group's brokerage arm (issue #723), which
+    the provider detects and hints the same way SimpleFIN already does.
     """
     name = _clean_institution_name(acc_data.institution_name)
     if not name:
@@ -1063,6 +1065,7 @@ async def handle_oauth_callback(
             connection_id=connection.id,
             external_id=acc_data.external_id,
             name=acc_data.name,
+            display_name=institution.name if institution else None,
             masked_number=acc_data.masked_number,
             type=acc_data.type,
             balance=acc_data.balance,
@@ -1777,6 +1780,10 @@ async def sync_connection(
                 # Backfills existing accounts on next sync (issue #345).
                 if institution is not None:
                     account.institution_id = institution.id
+                    # Only when the user hasn't named the account themselves —
+                    # never overwrite a manual display_name.
+                    if account.display_name is None:
+                        account.display_name = institution.name
                 if acc_data.type == "credit_card":
                     # Preserve existing CC metadata when the provider doesn't
                     # expose it. Pluggy's creditData fields (limit, close/due
@@ -1804,6 +1811,7 @@ async def sync_connection(
                     connection_id=connection.id,
                     external_id=acc_data.external_id,
                     name=acc_data.name,
+                    display_name=institution.name if institution else None,
                     masked_number=acc_data.masked_number,
                     type=acc_data.type,
                     balance=acc_data.balance,
