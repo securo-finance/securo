@@ -153,6 +153,7 @@ function currencyFormatter(currency: string, locale: string): Intl.NumberFormat 
     return new Intl.NumberFormat(locale, {
       style: 'currency',
       currency: currency || 'USD',
+	  currencyDisplay: 'narrowSymbol',
     })
   } catch {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
