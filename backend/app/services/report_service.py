@@ -58,7 +58,11 @@ _ASSET_TYPE_COLORS: dict[str, str] = {
 
 
 def _report_start_date(
-    today: date, months: int, period: str | None = None, days: int | None = None
+    today: date,
+    months: int,
+    period: str | None = None,
+    days: int | None = None,
+    financial_year_start_month: int = 1,
 ) -> date:
     """Resolve historical report start date.
 
@@ -69,7 +73,10 @@ def _report_start_date(
         return today - timedelta(days=days - 1)
 
     if period == "ytd":
-        return date(today.year, 1, 1)
+        if not 1 <= financial_year_start_month <= 12:
+            raise ValueError("financial_year_start_month must be between 1 and 12")
+        year = today.year - (today.month < financial_year_start_month)
+        return date(year, financial_year_start_month, 1)
 
     start = date(today.year, today.month, 1) - timedelta(days=months * 30)
     return start.replace(day=1)
@@ -282,13 +289,16 @@ async def get_net_worth_report(
     account_ids: Optional[list[uuid.UUID]] = None,
     asset_group_ids: Optional[list[uuid.UUID]] = None,
     period: str | None = None,
+    financial_year_start_month: int = 1,
 ) -> ReportResponse:
     """Build a full ReportResponse for net worth over time."""
     # A wallet-only collection (wallets, no accounts) still filters.
     if asset_group_ids is not None and account_ids is None:
         account_ids = []
     today = date.today()
-    start = _report_start_date(today, months, period)
+    start = _report_start_date(
+        today, months, period, financial_year_start_month=financial_year_start_month
+    )
 
     # Get user's primary currency
     user = await session.get(User, user_id)
@@ -385,12 +395,19 @@ async def get_income_expenses_report(
     account_ids: Optional[list[uuid.UUID]] = None,
     period: str | None = None,
     days: int | None = None,
+    financial_year_start_month: int = 1,
 ) -> ReportResponse:
     """Build a ReportResponse for income vs expenses over time."""
     filtered = account_ids is not None
     acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
     today = date.today()
-    start = _report_start_date(today, months, period, days)
+    start = _report_start_date(
+        today,
+        months,
+        period=period,
+        days=days,
+        financial_year_start_month=financial_year_start_month,
+    )
 
     # Get user's primary currency + global reporting mode
     user = await session.get(User, user_id)
