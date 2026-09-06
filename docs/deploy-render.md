@@ -81,7 +81,7 @@ Now we deploy the core engine of the application, connecting it to our cloud Dat
 | --- | --- |
 | `BACKEND_URL` | `[https://your-backend-service.onrender.com](https://your-backend-service.onrender.com)` *(Public URL generated for this backend)* |
 | `FRONTEND_URL` | `[https://your-frontend-service.onrender.com](https://your-frontend-service.onrender.com)` *(Public URL generated for the frontend)* |
-| `DATABASE_URL` | `postgresql+asyncpg://postgres.[id]:[pass]@host:5432/postgres` *(Configured in Step 1)* |
+| `DATABASE_URL` | `postgresql+asyncpg://postgres.[id]:[percent_encoded_pass]@host:5432/postgres` *(Configured in Step 1)* | 
 | `REDIS_URL` | `redis://...` *(Internal URL retrieved in Step 2)* |
 | `SECRET_KEY` | Generate via terminal: `openssl rand -hex 32` |
 | `OIDC_ENABLED` | `true` |
