@@ -11,10 +11,10 @@ import { applyTransactionToBalance, excludeMaterializedProjections, transactionA
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { toast } from 'sonner'
-import type { CreditCardBill, ProjectedTransaction, Transaction } from '@/types'
+import type { AccountCard, CreditCardBill, ProjectedTransaction, Transaction } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, EyeClosed, HelpCircle, Paperclip, Pencil, X } from 'lucide-react'
+import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, CreditCard, EyeClosed, HelpCircle, Paperclip, Pencil, X } from 'lucide-react'
 import { MobileTransactionRow } from '@/components/mobile-transaction-row'
 import { CategoryIcon } from '@/components/category-icon'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
@@ -346,6 +346,11 @@ export default function AccountDetailPage() {
     queryFn: () => accounts.bills(id!, 24),
     enabled: !!id && account?.type === 'credit_card',
   })
+  const linkedCardsQuery = useQuery({
+    queryKey: ['accounts', id, 'linked-cards'],
+    queryFn: () => accounts.linkedCards(id!),
+    enabled: !!id && account?.type === 'credit_card',
+  })
   // Bills sorted oldest → newest, for indexing helpers below.
   const billsAsc = useMemo(() => {
     if (!bills) return []
@@ -594,10 +599,20 @@ export default function AccountDetailPage() {
 
   const [ccSettingsOpen, setCcSettingsOpen] = useState(false)
   const ccSettingsMutation = useMutation({
-    mutationFn: (data: { credit_limit?: number | null; statement_close_day?: number | null; payment_due_day?: number | null }) =>
-      accounts.update(id!, data),
+    mutationFn: async ({
+      settings,
+      cards,
+    }: {
+      settings: { credit_limit?: number | null; statement_close_day?: number | null; payment_due_day?: number | null }
+      cards: { id: string; label: string }[]
+    }) => {
+      await accounts.update(id!, settings)
+      return accounts.updateLinkedCards(id!, cards)
+    },
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
+      queryClient.invalidateQueries({ queryKey: ['accounts', id, 'linked-cards'] })
+      queryClient.invalidateQueries({ queryKey: ['accounts', 'linked-cards'] })
       setCcSettingsOpen(false)
       toast.success(t('accounts.updated'))
     },
@@ -681,6 +696,7 @@ export default function AccountDetailPage() {
       installment_total_amount: null,
       installment_purchase_date: null,
       bill_id: null,
+      card_masked_number: null,
       effective_bill_date: null,
       recurring_transaction_id: p.recurring_id,
       splits: [],
@@ -1741,7 +1757,11 @@ export default function AccountDetailPage() {
           open={ccSettingsOpen}
           onClose={() => setCcSettingsOpen(false)}
           account={account}
-          onSave={(data) => ccSettingsMutation.mutate(data)}
+          linkedCards={linkedCardsQuery.data ?? []}
+          linkedCardsLoading={linkedCardsQuery.isLoading}
+          linkedCardsError={linkedCardsQuery.isError}
+          onRetryLinkedCards={() => void linkedCardsQuery.refetch()}
+          onSave={(settings, cards) => ccSettingsMutation.mutate({ settings, cards })}
           loading={ccSettingsMutation.isPending}
         />
       )}
@@ -1753,26 +1773,39 @@ function CreditCardSettingsDialog({
   open,
   onClose,
   account,
+  linkedCards,
+  linkedCardsLoading,
+  linkedCardsError,
+  onRetryLinkedCards,
   onSave,
   loading,
 }: {
   open: boolean
   onClose: () => void
   account: { credit_limit: number | null; statement_close_day: number | null; payment_due_day: number | null }
-  onSave: (data: { credit_limit: number | null; statement_close_day: number | null; payment_due_day: number | null }) => void
+  linkedCards: AccountCard[]
+  linkedCardsLoading: boolean
+  linkedCardsError: boolean
+  onRetryLinkedCards: () => void
+  onSave: (
+    settings: { credit_limit: number | null; statement_close_day: number | null; payment_due_day: number | null },
+    cards: { id: string; label: string }[],
+  ) => void
   loading: boolean
 }) {
   const { t } = useTranslation()
   const [creditLimit, setCreditLimit] = useState('')
   const [closeDay, setCloseDay] = useState('')
   const [dueDay, setDueDay] = useState('')
+  const [cardLabels, setCardLabels] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (!open) return
     setCreditLimit(account.credit_limit != null ? String(account.credit_limit) : '')
     setCloseDay(account.statement_close_day != null ? String(account.statement_close_day) : '')
     setDueDay(account.payment_due_day != null ? String(account.payment_due_day) : '')
-  }, [open, account.credit_limit, account.statement_close_day, account.payment_due_day])
+    setCardLabels(Object.fromEntries(linkedCards.map((card) => [card.id, card.label ?? ''])))
+  }, [open, account.credit_limit, account.statement_close_day, account.payment_due_day, linkedCards])
 
   const parseDay = (v: string): number | null => {
     const n = parseInt(v, 10)
@@ -1788,11 +1821,14 @@ function CreditCardSettingsDialog({
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            onSave({
-              credit_limit: creditLimit !== '' ? parseFloat(creditLimit) : null,
-              statement_close_day: parseDay(closeDay),
-              payment_due_day: parseDay(dueDay),
-            })
+            onSave(
+              {
+                credit_limit: creditLimit !== '' ? parseFloat(creditLimit) : null,
+                statement_close_day: parseDay(closeDay),
+                payment_due_day: parseDay(dueDay),
+              },
+              linkedCards.map((card) => ({ id: card.id, label: cardLabels[card.id] ?? '' })),
+            )
           }}
           className="space-y-4"
         >
@@ -1835,6 +1871,71 @@ function CreditCardSettingsDialog({
                 placeholder={t('accounts.dayOfMonthHint')}
               />
             </div>
+          </div>
+          <div className="border-t border-border pt-4 space-y-3">
+            <div>
+              <Label>{t('accounts.linkedCards')}</Label>
+              <p className="text-xs text-muted-foreground mt-1">{t('accounts.linkedCardsHint')}</p>
+            </div>
+            {linkedCardsLoading ? (
+              <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
+            ) : linkedCardsError ? (
+              <div className="flex items-center gap-3">
+                <p className="text-sm text-destructive">{t('common.error')}</p>
+                <Button type="button" variant="outline" size="sm" onClick={onRetryLinkedCards}>
+                  {t('common.retry')}
+                </Button>
+              </div>
+            ) : linkedCards.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t('accounts.noLinkedCards')}</p>
+            ) : (
+              <div className="overflow-hidden rounded-lg border border-border">
+                <div className="hidden grid-cols-[minmax(0,1fr)_minmax(180px,1.2fr)] gap-4 bg-muted/40 px-3 py-2 sm:grid">
+                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {t('transactions.card')}
+                  </span>
+                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {t('accounts.cardLabel')}
+                  </span>
+                </div>
+                <div className="divide-y divide-border">
+                  {linkedCards.map((card) => {
+                    const inputId = `linked-card-label-${card.id}`
+                    return (
+                      <div
+                        key={card.id}
+                        className="grid gap-2 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(180px,1.2fr)] sm:items-center sm:gap-4"
+                      >
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                            <CreditCard className="size-4" aria-hidden="true" />
+                          </div>
+                          <span className="truncate text-sm font-medium tabular-nums">
+                            {t('accounts.cardEnding', { number: card.masked_number })}
+                          </span>
+                        </div>
+                        <div>
+                          <Label className="sr-only" htmlFor={inputId}>
+                            {t('accounts.cardLabel')} — {t('accounts.cardEnding', { number: card.masked_number })}
+                          </Label>
+                          <Input
+                            id={inputId}
+                            value={cardLabels[card.id] ?? ''}
+                            onChange={(event) => setCardLabels((current) => ({
+                              ...current,
+                              [card.id]: event.target.value,
+                            }))}
+                            placeholder={t('accounts.cardLabelPlaceholder')}
+                            maxLength={80}
+                            disabled={loading}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>

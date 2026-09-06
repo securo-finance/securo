@@ -38,6 +38,22 @@ class _VectorJSON(sqlalchemy.types.JSON):
 setattr(_pgv, "Vector", _VectorJSON)
 # ---------------------------------------------------------------------------
 
+# postgresql.UUID compiles to a literal "UUID" column type, which SQLite
+# gives NUMERIC affinity (it doesn't recognize the CHAR/TEXT/INT/BLOB/REAL
+# keywords). NUMERIC affinity makes SQLite coerce a stored value into a
+# number whenever it losslessly can — for the rare uuid4() whose hex digits
+# are all decimal (no a-f), that silently turns the primary key into a
+# float on readback. CHAR(32) gets TEXT affinity instead, so SQLite never
+# tries the conversion. Production runs the real UUID column unchanged.
+from sqlalchemy.dialects.postgresql import UUID as _PG_UUID  # noqa: E402
+from sqlalchemy.ext.compiler import compiles  # noqa: E402
+
+
+@compiles(_PG_UUID, "sqlite")
+def _compile_pg_uuid_sqlite(type_, compiler, **kw):
+    return "CHAR(32)"
+
+
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
@@ -50,6 +66,7 @@ from app.models.passkey import UserPasskey  # noqa: E402,F401
 from app.models.category import Category  # noqa: E402
 from app.models.bank_connection import BankConnection  # noqa: E402
 from app.models.account import Account  # noqa: E402
+from app.models.account_card import AccountCard  # noqa: E402,F401
 from app.models.transaction import Transaction  # noqa: E402
 from app.models.rule import Rule  # noqa: E402
 from app.models.asset import Asset  # noqa: E402,F401
@@ -93,10 +110,9 @@ engine = create_async_engine(
 TestSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
-# SQLite doesn't support PostgreSQL UUID type natively — SQLAlchemy handles the
-# mapping automatically when we create tables via Base.metadata (it converts
-# PostgreSQL UUID to CHAR(32)). We just need to make sure we use string-based
-# UUID comparisons.
+# SQLite doesn't support the PostgreSQL UUID type natively; the `@compiles`
+# shim above maps it to CHAR(32) for table creation here. We just need to
+# make sure we use string-based UUID comparisons.
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session", autouse=True)

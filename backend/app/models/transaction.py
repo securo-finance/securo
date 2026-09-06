@@ -94,6 +94,11 @@ class Transaction(Base):
         nullable=True,
         index=True,
     )
+    # Last four characters of the physical/virtual card that made this charge.
+    # A credit-card account can represent multiple additional or virtual cards,
+    # so this belongs to the transaction rather than Account.masked_number.
+    # Never store the complete card number here.
+    card_masked_number: Mapped[Optional[str]] = mapped_column(String(4), nullable=True)
     # Ignore the row everywhere monetary totals are calculated, including the
     # account balance. The row remains stored and can still be shown in ledger
     # views unless the caller explicitly hides ignored transactions.
