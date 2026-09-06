@@ -638,8 +638,8 @@ async def enrich_with_category_suggestions(
     hidden_categories = await get_hidden_category_ids(session, workspace_id)
     category_name_map = {str(c.id): c.name for c in categories}
     category_name_to_id = {
-        c.name.strip().lower(): c.id 
-        for c in categories 
+        c.name.strip().lower(): c.id
+        for c in categories
         if c.id not in hidden_categories
     }
 
@@ -658,7 +658,7 @@ async def enrich_with_category_suggestions(
             category_id=None,
         )
         category_set = False
-        
+
         for rule in rules:
             conditions = rule.conditions or []
             actions = rule.actions or []
@@ -669,7 +669,7 @@ async def enrich_with_category_suggestions(
                     category_set,
                     hidden_category_ids=hidden_categories,
                 )
-        
+
         # If rules did not set a category, apply the CSV category if found
         if not category_set and txn.category_name:
             csv_cat_id = category_name_to_id.get(txn.category_name.strip().lower())
@@ -796,7 +796,7 @@ async def import_transactions(
             import_payee_id = import_payee_entity.id
 
         user_category_id = txn_data.category_id
-        suggested_cat_id = txn_data.suggested_category_id
+        suggested_category_id = txn_data.suggested_category_id
         csv_category_id = (
             category_map.get(txn_data.category_name.strip().lower())
             if txn_data.category_name
@@ -805,7 +805,7 @@ async def import_transactions(
         category_id = (
             None
             if txn_data.force_uncategorized
-            else user_category_id or suggested_cat_id or csv_category_id
+            else user_category_id or suggested_category_id
         )
 
         incoming = Transaction(
@@ -833,6 +833,8 @@ async def import_transactions(
             incoming,
             skip_category_rules=txn_data.force_uncategorized,
         )
+        if preview.category_id is None and not txn_data.force_uncategorized:
+            preview.category_id = csv_category_id
 
         # Normalize a detached candidate before either recurring match. If a
         # generated placeholder already represents this occurrence, upgrade it
@@ -899,6 +901,8 @@ async def import_transactions(
             incoming,
             skip_category_rules=txn_data.force_uncategorized,
         )
+        if incoming.category_id is None and not txn_data.force_uncategorized:
+            incoming.category_id = csv_category_id
 
         if not txn_data.fx_rate:
             await stamp_primary_amount(session, user_id, incoming)
