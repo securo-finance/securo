@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.app_clock import app_today
 from app.core.config import get_settings
 from app.models.account import Account
 from app.models.category import Category
@@ -44,7 +45,7 @@ async def get_transaction_calendar(
     projected ending balance returned by this read endpoint.
     """
     if month is None:
-        month = date.today().replace(day=1)
+        month = app_today().replace(day=1)
     month_start = month.replace(day=1)
     if month_start.month == 12:
         month_end = month_start.replace(year=month_start.year + 1, month=1)
@@ -88,9 +89,9 @@ async def get_transaction_calendar(
     # A future calendar month starts after today's current balance. Carry real
     # forecast rows that fall in the gap into the projected seed, just like
     # virtual recurring occurrences are carried below.
-    if grid_start > date.today():
+    if grid_start > app_today():
         before_grid_rows = await _get_forecast_transactions(
-            session, workspace_id, date.today() + timedelta(days=1), grid_start,
+            session, workspace_id, app_today() + timedelta(days=1), grid_start,
             requested_account_ids,
         )
         for tx in before_grid_rows:
@@ -296,7 +297,7 @@ async def _load_actual_transactions(
             Account.is_closed == False,
             Transaction.date >= start,
             Transaction.date < end,
-            Transaction.date <= date.today(),
+            Transaction.date <= app_today(),
             Transaction.status == "posted",
         )
         .options(

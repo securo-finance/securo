@@ -133,8 +133,16 @@ async def clean_db(session: AsyncSession):
 
 
 async def override_get_async_session() -> AsyncGenerator[AsyncSession, None]:
+    from app.core.app_clock import use_timezone
+
     async with TestSessionLocal() as session:
-        yield session
+        async with use_timezone(session):
+            yield session
+
+
+@pytest.fixture(autouse=True)
+def _runtime_settings_database(monkeypatch):
+    monkeypatch.setattr("app.services.provider_settings.async_session_maker", TestSessionLocal)
 
 
 # Override the dependency
@@ -592,7 +600,8 @@ def _mock_redis():
 @pytest.fixture(autouse=True)
 def _no_external_fx_sync():
     """Prevent tests from hitting the real OpenExchangeRates API."""
-    with patch("app.services.fx_rate_service._provider") as mock_provider:
+    with patch("app.services.fx_rate_service.OpenExchangeRatesProvider") as mock_provider:
+        mock_provider = mock_provider.return_value
         mock_provider.name = "test"
         mock_provider.fetch_latest = AsyncMock(return_value={})
         mock_provider.fetch_historical = AsyncMock(return_value={})

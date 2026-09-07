@@ -8,7 +8,6 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 
-from app.core.config import get_settings
 from app.providers.base import (
     AccountData,
     BankProvider,
@@ -245,6 +244,7 @@ class PluggyProvider(BankProvider):
 
     _api_key: Optional[str] = None
     _api_key_expires_at: float = 0
+    _credential_key: tuple[str, str] | None = None
 
     @property
     def name(self) -> str:
@@ -257,10 +257,11 @@ class PluggyProvider(BankProvider):
     async def _ensure_api_key(self) -> str:
         """Get a valid API key, refreshing if expired or about to expire (<5min remaining)."""
         now = time.time()
-        if self._api_key and (self._api_key_expires_at - now) > 300:
+        settings = self.settings
+        credential_key = (settings.pluggy_client_id, settings.pluggy_client_secret.get_secret_value())
+        if self._credential_key == credential_key and self._api_key and (self._api_key_expires_at - now) > 300:
             return self._api_key
 
-        settings = get_settings()
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
                 f"{PLUGGY_API_BASE}/auth",
@@ -273,6 +274,7 @@ class PluggyProvider(BankProvider):
             data = resp.json()
 
         PluggyProvider._api_key = data["apiKey"]
+        PluggyProvider._credential_key = credential_key
         # Pluggy API keys last 2 hours
         PluggyProvider._api_key_expires_at = now + 7200
         return PluggyProvider._api_key

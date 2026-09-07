@@ -1,3 +1,4 @@
+from app.core.config import Settings
 from app.providers.base import (
     AccountData,
     BankProvider,
@@ -49,53 +50,54 @@ def register_provider(name: str, cls: type[BankProvider]) -> None:
     _PROVIDERS[name] = cls
 
 
-def get_provider(name: str) -> BankProvider:
+def get_provider(name: str, settings: Settings | None = None) -> BankProvider:
     """Get an instance of a registered bank provider by name."""
-    provider_class = _PROVIDERS.get(name)
+    available_providers = _available_providers(settings)
+    provider_class = available_providers.get(name)
     if not provider_class:
-        available = ", ".join(_PROVIDERS.keys()) or "(none)"
+        available = ", ".join(available_providers) or "(none)"
         raise ValueError(f"Unknown provider: {name}. Available: {available}")
-    return provider_class()
+    return provider_class(settings=settings) if settings is not None else provider_class()
 
 
 def list_providers() -> list[dict[str, str]]:
     """Return info about all registered providers."""
     return [
         {"name": name, "flow_type": cls().flow_type}
-        for name, cls in _PROVIDERS.items()
+        for name, cls in _available_providers().items()
     ]
 
 
-def all_known_providers() -> list[dict]:
+def all_known_providers(settings: Settings | None = None) -> list[dict]:
     """Return all known providers with a configured flag."""
+    available = _available_providers(settings)
     return [
-        {**p, "configured": p["name"] in _PROVIDERS}
+        {**p, "configured": p["name"] in available}
         for p in KNOWN_PROVIDERS
     ]
 
 
-def _auto_register_providers() -> None:
-    """Auto-register providers when credentials are configured."""
+def _available_providers(settings: Settings | None = None) -> dict[str, type[BankProvider]]:
+    """Derive availability without mutating process-wide registration."""
     from app.core.config import get_settings
-    settings = get_settings()
+    settings = settings or get_settings()
+    providers = dict(_PROVIDERS)
 
     if settings.pluggy_client_id and settings.pluggy_client_secret:
         from app.providers.pluggy import PluggyProvider
-        register_provider("pluggy", PluggyProvider)
+        providers["pluggy"] = PluggyProvider
 
-    eb_has_key = bool(
-        settings.enable_banking_private_key or settings.enable_banking_private_key_file
-    )
-    if settings.enable_banking_app_id and eb_has_key:
+    from app.services.provider_settings import is_configured
+
+    if is_configured("enable_banking", settings):
         from app.providers.enable_banking import EnableBankingProvider
-        register_provider("enable_banking", EnableBankingProvider)
+        providers["enable_banking"] = EnableBankingProvider
 
     if settings.simplefin_enabled:
         from app.providers.simplefin import SimpleFinProvider
-        register_provider("simplefin", SimpleFinProvider)
+        providers["simplefin"] = SimpleFinProvider
 
-
-_auto_register_providers()
+    return providers
 
 
 _storage_provider = None

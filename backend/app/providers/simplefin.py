@@ -19,6 +19,7 @@ window, ``balance-date`` epoch seconds) are contained in this module.
 """
 from __future__ import annotations
 
+
 import base64
 import binascii
 import logging
@@ -450,7 +451,8 @@ class SimpleFinProvider(BankProvider):
         since: Optional[date] = None,
         payee_source: str = "auto",
     ) -> list[TransactionData]:
-        end_date = date.today()
+        # SimpleFIN's request windows and transaction dates use UTC boundaries.
+        end_date = datetime.now(timezone.utc).date()
         if since is None:
             start_date = end_date - timedelta(days=SIMPLEFIN_INITIAL_HISTORY_DAYS)
         else:

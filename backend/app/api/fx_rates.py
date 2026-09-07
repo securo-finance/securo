@@ -1,15 +1,15 @@
-from datetime import date
-
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.core.auth import current_active_user
 from app.core.config import get_settings
 from app.core.database import get_async_session
 from app.models.fx_rate import FxRate
 from app.models.user import User
 from app.services.fx_rate_service import sync_rates
+from app.services.provider_settings import resolve_settings
 
 router = APIRouter(prefix="/api/fx-rates", tags=["fx-rates"])
 
@@ -20,8 +20,11 @@ async def refresh_rates(
     user: User = Depends(current_active_user),
 ):
     """Trigger immediate FX rate sync."""
-    count = await sync_rates(session, date.today())
-    return {"synced": True, "rates_count": count, "date": date.today().isoformat()}
+    if not (await resolve_settings(session)).openexchangerates_app_id:
+        raise HTTPException(status_code=503, detail="Exchange rates are not configured. Ask an administrator to configure Open Exchange Rates in Settings.")
+    today = app_today()
+    count = await sync_rates(session, today)
+    return {"synced": True, "rates_count": count, "date": today.isoformat()}
 
 
 @router.get("/status")
@@ -42,4 +45,5 @@ async def rates_status(
         "last_sync_date": last_date.isoformat() if last_date else None,
         "total_rates": total,
         "fx_sync_mode": settings.fx_sync_mode,
+        "configured": bool((await resolve_settings(session)).openexchangerates_app_id),
     }

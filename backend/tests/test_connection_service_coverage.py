@@ -254,7 +254,7 @@ async def test_sync_holdings_creates_asset(session: AsyncSession, test_user):
         ),
     ])
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "t"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "t"}, mock_provider)
     await session.commit()
 
     asset = (await session.execute(
@@ -329,7 +329,7 @@ async def test_sync_holdings_matches_asset_across_workspace_members(
     )
 
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "t"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "t"}, mock_provider)
     await session.commit()
 
     matching = (
@@ -412,7 +412,7 @@ async def test_sync_holdings_does_not_adopt_another_connections_wallet(
     )
 
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, current, {"token": "t"})
+        await _sync_holdings(session, test_user.id, current, {"token": "t"}, mock_provider)
     await session.commit()
 
     await session.refresh(other_group)
@@ -429,7 +429,7 @@ async def test_sync_holdings_provider_error_swallowed(session: AsyncSession, tes
     mock_provider = AsyncMock()
     mock_provider.get_holdings = AsyncMock(side_effect=RuntimeError("500"))
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "t"})  # no raise
+        await _sync_holdings(session, test_user.id, conn, {"token": "t"}, mock_provider)  # no raise
 
 
 @pytest.mark.asyncio
@@ -444,7 +444,7 @@ async def test_sync_holdings_withdrawn_new_skipped(session: AsyncSession, test_u
         ),
     ])
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "t"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "t"}, mock_provider)
     await session.commit()
     rows = (await session.execute(
         select(Asset).where(Asset.external_id == "dead-1")
@@ -467,7 +467,7 @@ async def test_sync_holdings_archives_disappeared(session: AsyncSession, test_us
     mock_provider = AsyncMock()
     mock_provider.get_holdings = AsyncMock(return_value=[])  # nothing returned
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "t"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "t"}, mock_provider)
     await session.commit()
 
     await session.refresh(existing)
@@ -828,7 +828,7 @@ async def test_sync_holdings_updates_existing_asset(session: AsyncSession, test_
         ),
     ])
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "t"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "t"}, mock_provider)
     await session.commit()
 
     rows = (await session.execute(

@@ -1235,8 +1235,9 @@ async def test_sync_connection_skips_holdings_when_asset_sync_disabled(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("rotate_credentials", [False, True])
 async def test_sync_connection_imports_holdings_by_default(
-    session: AsyncSession, test_user, test_workspace
+    session: AsyncSession, test_user, test_workspace, rotate_credentials
 ):
     """Missing sync_assets setting preserves legacy asset-sync behavior."""
     conn = await _make_connection(session, test_user.id, "Assets Bank")
@@ -1257,7 +1258,10 @@ async def test_sync_connection_imports_holdings_by_default(
         ),
     ])
 
-    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+    rotated_provider = AsyncMock()
+    rotated_provider.get_holdings.side_effect = RuntimeError("Item belongs to previous application")
+    providers = [mock_provider, rotated_provider if rotate_credentials else mock_provider]
+    with patch("app.services.connection_service.get_provider", side_effect=providers), \
          patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
          patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
          patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
@@ -2832,7 +2836,7 @@ async def test_sync_holdings_splits_wallets_per_account(
         ),
     ]
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"}, mock_provider)
     await session.commit()
 
     groups = (
@@ -2999,7 +3003,7 @@ async def test_sync_holdings_readopts_orphaned_wallet_after_reconnect(
         ),
     ]
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "t"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "t"}, mock_provider)
     await session.commit()
 
     moved = await session.get(Asset, stranded_id)
@@ -3069,7 +3073,7 @@ async def test_sync_holdings_keeps_emptied_wallet_a_goal_tracks(
         ),
     ]
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "t"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "t"}, mock_provider)
     await session.commit()
 
     # Asset moved to the per-account wallet, but the goal's wallet survives
@@ -3123,7 +3127,7 @@ async def test_sync_holdings_adoption_preserves_wallet_customization(
         ),
     ]
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"}, mock_provider)
     await session.commit()
 
     wallet = await session.get(AssetGroup, wallet_id)
@@ -3202,7 +3206,7 @@ async def test_sync_holdings_mixed_hints_stay_stable_across_syncs(
         with patch(
             "app.services.connection_service.get_provider", return_value=mock_provider
         ):
-            await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+            await _sync_holdings(session, test_user.id, conn, {"token": "fake"}, mock_provider)
         await session.commit()
 
     wallets = (
@@ -3260,7 +3264,7 @@ async def test_sync_holdings_adoption_refreshes_suffixed_auto_names(
         ),
     ]
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"}, mock_provider)
     await session.commit()
 
     wallet = await session.get(AssetGroup, legacy_id)
@@ -3315,7 +3319,7 @@ async def test_sync_holdings_unattributed_first_keeps_default_wallet_key(
         with patch(
             "app.services.connection_service.get_provider", return_value=mock_provider
         ):
-            await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+            await _sync_holdings(session, test_user.id, conn, {"token": "fake"}, mock_provider)
         await session.commit()
 
     wallets = (
@@ -3375,7 +3379,7 @@ async def test_sync_holdings_never_adopts_another_connections_orphan(
         ),
     ]
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"}, mock_provider)
     await session.commit()
 
     untouched = await session.get(AssetGroup, orphan_id)
@@ -3441,7 +3445,7 @@ async def test_sync_holdings_adopts_own_stale_wallet_over_foreign_orphan(
         ),
     ]
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"}, mock_provider)
     await session.commit()
 
     adopted = await session.get(AssetGroup, stale_id)
@@ -3504,7 +3508,7 @@ async def test_sync_holdings_prefers_exact_key_match_over_stale_candidate(
         ),
     ]
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"}, mock_provider)
     await session.commit()
 
     adopted = await session.get(AssetGroup, legacy_id)
@@ -3558,7 +3562,7 @@ async def test_sync_holdings_keyless_reconnect_adopts_stale_wallet(
         with patch(
             "app.services.connection_service.get_provider", return_value=mock_provider
         ):
-            await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+            await _sync_holdings(session, test_user.id, conn, {"token": "fake"}, mock_provider)
         await session.commit()
 
     adopted = await session.get(AssetGroup, wallet_id)
@@ -3608,7 +3612,7 @@ async def test_sync_holdings_adoption_keeps_name_matching_account(
         ),
     ]
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"}, mock_provider)
     await session.commit()
 
     wallet = await session.get(AssetGroup, legacy_id)
@@ -3662,7 +3666,7 @@ async def test_sync_holdings_reaps_emptied_unreferenced_wallet(
         ),
     ]
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"}, mock_provider)
     await session.commit()
 
     assert await session.get(AssetGroup, old_wallet_id) is None
@@ -3714,7 +3718,7 @@ async def test_sync_holdings_readopts_split_wallet_after_reconnect(
         ),
     ]
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"}, mock_provider)
     await session.commit()
 
     wallet = await session.get(AssetGroup, orphan_id)
@@ -3764,7 +3768,7 @@ async def test_sync_holdings_rekeys_split_wallet_after_inplace_reconnect(
         ),
     ]
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"}, mock_provider)
     await session.commit()
 
     wallet = await session.get(AssetGroup, stale_id)
@@ -3819,7 +3823,7 @@ async def test_sync_holdings_hint_loss_does_not_drain_split_wallets(
         ),
     ]
     with patch("app.services.connection_service.get_provider", return_value=degraded):
-        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"}, degraded)
     await session.commit()
 
     survivor = await session.get(AssetGroup, wallet_id)
@@ -3839,7 +3843,7 @@ async def test_sync_holdings_hint_loss_does_not_drain_split_wallets(
         ),
     ]
     with patch("app.services.connection_service.get_provider", return_value=healthy):
-        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"}, healthy)
     await session.commit()
 
     # Steady state restored: the per-account wallet still owns the asset and
@@ -3921,7 +3925,7 @@ async def test_sync_holdings_new_account_first_keeps_default_wallet(
         ),
     ]
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"}, mock_provider)
     await session.commit()
 
     kept = await session.get(AssetGroup, default_id)
@@ -3989,7 +3993,7 @@ async def test_sync_holdings_never_touches_another_workspaces_wallets(
         ),
     ]
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"}, mock_provider)
     await session.commit()
 
     untouched = await session.get(AssetGroup, foreign_id)
@@ -4187,7 +4191,7 @@ async def test_sync_holdings_survives_losing_the_adoption_rekey_race(
     with patch(
         "app.services.connection_service.get_provider", return_value=mock_provider
     ):
-        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"}, mock_provider)
     await session.commit()
 
     # The loser backed off: its candidate is untouched, the winner's wallet
@@ -4260,7 +4264,7 @@ async def test_sync_holdings_keyless_bucket_adopts_default_after_rotation(
         ),
     ]
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"}, mock_provider)
     await session.commit()
 
     rekeyed = await session.get(AssetGroup, split_id)
@@ -4335,7 +4339,7 @@ async def test_sync_holdings_new_account_after_rotation_mints_its_own_wallet(
         ),
     ]
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"}, mock_provider)
     await session.commit()
 
     kept = await session.get(AssetGroup, default_id)
@@ -4399,7 +4403,7 @@ async def test_sync_holdings_two_stale_generations_mean_minting(
         ),
     ]
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"}, mock_provider)
     await session.commit()
 
     for gid, ext in ((gen1_id, "gen1-ext::acc-1"), (gen2_id, "gen2-ext::acc-1")):
@@ -4466,7 +4470,7 @@ async def test_sync_holdings_separator_in_account_id_cannot_steal_sibling_wallet
         ),
     ]
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        await _sync_holdings(session, test_user.id, conn, {"token": "fake"})
+        await _sync_holdings(session, test_user.id, conn, {"token": "fake"}, mock_provider)
     await session.commit()
 
     untouched = await session.get(AssetGroup, joint_id)

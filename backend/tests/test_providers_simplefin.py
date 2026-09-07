@@ -38,6 +38,39 @@ def _patched_client(handler):
     return patch.object(SimpleFinProvider, "_client", fake_client)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("zone", ["America/Sao_Paulo", "UTC", "Asia/Tokyo"])
+async def test_request_includes_transactions_from_current_utc_day(session, clean_db, zone):
+    from datetime import datetime, timezone
+    from app.core.app_clock import use_timezone
+    from app.models.app_settings import AppSetting
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 5, 19, 1, tzinfo=timezone.utc).astimezone(tz)
+
+    posted = int(datetime(2026, 5, 19, 0, 30, tzinfo=timezone.utc).timestamp())
+
+    def handler(request):
+        included = int(request.url.params["start-date"]) <= posted < int(request.url.params["end-date"])
+        transactions = [{"id": "recent", "amount": "-10", "posted": posted}] if included else []
+        return httpx.Response(200, json={"accounts": [{"id": "acc-1", "transactions": transactions}]})
+
+    session.add(AppSetting(key="timezone", value=zone))
+    await session.commit()
+    with (
+        patch("app.core.app_clock.datetime", FixedDatetime),
+        patch("app.providers.simplefin.datetime", FixedDatetime),
+        _patched_client(handler),
+    ):
+        async with use_timezone(session):
+            transactions = await SimpleFinProvider().get_transactions(
+                {"access_url": "https://u:p@bridge.example/simplefin"}, "acc-1", since=date(2026, 5, 18)
+            )
+    assert [t.external_id for t in transactions] == ["recent"]
+
+
 # ----- pure helpers -----------------------------------------------------------
 
 

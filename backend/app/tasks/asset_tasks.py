@@ -6,6 +6,8 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
+from app.core.app_clock import use_timezone
+from app.core.app_clock import app_today
 from app.worker import celery_app
 from app.core.config import get_settings
 from app.models.asset import Asset
@@ -45,10 +47,10 @@ async def _apply_growth_rules() -> int:
     """Apply growth rules for all assets that have valuation_method='growth_rule'."""
     engine, session_maker = _make_session_maker()
     try:
-        today = date.today()
         total = 0
 
-        async with session_maker() as session:
+        async with session_maker() as session, use_timezone(session):
+            today = app_today()
             result = await session.execute(
                 select(Asset).where(
                     Asset.valuation_method == "growth_rule",
@@ -63,7 +65,7 @@ async def _apply_growth_rules() -> int:
 
         for asset in assets:
             try:
-                async with session_maker() as session:
+                async with session_maker() as session, use_timezone(session):
                     # Get latest value
                     val_result = await session.execute(
                         select(AssetValue)
@@ -141,7 +143,7 @@ async def _refresh_market_prices() -> dict[str, int]:
     """
     engine, session_maker = _make_session_maker()
     try:
-        async with session_maker() as session:
+        async with session_maker() as session, use_timezone(session):
             return await refresh_all_market_prices(session)
     finally:
         await engine.dispose()

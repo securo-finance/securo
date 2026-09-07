@@ -23,6 +23,7 @@ dependencies = [
     "python-multipart>=0.0.6",
     "ofxparse>=0.21",
     "celery[redis]>=5.3.0",
+    "tzlocal>=5.0",
     "aiofiles>=24.0",
     "redis[hiredis]>=5.0.0",
     "pyotp>=2.9.0",

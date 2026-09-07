@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import current_active_user
 from app.core.database import get_async_session
 from app.core.workspace_context import (
     WorkspaceContext,
@@ -10,6 +11,7 @@ from app.core.workspace_context import (
     current_writable_workspace,
 )
 from app.providers import all_known_providers
+from app.models.user import User
 from app.providers.base import (
     ProviderNotConfiguredError,
     ProviderUserActionRequired,
@@ -34,19 +36,25 @@ router = APIRouter(prefix="/api/connections", tags=["connections"])
 
 
 @router.get("/providers")
-async def get_available_providers():
+async def get_available_providers(
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_active_user),
+):
     """List all known open finance providers with configuration status."""
-    return {"providers": all_known_providers()}
+    from app.services.provider_settings import resolve_settings
+
+    return {"providers": all_known_providers(await resolve_settings(session))}
 
 
 @router.post("/connect-token", response_model=ConnectTokenResponse)
 async def create_connect_token(
     data: ConnectTokenRequest,
     ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
 ):
     """Create a connect token for widget-based bank connection flows."""
     try:
-        token_data = await connection_service.create_connect_token(data.provider, ctx.user_id)
+        token_data = await connection_service.create_connect_token(data.provider, ctx.user_id, session=session)
         return ConnectTokenResponse(**token_data)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
@@ -69,10 +77,11 @@ async def list_connections(
 async def get_oauth_url(
     data: OAuthUrlRequest,
     ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
 ):
     try:
         url = await connection_service.get_oauth_url(
-            data.provider, ctx.user_id, ctx.workspace.id, flow_params=data.flow_params
+            data.provider, ctx.user_id, ctx.workspace.id, flow_params=data.flow_params, session=session
         )
         return OAuthUrlResponse(url=url)
     except ValueError as e:
@@ -84,9 +93,10 @@ async def list_provider_institutions(
     provider: str,
     country: str | None = None,
     ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
 ):
     try:
-        return await connection_service.list_provider_institutions(provider, country)
+        return await connection_service.list_provider_institutions(provider, country, session=session)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
@@ -226,7 +236,7 @@ async def get_reconnect_token(
 
     try:
         token_data = await connection_service.create_connect_token(
-            connection.provider, ctx.user_id, item_id=item_id
+            connection.provider, ctx.user_id, item_id=item_id, session=session
         )
         return ReconnectTokenResponse(**token_data)
     except Exception as e:

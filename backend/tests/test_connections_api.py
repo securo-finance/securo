@@ -32,6 +32,12 @@ async def test_list_providers(client: AsyncClient, auth_headers):
 
 
 @pytest.mark.asyncio
+async def test_list_providers_requires_authentication(client: AsyncClient):
+    response = await client.get("/api/connections/providers")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_list_connections(
     client: AsyncClient, auth_headers, test_connection: BankConnection
 ):

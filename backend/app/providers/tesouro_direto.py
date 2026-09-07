@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.core.app_clock import app_today
+
 import asyncio
 import csv
 import hashlib
@@ -125,7 +127,7 @@ class TesouroDiretoProvider:
     async def get_available_bonds(self) -> list[TesouroDiretoQuote]:
         # Only bonds still open for investment — the CSV also lists long-matured
         # series that nobody should be adding as a current holding.
-        today = date.today()
+        today = app_today()
         bonds = [q for q in await self._latest_quotes() if q.maturity_date >= today]
         return sorted(bonds, key=lambda q: (q.title_type, q.maturity_date))
 

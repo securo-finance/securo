@@ -23,6 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.app_clock import app_today
 from app.fiscal.registry import TaxIdKind, normalise_and_validate
 from app.models.invoice import (
     MANUAL_METHOD,
@@ -242,14 +243,14 @@ def derive_state(invoice: Invoice, today: Optional[_date] = None) -> DerivedStat
     if remaining <= ZERO:
         return "paid"
 
-    reference = today or datetime.now(timezone.utc).date()
+    reference = today or app_today()
     if invoice.due_date and invoice.due_date < reference:
         return "overdue"
     return "partial" if allocated_total(invoice) > ZERO else "open"
 
 
 def days_overdue(invoice: Invoice, today: Optional[_date] = None) -> int:
-    reference = today or datetime.now(timezone.utc).date()
+    reference = today or app_today()
     if derive_state(invoice, reference) != "overdue":
         return 0
     return (reference - invoice.due_date).days
@@ -438,7 +439,7 @@ async def aging_summary(
     is not money anybody owes. Voided and uncollectible invoices are
     excluded for the same reason, one decision later.
     """
-    reference = today or datetime.now(timezone.utc).date()
+    reference = today or app_today()
     result = await session.execute(
         _base_query(direction).where(
             Invoice.workspace_id == workspace_id,
@@ -595,7 +596,7 @@ async def create_invoice(
             "An imported document must say where it came from",
         )
 
-    issue_date = data.get("issue_date") or datetime.now(timezone.utc).date()
+    issue_date = data.get("issue_date") or app_today()
     due_date = data.get("due_date")
     if due_date is None:
         due_date = issue_date + timedelta(days=settings.default_payment_terms_days)

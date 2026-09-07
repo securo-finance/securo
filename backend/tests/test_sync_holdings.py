@@ -171,7 +171,7 @@ async def test_new_active_holding_creates_asset_wallet_and_today_value(
     ]
 
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
 
     assets = await _assets_for(session, test_user)
@@ -207,7 +207,7 @@ async def test_new_withdrawn_holding_is_skipped_entirely(
     ]
 
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
 
     assert await _assets_for(session, test_user) == []
@@ -226,7 +226,7 @@ async def test_withdrawn_existing_asset_gets_sell_date(
     _MockProvider._holdings = [_holding(external_id="h-1", current_value=Decimal("500"))]
 
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
     [asset] = await _assets_for(session, test_user)
     values_before = await _values_for(session, asset.id)
@@ -239,7 +239,7 @@ async def test_withdrawn_existing_asset_gets_sell_date(
     ]
 
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
     await session.refresh(asset)
 
@@ -279,7 +279,7 @@ async def test_withdrawn_existing_does_not_overwrite_user_sell_date(
     ]
 
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
     await session.refresh(asset)
 
@@ -312,7 +312,7 @@ async def test_user_sold_active_on_provider_stops_value_updates(
     _MockProvider._holdings = [_holding(external_id="h-1", current_value=Decimal("999.99"))]
 
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
     await session.refresh(asset)
 
@@ -330,14 +330,14 @@ async def test_provider_withdrawn_holding_reopens_when_active_again(
         _holding(external_id="h-1", current_value=Decimal("500")),
     ]
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
     [asset] = await _assets_for(session, test_user)
 
     _MockProvider._holdings = [
         _holding(external_id="h-1", current_value=Decimal("0"), is_withdrawn=True),
     ]
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
     await session.refresh(asset)
     assert asset.sell_date == date.today()
@@ -347,7 +347,7 @@ async def test_provider_withdrawn_holding_reopens_when_active_again(
     _MockProvider._holdings = [
         _holding(external_id="h-1", current_value=Decimal("525")),
     ]
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
     await session.refresh(asset)
 
@@ -367,14 +367,14 @@ async def test_active_holding_preserves_sell_date_edited_after_provider_withdraw
         _holding(external_id="h-1", current_value=Decimal("500")),
     ]
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
     [asset] = await _assets_for(session, test_user)
 
     _MockProvider._holdings = [
         _holding(external_id="h-1", current_value=Decimal("0"), is_withdrawn=True),
     ]
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
 
     corrected_sell_date = date.today() - timedelta(days=14)
@@ -384,7 +384,7 @@ async def test_active_holding_preserves_sell_date_edited_after_provider_withdraw
     _MockProvider._holdings = [
         _holding(external_id="h-1", current_value=Decimal("525")),
     ]
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
     await session.refresh(asset)
 
@@ -402,14 +402,14 @@ async def test_same_day_resync_updates_asset_value_in_place(
     _MockProvider._holdings = [_holding(external_id="h-1", current_value=Decimal("100"))]
 
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
     [asset] = await _assets_for(session, test_user)
 
     _MockProvider._holdings = [_holding(external_id="h-1", current_value=Decimal("110"))]
 
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
 
     values = await _values_for(session, asset.id)
@@ -437,7 +437,7 @@ async def test_sparse_fields_are_preserved_on_later_sync(
     ]
 
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
     [asset] = await _assets_for(session, test_user)
     assert asset.purchase_price == Decimal("450")
@@ -454,7 +454,7 @@ async def test_sparse_fields_are_preserved_on_later_sync(
     ]
 
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
     await session.refresh(asset)
 
@@ -480,7 +480,7 @@ async def test_historical_seed_is_idempotent(
 
     assert mock_connection.credentials is not None
     for _ in range(3):
-        await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+        await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
         await session.commit()
 
     [asset] = await _assets_for(session, test_user)
@@ -527,7 +527,7 @@ async def test_historical_seed_respects_prior_manual_value(
     ]
 
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
 
     rows = [v for v in await _values_for(session, asset.id) if v.date == purchase]
@@ -549,14 +549,14 @@ async def test_disappeared_holding_gets_archived(
     ]
 
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
 
     # Only h-1 comes back on the next sync. h-2 must be archived.
     _MockProvider._holdings = [_holding(external_id="h-1", current_value=Decimal("510"))]
 
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
 
     assets = {a.external_id: a for a in await _assets_for(session, test_user)}
@@ -572,14 +572,14 @@ async def test_returned_holding_is_unarchived_after_reconnect(
     _MockProvider._holdings = [_holding(external_id="h-1", current_value=Decimal("500"))]
 
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
 
     # Next sync does not include h-1 -> archived.
     _MockProvider._holdings = []
 
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
 
     assets = {a.external_id: a for a in await _assets_for(session, test_user)}
@@ -606,7 +606,7 @@ async def test_returned_holding_is_unarchived_after_reconnect(
     _MockProvider._holdings = [_holding(external_id="h-1", current_value=Decimal("525"))]
 
     assert reconnected.credentials is not None
-    await _sync_holdings(session, test_user.id, reconnected, reconnected.credentials)
+    await _sync_holdings(session, test_user.id, reconnected, reconnected.credentials, _MockProvider())
     await session.commit()
 
     assets = {a.external_id: a for a in await _assets_for(session, test_user)}
@@ -621,7 +621,7 @@ async def test_user_archived_holding_stays_archived_on_same_connection_sync(
     _MockProvider._holdings = [_holding(external_id="h-1", current_value=Decimal("500"))]
 
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
 
     assets = {a.external_id: a for a in await _assets_for(session, test_user)}
@@ -631,7 +631,7 @@ async def test_user_archived_holding_stays_archived_on_same_connection_sync(
     _MockProvider._holdings = [_holding(external_id="h-1", current_value=Decimal("510"))]
 
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
 
     assets = {a.external_id: a for a in await _assets_for(session, test_user)}
@@ -647,7 +647,7 @@ async def test_user_moved_asset_to_custom_wallet_not_overridden(
     _MockProvider._holdings = [_holding(external_id="h-1", current_value=Decimal("500"))]
 
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
     [asset] = await _assets_for(session, test_user)
     default_wallet_id = asset.group_id
@@ -670,7 +670,7 @@ async def test_user_moved_asset_to_custom_wallet_not_overridden(
     _MockProvider._holdings = [_holding(external_id="h-1", current_value=Decimal("520"))]
 
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
     await session.refresh(asset)
 
@@ -687,7 +687,7 @@ async def test_provider_error_is_swallowed_without_side_effects(
     _MockProvider._raise = RuntimeError("provider 500")
 
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     # No assets, no exception.
     assert await _assets_for(session, test_user) == []
 
@@ -716,7 +716,7 @@ async def test_next_day_sync_appends_new_asset_value(
     _MockProvider._holdings = [_holding(external_id="h-1", current_value=Decimal("105"))]
 
     assert mock_connection.credentials is not None
-    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials, _MockProvider())
     await session.commit()
 
     rows = await _values_for(session, asset.id)

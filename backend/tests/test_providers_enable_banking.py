@@ -92,6 +92,22 @@ def test_jwt_token_cached_across_calls(eb_keys):
     assert a == b
 
 
+def test_jwt_token_changes_when_application_credentials_change(eb_keys):
+    from pydantic import SecretStr
+    from app.core.config import get_settings
+
+    original = EnableBankingProvider._jwt_token()
+    private_pem, public_pem = _rsa_pem()
+    updated = get_settings().model_copy(update={
+        "enable_banking_app_id": "replacement-app",
+        "enable_banking_private_key": SecretStr(private_pem),
+    })
+    replacement = EnableBankingProvider._jwt_token(updated)
+    assert replacement != original
+    assert jwt.get_unverified_header(replacement)["kid"] == "replacement-app"
+    jwt.decode(replacement, public_pem, algorithms=["RS256"], audience="api.enablebanking.com")
+
+
 # ----- pure helpers -----
 
 

@@ -15,8 +15,10 @@ from app.schemas.admin import (
     AdminUserUpdate,
     AppSettingRead,
     AppSettingUpdate,
+    ProviderSettingRead,
 )
 from app.services import admin_service
+from app.services import provider_settings
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -28,6 +30,7 @@ ALLOWED_SETTINGS = {
     "theme_color_dark",
     "number_format",
     "date_format",
+    "timezone",
 }
 
 
@@ -115,10 +118,37 @@ async def get_setting(
     session: AsyncSession = Depends(get_async_session),
     _user: User = Depends(current_superuser),
 ):
+    if key in provider_settings.SETTING_FIELDS:
+        raise HTTPException(status_code=404, detail="Setting not found")
     setting = await admin_service.get_app_setting(session, key)
     if not setting:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Setting not found")
     return AppSettingRead.model_validate(setting)
+
+
+@router.get("/provider-settings", response_model=list[ProviderSettingRead])
+async def get_provider_settings(
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    return await provider_settings.provider_status(session)
+
+
+@router.patch("/provider-settings/{provider}", response_model=ProviderSettingRead)
+async def update_provider_settings(
+    provider: str,
+    request: Request,
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    # Parse explicitly to keep Pydantic validation errors from echoing secrets.
+    try:
+        body = await request.json()
+        if not isinstance(body, dict) or set(body) != {"values"} or not isinstance(body["values"], dict):
+            raise ValueError("Expected a credential values object")
+        return await provider_settings.update_provider(session, provider, body["values"])
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid provider settings")
 
 
 @router.patch("/settings/{key}", response_model=AppSettingRead)
@@ -133,6 +163,13 @@ async def update_setting(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Setting '{key}' is not configurable",
         )
+    if key == "timezone":
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        try:
+            ZoneInfo(data.value)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise HTTPException(status_code=400, detail="Invalid IANA timezone")
     SETTING_VALIDATORS = {
         "registration_enabled": {"true", "false"},
         "credit_card_accounting_mode": {"cash", "accrual"},
@@ -156,6 +193,17 @@ async def update_setting(
 
     setting = await admin_service.set_app_setting(session, key, data.value)
     return AppSettingRead.model_validate(setting)
+
+
+@router.get("/timezone")
+async def timezone_settings(
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    from zoneinfo import available_timezones
+    from app.core.app_clock import get_timezone
+
+    return {"timezone": str(await get_timezone(session)), "available": sorted(available_timezones())}
 
 
 @router.get("/registration-status")

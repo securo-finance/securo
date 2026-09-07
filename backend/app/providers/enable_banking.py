@@ -11,6 +11,7 @@ authorization URL can be generated, so `get_oauth_url` takes
 """
 from __future__ import annotations
 
+
 import hashlib
 import logging
 import time
@@ -22,6 +23,7 @@ from typing import Any, Optional
 import httpx
 from jose import jwt
 
+from app.core.app_clock import app_today
 from app.agents.services.crypto import decrypt, encrypt
 from app.core.config import get_settings
 from app.providers.base import (
@@ -181,6 +183,7 @@ class EnableBankingProvider(BankProvider):
     _cached_token: Optional[str] = None
     _cached_token_exp: float = 0.0
     _cached_private_key: Optional[str] = None
+    _credential_key: tuple[str, str, str] | None = None
 
     @property
     def name(self) -> str:
@@ -200,10 +203,10 @@ class EnableBankingProvider(BankProvider):
     # ----- credentials -----
 
     @classmethod
-    def _load_private_key(cls) -> str:
+    def _load_private_key(cls, settings=None) -> str:
         if cls._cached_private_key:
             return cls._cached_private_key
-        settings = get_settings()
+        settings = settings or get_settings()
         key_file = (settings.enable_banking_private_key_file or "").strip()
         if key_file:
             cls._cached_private_key = Path(key_file).read_text(encoding="utf-8")
@@ -215,15 +218,24 @@ class EnableBankingProvider(BankProvider):
         return cls._cached_private_key
 
     @classmethod
-    def _jwt_token(cls) -> str:
+    def _jwt_token(cls, settings=None) -> str:
+        settings = settings or get_settings()
+        credential_key = (
+            settings.enable_banking_app_id,
+            settings.enable_banking_private_key.get_secret_value(),
+            settings.enable_banking_private_key_file,
+        )
+        if cls._credential_key != credential_key:
+            cls._cached_token = None
+            cls._cached_private_key = None
+            cls._credential_key = credential_key
         now = time.time()
         if cls._cached_token and now < cls._cached_token_exp - JWT_CACHE_REFRESH_BEFORE:
             return cls._cached_token
-        settings = get_settings()
         app_id = settings.enable_banking_app_id
         if not app_id:
             raise RuntimeError("ENABLE_BANKING_APP_ID is not configured")
-        private_key = cls._load_private_key()
+        private_key = cls._load_private_key(settings)
         if not private_key:
             raise RuntimeError("Enable Banking private key is not configured")
         issued_at = int(now)
@@ -251,7 +263,7 @@ class EnableBankingProvider(BankProvider):
         return httpx.AsyncClient(
             base_url=settings.enable_banking_api_url.rstrip("/"),
             headers={
-                "Authorization": f"Bearer {self._jwt_token()}",
+                "Authorization": f"Bearer {self._jwt_token(self.settings)}",
                 "Accept": "application/json",
                 "Content-Type": "application/json",
                 "User-Agent": "Securo/0.1 (+https://usesecuro.com)",
@@ -543,8 +555,8 @@ class EnableBankingProvider(BankProvider):
         payee_source: str = "auto",
     ) -> list[TransactionData]:
         _ = self._session_id(credentials)  # surface expired credentials early
-        date_from = (since or (date.today() - timedelta(days=DEFAULT_HISTORY_DAYS))).isoformat()
-        date_to = date.today().isoformat()
+        date_from = (since or (app_today() - timedelta(days=DEFAULT_HISTORY_DAYS))).isoformat()
+        date_to = app_today().isoformat()
         transactions: list[TransactionData] = []
         continuation_key: Optional[str] = None
         seen_continuation_keys: set[str] = set()

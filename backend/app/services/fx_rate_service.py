@@ -8,14 +8,15 @@ from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from app.core.app_clock import app_today
 from app.core.config import get_settings
 from app.models.fx_rate import FxRate
 from app.models.user import User
 from app.providers.openexchangerates import OpenExchangeRatesProvider
+from app.services.provider_settings import resolve_settings
 
 logger = logging.getLogger(__name__)
 
-_provider = OpenExchangeRatesProvider()
 
 
 async def sync_rates(
@@ -27,17 +28,18 @@ async def sync_rates(
     Idempotent — existing rates for the same date are updated.
     Returns the number of rates synced.
     """
-    requested_target = target_date or date.today()
+    provider = OpenExchangeRatesProvider(await resolve_settings(session))
+    requested_target = target_date or app_today()
     # Providers cannot return a historical rate for a date that has not
     # happened yet. Treat a future request as a request for today's latest
     # published rate and store it under today's date.
-    target = min(requested_target, date.today())
+    target = min(requested_target, app_today())
     supported = set(get_settings().supported_currencies.split(","))
 
-    if target == date.today():
-        rates = await _provider.fetch_latest()
+    if target == app_today():
+        rates = await provider.fetch_latest()
     else:
-        rates = await _provider.fetch_historical(target)
+        rates = await provider.fetch_historical(target)
 
     count = 0
     for currency_code, rate in rates.items():
@@ -48,11 +50,11 @@ async def sync_rates(
             quote_currency=currency_code,
             date=target,
             rate=rate,
-            source=_provider.name,
+            source=provider.name,
         )
         stmt = stmt.on_conflict_do_update(
             constraint="uq_fx_rate_base_quote_date",
-            set_={"rate": rate, "source": _provider.name},
+            set_={"rate": rate, "source": provider.name},
         )
         await session.execute(stmt)
         count += 1
@@ -82,11 +84,11 @@ async def _resolve_rate(
     if from_currency == to_currency:
         return Decimal("1")
 
-    requested_target = target_date or date.today()
+    requested_target = target_date or app_today()
     # A future transaction must use the latest real rate, never query a
     # not-yet-existing historical snapshot. Looking up against today also
     # lets the closest-rate fallback select the last cached business day.
-    target = min(requested_target, date.today())
+    target = min(requested_target, app_today())
 
     # Step 1: Try exact date
     usd_to_source = await _get_exact_date_rate(session, from_currency, target)
@@ -143,7 +145,7 @@ async def get_rate(
     if rate is None:
         logger.warning(
             "No FX rate found for %s -> %s on %s, returning 1",
-            from_currency, to_currency, target_date or date.today(),
+            from_currency, to_currency, target_date or app_today(),
         )
         return Decimal("1")
     return rate

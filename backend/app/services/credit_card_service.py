@@ -1,3 +1,5 @@
+from app.core.app_clock import app_today
+
 import calendar
 from datetime import date
 from decimal import Decimal
@@ -29,7 +31,7 @@ def get_cycle_dates(
     occurrence of payment_due_day, and the close is the most recent occurrence of
     statement_close_day on or before that due date. This guarantees close <= due."""
     if reference is None:
-        reference = date.today()
+        reference = app_today()
 
     next_due = _next_day_occurrence(payment_due_day, reference) if payment_due_day else None
 
