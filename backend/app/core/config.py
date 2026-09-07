@@ -111,6 +111,16 @@ class Settings(BaseSettings):
     # Celery
     redis_url: str = "redis://localhost:6379/0"
 
+    # Reverse-proxy trust for client-IP-based rate limiting. 0 (default) means
+    # request.client.host is used as-is, which is only correct when nothing
+    # sits between the client and this service. In the shipped docker-compose
+    # topology the backend is reached through the bundled nginx frontend, so
+    # request.client.host is always nginx's container address. Set this to the
+    # number of trusted reverse proxies in front of the backend (usually 1) to
+    # derive the client IP from X-Forwarded-For instead, trusting only that
+    # many hops from the right; a chain shorter than expected is not trusted.
+    trusted_proxy_hops: int = 0
+
     # Logo size for market-priced asset icons. The logo URL is built from
     # the company website we get from the market-price provider; no API
     # key or third-party account is required. Defaults to 128×128 which
