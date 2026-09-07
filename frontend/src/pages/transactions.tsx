@@ -107,6 +107,10 @@ export default function TransactionsPage() {
     const initial = searchParams.get('account_id')
     return initial ? initial.split(',') : []
   })
+  const [filterLinkedCardIds, setFilterLinkedCardIds] = useState<string[]>(() => {
+    const initial = searchParams.get('linked_card_id')
+    return initial ? initial.split(',') : []
+  })
   const [filterCategoryIds, setFilterCategoryIds] = useState<string[]>(() => {
     const initial = searchParams.get('category_id')
     return initial ? [initial] : []
@@ -250,6 +254,8 @@ export default function TransactionsPage() {
     setFilterUncategorized(searchParams.get('uncategorized') === '1');
     const accounts = searchParams.get('account_id');
     setFilterAccountIds(accounts ? accounts.split(',') : []);
+    const linkedCards = searchParams.get('linked_card_id');
+    setFilterLinkedCardIds(linkedCards ? linkedCards.split(',') : []);
     const urlFrom = searchParams.get('from')
     const urlTo = searchParams.get('to')
     if (urlFrom || urlTo) {
@@ -283,6 +289,7 @@ export default function TransactionsPage() {
         ['category_id', filterCategoryIds.join(',')],
         ['uncategorized', filterUncategorized ? '1' : ''],
         ['account_id', filterAccountIds.join(',')],
+        ['linked_card_id', filterLinkedCardIds.join(',')],
         ['from', filterFrom],
         ['to', filterTo],
         ['min_amount', filterMinAmount],
@@ -308,6 +315,7 @@ export default function TransactionsPage() {
     filterCategoryIds,
     filterUncategorized,
     filterAccountIds,
+    filterLinkedCardIds,
     filterFrom,
     filterTo,
     filterMinAmount,
@@ -329,11 +337,12 @@ export default function TransactionsPage() {
     setSelectedIds(new Set())
     setLastSelectedId(null)
     setBulkCategory('')
-  }, [page, filterAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery])
+  }, [page, filterAccountIds, filterLinkedCardIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery])
 
   useEffect(() => {
     if (viewMode === 'calendar') {
       setFilterAccountIds((prev) => prev.length > 1 ? [] : prev)
+      setFilterLinkedCardIds([])
       setSelectedIds(new Set())
       setLastSelectedId(null)
       setBulkCategory('')
@@ -379,13 +388,14 @@ export default function TransactionsPage() {
     && activeAccountIds !== null && activeAccountIds.length === 0
 
   const { data, isLoading } = useQuery({
-    queryKey: ['transactions', page, limit, effectiveAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
+    queryKey: ['transactions', page, limit, effectiveAccountIds, filterLinkedCardIds, filterCategoryIds, filterUncategorized, filterPayee, filterGroupId, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, hideIgnored, searchQuery, tagFilters, isMobile ? 'date' : grid.sortBy, isMobile ? 'desc' : grid.sortDir],
     enabled: !noAccounts,
     queryFn: () =>
       transactions.list({
         page,
         limit,
         account_ids: effectiveAccountIds.length > 0 ? effectiveAccountIds : undefined,
+        linked_card_ids: filterLinkedCardIds.length > 0 ? filterLinkedCardIds : undefined,
         category_ids: filterCategoryIds.length > 0 ? filterCategoryIds : undefined,
         payee_id: filterPayee || undefined,
         group_id: filterGroupId || undefined,
@@ -423,6 +433,7 @@ export default function TransactionsPage() {
   const ctxFilters = {
     search: searchQuery || undefined,
     account_ids: effectiveAccountIds.length ? effectiveAccountIds : undefined,
+    linked_card_ids: filterLinkedCardIds.length ? filterLinkedCardIds : undefined,
     category_ids: filterCategoryIds.length ? filterCategoryIds : undefined,
     payee_id: filterPayee || undefined,
     group_id: filterGroupId || undefined,
@@ -473,6 +484,10 @@ export default function TransactionsPage() {
   const { data: accountsList } = useQuery({
     queryKey: ['accounts'],
     queryFn: () => accountsApi.list(),
+  })
+  const { data: linkedCardsList = [] } = useQuery({
+    queryKey: ['accounts', 'linked-cards'],
+    queryFn: () => accountsApi.linkedCards(),
   })
 
   const { data: payeesList } = useQuery({
@@ -961,6 +976,7 @@ export default function TransactionsPage() {
       } else {
         await transactions.export({
           account_ids: effectiveAccountIds.length > 0 ? effectiveAccountIds : undefined,
+          linked_card_ids: filterLinkedCardIds.length > 0 ? filterLinkedCardIds : undefined,
           category_ids: filterCategoryIds.length > 0 ? filterCategoryIds : undefined,
           payee_id: filterPayee || undefined,
           type: filterType || undefined,
@@ -1363,6 +1379,7 @@ export default function TransactionsPage() {
               value: viewMode,
               onChange: (value) => {
                 if (value === 'calendar' && filterAccountIds.length > 1) setFilterAccountIds([])
+                if (value === 'calendar') setFilterLinkedCardIds([])
                 setViewMode(value)
               },
               listLabel: t('transactions.listView'),
@@ -1399,6 +1416,9 @@ export default function TransactionsPage() {
         filterAccountIds={filterAccountIds}
         onAccountIdsChange={(v) => { setFilterAccountIds(viewMode === 'calendar' ? v.slice(0, 1) : v); setPage(1) }}
         accountSelectionMode={viewMode === 'calendar' ? 'single' : 'multiple'}
+        linkedCards={viewMode === 'list' ? linkedCardsList : []}
+        filterLinkedCardIds={filterLinkedCardIds}
+        onLinkedCardIdsChange={(v) => { setFilterLinkedCardIds(v); setPage(1) }}
         filterCategoryIds={filterCategoryIds}
         onCategoryIdsChange={(v) => { setFilterCategoryIds(v); setPage(1) }}
         filterUncategorized={filterUncategorized}
@@ -1423,6 +1443,7 @@ export default function TransactionsPage() {
           setFilterFrom('')
           setFilterTo('')
           setFilterAccountIds([])
+          setFilterLinkedCardIds([])
           setFilterCategoryIds([])
           setFilterUncategorized(false)
           setFilterPayee('')
