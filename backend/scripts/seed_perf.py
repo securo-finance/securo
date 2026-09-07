@@ -325,15 +325,36 @@ async def seed(
                 "source": "manual",
                 "status": "posted",
                 "payee": rng.choice(PAYEES),
+                "exclude_from_pnl": False,
             })
 
-        chunk = 2000  # asyncpg limit: 32767 params / 14 cols per tx = 2340 max
+        # One deterministic reconciliation row makes the Adjust balance badge
+        # and report-exclusion behavior visible in the manual-test dataset.
+        tx_rows.append({
+            "id": uuid.uuid4(),
+            "user_id": uid,
+            "workspace_id": wid,
+            "account_id": accounts[0].id,
+            "category_id": None,
+            "description": "Manual balance adjustment",
+            "amount": Decimal("42.50"),
+            "currency": accounts[0].currency,
+            "date": today,
+            "effective_date": today,
+            "type": "debit",
+            "source": "balance_adjustment",
+            "status": "posted",
+            "payee": None,
+            "exclude_from_pnl": True,
+        })
+
+        chunk = 2000  # asyncpg limit: 32767 params / 15 cols per tx = 2184 max
         for i in range(0, len(tx_rows), chunk):
             await session.execute(pg_insert(Transaction).values(tx_rows[i : i + chunk]))
-            done = min(i + chunk, n_tx)
-            print(f"  {done:,}/{n_tx:,}", end="\r", flush=True)
+            done = min(i + chunk, len(tx_rows))
+            print(f"  {done:,}/{len(tx_rows):,}", end="\r", flush=True)
         await session.commit()
-        print(f"  {n_tx:,} transactions done        ")
+        print(f"  {len(tx_rows):,} transactions done        ")
 
         # ── 6. Asset Groups (wallets) ────────────────────────────────────────
         print("Creating asset groups (wallets) …")

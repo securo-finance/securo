@@ -2,7 +2,7 @@ import { getAccountName } from '@/lib/account-utils'
 import { AccountIcon } from '@/components/account-icon'
 import { CategoryIcon } from '@/components/category-icon'
 import type { Transaction, Account } from '@/types'
-import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, Clock, EyeClosed, Paperclip } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, Clock, EyeClosed, Paperclip, PencilLine } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useTranslation } from 'react-i18next'
 import { formatCurrency } from '@/lib/format'
@@ -103,8 +103,13 @@ export function MobileTransactionRow({
         {/* Description row */}
         <div className="flex items-center gap-1.5">
           <p className={`text-sm font-semibold text-foreground leading-tight min-w-0 ${hasWordBreaks(tx.description) ? 'break-words whitespace-normal' : 'truncate'}`}>
-            {tx.description}
+            {tx.source === 'balance_adjustment' && tx.description === 'Manual balance adjustment'
+              ? t('accounts.manualBalanceAdjustment')
+              : tx.description}
           </p>
+          {tx.source === 'balance_adjustment' && (
+            <PencilLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          )}
           {tx.group_id && (
             <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1 py-0.5 rounded-full shrink-0">
               {tx.is_shared && tx.parent_owner_name ? tx.parent_owner_name : t('splitGroups.ownerRowBadge', { group: groupName ?? '' })}

@@ -3,7 +3,9 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.transaction import TransactionRead
 
 
 class AccountBase(BaseModel):
@@ -105,3 +107,21 @@ class AccountSummary(BaseModel):
     monthly_expenses_primary: Optional[float] = None
     projected_income_primary: Optional[float] = None
     projected_expenses_primary: Optional[float] = None
+
+
+class BalanceAdjustmentCreate(BaseModel):
+    """Absolute balance target for today.
+
+    Credit cards accept the positive amount owed. Other account types accept
+    the signed balance shown in the ledger.
+    """
+
+    balance: Decimal = Field(max_digits=15, decimal_places=2)
+    exclude_from_pnl: bool = True
+
+
+class BalanceAdjustmentRead(BaseModel):
+    previous_balance: float
+    target_balance: float
+    adjustment_amount: float
+    transaction: TransactionRead

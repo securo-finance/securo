@@ -35,7 +35,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Clock, HelpCircle, Info, Paperclip, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, SlidersHorizontal, Receipt } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Clock, HelpCircle, Info, Paperclip, PencilLine, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, SlidersHorizontal, Receipt } from 'lucide-react'
 import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload } from '@/types'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { PageHeader } from '@/components/page-header'
@@ -1094,7 +1094,14 @@ export default function TransactionsPage() {
         <CategoryIcon icon={tx.category?.icon} color={tx.category?.color} size="lg" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <p className="text-sm font-semibold text-foreground truncate">{tx.description}</p>
+            <p className="text-sm font-semibold text-foreground truncate">
+              {tx.source === 'balance_adjustment' && tx.description === 'Manual balance adjustment'
+                ? t('accounts.manualBalanceAdjustment')
+                : tx.description}
+            </p>
+            {tx.source === 'balance_adjustment' && (
+              <PencilLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            )}
             {tx.group_id && (
               <span
                 className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1.5 py-0.5 rounded-full"

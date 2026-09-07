@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applyTransactionToBalance,
   excludeMaterializedProjections,
+  mergeTransactionsForRunningBalance,
 } from './account-detail-utils'
 
 describe('applyTransactionToBalance', () => {
@@ -53,6 +54,28 @@ describe('applyTransactionToBalance', () => {
       source: 'opening_balance',
       type: 'credit',
     }, false, 'BRL')).toBe(600)
+  })
+})
+
+describe('mergeTransactionsForRunningBalance', () => {
+  it('reverses newest-first API rows when transactions share a date', () => {
+    const adjustment = { id: 'adjustment', date: '2026-08-24' }
+    const openingBalance = { id: 'opening', date: '2026-08-24' }
+
+    expect(mergeTransactionsForRunningBalance(
+      [adjustment, openingBalance],
+      [],
+    )).toEqual([openingBalance, adjustment])
+  })
+
+  it('keeps projected rows after real transactions on the same date', () => {
+    const transaction = { id: 'transaction', date: '2026-08-24' }
+    const projection = { id: 'projected-1', date: '2026-08-24' }
+
+    expect(mergeTransactionsForRunningBalance(
+      [transaction],
+      [projection],
+    )).toEqual([transaction, projection])
   })
 })
 

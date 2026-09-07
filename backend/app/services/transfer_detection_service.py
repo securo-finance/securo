@@ -31,6 +31,7 @@ async def detect_transfer_pairs(
         Transaction.type == "debit",
         Transaction.transfer_pair_id.is_(None),
         Transaction.source != "opening_balance",
+        Transaction.source != "balance_adjustment",
     )
     if candidate_ids:
         debit_query = debit_query.where(Transaction.id.in_(candidate_ids))
@@ -46,6 +47,7 @@ async def detect_transfer_pairs(
             Transaction.type == "debit",
             Transaction.transfer_pair_id.is_(None),
             Transaction.source != "opening_balance",
+            Transaction.source != "balance_adjustment",
             Transaction.id.not_in(candidate_ids),
         )
         reverse_result = await session.execute(reverse_debit_query)
@@ -64,6 +66,7 @@ async def detect_transfer_pairs(
         Transaction.type == "credit",
         Transaction.transfer_pair_id.is_(None),
         Transaction.source != "opening_balance",
+        Transaction.source != "balance_adjustment",
     )
     credit_result = await session.execute(credit_query)
     credits = list(credit_result.scalars().all())

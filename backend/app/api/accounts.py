@@ -17,6 +17,8 @@ from app.schemas.account import (
     AccountRead,
     AccountSummary,
     AccountUpdate,
+    BalanceAdjustmentCreate,
+    BalanceAdjustmentRead,
     CreditCardBillRead,
 )
 from app.services import account_service
@@ -139,7 +141,44 @@ async def get_account(
     account = await account_service.get_account(session, account_id, ctx.workspace.id)
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
-    return account_service.serialize_account(account, None, None, account.connection)
+    current_balance = await account_service.get_current_balance(session, account)
+    balance_adjustment = None
+    if account.connection_id:
+        provider_balance = -account.balance if account.type == "credit_card" else account.balance
+        balance_adjustment = current_balance - provider_balance
+    return account_service.serialize_account(
+        account, current_balance, None, account.connection, balance_adjustment
+    )
+
+
+@router.post(
+    "/{account_id}/adjust-balance",
+    response_model=BalanceAdjustmentRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def adjust_account_balance(
+    account_id: uuid.UUID,
+    data: BalanceAdjustmentCreate,
+    ctx: WorkspaceContext = Depends(current_writable_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    try:
+        result = await account_service.adjust_balance(
+            session, account_id, ctx.workspace.id, data
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
+    previous, target, transaction = result
+    account = await account_service.get_account(session, account_id, ctx.workspace.id)
+    is_credit_card = bool(account and account.type == "credit_card")
+    return {
+        "previous_balance": float(-previous if is_credit_card else previous),
+        "target_balance": float(-target if is_credit_card else target),
+        "adjustment_amount": float(target - previous),
+        "transaction": transaction,
+    }
 
 
 @router.post("", response_model=AccountRead, status_code=status.HTTP_201_CREATED)

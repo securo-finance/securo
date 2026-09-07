@@ -11,16 +11,15 @@ from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.credit_card_bill import CreditCardBill
 from app.models.transaction import Transaction
-from app.schemas.account import AccountCreate, AccountUpdate
+from app.schemas.account import AccountCreate, AccountUpdate, BalanceAdjustmentCreate
 from app.services._query_filters import (
     counts_as_pnl,
     counts_in_current_balance,
     counts_on_bill,
-    is_confirmed,
     is_inside_provider_snapshot,
-    is_not_future,
 )
 from app.services.credit_card_service import apply_effective_date, compute_available_credit, get_cycle_dates
+from app.services.fx_rate_service import stamp_primary_amount
 from app.models.category import Category
 
 
@@ -82,6 +81,23 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
         .subquery()
     )
 
+    # Connected accounts display the provider snapshot, but a manual balance
+    # adjustment is an explicit ledger correction layered on top of it.
+    adjustment_sq = (
+        select(
+            Transaction.account_id,
+            func.coalesce(func.sum(signed_amount), 0).label("balance_adjustment"),
+        )
+        .join(Account, Transaction.account_id == Account.id)
+        .where(
+            Transaction.source == "balance_adjustment",
+            counts_in_current_balance(today),
+            Transaction.is_ignored == False,
+        )
+        .group_by(Transaction.account_id)
+        .subquery()
+    )
+
     # Subquery: compute previous_balance (balance at end of previous month)
     first_of_month = today.replace(day=1)
     prev_month_end = first_of_month - timedelta(days=1)
@@ -113,10 +129,12 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
             BankConnection,
             func.coalesce(balance_sq.c.current_balance, 0).label("current_balance"),
             func.coalesce(prev_balance_sq.c.previous_balance, 0).label("previous_balance"),
+            func.coalesce(adjustment_sq.c.balance_adjustment, 0).label("balance_adjustment"),
         )
         .outerjoin(BankConnection)
         .outerjoin(balance_sq, Account.id == balance_sq.c.account_id)
         .outerjoin(prev_balance_sq, Account.id == prev_balance_sq.c.account_id)
+        .outerjoin(adjustment_sq, Account.id == adjustment_sq.c.account_id)
         .where(
             or_(
                 Account.workspace_id == workspace_id,
@@ -129,8 +147,10 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
     query = query.order_by(Account.name)
     result = await session.execute(query)
     return [
-            serialize_account(acc, current_balance, previous_balance, connection)
-            for acc, connection, current_balance, previous_balance in result.all()
+            serialize_account(
+                acc, current_balance, previous_balance, connection, balance_adjustment
+            )
+            for acc, connection, current_balance, previous_balance, balance_adjustment in result.all()
         ]
 
 
@@ -161,11 +181,13 @@ def serialize_account(
     current_balance: Optional[Decimal],
     previous_balance: Optional[Decimal],
     connection: Optional[BankConnection] = None,
+    balance_adjustment: Optional[Decimal] = None,
 ) -> dict:
     # Connected CC: provider stores positive for debt → negate.
     # Manual accounts: transaction math already gives correct sign.
     if acc.connection_id:
-        resolved_balance = float(acc.balance) * (-1 if acc.type == "credit_card" else 1)
+        provider_balance = float(acc.balance) * (-1 if acc.type == "credit_card" else 1)
+        resolved_balance = provider_balance + float(balance_adjustment or 0)
     else:
         resolved_balance = float(current_balance or 0)
 
@@ -250,6 +272,115 @@ async def get_account(session: AsyncSession, account_id: uuid.UUID, workspace_id
         )
     )
     return result.scalar_one_or_none()
+
+
+async def get_current_balance(session: AsyncSession, account: Account) -> Decimal:
+    """Return the signed balance shown to the user as of today."""
+    today = _Date.today()
+
+    if account.connection_id:
+        provider_balance = -account.balance if account.type == "credit_card" else account.balance
+        adjustment_result = await session.execute(
+            select(
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (Transaction.type == "credit", Transaction.amount),
+                            else_=-Transaction.amount,
+                        )
+                    ),
+                    0,
+                )
+            ).where(
+                Transaction.account_id == account.id,
+                Transaction.source == "balance_adjustment",
+                Transaction.date <= today,
+                Transaction.status.in_(("posted", "pending"))
+                if account.type == "credit_card"
+                else Transaction.status == "posted",
+                Transaction.is_ignored == False,
+            )
+        )
+        return Decimal(str(provider_balance)) + Decimal(str(adjustment_result.scalar() or 0))
+
+    effective_amount = case(
+        (Transaction.currency == account.currency, Transaction.amount),
+        else_=func.coalesce(Transaction.amount_primary, Transaction.amount),
+    )
+    balance_result = await session.execute(
+        select(
+            func.coalesce(
+                func.sum(
+                    case(
+                        (Transaction.type == "credit", effective_amount),
+                        else_=-effective_amount,
+                    )
+                ),
+                0,
+            )
+        ).where(
+            Transaction.account_id == account.id,
+            Transaction.date <= today,
+            *([] if account.type == "credit_card" else [Transaction.status == "posted"]),
+            Transaction.is_ignored == False,
+            or_(
+                Transaction.category_id.is_(None),
+                Transaction.category_id.not_in(
+                    select(Category.id).where(Category.is_ignored == True)
+                ),
+            ),
+        )
+    )
+    return Decimal(str(balance_result.scalar() or 0))
+
+
+async def adjust_balance(
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    data: BalanceAdjustmentCreate,
+) -> Optional[tuple[Decimal, Decimal, Transaction]]:
+    """Create today's delta needed to reach an absolute balance target."""
+    account = await get_account(session, account_id, workspace_id)
+    if not account:
+        return None
+    if account.is_closed:
+        raise ValueError("Cannot adjust a closed account")
+    if account.type == "credit_card" and data.balance < 0:
+        raise ValueError("Credit card amount owed must be zero or positive")
+
+    # Serialize concurrent absolute adjustments. Without the row lock, two
+    # requests could read the same balance and both apply a full delta.
+    locked_account = await session.execute(
+        select(Account).where(Account.id == account.id).with_for_update()
+    )
+    account = locked_account.scalar_one()
+    previous_signed = await get_current_balance(session, account)
+    target_signed = -data.balance if account.type == "credit_card" else data.balance
+    delta = (target_signed - previous_signed).quantize(Decimal("0.01"))
+    if delta == 0:
+        raise ValueError("Account already has this balance")
+
+    transaction = Transaction(
+        user_id=account.user_id,
+        workspace_id=account.workspace_id,
+        account_id=account.id,
+        description="Manual balance adjustment",
+        amount=abs(delta),
+        currency=account.currency,
+        date=_Date.today(),
+        type="credit" if delta > 0 else "debit",
+        source="balance_adjustment",
+        status="posted",
+        exclude_from_pnl=data.exclude_from_pnl,
+    )
+    apply_effective_date(transaction, account)
+    session.add(transaction)
+    await session.flush()
+    await stamp_primary_amount(session, account.user_id, transaction)
+    await session.commit()
+    await session.refresh(transaction, ["category", "splits"])
+    return previous_signed, target_signed, transaction
 
 
 async def create_account(
@@ -497,6 +628,7 @@ async def sync_opening_balance_for_connected_account(
         select(func.coalesce(func.sum(signed_amount), 0)).where(
             Transaction.account_id == account.id,
             Transaction.source != "opening_balance",
+            Transaction.source != "balance_adjustment",
             Transaction.date <= balance_cutoff,
             Transaction.is_ignored == False,
             or_(
@@ -529,6 +661,7 @@ async def sync_opening_balance_for_connected_account(
         select(func.min(Transaction.date)).where(
             Transaction.account_id == account.id,
             Transaction.source != "opening_balance",
+            Transaction.source != "balance_adjustment",
             Transaction.date <= balance_cutoff,
             Transaction.is_ignored == False,
             or_(
@@ -688,44 +821,7 @@ async def get_account_summary(
         else_=func.coalesce(Transaction.amount_primary, Transaction.amount),
     )
 
-    # For bank-connected accounts, use the stored balance from the provider
-    if account.connection_id:
-        current_balance = float(account.balance)
-    else:
-        # Current balance = SUM(credit amounts) - SUM(debit amounts)
-        balance_result = await session.execute(
-            select(
-                func.coalesce(
-                    func.sum(
-                        case(
-                            (Transaction.type == "credit", effective_amount),
-                            else_=-effective_amount,
-                        )
-                    ),
-                    0,
-                )
-            ).where(
-                Transaction.account_id == account_id,
-                is_not_future(today),
-                # Same carve-out as the accounts list: a card's balance is the
-                # debt owed and an authorized purchase is already owed. The
-                # account is loaded here, so branch in Python rather than SQL.
-                *([] if account.type == "credit_card" else [is_confirmed()]),
-                Transaction.is_ignored == False,
-                or_(
-                    Transaction.category_id.is_(None),
-                    Transaction.category_id.not_in(
-                        select(Category.id).where(Category.is_ignored == True)
-                    ),
-                ),
-            )
-        )
-        current_balance = float(balance_result.scalar() or 0)
-
-    # Connected CC: provider balance is positive for debt → negate.
-    # Manual CC: transaction math already gives negative for debt.
-    if account.type == "credit_card" and account.connection_id:
-        current_balance = -current_balance
+    current_balance = float(await get_current_balance(session, account))
 
     # Bucketing date: for credit-card txs the user can override which cycle
     # a tx belongs to via `effective_bill_date`. We honor that first so the

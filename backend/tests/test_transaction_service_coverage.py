@@ -534,6 +534,52 @@ async def test_get_transfer_candidates_anchor_already_paired(session, test_user,
     assert cands == []
 
 
+async def test_get_transfer_candidates_rejects_balance_adjustment_anchor(
+    session, test_user, test_workspace, acct,
+):
+    acct2 = Account(
+        id=uuid.uuid4(), user_id=test_user.id, name="Candidate", type="savings",
+        balance=Decimal("0"), currency="BRL",
+    )
+    session.add(acct2)
+    await session.commit()
+
+    anchor = await _mk_txn(
+        session, test_user, acct, description="Adjustment", amount=Decimal("100"),
+        type="debit", source="balance_adjustment", date=date(2025, 3, 15),
+    )
+    await _mk_txn(
+        session, test_user, acct2, description="Ordinary", amount=Decimal("100"),
+        type="credit", date=date(2025, 3, 15),
+    )
+
+    cands = await get_transfer_candidates(session, test_workspace.id, anchor.id)
+    assert cands == []
+
+
+async def test_get_transfer_candidates_rejects_balance_adjustment_candidate(
+    session, test_user, test_workspace, acct,
+):
+    acct2 = Account(
+        id=uuid.uuid4(), user_id=test_user.id, name="Candidate", type="savings",
+        balance=Decimal("0"), currency="BRL",
+    )
+    session.add(acct2)
+    await session.commit()
+
+    anchor = await _mk_txn(
+        session, test_user, acct, description="Ordinary", amount=Decimal("100"),
+        type="debit", date=date(2025, 3, 15),
+    )
+    await _mk_txn(
+        session, test_user, acct2, description="Adjustment", amount=Decimal("100"),
+        type="credit", source="balance_adjustment", date=date(2025, 3, 15),
+    )
+
+    cands = await get_transfer_candidates(session, test_workspace.id, anchor.id)
+    assert cands == []
+
+
 # ---------------------------------------------------------------------------
 # link_existing_as_transfer (lines 884-921)
 # ---------------------------------------------------------------------------

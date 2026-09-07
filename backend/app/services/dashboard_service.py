@@ -405,6 +405,7 @@ async def get_summary(
         Transaction.workspace_id == workspace_id,
         Transaction.category_id.is_(None),
         Transaction.source != "opening_balance",
+        Transaction.source != "balance_adjustment",
         # Settlement-sourced rows are auto-generated movements (paying
         # back / receiving back a group debt). They aren't expenses or
         # income that need a category, so exclude them.
@@ -1250,6 +1251,22 @@ async def _account_balance_at(
         current_bal = float(account.balance)
         if account.type == "credit_card":
             current_bal = -current_bal
+
+        # Manual balance adjustments are Securo-owned ledger corrections, so
+        # they are not part of the provider snapshot. Layer them onto today's
+        # provider balance; the historical unwind below removes adjustments
+        # that occurred after an older cutoff like any other transaction.
+        adjustment_delta = await session.scalar(
+            select(func.coalesce(func.sum(_signed_balance_expr(account.currency)), 0))
+            .where(
+                Transaction.account_id == account.id,
+                Transaction.source == "balance_adjustment",
+                Transaction.date <= today,
+                Transaction.status == "posted",
+                Transaction.is_ignored == False,
+            )
+        )
+        current_bal += float(adjustment_delta or 0)
 
         # The provider number is the source of truth for the current balance,
         # including whatever pending entries the provider happens to include.

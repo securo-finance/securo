@@ -1006,6 +1006,8 @@ async def get_transfer_candidates(
         return []
     if anchor.transfer_pair_id is not None:
         return []
+    if anchor.source == "balance_adjustment":
+        return []
 
     opposing_type = "credit" if anchor.type == "debit" else "debit"
     from_date = anchor.date - timedelta(days=window_days)
@@ -1020,6 +1022,7 @@ async def get_transfer_candidates(
             Transaction.type == opposing_type,
             Transaction.transfer_pair_id.is_(None),
             Transaction.source != "opening_balance",
+            Transaction.source != "balance_adjustment",
             Transaction.date >= from_date,
             Transaction.date <= to_date,
         )
@@ -1498,6 +1501,16 @@ async def update_transaction(
     # service can validate against the new amount.
     splits_payload = data.splits if "splits" in update_data else None
     update_data.pop("splits", None)
+
+    if transaction.source == "balance_adjustment":
+        editable_fields = {"amount", "type", "notes", "exclude_from_pnl"}
+        locked_fields = set(update_data) - editable_fields
+        if splits_payload is not None:
+            locked_fields.add("splits")
+        if locked_fields:
+            raise ValueError(
+                "Balance adjustments only allow amount, type, notes, and report exclusion to be changed"
+            )
 
     # Verify the new account belongs to the workspace before touching the
     # row. When changing the account on one side of a transfer pair,
