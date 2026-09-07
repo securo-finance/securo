@@ -2238,5 +2238,34 @@
         "subtitle": "接続を追加して、ローカルのOllama、OpenAI、Anthropic、任意のOpenAI互換エンドポイントをSecuroに指し示してください。"
       }
     }
+  },
+  "providerSettings": {
+    "title": "プロバイダー設定",
+    "description": "保存した認証情報は環境変数の値より優先されます。変更は再起動せずに反映されます。「設定済み」は必須項目が入力されていることを示し、認証情報の有効性はここでは確認しません。",
+    "configured": "設定済み",
+    "notConfigured": "未設定",
+    "app": "アプリに保存済み",
+    "environment": "環境変数から取得",
+    "none": "未設定",
+    "invalid": "保存した認証情報を読み取れません。新しい値に置き換えるか、環境変数の値を使用してください。",
+    "reset": "環境変数の値を使用",
+    "remove": "保存した値を削除",
+    "removeTitle": "保存した「{{field}}」の値を削除しますか？",
+    "removeWithFallback": "保存した値が削除されます。新しい処理では環境変数の値が使用されます。",
+    "removeWithoutFallback": "環境変数の値がありません。削除すると、再設定するまでプロバイダーが無効になります。",
+    "secretStorageUnavailable": "認証情報を保存する前に、サーバーで32文字以上の固有のSECRET_KEYを設定してください。既存の環境変数による設定は引き続き使用できます。",
+    "secretPlaceholder": "保存した認証情報を置き換える新しい値を入力",
+    "simplefinHelp": "ここでSimpleFINを有効にし、口座ページで各接続専用のセットアップトークンを使って接続を追加してください。",
+    "system": "システム",
+    "timezone": "バックエンドのタイムゾーン",
+    "timezoneHelp": "日付、定期取引、スケジュールされたタスク、AIのコンテキストにこのタイムゾーンを使用します。変更は新しいリクエストとジョブに適用されます。",
+    "fields": {
+      "openexchangerates_app_id": "アプリID",
+      "pluggy_client_id": "クライアントID",
+      "pluggy_client_secret": "クライアントシークレット",
+      "enable_banking_app_id": "アプリID",
+      "enable_banking_private_key": "秘密鍵（PEM）",
+      "simplefin_enabled": "SimpleFINを有効にする"
+    }
   }
 }

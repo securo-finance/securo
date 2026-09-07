@@ -2239,5 +2239,34 @@
         "subtitle": "Füge eine Verbindung hinzu, um Securo auf dein lokales Ollama, OpenAI, Anthropic oder einen OpenAI-kompatiblen Endpunkt zu verweisen."
       }
     }
+  },
+  "providerSettings": {
+    "title": "Anbieterkonfiguration",
+    "description": "Gespeicherte Zugangsdaten haben Vorrang vor Umgebungswerten. Änderungen gelten ohne Neustart. „Konfiguriert“ bedeutet, dass Pflichtfelder vorhanden sind; die Zugangsdaten werden hier nicht geprüft.",
+    "configured": "Konfiguriert",
+    "notConfigured": "Nicht konfiguriert",
+    "app": "In der App gespeichert",
+    "environment": "Aus der Umgebung",
+    "none": "Nicht festgelegt",
+    "invalid": "Gespeicherte Zugangsdaten sind nicht lesbar. Ersetze sie oder verwende den Umgebungswert.",
+    "reset": "Umgebungswert verwenden",
+    "remove": "Gespeicherten Wert entfernen",
+    "removeTitle": "Gespeicherten Wert für {{field}} entfernen?",
+    "removeWithFallback": "Der gespeicherte Wert wird gelöscht. Neue Vorgänge verwenden den Umgebungswert.",
+    "removeWithoutFallback": "Es ist kein Umgebungswert vorhanden. Das Entfernen deaktiviert den Anbieter, bis er erneut konfiguriert wird.",
+    "secretStorageUnavailable": "Lege auf dem Server einen eindeutigen SECRET_KEY mit mindestens 32 Zeichen fest, bevor du Zugangsdaten speicherst. Bestehende Umgebungseinstellungen funktionieren weiterhin.",
+    "secretPlaceholder": "Neuen Wert eingeben, um die gespeicherten Zugangsdaten zu ersetzen",
+    "simplefinHelp": "Aktiviere SimpleFIN hier und füge dann jede Verbindung mit ihrem eigenen Einrichtungstoken auf der Kontenseite hinzu.",
+    "system": "System",
+    "timezone": "Backend-Zeitzone",
+    "timezoneHelp": "Kalenderdaten, wiederkehrende Transaktionen, geplante Aufgaben und der KI-Kontext verwenden diese Zeitzone. Änderungen gelten für neue Anfragen und Aufgaben.",
+    "fields": {
+      "openexchangerates_app_id": "App-ID",
+      "pluggy_client_id": "Client-ID",
+      "pluggy_client_secret": "Client-Geheimnis",
+      "enable_banking_app_id": "App-ID",
+      "enable_banking_private_key": "Privater Schlüssel (PEM)",
+      "simplefin_enabled": "SimpleFIN aktivieren"
+    }
   }
 }

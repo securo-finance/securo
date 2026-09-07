@@ -1,4 +1,5 @@
 import axios from 'axios'
+
 import type { NumberFormat, DateFormat } from '@/lib/format'
 import type {
   User,
@@ -78,6 +79,13 @@ import type {
   TransactionApplyScope,
   InvoiceAttachment,
 } from '@/types'
+
+export interface ProviderSettingStatus {
+  name: string
+  configured: boolean
+  can_store_secrets: boolean
+  fields: Record<string, { configured: boolean; source: 'app' | 'environment' | 'none'; invalid: boolean; environment_configured: boolean }>
+}
 
 const api = axios.create({
   baseURL: '/api',
@@ -1310,7 +1318,7 @@ export const fxRates = {
     const { data } = await api.post('/fx-rates/refresh')
     return data
   },
-  status: async (): Promise<{ last_sync_date: string | null; total_rates: number }> => {
+  status: async (): Promise<{ last_sync_date: string | null; total_rates: number; configured: boolean; fx_sync_mode: string }> => {
     const { data } = await api.get('/fx-rates/status')
     return data
   },
@@ -1380,6 +1388,18 @@ export const admin = {
   },
   deleteUser: async (id: string): Promise<void> => {
     await api.delete(`/admin/users/${id}`)
+  },
+  providerSettings: async (): Promise<ProviderSettingStatus[]> => {
+    const { data } = await api.get('/admin/provider-settings')
+    return data
+  },
+  updateProviderSettings: async (provider: string, values: Record<string, string | boolean | null>): Promise<ProviderSettingStatus> => {
+    const { data } = await api.patch(`/admin/provider-settings/${provider}`, { values })
+    return data
+  },
+  timezone: async (): Promise<{ timezone: string; available: string[] }> => {
+    const { data } = await api.get('/admin/timezone')
+    return data
   },
   getSetting: async (key: string): Promise<AppSetting> => {
     const { data } = await api.get(`/admin/settings/${key}`)

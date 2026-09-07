@@ -33,6 +33,8 @@ import { setThemeBasedOnSystem } from '@/lib/theme-utils'
 import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
 import { Search, Plus, Trash2, Shield, ShieldOff, UserCog, Users, Scale, Tag, Palette, Save, Hash, CalendarDays } from 'lucide-react'
 import type { AdminUser } from '@/types'
+import { ProviderSettings } from '@/components/provider-settings'
+import { TimezoneSettings } from '@/components/timezone-settings'
 
 export default function AdminSettingsPage() {
   const { t, i18n } = useTranslation()
@@ -368,6 +370,9 @@ export default function AdminSettingsPage() {
           </div>
         )}
       </div>
+
+      <TimezoneSettings />
+      <ProviderSettings />
 
       {/* Theme and Customization Section */}
       <div className="grid grid-cols-1 gap-6 mb-8">

@@ -2239,5 +2239,34 @@
         "subtitle": "Ajoutez une connexion pour pointer Securo vers votre Ollama local, OpenAI, Anthropic, ou tout point de terminaison compatible OpenAI."
       }
     }
+  },
+  "providerSettings": {
+    "title": "Configuration des fournisseurs",
+    "description": "Les identifiants enregistrés priment sur les valeurs d’environnement. Les changements s’appliquent sans redémarrage. « Configuré » indique que les champs requis sont renseignés ; les identifiants ne sont pas vérifiés ici.",
+    "configured": "Configuré",
+    "notConfigured": "Non configuré",
+    "app": "Enregistré dans l’application",
+    "environment": "Depuis l’environnement",
+    "none": "Non défini",
+    "invalid": "L’identifiant enregistré est illisible. Remplacez-le ou utilisez la valeur d’environnement.",
+    "reset": "Utiliser la valeur d’environnement",
+    "remove": "Supprimer la valeur enregistrée",
+    "removeTitle": "Supprimer la valeur enregistrée pour {{field}} ?",
+    "removeWithFallback": "La valeur enregistrée sera supprimée. Les nouvelles opérations utiliseront la valeur d’environnement.",
+    "removeWithoutFallback": "Aucune valeur d’environnement n’est disponible. La suppression désactivera le fournisseur jusqu’à sa prochaine configuration.",
+    "secretStorageUnavailable": "Définissez sur le serveur un SECRET_KEY unique d’au moins 32 caractères avant d’enregistrer des identifiants. Les paramètres d’environnement existants restent utilisables.",
+    "secretPlaceholder": "Saisissez une nouvelle valeur pour remplacer l’identifiant enregistré",
+    "simplefinHelp": "Activez SimpleFIN ici, puis ajoutez chaque connexion avec son propre jeton de configuration sur la page des comptes.",
+    "system": "Système",
+    "timezone": "Fuseau horaire du serveur",
+    "timezoneHelp": "Les dates, les transactions récurrentes, les tâches planifiées et le contexte de l’IA utilisent ce fuseau horaire. Les changements s’appliquent aux nouvelles requêtes et tâches.",
+    "fields": {
+      "openexchangerates_app_id": "ID d’application",
+      "pluggy_client_id": "ID client",
+      "pluggy_client_secret": "Secret client",
+      "enable_banking_app_id": "ID d’application",
+      "enable_banking_private_key": "Clé privée (PEM)",
+      "simplefin_enabled": "Activer SimpleFIN"
+    }
   }
 }

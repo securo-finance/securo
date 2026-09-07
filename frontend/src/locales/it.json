@@ -2239,5 +2239,34 @@
         "openai": "OpenAI Responses API"
       }
     }
+  },
+  "providerSettings": {
+    "title": "Configurazione dei fornitori",
+    "description": "Le credenziali salvate hanno priorità sui valori dell’ambiente. Le modifiche si applicano senza riavvio. «Configurato» indica che i campi obbligatori sono presenti; le credenziali non vengono verificate qui.",
+    "configured": "Configurato",
+    "notConfigured": "Non configurato",
+    "app": "Salvato nell’app",
+    "environment": "Dall’ambiente",
+    "none": "Non impostato",
+    "invalid": "Impossibile leggere la credenziale salvata. Sostituiscila o usa il valore dell’ambiente.",
+    "reset": "Usa valore dell’ambiente",
+    "remove": "Elimina valore salvato",
+    "removeTitle": "Eliminare il valore salvato di {{field}}?",
+    "removeWithFallback": "Il valore salvato verrà eliminato. Le nuove operazioni useranno il valore dell’ambiente.",
+    "removeWithoutFallback": "Non è disponibile alcun valore nell’ambiente. L’eliminazione disattiverà il fornitore finché non verrà configurato di nuovo.",
+    "secretStorageUnavailable": "Imposta sul server un SECRET_KEY univoco di almeno 32 caratteri prima di salvare le credenziali. Le impostazioni esistenti dell’ambiente continueranno a funzionare.",
+    "secretPlaceholder": "Inserisci un nuovo valore per sostituire la credenziale salvata",
+    "simplefinHelp": "Attiva SimpleFIN qui, poi aggiungi ogni connessione con il proprio token di configurazione nella pagina dei conti.",
+    "system": "Sistema",
+    "timezone": "Fuso orario del backend",
+    "timezoneHelp": "Le date, le transazioni ricorrenti, le attività pianificate e il contesto IA usano questo fuso orario. Le modifiche si applicano alle nuove richieste e attività.",
+    "fields": {
+      "openexchangerates_app_id": "ID applicazione",
+      "pluggy_client_id": "ID client",
+      "pluggy_client_secret": "Segreto client",
+      "enable_banking_app_id": "ID applicazione",
+      "enable_banking_private_key": "Chiave privata (PEM)",
+      "simplefin_enabled": "Attiva SimpleFIN"
+    }
   }
 }

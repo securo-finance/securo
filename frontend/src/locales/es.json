@@ -2239,5 +2239,34 @@
         "openai": "OpenAI Responses API"
       }
     }
+  },
+  "providerSettings": {
+    "title": "Configuración de proveedores",
+    "description": "Las credenciales guardadas tienen prioridad sobre los valores del entorno. Los cambios se aplican sin reiniciar. «Configurado» indica que los campos obligatorios están presentes; aquí no se verifican las credenciales.",
+    "configured": "Configurado",
+    "notConfigured": "Sin configurar",
+    "app": "Guardado en la aplicación",
+    "environment": "Del entorno",
+    "none": "Sin definir",
+    "invalid": "No se puede leer la credencial guardada. Sustitúyela o utiliza el valor del entorno.",
+    "reset": "Usar valor del entorno",
+    "remove": "Eliminar valor guardado",
+    "removeTitle": "¿Eliminar el valor guardado de {{field}}?",
+    "removeWithFallback": "Se eliminará el valor guardado. Las nuevas operaciones utilizarán el valor del entorno.",
+    "removeWithoutFallback": "No hay ningún valor en el entorno. Eliminar este valor desactivará el proveedor hasta que se configure de nuevo.",
+    "secretStorageUnavailable": "Define en el servidor un SECRET_KEY único de al menos 32 caracteres antes de guardar credenciales. La configuración existente del entorno seguirá funcionando.",
+    "secretPlaceholder": "Introduce un nuevo valor para sustituir la credencial guardada",
+    "simplefinHelp": "Activa SimpleFIN aquí y añade cada conexión con su propio token de configuración en la página de cuentas.",
+    "system": "Sistema",
+    "timezone": "Zona horaria del backend",
+    "timezoneHelp": "Las fechas, las transacciones recurrentes, las tareas programadas y el contexto de IA utilizan esta zona horaria. Los cambios se aplican a las nuevas solicitudes y tareas.",
+    "fields": {
+      "openexchangerates_app_id": "ID de aplicación",
+      "pluggy_client_id": "ID de cliente",
+      "pluggy_client_secret": "Secreto de cliente",
+      "enable_banking_app_id": "ID de aplicación",
+      "enable_banking_private_key": "Clave privada (PEM)",
+      "simplefin_enabled": "Activar SimpleFIN"
+    }
   }
 }

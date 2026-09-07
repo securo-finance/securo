@@ -2239,5 +2239,34 @@
         "openai": "OpenAI Responses API"
       }
     }
+  },
+  "providerSettings": {
+    "title": "Configuração de provedores",
+    "description": "As credenciais salvas têm prioridade sobre os valores do ambiente. As alterações são aplicadas sem reiniciar. Configurado indica que os campos obrigatórios estão preenchidos; as credenciais não são verificadas aqui.",
+    "configured": "Configurado",
+    "notConfigured": "Não configurado",
+    "app": "Salvo no aplicativo",
+    "environment": "Do ambiente",
+    "none": "Não definido",
+    "invalid": "Não foi possível ler a credencial salva. Substitua-a ou use o valor do ambiente.",
+    "reset": "Usar valor do ambiente",
+    "remove": "Remover valor salvo",
+    "removeTitle": "Remover o valor salvo de {{field}}?",
+    "removeWithFallback": "O valor salvo será excluído. Novas operações usarão o valor do ambiente.",
+    "removeWithoutFallback": "Não há valor disponível no ambiente. A remoção desativará o provedor até que ele seja configurado novamente.",
+    "secretStorageUnavailable": "Defina no servidor um SECRET_KEY único com pelo menos 32 caracteres antes de salvar credenciais. As configurações existentes do ambiente continuam funcionando.",
+    "secretPlaceholder": "Insira um novo valor para substituir a credencial salva",
+    "simplefinHelp": "Ative o SimpleFIN aqui e adicione cada conexão com seu próprio token de configuração na página Contas.",
+    "system": "Sistema",
+    "timezone": "Fuso horário do backend",
+    "timezoneHelp": "Datas, transações recorrentes, tarefas agendadas e contexto da IA usam este fuso horário. As alterações valem para novas solicitações e tarefas.",
+    "fields": {
+      "openexchangerates_app_id": "ID do aplicativo",
+      "pluggy_client_id": "ID do cliente",
+      "pluggy_client_secret": "Segredo do cliente",
+      "enable_banking_app_id": "ID do aplicativo",
+      "enable_banking_private_key": "Chave privada (PEM)",
+      "simplefin_enabled": "Ativar SimpleFIN"
+    }
   }
 }

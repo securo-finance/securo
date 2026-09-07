@@ -2340,5 +2340,34 @@
         "openai": "OpenAI Responses API"
       }
     }
+  },
+  "providerSettings": {
+    "title": "Konfiguracja dostawców",
+    "description": "Zapisane dane uwierzytelniające mają pierwszeństwo przed wartościami środowiska. Zmiany nie wymagają ponownego uruchomienia. „Skonfigurowany” oznacza obecność wymaganych pól; dane nie są tutaj weryfikowane.",
+    "configured": "Skonfigurowany",
+    "notConfigured": "Nieskonfigurowany",
+    "app": "Zapisano w aplikacji",
+    "environment": "Ze środowiska",
+    "none": "Nie ustawiono",
+    "invalid": "Nie można odczytać zapisanych danych. Zastąp je lub użyj wartości środowiska.",
+    "reset": "Użyj wartości środowiska",
+    "remove": "Usuń zapisaną wartość",
+    "removeTitle": "Usunąć zapisaną wartość pola {{field}}?",
+    "removeWithFallback": "Zapisana wartość zostanie usunięta. Nowe operacje będą używać wartości środowiska.",
+    "removeWithoutFallback": "Brak wartości środowiska. Usunięcie wyłączy dostawcę do czasu ponownej konfiguracji.",
+    "secretStorageUnavailable": "Przed zapisaniem danych uwierzytelniających ustaw na serwerze unikalny SECRET_KEY o długości co najmniej 32 znaków. Dotychczasowe ustawienia środowiska nadal działają.",
+    "secretPlaceholder": "Wpisz nową wartość, aby zastąpić zapisane dane uwierzytelniające",
+    "simplefinHelp": "Włącz tutaj SimpleFIN, a następnie dodaj każde połączenie za pomocą jego własnego tokenu konfiguracji na stronie kont.",
+    "system": "System",
+    "timezone": "Strefa czasowa serwera",
+    "timezoneHelp": "Daty, transakcje cykliczne, zaplanowane zadania i kontekst AI korzystają z tej strefy czasowej. Zmiany dotyczą nowych żądań i zadań.",
+    "fields": {
+      "openexchangerates_app_id": "ID aplikacji",
+      "pluggy_client_id": "ID klienta",
+      "pluggy_client_secret": "Sekret klienta",
+      "enable_banking_app_id": "ID aplikacji",
+      "enable_banking_private_key": "Klucz prywatny (PEM)",
+      "simplefin_enabled": "Włącz SimpleFIN"
+    }
   }
 }

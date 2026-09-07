@@ -2374,5 +2374,34 @@
         "subtitle": "Pridaj pripojenie a nasmeruj Securo na lokálnu Ollamu, OpenAI, Anthropic alebo ľubovoľný OpenAI-compatible endpoint."
       }
     }
+  },
+  "providerSettings": {
+    "title": "Konfigurácia poskytovateľov",
+    "description": "Uložené prihlasovacie údaje majú prednosť pred hodnotami prostredia. Zmeny platia bez reštartu. „Nakonfigurovaný“ znamená, že povinné polia sú vyplnené; údaje sa tu neoverujú.",
+    "configured": "Nakonfigurovaný",
+    "notConfigured": "Nenakonfigurovaný",
+    "app": "Uložené v aplikácii",
+    "environment": "Z prostredia",
+    "none": "Nenastavené",
+    "invalid": "Uložené prihlasovacie údaje nemožno prečítať. Nahraďte ich alebo použite hodnotu prostredia.",
+    "reset": "Použiť hodnotu prostredia",
+    "remove": "Odstrániť uloženú hodnotu",
+    "removeTitle": "Odstrániť uloženú hodnotu poľa {{field}}?",
+    "removeWithFallback": "Uložená hodnota sa odstráni. Nové operácie budú používať hodnotu prostredia.",
+    "removeWithoutFallback": "Hodnota prostredia nie je dostupná. Odstránenie vypne poskytovateľa až do opätovnej konfigurácie.",
+    "secretStorageUnavailable": "Pred uložením prihlasovacích údajov nastavte na serveri jedinečný SECRET_KEY s aspoň 32 znakmi. Existujúce nastavenia prostredia budú fungovať naďalej.",
+    "secretPlaceholder": "Zadajte novú hodnotu na nahradenie uložených prihlasovacích údajov",
+    "simplefinHelp": "Tu zapnite SimpleFIN a potom na stránke účtov pridajte každé pripojenie pomocou jeho vlastného nastavovacieho tokenu.",
+    "system": "Systém",
+    "timezone": "Časové pásmo servera",
+    "timezoneHelp": "Dátumy, opakované transakcie, naplánované úlohy a kontext AI používajú toto časové pásmo. Zmeny platia pre nové požiadavky a úlohy.",
+    "fields": {
+      "openexchangerates_app_id": "ID aplikácie",
+      "pluggy_client_id": "ID klienta",
+      "pluggy_client_secret": "Tajný kľúč klienta",
+      "enable_banking_app_id": "ID aplikácie",
+      "enable_banking_private_key": "Súkromný kľúč (PEM)",
+      "simplefin_enabled": "Zapnúť SimpleFIN"
+    }
   }
 }

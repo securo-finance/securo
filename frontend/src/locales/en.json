@@ -2238,5 +2238,34 @@
         "subtitle": "Add a connection to point Securo at your local Ollama, OpenAI, Anthropic, or any OpenAI-compatible endpoint."
       }
     }
+  },
+  "providerSettings": {
+    "title": "Provider configuration",
+    "description": "Saved credentials take priority over environment values. Changes apply without a restart. Configured means the required fields are present; credentials are not verified here.",
+    "configured": "Configured",
+    "notConfigured": "Not configured",
+    "app": "Saved in app",
+    "environment": "From environment",
+    "none": "Not set",
+    "invalid": "Saved credential cannot be read. Replace it or use the environment value.",
+    "reset": "Use environment value",
+    "remove": "Remove saved value",
+    "removeTitle": "Remove saved {{field}}?",
+    "removeWithFallback": "The saved value will be deleted. The environment value will be used for new operations.",
+    "removeWithoutFallback": "No environment value is available. Removing this value will disable the provider until it is configured again.",
+    "secretStorageUnavailable": "Set a unique SECRET_KEY of at least 32 characters on the server before saving credentials. Existing environment settings still work.",
+    "secretPlaceholder": "Enter a new value to replace the saved credential",
+    "simplefinHelp": "Enable SimpleFIN here, then add each connection using its own setup token on the Accounts page.",
+    "system": "System",
+    "timezone": "Backend timezone",
+    "timezoneHelp": "Calendar dates, recurring transactions, scheduled work and AI context use this timezone. Changes apply to new requests and jobs.",
+    "fields": {
+      "openexchangerates_app_id": "App ID",
+      "pluggy_client_id": "Client ID",
+      "pluggy_client_secret": "Client secret",
+      "enable_banking_app_id": "App ID",
+      "enable_banking_private_key": "Private key (PEM)",
+      "simplefin_enabled": "Enable SimpleFIN"
+    }
   }
 }

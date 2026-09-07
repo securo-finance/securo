@@ -2240,5 +2240,34 @@
         "subtitle": "Voeg een verbinding toe om Securo te richten op uw lokale Ollama, OpenAI, Anthropic of een ander OpenAI-compatibel endpoint."
       }
     }
+  },
+  "providerSettings": {
+    "title": "Providerconfiguratie",
+    "description": "Opgeslagen inloggegevens hebben voorrang op omgevingswaarden. Wijzigingen gelden zonder herstart. ‘Geconfigureerd’ betekent dat de verplichte velden aanwezig zijn; de inloggegevens worden hier niet gecontroleerd.",
+    "configured": "Geconfigureerd",
+    "notConfigured": "Niet geconfigureerd",
+    "app": "Opgeslagen in de app",
+    "environment": "Uit de omgeving",
+    "none": "Niet ingesteld",
+    "invalid": "De opgeslagen inloggegevens zijn niet leesbaar. Vervang ze of gebruik de omgevingswaarde.",
+    "reset": "Omgevingswaarde gebruiken",
+    "remove": "Opgeslagen waarde verwijderen",
+    "removeTitle": "Opgeslagen waarde voor {{field}} verwijderen?",
+    "removeWithFallback": "De opgeslagen waarde wordt verwijderd. Nieuwe bewerkingen gebruiken de omgevingswaarde.",
+    "removeWithoutFallback": "Er is geen omgevingswaarde beschikbaar. Verwijderen schakelt de provider uit totdat deze opnieuw is geconfigureerd.",
+    "secretStorageUnavailable": "Stel op de server een unieke SECRET_KEY van minstens 32 tekens in voordat je inloggegevens opslaat. Bestaande omgevingsinstellingen blijven werken.",
+    "secretPlaceholder": "Voer een nieuwe waarde in om de opgeslagen inloggegevens te vervangen",
+    "simplefinHelp": "Schakel SimpleFIN hier in en voeg vervolgens elke verbinding met een eigen installatietoken toe op de rekeningenpagina.",
+    "system": "Systeem",
+    "timezone": "Tijdzone van de backend",
+    "timezoneHelp": "Datums, terugkerende transacties, geplande taken en de AI-context gebruiken deze tijdzone. Wijzigingen gelden voor nieuwe verzoeken en taken.",
+    "fields": {
+      "openexchangerates_app_id": "App-ID",
+      "pluggy_client_id": "Client-ID",
+      "pluggy_client_secret": "Clientgeheim",
+      "enable_banking_app_id": "App-ID",
+      "enable_banking_private_key": "Privésleutel (PEM)",
+      "simplefin_enabled": "SimpleFIN inschakelen"
+    }
   }
 }
