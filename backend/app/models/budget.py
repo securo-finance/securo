@@ -36,3 +36,8 @@ class Budget(Base):
 
     user: Mapped["User"] = relationship()
     category: Mapped["Category"] = relationship()
+
+    def is_active_for_month(self, target_month: date) -> bool:
+        if self.is_recurring:
+            return self.month <= target_month
+        return self.month == target_month
