@@ -64,7 +64,7 @@ dev = [
     # 0.0.x release can add new checks, so letting it float would turn a green
     # CI red on an unrelated PR. Bump deliberately, together with whatever
     # annotations the new release asks for.
-    "ty==0.0.75",
+    "ty==0.0.79",
 ]
 
 [tool.setuptools.packages.find]
