@@ -49,6 +49,12 @@ class Settings(BaseSettings):
 
     # Frontend
     frontend_url: str = "http://localhost:5173"
+    # Absolute path to a built frontend (Vite's `dist`), served in-process by
+    # the API. Empty by default and deliberately so: the published backend
+    # image ships no frontend build, and a default path would let it start
+    # serving whatever happened to be at that location. Only the all-in-one
+    # image sets it.
+    frontend_dist_path: str = ""
 
     # WebAuthn / passkeys
     webauthn_rp_name: str = "Securo"
