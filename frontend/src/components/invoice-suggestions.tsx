@@ -23,23 +23,8 @@ import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { formatCurrency } from '@/lib/format'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
+import { suggestionsFor } from '@/lib/invoice-suggestions'
 import type { ReconciliationSuggestion } from '@/types'
-
-/** Every question that names this invoice, whether it names it alone or
- *  alongside others. A payout settling three invoices is one question,
- *  and it has to be findable from any of the three. */
-export function suggestionsFor(
-  suggestions: ReconciliationSuggestion[],
-  invoiceId: string,
-): ReconciliationSuggestion[] {
-  return suggestions.filter(
-    (s) =>
-      (s.expectation_kind === 'invoice' && s.expectation_id === invoiceId) ||
-      (s.covers ?? []).some(
-        (c) => c.expectation_kind === 'invoice' && c.expectation_id === invoiceId,
-      ),
-  )
-}
 
 export function InvoiceSuggestions({
   invoiceId,
