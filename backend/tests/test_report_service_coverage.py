@@ -750,7 +750,7 @@ async def test_cash_flow_accrual_mode_pending_cc(session, test_user, test_worksp
     from app.models.app_settings import AppSetting
 
     # Switch global accounting mode to accrual
-    session.add(AppSetting(key="credit_card_accounting_mode", value="accrual"))
+    session.add(AppSetting(key="credit_card_accounting_mode", value="invoice_due_date"))
     await session.commit()
 
     conn = BankConnection(

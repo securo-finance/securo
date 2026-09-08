@@ -290,7 +290,7 @@ async def get_budget_vs_actual(
     # Subtract non-owner shares of own splits — only the user's share counts.
     own_offset = await owner_split_offset_by_category(
         session, user_id, month_start, month_end,
-        use_effective_date=accounting_mode == "accrual",
+        use_effective_date=accounting_mode == "invoice_due_date",
         primary_currency=primary_currency,
         workspace_id=workspace_id,
     )
@@ -311,7 +311,7 @@ async def get_budget_vs_actual(
 
     shared_by_cat = await viewer_shared_spending_by_category(
         session, user_id, month_start, month_end,
-        use_effective_date=accounting_mode == "accrual",
+        use_effective_date=accounting_mode == "invoice_due_date",
         primary_currency=primary_currency,
     )
     for cat_uuid, total in shared_by_cat.items():
@@ -375,7 +375,7 @@ async def get_budget_vs_actual(
 
     prev_own_offset = await owner_split_offset_by_category(
         session, user_id, prev_month_start, prev_month_end,
-        use_effective_date=accounting_mode == "accrual",
+        use_effective_date=accounting_mode == "invoice_due_date",
         primary_currency=primary_currency,
         workspace_id=workspace_id,
     )
@@ -392,7 +392,7 @@ async def get_budget_vs_actual(
     # comparison is apples-to-apples.
     prev_shared_by_cat = await viewer_shared_spending_by_category(
         session, user_id, prev_month_start, prev_month_end,
-        use_effective_date=accounting_mode == "accrual",
+        use_effective_date=accounting_mode == "invoice_due_date",
         primary_currency=primary_currency,
     )
     for cat_uuid, total in prev_shared_by_cat.items():

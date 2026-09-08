@@ -41,8 +41,8 @@ class Transaction(Base):
     date: Mapped[_date] = mapped_column(Date)
     # Effective date for cash-flow reporting. For regular accounts this equals
     # `date`. For credit card transactions it's the due date of the bill that
-    # the transaction belongs to — so accrual-mode aggregations count the
-    # purchase when it hits the user's cash, not when it was made.
+    # the transaction belongs to — so invoice_due_date-mode aggregations count
+    # the purchase when it hits the user's cash, not when it was made.
     effective_date: Mapped[_date] = mapped_column(Date, index=True)
     type: Mapped[str] = mapped_column(String(10))  # debit, credit
     source: Mapped[str] = mapped_column(String(20))  # sync, ofx, csv, manual

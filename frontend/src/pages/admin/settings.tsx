@@ -136,7 +136,7 @@ export default function AdminSettingsPage() {
     retry: false,
   })
 
-  // Credit card accounting mode: returns 404 when unset → defaults to "cash".
+  // Credit card accounting mode: returns 404 when unset → defaults to "purchase_date".
   const { data: ccModeSetting } = useQuery({
     queryKey: ['admin', 'settings', 'credit_card_accounting_mode'],
     queryFn: () => adminApi.getSetting('credit_card_accounting_mode').catch(() => null),
@@ -154,7 +154,7 @@ export default function AdminSettingsPage() {
     },
   })
 
-  const accountingMode = (ccModeSetting?.value === 'accrual' ? 'accrual' : 'cash') as 'cash' | 'accrual'
+  const accountingMode = (ccModeSetting?.value === 'invoice_due_date' ? 'invoice_due_date' : 'purchase_date') as 'purchase_date' | 'invoice_due_date'
 
   // Provider categories: returns 404 when unset → defaults to "true" so
   // existing installs keep the historical sync behavior.
@@ -439,30 +439,30 @@ export default function AdminSettingsPage() {
         <div className="divide-y divide-border/40">
           <button
             type="button"
-            onClick={() => updateAccountingModeMutation.mutate('cash')}
+            onClick={() => updateAccountingModeMutation.mutate('purchase_date')}
             disabled={updateAccountingModeMutation.isPending}
             className="flex items-start gap-3 w-full px-5 py-4 text-left hover:bg-muted/40 transition-colors"
           >
-            <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${accountingMode === 'cash' ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`}>
-              {accountingMode === 'cash' && <div className="h-full w-full rounded-full bg-primary ring-2 ring-background ring-inset" />}
+            <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${accountingMode === 'purchase_date' ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`}>
+              {accountingMode === 'purchase_date' && <div className="h-full w-full rounded-full bg-primary ring-2 ring-background ring-inset" />}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground">{t('admin.settings.accountingCash')}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{t('admin.settings.accountingCashDesc')}</p>
+              <p className="text-sm font-medium text-foreground">{t('admin.settings.accountingPurchaseDate')}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{t('admin.settings.accountingPurchaseDateDesc')}</p>
             </div>
           </button>
           <button
             type="button"
-            onClick={() => updateAccountingModeMutation.mutate('accrual')}
+            onClick={() => updateAccountingModeMutation.mutate('invoice_due_date')}
             disabled={updateAccountingModeMutation.isPending}
             className="flex items-start gap-3 w-full px-5 py-4 text-left hover:bg-muted/40 transition-colors"
           >
-            <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${accountingMode === 'accrual' ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`}>
-              {accountingMode === 'accrual' && <div className="h-full w-full rounded-full bg-primary ring-2 ring-background ring-inset" />}
+            <div className={`mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 ${accountingMode === 'invoice_due_date' ? 'border-primary bg-primary' : 'border-muted-foreground/40'}`}>
+              {accountingMode === 'invoice_due_date' && <div className="h-full w-full rounded-full bg-primary ring-2 ring-background ring-inset" />}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground">{t('admin.settings.accountingAccrual')}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{t('admin.settings.accountingAccrualDesc')}</p>
+              <p className="text-sm font-medium text-foreground">{t('admin.settings.accountingInvoiceDueDate')}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{t('admin.settings.accountingInvoiceDueDateDesc')}</p>
             </div>
           </button>
         </div>
