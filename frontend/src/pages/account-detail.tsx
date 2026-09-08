@@ -324,6 +324,20 @@ export default function AccountDetailPage() {
     return isOpenCycleWindow(filterFrom, newestBill.due_date, account?.statement_close_day)
   }, [activeBill, billsAsc, filterFrom, account?.statement_close_day])
 
+  // A window this page computed, as opposed to one the user picked in the
+  // date fields. Every cycle range here comes out of creditCardCycleBoundaries
+  // (the arrows, the timeline bars and the initial default all route through
+  // it), so asking it for the cycle containing this window's end hands the
+  // window back when it is one of them. A card with no close day has no cycles
+  // to compare against, so it keeps the label it has always had.
+  const isCycleMathWindow = useMemo(() => {
+    const closeDay = account?.statement_close_day
+    if (!closeDay) return true
+    if (!filterFrom || !filterTo) return false
+    const cycle = creditCardCycleBoundaries(closeDay, parseISO(filterTo + 'T00:00:00'))
+    return cycle.start === filterFrom && cycle.end === filterTo
+  }, [account?.statement_close_day, filterFrom, filterTo])
+
   const [cycleSource, setCycleSource] = useState<{ account: typeof account; bills: typeof bills } | null>(null)
   if (!cycleSource || cycleSource.account !== account || cycleSource.bills !== bills) {
     setCycleSource({ account, bills })
@@ -932,7 +946,7 @@ export default function AccountDetailPage() {
                       ? format(parseISO(activeBill.due_date + 'T00:00:00'), 'MMM yyyy', {
                           locale: resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language),
                         })
-                      : isInProgressCycle || !billsAsc.length
+                      : isCycleMathWindow
                         ? creditCardCycleLabel(filterTo, account?.payment_due_day, i18n.language)
                         : cycleRangeLabel(filterFrom, filterTo, i18n.resolvedLanguage ?? i18n.language)}
                   </button>
