@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDateLocale } from '@/hooks/use-display-locale'
@@ -97,15 +97,19 @@ export default function WorkspaceSettingsPage() {
   const [removeTarget, setRemoveTarget] = useState<WorkspaceMember | null>(null)
   const [archiveOpen, setArchiveOpen] = useState(false)
 
-  useEffect(() => {
-    if (!current) return
-    setEditName(current.name)
-    setEditCurrency(current.default_currency)
-    setEditLocale(current.locale ?? '')
-    setEditJurisdiction(current.tax_jurisdiction ?? '')
-    setEditIcon(current.icon ?? DEFAULT_WORKSPACE_ICON)
-    setEditColor(current.color ?? DEFAULT_WORKSPACE_COLOR)
-  }, [current?.id, current?.name, current?.default_currency, current?.locale, current?.tax_jurisdiction, current?.icon, current?.color])
+  const formKey = JSON.stringify([current?.id, current?.name, current?.default_currency, current?.locale, current?.tax_jurisdiction, current?.icon, current?.color])
+  const [previousFormKey, setPreviousFormKey] = useState<string | null>(null)
+  if (formKey !== previousFormKey) {
+    setPreviousFormKey(formKey)
+    if (current) {
+      setEditName(current.name)
+      setEditCurrency(current.default_currency)
+      setEditLocale(current.locale ?? '')
+      setEditJurisdiction(current.tax_jurisdiction ?? '')
+      setEditIcon(current.icon ?? DEFAULT_WORKSPACE_ICON)
+      setEditColor(current.color ?? DEFAULT_WORKSPACE_COLOR)
+    }
+  }
 
   // Which jurisdictions ship a pack. An empty choice is valid, not missing:
   // with none set, documents are stored as free text with no mask.

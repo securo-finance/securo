@@ -3,10 +3,12 @@ import hashlib
 import io
 import re
 import uuid
+import warnings
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from decimal import Decimal
 
+from bs4 import XMLParsedAsHTMLWarning
 from ofxparse import OfxParser
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -139,7 +141,25 @@ def _is_balance_summary_row(description: str | None) -> bool:
 def parse_ofx(content: bytes) -> list[TransactionImport]:
     """Parse OFX file content and return transactions."""
     content = _preprocess_ofx(content)
-    ofx = OfxParser.parse(io.BytesIO(content))
+    # ofxparse 0.21 intentionally parses normalized SGML/XML with html.parser
+    # and still calls BeautifulSoup's findAll alias. Keep this compatibility
+    # boundary local; remove it when ofxparse adopts the supported soup API.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=(
+                r"^Call to deprecated method findAll\. \(Replaced by find_all\) "
+                r"-- Deprecated since version 4\.0\.0\.$"
+            ),
+            category=DeprecationWarning,
+            module=r"^ofxparse\.ofxparse$",
+        )
+        warnings.filterwarnings(
+            "ignore",
+            category=XMLParsedAsHTMLWarning,
+            module=r"^ofxparse\.ofxparse$",
+        )
+        ofx = OfxParser.parse(io.BytesIO(content))
     transactions = []
 
     for account in ofx.accounts:

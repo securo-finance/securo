@@ -93,21 +93,19 @@ export default function PayeesPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [payeesToDelete, setPayeesToDelete] = useState<string[]>([])
   const [sort, setSort] = useState<PayeeSort>(() => loadPayeeSort())
-  const prevSearchRef = useRef<string | null>(null)
+  const [previousSearch, setPreviousSearch] = useState(() => searchParams.toString())
   const summaryRef = useRef<HTMLDivElement>(null)
 
-  // Sync state from URL when navigating
-  useEffect(() => {
-    const searchStr = searchParams.toString()
-    if (prevSearchRef.current === searchStr) return
-    prevSearchRef.current = searchStr
-
+  // Navigation replaces the draft and applied filters together.
+  const currentSearch = searchParams.toString()
+  if (previousSearch !== currentSearch) {
+    setPreviousSearch(currentSearch)
     const nextQ = searchParams.get('q') ?? ''
     setSearch(nextQ)
     setSearchQuery(nextQ)
     setFilterType(searchParams.get('type') ?? '')
     setFilterFavorites(searchParams.get('is_favorite') === 'true')
-  }, [searchParams])
+  }
 
   // Sync states back to URL searchParams
   useEffect(() => {
@@ -136,11 +134,12 @@ export default function PayeesPage() {
     }
   }, [search])
 
-  // Clear selection on filter or search query change
-  useEffect(() => {
+  const [selectionFilter, setSelectionFilter] = useState({ searchQuery, filterType, filterFavorites })
+  if (selectionFilter.searchQuery !== searchQuery || selectionFilter.filterType !== filterType || selectionFilter.filterFavorites !== filterFavorites) {
+    setSelectionFilter({ searchQuery, filterType, filterFavorites })
     setSelectedIds(new Set())
     setLastSelectedId(null)
-  }, [searchQuery, filterType, filterFavorites])
+  }
 
   useEffect(() => {
     if (!summaryPayee) return

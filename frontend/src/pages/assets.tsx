@@ -495,7 +495,7 @@ export default function AssetsPage() {
     return Math.round(current * 100) / 100
   }, [formMethod, formPurchasePrice, formGrowthRate, formGrowthType, formGrowthFrequency, formGrowthStartDate, formPurchaseDate])
 
-  const activeAssets = assetsList?.filter(a => !a.sell_date && !a.is_archived) ?? []
+  const activeAssets = useMemo(() => assetsList?.filter(a => !a.sell_date && !a.is_archived) ?? [], [assetsList])
   const soldAssets = assetsList?.filter(a => a.sell_date) ?? []
 
   // Debounced ticker search. Runs only when the market-price method is
@@ -2771,7 +2771,9 @@ function AddHoldingTransactionDialog({
   const [fee, setFee] = useState('')
   const [date, setDate] = useState(localDateString)
 
-  useEffect(() => {
+  const [formSource, setFormSource] = useState<{ assetId: typeof assetId } | null>(null)
+  if (!formSource || formSource.assetId !== assetId) {
+    setFormSource({ assetId })
     if (assetId) {
       setKind('buy')
       setQuantity('')
@@ -2779,7 +2781,7 @@ function AddHoldingTransactionDialog({
       setFee('')
       setDate(localDateString())
     }
-  }, [assetId])
+  }
 
   const saveMutation = useMutation({
     mutationFn: () =>

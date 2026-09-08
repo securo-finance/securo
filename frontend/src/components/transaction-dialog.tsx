@@ -118,21 +118,13 @@ export function TransactionDialog({
     useState<PendingInstallmentEdit | null>(null)
 
   const handlePreviewChange = useCallback((newPreview: AttachmentPreview | null) => {
-    setPreview(prev => {
-      if (prev?.url) URL.revokeObjectURL(prev.url)
-      return newPreview
-    })
+    setPreview(newPreview)
   }, [])
 
-  // Clean up preview when dialog closes
-  useEffect(() => {
-    if (!open) {
-      setPreview(prev => {
-        if (prev?.url) URL.revokeObjectURL(prev.url)
-        return null
-      })
-    }
-  }, [open])
+  if (!open && preview) setPreview(null)
+  useEffect(() => () => {
+    if (preview?.url) URL.revokeObjectURL(preview.url)
+  }, [preview])
 
   const handleDownloadPreview = async () => {
     if (!preview || !transaction) return
@@ -629,7 +621,7 @@ function TransactionForm({
     staleTime: 5 * 60 * 1000,
     enabled: isCreating,
   })
-  const allowedExtensions = attachmentSettings?.allowed_extensions ?? ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'pdf']
+  const allowedExtensions = useMemo(() => attachmentSettings?.allowed_extensions ?? ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'pdf'], [attachmentSettings?.allowed_extensions])
   const maxFileSize = (attachmentSettings?.max_file_size_mb ?? 10) * 1024 * 1024
   const maxAttachments = attachmentSettings?.max_attachments_per_transaction ?? 10
 

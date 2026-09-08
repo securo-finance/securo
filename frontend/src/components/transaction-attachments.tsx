@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -79,7 +79,7 @@ export function TransactionAttachments({
     staleTime: 5 * 60 * 1000,
   })
 
-  const allowedExtensions = attachmentSettings?.allowed_extensions ?? ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'pdf']
+  const allowedExtensions = useMemo(() => attachmentSettings?.allowed_extensions ?? ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'pdf'], [attachmentSettings?.allowed_extensions])
   const maxFileSize = (attachmentSettings?.max_file_size_mb ?? 10) * 1024 * 1024
   const maxAttachments = attachmentSettings?.max_attachments_per_transaction ?? 10
 

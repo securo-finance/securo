@@ -10,8 +10,9 @@ Two things these tests exist to pin down, beyond the usual CRUD:
      UI does, computed from allocations and the due date.
 """
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
@@ -21,6 +22,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.account import Account
 from app.models.payee import Payee
 from app.models.transaction import Transaction
+
+
+@pytest.fixture
+def invoice_today():
+    """Pin the service clock so UTC/local midnight cannot change expectations."""
+    with patch("app.services.invoice_service.datetime", wraps=datetime) as clock:
+        clock.now.return_value = datetime(2026, 1, 15, tzinfo=timezone.utc)
+        yield clock.now.return_value.date()
 
 
 @pytest_asyncio.fixture
@@ -338,13 +347,13 @@ async def test_unlinking_restores_both_sides(client: AsyncClient, biz_headers, i
 
 
 @pytest.mark.asyncio
-async def test_overdue_needs_no_job(client: AsyncClient, biz_headers):
+async def test_overdue_needs_no_job(client: AsyncClient, biz_headers, invoice_today):
     """The point of deriving: nothing ran, and it still reads overdue."""
     invoice = await _create(
         client,
         biz_headers,
-        issue_date=str(date.today() - timedelta(days=40)),
-        due_date=str(date.today() - timedelta(days=10)),
+        issue_date=str(invoice_today - timedelta(days=40)),
+        due_date=str(invoice_today - timedelta(days=10)),
     )
     resp = await client.get(f"/api/invoices/{invoice['id']}", headers=biz_headers)
     assert resp.json()["state"] == "overdue"
@@ -565,13 +574,15 @@ async def test_competence_date_defaults_to_issue_but_can_diverge(
 
 
 @pytest.mark.asyncio
-async def test_due_date_defaults_to_payment_terms(client: AsyncClient, biz_headers):
+async def test_due_date_defaults_to_payment_terms(
+    client: AsyncClient, biz_headers, invoice_today
+):
     await client.patch(
         "/api/invoices/settings", headers=biz_headers, json={"default_payment_terms_days": 7}
     )
     resp = await client.post("/api/invoices", headers=biz_headers, json={"total": "10.00"})
     assert resp.status_code == 201, resp.text
-    assert resp.json()["due_date"] == str(date.today() + timedelta(days=7))
+    assert resp.json()["due_date"] == str(invoice_today + timedelta(days=7))
 
 
 @pytest.mark.asyncio

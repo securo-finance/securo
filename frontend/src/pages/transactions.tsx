@@ -792,7 +792,7 @@ export default function TransactionsPage() {
 
   // Tag filtering is now applied server-side, so the visible list and the
   // page count both reflect the same filtered total — issue #88.
-  const filteredItems = data?.items ?? []
+  const filteredItems = useMemo(() => data?.items ?? [], [data?.items])
   const selectableItems = filteredItems.filter(tx => !tx.is_shared)
 
   // Group transactions by date for the mobile card view

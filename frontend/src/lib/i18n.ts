@@ -1,48 +1,45 @@
-import i18n from 'i18next'
+import i18n, { type BackendModule, type ResourceLanguage } from 'i18next'
 import { initReactI18next } from 'react-i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
 
 import ptBR from '@/locales/pt-BR.json'
-import ptPT from '@/locales/pt-PT.json'
 import en from '@/locales/en.json'
-import es from '@/locales/es.json'
-import pl from '@/locales/pl.json'
-import it from '@/locales/it.json'
-import ru from '@/locales/ru.json'
-import uk from '@/locales/uk.json'
-import de from '@/locales/de.json'
-import fr from '@/locales/fr.json'
-import nl from '@/locales/nl.json'
-import sk from '@/locales/sk.json'
-import el from '@/locales/el.json'
-import hi from '@/locales/hi.json'
-import ja from '@/locales/ja.json'
+
+// Keep the default and Brazilian Portuguese bundles available immediately;
+// other languages are separate build assets loaded by i18next when selected.
+const localeLoaders = import.meta.glob<{ default: ResourceLanguage }>([
+  '../locales/*.json', '!../locales/en.json', '!../locales/pt-BR.json',
+])
 
 function syncHtmlLang(lng: string) {
   document.documentElement.lang = lng
 }
 
-i18n
+export const i18nReady = i18n
+  .use<BackendModule>({
+    type: 'backend',
+    init() {},
+    read(language, _namespace, callback) {
+      const load = localeLoaders[`../locales/${language}.json`]
+      if (!load) {
+        callback(null, {})
+        return
+      }
+      load().then(
+        ({ default: resource }) => callback(null, resource),
+        (error: Error) => callback(error, false),
+      )
+    },
+  })
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
     resources: {
       'pt-BR': { translation: ptBR },
-      'pt-PT': { translation: ptPT },
       en: { translation: en },
-      es: { translation: es },
-      pl: { translation: pl },
-      it: { translation: it },
-      ru: { translation: ru },
-      uk: { translation: uk },
-      de: { translation: de },
-      fr: { translation: fr },
-      nl: { translation: nl },
-      sk: { translation: sk },
-      el: { translation: el },
-      hi: { translation: hi },
-      ja: { translation: ja },
     },
+    partialBundledLanguages: true,
+    initAsync: false,
     fallbackLng: 'en',
     // English is the default. Honour an explicit, persisted choice
     // (querystring/localStorage/cookie) but do NOT auto-pick the browser
@@ -57,7 +54,7 @@ i18n
     },
   })
 
-syncHtmlLang(i18n.language)
+syncHtmlLang(i18n.language || 'en')
 i18n.on('languageChanged', syncHtmlLang)
 
 export type SupportedLang =
@@ -78,7 +75,7 @@ export type SupportedLang =
   | 'ja'
 
 // Single source of truth for language pickers. When adding a locale, register
-// the bundle above and add one entry here; every picker stays in sync instead
+// a locale JSON file and add one entry here; every picker stays in sync instead
 // of each hand-rolling its own list (the setup screen's button row broke a
 // little more with every translation PR before this existed).
 export const SUPPORTED_LANGS: { code: SupportedLang; label: string }[] = [

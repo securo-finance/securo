@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { GroupKind } from '@/types'
 
-export const KIND_OPTIONS: { value: GroupKind; tKey: string }[] = [
+const KIND_OPTIONS: { value: GroupKind; tKey: string }[] = [
   { value: 'social', tKey: 'splitGroups.kind.social' },
   { value: 'cost_center', tKey: 'splitGroups.kind.cost_center' },
   { value: 'project', tKey: 'splitGroups.kind.project' },
