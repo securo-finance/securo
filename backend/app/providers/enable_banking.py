@@ -133,6 +133,14 @@ def _join_remittance(value: Any) -> str:
     return (value or "").strip() if isinstance(value, str) else ""
 
 
+def _counterparty_name(raw: dict, party: str) -> str:
+    party_obj = raw.get(party)
+    name = party_obj.get("name") if isinstance(party_obj, dict) else None
+    if not isinstance(name, str) or not name.strip():
+        name = raw.get(f"{party}_name")
+    return name.strip() if isinstance(name, str) else ""
+
+
 def _txn_fingerprint(account_uid: str, raw: dict) -> str:
     """Stable id for a booked transaction.
 
@@ -142,16 +150,19 @@ def _txn_fingerprint(account_uid: str, raw: dict) -> str:
     sync layer's pending↔posted twin matcher handles that.
     """
     amount = raw.get("transaction_amount") or {}
+    creditor_acc = raw.get("creditor_account")
+    debtor_acc = raw.get("debtor_account")
     parts = [
-        account_uid,
-        raw.get("booking_date") or "",
-        raw.get("value_date") or "",
-        str(amount.get("amount") or ""),
-        str(amount.get("currency") or ""),
-        raw.get("credit_debit_indicator") or "",
+        str(account_uid),
+        str(raw.get("booking_date") or ""),
+        str(raw.get("value_date") or ""),
+        str(raw.get("transaction_date") or ""),
+        str(amount.get("amount") or "") if isinstance(amount, dict) else "",
+        str(amount.get("currency") or "") if isinstance(amount, dict) else "",
+        str(raw.get("credit_debit_indicator") or ""),
         _join_remittance(raw.get("remittance_information"))[:80],
-        ((raw.get("creditor_account") or {}).get("iban") or ""),
-        ((raw.get("debtor_account") or {}).get("iban") or ""),
+        (creditor_acc.get("iban") or "") if isinstance(creditor_acc, dict) else "",
+        (debtor_acc.get("iban") or "") if isinstance(debtor_acc, dict) else "",
     ]
     digest = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
     return digest[:32]
@@ -165,8 +176,8 @@ def _extract_payee(raw: dict, indicator: str, source: str) -> Optional[str]:
     """
     if source == "none":
         return None
-    creditor = (raw.get("creditor") or {}).get("name") or raw.get("creditor_name")
-    debtor = (raw.get("debtor") or {}).get("name") or raw.get("debtor_name")
+    creditor = _counterparty_name(raw, "creditor")
+    debtor = _counterparty_name(raw, "debtor")
     if source == "description":
         return None  # let description carry the info
     if indicator == "DBIT":
@@ -605,6 +616,8 @@ class EnableBankingProvider(BankProvider):
         payee_source: str,
     ) -> Optional[TransactionData]:
         amount_obj = raw.get("transaction_amount") or {}
+        if not isinstance(amount_obj, dict):
+            return None
         try:
             amount = Decimal(str(amount_obj.get("amount", "0")))
         except InvalidOperation:
@@ -615,15 +628,23 @@ class EnableBankingProvider(BankProvider):
         currency = amount_obj.get("currency") or "EUR"
         booking = _parse_iso_date(raw.get("booking_date"))
         value = _parse_iso_date(raw.get("value_date"))
-        txn_date = booking or value
+        txn_date = booking or value or _parse_iso_date(raw.get("transaction_date"))
         if not txn_date:
             return None
-        description = _join_remittance(raw.get("remittance_information")) or (
-            raw.get("additional_information") or ""
-        )
+        additional_value = raw.get("additional_information")
+        additional = additional_value.strip() if isinstance(additional_value, str) else ""
+        description = _join_remittance(raw.get("remittance_information")) or additional
+        if not description:
+            creditor = _counterparty_name(raw, "creditor")
+            debtor = _counterparty_name(raw, "debtor")
+            if indicator == "DBIT":
+                description = creditor or debtor or ""
+            else:
+                description = debtor or creditor or ""
         description = description.strip()[:500] or "Transaction"
-        external_id = (raw.get("entry_reference") or "").strip() or _txn_fingerprint(
-            account_uid, raw
+        entry_ref = (raw.get("entry_reference") or "").strip()
+        external_id = (
+            entry_ref if entry_ref and entry_ref != "0" else _txn_fingerprint(account_uid, raw)
         )
         return TransactionData(
             external_id=external_id,
