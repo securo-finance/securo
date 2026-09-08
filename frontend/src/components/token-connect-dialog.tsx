@@ -25,6 +25,7 @@ interface TokenConnectDialogProps {
 
 const PROVIDER_BRIDGE_URLS: Record<string, string> = {
   simplefin: 'https://bridge.simplefin.org/simplefin/create',
+  akahu: 'https://my.akahu.nz/developers',
 }
 
 export function TokenConnectDialog({
