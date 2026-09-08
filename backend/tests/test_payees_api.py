@@ -153,6 +153,21 @@ async def test_create_payee_duplicate(client: AsyncClient, auth_headers):
         json={"name": "unique"},  # case-insensitive duplicate
     )
     assert resp.status_code == 400
+    # A code, not prose: the client owns the wording and the language.
+    assert resp.json()["detail"] == "duplicate_payee_name"
+
+
+@pytest.mark.asyncio
+async def test_rename_payee_onto_existing_name_rejected(client: AsyncClient, auth_headers):
+    await _create_payee(client, auth_headers, "Taken")
+    other = await _create_payee(client, auth_headers, "Free")
+
+    resp = await client.patch(
+        f"/api/payees/{other['id']}", headers=auth_headers,
+        json={"name": "taken"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "duplicate_payee_name"
 
 
 # ---------------------------------------------------------------------------

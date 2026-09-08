@@ -1,8 +1,9 @@
 """Cover the Asset lifecycle through `_sync_holdings`.
 
 The sync contract is a bit subtle: provider data drives creation *and*
-closure of Assets, but user-set fields are load-bearing — sell_date is
-never overwritten, and group_id is rewritten only between wallets the
+closure of Assets, but user-set fields are load-bearing — manual sell_date
+is never overwritten, while provider closures reopen if the holding returns
+ACTIVE; group_id is rewritten only between wallets the
 sync itself owns (per-account re-attribution, issue #345); a wallet the
 user chose is never touched (see test_connection_service.py for the
 re-attribution matrix). These tests pin the rest: new/existing ×
@@ -134,7 +135,11 @@ def _holding(
         purchase_price=purchase_price,
         purchase_date=purchase_date,
         is_withdrawn=is_withdrawn,
-        metadata=metadata or {"status": "ACTIVE"},
+        metadata=(
+            metadata
+            if metadata is not None
+            else {"status": "TOTAL_WITHDRAWAL" if is_withdrawn else "ACTIVE"}
+        ),
     )
 
 
@@ -239,6 +244,8 @@ async def test_withdrawn_existing_asset_gets_sell_date(
     await session.refresh(asset)
 
     assert asset.sell_date == today
+    assert asset.external_metadata is not None
+    assert asset.external_metadata["status"] == "TOTAL_WITHDRAWAL"
     values_after = await _values_for(session, asset.id)
     # Historical values preserved; no zero appended.
     assert len(values_after) == len(values_before)
@@ -312,6 +319,78 @@ async def test_user_sold_active_on_provider_stops_value_updates(
     assert asset.sell_date == user_sell_date  # untouched
     values = await _values_for(session, asset.id)
     assert values == []  # no new values recorded
+
+
+@pytest.mark.asyncio
+async def test_provider_withdrawn_holding_reopens_when_active_again(
+    session: AsyncSession, test_user: User, mock_connection: BankConnection
+):
+    """A transient TOTAL_WITHDRAWAL must not leave an ACTIVE holding sold."""
+    _MockProvider._holdings = [
+        _holding(external_id="h-1", current_value=Decimal("500")),
+    ]
+    assert mock_connection.credentials is not None
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await session.commit()
+    [asset] = await _assets_for(session, test_user)
+
+    _MockProvider._holdings = [
+        _holding(external_id="h-1", current_value=Decimal("0"), is_withdrawn=True),
+    ]
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await session.commit()
+    await session.refresh(asset)
+    assert asset.sell_date == date.today()
+    assert asset.external_metadata is not None
+    assert asset.external_metadata["status"] == "TOTAL_WITHDRAWAL"
+
+    _MockProvider._holdings = [
+        _holding(external_id="h-1", current_value=Decimal("525")),
+    ]
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await session.commit()
+    await session.refresh(asset)
+
+    assert asset.sell_date is None
+    assert asset.external_metadata is not None
+    assert asset.external_metadata["status"] == "ACTIVE"
+    values = await _values_for(session, asset.id)
+    assert any(v.date == date.today() and v.amount == Decimal("525") for v in values)
+
+
+@pytest.mark.asyncio
+async def test_active_holding_preserves_sell_date_edited_after_provider_withdrawal(
+    session: AsyncSession, test_user: User, mock_connection: BankConnection
+):
+    """A user correction after withdrawal must survive provider reactivation."""
+    _MockProvider._holdings = [
+        _holding(external_id="h-1", current_value=Decimal("500")),
+    ]
+    assert mock_connection.credentials is not None
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await session.commit()
+    [asset] = await _assets_for(session, test_user)
+
+    _MockProvider._holdings = [
+        _holding(external_id="h-1", current_value=Decimal("0"), is_withdrawn=True),
+    ]
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await session.commit()
+
+    corrected_sell_date = date.today() - timedelta(days=14)
+    asset.sell_date = corrected_sell_date
+    await session.commit()
+
+    _MockProvider._holdings = [
+        _holding(external_id="h-1", current_value=Decimal("525")),
+    ]
+    await _sync_holdings(session, test_user.id, mock_connection, mock_connection.credentials)
+    await session.commit()
+    await session.refresh(asset)
+
+    assert asset.sell_date == corrected_sell_date
+    assert asset.external_metadata is not None
+    assert asset.external_metadata["status"] == "ACTIVE"
 
 
 @pytest.mark.asyncio

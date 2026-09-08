@@ -127,6 +127,8 @@ def counts_as_pnl():
         movements like investment applications where the counterpart is
         an Asset/Holding, not another Account),
       - transactions flagged `is_ignored=True` (user-marked as not to be reported),
+      - transactions flagged `exclude_from_pnl=True` (kept in balance,
+        omitted from income and expense calculations),
       - transactions in categories flagged `is_ignored=True` (user-marked as not to be reported).
 
     Does NOT exclude `source='opening_balance'` — callers that already
@@ -136,6 +138,7 @@ def counts_as_pnl():
     return and_(
         Transaction.transfer_pair_id.is_(None),
         Transaction.is_ignored.is_(False),
+        Transaction.exclude_from_pnl.is_(False),
         # Settlement *debits* are repayments of debts that were already
         # booked as an expense via the share. Counting them would
         # double-count. Settlement *credits*, however, represent the
@@ -154,6 +157,64 @@ def counts_as_pnl():
                 )
             ),
         ),
+    )
+
+
+def counts_on_bill():
+    """SQL filter: True when a transaction belongs on a credit-card bill.
+
+    A bill total is an *amount owed*, not a reporting figure, and the two
+    answer to different authorities: the bill has to match what the bank
+    says you owe, while P/L answers to how the user chose to categorize
+    their spending. So the card's cycle total cannot reuse
+    `counts_as_pnl` — every judgment that helper makes about what counts
+    as *spending* is a judgment the bank never made.
+
+    Kept out, because they are genuinely not charges on this bill:
+      - paired transfers (the bill *payment* is not a purchase),
+      - settlement debits (a repayment of a share already booked),
+      - rows the user flagged `is_ignored`, on the transaction or its
+        category — those leave the account balance too, so dropping them
+        from the bill keeps the card's two numbers telling one story.
+
+    `treat_as_transfer` categories are handled asymmetrically, and this is
+    the whole point of the helper:
+      - kept in for *debits*: buying an investment or paying a consortium
+        installment with the card still lands on the statement, so a
+        charge doesn't stop being owed to the bank because of how it was
+        tagged afterwards (issue #647).
+      - dropped for *credits*: an unpaired card payment (the payer's
+        account isn't connected, the amount doesn't match exactly, or it
+        was a partial payment) is normally filed under a transfer-like
+        category, and letting it through here would net it against new
+        debt instead of being a repayment of it.
+
+    Neither reading is exactly right — there's no field today that tells
+    a genuine merchant refund apart from an unpaired bill payment once
+    both land as a credit in a transfer-like category, so this is a
+    judgment call, not a derived fact. Dropping transfer-tagged credits
+    errs toward the more common case (an unmatched payment silently
+    shrinking the bill every cycle) over the rarer one (a refund of a
+    transfer-tagged purchase failing to shrink it back).
+
+    Deliberately spelled out rather than defined as "`counts_as_pnl`
+    minus a clause": a filter for what a *report* excludes will keep
+    growing as the product learns new ways to say "don't count this",
+    and a bill total must not inherit those. Every clause here is one
+    somebody chose for the bill.
+    """
+    ignored_category = Transaction.category_id.in_(
+        select(Category.id).where(Category.is_ignored.is_(True))
+    )
+    transfer_category = Transaction.category_id.in_(
+        select(Category.id).where(Category.treat_as_transfer.is_(True))
+    )
+    return and_(
+        Transaction.transfer_pair_id.is_(None),
+        Transaction.is_ignored.is_(False),
+        ~and_(Transaction.source == "settlement", Transaction.type == "debit"),
+        or_(Transaction.category_id.is_(None), ~ignored_category),
+        or_(Transaction.type == "debit", Transaction.category_id.is_(None), ~transfer_category),
     )
 
 

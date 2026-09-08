@@ -123,7 +123,7 @@ async def get_transaction_calendar(
             tx.category and tx.category.treat_as_transfer
         )
         ignored = bool(tx.is_ignored or (tx.category and tx.category.is_ignored))
-        if not ignored:
+        if not ignored and not tx.exclude_from_pnl:
             if is_transfer or tx.source == "transfer":
                 transfer_delta = await _signed_balance_delta_primary(session, tx, primary_currency)
                 day.transfer_net += transfer_delta
@@ -157,7 +157,7 @@ async def get_transaction_calendar(
             tx.category and tx.category.treat_as_transfer
         )
         ignored = bool(tx.is_ignored or (tx.category and tx.category.is_ignored))
-        if not ignored:
+        if not ignored and not tx.exclude_from_pnl:
             if is_transfer or tx.source == "transfer":
                 delta = await _signed_balance_delta_primary(session, tx, primary_currency)
                 day.transfer_net += delta
@@ -370,6 +370,7 @@ def _actual_item(
         transfer_pair_id=tx.transfer_pair_id,
         is_transfer=is_transfer,
         is_ignored=ignored,
+        exclude_from_pnl=bool(tx.exclude_from_pnl),
     )
 
 
@@ -398,6 +399,7 @@ def _forecast_item(
         transfer_pair_id=tx.transfer_pair_id,
         is_transfer=is_transfer,
         is_ignored=ignored,
+        exclude_from_pnl=bool(tx.exclude_from_pnl),
     )
 
 

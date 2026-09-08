@@ -194,6 +194,23 @@ async def test_create_installment_series_weekly(
 
 
 @pytest.mark.asyncio
+async def test_create_installment_series_biweekly(
+    session: AsyncSession, test_user, test_workspace, installment_account
+):
+    created = await create_installment_series(
+        session,
+        test_workspace.id,
+        test_user.id,
+        _series_payload(installment_account, installments=3, frequency="biweekly"),
+    )
+    assert [transaction.date for transaction in created] == [
+        date(2026, 1, 15),
+        date(2026, 1, 29),
+        date(2026, 2, 12),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_create_installment_series_yearly(
     session: AsyncSession, test_user, test_workspace, installment_account
 ):
@@ -245,6 +262,28 @@ async def test_create_installment_series_month_end_clamping(
         date(2026, 1, 31),
         date(2026, 2, 28),
         date(2026, 3, 31),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_create_installment_series_semiannual_month_end(
+    session: AsyncSession, test_user, test_workspace, installment_account
+):
+    created = await create_installment_series(
+        session,
+        test_workspace.id,
+        test_user.id,
+        _series_payload(
+            installment_account,
+            base={"date": date(2024, 8, 31)},
+            installments=3,
+            frequency="semiannual",
+        ),
+    )
+    assert [transaction.date for transaction in created] == [
+        date(2024, 8, 31),
+        date(2025, 2, 28),
+        date(2025, 8, 31),
     ]
 
 

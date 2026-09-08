@@ -100,6 +100,7 @@ class TransactionUpdate(BaseModel):
     amount_primary: Optional[Decimal] = None
     fx_rate_used: Optional[Decimal] = None
     is_ignored: Optional[bool] = None
+    exclude_from_pnl: Optional[bool] = None
     # Manual status override (posted=settled, pending=not yet settled). Lets the
     # user mark a manually-entered transaction as settled once it clears,
     # or flip a synced row back to pending before the next sync.
@@ -129,7 +130,7 @@ class InstallmentSeriesCreate(BaseModel):
     # Period between installments. Defaults to monthly. Matches the
     # recurring-transaction frequencies so "repeat as installments" offers
     # the same cadence choices as a recurring bill.
-    frequency: Literal["monthly", "quarterly", "weekly", "yearly"] = "monthly"
+    frequency: Literal["monthly", "quarterly", "semiannual", "weekly", "biweekly", "yearly"] = "monthly"
 
     @model_validator(mode="after")
     def validate_amounts(self):
@@ -138,12 +139,33 @@ class InstallmentSeriesCreate(BaseModel):
         return self
 
 
+class TransactionInvoiceLink(BaseModel):
+    """The invoice this transaction settles, when it settles one.
+
+    Present only for workspaces with the invoicing module, and only on
+    rows that carry an allocation — a personal workspace never sees this
+    field at all, because the query that fills it is not run there.
+    """
+
+    invoice_id: uuid.UUID
+    number: Optional[int] = None
+    series: Optional[str] = None
+    #: The name an imported invoice arrived with. Without it the badge for
+    #: one has nothing to show, since it carries no number of ours.
+    external_number: Optional[str] = None
+    amount: Decimal
+
+
 class TransactionRead(TransactionBase):
     id: uuid.UUID
     user_id: uuid.UUID
     account_id: Optional[uuid.UUID] = None
     category_id: Optional[uuid.UUID] = None
     category: Optional[CategoryRead] = None
+    #: Every invoice this transaction settles. A list because one
+    #: payment can settle several — a payout net of fees is the
+    #: ordinary case, not the exotic one.
+    invoice_links: list[TransactionInvoiceLink] = []
     currency: str = "USD"
     source: str
     status: str = "posted"
@@ -178,6 +200,7 @@ class TransactionRead(TransactionBase):
     # instead of a generic "shared" badge.
     parent_owner_name: Optional[str] = None
     is_ignored: bool = False
+    exclude_from_pnl: bool = False
 
     @model_validator(mode="after")
     def reflect_ignored_category(self):
@@ -261,6 +284,13 @@ class TransactionImport(TransactionBase):
     notes: Optional[str] = None
 
 
+class FailedRow(BaseModel):
+    line_number: int
+    description: str
+    raw_value: str
+    error_reason: str
+
+
 class TransactionImportPreview(BaseModel):
     transactions: list[TransactionImport]
     detected_format: str
@@ -270,6 +300,7 @@ class TransactionImportPreview(BaseModel):
     # Set when a CSV's columns could not be auto-detected. The preview still
     # succeeds (with no transactions) so the UI can show the mapping dropdowns.
     parse_error: Optional[str] = None
+    failed_rows: list[FailedRow] = []
 
 
 class TransactionImportRequest(BaseModel):

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo } from 'react'
 import { getAccountName } from '@/lib/account-utils'
 import { useParams, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -286,11 +286,61 @@ export default function AccountDetailPage() {
   const [filterFrom, setFilterFrom] = useState(defaultFrom)
   const [filterTo, setFilterTo] = useState(defaultTo)
   const [showPrimary, setShowPrimary] = useState(false)
-  const filterTouched = useRef(false)
-  const handleFilterFromChange = (v: string) => { filterTouched.current = true; setFilterFrom(v) }
-  const handleFilterToChange = (v: string) => { filterTouched.current = true; setFilterTo(v) }
+  const [filterTouched, setFilterTouched] = useState(false)
+  const handleFilterFromChange = (v: string) => { setFilterTouched(true); setFilterFrom(v) }
+  const handleFilterToChange = (v: string) => { setFilterTouched(true); setFilterTo(v) }
+  const { data: account, isLoading: accountLoading } = useQuery({
+    queryKey: ['accounts', id],
+    queryFn: () => accounts.get(id!),
+    enabled: !!id,
+  })
+
+  // Bills (faturas) from the provider's bills feed — issue #92. Only fetched
+  // for CC accounts; non-CC and CC-without-bills both return [] so the UI
+  // falls back to local cycle math wherever bills aren't available.
+  // Declared before the initial cycle selection and navigation helpers.
+  const { data: bills } = useQuery({
+    queryKey: ['accounts', id, 'bills'],
+    queryFn: () => accounts.bills(id!, 24),
+    enabled: !!id && account?.type === 'credit_card',
+  })
+  // Bills sorted oldest → newest, for indexing helpers below.
+  const billsAsc = useMemo(() => {
+    if (!bills) return []
+    return [...bills].sort((a, b) => a.due_date.localeCompare(b.due_date))
+  }, [bills])
+  // The bill, if any, the active filter currently corresponds to. We always
+  // set filterTo = bill.due_date when navigating to a bill, so the lookup is
+  // a simple equality check.
+  const activeBill = useMemo(() => {
+    if (!billsAsc.length) return null
+    return billsAsc.find(b => b.due_date === filterTo) ?? null
+  }, [billsAsc, filterTo])
+  // True when the user is on the trailing in-progress cycle (CC has bills,
+  // but the current view doesn't match any of them). Backend uses this to
+  // exclude already-billed txs from the cycle window so they don't double-
+  // count against the in-progress bar/total.
+  const isInProgressCycle = !activeBill && billsAsc.length > 0
+
+  const [cycleSource, setCycleSource] = useState<{ account: typeof account; bills: typeof bills } | null>(null)
+  if (!cycleSource || cycleSource.account !== account || cycleSource.bills !== bills) {
+    setCycleSource({ account, bills })
+    if (account?.type === 'credit_card' && !filterTouched) {
+      const today = format(new Date(), 'yyyy-MM-dd')
+      const upcomingIndex = billsAsc.findIndex(b => b.due_date >= today)
+      const upcoming = billsAsc[upcomingIndex]
+      const range = upcoming
+        ? rangeForBill(upcoming, upcomingIndex > 0 ? billsAsc[upcomingIndex - 1] : null)
+        : billsAsc.length > 0 && account.statement_close_day
+          ? creditCardCycleBoundaries(account.statement_close_day, new Date())
+          : defaultCycleForCreditCard(account.statement_close_day, account.payment_due_day, new Date())
+      setFilterFrom(range.start)
+      setFilterTo(range.end)
+    }
+  }
+
   const shiftCycleBy = (direction: -1 | 1) => {
-    filterTouched.current = true
+    setFilterTouched(true)
     // Bill-aware nav: step through the bills list when we have it, so prev/next
     // mirrors the bank's actual statements (handles dynamic close days).
     if (billsAsc.length > 0) {
@@ -330,80 +380,6 @@ export default function AccountDetailPage() {
     setFilterFrom(format(addMonths(parseISO(filterFrom + 'T00:00:00'), direction), 'yyyy-MM-dd'))
     setFilterTo(format(addMonths(parseISO(filterTo + 'T00:00:00'), direction), 'yyyy-MM-dd'))
   }
-
-  const { data: account, isLoading: accountLoading } = useQuery({
-    queryKey: ['accounts', id],
-    queryFn: () => accounts.get(id!),
-    enabled: !!id,
-  })
-
-  // Bills (faturas) from the provider's bills feed — issue #92. Only fetched
-  // for CC accounts; non-CC and CC-without-bills both return [] so the UI
-  // falls back to local cycle math wherever bills aren't available.
-  // Declared early so the cycle-init useEffect and shiftCycleBy can read it.
-  const { data: bills } = useQuery({
-    queryKey: ['accounts', id, 'bills'],
-    queryFn: () => accounts.bills(id!, 24),
-    enabled: !!id && account?.type === 'credit_card',
-  })
-  // Bills sorted oldest → newest, for indexing helpers below.
-  const billsAsc = useMemo(() => {
-    if (!bills) return []
-    return [...bills].sort((a, b) => a.due_date.localeCompare(b.due_date))
-  }, [bills])
-  // The bill, if any, the active filter currently corresponds to. We always
-  // set filterTo = bill.due_date when navigating to a bill, so the lookup is
-  // a simple equality check.
-  const activeBill = useMemo(() => {
-    if (!billsAsc.length) return null
-    return billsAsc.find(b => b.due_date === filterTo) ?? null
-  }, [billsAsc, filterTo])
-  // True when the user is on the trailing in-progress cycle (CC has bills,
-  // but the current view doesn't match any of them). Backend uses this to
-  // exclude already-billed txs from the cycle window so they don't double-
-  // count against the in-progress bar/total.
-  const isInProgressCycle = !activeBill && billsAsc.length > 0
-
-  useEffect(() => {
-    if (!account || filterTouched.current) return
-    if (account.type === 'credit_card') {
-      // Default landing matches the existing UX: the bill the user is
-      // about to pay (next due). With a bills feed we can prefer an
-      // upcoming bank-reported bill; if today is past the newest bill,
-      // fall through to local cycle math for the in-progress cycle so
-      // the user sees what's accumulating on the next (not-yet-issued)
-      // statement.
-      if (billsAsc.length > 0) {
-        const today = format(new Date(), 'yyyy-MM-dd')
-        const upcoming = billsAsc.find(b => b.due_date >= today)
-        if (upcoming) {
-          const idx = billsAsc.indexOf(upcoming)
-          const prev = idx > 0 ? billsAsc[idx - 1] : null
-          const { start, end } = rangeForBill(upcoming, prev)
-          setFilterFrom(start)
-          setFilterTo(end)
-          return
-        }
-        // Today is past the newest bill — use cycle-math range
-        // [prev_close, next_close-1] so the prev-close-day tx (Brazilian:
-        // belongs to next cycle) is in window. Backend's bill_id IS NULL
-        // filter in the cycle-math fallback keeps already-billed txs out.
-        if (account.statement_close_day) {
-          const { start, end } = creditCardCycleBoundaries(account.statement_close_day, new Date())
-          setFilterFrom(start)
-          setFilterTo(end)
-          return
-        }
-      }
-      const { start, end } = defaultCycleForCreditCard(
-        account.statement_close_day,
-        account.payment_due_day,
-        new Date(),
-      )
-      setFilterFrom(start)
-      setFilterTo(end)
-    }
-  }, [account, billsAsc])
 
   const { data: accountsList } = useQuery({
     queryKey: ['accounts'],
@@ -1011,7 +987,7 @@ export default function AccountDetailPage() {
               size="sm"
               className="text-muted-foreground hover:text-foreground min-h-[44px] min-w-[44px] px-3 shrink-0"
               onClick={() => {
-                filterTouched.current = false
+                setFilterTouched(false)
                 if (account?.type === 'credit_card') {
                   const { start, end } = defaultCycleForCreditCard(
                     account.statement_close_day,
@@ -1099,7 +1075,7 @@ export default function AccountDetailPage() {
                     key={i}
                     type="button"
                     onClick={() => {
-                      filterTouched.current = true
+                      setFilterTouched(true)
                       setFilterFrom(c.start)
                       setFilterTo(c.end)
                     }}
@@ -1767,12 +1743,16 @@ function CreditCardSettingsDialog({
   const [closeDay, setCloseDay] = useState('')
   const [dueDay, setDueDay] = useState('')
 
-  useEffect(() => {
-    if (!open) return
-    setCreditLimit(account.credit_limit != null ? String(account.credit_limit) : '')
-    setCloseDay(account.statement_close_day != null ? String(account.statement_close_day) : '')
-    setDueDay(account.payment_due_day != null ? String(account.payment_due_day) : '')
-  }, [open, account.credit_limit, account.statement_close_day, account.payment_due_day])
+  const formKey = JSON.stringify([open, account.credit_limit, account.statement_close_day, account.payment_due_day])
+  const [previousFormKey, setPreviousFormKey] = useState<string | null>(null)
+  if (formKey !== previousFormKey) {
+    setPreviousFormKey(formKey)
+    if (open) {
+      setCreditLimit(account.credit_limit != null ? String(account.credit_limit) : '')
+      setCloseDay(account.statement_close_day != null ? String(account.statement_close_day) : '')
+      setDueDay(account.payment_due_day != null ? String(account.payment_due_day) : '')
+    }
+  }
 
   const parseDay = (v: string): number | null => {
     const n = parseInt(v, 10)

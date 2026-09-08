@@ -1134,3 +1134,232 @@ async def test_grouped_rules_survive_export_import(
     conditions = next(r["conditions"] for r in listed if r["name"] == "Rides")
     assert conditions[1]["op"] == "or"
     assert [c["value"] for c in conditions[1]["conditions"]] == ["UBER", "99POP"]
+
+
+@pytest.mark.asyncio
+async def test_preview_rule_reports_matches_without_saving(
+    client: AsyncClient, auth_headers, test_categories, test_transactions
+):
+    """Preview an unsaved rule: it reports matches but changes nothing."""
+    target = test_categories[0]
+    response = await client.post(
+        "/api/rules/preview",
+        json={
+            "conditions_op": "and",
+            "conditions": [{"field": "description", "op": "contains", "value": "NETFLIX"}],
+            "actions": [{"op": "set_category", "value": str(target.id)}],
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["matched"] == 1
+    assert data["will_change"] == 1
+
+    item = data["sample"][0]
+    assert item["description"] == "NETFLIX"
+    assert item["amount"] == 39.90
+    assert item["current_category_id"] is None
+    assert item["new_category_name"] == target.name
+    assert item["will_change"] is True
+
+    # Nothing was persisted and no rule was created.
+    assert (await client.get("/api/rules", headers=auth_headers)).json() == []
+    txn = (await client.get(f"/api/transactions/{item['id']}", headers=auth_headers)).json()
+    assert txn["category_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_preview_rule_flags_already_categorized_as_unchanged(
+    client: AsyncClient, auth_headers, test_categories, test_transactions
+):
+    """A match that keeps its category is reported as matched but unchanged."""
+    body = {
+        "conditions_op": "and",
+        "conditions": [{"field": "description", "op": "contains", "value": "UBER"}],
+        "actions": [{"op": "set_category", "value": str(test_categories[0].id)}],
+    }
+
+    data = (await client.post("/api/rules/preview", json=body, headers=auth_headers)).json()
+    assert data["matched"] == 1
+    assert data["will_change"] == 0
+    item = data["sample"][0]
+    assert item["will_change"] is False
+    # Without overwrite the transaction keeps the category it already has.
+    assert item["new_category_name"] == item["current_category_name"] == test_categories[1].name
+
+    overwritten = (
+        await client.post(
+            "/api/rules/preview",
+            json={**body, "overwrite_existing_categories": True},
+            headers=auth_headers,
+        )
+    ).json()
+    assert overwritten["matched"] == 1
+    assert overwritten["will_change"] == 1
+    assert overwritten["sample"][0]["new_category_name"] == test_categories[0].name
+
+
+@pytest.mark.asyncio
+async def test_preview_rule_honors_condition_groups_and_sample_limit(
+    client: AsyncClient, auth_headers, test_categories, test_transactions
+):
+    response = await client.post(
+        "/api/rules/preview",
+        json={
+            "conditions_op": "and",
+            "conditions": [
+                {"field": "type", "op": "equals", "value": "debit"},
+                {"op": "or", "conditions": [
+                    {"field": "description", "op": "contains", "value": "UBER"},
+                    {"field": "description", "op": "contains", "value": "NETFLIX"},
+                ]},
+            ],
+            "actions": [{"op": "set_category", "value": str(test_categories[0].id)}],
+            "limit": 1,
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["matched"] == 2
+    # The sample is capped by `limit`, the counts still cover every match.
+    assert len(data["sample"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_preview_rule_pages_through_the_matches(
+    client: AsyncClient, auth_headers, test_categories, test_transactions
+):
+    """Every match is reachable, one window at a time.
+
+    A rule matching four figures of transactions is exactly the one worth
+    inspecting, so the sample has to be pageable rather than a fixed first
+    screenful. The windows tile the match list without gaps or repeats, and
+    the counts stay exact whichever window is asked for.
+    """
+    body = {
+        "conditions_op": "and",
+        "conditions": [{"field": "amount", "op": "gt", "value": "0"}],
+        "actions": [{"op": "set_category", "value": str(test_categories[0].id)}],
+        "limit": 2,
+    }
+
+    seen: list[str] = []
+    for offset in (0, 2, 4):
+        data = (
+            await client.post(
+                "/api/rules/preview",
+                json={**body, "offset": offset},
+                headers=auth_headers,
+            )
+        ).json()
+        assert data["matched"] == len(test_transactions)
+        assert data["offset"] == offset
+        seen.extend(item["id"] for item in data["sample"])
+
+    # Three windows of two over five matches: 2 + 2 + 1, every row once.
+    assert len(seen) == len(set(seen)) == len(test_transactions)
+    assert set(seen) == {str(tx.id) for tx in test_transactions}
+
+    # Past the end is empty, not an error — the counts still come back.
+    past_end = (
+        await client.post(
+            "/api/rules/preview",
+            json={**body, "offset": len(test_transactions)},
+            headers=auth_headers,
+        )
+    ).json()
+    assert past_end["matched"] == len(test_transactions)
+    assert past_end["sample"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "action, detail",
+    [
+        ({"op": "set_category", "value": "not-a-uuid"}, "Category not found"),
+        ({"op": "set_payee", "value": str(uuid.uuid4())}, "Payee not found"),
+        ({"op": "set_description", "value": "   "}, "Description cannot be blank"),
+    ],
+)
+async def test_preview_rule_validates_actions_like_the_save_path(
+    client: AsyncClient, auth_headers, test_transactions, action, detail
+):
+    """The preview runs the draft's actions, so it has to vet them first.
+
+    Otherwise a malformed action reaches `apply_rule_actions` unvalidated and
+    the preview quietly reports the no-op it degrades into, rather than the
+    error the same draft would raise on save.
+    """
+    response = await client.post(
+        "/api/rules/preview",
+        json={
+            "conditions_op": "and",
+            "conditions": [{"field": "description", "op": "contains", "value": "UBER"}],
+            "actions": [action],
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == detail
+
+
+@pytest.mark.asyncio
+async def test_preview_rule_rejects_blank_condition_value(
+    client: AsyncClient, auth_headers, test_categories
+):
+    response = await client.post(
+        "/api/rules/preview",
+        json={
+            "conditions_op": "and",
+            "conditions": [{"field": "description", "op": "contains", "value": "  "}],
+            "actions": [{"op": "set_category", "value": str(test_categories[0].id)}],
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "flags, reason",
+    [
+        ({"is_active": False}, "an inactive rule is never applied"),
+        ({"apply_to_existing": False}, "existing transactions are left alone"),
+    ],
+)
+async def test_preview_rule_reports_no_change_when_the_draft_would_not_be_applied(
+    client: AsyncClient, auth_headers, test_categories, test_transactions, flags, reason
+):
+    """The preview forecasts saving, and these flags mean saving changes nothing.
+
+    The matches still come back — they are what the conditions select, and that
+    is worth seeing while writing the rule — but nothing is reported as
+    changing, because `apply_single_rule` would not run at all.
+    """
+    target = test_categories[0]
+    body = {
+        "conditions_op": "and",
+        "conditions": [{"field": "description", "op": "contains", "value": "NETFLIX"}],
+        "actions": [{"op": "set_category", "value": str(target.id)}],
+    }
+
+    data = (
+        await client.post("/api/rules/preview", json={**body, **flags}, headers=auth_headers)
+    ).json()
+    assert data["matched"] == 1, reason
+    assert data["will_change"] == 0
+    assert data["will_apply"] is False
+    item = data["sample"][0]
+    assert item["will_change"] is False
+    # Nothing is applied, so the row keeps the category it already has.
+    assert item["new_category_id"] == item["current_category_id"] is None
+
+    # Same draft with the flag on: the match is now a change.
+    applied = (
+        await client.post("/api/rules/preview", json=body, headers=auth_headers)
+    ).json()
+    assert applied["will_apply"] is True
+    assert applied["will_change"] == 1
+    assert applied["sample"][0]["new_category_name"] == target.name

@@ -17,9 +17,6 @@ from mcp_server.auth import CallContext
 from mcp_server.registry import REGISTRY
 
 
-pytestmark = pytest.mark.asyncio
-
-
 @pytest_asyncio.fixture
 async def ctx(test_user) -> CallContext:
     return CallContext(user_id=test_user.id, conversation_id=uuid.uuid4())
@@ -72,6 +69,21 @@ def test_each_tool_has_input_schema():
     for name, spec in REGISTRY.items():
         assert spec.parameters.get("type") == "object", f"{name} schema must be object"
         assert "properties" in spec.parameters
+
+
+@pytest.mark.parametrize(
+    "tool_name",
+    [
+        "propose_create_recurring_transaction",
+        "propose_update_recurring_transaction",
+    ],
+    ids=["create", "update"],
+)
+def test_recurring_proposal_frequency_schema_includes_new_values(tool_name):
+    advertised = set(
+        REGISTRY[tool_name].parameters["properties"]["frequency"]["enum"]
+    )
+    assert {"biweekly", "semiannual"} <= advertised
 
 
 # --- Read tools (with real seeded data) -----------------------------------
@@ -462,6 +474,22 @@ async def test_propose_create_recurring_monthly_requires_day(
         frequency="monthly", account_id=str(test_account.id),
     )
     assert "day_of_month" in r.get("error", "")
+
+
+async def test_propose_create_recurring_semiannual_requires_day(
+    session: AsyncSession, ctx: CallContext, test_account
+):
+    handler = REGISTRY["propose_create_recurring_transaction"].handler
+    result = await handler(
+        session=session,
+        ctx=ctx,
+        description="Insurance",
+        amount=600.0,
+        type="debit",
+        frequency="semiannual",
+        account_id=str(test_account.id),
+    )
+    assert "day_of_month" in result.get("error", "")
 
 
 async def test_propose_create_recurring_monthly_full(

@@ -612,8 +612,8 @@ async def propose_create_transaction(
     + (
         "Build a preview for adding a recurring transaction / subscription "
         "(e.g. 'Netflix R$55 every month on the 10th'). Frequency is one "
-        "of weekly/monthly/quarterly/yearly. For monthly or quarterly use "
-        "day_of_month (1-31)."
+        "of weekly/biweekly/monthly/quarterly/semiannual/yearly. For monthly, "
+        "quarterly, or semiannual use day_of_month (1-31)."
     ),
     parameters={
         "type": "object",
@@ -621,13 +621,13 @@ async def propose_create_transaction(
             "description": {"type": "string", "minLength": 1, "maxLength": 500},
             "amount": {"type": "number", "exclusiveMinimum": 0},
             "type": {"type": "string", "enum": ["debit", "credit"]},
-            "frequency": {"type": "string", "enum": ["weekly", "monthly", "quarterly", "yearly"]},
+            "frequency": {"type": "string", "enum": ["weekly", "biweekly", "monthly", "quarterly", "semiannual", "yearly"]},
             "weekend_adjustment": {
                 "type": "string",
                 "enum": ["none", "previous_friday", "next_monday"],
                 "default": "none",
             },
-            "day_of_month": {"type": "integer", "minimum": 1, "maximum": 31, "description": "Required for monthly or quarterly"},
+            "day_of_month": {"type": "integer", "minimum": 1, "maximum": 31, "description": "Required for monthly, quarterly, or semiannual"},
             "start_date": {"type": "string", "format": "date", "description": "Defaults to today"},
             "end_date": {"type": "string", "format": "date"},
             "account_id": {"type": "string", "format": "uuid"},
@@ -658,8 +658,8 @@ async def propose_create_recurring_transaction(
     currency: str | None = None,
     apply: bool = False,
 ) -> dict[str, Any]:
-    if frequency in ("monthly", "quarterly") and not day_of_month:
-        return {"error": "day_of_month is required for monthly or quarterly frequency"}
+    if frequency in ("monthly", "quarterly", "semiannual") and not day_of_month:
+        return {"error": "day_of_month is required for monthly, quarterly, or semiannual frequency"}
     ws_id = await resolve_workspace_id(session, ctx)
     acc = (
         await session.execute(
@@ -745,7 +745,7 @@ async def propose_create_recurring_transaction(
             "recurring_id": {"type": "string", "format": "uuid"},
             "description": {"type": "string", "minLength": 1, "maxLength": 500},
             "amount": {"type": "number", "exclusiveMinimum": 0},
-            "frequency": {"type": "string", "enum": ["weekly", "monthly", "quarterly", "yearly"]},
+            "frequency": {"type": "string", "enum": ["weekly", "biweekly", "monthly", "quarterly", "semiannual", "yearly"]},
             "weekend_adjustment": {
                 "type": "string",
                 "enum": ["none", "previous_friday", "next_monday"],

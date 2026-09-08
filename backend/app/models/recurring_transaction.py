@@ -38,7 +38,7 @@ class RecurringTransaction(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2))
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     type: Mapped[str] = mapped_column(String(10))  # debit, credit
-    frequency: Mapped[str] = mapped_column(String(20))  # weekly, monthly, quarterly, yearly
+    frequency: Mapped[str] = mapped_column(String(20))  # weekly, biweekly, monthly, quarterly, semiannual, yearly
     weekend_adjustment: Mapped[str] = mapped_column(
         String(20), default="none", server_default="none"
     )

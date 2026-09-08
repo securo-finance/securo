@@ -14,4 +14,5 @@ async def get_attachment_settings():
         "allowed_extensions": allowed,
         "max_file_size_mb": settings.storage_max_file_size_mb,
         "max_attachments_per_transaction": settings.storage_max_attachments_per_transaction,
+        "max_attachments_per_invoice": settings.storage_max_attachments_per_invoice,
     }

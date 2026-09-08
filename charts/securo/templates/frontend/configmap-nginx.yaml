@@ -13,8 +13,16 @@ data:
         index index.html;
 
         # API proxy to backend.
+        # Resolve the backend hostname at request time instead of caching the IP
+        # at startup. Without this, Nginx pins the upstream IP when the config
+        # loads and returns 502s after the backend pod is recreated with a new
+        # IP. Using a variable in proxy_pass forces re-resolution; NGINX_RESOLVER
+        # is derived from the pod's own /etc/resolv.conf (cluster DNS) by the
+        # image's docker-entrypoint.d/19-resolver.envsh.
         location /api/ {
-            proxy_pass ${BACKEND_URL};
+            resolver ${NGINX_RESOLVER} valid=5s;
+            set $upstream ${BACKEND_URL};
+            proxy_pass $upstream;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

@@ -218,7 +218,22 @@ export interface AccountSummary {
   projected_expenses_primary?: number | null
 }
 
+/** Set when this transaction settles an invoice. Absent in workspaces
+ *  without the invoicing module — the query behind it does not run there. */
+export interface TransactionInvoiceLink {
+  invoice_id: string
+  number: number | null
+  series: string | null
+  /** The name an imported invoice arrived with; it carries no number of
+   *  ours, so the badge reads this instead. */
+  external_number: string | null
+  amount: string
+}
+
 export interface Transaction {
+  /** Every invoice this transaction settles — a payout net of fees
+   *  settles several. Absent in a workspace without the module. */
+  invoice_links?: TransactionInvoiceLink[] | null
   id: string
   user_id: string
   account_id: string | null
@@ -268,6 +283,8 @@ export interface Transaction {
   parent_owner_name?: string | null
   // Flag to exclude this transaction from reports and dashboard aggregations
   is_ignored: boolean
+  // Keeps the transaction in the ledger/balance while excluding it from P&L.
+  exclude_from_pnl?: boolean
   virtual?: boolean
 }
 
@@ -299,7 +316,7 @@ export interface InstallmentSeriesInput {
   }
   installments: number
   first_installment_status?: 'posted' | 'pending'
-  frequency?: 'monthly' | 'quarterly' | 'weekly' | 'yearly'
+  frequency?: 'monthly' | 'quarterly' | 'semiannual' | 'weekly' | 'biweekly' | 'yearly'
 }
 
 export type ShareType = 'equal' | 'exact' | 'percent'
@@ -497,6 +514,35 @@ export interface RuleImportResponse {
   overwritten: number
 }
 
+/** One matched transaction in a rule preview, with the category the draft rule
+ * would leave it in. `will_change` is false when the rule matches but changes
+ * nothing — usually a transaction that already has a category the draft keeps. */
+export interface RulePreviewItem {
+  id: string
+  date: string
+  description: string
+  amount: number
+  currency: string
+  type: 'debit' | 'credit'
+  current_category_id: string | null
+  current_category_name: string | null
+  new_category_id: string | null
+  new_category_name: string | null
+  will_change: boolean
+}
+
+export interface RulePreviewResponse {
+  matched: number
+  will_change: number
+  /** False when the draft's flags mean saving it changes nothing right now —
+   * an inactive rule, or one not being applied to existing transactions. */
+  will_apply: boolean
+  /** One window of the matches, newest first: `offset` through
+   * `offset + limit`. More remain while `offset + sample.length < matched`. */
+  sample: RulePreviewItem[]
+  offset: number
+}
+
 export interface ImportLog {
   id: string
   user_id: string
@@ -536,6 +582,13 @@ export interface ImportReviewTransaction extends ImportPreviewTransaction {
   selected_category_id?: string | null
 }
 
+export interface FailedRow {
+  line_number: number
+  description: string
+  raw_value: string
+  error_reason: string
+}
+
 export interface RecurringTransaction {
   id: string
   user_id: string
@@ -545,7 +598,7 @@ export interface RecurringTransaction {
   amount: number
   currency: string
   type: 'debit' | 'credit'
-  frequency: 'monthly' | 'quarterly' | 'weekly' | 'yearly'
+  frequency: 'monthly' | 'quarterly' | 'semiannual' | 'weekly' | 'biweekly' | 'yearly'
   weekend_adjustment: 'none' | 'previous_friday' | 'next_monday'
   day_of_month: number | null
   start_date: string
@@ -593,6 +646,7 @@ export interface TransactionCalendarItem {
   transfer_pair_id: string | null
   is_transfer: boolean
   is_ignored: boolean
+  exclude_from_pnl: boolean
 }
 
 export interface TransactionCalendarDay {
@@ -656,6 +710,7 @@ export interface SpendingByCategory {
   category_icon: string
   category_color: string
   total: number
+  projected_total: number
   percentage: number
 }
 
@@ -977,4 +1032,497 @@ export interface ReportResponse {
   meta: ReportMeta
   composition: ReportCompositionItem[]
   category_trend: CategoryTrendItem[]
+}
+
+// --- Invoices -------------------------------------------------------------
+// The ledger of what clients owe. Only reachable from a business
+// workspace: the module resolver leaves `invoices` out of a personal
+// workspace's `enabled_modules`, so nothing below is ever fetched there.
+
+/** A decision a human took. Never PATCHed directly — each one has its own
+ *  endpoint, because a status that changed always has a reason. */
+export type InvoiceStatus = 'draft' | 'open' | 'void' | 'uncollectible'
+
+/** Which side of the ledger a document sits on. Everything the UI writes
+ *  today is a receivable; `payable` exists so supplier documents have
+ *  somewhere to land without a migration when that path arrives. */
+export type InvoiceDirection = 'receivable' | 'payable'
+
+/** What the UI renders. The three terminal decisions above, plus the four
+ *  facts the server computes from allocations and the due date. Nothing
+ *  here is stored in a column. */
+export type InvoiceState =
+  | 'draft'
+  | 'open'
+  | 'partial'
+  | 'paid'
+  | 'overdue'
+  | 'void'
+  | 'uncollectible'
+
+export interface InvoiceLine {
+  id: string
+  description: string
+  quantity: string
+  unit: string | null
+  unit_price: string
+  tax_rate: string | null
+  total: string
+  position: number
+}
+
+export interface InvoiceLineInput {
+  description: string
+  quantity: string
+  /** What the quantity counts — hours, words, pieces. Free text, because
+   *  a list here would be a guess about somebody else's trade. */
+  unit?: string | null
+  unit_price: string
+  tax_rate?: string | null
+}
+
+export interface InvoiceAllocation {
+  id: string
+  transaction_id: string | null
+  credit_note_id: string | null
+  amount: string
+  method: string
+  allocated_at: string
+  transaction: {
+    id: string
+    description: string | null
+    date: string | null
+    amount: string | null
+  } | null
+}
+
+/** What a filed document proves. Roles, not file types — a nota fiscal,
+ *  a facture and a Rechnung are all `fiscal`, and each locale names it. */
+export type InvoiceAttachmentKind = 'bill' | 'fiscal' | 'receipt' | 'contract' | 'other'
+
+export interface InvoiceAttachment {
+  id: string
+  invoice_id: string
+  /** The system that produced or delivered the file — a payment
+   *  provider, a fiscal-document integration, a mailbox. Null when a
+   *  person uploaded it here. */
+  source: string | null
+  /** Its id in that system, when it has one. */
+  external_id: string | null
+  kind: InvoiceAttachmentKind
+  /** True on the one file that *is* the document. Downloading the invoice
+   *  hands this file over instead of a page drawn from our own fields. */
+  is_primary: boolean
+  document_number: string | null
+  issued_at: string | null
+  filename: string
+  content_type: string
+  size: number
+  created_at: string
+}
+
+export interface Invoice {
+  id: string
+  payee_id: string | null
+  payee: { id: string; name: string } | null
+  document_type: string
+  direction: InvoiceDirection
+  origin: string
+  external_source: string | null
+  external_id: string | null
+  number: number | null
+  series: string | null
+  /** The name an imported document arrived with, reproduced verbatim.
+   *  Null on anything we wrote, which our own counter names instead. */
+  external_number: string | null
+  status: InvoiceStatus
+  state: InvoiceState
+  issue_date: string
+  due_date: string
+  /** The accrual date — competência / fait générateur / Leistungsdatum.
+   *  Defaults to `issue_date` and diverges when work was delivered in a
+   *  different period from the one it was billed in. */
+  competence_date: string | null
+  sent_at: string | null
+  currency: string
+  subtotal: string
+  discount: string
+  tax_total: string
+  total: string
+  amount_paid: string
+  balance: string
+  days_overdue: number
+  notes: string | null
+  internal_notes: string | null
+  custom_fields: Record<string, string> | null
+  /** Frozen at issuance: issuer, counterparty and labels as they were.
+   *  Rendered instead of live settings so changing a logo never rewrites
+   *  a document the client already received.
+   *
+   *  `unknown` rather than `any`: the shape is the server's and it grows
+   *  (locale and payment details joined it after the first version), so
+   *  every reader asserts the one field it wants instead of the type
+   *  quietly promising all of them. */
+  snapshot: Record<string, unknown> | null
+  /** Present once a shareable link exists. Null until someone asks for
+   *  one, and null again once revoked. */
+  share_token: string | null
+  lines: InvoiceLine[]
+  allocations: InvoiceAllocation[]
+  created_at: string
+}
+
+export interface InvoiceAgingBuckets {
+  current: string
+  d1_30: string
+  d31_60: string
+  d61_90: string
+  d90_plus: string
+}
+
+export interface InvoiceSummary {
+  outstanding: string
+  overdue_amount: string
+  overdue_count: number
+  received_this_month: string
+  buckets: InvoiceAgingBuckets
+  upcoming: Invoice[]
+}
+
+export interface InvoiceCustomFieldDef {
+  key: string
+  label: string
+  required?: boolean
+}
+
+export interface InvoiceTemplate {
+  /** Overrides only. Anything left out falls back to the pack for the
+   *  issuer's language, resolved server-side. */
+  labels?: Record<string, string>
+  custom_fields?: InvoiceCustomFieldDef[]
+}
+
+export interface InvoiceSettings {
+  /** A starting point that fills the next three fields, not a mode: each
+   *  one stays individually overridable afterwards. */
+  preset: 'tracking' | 'document'
+  document_required: boolean
+  initial_state: 'draft' | 'open'
+  tax_fields: 'hidden' | 'optional' | 'required'
+  default_payment_terms_days: number
+  number_prefix: string | null
+  series: string | null
+  next_number: number
+  /** The uploaded mark, addressed by an id that never changes for a
+   *  given file. Null when none was uploaded. */
+  logo_id: string | null
+  issuer_display_name: string | null
+  footer_note: string | null
+  /** Free text: a Pix key, an IBAN, a routing number. Shown on the
+   *  document; never parsed. */
+  payment_details: string | null
+  accent_color: string | null
+  template: InvoiceTemplate | null
+}
+
+/** The invoice resolved into a document: what the PDF prints and what the
+ *  preview shows, from one definition on the server. Nothing here is
+ *  recomputed on this side — a second implementation is how the two
+ *  would come to disagree. */
+export interface InvoiceDocumentParty {
+  name: string | null
+  legal_name?: string | null
+  address: string | null
+  email?: string | null
+  /** Already masked server-side, because the PDF has no frontend to ask. */
+  tax_ids: { label: string; value: string }[]
+}
+
+export interface InvoiceDocumentLine {
+  description: string
+  quantity: string
+  unit: string | null
+  unit_price: string
+  total: string
+  tax_rate: string | null
+}
+
+export interface InvoiceDocumentPayload {
+  number: string | null
+  status: InvoiceStatus
+  state: InvoiceState
+  issue_date: string
+  due_date: string
+  currency: string
+  subtotal: string
+  discount: string
+  tax_total: string
+  total: string
+  amount_paid: string
+  balance: string
+  issuer: InvoiceDocumentParty
+  client: InvoiceDocumentParty
+  lines: InvoiceDocumentLine[]
+  labels: Record<string, string>
+  accent_color: string
+  logo_url: string | null
+  payment_details: string | null
+  notes: string | null
+  footer_note: string | null
+  custom_fields: { label: string; value: string }[]
+  /** On a payable the parties are already swapped server-side; this is
+   *  carried so the page can say "received" instead of "issued". */
+  direction: InvoiceDirection
+  /** False when the invoice is only tracking money — the common case
+   *  where the fiscal document was issued somewhere else entirely. */
+  has_line_items: boolean
+  /** Set when a real document was filed under this invoice. When it is,
+   *  that file is the document and the page below is only a summary of
+   *  it — nothing here needs redrawing. */
+  source_file: { id: string; filename: string; content_type: string } | null
+}
+
+export interface IssuerTaxId {
+  kind: string
+  value: string
+}
+
+export interface IssuerProfile {
+  legal_name: string | null
+  address: string | null
+  tax_jurisdiction: string | null
+  tax_ids: IssuerTaxId[]
+}
+
+export interface InvoiceShareLink {
+  token: string
+  /** A path, not a URL: only the browser reliably knows the public origin. */
+  path: string
+}
+
+/** What the filter bar needs to render itself: which years have
+ *  invoices, and how many sit in each state for the selected year. */
+export interface InvoiceFacets {
+  years: number[]
+  counts: {
+    all: number
+    open: number
+    overdue: number
+    paid: number
+    draft: number
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Reconciliation
+// ---------------------------------------------------------------------------
+
+/** The signals matching consults, as the API sends them.
+ *
+ *  Deliberately not an open-ended condition tree like the categorization
+ *  rules: matching runs on a fixed set of signals, and a form over exactly
+ *  those is honest about what the engine can actually look at. */
+/** Which moment a rule runs at.
+ *
+ *  `money_arrives`: a payment lands and we look for the promise it
+ *  answers; the promise came first and was waiting.
+ *  `invoice_issued`: a document is written and we look back at money that
+ *  arrived before it existed, the client who pays and lets the nota
+ *  follow. Weaker evidence: that money already had a life of its own.
+ *  `both`: the rule trusts either. */
+export type Trigger = 'money_arrives' | 'invoice_issued' | 'both'
+
+export interface ReconciliationConditions {
+  // -- Which money the rule is written for. Every one of these decides
+  //    whether the rule is consulted at all, before any comparison. Absent
+  //    means "no limit", never "none".
+  /** Only money in these bank accounts. */
+  accounts?: { in: string[] }
+  /** Only money from these clients. Different from `counterparty`, which
+   *  asks whether the payer is the one named on the invoice. */
+  payees?: { in: string[] }
+  /** Only money coming in, or only money going out. */
+  direction?: 'any' | 'credit' | 'debit'
+  /** What the statement line has to say, or must not. Case-insensitive. */
+  /** One word, or several meaning *any of them*. Stored as written, so a
+   *  rule naming one gateway stays a string and does not read as changed. */
+  text?: { contains?: string | string[]; not_contains?: string | string[] }
+
+  // -- How closely the pair has to fit.
+  counterparty?: 'any' | 'same_payee'
+  amount?: {
+    /** `partial` is what makes two transactions on one invoice reachable:
+     *  every other mode compares against the whole outstanding balance,
+     *  and half of it is simply not that. */
+    match: 'exact' | 'tolerance' | 'ratio' | 'partial' | 'set'
+    percent?: string
+    /** For `set`: how many invoices one payment may cover. */
+    max_invoices?: number
+    epsilon?: string
+    ratios?: string
+    difference_kind?: string
+    /** For `partial`: the smallest fraction of the balance worth
+     *  offering, so a token payment is not proposed as an instalment. */
+    min_ratio?: string
+    /** For `partial`: the largest, above which the gap is a fee or a
+     *  withholding rather than an instalment. */
+    max_ratio?: string
+    /** Bounds on the movement itself, not on how close it is to the
+     *  promise: "never link anything over ten thousand on its own". */
+    min?: string
+    max?: string
+  }
+  /** Asymmetric on purpose: late is measured from the due date, early from
+   *  the day the promise was written. */
+  date?: { before_days: number; after_days: number }
+  description_similarity?: { min: string }
+  currency?: {
+    /** Whether a movement may settle a promise held in another currency. */
+    conversion: 'reject' | 'allow'
+    /** Only these currency codes. */
+    in?: string[]
+    /** Only currencies other than the workspace's own: what somebody
+     *  means by "check anything that is not in our money". */
+    foreign?: boolean
+  }
+  same_account?: boolean
+  unique_candidate?: boolean
+}
+
+export interface ReconciliationRule {
+  id: string
+  node: string
+  /** Set only for a rule the workspace wrote. A shipped rule keeps its
+   *  translated name, which would otherwise freeze in one language the day
+   *  somebody edited a threshold. */
+  name?: string | null
+  origin: 'default' | 'custom'
+  /** Whether this workspace departed from what we ship. Drives the "you
+   *  changed this" mark and the offer to put it back. */
+  customised: boolean
+  enabled: boolean
+  outcome: 'link' | 'suggest'
+  trigger: Trigger
+  when: ReconciliationConditions
+  position: number
+}
+
+export interface ReconciliationNode {
+  node: string
+  /** Whether the set is reachable for this workspace at all. The invoice
+   *  rules mean nothing where the module is off. */
+  active: boolean
+  rules: ReconciliationRule[]
+  /** Rules we ship that this workspace threw away. Sent so the page can
+   *  offer them back: a shipped rule leaves a tombstone rather than a
+   *  hole, so we still know its name, and without this the delete is a
+   *  trap, because the row is gone and there is nothing left to click. */
+  discarded: { id: string; node: string }[]
+}
+
+/** A matching policy as a file. Ids are resolved to names on the way out
+ *  and looked up again on the way in: a UUID means nothing in another
+ *  database. */
+export interface ReconciliationPolicyFile {
+  format: string
+  version: number
+  policy_version: number
+  nodes: {
+    node: string
+    rules: {
+      id: string
+      origin: string
+      name: string | null
+      enabled: boolean
+      outcome: string
+      trigger: string
+      when: Record<string, unknown>
+    }[]
+    discarded: string[]
+  }[]
+}
+
+export interface ReconciliationRulePatch {
+  enabled?: boolean
+  outcome?: 'link' | 'suggest'
+  trigger?: Trigger
+  when?: ReconciliationConditions
+  position?: number
+}
+
+export interface ReconciliationRuleDraft {
+  node: string
+  name: string
+  outcome: 'link' | 'suggest'
+  trigger?: Trigger
+  when: ReconciliationConditions
+  enabled?: boolean
+  position?: number | null
+}
+
+/** One match the engine was not confident enough to make on its own.
+ *
+ *  `scores` is a per-signal breakdown rather than one number: "78% sure" is
+ *  not something anyone can check, while "the amount is exact and the date
+ *  is four days out" tells a person exactly where to look. */
+export interface ReconciliationSuggestion {
+  id: string
+  node: string
+  strategy_id: string
+  expectation_kind: 'invoice' | 'recurring'
+  expectation_id: string
+  expectation_label?: string | null
+  amount: string
+  scores: {
+    strategy?: string
+    description?: number
+    amount_expected?: string
+    amount_moved?: string
+    amount_exact?: boolean
+    days_apart?: number
+    same_counterparty?: boolean
+    currency?: string
+  }
+  status: 'pending' | 'accepted' | 'declined' | 'expired'
+  created_at: string
+  /** Everything this one question covers. A single entry for the ordinary
+   *  case; several when one payment is offered against several invoices,
+   *  which is answered whole or not at all. */
+  covers: {
+    expectation_kind: 'invoice' | 'recurring'
+    expectation_id: string
+    label?: string | null
+    amount: string
+  }[]
+  transaction?: {
+    id: string
+    description?: string | null
+    amount: string
+    currency?: string | null
+    date: string
+    type: string
+  } | null
+}
+
+/** One thing matching did.
+ *
+ *  `linked` means the rules did it on their own; `accepted` means a person
+ *  did, by answering a question. They are never both written for one act:
+ *  the allocation an acceptance produces is its consequence, not a second
+ *  event, because the whole stream is organised around that one line. */
+export interface ReconciliationHistoryEvent {
+  id: string
+  at: string
+  action: 'linked' | 'suggested' | 'accepted' | 'declined' | 'expired' | 'unlinked'
+  expectation_kind: 'invoice' | 'recurring'
+  expectation_id: string
+  expectation_label?: string | null
+  amount: string
+  /** What `amount` is denominated in, resolved from the promise. */
+  currency?: string | null
+  strategy_id?: string | null
+  /** Null means the rules acted on their own. */
+  user_id?: string | null
+  transaction_id?: string | null
+  transaction_description?: string | null
 }

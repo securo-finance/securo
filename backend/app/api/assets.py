@@ -132,7 +132,7 @@ async def refresh_asset_price(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
     if asset.valuation_method != "market_price":
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Only externally priced assets can be refreshed via this endpoint",
         )
 

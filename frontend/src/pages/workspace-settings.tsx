@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDateLocale } from '@/hooks/use-display-locale'
@@ -38,6 +38,7 @@ import {
 } from '@/components/ui/dialog'
 import { AlertTriangle, Archive, Plus, Save, Trash2, Users } from 'lucide-react'
 import { WORKSPACE_KIND_LABEL_KEY } from '@/lib/workspace-kinds'
+import { SUPPORTED_LANGS } from '@/lib/i18n'
 import { countryFlag } from '@/lib/country-flag'
 import { countryName } from '@/lib/country-name'
 import type { WorkspaceKind, WorkspaceMember, WorkspaceRole } from '@/types'
@@ -96,15 +97,19 @@ export default function WorkspaceSettingsPage() {
   const [removeTarget, setRemoveTarget] = useState<WorkspaceMember | null>(null)
   const [archiveOpen, setArchiveOpen] = useState(false)
 
-  useEffect(() => {
-    if (!current) return
-    setEditName(current.name)
-    setEditCurrency(current.default_currency)
-    setEditLocale(current.locale ?? '')
-    setEditJurisdiction(current.tax_jurisdiction ?? '')
-    setEditIcon(current.icon ?? DEFAULT_WORKSPACE_ICON)
-    setEditColor(current.color ?? DEFAULT_WORKSPACE_COLOR)
-  }, [current?.id, current?.name, current?.default_currency, current?.locale, current?.tax_jurisdiction, current?.icon, current?.color])
+  const formKey = JSON.stringify([current?.id, current?.name, current?.default_currency, current?.locale, current?.tax_jurisdiction, current?.icon, current?.color])
+  const [previousFormKey, setPreviousFormKey] = useState<string | null>(null)
+  if (formKey !== previousFormKey) {
+    setPreviousFormKey(formKey)
+    if (current) {
+      setEditName(current.name)
+      setEditCurrency(current.default_currency)
+      setEditLocale(current.locale ?? '')
+      setEditJurisdiction(current.tax_jurisdiction ?? '')
+      setEditIcon(current.icon ?? DEFAULT_WORKSPACE_ICON)
+      setEditColor(current.color ?? DEFAULT_WORKSPACE_COLOR)
+    }
+  }
 
   // Which jurisdictions ship a pack. An empty choice is valid, not missing:
   // with none set, documents are stored as free text with no mask.
@@ -435,16 +440,9 @@ export default function WorkspaceSettingsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">—</SelectItem>
-                  <SelectItem value="ru">Русский</SelectItem>
-                  <SelectItem value="de">Deutsch</SelectItem>
-                  <SelectItem value="uk">Українська</SelectItem>
-                  <SelectItem value="en">English</SelectItem>
-                  <SelectItem value="pt-BR">Português (BR)</SelectItem>
-                  <SelectItem value="pt-PT">Português (PT)</SelectItem>
-                  <SelectItem value="es">Español</SelectItem>
-                  <SelectItem value="pl">Polski</SelectItem>
-                  <SelectItem value="it">Italiano</SelectItem>
-                  <SelectItem value="fr">Français</SelectItem>
+                  {SUPPORTED_LANGS.map(({ code, label }) => (
+                    <SelectItem key={code} value={code}>{label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

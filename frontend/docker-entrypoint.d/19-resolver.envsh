@@ -1,0 +1,13 @@
+#!/bin/sh
+# Resolver nginx uses to re-resolve BACKEND_URL at request time.
+#
+# Precedence: an explicit NGINX_RESOLVER wins; otherwise take the platform's
+# own resolver, which 15-local-resolvers.envsh reads from /etc/resolv.conf
+# (it already brackets IPv6 addresses); otherwise fall back to Docker's
+# embedded DNS. This is what lets the same image work unchanged on Docker,
+# Podman, Kubernetes and Railway (whose internal DNS is [fd12::10]).
+#
+# Deliberately no `set -e`: the entrypoint *sources* .envsh files, so it would
+# leak into the entrypoint's own shell and change its semantics.
+: "${NGINX_RESOLVER:=${NGINX_LOCAL_RESOLVERS:-127.0.0.11}}"
+export NGINX_RESOLVER

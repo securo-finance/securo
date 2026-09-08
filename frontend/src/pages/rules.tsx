@@ -1,4 +1,5 @@
 import { useRef, useState, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { categories as categoriesApi, categoryGroups as categoryGroupsApi, rules as rulesApi, accounts as accountsApi, payees as payeesApi } from '@/lib/api'
@@ -16,11 +17,17 @@ import {
 } from '@/components/ui/dialog'
 import type { Category, Payee, Rule, RuleAction, RuleCondition, RuleConditionNode, RuleExportPayload } from '@/types'
 import { isConditionGroup } from '@/lib/rule-conditions'
-import { Trash2, Plus, RefreshCw, Package, Check, ArrowUpDown, ArrowUp, ArrowDown, Download, Upload } from 'lucide-react'
+import { normalizeRuleMatchValue, ruleSearchText } from '@/lib/rule-match-utils'
+import { Trash2, Plus, RefreshCw, Package, Check, ArrowUpDown, ArrowUp, ArrowDown, Download, Upload, Search, Power } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { RuleDialog } from '@/components/rule-dialog'
+import { ReconciliationRules } from '@/components/reconciliation-rules'
+import { ReconciliationQueue } from '@/components/reconciliation-queue'
+import { ReconciliationHistory } from '@/components/reconciliation-history'
+import { Segmented } from '@/components/invoice-ui'
+import { reconciliation as reconciliationApi } from '@/lib/api'
 import { findCategoryReference, getRuleCategoryName } from '@/lib/category-reference-utils'
 
 function SectionCard({ children }: { children: React.ReactNode }) {
@@ -31,10 +38,25 @@ function SectionCard({ children }: { children: React.ReactNode }) {
   )
 }
 
-function SectionHeader({ title, action }: { title: string; action?: React.ReactNode }) {
+function SectionHeader({
+  title,
+  hint,
+  action,
+}: {
+  title: string
+  /** One line saying what this list of rules decides. The matching card
+   *  carried one and this one did not, so the two cards answered
+   *  different questions: one told you what it was for, the other
+   *  assumed you knew. */
+  hint?: string
+  action?: React.ReactNode
+}) {
   return (
-    <div className="px-4 sm:px-5 py-4 border-b border-border flex flex-wrap items-center justify-between gap-2">
-      <p className="text-sm font-semibold text-foreground">{title}</p>
+    <div className="px-4 sm:px-5 py-4 border-b border-border flex flex-wrap items-start justify-between gap-2">
+      <div>
+        <p className="text-sm font-semibold text-foreground">{title}</p>
+        {hint && <p className="text-xs text-muted-foreground mt-0.5">{hint}</p>}
+      </div>
       {action}
     </div>
   )
@@ -125,10 +147,20 @@ function actionSummary(actions: RuleAction[], categories: Category[], payeesList
   }).join('  ') || t('rules.noActions')
 }
 
+const ACTION_FILTERS = [
+  { value: 'set_category', label: 'rules.setCategory' },
+  { value: 'set_description', label: 'rules.setDescription' },
+  { value: 'set_payee', label: 'rules.setPayee' },
+  { value: 'append_notes', label: 'rules.appendNotes' },
+  { value: 'ignore', label: 'rules.ignoreAction' },
+] as const
+
+const FILTER_CONTROL_CLASS = 'h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]'
+
 export default function RulesPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const { canWrite } = useWorkspace()
+  const { canWrite, hasModule } = useWorkspace()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [packsDialogOpen, setPacksDialogOpen] = useState(false)
   const [importDialogOpen, setImportDialogOpen] = useState(false)
@@ -236,6 +268,27 @@ export default function RulesPage() {
     },
   })
 
+  // Flipping the switch, and nothing else.
+  //
+  // Turning a rule on through the editor also runs it over transactions
+  // already filed, which is the right default when you have just
+  // finished writing the rule. It is the wrong default for one click on
+  // an icon: nothing on screen warned that months of categories were
+  // about to be rewritten. So the row does the smaller act, and catching
+  // up stays explicit: the editor's own checkbox, or "Reset and
+  // reapply" in the header.
+  const toggleMutation = useMutation({
+    mutationFn: (rule: Rule) =>
+      rulesApi.update(rule.id, { is_active: !rule.is_active, apply_to_existing: false }),
+    onSuccess: (_result, rule) => {
+      queryClient.invalidateQueries({ queryKey: ['rules'] })
+      toast.success(t(rule.is_active ? 'rules.turnedOff' : 'rules.turnedOn'))
+    },
+    onError: (err: unknown) => {
+      toast.error(extractApiError(err, t('common.error')))
+    },
+  })
+
   const deleteMutation = useMutation({
     mutationFn: (id: string) => rulesApi.delete(id),
     onSuccess: () => {
@@ -304,9 +357,38 @@ export default function RulesPage() {
 
   const [sortBy, setSortBy] = useState<'priority' | 'name' | 'category'>('priority')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [search, setSearch] = useState('')
+  const [filterCategory, setFilterCategory] = useState('')
+  const [filterStatus, setFilterStatus] = useState<'' | 'active' | 'inactive'>('')
+  const [filterAction, setFilterAction] = useState('')
+
+  const hasFilters = !!(search || filterCategory || filterStatus || filterAction)
+
+  function clearFilters() {
+    setSearch('')
+    setFilterCategory('')
+    setFilterStatus('')
+    setFilterAction('')
+  }
+
+  const filteredRules = useMemo(() => {
+    const query = normalizeRuleMatchValue(search)
+    return (rulesList ?? []).filter(rule => {
+      // displayCategories, not categories: the row and the sort already read
+      // from it, so a rule assigning a hidden category shows that name.
+      // Searching over the visible-only list made that rule unfindable by the
+      // very name on screen.
+      if (query && !ruleSearchText(rule, displayCategories).includes(query)) return false
+      if (filterCategory && !rule.actions.some(a => a.op === 'set_category' && a.value === filterCategory)) return false
+      if (filterStatus === 'active' && !rule.is_active) return false
+      if (filterStatus === 'inactive' && rule.is_active) return false
+      if (filterAction && !rule.actions.some(a => a.op === filterAction)) return false
+      return true
+    })
+  }, [rulesList, displayCategories, search, filterCategory, filterStatus, filterAction])
 
   const sortedRules = useMemo(() => {
-    const list = [...(rulesList ?? [])]
+    const list = [...filteredRules]
     const dir = sortDir === 'asc' ? 1 : -1
     if (sortBy === 'name') {
       return list.sort((a, b) => dir * a.name.localeCompare(b.name))
@@ -318,15 +400,87 @@ export default function RulesPage() {
       return list.sort((a, b) => dir * getCategoryName(a).localeCompare(getCategoryName(b)))
     }
     return list.sort((a, b) => dir * (a.priority - b.priority))
-  }, [rulesList, displayCategories, sortBy, sortDir])
+  }, [filteredRules, displayCategories, sortBy, sortDir])
+
+  // Three reasons to come here, not one. Rules is configuration: visited
+  // when somebody wants to change behaviour. The queue is *work*, visited
+  // when there is something pending. History is *audit*, visited to find
+  // out what happened. Burying work inside a configuration page meant only
+  // people who came to configure something ever discovered they had any.
+  // Matching serves two sets that belong to different modules: invoices,
+  // and the bills you told us to expect. Either one is enough to have a
+  // queue and a history worth showing; without both, the routes behind
+  // them answer 404, so two permanently empty tabs would be furniture and
+  // asking for their contents would be asking for a 404 on every load.
+  const matching = hasModule('invoices') || hasModule('recurring')
+
+  // Addressable, because the queue is now linked to from elsewhere: a
+  // badge on a transaction row is a promise to land on the question, and
+  // landing on the rules list instead would break it.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requested = searchParams.get('tab')
+  const asked =
+    requested === 'queue' || requested === 'history' ? requested : 'rules'
+  // A link to a tab this workspace does not have lands on the one it
+  // does, rather than on a page rendering nothing.
+  const tab: 'rules' | 'queue' | 'history' = matching ? asked : 'rules'
+  const setTab = (next: 'rules' | 'queue' | 'history') => {
+    // `replace`, so the back button leaves the page rather than walking
+    // back through tabs somebody clicked on the way.
+    setSearchParams(next === 'rules' ? {} : { tab: next }, { replace: true })
+  }
+
+  // Fetched here rather than inside the queue so the count can sit on the
+  // tab: a queue nobody can see is not a queue.
+  const { data: pending } = useQuery({
+    queryKey: ['reconciliation-suggestions'],
+    queryFn: reconciliationApi.suggestions,
+    enabled: matching,
+  })
 
   return (
     <div>
       <PageHeader section={t('rules.section')} title={t('nav.rules')} />
 
+      <div className="mb-4">
+        <Segmented
+          value={tab}
+          onChange={setTab}
+          testIdPrefix="automation-tab"
+          options={[
+            { value: 'rules', label: t('rules.tab.rules') },
+            ...(matching ? [{
+              value: 'queue' as const,
+              // The count is rendered here rather than through Segmented's
+              // own `count`, which is a muted figure beside a filter: the
+              // right weight for "Overdue 2" and the wrong one for work
+              // waiting on somebody. This is a nudge, so it looks like
+              // one; when there is nothing waiting it disappears entirely
+              // rather than announcing a zero.
+              label: (
+                <span className="inline-flex items-center gap-1.5">
+                  {t('rules.tab.queue')}
+                  {!!pending?.length && (
+                    <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-semibold tabular-nums">
+                      {pending.length}
+                    </span>
+                  )}
+                </span>
+              ),
+            },
+            { value: 'history' as const, label: t('rules.tab.history') }] : []),
+          ]}
+        />
+      </div>
+
+      {matching && tab === 'queue' && <ReconciliationQueue canWrite={canWrite} />}
+      {matching && tab === 'history' && <ReconciliationHistory />}
+
+      <div className={tab === 'rules' ? '' : 'hidden'}>
       <SectionCard>
         <SectionHeader
           title={t('rules.sectionTitle')}
+          hint={t('rules.sectionHint')}
           action={
             canWrite ? (
               <div className="flex gap-2">
@@ -390,7 +544,57 @@ export default function RulesPage() {
             ) : undefined
           }
         />
-        <div className="px-4 sm:px-5 py-2 bg-muted/50 border-b border-border flex items-center gap-2">
+        <div className="px-4 sm:px-5 py-2 bg-muted/50 border-b border-border flex flex-wrap items-center gap-2">
+          <div className="flex min-w-[10rem] flex-1 items-center gap-1.5">
+            <Search size={14} className="pointer-events-none shrink-0 text-muted-foreground/70" />
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('rules.searchPlaceholder')}
+              className="w-full min-w-0 rounded-sm bg-transparent text-xs text-foreground focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px] placeholder:text-muted-foreground/75"
+            />
+          </div>
+          <select
+            className={FILTER_CONTROL_CLASS}
+            value={filterCategory}
+            onChange={(e) => setFilterCategory(e.target.value)}
+          >
+            <option value="">{t('rules.filterAllCategories')}</option>
+            {/* displayCategories so a rule assigning a hidden category is
+                still filterable by it, matching what the row displays. */}
+            {displayCategories.map(cat => (
+              <option key={cat.id} value={cat.id}>{cat.name}</option>
+            ))}
+          </select>
+          <select
+            className={FILTER_CONTROL_CLASS}
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value as '' | 'active' | 'inactive')}
+          >
+            <option value="">{t('rules.filterAllStatuses')}</option>
+            <option value="active">{t('rules.filterActiveOnly')}</option>
+            <option value="inactive">{t('rules.filterInactiveOnly')}</option>
+          </select>
+          <select
+            className={FILTER_CONTROL_CLASS}
+            value={filterAction}
+            onChange={(e) => setFilterAction(e.target.value)}
+          >
+            <option value="">{t('rules.filterAllActions')}</option>
+            {ACTION_FILTERS.map(a => (
+              <option key={a.value} value={a.value}>{t(a.label)}</option>
+            ))}
+          </select>
+          {hasFilters && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="h-7 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+            >
+              {t('transactions.clearFilters')}
+            </button>
+          )}
           <span className="text-xs text-muted-foreground">{t('rules.sortLabel')}</span>
           {(['priority', 'name', 'category'] as const).map(opt => (
             <button
@@ -413,7 +617,7 @@ export default function RulesPage() {
             </button>
           ))}
         </div>
-        {rulesList && rulesList.length > 0 ? (
+        {sortedRules.length > 0 ? (
           <div className="divide-y divide-border">
             {sortedRules.map((rule) => (
               <div
@@ -446,6 +650,27 @@ export default function RulesPage() {
                   </div>
                   {canWrite && (
                     <div className="flex items-center gap-1 shrink-0">
+                      {/* Stopping a rule and deleting it are different
+                          decisions, and only one of them was reachable
+                          from here. The other was a checkbox inside the
+                          editor, so switching a rule off meant opening
+                          it, finding the box, and saving a form you did
+                          not want to change. It lives on the row now, in
+                          the same place and the same shape as on a
+                          matching rule below. */}
+                      <button
+                        className={cn(
+                          'p-1.5 rounded-md transition-colors hover:bg-background',
+                          rule.is_active
+                            ? 'text-emerald-600 hover:text-emerald-700'
+                            : 'text-muted-foreground hover:text-foreground',
+                        )}
+                        onClick={(e) => { e.stopPropagation(); toggleMutation.mutate(rule) }}
+                        disabled={toggleMutation.isPending}
+                        title={t(rule.is_active ? 'rules.turnOff' : 'rules.turnOn')}
+                      >
+                        <Power size={13} />
+                      </button>
                       <button
                         className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
                         onClick={(e) => { e.stopPropagation(); setDeletingRule(rule) }}
@@ -461,9 +686,22 @@ export default function RulesPage() {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground text-center py-10">{t('rules.empty')}</p>
+          <p className="text-sm text-muted-foreground text-center py-10">
+            {hasFilters ? t('rules.noFilterResults') : t('rules.empty')}
+          </p>
         )}
       </SectionCard>
+
+      {/* Matching rules below categorization rules, because they are the
+          same promise made twice: the software decides things about your
+          money, and you get to see the decision and disagree with it.
+          Not mounted at all without the module: rendering it and letting
+          it decide to show nothing still costs a request that comes back
+          404. */}
+      <div className="mt-6 space-y-6">
+        {matching && <ReconciliationRules canWrite={canWrite} />}
+      </div>
+      </div>
 
       <DeleteConfirmationDialog
         open={!!deletingRule}

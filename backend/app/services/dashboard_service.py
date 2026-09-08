@@ -22,6 +22,7 @@ from app.services._query_filters import (
     viewer_shared_pnl,
     viewer_shared_spending_by_category,
 )
+from app.services import invoice_forecast_service
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.recurring_transaction_service import get_occurrences_in_range
 from app.services.asset_service import get_asset_values_at
@@ -201,6 +202,7 @@ def _counts_as_user_pnl_row(tx: Transaction) -> bool:
     return not (
         tx.transfer_pair_id
         or tx.is_ignored
+        or tx.exclude_from_pnl
         or tx.source == "settlement"
         or (category and (category.treat_as_transfer or category.is_ignored))
     )
@@ -309,6 +311,28 @@ async def get_summary(
                 projected_balance.get(account_currency, 0.0) + float(signed)
             )
 
+        # Money promised but not yet moved. An invoice is a claim rather
+        # than a movement, so it never entered here for free, and adding
+        # it before matching existed would have counted the same money
+        # twice: the open invoice and the pending bank credit that pays
+        # it. Only the *unallocated* balance is carried, so the moment a
+        # payment is linked the claim shrinks and the transaction above
+        # carries the forecast alone.
+        #
+        # Filtered by account? No. A claim has no account until it is
+        # paid, so narrowing the dashboard to one account cannot include
+        # it without inventing where the money will land.
+        # `is None`, not falsy: a collection holding only wallets narrows
+        # the report to an empty set of bank accounts, and an empty list
+        # means filtered to nothing rather than not filtered at all.
+        if account_ids is None:
+            for claim in await invoice_forecast_service.claims_in_range(
+                session, workspace_id, projection_start, month_end
+            ):
+                projected_balance[claim.currency] = (
+                    projected_balance.get(claim.currency, 0.0) + float(claim.signed)
+                )
+
     # Monthly income and expenses — exclude opening_balance so initial deposits
     # don't inflate the month's income figure. counts_as_user_pnl() skips
     # paired transfers, transfer-like categories AND settlement movements
@@ -411,17 +435,18 @@ async def get_summary(
         Transaction.transfer_pair_id.is_(None),
         *acct_filter,
     ]
-    pending_categorization = await session.scalar(
-        select(func.count())
+    pending_categorization_result = await session.execute(
+        select(
+            func.count(),
+            func.coalesce(func.sum(func.abs(Transaction.amount)), 0),
+        )
         .select_from(Transaction)
         .where(*pending_cat_filters)
-    ) or 0
-
-    pending_categorization_amount = abs(float(await session.scalar(
-        select(func.coalesce(func.sum(func.abs(Transaction.amount)), 0))
-        .select_from(Transaction)
-        .where(*pending_cat_filters)
-    ) or 0))
+    )
+    pending_categorization, pending_categorization_amount = (
+        pending_categorization_result.one()
+    )
+    pending_categorization_amount = abs(float(pending_categorization_amount or 0))
 
     # Get user's primary currency (user already loaded above for reporting mode)
     primary_currency = user.primary_currency if user else get_settings().default_currency
@@ -1322,21 +1347,97 @@ async def _total_balance_by_currency(
 ) -> dict[str, float]:
     """Get total balance across all open accounts at a date, grouped by currency."""
     accounts = await _get_open_accounts(session, workspace_id, account_ids)
+    if not accounts:
+        return {}
+
+    today = date.today()
+    balance_cutoff = min(cutoff, today)
+    connected = [account for account in accounts if account.connection_id]
+    manual = [account for account in accounts if not account.connection_id]
+
+    # Resolve every account of the same kind in one aggregate instead of one
+    # query per account. This matters especially for balance-history, which
+    # asks for two historical cutoffs and used to multiply the round-trips by
+    # the number of accounts.
+    effective = case(
+        (Transaction.currency == Account.currency, Transaction.amount),
+        else_=func.coalesce(Transaction.amount_primary, Transaction.amount),
+    )
+    signed = case(
+        (Transaction.type == "credit", effective),
+        else_=-effective,
+    )
+
+    async def grouped_sums(account_ids: list[uuid.UUID], *filters) -> dict[uuid.UUID, float]:
+        if not account_ids:
+            return {}
+        result = await session.execute(
+            select(Transaction.account_id, func.coalesce(func.sum(signed), 0))
+            .join(Account, Transaction.account_id == Account.id)
+            .outerjoin(Category, Transaction.category_id == Category.id)
+            .where(
+                Transaction.account_id.in_(account_ids),
+                Transaction.is_ignored == False,
+                *filters,
+                or_(
+                    Transaction.category_id.is_(None),
+                    Category.is_ignored == False,
+                ),
+            )
+            .group_by(Transaction.account_id)
+        )
+        return {row[0]: float(row[1] or 0) for row in result.all()}
+
+    manual_sums = await grouped_sums(
+        [account.id for account in manual],
+        Transaction.date <= balance_cutoff,
+        *([] if include_pending else [Transaction.status == "posted"]),
+    )
+
+    connected_deltas: dict[uuid.UUID, float] = {}
+    connected_pending: dict[uuid.UUID, float] = {}
+    if connected and cutoff < today:
+        connected_ids = [account.id for account in connected]
+        connected_deltas = await grouped_sums(
+            connected_ids,
+            Transaction.date > cutoff,
+            Transaction.date <= today,
+            *([] if include_pending else [Transaction.status == "posted"]),
+        )
+        if not include_pending:
+            connected_pending = await grouped_sums(
+                connected_ids,
+                Transaction.date <= today,
+                Transaction.status == "pending",
+            )
+
     totals: dict[str, float] = {}
+    balances: dict[uuid.UUID, float] = {}
+    for account in accounts:
+        if account.connection_id:
+            bal = float(account.balance)
+            if account.type == "credit_card":
+                bal = -bal
+            if cutoff < today:
+                bal -= connected_deltas.get(account.id, 0.0)
+                if not include_pending:
+                    bal -= connected_pending.get(account.id, 0.0)
+        else:
+            bal = manual_sums.get(account.id, 0.0)
+        balances[account.id] = bal
+
     grouped: dict[str, list[Account]] = {}
     for account in accounts:
         key = account.shared_balance_group or str(account.id)
         grouped.setdefault(key, []).append(account)
 
     for group in grouped.values():
-        balances = [
-            await _account_balance_at(session, account, cutoff, include_pending=include_pending)
-            for account in group
-        ]
-        total = sum(balances)
+        total = sum(balances[account.id] for account in group)
         if len(group) > 1 and group[0].shared_balance_group:
+            # Every card in the group carries the same shared debt, so `total`
+            # counts it len(group) times; strip the duplicates.
             current_shared = await _account_balance_at(
-                session, group[0], date.today(), include_pending=include_pending
+                session, group[0], today, include_pending=include_pending
             )
             total -= current_shared * (len(group) - 1)
         currency = group[0].currency

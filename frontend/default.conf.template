@@ -9,9 +9,12 @@ server {
     # upstream IP when the config loads and returns 502s after the backend
     # container is recreated with a new IP (e.g. selective redeploys where the
     # frontend container is left running). Using a variable in proxy_pass forces
-    # re-resolution; the resolver below is the Docker daemon's internal DNS.
+    # re-resolution. NGINX_RESOLVER is derived from the platform's own
+    # /etc/resolv.conf at startup (see docker-entrypoint.d/19-resolver.envsh),
+    # so this works as-is on Docker, Podman, Kubernetes and Railway. Set
+    # NGINX_RESOLVER explicitly to override that detection.
     location /api/ {
-        resolver 127.0.0.11 valid=5s;
+        resolver ${NGINX_RESOLVER} valid=5s;
         set $upstream ${BACKEND_URL};
         proxy_pass $upstream;
         proxy_set_header Host $host;

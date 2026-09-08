@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import Optional, cast
 
 from sqlalchemy import CursorResult, case, select, func, update, delete
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.payee import Payee, PayeeMapping, PayeeTaxId
@@ -70,14 +71,10 @@ async def get_or_create_payee(
     user_id: uuid.UUID,
     name: str,
     *,
-    workspace_id: Optional[uuid.UUID] = None,
+    workspace_id: uuid.UUID,
     source: str = "sync",
 ) -> Payee:
-    """Find a payee by name (case-insensitive) or create a new one.
-
-    `user_id` is kept first for backwards compatibility with import/connection
-    sync paths. When `workspace_id` is provided, the lookup scopes by workspace;
-    otherwise the autostamp listener fills it in on insert.
+    """Find a normalized workspace payee or create it.
 
     `source` is stamped only on rows this call creates. An existing payee is
     returned untouched, so a counterparty somebody entered by hand keeps
@@ -94,23 +91,36 @@ async def get_or_create_payee(
 
     if len(name) > 255:
         name = name[:255]
-
-    lookup = select(Payee).where(func.lower(Payee.name) == name.lower())
-    if workspace_id is not None:
-        lookup = lookup.where(Payee.workspace_id == workspace_id)
-    else:
-        lookup = lookup.where(Payee.user_id == user_id)
+    # Mirrors the uq_payees_workspace_id_lower_name index exactly, so the
+    # lookup hits the same row the unique constraint would reject.
+    lookup = select(Payee).where(
+        Payee.workspace_id == workspace_id,
+        func.lower(func.trim(Payee.name)) == name.lower(),
+    )
     result = await session.execute(lookup)
     payee = result.scalar_one_or_none()
     if payee:
         return payee
 
-    payee = Payee(user_id=user_id, name=name, source=source)
-    if workspace_id is not None:
-        payee.workspace_id = workspace_id
-    session.add(payee)
-    await session.flush()
-    return payee
+    payee = Payee(
+        user_id=user_id,
+        workspace_id=workspace_id,
+        name=name,
+        source=source,
+    )
+    try:
+        async with session.begin_nested():
+            session.add(payee)
+            await session.flush()
+        return payee
+    except IntegrityError:
+        # Another sync/import created it after our lookup. The savepoint keeps
+        # the caller's transaction usable; return the winner instead.
+        result = await session.execute(lookup)
+        existing = result.scalar_one_or_none()
+        if existing:
+            return existing
+        raise
 
 
 async def _apply_tax_ids(
@@ -177,14 +187,23 @@ async def create_payee(
     user_id: uuid.UUID,
     data: PayeeCreate,
 ) -> Payee:
-    # Check uniqueness
+    name = data.name.strip()
+    if not name:
+        raise ValueError("Payee name cannot be empty")
+
+    # Raised as a code, like the tax-id errors above: the client turns it into
+    # a translated sentence, which prose in English here could never be.
     existing = await session.execute(
-        select(Payee).where(Payee.workspace_id == workspace_id, func.lower(Payee.name) == data.name.strip().lower())
+        select(Payee).where(
+            Payee.workspace_id == workspace_id,
+            func.lower(func.trim(Payee.name)) == name.lower(),
+        )
     )
     if existing.scalar_one_or_none():
-        raise ValueError("A payee with this name already exists")
+        raise ValueError("duplicate_payee_name")
 
     fields = data.model_dump(exclude={"tax_ids"})
+    fields["name"] = name
     # Stamped here rather than taken from the request: this is the path a
     # person went through a form to reach.
     payee = Payee(user_id=user_id, workspace_id=workspace_id, source="manual", **fields)
@@ -215,16 +234,20 @@ async def update_payee(
     tax_ids = update_data.pop("tax_ids", None)
 
     # Check name uniqueness if name is being changed
-    if "name" in update_data and update_data["name"]:
+    if "name" in update_data:
+        name = (update_data["name"] or "").strip()
+        if not name:
+            raise ValueError("Payee name cannot be empty")
+        update_data["name"] = name
         existing = await session.execute(
             select(Payee).where(
                 Payee.workspace_id == workspace_id,
-                func.lower(Payee.name) == update_data["name"].strip().lower(),
+                func.lower(func.trim(Payee.name)) == name.lower(),
                 Payee.id != payee_id,
             )
         )
         if existing.scalar_one_or_none():
-            raise ValueError("A payee with this name already exists")
+            raise ValueError("duplicate_payee_name")
 
     for key, value in update_data.items():
         setattr(payee, key, value)
@@ -237,10 +260,38 @@ async def update_payee(
     return payee
 
 
+async def _invoice_count(session: AsyncSession, payee_ids: list[uuid.UUID]) -> int:
+    """How many invoices name any of these counterparties.
+
+    Reads the model rather than calling the invoicing service: this is
+    the same layer, and a service-to-service call here would make the
+    payee module depend on a module most workspaces never enable.
+    """
+    from app.models.invoice import Invoice
+
+    result = await session.execute(
+        select(func.count())
+        .select_from(Invoice)
+        .where(Invoice.payee_id.in_(payee_ids))
+    )
+    return int(result.scalar_one())
+
+
 async def delete_payee(session: AsyncSession, payee_id: uuid.UUID, workspace_id: uuid.UUID) -> bool:
     payee = await get_payee(session, payee_id, workspace_id)
     if not payee:
         return False
+
+    # Invoices hold this payee under a RESTRICT foreign key, deliberately:
+    # deleting a client must never silently delete the record of money
+    # they owed. Refuse in words rather than letting the constraint
+    # surface as a 500, and point at the way out — merging keeps the
+    # history, which is what someone deleting a duplicate actually wants.
+    invoiced = await _invoice_count(session, [payee_id])
+    if invoiced:
+        raise ValueError(
+            f"payee_has_invoices:{invoiced}"
+        )
 
     # Null out transaction references
     await session.execute(
@@ -268,6 +319,10 @@ async def bulk_delete_payees(session: AsyncSession, workspace_id: uuid.UUID, pay
 
     if not valid_ids:
         return 0
+
+    invoiced = await _invoice_count(session, valid_ids)
+    if invoiced:
+        raise ValueError(f"payee_has_invoices:{invoiced}")
 
     # Null out transaction references
     await session.execute(
@@ -317,6 +372,22 @@ async def merge_payees(
         .values(payee_id=target_id)
     )
     reassigned = cast(CursorResult, result).rowcount
+
+    # Invoices follow the merge for the same reason transactions do: the
+    # two rows were one counterparty all along, and leaving the invoices
+    # behind would both strand them and trip the RESTRICT foreign key on
+    # the delete below.
+    #
+    # The issued document is untouched by this. Its snapshot froze the
+    # client's name and documents at issuance, so a merge changes who the
+    # invoice is *linked to* without rewriting what the client received.
+    from app.models.invoice import Invoice
+
+    await session.execute(
+        update(Invoice)
+        .where(Invoice.payee_id.in_(source_ids))
+        .values(payee_id=target_id)
+    )
 
     # Update mappings: point source mappings to target
     for source_id in source_ids:

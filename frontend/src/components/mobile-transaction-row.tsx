@@ -2,7 +2,7 @@ import { getAccountName } from '@/lib/account-utils'
 import { AccountIcon } from '@/components/account-icon'
 import { CategoryIcon } from '@/components/category-icon'
 import type { Transaction, Account } from '@/types'
-import { AlertTriangle, ArrowLeftRight, CalendarClock, Clock, EyeClosed, Paperclip } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, Clock, EyeClosed, Paperclip } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useTranslation } from 'react-i18next'
 import { formatCurrency } from '@/lib/format'
@@ -118,6 +118,12 @@ export function MobileTransactionRow({
           )}
           {tx.is_ignored && (
             <EyeClosed className="h-3 w-3 text-gray-500 shrink-0" />
+          )}
+          {tx.exclude_from_pnl && !tx.is_ignored && (
+            <ChartNoAxesColumn
+              className="h-3 w-3 text-slate-500 shrink-0"
+              aria-label={t('transactions.excludedFromReports')}
+            />
           )}
           {tx.recurring_transaction_id != null && !virtual && (
             <span className="text-[9px] font-semibold uppercase tracking-wide text-primary bg-primary/5 border border-primary/10 px-1 py-0.5 rounded-full shrink-0">

@@ -20,6 +20,14 @@ repos:
         files: ^backend/
         pass_filenames: false
 
+      - id: migration-chain
+        name: alembic chain (backend)
+        entry: python3 backend/scripts/check_migration_chain.py
+        language: system
+        files: ^backend/alembic/versions/
+        # The chain is a property of the whole directory, not of one file.
+        pass_filenames: false
+
       - id: ty
         name: ty (backend)
         entry: bash -c 'cd backend && ty check .'

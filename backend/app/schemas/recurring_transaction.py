@@ -13,7 +13,7 @@ class RecurringTransactionCreate(BaseModel):
     amount: Decimal
     currency: str = "USD"
     type: str  # debit, credit
-    frequency: str  # weekly, monthly, quarterly, yearly
+    frequency: str  # weekly, biweekly, monthly, quarterly, semiannual, yearly
     weekend_adjustment: WeekendAdjustment = "none"
     day_of_month: Optional[int] = None
     start_date: _Date
@@ -29,7 +29,7 @@ class RecurringTransactionUpdate(BaseModel):
     amount: Optional[Decimal] = None
     currency: Optional[str] = None
     type: Optional[str] = None
-    frequency: Optional[str] = None  # weekly, monthly, quarterly, yearly
+    frequency: Optional[str] = None  # weekly, biweekly, monthly, quarterly, semiannual, yearly
     weekend_adjustment: Optional[WeekendAdjustment] = None
     day_of_month: Optional[int] = None
     start_date: Optional[_Date] = None

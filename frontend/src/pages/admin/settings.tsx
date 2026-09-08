@@ -4,7 +4,7 @@ import { useTheme } from 'next-themes'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { admin as adminApi, currencies as currenciesApi } from '@/lib/api'
 import { resolveDisplayLocale, resolveDateLocale, type NumberFormat, type DateFormat } from '@/lib/format'
-import { resolveSupportedLang } from '@/lib/i18n'
+import { resolveSupportedLang, SUPPORTED_LANGS } from '@/lib/i18n'
 import { useAuth } from '@/contexts/auth-context'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -657,16 +657,9 @@ export default function AdminSettingsPage() {
                     onChange={(e) => setFormLanguage(e.target.value)}
                     className="w-full h-10 rounded-lg border border-input bg-card px-3 text-sm"
                   >
-                    <option value="en">English</option>
-                    <option value="de">Deutsch</option>
-                    <option value="ru">Русский</option>
-                    <option value="uk">Українська</option>
-                    <option value="pt-BR">Português (BR)</option>
-                    <option value="pt-PT">Português (PT)</option>
-                    <option value="es">Español</option>
-                    <option value="pl">Polski</option>
-                    <option value="it">Italiano</option>
-                    <option value="fr">Français</option>
+                    {SUPPORTED_LANGS.map(({ code, label }) => (
+                      <option key={code} value={code}>{label}</option>
+                    ))}
                   </select>
                 </div>
                 <div className="space-y-1.5">

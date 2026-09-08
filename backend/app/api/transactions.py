@@ -24,6 +24,35 @@ from app.services.transaction_calendar_service import get_transaction_calendar
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
 
+async def _attach_invoice_links(session, ctx, items: list) -> None:
+    """Mark the rows on this page that settle an invoice.
+
+    One query for the whole page rather than one per row: this is the
+    hottest list in the product and an N+1 here would be felt.
+
+    Skipped entirely unless the workspace has the invoicing module, so a
+    personal workspace pays nothing — not a query, not a field on the
+    response. The import is local for the same reason the check is: the
+    transaction list must not grow a hard dependency on a module most
+    workspaces never enable.
+    """
+    from app.services.module_service import ModuleId, resolve_modules
+
+    if ModuleId.INVOICES.value not in resolve_modules(ctx.workspace):
+        return
+
+    from app.schemas.transaction import TransactionInvoiceLink
+    from app.services.invoice_service import invoice_links_for_transactions
+
+    links = await invoice_links_for_transactions(
+        session, ctx.workspace.id, [item.id for item in items]
+    )
+    for item in items:
+        item.invoice_links = [
+            TransactionInvoiceLink(**link) for link in links.get(item.id, [])
+        ]
+
+
 def _tag_fx_fallback(tx: TransactionRead, primary_currency: str) -> TransactionRead:
     """Set fx_fallback=True when a cross-currency tx isn't backed by a real rate.
 
@@ -103,7 +132,7 @@ async def list_transactions(
     min_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount >= this value (primary currency)."),
     max_amount: Optional[float] = Query(None, ge=0, description="Filter to transactions with absolute amount <= this value (primary currency)."),
     sort_by: Optional[str] = Query(None, description="Column to sort by (date|amount|description|payee|category|account|type|status). Default: date desc."),
-    sort_dir: str = Query("desc", regex="^(asc|desc)$"),
+    sort_dir: str = Query("desc", pattern="^(asc|desc)$"),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
@@ -131,6 +160,7 @@ async def list_transactions(
     )
     primary_currency = ctx.user.primary_currency
     items = [_tag_fx_fallback(TransactionRead.model_validate(tx, from_attributes=True), primary_currency) for tx in transactions]
+    await _attach_invoice_links(session, ctx, items)
     summary_out = (
         TransactionsSummary(**summary, currency=primary_currency)
         if summary is not None
@@ -518,7 +548,7 @@ async def unlink_recurring_transaction(
 @router.delete("/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_transaction(
     transaction_id: uuid.UUID,
-    apply_to: str = Query("this", regex="^(this|future|all)$", description="Installment-series scope: this row only (default), this + later installments, or the whole series. Ignored for non-installment transactions."),
+    apply_to: str = Query("this", pattern="^(this|future|all)$", description="Installment-series scope: this row only (default), this + later installments, or the whole series. Ignored for non-installment transactions."),
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):

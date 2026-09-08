@@ -28,11 +28,18 @@ jobs:
           # Both images are required to run Securo, so the smaller count is
           # the closest proxy for real installs.
           min=$(( backend < frontend ? backend : frontend ))
-          if [ "$min" -ge 1000 ]; then
-            pretty=$(awk -v n="$min" 'BEGIN { printf "%.1fk", n / 1000 }')
-          else
-            pretty=$min
-          fi
+          # Keep the decimal only while it still says something: 1.2k reads
+          # better than 1k, and 101k better than 100.8k.
+          pretty=$(awk -v n="$min" 'BEGIN {
+            if (n < 1000) { out = sprintf("%d", n) }
+            else {
+              k = n / 1000
+              out = (k < 10) ? sprintf("%.1f", k) : sprintf("%.0f", k)
+              sub(/\.0$/, "", out)
+              out = out "k"
+            }
+            printf "%s", out
+          }')
           echo "Backend: $backend, Frontend: $frontend, Badge: $pretty"
           echo "count=$pretty" >> "$GITHUB_OUTPUT"
 

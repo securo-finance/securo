@@ -55,7 +55,7 @@ The same applies to issues. An issue produced by pointing a model at the reposit
 1. Create a branch from `main`: `git checkout -b feature/your-feature`
 2. Make your changes
 3. Run backend tests: `cd backend && uv sync --all-extras && uv run pytest` (Python 3.11+)
-4. Run frontend lint: `cd frontend && npm run lint`
+4. Run frontend checks: `cd frontend && npm run lint && npm test`
 5. Commit with a clear message (see below)
 6. Push your branch and open a Pull Request
 
@@ -73,6 +73,29 @@ local and CI stay in sync.
 
 [prek](https://github.com/j178/prek) is a drop-in replacement for pre-commit:
 same `.pre-commit-config.yaml`, but a single binary with no Python bootstrap.
+
+### Frontend tests
+
+Vitest and Testing Library. Render through `renderWithProviders` from
+`@/test/utils`, which wires up TanStack Query, the router and i18n, and import
+with the `@/` alias rather than a relative path. Assert on what the user sees:
+the rendered text, the disabled button, the error that appears on a failed
+request.
+
+### Adding a frontend dependency
+
+`frontend/.npmrc` never runs a package's install scripts, and asks npm to skip
+releases younger than seven days so a compromised publish has time to be caught.
+The cooldown needs npm 11.10 or newer; the npm that ships with Node 22 is older
+and will ignore that line without saying so, so upgrade before you add anything:
+
+```bash
+npm install --global npm@latest
+cd frontend && npm install <package>     # commit package.json and package-lock.json
+```
+
+If the package you want was published in the last week, npm resolves the release
+before it. That is the point — wait, or say in the PR why you can't.
 Either works.
 
 ## Commit Messages
@@ -108,12 +131,30 @@ ty check .
 # commit uv.lock along with it (CI enforces this)
 ./scripts/lock.sh
 
+# After adding a migration: check the revision chain is still a single line
+python3 scripts/check_migration_chain.py
+
 # Frontend lint
 cd frontend && npm run lint
 
 # Frontend build check
 cd frontend && npm run build
 ```
+
+### Adding a migration
+
+Number the file after the current head and chain it there, so
+`backend/alembic/versions/` sorts in apply order:
+
+```python
+revision: str = "076"
+down_revision: Union[str, None] = "075"
+```
+
+If another migration lands on `main` while your PR is open, your number is
+taken and you have to renumber. CI catches this: the Migration Chain job runs
+against your branch merged with `main`, so a clash fails there rather than on
+someone's `alembic upgrade head` after both are merged.
 
 ## Pull Request Guidelines
 

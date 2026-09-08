@@ -490,6 +490,10 @@ def validate_sg_uen(value: str) -> str | None:
         return None
     return "invalid"
 
+def validate_az_voen(value: str) -> str | None:
+    """Ten digits. Check for a valid 10-digit format without checksum validation."""
+    return _digits_len(value, 10)
+
 
 def validate_cn_uscc(value: str) -> str | None:
     """Eighteen characters from a restricted alphabet: I, O, S, V and Z are
@@ -541,4 +545,5 @@ VALIDATORS: dict[str, Callable[[str], str | None]] = {
     "in_pan": validate_in_pan,
     "cn_uscc": validate_cn_uscc,
     "sg_uen": validate_sg_uen,
+    "az_voen": validate_az_voen,
 }

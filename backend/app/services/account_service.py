@@ -15,6 +15,7 @@ from app.schemas.account import AccountCreate, AccountUpdate
 from app.services._query_filters import (
     counts_as_pnl,
     counts_in_current_balance,
+    counts_on_bill,
     is_confirmed,
     is_inside_provider_snapshot,
     is_not_future,
@@ -796,8 +797,18 @@ async def get_account_summary(
             )
         return query.where(bucket_date >= date_from, bucket_date <= date_to)
 
-    # Income = SUM of credit transactions in window (excluding opening_balance,
-    # paired transfers, and transfer-like categories).
+    # Which exclusions these totals answer to. A credit card's four summary
+    # numbers are all bill-side — they describe what the bank put on the
+    # statement, so they keep purchases in `treat_as_transfer` categories
+    # that the reporting filter drops. Every other account type keeps the
+    # reporting view. See `counts_on_bill` for why the bill cannot simply
+    # reuse `counts_as_pnl`.
+    summary_filter = (
+        counts_on_bill() if account.type == "credit_card" else counts_as_pnl()
+    )
+
+    # Income = SUM of credit transactions in window (excluding opening_balance
+    # and paired transfers).
     income_result = await session.execute(
         _scope(select(func.coalesce(func.sum(effective_amount), 0)).where(
             Transaction.account_id == account_id,
@@ -805,7 +816,7 @@ async def get_account_summary(
             Transaction.source != "opening_balance",
             bucket_date <= today,
             Transaction.status == "posted",
-            counts_as_pnl(),
+            summary_filter,
         ))
     )
     monthly_income = float(income_result.scalar())
@@ -813,8 +824,10 @@ async def get_account_summary(
     # Expenses = SUM of debit transactions in window (same exclusions).
     # For credit-card accounts, NET refund credits against debits so the
     # cycle's "Total da fatura" matches the bank's bill (refunds reduce the
-    # invoice amount). counts_as_pnl already excludes paired transfers and
-    # transfer-like categories, so bill payments are not double-counted.
+    # invoice amount). Paired transfers are dropped by `transfer_pair_id`;
+    # unpaired card payments are dropped by the credit-side `treat_as_transfer`
+    # exclusion in `counts_on_bill` (see its docstring for why that's
+    # asymmetric with the debit side).
     if account.type == "credit_card":
         signed_for_bill = case(
             (Transaction.type == "credit", -func.abs(effective_amount)),
@@ -826,7 +839,7 @@ async def get_account_summary(
                 Transaction.source != "opening_balance",
                 bucket_date <= today,
                 Transaction.status == "posted",
-                counts_as_pnl(),
+                summary_filter,
             ))
         )
     else:
@@ -836,7 +849,7 @@ async def get_account_summary(
                 Transaction.type == "debit",
                 bucket_date <= today,
                 Transaction.status == "posted",
-                counts_as_pnl(),
+                summary_filter,
             ))
         )
     monthly_expenses = float(expenses_result.scalar())
@@ -856,7 +869,7 @@ async def get_account_summary(
             Transaction.type == "credit",
             Transaction.source != "opening_balance",
             forecast_condition,
-            counts_as_pnl(),
+            summary_filter,
         ))
     )
     forecast_income = float(forecast_income_result.scalar() or 0)
@@ -867,7 +880,7 @@ async def get_account_summary(
                 Transaction.account_id == account_id,
                 Transaction.source != "opening_balance",
                 forecast_condition,
-                counts_as_pnl(),
+                summary_filter,
             ))
         )
     else:
@@ -876,7 +889,7 @@ async def get_account_summary(
                 Transaction.account_id == account_id,
                 Transaction.type == "debit",
                 forecast_condition,
-                counts_as_pnl(),
+                summary_filter,
             ))
         )
     forecast_expenses = float(forecast_expense_result.scalar() or 0)

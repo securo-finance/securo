@@ -16,6 +16,8 @@ from app.schemas.rule import (
     RuleImportRequest,
     RuleImportResponse,
     RuleMutationResponse,
+    RulePreviewRequest,
+    RulePreviewResponse,
     RuleRead,
     RuleUpdate,
 )
@@ -106,6 +108,31 @@ async def create_rule(
     response = RuleCreateResponse.model_validate(rule)
     response.applied_count = applied_count
     return response
+
+
+@router.post("/preview", response_model=RulePreviewResponse)
+async def preview_rule(
+    data: RulePreviewRequest,
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Show which existing transactions a draft rule would match, and how it
+    would change them, without saving anything."""
+    try:
+        return await rule_service.preview_rule(
+            session,
+            ctx.workspace.id,
+            data.conditions_op,
+            [c.model_dump() for c in data.conditions],
+            [a.model_dump() for a in data.actions],
+            is_active=data.is_active,
+            apply_to_existing=data.apply_to_existing,
+            overwrite_existing_categories=data.overwrite_existing_categories,
+            limit=data.limit,
+            offset=data.offset,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.get("/export")

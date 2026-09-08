@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import AsyncGenerator
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 # --- Agents test setup (must run BEFORE app.main is imported) ---------------
 # Force the optional agents feature on for the test process so the routes
@@ -12,6 +12,10 @@ from unittest.mock import AsyncMock, patch
 os.environ.setdefault("AGENTS_ENABLED", "true")
 os.environ.setdefault("AGENTS_MCP_JWT_SECRET", "test-secret-not-for-production")
 os.environ.setdefault("AGENTS_BUILTIN_MCP_URL", "http://test-mcp:8765/mcp")
+# Tests use synthetic credentials, never local deployment secrets. Explicit
+# Settings(_secrets_dir=...) tests still exercise secret-file loading.
+os.environ["SECRET_KEY"] = "synthetic-test-signing-key-not-for-production"
+os.environ["CREDENTIALS_DIRECTORY"] = ""
 
 # pgvector's Vector type only compiles on PostgreSQL. Tests use SQLite, so
 # we shim it with JSON before any model module imports it. Production runs
@@ -559,12 +563,14 @@ async def test_user_with_2fa(session: AsyncSession, clean_db) -> User:
 def _mock_redis():
     """Provide a no-op Redis mock so rate limiting never blocks tests."""
     mock = AsyncMock()
-    # Pipeline mock that always reports 0 prior requests (never rate-limits)
-    pipe_mock = AsyncMock()
-    pipe_mock.zremrangebyscore = AsyncMock()
-    pipe_mock.zcard = AsyncMock()
-    pipe_mock.zadd = AsyncMock()
-    pipe_mock.expire = AsyncMock()
+    # Pipeline commands are synchronous/chained on redis-py's pipeline; only
+    # execute() is awaited. Match that contract so requests create no unawaited
+    # mock coroutines, while still reporting zero prior requests.
+    pipe_mock = MagicMock()
+    pipe_mock.zremrangebyscore = MagicMock(return_value=pipe_mock)
+    pipe_mock.zcard = MagicMock(return_value=pipe_mock)
+    pipe_mock.zadd = MagicMock(return_value=pipe_mock)
+    pipe_mock.expire = MagicMock(return_value=pipe_mock)
     pipe_mock.execute = AsyncMock(return_value=[0, 0, True, True])
     mock.pipeline = lambda: pipe_mock
     # Key-value ops for 2FA temp tokens

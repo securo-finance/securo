@@ -515,7 +515,7 @@ export default function GroupDetailPage() {
         month: new Date(month + '-01').toLocaleString(dateLocale, { month: 'short' }),
         total: Number(total.toFixed(2)),
       }))
-  }, [groupTxs, locale, dateLocale])
+  }, [groupTxs, dateLocale])
 
   // Group spending broken down by category — for the stacked horizontal
   // bar. We sum debits only (income/credits aren't "spending"). When a

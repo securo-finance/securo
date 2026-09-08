@@ -272,6 +272,17 @@ class TestInstallmentSeriesCreate:
         assert data.first_installment_status == "pending"
         assert data.frequency == "yearly"
 
+
+    @pytest.mark.parametrize("frequency", ["biweekly", "semiannual"])
+    def test_installment_series_accepts_new_frequencies(self, frequency):
+        data = InstallmentSeriesCreate.model_validate({
+            "base": self.BASE,
+            "installments": 3,
+            "frequency": frequency,
+        })
+        assert data.frequency == frequency
+        assert data.model_dump(mode="json")["frequency"] == frequency
+
     def test_rejects_single_installment(self):
         with pytest.raises(ValidationError):
             InstallmentSeriesCreate.model_validate(

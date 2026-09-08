@@ -655,6 +655,91 @@ async def test_list_transactions_user_pnl_only(
 
 
 @pytest.mark.asyncio
+async def test_exclude_from_pnl_keeps_ledger_and_balance_but_not_report_totals(
+    client: AsyncClient, auth_headers,
+):
+    account_response = await client.post(
+        "/api/accounts",
+        headers=auth_headers,
+        json={
+            "name": "Report exclusion account",
+            "type": "checking",
+            "balance": 0,
+            "currency": "BRL",
+        },
+    )
+    assert account_response.status_code == 201, account_response.text
+    account_id = account_response.json()["id"]
+
+    transaction_response = await client.post(
+        "/api/transactions",
+        headers=auth_headers,
+        json={
+            "account_id": account_id,
+            "description": "Ledger-only income",
+            "amount": "100.00",
+            "date": date.today().isoformat(),
+            "type": "credit",
+        },
+    )
+    assert transaction_response.status_code == 201, transaction_response.text
+    transaction_id = transaction_response.json()["id"]
+
+    excluded = await client.patch(
+        f"/api/transactions/{transaction_id}",
+        headers=auth_headers,
+        json={"exclude_from_pnl": True},
+    )
+    assert excluded.status_code == 200, excluded.text
+    assert excluded.json()["exclude_from_pnl"] is True
+
+    ledger = await client.get(
+        f"/api/transactions?account_id={account_id}", headers=auth_headers
+    )
+    assert ledger.status_code == 200
+    assert ledger.json()["total"] == 1
+    assert ledger.json()["summary"]["income"] == pytest.approx(0)
+
+    accounts = await client.get("/api/accounts", headers=auth_headers)
+    assert accounts.status_code == 200
+    balance = next(row for row in accounts.json() if row["id"] == account_id)
+    assert balance["current_balance"] == pytest.approx(100)
+
+    pnl_only = await client.get(
+        f"/api/transactions?account_id={account_id}&user_pnl_only=true",
+        headers=auth_headers,
+    )
+    assert pnl_only.status_code == 200
+    assert pnl_only.json()["total"] == 0
+
+    cash_flow = await client.get(
+        "/api/reports/cash-flow",
+        headers=auth_headers,
+        params={"months": 1, "interval": "daily", "account_ids": account_id},
+    )
+    assert cash_flow.status_code == 200, cash_flow.text
+    today_flow = next(
+        row
+        for row in cash_flow.json()["trend"]
+        if row["date"] == date.today().isoformat()
+    )
+    assert today_flow["breakdowns"] == {"inflow": 0.0, "outflow": 0.0}
+
+    ignored = await client.patch(
+        f"/api/transactions/{transaction_id}",
+        headers=auth_headers,
+        json={"is_ignored": True},
+    )
+    assert ignored.status_code == 200, ignored.text
+    ignored_accounts = await client.get("/api/accounts", headers=auth_headers)
+    assert ignored_accounts.status_code == 200
+    ignored_balance = next(
+        row for row in ignored_accounts.json() if row["id"] == account_id
+    )
+    assert ignored_balance["current_balance"] == pytest.approx(0)
+
+
+@pytest.mark.asyncio
 async def test_exclude_transfers_false_includes_all(
     client: AsyncClient, auth_headers, test_transactions_with_transfers,
 ):
