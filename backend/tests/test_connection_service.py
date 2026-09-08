@@ -661,6 +661,43 @@ async def test_handle_oauth_callback_creates_connection(session: AsyncSession, t
 
 
 @pytest.mark.asyncio
+async def test_handle_oauth_callback_names_disambiguated_account_from_institution(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A connection spanning a banking group's brokerage arm (issue #723) sends
+    a per-account institution hint. The account's display_name adopts it on
+    creation, since the raw provider name alone ("XP" for both) can't tell the
+    two apart in the account list (issue #724)."""
+    mock_provider = AsyncMock()
+    mock_provider.handle_oauth_callback = AsyncMock(return_value=ConnectionData(
+        external_id="ext-oauth-3",
+        institution_name="XP",
+        credentials={"token": "xyz"},
+        accounts=[
+            AccountData(
+                external_id="acc-broker", name="XP",
+                type="checking", balance=Decimal("100"), currency="BRL",
+                institution_external_id="348",
+                institution_name="XP Investimentos CCTVM S/A",
+            ),
+        ],
+    ))
+    mock_provider.get_transactions = AsyncMock(return_value=[])
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await handle_oauth_callback(session, test_workspace.id, test_user.id, "auth-code", "pluggy")
+
+    account = (
+        await session.execute(select(Account).where(Account.external_id == "acc-broker"))
+    ).scalar_one()
+    assert account.name == "XP"
+    assert account.display_name == "XP Investimentos CCTVM S/A"
+
+
+@pytest.mark.asyncio
 async def test_handle_oauth_callback_deduplicates_initial_transactions(
     session: AsyncSession, test_user, test_workspace
 ):
@@ -2935,6 +2972,7 @@ async def test_sync_wires_account_institutions_and_reaps_orphans(
     assert inst.name == "Chase"
     refreshed = await session.get(Account, account_id)
     assert refreshed is not None and refreshed.institution_id == inst.id
+    assert refreshed.display_name == "Chase"  # backfilled: had no display_name yet
     assert await session.get(Inst, stray_id) is None  # reaped: nothing references it
     assert await session.get(Inst, kept_id) is not None  # wallet keeps its label
 
@@ -2950,6 +2988,35 @@ async def test_sync_wires_account_institutions_and_reaps_orphans(
     ).scalar_one()
     read = BankConnectionRead.model_validate(conn_row)
     assert {i.name for i in read.institutions} == {"Chase Bank", "Departed Brokerage"}
+
+
+@pytest.mark.asyncio
+async def test_sync_keeps_user_defined_account_display_name(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A user-chosen display_name is never clobbered by an institution hint,
+    even when the account is newly resolved as ambiguous (issue #724)."""
+    conn = await _make_connection(session, test_user.id, "Sync Bank")
+    conn_id = conn.id
+
+    session.add(Account(
+        id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
+        connection_id=conn_id, external_id="acc-1", name="Checking",
+        display_name="My Checking", type="checking",
+        balance=Decimal("0"), currency="USD",
+    ))
+    await session.commit()
+
+    with patch("app.services.connection_service.get_provider", return_value=_institution_provider("Chase")), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(session, conn_id, test_workspace.id, test_user.id)
+
+    refreshed = (
+        await session.execute(select(Account).where(Account.external_id == "acc-1"))
+    ).scalar_one()
+    assert refreshed.display_name == "My Checking"
 
 
 @pytest.mark.asyncio
