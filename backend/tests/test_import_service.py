@@ -1141,6 +1141,151 @@ class TestParseOfx:
         assert _preprocess_ofx(sgml).count(b"OFXHEADER:") == 1
         assert parse_ofx(sgml)[0].description == "Grocery Store"
 
+    def test_parse_ofx_sgml_header_iso_8859_1_encoding(self):
+        """OFX 1.x files with ENCODING:ISO-8859-1 in the SGML header should
+        parse without UnboundLocalError (ofxparse only handles USASCII,
+        UNICODE and UTF-8)."""
+        sgml = (
+            b"OFXHEADER:100\r\nDATA:OFXSGML\r\nVERSION:102\r\nSECURITY:NONE\r\n"
+            b"ENCODING:ISO-8859-1\r\nCHARSET:8859-1\r\nCOMPRESSION:NONE\r\n"
+            b"OLDFILEUID:NONE\r\nNEWFILEUID:NONE\r\n\r\n"
+            b"<OFX>\r\n"
+            b"<SIGNONMSGSRSV1>\r\n<SONRS><STATUS><CODE>0<SEVERITY>INFO</STATUS>"
+            b"<DTSERVER>20260115<LANGUAGE>POR</SONRS></SIGNONMSGSRSV1>\r\n"
+            b"<BANKMSGSRSV1>\r\n"
+            b"<STMTTRNRS><STMTRS><CURDEF>BRL>\r\n"
+            b"<BANKTRANLIST>\r\n"
+            b"<STMTTRN><TRNTYPE>POS<DTPOSTED>20260115<TRNAMT>-25.50<FITID>TX001"
+            b"<NAME>Caf\xe9 Express</NAME></STMTTRN>\r\n"
+            b"</BANKTRANLIST>\r\n"
+            b"<LEDGERBAL><BALAMT>1000.00<DTASOF>20260115</LEDGERBAL>\r\n"
+            b"</STMTRS></STMTTRNRS>\r\n"
+            b"</BANKMSGSRSV1>\r\n"
+            b"</OFX>"
+        )
+        transactions = parse_ofx(sgml)
+        assert len(transactions) == 1
+        assert transactions[0].description == "Caf\xe9 Express"
+
+    def test_parse_ofx_sgml_header_windows_1252_encoding(self):
+        """OFX 1.x files with ENCODING:WINDOWS-1252 should parse correctly."""
+        sgml = (
+            b"OFXHEADER:100\r\nDATA:OFXSGML\r\nVERSION:102\r\nSECURITY:NONE\r\n"
+            b"ENCODING:WINDOWS-1252\r\nCHARSET:1252\r\nCOMPRESSION:NONE\r\n"
+            b"OLDFILEUID:NONE\r\nNEWFILEUID:NONE\r\n\r\n"
+            b"<OFX>\r\n"
+            b"<SIGNONMSGSRSV1>\r\n<SONRS><STATUS><CODE>0<SEVERITY>INFO</STATUS>"
+            b"<DTSERVER>20260115<LANGUAGE>POR</SONRS></SIGNONMSGSRSV1>\r\n"
+            b"<BANKMSGSRSV1>\r\n"
+            b"<STMTTRNRS><STMTRS><CURDEF>BRL>\r\n"
+            b"<BANKTRANLIST>\r\n"
+            b"<STMTTRN><TRNTYPE>POS<DTPOSTED>20260115<TRNAMT>-50.00<FITID>TX002"
+            b"<NAME>Loj\xe3 Center</NAME></STMTTRN>\r\n"
+            b"</BANKTRANLIST>\r\n"
+            b"<LEDGERBAL><BALAMT>1000.00<DTASOF>20260115</LEDGERBAL>\r\n"
+            b"</STMTRS></STMTTRNRS>\r\n"
+            b"</BANKMSGSRSV1>\r\n"
+            b"</OFX>"
+        )
+        transactions = parse_ofx(sgml)
+        assert len(transactions) == 1
+        assert transactions[0].description == "Loj\xe3 Center"
+
+    def test_parse_ofx_windows_1252_charset_decodes_typographic_characters(self):
+        """WINDOWS-1252/CP1252 must normalise to CHARSET:1252, not 8859-1.
+
+        Byte 0x96 is an en dash (U+2013) in Windows-1252 but an undefined
+        C1 control code in ISO-8859-1 — declaring the wrong CHARSET would
+        have ofxparse decode this byte as the control code instead of the
+        dash the source bank actually meant.
+        """
+        sgml = (
+            b"OFXHEADER:100\r\nDATA:OFXSGML\r\nVERSION:102\r\nSECURITY:NONE\r\n"
+            b"ENCODING:WINDOWS-1252\r\nCHARSET:1252\r\nCOMPRESSION:NONE\r\n"
+            b"OLDFILEUID:NONE\r\nNEWFILEUID:NONE\r\n\r\n"
+            b"<OFX>\r\n"
+            b"<SIGNONMSGSRSV1>\r\n<SONRS><STATUS><CODE>0<SEVERITY>INFO</STATUS>"
+            b"<DTSERVER>20260115<LANGUAGE>POR</SONRS></SIGNONMSGSRSV1>\r\n"
+            b"<BANKMSGSRSV1>\r\n"
+            b"<STMTTRNRS><STMTRS><CURDEF>BRL>\r\n"
+            b"<BANKTRANLIST>\r\n"
+            b"<STMTTRN><TRNTYPE>POS<DTPOSTED>20260115<TRNAMT>-15.00<FITID>TX005"
+            b"<NAME>Loja A \x96 Filial B</NAME></STMTTRN>\r\n"
+            b"</BANKTRANLIST>\r\n"
+            b"<LEDGERBAL><BALAMT>1000.00<DTASOF>20260115</LEDGERBAL>\r\n"
+            b"</STMTRS></STMTTRNRS>\r\n"
+            b"</BANKMSGSRSV1>\r\n"
+            b"</OFX>"
+        )
+        transactions = parse_ofx(sgml)
+        assert len(transactions) == 1
+        assert transactions[0].description == "Loja A – Filial B"
+
+    def test_parse_ofx_sgml_header_unknown_encoding_fallback(self):
+        """An OFX file with a completely unknown ENCODING value should fall
+        back to UTF-8 without crashing."""
+        sgml = (
+            b"OFXHEADER:100\r\nDATA:OFXSGML\r\nVERSION:102\r\nSECURITY:NONE\r\n"
+            b"ENCODING:UNKNOWN-CODEC\r\nCHARSET:8859-1\r\nCOMPRESSION:NONE\r\n"
+            b"OLDFILEUID:NONE\r\nNEWFILEUID:NONE\r\n\r\n"
+            b"<OFX>\r\n"
+            b"<SIGNONMSGSRSV1>\r\n<SONRS><STATUS><CODE>0<SEVERITY>INFO</STATUS>"
+            b"<DTSERVER>20260115<LANGUAGE>POR</SONRS></SIGNONMSGSRSV1>\r\n"
+            b"<BANKMSGSRSV1>\r\n"
+            b"<STMTTRNRS><STMTRS><CURDEF>BRL>\r\n"
+            b"<BANKTRANLIST>\r\n"
+            b"<STMTTRN><TRNTYPE>POS<DTPOSTED>20260115<TRNAMT>-10.00<FITID>TX003"
+            b"<NAME>Simple Transaction</NAME></STMTTRN>\r\n"
+            b"</BANKTRANLIST>\r\n"
+            b"<LEDGERBAL><BALAMT>1000.00<DTASOF>20260115</LEDGERBAL>\r\n"
+            b"</STMTRS></STMTTRNRS>\r\n"
+            b"</BANKMSGSRSV1>\r\n"
+            b"</OFX>"
+        )
+        transactions = parse_ofx(sgml)
+        assert len(transactions) == 1
+        assert transactions[0].description == "Simple Transaction"
+
+    def test_parse_ofx_body_encoding_line_not_corrupted(self):
+        """Transaction memo content that happens to contain 'ENCODING:' on a
+        new line must not be rewritten by the header normalisation."""
+        sgml = (
+            b"OFXHEADER:100\r\nDATA:OFXSGML\r\nVERSION:102\r\nSECURITY:NONE\r\n"
+            b"ENCODING:ISO-8859-1\r\nCHARSET:8859-1\r\nCOMPRESSION:NONE\r\n"
+            b"OLDFILEUID:NONE\r\nNEWFILEUID:NONE\r\n\r\n"
+            b"<OFX>\r\n"
+            b"<SIGNONMSGSRSV1>\r\n<SONRS><STATUS><CODE>0<SEVERITY>INFO</STATUS>"
+            b"<DTSERVER>20260115<LANGUAGE>POR</SONRS></SIGNONMSGSRSV1>\r\n"
+            b"<BANKMSGSRSV1>\r\n"
+            b"<STMTTRNRS><STMTRS><CURDEF>BRL>\r\n"
+            b"<BANKTRANLIST>\r\n"
+            b"<STMTTRN><TRNTYPE>POS<DTPOSTED>20260115<TRNAMT>-30.00<FITID>TX004"
+            b"<NAME>Rate: ENCODING:WINDOWS-1252 promo</NAME></STMTTRN>\r\n"
+            b"</BANKTRANLIST>\r\n"
+            b"<LEDGERBAL><BALAMT>1000.00<DTASOF>20260115</LEDGERBAL>\r\n"
+            b"</STMTRS></STMTTRNRS>\r\n"
+            b"</BANKMSGSRSV1>\r\n"
+            b"</OFX>"
+        )
+        transactions = parse_ofx(sgml)
+        assert len(transactions) == 1
+        assert "ENCODING:WINDOWS-1252" in transactions[0].description
+
+    def test_normalize_ofx_encoding_only_affects_preamble(self):
+        """_normalize_ofx_encoding must only touch the preamble before the
+        first '<', never the body."""
+        from app.services.import_service import _normalize_ofx_encoding
+
+        text = (
+            "ENCODING:ISO-8859-1\r\nCHARSET:8859-1\r\n\r\n"
+            "<OFX><MEMO>\r\nENCODING:WINDOWS-1252 line</MEMO>"
+        )
+        result = _normalize_ofx_encoding(text, "latin-1")
+        # Preamble should be normalised
+        assert "ENCODING:USASCII" in result.split("<")[0]
+        # Body should be untouched
+        assert "ENCODING:WINDOWS-1252" in result.split("<", 1)[1]
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # MULTI-CURRENCY PARSING TESTS
