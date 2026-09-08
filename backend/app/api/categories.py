@@ -96,6 +96,7 @@ async def delete_category(
         ) from exc
     if not deleted:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Category not found or is a system category",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Category not found",
         )
+
