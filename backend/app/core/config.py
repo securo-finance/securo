@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     enable_banking_api_url: str = "https://api.enablebanking.com"
     enable_banking_oauth_redirect_uri: str = ""  # empty derives from FRONTEND_URL
 
+    # Wealth Reader (European AIS). BYO api_key from the client area.
+    # Register the redirect URL with access_type=oauth and tokenize=1.
+    wealthreader_api_key: str = ""
+    wealthreader_api_url: str = "https://api.wealthreader.com"
+    wealthreader_oauth_url: str = "https://oauth.wealthreader.com"
+    wealthreader_oauth_redirect_uri: str = ""  # empty derives from FRONTEND_URL
+
     # SimpleFIN Bridge (US/intl banks, paste-a-token flow). Off by default.
     # The bridge URL defaults to the beta/sandbox host so users can test with
     # the demo token; flip to https://bridge.simplefin.org for production.

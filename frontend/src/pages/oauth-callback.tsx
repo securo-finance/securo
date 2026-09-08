@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import axios from 'axios'
 import { connections } from '@/lib/api'
+import { resolveOAuthCallbackState } from '@/lib/connection-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { Button } from '@/components/ui/button'
 import { Building2, ExternalLink } from 'lucide-react'
@@ -21,7 +22,9 @@ export default function OAuthCallbackPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const code = params.get('code')
-  const state = params.get('state')
+  // Wealth Reader may omit state and return only nonce; we also stash Securo's
+  // state in sessionStorage before the bank redirect.
+  const state = resolveOAuthCallbackState(params)
   const errorParam = params.get('error')
   const errorDescription = params.get('error_description')
   const [restricted, setRestricted] = useState<RestrictedDetail | null>(null)

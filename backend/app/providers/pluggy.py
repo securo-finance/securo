@@ -313,7 +313,7 @@ class PluggyProvider(BankProvider):
     ) -> str:
         raise NotImplementedError("Pluggy uses widget flow, not OAuth redirect")
 
-    async def handle_oauth_callback(self, code: str) -> ConnectionData:
+    async def handle_oauth_callback(self, code: str, state: Optional[str] = None) -> ConnectionData:
         """Handle widget callback. The 'code' parameter is the Pluggy Item ID."""
         item_id = code
         headers = await self._headers()

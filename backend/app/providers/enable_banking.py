@@ -397,7 +397,7 @@ class EnableBankingProvider(BankProvider):
 
     # ----- session exchange -----
 
-    async def handle_oauth_callback(self, code: str) -> ConnectionData:
+    async def handle_oauth_callback(self, code: str, state: Optional[str] = None) -> ConnectionData:
         data = await self._request("POST", "/sessions", json_body={"code": code})
         session_id = data.get("session_id")
         if not session_id:
