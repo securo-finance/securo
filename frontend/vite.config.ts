@@ -25,9 +25,7 @@ export default defineConfig(async ({ mode }) => {
       __APP_VERSION__: JSON.stringify(appVersion),
     },
     build: {
-      // Translation resources are loaded eagerly so language changes remain
-      // synchronous. The largest generated chunk is still below 1 MB raw
-      // (roughly 306 KB gzip), so use that as the intentional warning budget.
+      // Keep the existing per-chunk budget; optional locales load on demand.
       chunkSizeWarningLimit: 1000,
       // Emit hashed JS/CSS into `static/` instead of Vite's default `assets/`.
       // The default collides with our `/assets` SPA route: nginx's

@@ -65,6 +65,7 @@ const CURRENCY_LOCALE: Record<string, string> = {
   SGD: 'en-SG',
   AZN: 'az-AZ',
   TRY: 'tr-TR',
+  PKR: 'en-PK',
 }
 
 /**

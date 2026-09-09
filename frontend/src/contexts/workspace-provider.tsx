@@ -1,34 +1,11 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
 import { workspaces as workspacesApi, WORKSPACE_STORAGE_KEY } from '@/lib/api'
 import type { ModuleId } from '@/lib/modules'
-import type { Workspace, WorkspaceRole } from '@/types'
+import type { Workspace } from '@/types'
+import { WorkspaceContext } from '@/contexts/workspace-context'
 
-interface WorkspaceContextType {
-  current: Workspace | null
-  workspaces: Workspace[]
-  isLoading: boolean
-  /** Switch the active workspace. Persists to localStorage and invalidates queries. */
-  switchWorkspace: (id: string) => Promise<void>
-  /** Re-fetch the list of workspaces the user can access. */
-  refresh: () => Promise<void>
-  /** Role of the current user inside the active workspace, or null if no active workspace. */
-  role: WorkspaceRole | null
-  /** True for owner OR manager (the manager has effective owner rights). */
-  canManage: boolean
-  /** True for owner, manager, OR editor — anyone allowed to mutate financial data. */
-  canWrite: boolean
-  /** Modules the active workspace shows, as resolved by the server. */
-  enabledModules: ModuleId[]
-  /**
-   * The single question the UI asks about modules. False while the
-   * workspace list is still loading, so nothing renders on a guess.
-   */
-  hasModule: (id: ModuleId) => boolean
-}
-
-const WorkspaceContext = createContext<WorkspaceContextType | null>(null)
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const { user, token, isLoading: authLoading } = useAuth()
@@ -134,12 +111,4 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       {children}
     </WorkspaceContext.Provider>
   )
-}
-
-export function useWorkspace() {
-  const ctx = useContext(WorkspaceContext)
-  if (!ctx) {
-    throw new Error('useWorkspace must be used within a WorkspaceProvider')
-  }
-  return ctx
 }

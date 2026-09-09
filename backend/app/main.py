@@ -21,6 +21,7 @@ from app.api.passkeys import router as passkeys_router
 from app.api.import_transactions import router as import_router
 from app.api.info import router as info_router
 from app.api.recurring_transactions import router as recurring_router
+from app.api.reconciliation import router as reconciliation_router
 from app.api.rules import router as rules_router
 from app.api.assets import router as assets_router
 from app.api.asset_groups import router as asset_groups_router
@@ -166,6 +167,7 @@ app.include_router(
 app.include_router(categories_router)
 app.include_router(category_groups_router)
 app.include_router(rules_router)
+app.include_router(reconciliation_router)
 app.include_router(transactions_router)
 app.include_router(import_router)
 app.include_router(import_logs_router)

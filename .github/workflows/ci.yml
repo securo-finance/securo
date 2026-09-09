@@ -61,7 +61,7 @@ jobs:
           # the lock) and hand it to pip with hash checking, so CI installs
           # exactly the audited versions.
           # renovate: datasource=pypi depName=uv
-          pip install -q uv==0.12.5
+          pip install -q uv==0.12.10
           uv export --frozen --all-extras --no-emit-project -o /tmp/requirements-dev.txt
           pip install --require-hashes -r /tmp/requirements-dev.txt
           pip install --no-deps -e .
@@ -84,7 +84,7 @@ jobs:
       - name: Run tests with coverage
         if: steps.backend-changes.outputs.run_backend == 'true'
         run: |
-          pytest -n auto --dist loadfile --cov=app --cov-report=xml --cov-report=term-missing --cov-fail-under=60
+          pytest -n auto --dist loadfile --cov=app --cov-report=xml --cov-report=term-missing --cov-fail-under=60 -ra -W error
 
       - name: Upload coverage report
         if: ${{ always() && steps.backend-changes.outputs.run_backend == 'true' }}
@@ -147,7 +147,7 @@ jobs:
         run: npm ci
 
       - name: Lint
-        run: npm run lint
+        run: npm run lint -- --max-warnings=0
 
       - name: Type check & Build
         run: npm run build

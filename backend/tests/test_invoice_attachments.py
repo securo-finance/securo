@@ -61,6 +61,10 @@ async def make_invoice(client, headers, **overrides) -> dict:
         "total": "1200.00",
         "due_date": str(TODAY + timedelta(days=20)),
         "lines": [{"description": "Servico", "quantity": "1", "unit_price": "1200.00"}],
+        # A draft, because issuing files our own rendered page and every
+        # test below counts what a *person* put in the folder. The filed
+        # document has its own tests, in `test_invoices_api.py`.
+        "as_draft": True,
     }
     payload.update(overrides)
     resp = await client.post("/api/invoices", headers=headers, json=payload)

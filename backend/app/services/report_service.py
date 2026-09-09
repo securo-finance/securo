@@ -32,6 +32,7 @@ from app.schemas.report import (
     ReportResponse,
     ReportSummary,
 )
+from app.services import invoice_forecast_service
 from app.services.dashboard_service import (
     _account_balance_at,
     _counts_as_user_pnl_row,
@@ -58,7 +59,11 @@ _ASSET_TYPE_COLORS: dict[str, str] = {
 
 
 def _report_start_date(
-    today: date, months: int, period: str | None = None, days: int | None = None
+    today: date,
+    months: int,
+    period: str | None = None,
+    days: int | None = None,
+    financial_year_start_month: int = 1,
 ) -> date:
     """Resolve historical report start date.
 
@@ -69,7 +74,10 @@ def _report_start_date(
         return today - timedelta(days=days - 1)
 
     if period == "ytd":
-        return date(today.year, 1, 1)
+        if not 1 <= financial_year_start_month <= 12:
+            raise ValueError("financial_year_start_month must be between 1 and 12")
+        year = today.year - (today.month < financial_year_start_month)
+        return date(year, financial_year_start_month, 1)
 
     start = date(today.year, today.month, 1) - timedelta(days=months * 30)
     return start.replace(day=1)
@@ -282,13 +290,16 @@ async def get_net_worth_report(
     account_ids: Optional[list[uuid.UUID]] = None,
     asset_group_ids: Optional[list[uuid.UUID]] = None,
     period: str | None = None,
+    financial_year_start_month: int = 1,
 ) -> ReportResponse:
     """Build a full ReportResponse for net worth over time."""
     # A wallet-only collection (wallets, no accounts) still filters.
     if asset_group_ids is not None and account_ids is None:
         account_ids = []
     today = date.today()
-    start = _report_start_date(today, months, period)
+    start = _report_start_date(
+        today, months, period, financial_year_start_month=financial_year_start_month
+    )
 
     # Get user's primary currency
     user = await session.get(User, user_id)
@@ -385,12 +396,19 @@ async def get_income_expenses_report(
     account_ids: Optional[list[uuid.UUID]] = None,
     period: str | None = None,
     days: int | None = None,
+    financial_year_start_month: int = 1,
 ) -> ReportResponse:
     """Build a ReportResponse for income vs expenses over time."""
     filtered = account_ids is not None
     acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
     today = date.today()
-    start = _report_start_date(today, months, period, days)
+    start = _report_start_date(
+        today,
+        months,
+        period=period,
+        days=days,
+        financial_year_start_month=financial_year_start_month,
+    )
 
     # Get user's primary currency + global reporting mode
     user = await session.get(User, user_id)
@@ -615,6 +633,30 @@ async def get_income_expenses_report(
                 forecast_map[label] = (existing_income + amount, existing_expenses)
             else:
                 forecast_map[label] = (existing_income, existing_expenses + amount)
+
+        # Invoices still owed, at the date they were promised for. Only
+        # the unallocated balance, so a claim and the payment that
+        # settles it never both land in the same month. Skipped when the
+        # report is narrowed to particular accounts: a claim has no
+        # account until somebody pays it.
+        # `is None`, not falsy: a collection holding only wallets narrows
+        # the report to an empty set of bank accounts, and an empty list
+        # means filtered to nothing rather than not filtered at all.
+        if account_ids is None:
+            for claim in await invoice_forecast_service.claims_in_range(
+                session, workspace_id, max(m_start, start), m_end
+            ):
+                converted, _ = await fx_convert(
+                    session, claim.amount, claim.currency, primary_currency,
+                )
+                claim_amount = abs(float(converted))
+                label = _format_date_label(claim.due_date, interval)
+                existing_income, existing_expenses = forecast_map.get(label, (0.0, 0.0))
+                if claim.direction == "receivable":
+                    forecast_map[label] = (existing_income + claim_amount, existing_expenses)
+                else:
+                    forecast_map[label] = (existing_income, existing_expenses + claim_amount)
+
         # Advance to next month
         if cursor.month == 12:
             cursor = date(cursor.year + 1, 1, 1)
@@ -1472,6 +1514,28 @@ async def get_cash_flow_report(
         if key not in cat_totals:
             cat_totals[key] = {"label": info["label"], "color": info["color"], "value": 0.0}
         cat_totals[key]["value"] += amount_primary
+
+    # 3b. Invoices still owed, on the day they were promised for. An
+    #     invoice is a claim rather than a movement, which is why it never
+    #     reached this chart before: until matching could say that an open
+    #     invoice and a pending bank credit were the same money, adding
+    #     both would have inflated every projection in the product.
+    #
+    #     Only the unallocated balance is carried, so a claim and the
+    #     payment that settles it never both appear. Skipped when the
+    #     chart is narrowed to particular accounts: a claim has no account
+    #     until somebody pays it.
+    # `is None`, not falsy: a collection holding only wallets narrows
+    # the report to an empty set of bank accounts, and an empty list
+    # means filtered to nothing rather than not filtered at all.
+    if account_ids is None:
+        for claim in await invoice_forecast_service.claims_in_range(
+            session, workspace_id, today + timedelta(days=1), end + timedelta(days=1)
+        ):
+            claim_primary = await _to_primary(claim.amount, claim.currency)
+            if claim_primary == 0:
+                continue
+            _add_flow(claim.due_date, abs(claim_primary), claim.direction == "receivable")
 
     # 4. Walk day-by-day. The actual section is anchored at today's
     # authoritative balance. The forward projected section starts from that

@@ -823,8 +823,10 @@ async def get_account_summary(
     # Expenses = SUM of debit transactions in window (same exclusions).
     # For credit-card accounts, NET refund credits against debits so the
     # cycle's "Total da fatura" matches the bank's bill (refunds reduce the
-    # invoice amount). `summary_filter` already excludes paired transfers,
-    # so bill payments are not double-counted.
+    # invoice amount). Paired transfers are dropped by `transfer_pair_id`;
+    # unpaired card payments are dropped by the credit-side `treat_as_transfer`
+    # exclusion in `counts_on_bill` (see its docstring for why that's
+    # asymmetric with the debit side).
     if account.type == "credit_card":
         signed_for_bill = case(
             (Transaction.type == "credit", -func.abs(effective_amount)),

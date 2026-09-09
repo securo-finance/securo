@@ -17,9 +17,6 @@ from mcp_server.auth import CallContext
 from mcp_server.registry import REGISTRY
 
 
-pytestmark = pytest.mark.asyncio
-
-
 @pytest_asyncio.fixture
 async def ctx(test_user) -> CallContext:
     return CallContext(user_id=test_user.id, conversation_id=uuid.uuid4())

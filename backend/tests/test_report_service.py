@@ -1,8 +1,11 @@
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
@@ -19,6 +22,10 @@ from app.schemas.report import (
     ReportSummary,
 )
 from app.services import report_service
+from app.api.reports import (
+    _financial_year_start_month,
+    _reject_unsupported_fiscal_year_report,
+)
 from app.services.report_service import (
     _add_months,
     _asset_value_at,
@@ -30,6 +37,8 @@ from app.services.report_service import (
     get_net_worth_report,
 )
 from app.models.recurring_transaction import RecurringTransaction
+from app.core.workspace_context import current_workspace
+from app.main import app
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +186,22 @@ def test_report_start_date_month_range_aligns_to_month_start():
 
 def test_report_start_date_ytd_uses_current_year_start():
     assert _report_start_date(date(2025, 6, 15), 24, period="ytd") == date(2025, 1, 1)
+
+
+def test_report_start_date_ytd_uses_april_for_indian_financial_year():
+    assert _report_start_date(
+        date(2026, 3, 31), 12, period="ytd", financial_year_start_month=4
+    ) == date(2025, 4, 1)
+    assert _report_start_date(
+        date(2026, 4, 1), 12, period="ytd", financial_year_start_month=4
+    ) == date(2026, 4, 1)
+
+
+def test_report_start_date_ytd_rejects_invalid_financial_year_month():
+    with pytest.raises(ValueError, match="financial_year_start_month"):
+        _report_start_date(
+            date(2025, 6, 15), 12, period="ytd", financial_year_start_month=13
+        )
 
 
 def test_report_start_date_days_window_is_exact_and_inclusive():
@@ -546,11 +571,15 @@ async def test_income_expenses_api_validation(client, auth_headers):
 async def test_income_expenses_api_accepts_ytd_period(client, auth_headers, monkeypatch):
     """GET /reports/income-expenses passes period=ytd to service."""
 
-    async def fake_report(session, workspace_id, user_id, months, interval, currency, account_ids=None, period=None, days=None):
+    async def fake_report(
+        session, workspace_id, user_id, months, interval, currency,
+        account_ids=None, period=None, days=None, financial_year_start_month=1,
+    ):
         assert months == 12
         assert interval == "monthly"
         assert period == "ytd"
         assert days is None
+        assert financial_year_start_month == 1
         return ReportResponse(
             summary=ReportSummary(
                 primary_value=0,
@@ -584,7 +613,10 @@ async def test_income_expenses_api_forwards_days_window(client, auth_headers, mo
     """GET /reports/income-expenses passes the exact day window to the service."""
     seen: dict = {}
 
-    async def fake_report(session, workspace_id, user_id, months, interval, currency, account_ids=None, period=None, days=None):
+    async def fake_report(
+        session, workspace_id, user_id, months, interval, currency,
+        account_ids=None, period=None, days=None, financial_year_start_month=1,
+    ):
         seen["days"] = days
         return ReportResponse(
             summary=ReportSummary(
@@ -620,6 +652,68 @@ async def test_income_expenses_api_forwards_days_window(client, auth_headers, mo
         headers=auth_headers,
     )
     assert resp.status_code == 422
+
+
+def test_financial_year_start_month_uses_india_jurisdiction():
+    assert _financial_year_start_month("IN") == 4
+    assert _financial_year_start_month("in") == 4
+    assert _financial_year_start_month("BR") == 1
+    assert _financial_year_start_month(None) == 1
+
+
+def test_indian_yearly_ytd_reports_are_rejected_until_fiscal_buckets_exist():
+    with pytest.raises(HTTPException, match="Yearly YTD reports"):
+        _reject_unsupported_fiscal_year_report("ytd", "yearly", 4)
+    _reject_unsupported_fiscal_year_report("ytd", "yearly", 1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("tax_jurisdiction", "expected_month"), [("IN", 4), ("BR", 1)])
+async def test_report_api_forwards_workspace_financial_year(
+    client, auth_headers, monkeypatch, tax_jurisdiction, expected_month
+):
+    context = SimpleNamespace(
+        workspace=SimpleNamespace(id=uuid.uuid4(), tax_jurisdiction=tax_jurisdiction),
+        user_id=uuid.uuid4(),
+        user=SimpleNamespace(primary_currency="INR"),
+    )
+
+    async def override_workspace():
+        return context
+
+    empty_report = ReportResponse(
+        summary=ReportSummary(
+            primary_value=0, change_amount=0, change_percent=None, breakdowns=[]
+        ),
+        trend=[],
+        meta=ReportMeta(
+            type="income_expenses",
+            series_keys=["income", "expenses"],
+            currency="INR",
+            interval="monthly",
+        ),
+        composition=[],
+        category_trend=[],
+    )
+    net_worth = AsyncMock(return_value=empty_report)
+    income_expenses = AsyncMock(return_value=empty_report)
+    app.dependency_overrides[current_workspace] = override_workspace
+    monkeypatch.setattr(report_service, "get_net_worth_report", net_worth)
+    monkeypatch.setattr(report_service, "get_income_expenses_report", income_expenses)
+    try:
+        net_response = await client.get(
+            "/api/reports/net-worth", params={"period": "ytd"}, headers=auth_headers
+        )
+        income_response = await client.get(
+            "/api/reports/income-expenses", params={"period": "ytd"}, headers=auth_headers
+        )
+    finally:
+        app.dependency_overrides.pop(current_workspace, None)
+
+    assert net_response.status_code == 200
+    assert income_response.status_code == 200
+    assert net_worth.call_args.kwargs["financial_year_start_month"] == expected_month
+    assert income_expenses.call_args.kwargs["financial_year_start_month"] == expected_month
 
 
 @pytest.mark.asyncio

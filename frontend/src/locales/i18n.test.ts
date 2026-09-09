@@ -44,7 +44,13 @@ const PLURAL_SUFFIXES = ['_zero', '_one', '_two', '_few', '_many', '_other']
 
 function pluralBase(key: string): string | null {
   for (const s of PLURAL_SUFFIXES) {
-    if (key.endsWith(s)) return key.slice(0, -s.length)
+    if (key.endsWith(s)) {
+      const base = key.slice(0, -s.length)
+      // One suffix, not a chain. Without this, "title_one_other" reduces
+      // to "title_one", which en does have, and a malformed key rides in
+      // as though it were a plural form of a real one.
+      return PLURAL_SUFFIXES.some((inner) => base.endsWith(inner)) ? null : base
+    }
   }
   return null
 }
@@ -149,12 +155,16 @@ describe('i18n locale files', () => {
     for (const locale of LOCALES.filter((l: string) => l !== 'en')) {
       it(locale, () => {
         const keys = new Set(flattenKeys(JSON.parse(readRaw(locale))))
-        // A key is valid if it exists in en directly, OR if it is a plural form
-        // of a key that exists in en (e.g. "foo_few" is valid when en has "foo").
+        // A key is valid if it exists in en directly, OR if it is a plural
+        // form of a key en carries. English has two plural categories and
+        // Slavic languages have four, so "title_few" is a translation of
+        // "title_one"/"title_other" rather than an invented key: matching
+        // against the bare base alone would have forced those languages to
+        // choose between reading correctly and passing here.
         const extra = [...keys].filter((k) => {
           if (enKeys.has(k)) return false
           const base = pluralBase(k)
-          return !(base && enKeys.has(base))
+          return !(base && hasKeyOrPluralForms(enKeys, base))
         })
         expect(extra, `Extra keys in ${locale} not in en:`).toEqual([])
       })

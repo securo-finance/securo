@@ -192,17 +192,24 @@ export function documentSource(
   return origin === 'imported' ? 'missing' : 'rendered'
 }
 
+/** The source stamped on the page we render and file at the moment an
+ *  invoice is issued. */
+export const ISSUED_BY_US = 'issued'
+
 /** Where a filed document came from, as a person reads it.
  *
  *  A source id is a machine name (`stripe`, `nfe`, `email`), so it is
  *  shown as it is rather than translated — renaming somebody's system in
  *  our own words helps nobody trying to work out which integration
- *  delivered which file. Only the absence of one is our word: a file
- *  with no source was uploaded here by hand.
+ *  delivered which file. Two sources are our word rather than theirs: a
+ *  file with no source was uploaded here by hand, and one stamped
+ *  `issued` is the page we drew ourselves, which read as the literal
+ *  "De issued" until it was given a name.
  */
 export function documentProvenance(
   source: string | null | undefined,
-): { kind: 'uploaded' } | { kind: 'system'; name: string } {
+): { kind: 'uploaded' } | { kind: 'ours' } | { kind: 'system'; name: string } {
   const name = (source ?? '').trim()
+  if (name === ISSUED_BY_US) return { kind: 'ours' }
   return name ? { kind: 'system', name } : { kind: 'uploaded' }
 }
