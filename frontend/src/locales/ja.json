@@ -959,6 +959,9 @@
       },
       "simplefin": {
         "description": "SimpleFIN Bridge経由の米国および国際的な銀行"
+      },
+      "truelayer": {
+        "description": "TrueLayerオープンバンキング経由の英国およびヨーロッパの銀行"
       }
     },
     "reconnected": "銀行に再接続しました"
