@@ -243,7 +243,6 @@ async def generate_pending(
         .where(
             RecurringTransaction.user_id == user_id,
             RecurringTransaction.is_active == True,
-            RecurringTransaction.auto_generate == True,
             or_(
                 and_(
                     RecurringTransaction.weekend_adjustment == "previous_friday",
@@ -288,6 +287,12 @@ async def generate_pending(
             )
             if existing_real is not None:
                 existing_real.recurring_transaction_id = recurring.id
+            elif not recurring.auto_generate:
+                # Generation is off for this bill and nothing covers this
+                # occurrence yet. Stop without materialising a placeholder and
+                # without advancing the pointer, so the occurrence stays due
+                # and is reconciled on a later run once the real charge lands.
+                break
             else:
                 account = await session.get(Account, recurring.account_id)
                 # Only occurrences that already came due reach this point, so

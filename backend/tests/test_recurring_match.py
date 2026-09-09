@@ -475,3 +475,25 @@ async def test_unlink_recurring_noop_when_not_linked(session, test_user, test_wo
         session, tx.id, test_workspace.id
     )
     assert result is None  # nothing to unlink → 404 at the API layer
+
+@pytest.mark.asyncio
+async def test_generate_pending_links_real_tx_when_auto_generate_off(
+    session, test_user, test_workspace, account
+):
+    """A bill with generation off is still reconciled against a real charge.
+
+    Turning off automatic generation should suppress placeholders, not the
+    matching itself — otherwise the users who opted out precisely to avoid
+    duplicates are the only ones who never get a link.
+    """
+    bill = await _make_bill(
+        session, test_workspace, test_user, account, auto_generate=False
+    )
+    real = await _add_tx(
+        session, test_user, test_workspace, account,
+        date=date(2025, 1, 12), source="manual", external_id=None,
+    )
+    count = await generate_pending(session, test_user.id, up_to=date(2025, 1, 20))
+    assert count == 0  # no placeholder written
+    await session.refresh(real)
+    assert real.recurring_transaction_id == bill.id
