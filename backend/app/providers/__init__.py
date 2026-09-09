@@ -41,6 +41,14 @@ KNOWN_PROVIDERS = [
         "requires_institution_select": False,
         "supports_asset_sync": True,
     },
+    {
+        "name": "up",
+        "display_name": "Up Bank",
+        "description": "Australian bank via Personal Access Token",
+        "flow_type": "token",
+        "requires_institution_select": False,
+        "supports_asset_sync": False,
+    },
 ]
 
 
@@ -93,6 +101,10 @@ def _auto_register_providers() -> None:
     if settings.simplefin_enabled:
         from app.providers.simplefin import SimpleFinProvider
         register_provider("simplefin", SimpleFinProvider)
+
+    if settings.up_enabled:
+        from app.providers.up import UpBankProvider
+        register_provider("up", UpBankProvider)
 
 
 _auto_register_providers()
