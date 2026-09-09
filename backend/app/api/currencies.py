@@ -41,6 +41,7 @@ CURRENCY_META = {
     "SGD": {"symbol": "S$", "name": "Singapore Dollar", "flag": "\U0001F1F8\U0001F1EC"},
     "TRY": {"symbol": "₺", "name": "Turkish Lira", "flag": "\U0001F1F9\U0001F1F7"},
     "PKR": {"symbol": "₨", "name": "Pakistani Rupee", "flag": "\U0001F1F5\U0001F1F0"},
+    "MDL": {"symbol": "L", "name": "Moldovan Leu", "flag": "\U0001F1F2\U0001F1E9"},
 }
 
 
