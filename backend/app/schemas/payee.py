@@ -3,7 +3,7 @@ from datetime import date as _Date, datetime
 from decimal import Decimal
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.fiscal.registry import TaxIdKind
 from app.schemas.category import CategoryRead
@@ -71,6 +71,14 @@ class PayeeRead(BaseModel):
     user_id: uuid.UUID
     name: str
     type: Optional[PayeeType] = None
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def coerce_legacy_type(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None and value not in ("person", "company"):
+            return None
+        return value
+
     # Read-only. Exposed so a client picker can tell the handful of
     # counterparties somebody entered on purpose from the hundreds sync
     # created from card descriptors.

@@ -7,6 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.account import Account
+from app.models.payee import Payee
 from app.models.transaction import Transaction
 from app.models.user import User
 
@@ -76,6 +77,37 @@ async def test_list_payees(client: AsyncClient, auth_headers):
     assert len(data) == 2
     names = {p["name"] for p in data}
     assert names == {"Alpha", "Beta"}
+
+
+@pytest.mark.asyncio
+async def test_list_payees_coerces_legacy_types_to_null(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_user: User,
+    test_workspace,
+):
+    legacy_types = ("transfer", "employer", "merchant")
+    session.add_all(
+        [
+            Payee(
+                id=uuid.uuid4(),
+                user_id=test_user.id,
+                workspace_id=test_workspace.id,
+                name=f"Legacy {legacy_type}",
+                type=legacy_type,
+            )
+            for legacy_type in legacy_types
+        ]
+    )
+    await session.commit()
+
+    resp = await client.get("/api/payees", headers=auth_headers)
+
+    assert resp.status_code == 200
+    assert {payee["name"]: payee["type"] for payee in resp.json()} == {
+        f"Legacy {legacy_type}": None for legacy_type in legacy_types
+    }
 
 
 @pytest.mark.asyncio
