@@ -1,4 +1,4 @@
-name: securo
+name: securo-dev
 
 # podman-compose groups all services into a single pod by default, which
 # interferes with per-service port mapping and networking. Disabling it makes
