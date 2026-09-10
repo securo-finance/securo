@@ -16,6 +16,7 @@ def test_budget_copy_request_schema_defaults():
 
 def test_budget_model_active_helper():
     b = Budget(
+        workspace_id=uuid.uuid4(),
         user_id=uuid.uuid4(),
         category_id=uuid.uuid4(),
         amount=Decimal("500.00"),

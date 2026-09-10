@@ -471,6 +471,7 @@ async def get_budget_vs_actual(
 
 async def copy_monthly_budgets(
     db: AsyncSession,
+    workspace_id: uuid.UUID,
     user_id: uuid.UUID,
     source_month: date,
     target_month: date,
@@ -483,6 +484,7 @@ async def copy_monthly_budgets(
     result = await db.execute(
         select(Budget).where(
             and_(
+                Budget.workspace_id == workspace_id,
                 Budget.user_id == user_id,
                 Budget.month == source_first,
             )
@@ -493,6 +495,7 @@ async def copy_monthly_budgets(
     existing_target_res = await db.execute(
         select(Budget).where(
             and_(
+                Budget.workspace_id == workspace_id,
                 Budget.user_id == user_id,
                 Budget.month == target_first,
             )
@@ -513,6 +516,7 @@ async def copy_monthly_budgets(
                 created_or_updated.append(tgt)
         else:
             new_budget = Budget(
+                workspace_id=workspace_id,
                 user_id=user_id,
                 category_id=src.category_id,
                 amount=new_amount,
@@ -528,10 +532,11 @@ async def copy_monthly_budgets(
 
 async def get_budget_rollover_summary(
     db: AsyncSession,
+    workspace_id: uuid.UUID,
     user_id: uuid.UUID,
     month: date,
 ) -> dict:
-    vs_actuals = await get_budget_vs_actual(db, user_id, month)
+    vs_actuals = await get_budget_vs_actual(db, workspace_id, user_id, month)
     total_budgeted = Decimal("0.00")
     total_spent = Decimal("0.00")
     categories_summary = []
@@ -562,6 +567,7 @@ async def get_budget_rollover_summary(
 
 async def get_multi_month_forecast(
     db: AsyncSession,
+    workspace_id: uuid.UUID,
     user_id: uuid.UUID,
     start_month: date,
     num_months: int = 6,
@@ -572,7 +578,7 @@ async def get_multi_month_forecast(
 
     for _ in range(num_months):
         m_date = date(cur_year, cur_month, 1)
-        summary = await get_budget_rollover_summary(db, user_id, m_date)
+        summary = await get_budget_rollover_summary(db, workspace_id, user_id, m_date)
         items.append({
             "month": m_date,
             "projected_budget": summary["total_budgeted"],

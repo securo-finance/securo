@@ -80,7 +80,8 @@ async def copy_budgets_endpoint(
     """Copy all budget category allocations from a source month to a target month with optional percentage adjustments."""
     return await budget_service.copy_monthly_budgets(
         db=db,
-        user_id=ctx.effective_user_id,
+        workspace_id=ctx.workspace.id,
+        user_id=ctx.user_id,
         source_month=req.source_month,
         target_month=req.target_month,
         adjustment_percentage=req.adjustment_percentage,
@@ -97,7 +98,8 @@ async def get_rollover_summary_endpoint(
     """Calculate end-of-month surpluses and deficits for budget carryover analysis."""
     return await budget_service.get_budget_rollover_summary(
         db=db,
-        user_id=ctx.effective_user_id,
+        workspace_id=ctx.workspace.id,
+        user_id=ctx.user_id,
         month=month,
     )
 
@@ -112,7 +114,8 @@ async def get_budget_forecast_endpoint(
     """Project multi-month budget performance and variance."""
     return await budget_service.get_multi_month_forecast(
         db=db,
-        user_id=ctx.effective_user_id,
+        workspace_id=ctx.workspace.id,
+        user_id=ctx.user_id,
         start_month=start_month,
         num_months=months,
     )
