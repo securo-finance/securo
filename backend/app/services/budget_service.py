@@ -537,8 +537,8 @@ async def get_budget_rollover_summary(
     categories_summary = []
 
     for item in vs_actuals:
-        budgeted = item.budgeted_amount
-        spent = item.actual_spent
+        budgeted = item.budget_amount or Decimal("0.00")
+        spent = item.actual_amount
         remaining = budgeted - spent
         total_budgeted += budgeted
         total_spent += spent
