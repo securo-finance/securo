@@ -19,6 +19,7 @@ from app.services._query_filters import (
     counts_as_user_pnl,
     owner_split_offset_by_category,
     reporting_date_col,
+    reporting_date_value,
 )
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.account_service import get_account_name
@@ -623,10 +624,7 @@ async def get_income_expenses_report(
                     session, Decimal(str(abs(tx.amount))), tx.currency, primary_currency,
                 )
                 amount = abs(float(converted))
-            tx_report_date = (
-                tx.effective_bill_date
-                or (tx.effective_date if accounting_mode == "accrual" else tx.date)
-            )
+            tx_report_date = reporting_date_value(tx, accounting_mode)
             label = _format_date_label(tx_report_date, interval)
             existing_income, existing_expenses = forecast_map.get(label, (0.0, 0.0))
             if tx.type == "credit":
@@ -1009,10 +1007,7 @@ async def get_income_expenses_report(
                 continue
             cat_id_str = str(tx.category_id) if tx.category_id else "uncategorized"
             group = "income" if tx.type == "credit" else "expenses"
-            tx_report_date = (
-                tx.effective_bill_date
-                or (tx.effective_date if accounting_mode == "accrual" else tx.date)
-            )
+            tx_report_date = reporting_date_value(tx, accounting_mode)
             forecast_period_label = _format_date_label(tx_report_date, interval)
             if cat_id_str != "uncategorized" and cat_id_str not in cat_cache:
                 cat_row = await session.execute(
@@ -1169,6 +1164,7 @@ async def _get_baseline_projection(
     primary_currency: str,
     to_primary,
     account_ids: Optional[list[uuid.UUID]] = None,
+    accounting_mode: str = "cash",
 ) -> tuple[list[dict], int]:
     """Estimate future flows by averaging the user's recent transaction history.
 
@@ -1192,14 +1188,15 @@ async def _get_baseline_projection(
     actual window used in the response (zero when there's no history).
     """
     acct_filter = [Transaction.account_id.in_(account_ids)] if account_ids is not None else []
+    report_date = reporting_date_col(accounting_mode)
     cap_start = _add_months(today, -_BASELINE_MAX_LOOKBACK_MONTHS)
     earliest_result = await session.execute(
-        select(func.min(Transaction.date))
+        select(func.min(report_date))
         .join(Account, Transaction.account_id == Account.id)
         .where(
             Transaction.workspace_id == workspace_id,
             Account.is_closed == False,
-            Transaction.date <= today,
+            report_date <= today,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
             counts_as_pnl(),
@@ -1222,8 +1219,8 @@ async def _get_baseline_projection(
         .where(
             Transaction.workspace_id == workspace_id,
             Account.is_closed == False,
-            Transaction.date >= window_start,
-            Transaction.date <= today,
+            report_date >= window_start,
+            report_date <= today,
             Transaction.source != "opening_balance",
             Transaction.status == "posted",
             counts_as_pnl(),
@@ -1293,13 +1290,10 @@ async def get_cash_flow_report(
     historical-mean baseline (when ``baseline=True``) — see
     ``_get_baseline_projection`` for the latter.
 
-    Respects the global ``credit_card_accounting_mode`` setting:
-      - **cash**: flows queried by ``Transaction.date``.
-      - **accrual**: flows queried by ``Transaction.effective_date`` so CC
-        purchases show up as cash leaving on their bill due date. The
-        balance at past-history start is also adjusted to add back any
-        pending CC purchases whose effective_date is in the future window,
-        avoiding double-counting against ``_balance_at``.
+    Respects the global ``credit_card_accounting_mode`` setting. A manual
+    ``reporting_date_override`` wins in either mode; otherwise cash uses the
+    provider date and accrual uses the credit-card effective date. Balance
+    reconstruction remains based on provider dates.
     """
     from app.services.dashboard_service import _balance_at, _get_recurring_projections
     from app.services.fx_rate_service import get_rate
@@ -1343,7 +1337,7 @@ async def get_cash_flow_report(
         else:
             bucket["outflow"] += amount
 
-    flow_date_col = Transaction.effective_date if accrual else Transaction.date
+    flow_date_col = reporting_date_col(accounting_mode)
 
     # 1a. Past actual transactions (chart_start, today]. Gives the chart a
     #     "real" section before the forecast so the today-marker has meaning.
@@ -1421,7 +1415,7 @@ async def get_cash_flow_report(
     for tx in pending_forecast:
         if tx.status != "pending" or not _counts_as_user_pnl_row(tx):
             continue
-        flow_date = tx.effective_bill_date or (tx.effective_date if accrual else tx.date)
+        flow_date = reporting_date_value(tx, accounting_mode)
         if flow_date > end:
             continue
         if tx.amount_primary is not None:
@@ -1450,7 +1444,7 @@ async def get_cash_flow_report(
                 continue
             if not tx.account or tx.account.type != "credit_card" or tx.date > today:
                 continue
-            flow_date = tx.effective_bill_date or tx.effective_date
+            flow_date = reporting_date_value(tx, accounting_mode)
             if flow_date <= today or flow_date > end:
                 continue
             if tx.amount_primary is not None:
@@ -1473,6 +1467,7 @@ async def get_cash_flow_report(
     if baseline:
         projections, baseline_lookback_days = await _get_baseline_projection(
             session, workspace_id, today, end, primary_currency, _to_primary, account_ids,
+            accounting_mode,
         )
     else:
         projections = await _get_recurring_projections(

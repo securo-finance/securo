@@ -435,6 +435,9 @@ function TransactionForm({
   // Manual CC bucketing override (issue #92). Empty = auto. Visible only
   // when the selected account is a credit card.
   const [effectiveBillDate, setEffectiveBillDate] = useState(seed?.effective_bill_date ?? '')
+  const [reportingDateOverride, setReportingDateOverride] = useState(
+    seed?.reporting_date_override ?? '',
+  )
   const [convertedAmount, setConvertedAmount] = useState(
     seed?.amount_primary != null ? formatAmountInput(seed.amount_primary, displayLocale, 8) : ''
   )
@@ -479,6 +482,9 @@ function TransactionForm({
     return !!(existing && existing.length > 0)
   })
   const isCreating = !transaction
+  const selectedAccount = accounts.find(a => a.id === accountId)
+  const isCreditCardSelected = selectedAccount?.type === 'credit_card'
+  const showReportingDateOverride = isSynced && !isCreditCardSelected
   const showConversion = currency !== userCurrency && !isSynced
   // Privacy mode hides monetary values across the app, but the edit modal
   // surfaced the raw amount anyway (issue #323). Only existing transactions
@@ -735,15 +741,14 @@ function TransactionForm({
           fxFields.amount_primary = null
           fxFields.fx_rate_used = null
         }
-        // Active CC account ⇒ surface effective_bill_date in the payload
-        // (sent both for synced and manual edits since the user can hand-
-        // correct the bucketing on either; null clears the override back to
-        // auto bucketing).
-        const selectedAcc = accounts.find(a => a.id === accountId)
-        const isCcSelected = selectedAcc?.type === 'credit_card'
-        const overridePayload: Partial<Transaction> = isCcSelected
+        // Credit-card bill assignment and general period attribution are
+        // distinct controls. Synchronized non-card rows can move between
+        // report periods without changing their immutable bank date.
+        const overridePayload: Partial<Transaction> = isCreditCardSelected
           ? { effective_bill_date: effectiveBillDate || null }
-          : {}
+          : showReportingDateOverride
+            ? { reporting_date_override: reportingDateOverride || null }
+            : {}
         // Splits ride along on the same payload — the backend treats a
         // missing `splits` field as untouched and a present payload as
         // full replacement. To clear existing splits when the user
@@ -978,7 +983,7 @@ function TransactionForm({
       </div>
       <div className="grid grid-cols-2 gap-3 sm:gap-4">
         <div className="space-y-2">
-          <Label>{t('transactions.date')}</Label>
+          <Label>{isSynced ? t('transactions.bankDate') : t('transactions.date')}</Label>
           <DatePickerInput
             value={date}
             onChange={setDate}
@@ -986,19 +991,49 @@ function TransactionForm({
             className="w-full justify-start"
           />
         </div>
-        <div className="space-y-2">
-          <Label>{t('transactions.colStatus')}</Label>
-          <select
-            className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card h-9 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
-            value={status}
-            onChange={(e) => setStatus(e.target.value as 'posted' | 'pending')}
-            disabled={isSynced}
-          >
-            <option value="posted">{t('transactions.statusPosted')}</option>
-            <option value="pending">{t('transactions.statusPending')}</option>
-          </select>
-        </div>
+        {showReportingDateOverride ? (
+          <div className="space-y-2">
+            <Label>{t('transactions.reportingDate')}</Label>
+            <div className="flex items-center gap-1">
+              <DatePickerInput
+                value={reportingDateOverride}
+                onChange={setReportingDateOverride}
+                placeholder={t('transactions.reportingDatePlaceholder')}
+                className="w-full justify-start"
+              />
+              {reportingDateOverride && (
+                <button
+                  type="button"
+                  className="h-9 w-9 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring transition-colors shrink-0"
+                  onClick={() => setReportingDateOverride('')}
+                  title={t('transactions.clearReportingDate')}
+                  aria-label={t('transactions.clearReportingDate')}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Label>{t('transactions.colStatus')}</Label>
+            <select
+              className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card h-9 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
+              value={status}
+              onChange={(e) => setStatus(e.target.value as 'posted' | 'pending')}
+              disabled={isSynced}
+            >
+              <option value="posted">{t('transactions.statusPosted')}</option>
+              <option value="pending">{t('transactions.statusPending')}</option>
+            </select>
+          </div>
+        )}
       </div>
+      {showReportingDateOverride && (
+        <p className="-mt-2 text-xs text-muted-foreground">
+          {t('transactions.reportingDateHint')}
+        </p>
+      )}
       {showConversion && (
         <div className="border border-border rounded-md p-3 space-y-2">
           {transaction?.fx_fallback && (
@@ -1141,10 +1176,7 @@ function TransactionForm({
           input = use auto bucketing (Pluggy bill_id when available, cycle
           math otherwise). Setting the date forces this tx into the bill
           whose due_date matches. */}
-      {(() => {
-        const selectedAcc = accounts.find(a => a.id === accountId)
-        if (selectedAcc?.type !== 'credit_card') return null
-        return (
+      {isCreditCardSelected && (
           <div className="space-y-2">
             <Label>
               {t('transactions.effectiveBillDate', 'Effective bill date')}{' '}
@@ -1170,8 +1202,7 @@ function TransactionForm({
               )}
             </div>
           </div>
-        )
-      })()}
+      )}
 
       {/* A settlement-sourced transaction *is* the movement clearing a
           group debt; splitting it would create circular accounting

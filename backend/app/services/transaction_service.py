@@ -1501,6 +1501,19 @@ async def update_transaction(
     apply_to_transfer_pair = update_data.pop("apply_to_transfer_pair", False)
     apply_to = update_data.pop("apply_to", "this")
 
+    # A synchronized transaction's provider date is immutable bank truth.
+    # Period corrections belong in reporting_date_override so sync identity,
+    # pending→posted deduplication, transfer matching, and FX history stay exact.
+    if (
+        transaction.source == "sync"
+        and "date" in update_data
+        and update_data["date"] != transaction.date
+    ):
+        raise ValueError(
+            "Bank date cannot be changed for synchronized transactions; "
+            "use reporting_date_override instead"
+        )
+
     # Splits are processed separately after column updates land so the
     # service can validate against the new amount.
     splits_payload = data.splits if "splits" in update_data else None
