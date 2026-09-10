@@ -715,7 +715,7 @@
     "effectiveBillDatePlaceholder": "बिल देय तिथि (वैकल्पिक)",
     "bankDate": "बैंक की तारीख",
     "reportingDate": "रिपोर्टिंग तारीख",
-    "reportingDateHint": "केवल मासिक रिपोर्ट बदलती है; बैंक की तारीख अपरिवर्तित रहती है।",
+    "reportingDateHint": "पूरे ऐप में रिपोर्टिंग अवधि बदलती है; बैंक की तारीख अपरिवर्तित रहती है।",
     "reportingDatePlaceholder": "रिपोर्टिंग तारीख चुनें (वैकल्पिक)",
     "clearReportingDate": "रिपोर्टिंग तारीख रीसेट करें",
     "clearOverride": "ओवरराइड हटाएँ",

@@ -712,7 +712,7 @@
     "effectiveBillDatePlaceholder": "Vencimento da fatura (opcional)",
     "bankDate": "Data bancária",
     "reportingDate": "Data de reporte",
-    "reportingDateHint": "Altera apenas os relatórios mensais; a data bancária permanece inalterada.",
+    "reportingDateHint": "Altera os períodos de reporte em toda a aplicação; a data bancária permanece inalterada.",
     "reportingDatePlaceholder": "Escolher data de reporte (opcional)",
     "clearReportingDate": "Repor data de reporte",
     "linkAsTransfer": "Vincular como transferência",

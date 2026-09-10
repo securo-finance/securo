@@ -712,7 +712,7 @@
     "effectiveBillDatePlaceholder": "Vencimento da fatura (opcional)",
     "bankDate": "Data do banco",
     "reportingDate": "Data de competência",
-    "reportingDateHint": "Altera apenas os relatórios mensais; a data do banco permanece inalterada.",
+    "reportingDateHint": "Altera os períodos de competência em todo o aplicativo; a data do banco permanece inalterada.",
     "reportingDatePlaceholder": "Escolher data de competência (opcional)",
     "clearReportingDate": "Redefinir data de competência",
     "linkAsTransfer": "Vincular como transferência",

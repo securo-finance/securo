@@ -715,7 +715,7 @@
     "effectiveBillDatePlaceholder": "請求の支払期日(任意)",
     "bankDate": "銀行日付",
     "reportingDate": "レポート日付",
-    "reportingDateHint": "月次レポートのみ変更され、銀行日付は変更されません。",
+    "reportingDateHint": "アプリ全体のレポート期間を変更します。銀行日付は変更されません。",
     "reportingDatePlaceholder": "レポート日付を選択（任意）",
     "clearReportingDate": "レポート日付をリセット",
     "clearOverride": "上書きをクリア",

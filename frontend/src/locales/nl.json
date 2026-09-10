@@ -715,7 +715,7 @@
     "effectiveBillDatePlaceholder": "Vervaldatum factuur (optioneel)",
     "bankDate": "Bankdatum",
     "reportingDate": "Rapportagedatum",
-    "reportingDateHint": "Wijzigt alleen maandrapporten; de bankdatum blijft ongewijzigd.",
+    "reportingDateHint": "Wijzigt rapportageperioden in de hele app; de bankdatum blijft ongewijzigd.",
     "reportingDatePlaceholder": "Kies rapportagedatum (optioneel)",
     "clearReportingDate": "Rapportagedatum herstellen",
     "clearOverride": "Overschrijving wissen",

@@ -1,5 +1,6 @@
 """Extended API tests covering missing lines in transactions, rules, assets,
 accounts, and import endpoints."""
+import csv
 import uuid
 from datetime import date
 
@@ -28,11 +29,12 @@ async def test_export_transactions_csv(
     lines = content.strip().split("\n")
     assert len(lines) > 1
     header = lines[0].replace("\ufeff", "")  # Remove BOM
-    assert "date" in header
-    assert "description" in header
-    assert "amount" in header
-    assert "reporting_date" in header
-    assert "reporting_date_override" in header
+    columns = next(csv.reader([header]))
+    assert "date" in columns
+    assert "description" in columns
+    assert "amount" in columns
+    assert "reporting_date" in columns
+    assert "reporting_date_override" in columns
 
 
 @pytest.mark.asyncio

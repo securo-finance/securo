@@ -746,7 +746,7 @@
     "effectiveBillDatePlaceholder": "Termin płatności rachunku (opcjonalnie)",
     "bankDate": "Data bankowa",
     "reportingDate": "Data raportowania",
-    "reportingDateHint": "Zmienia tylko raporty miesięczne; data bankowa pozostaje bez zmian.",
+    "reportingDateHint": "Zmienia okresy raportowania w całej aplikacji; data bankowa pozostaje bez zmian.",
     "reportingDatePlaceholder": "Wybierz datę raportowania (opcjonalnie)",
     "clearReportingDate": "Zresetuj datę raportowania",
     "linkAsTransfer": "Powiąż jako transfer",

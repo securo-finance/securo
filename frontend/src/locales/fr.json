@@ -715,7 +715,7 @@
     "effectiveBillDatePlaceholder": "Date d'échéance de la facture (optionnel)",
     "bankDate": "Date bancaire",
     "reportingDate": "Date de déclaration",
-    "reportingDateHint": "Modifie uniquement les rapports mensuels ; la date bancaire reste inchangée.",
+    "reportingDateHint": "Modifie les périodes de déclaration dans toute l’application ; la date bancaire reste inchangée.",
     "reportingDatePlaceholder": "Choisir une date de déclaration (facultatif)",
     "clearReportingDate": "Réinitialiser la date de déclaration",
     "clearOverride": "Effacer le remplacement",

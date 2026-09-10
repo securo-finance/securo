@@ -712,7 +712,7 @@
     "effectiveBillDatePlaceholder": "Scadenza estratto conto (facoltativo)",
     "bankDate": "Data bancaria",
     "reportingDate": "Data di rendicontazione",
-    "reportingDateHint": "Modifica solo i report mensili; la data bancaria resta invariata.",
+    "reportingDateHint": "Modifica i periodi di rendicontazione in tutta l'app; la data bancaria resta invariata.",
     "reportingDatePlaceholder": "Scegli la data di rendicontazione (facoltativo)",
     "clearReportingDate": "Reimposta la data di rendicontazione",
     "linkAsTransfer": "Collega come trasferimento",

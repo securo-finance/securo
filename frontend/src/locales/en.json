@@ -715,7 +715,7 @@
     "effectiveBillDatePlaceholder": "Bill due date (optional)",
     "bankDate": "Bank date",
     "reportingDate": "Reporting date",
-    "reportingDateHint": "Changes monthly reports only; the bank date remains unchanged.",
+    "reportingDateHint": "Changes reporting periods across the app; the bank date remains unchanged.",
     "reportingDatePlaceholder": "Choose reporting date (optional)",
     "clearReportingDate": "Reset reporting date",
     "clearOverride": "Clear override",

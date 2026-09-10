@@ -712,7 +712,7 @@
     "effectiveBillDatePlaceholder": "Vencimiento de la factura (opcional)",
     "bankDate": "Fecha bancaria",
     "reportingDate": "Fecha del informe",
-    "reportingDateHint": "Solo cambia los informes mensuales; la fecha bancaria no cambia.",
+    "reportingDateHint": "Cambia los períodos de informe en toda la aplicación; la fecha bancaria no cambia.",
     "reportingDatePlaceholder": "Elegir fecha del informe (opcional)",
     "clearReportingDate": "Restablecer fecha del informe",
     "linkAsTransfer": "Marcar como transferencia",

@@ -1523,6 +1523,7 @@ async def update_transaction(
     # row. When changing the account on one side of a transfer pair,
     # refuse to collide with the paired transaction's account (a transfer
     # must have two distinct accounts).
+    new_account = None
     new_account_id = update_data.get("account_id")
     if new_account_id is not None and new_account_id != transaction.account_id:
         account_result = await session.execute(
@@ -1536,7 +1537,8 @@ async def update_transaction(
                 ),
             )
         )
-        if account_result.scalar_one_or_none() is None:
+        new_account = account_result.scalar_one_or_none()
+        if new_account is None:
             raise ValueError("Account not found")
 
         if transaction.transfer_pair_id:
@@ -1549,6 +1551,22 @@ async def update_transaction(
             paired_tx = paired_result.scalar_one_or_none()
             if paired_tx and paired_tx.account_id == new_account_id:
                 raise ValueError("Cannot move transfer to the same account as its paired transaction")
+
+    reporting_override = update_data.get(
+        "reporting_date_override", transaction.reporting_date_override
+    )
+    if reporting_override is not None:
+        if transaction.source != "sync":
+            raise ValueError(
+                "Reporting date override is only supported for synchronized "
+                "non-credit-card transactions"
+            )
+        effective_account = new_account or await session.get(Account, transaction.account_id)
+        if effective_account is None or effective_account.type == "credit_card":
+            raise ValueError(
+                "Reporting date override is only supported for synchronized "
+                "non-credit-card transactions"
+            )
 
     if "category_id" in update_data:
         await _ensure_category_in_workspace(session, workspace_id, update_data["category_id"])
