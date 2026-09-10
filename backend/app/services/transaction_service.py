@@ -1552,21 +1552,6 @@ async def update_transaction(
             if paired_tx and paired_tx.account_id == new_account_id:
                 raise ValueError("Cannot move transfer to the same account as its paired transaction")
 
-    reporting_override = update_data.get(
-        "reporting_date_override", transaction.reporting_date_override
-    )
-    if reporting_override is not None:
-        if transaction.source != "sync":
-            raise ValueError(
-                "Reporting date override is only supported for synchronized "
-                "non-credit-card transactions"
-            )
-        effective_account = new_account or await session.get(Account, transaction.account_id)
-        if effective_account is None or effective_account.type == "credit_card":
-            raise ValueError(
-                "Reporting date override is only supported for synchronized "
-                "non-credit-card transactions"
-            )
 
     if "category_id" in update_data:
         await _ensure_category_in_workspace(session, workspace_id, update_data["category_id"])
@@ -1605,6 +1590,7 @@ async def update_transaction(
             k: v for k, v in update_data.items() if k in installment_scoped_fields
         }
 
+    prepared_rows = []
     for row in rows:
         # The edited transaction itself reflects the full form payload; the
         # sibling installments only receive the whitelisted fields (and keep
@@ -1619,6 +1605,32 @@ async def update_transaction(
             assert scoped_update is not None
             row_update = scoped_update
             row_splits = None
+        prepared_rows.append((row, row_update, row_splits))
+
+    account_cache = {new_account.id: new_account} if new_account is not None else {}
+    for row, row_update, _ in prepared_rows:
+        reporting_override = row_update.get(
+            "reporting_date_override", row.reporting_date_override
+        )
+        if reporting_override is None:
+            continue
+        target_account_id = row_update.get("account_id", row.account_id)
+        effective_account = account_cache.get(target_account_id)
+        if effective_account is None:
+            effective_account = await session.get(Account, target_account_id)
+            if effective_account is not None:
+                account_cache[target_account_id] = effective_account
+        if (
+            row.source != "sync"
+            or effective_account is None
+            or effective_account.type == "credit_card"
+        ):
+            raise ValueError(
+                "Reporting date override is only supported for synchronized "
+                "non-credit-card transactions"
+            )
+
+    for row, row_update, row_splits in prepared_rows:
         await _apply_update_to_row(
             session,
             user_id,
