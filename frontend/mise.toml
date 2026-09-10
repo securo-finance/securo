@@ -1,5 +1,5 @@
 [tools]
-node = "22"
+node = "24"
 
 [tasks.install]
 alias = "i"

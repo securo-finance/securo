@@ -54,7 +54,7 @@ The same applies to issues. An issue produced by pointing a model at the reposit
 
 1. Create a branch from `main`: `git checkout -b feature/your-feature`
 2. Make your changes
-3. Run backend tests: `cd backend && uv sync --all-extras && uv run pytest` (Python 3.11+)
+3. Run backend tests: `cd backend && uv sync --locked --group dev && uv run --no-sync pytest` (Python 3.11+)
 4. Run frontend checks: `cd frontend && npm run lint && npm test`
 5. Commit with a clear message (see below)
 6. Push your branch and open a Pull Request
@@ -64,7 +64,7 @@ Optional but recommended, so you catch lint and type errors before CI does:
 ```bash
 prek install                                   # once, from the repo root
 # or, if you prefer the Python original:
-pip install pre-commit && pre-commit install
+uv tool run pre-commit install
 ```
 
 This runs `ruff check` and `ty check` on the backend whenever you commit a
@@ -86,8 +86,8 @@ request.
 
 `frontend/.npmrc` never runs a package's install scripts, and asks npm to skip
 releases younger than seven days so a compromised publish has time to be caught.
-The cooldown needs npm 11.10 or newer; the npm that ships with Node 22 is older
-and will ignore that line without saying so, so upgrade before you add anything:
+Use Node 24, matching CI and the frontend containers. The cooldown needs npm
+11.10 or newer; upgrade npm if your Node installation ships an older version:
 
 ```bash
 npm install --global npm@latest
@@ -112,27 +112,22 @@ Use clear, descriptive commit messages:
 ```bash
 # Backend tests (run from backend/, needs Python 3.11+; same as CI)
 cd backend
-uv sync --all-extras   # first time only — builds .venv from uv.lock, same versions as CI
-source .venv/bin/activate
-pytest
-
-# No uv? pip works too, from an export of the lock:
-#   pip install uv && uv export --frozen --all-extras --no-emit-project -o /tmp/req.txt
-#   pip install --require-hashes -r /tmp/req.txt && pip install --no-deps -e .
+uv sync --locked --group dev   # builds .venv from uv.lock, same versions as CI
+uv run --no-sync pytest
 
 # Backend tests with coverage
-pytest --cov=app --cov-report=term-missing
+uv run --no-sync pytest --cov=app --cov-report=term-missing --cov-fail-under=60
 
 # Backend lint + type check (same commands CI runs)
-ruff check .
-ty check .
+uv run --no-sync ruff check .
+uv run --no-sync ty check .
 
 # After changing dependencies in pyproject.toml: regenerate the lock and
 # commit uv.lock along with it (CI enforces this)
 ./scripts/lock.sh
 
 # After adding a migration: check the revision chain is still a single line
-python3 scripts/check_migration_chain.py
+uv run --no-sync python scripts/check_migration_chain.py
 
 # Frontend lint
 cd frontend && npm run lint
@@ -140,6 +135,12 @@ cd frontend && npm run lint
 # Frontend build check
 cd frontend && npm run build
 ```
+
+The PostgreSQL report tests run in the same suite when `POSTGRES_TEST_URL` points
+to a disposable PostgreSQL 16 database, for example
+`postgresql+asyncpg://postgres:postgres@localhost:5432/securo_test`. Each test creates
+and drops its own schema; the database user must be allowed to do both. These tests
+skip locally when the URL is absent and fail in CI if it is missing.
 
 ### Adding a migration
 

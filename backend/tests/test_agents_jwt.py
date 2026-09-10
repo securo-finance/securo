@@ -9,6 +9,7 @@ Both sides share AGENTS_MCP_JWT_SECRET. We test that:
 
 import time
 import uuid
+from datetime import datetime
 
 import pytest
 from jose import jwt
@@ -94,16 +95,30 @@ def test_expired_token_rejected():
     assert exc.value.status_code == 401
 
 
-def test_short_ttl_respected():
-    """Mint with ttl_seconds=1, sleep 2, verify rejection."""
+def test_short_ttl_respected(monkeypatch):
+    """A one-second token verifies before expiry and is rejected afterward."""
     from fastapi import HTTPException
     from mcp_server.auth import verify_request
 
-    token = mint_token(user_id=uuid.uuid4(), ttl_seconds=1)
-    time.sleep(2.1)
+    user_id = uuid.uuid4()
+    token = mint_token(user_id=user_id, ttl_seconds=1)
+    claims = jwt.get_unverified_claims(token)
+    assert claims["exp"] - claims["iat"] == 1
+    now = claims["iat"]
 
-    with pytest.raises(HTTPException):
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime.fromtimestamp(now, tz)
+
+    monkeypatch.setattr(jwt, "datetime", Clock)
+    assert verify_request(_req_bearer(token)).user_id == user_id
+
+    now += 2
+    with pytest.raises(HTTPException) as exc:
         _ = verify_request(_req_bearer(token))
+    assert exc.value.status_code == 401
+    assert "expired" in exc.value.detail
 
 
 def test_optional_conv_id_is_truly_optional():

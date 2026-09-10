@@ -1,6 +1,9 @@
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import path from 'node:path'
+
+// These two library suites exercise browser styles or i18n.
+const nodeTests = ['src/lib/!(theme-utils|workspace-kinds).test.ts']
 
 export default defineConfig({
   plugins: [react()],
@@ -19,14 +22,28 @@ export default defineConfig({
     ],
   },
   test: {
-    // jsdom for everything, not only the component tests. The pure-function
-    // suites under src/lib run fine in it and keeping one environment means a
-    // new test file works wherever it is dropped, with no per-file docblock to
-    // forget.
-    environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts'],
     // Vite serves the app's CSS through Tailwind; none of it affects what the
     // tests assert, so skip the transform and keep the suite fast.
     css: false,
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'node',
+          environment: 'node',
+          include: nodeTests,
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'dom',
+          environment: 'jsdom',
+          setupFiles: ['./src/test/setup.ts'],
+          // Every other discovered test keeps the browser environment.
+          exclude: [...configDefaults.exclude, ...nodeTests],
+        },
+      },
+    ],
   },
 })

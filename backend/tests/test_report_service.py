@@ -466,79 +466,6 @@ async def test_net_worth_api_requires_auth(client):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-@pytest.mark.skip(reason="to_char() is PostgreSQL-specific; tests use SQLite")
-async def test_income_expenses_api_endpoint(client, auth_headers, test_transactions):
-    """GET /reports/income-expenses returns valid response."""
-    response = await client.get(
-        "/api/reports/income-expenses",
-        params={"months": 12, "interval": "monthly"},
-        headers=auth_headers,
-    )
-    assert response.status_code == 200
-    data = response.json()
-
-    assert data["meta"]["type"] == "income_expenses"
-    assert data["meta"]["series_keys"] == [
-        "income", "expenses", "projectedIncome", "projectedExpenses"
-    ]
-    assert "summary" in data
-    assert "trend" in data
-
-    # Summary should have income, expenses, netIncome breakdowns
-    breakdown_keys = [b["key"] for b in data["summary"]["breakdowns"]]
-    assert "income" in breakdown_keys
-    assert "expenses" in breakdown_keys
-    assert "netIncome" in breakdown_keys
-
-    # Verify math: net income = income - expenses
-    breakdowns = {b["key"]: b["value"] for b in data["summary"]["breakdowns"]}
-    assert abs(breakdowns["netIncome"] - (breakdowns["income"] - breakdowns["expenses"])) < 0.01
-
-    # Each trend point has income/expenses breakdowns
-    for dp in data["trend"]:
-        assert "income" in dp["breakdowns"]
-        assert "expenses" in dp["breakdowns"]
-        # value = net income = income - expenses
-        expected_net = dp["breakdowns"]["income"] - dp["breakdowns"]["expenses"]
-        assert abs(dp["value"] - expected_net) < 0.01
-
-
-@pytest.mark.asyncio
-@pytest.mark.skip(reason="to_char() is PostgreSQL-specific; tests use SQLite")
-async def test_income_expenses_excludes_opening_balance(client, auth_headers):
-    """Income expenses report excludes opening balance transactions."""
-    # Create account with opening balance
-    acc_resp = await client.post(
-        "/api/accounts",
-        json={"name": "IE Test", "type": "checking", "balance": 10000.00, "currency": "BRL"},
-        headers=auth_headers,
-    )
-    assert acc_resp.status_code == 201
-
-    response = await client.get(
-        "/api/reports/income-expenses",
-        params={"months": 1, "interval": "monthly"},
-        headers=auth_headers,
-    )
-    assert response.status_code == 200
-    data = response.json()
-
-    # Opening balance should NOT appear as income
-    breakdowns = {b["key"]: b["value"] for b in data["summary"]["breakdowns"]}
-    assert breakdowns["income"] == 0.0
-
-
-@pytest.mark.asyncio
-@pytest.mark.skip(reason="to_char() is PostgreSQL-specific; tests use SQLite")
-async def test_income_expenses_excludes_transfers(client, auth_headers):
-    """Income expenses report excludes transfer pair transactions."""
-    response = await client.get(
-        "/api/reports/income-expenses",
-        params={"months": 12, "interval": "monthly"},
-        headers=auth_headers,
-    )
-    assert response.status_code == 200
     # Just verify the endpoint works — transfer exclusion is enforced by the SQL filter
 
 
@@ -800,36 +727,6 @@ async def test_net_worth_report_has_empty_category_trend(session: AsyncSession, 
 # ---------------------------------------------------------------------------
 # API-level test: income-expenses includes category_trend
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-@pytest.mark.skip(reason="to_char() is PostgreSQL-specific; tests use SQLite")
-async def test_income_expenses_has_category_trend(client, auth_headers, test_transactions):
-    """GET /reports/income-expenses response includes category_trend array."""
-    response = await client.get(
-        "/api/reports/income-expenses",
-        params={"months": 12, "interval": "monthly"},
-        headers=auth_headers,
-    )
-    assert response.status_code == 200
-    data = response.json()
-
-    assert "category_trend" in data
-    assert isinstance(data["category_trend"], list)
-
-    # Each item should have the expected shape
-    for item in data["category_trend"]:
-        assert "key" in item
-        assert "label" in item
-        assert "color" in item
-        assert "total" in item
-        assert "group" in item
-        assert item["group"] in ("income", "expenses")
-        assert "series" in item
-        assert isinstance(item["series"], list)
-        for point in item["series"]:
-            assert "date" in point
-            assert "value" in point
 
 
 # ---------------------------------------------------------------------------

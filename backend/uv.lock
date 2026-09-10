@@ -2541,7 +2541,7 @@ wheels = [
 [[package]]
 name = "securo-backend"
 version = "0.15.1"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "aiofiles" },
     { name = "alembic" },
@@ -2570,10 +2570,9 @@ dependencies = [
     { name = "yfinance" },
 ]
 
-[package.optional-dependencies]
+[package.dev-dependencies]
 dev = [
     { name = "aiosqlite" },
-    { name = "httpx" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
@@ -2585,7 +2584,6 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aiofiles", specifier = ">=24.0" },
-    { name = "aiosqlite", marker = "extra == 'dev'", specifier = ">=0.19.0" },
     { name = "alembic", specifier = ">=1.13.0" },
     { name = "asyncpg", specifier = ">=0.29.0" },
     { name = "celery", extras = ["redis"], specifier = ">=5.3.0" },
@@ -2594,7 +2592,6 @@ requires-dist = [
     { name = "fastapi-users", extras = ["sqlalchemy"], specifier = ">=13.0.0" },
     { name = "fastembed", specifier = ">=0.4.0" },
     { name = "httpx", specifier = ">=0.26.0" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.26.0" },
     { name = "ofxparse", specifier = ">=0.21" },
     { name = "passlib", extras = ["bcrypt"], specifier = ">=1.7.4" },
     { name = "pgvector", specifier = ">=0.3.0" },
@@ -2602,23 +2599,27 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.5.0" },
     { name = "pyotp", specifier = ">=2.9.0" },
     { name = "pypdf", specifier = ">=5.0.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=1.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
-    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.6.1" },
     { name = "python-jose", extras = ["cryptography"], specifier = ">=3.3.0" },
     { name = "python-multipart", specifier = ">=0.0.6" },
     { name = "pyzipper", specifier = ">=0.4.0" },
     { name = "redis", extras = ["hiredis"], specifier = ">=5.0.0" },
     { name = "reportlab", specifier = ">=4.2.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.16.4,<0.17" },
     { name = "sqlalchemy", specifier = ">=2.0.0" },
-    { name = "ty", marker = "extra == 'dev'", specifier = "==0.0.79" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.27.0" },
     { name = "webauthn", specifier = ">=2.8.0" },
     { name = "yfinance", specifier = ">=1.3.0" },
 ]
-provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "aiosqlite", specifier = ">=0.19.0" },
+    { name = "pytest", specifier = ">=9.0.0" },
+    { name = "pytest-asyncio", specifier = ">=1.0" },
+    { name = "pytest-cov", specifier = ">=4.1.0" },
+    { name = "pytest-xdist", specifier = ">=3.6.1" },
+    { name = "ruff", specifier = "==0.16.6" },
+    { name = "ty", specifier = "==0.0.79" },
+]
 
 [[package]]
 name = "six"

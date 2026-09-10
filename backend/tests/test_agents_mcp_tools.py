@@ -337,18 +337,6 @@ async def test_aggregate_by_category(
     assert "Transporte" in labels or "Alimentação" in labels
 
 
-@pytest.mark.skip(reason="aggregate by month uses PostgreSQL to_char, not portable to SQLite test DB")
-async def test_aggregate_by_month(
-    session: AsyncSession, ctx: CallContext, test_transactions
-):
-    handler = REGISTRY["aggregate"].handler
-    result = await handler(session=session, ctx=ctx, metric="count", group_by="month")
-    assert "items" in result
-    for item in result["items"]:
-        if item["bucket"]:
-            assert len(item["bucket"]) == 7 and item["bucket"][4] == "-"
-
-
 async def test_aggregate_unknown_group_by(session: AsyncSession, ctx: CallContext):
     handler = REGISTRY["aggregate"].handler
     result = await handler(session=session, ctx=ctx, group_by="bogus")

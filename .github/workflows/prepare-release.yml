@@ -68,7 +68,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          # backend/pyproject.toml is installed into the image with `pip install -e .`,
+          # backend/pyproject.toml is installed into the image by `uv sync`,
           # so this is the version the running backend actually reports.
           sed -i -E "0,/^version = /s|^version = .*|version = \"$VERSION\"|" backend/pyproject.toml
 
@@ -81,15 +81,18 @@ jobs:
           sed -i -E "0,/^version:/s|^version:.*|version: $VERSION|" charts/securo/Chart.yaml
           sed -i -E "0,/^appVersion:/s|^appVersion:.*|appVersion: \"$VERSION\"|" charts/securo/Chart.yaml
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.10"
+
       - name: Regenerate uv.lock
         run: |
           set -euo pipefail
 
-          # uv.lock carries the project's own version, so CI's `uv lock --check`
+          # uv.lock carries the project's own version, so CI's `uv sync --locked`
           # fails if the pyproject bump lands alone. Same pinned uv as ci.yml and
           # the backend image.
-          # renovate: datasource=pypi depName=uv
-          pip install -q uv==0.12.5
           cd backend
           uv lock
           uv lock --check

@@ -1,20 +1,19 @@
 # Runs the same backend checks as CI, before you push. Optional.
 #
-#   cd backend && uv sync --all-extras      # installs ruff + ty (from uv.lock)
-#   prek install                            # or: pip install pre-commit && pre-commit install
+#   cd backend && uv sync --locked --group dev  # installs ruff + ty (from uv.lock)
+#   prek install                               # or: uv tool run pre-commit install
 #
-# Run by hand: prek run --all-files
+# Run by hand: prek run --all-files (or: uv tool run pre-commit run --all-files)
 #
-# The hooks call the ruff and ty from backend/.[dev], so they always match the
-# versions CI uses. If ty reports errors CI doesn't, your venv is behind
-# pyproject.toml — re-run the install above.
+# The hooks use the backend dev group and verify uv.lock before running,
+# so their tool versions match CI without activating a virtual environment.
 
 repos:
   - repo: local
     hooks:
       - id: ruff
         name: ruff (backend)
-        entry: bash -c 'cd backend && ruff check .'
+        entry: bash -c 'cd backend && uv run --locked ruff check .'
         language: system
         types: [python]
         files: ^backend/
@@ -22,7 +21,7 @@ repos:
 
       - id: migration-chain
         name: alembic chain (backend)
-        entry: python3 backend/scripts/check_migration_chain.py
+        entry: bash -c 'cd backend && uv run --locked python scripts/check_migration_chain.py'
         language: system
         files: ^backend/alembic/versions/
         # The chain is a property of the whole directory, not of one file.
@@ -30,7 +29,7 @@ repos:
 
       - id: ty
         name: ty (backend)
-        entry: bash -c 'cd backend && ty check .'
+        entry: bash -c 'cd backend && uv run --locked ty check .'
         language: system
         types: [python]
         files: ^backend/

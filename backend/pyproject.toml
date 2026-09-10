@@ -3,9 +3,8 @@ name = "securo-backend"
 version = "0.15.1"
 description = "Securo API - Personal Finance Manager"
 requires-python = ">=3.11"
-# These ranges express intent; the resolved versions live in uv.lock, which is
-# what CI and the Docker image actually install (exported with --frozen and
-# fed to pip with hash checking). After changing anything here, run
+# These ranges express intent; CI and Docker install uv.lock with uv sync --locked.
+# After changing dependencies, run
 # scripts/lock.sh and commit the updated uv.lock — CI fails if it drifts.
 dependencies = [
     "fastapi>=0.109.0",
@@ -48,29 +47,30 @@ dependencies = [
     "fastembed>=0.4.0",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
     "pytest>=9.0.0",
     "pytest-asyncio>=1.0",
     "pytest-cov>=4.1.0",
     "pytest-xdist>=3.6.1",
-    "httpx>=0.26.0",
     "aiosqlite>=0.19.0",
-    # Upper-bounded so CI lint stays deterministic: ruff 0.16 reformats the
-    # historical alembic/ migration import blocks. Bump deliberately (with the
-    # accompanying reformat) rather than letting CI float to a newer release.
-    "ruff>=0.16.4,<0.17",
-    # Pinned exactly, for the same reason as ruff above: ty is pre-1.0 and each
-    # 0.0.x release can add new checks, so letting it float would turn a green
-    # CI red on an unrelated PR. Bump deliberately, together with whatever
-    # annotations the new release asks for.
+    # Upgrade these checks deliberately: new releases can change diagnostics.
+    "ruff==0.16.6",
     "ty==0.0.79",
 ]
 
-[tool.setuptools.packages.find]
-include = ["app*"]
+[build-system]
+requires = ["uv_build>=0.12.10,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = ["app", "mcp_server"]
+module-root = ""
 
 [tool.pytest.ini_options]
+# Fail on configuration/marker typos, duplicate parameter IDs and unexpected
+# xfail passes instead of silently weakening the suite.
+strict = true
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
@@ -96,13 +96,19 @@ omit = [
 # 3.12+-only construct is caught here rather than by a self-hoster on 3.11.
 python-version = "3.11"
 
+[tool.ty.rules]
+unused-ignore-comment = "error"
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-# Ruff 0.16 widened its default rule set, so leaving the selection implicit
-# means a ruff bump silently changes what CI enforces. Pin the set we lint
-# against (ruff's pre-0.16 default) and change it deliberately, not by upgrade.
-select = ["E4", "E7", "E9", "F"]
+# Keep the lint contract explicit and expand it deliberately.
+select = [
+    "E4", "E7", "E9", "F",
+    # Stable correctness checks; avoid a mechanical style-only rewrite.
+    "B006", "B012", "B016", "B019", "B020", "B022", "B026", "B029", "B033", "B034",
+    "PLE",
+]
 ignore = ["E711", "E712"]
