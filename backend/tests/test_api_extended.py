@@ -31,6 +31,8 @@ async def test_export_transactions_csv(
     assert "date" in header
     assert "description" in header
     assert "amount" in header
+    assert "reporting_date" in header
+    assert "reporting_date_override" in header
 
 
 @pytest.mark.asyncio
