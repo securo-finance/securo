@@ -1,3 +1,4 @@
+from copy import deepcopy
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -6,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.account import Account
 from app.models.budget import Budget
 from app.models.transaction import Transaction
 from app.schemas.transaction import TransactionUpdate
@@ -28,6 +30,7 @@ async def _synced_transaction(
     category_id=None,
     amount: Decimal = Decimal("100.00"),
     transfer_pair_id=None,
+    source: str = "sync",
 ) -> Transaction:
     transaction = Transaction(
         id=uuid.uuid4(),
@@ -45,7 +48,7 @@ async def _synced_transaction(
         effective_date=bank_date,
         reporting_date_override=reporting_date,
         type="credit",
-        source="sync",
+        source=source,
         status="posted",
         raw_data={"provider": "bank-truth"},
         transfer_pair_id=transfer_pair_id,
@@ -79,7 +82,7 @@ async def test_override_moves_synced_row_and_reset_preserves_bank_truth(
         "amount": transaction.amount,
         "amount_primary": transaction.amount_primary,
         "fx_rate_used": transaction.fx_rate_used,
-        "raw_data": transaction.raw_data,
+        "raw_data": deepcopy(transaction.raw_data),
         "status": transaction.status,
         "account_id": transaction.account_id,
     }
@@ -148,6 +151,92 @@ async def test_override_moves_synced_row_and_reset_preserves_bank_truth(
             test_user.id,
             TransactionUpdate(date=bank_date - timedelta(days=2)),
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("source", "account_type"),
+    [("manual", "checking"), ("sync", "credit_card")],
+)
+async def test_override_rejects_unsupported_transactions(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+    test_account,
+    source,
+    account_type,
+):
+    test_account.type = account_type
+    await session.commit()
+    transaction = await _synced_transaction(
+        session,
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=test_account.id,
+        bank_date=date.today(),
+        source=source,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="only supported for synchronized non-credit-card transactions",
+    ):
+        await update_transaction(
+            session,
+            transaction.id,
+            test_workspace.id,
+            test_user.id,
+            TransactionUpdate(reporting_date_override=date.today() - timedelta(days=1)),
+        )
+
+    await session.refresh(transaction)
+    assert transaction.reporting_date_override is None
+
+
+@pytest.mark.asyncio
+async def test_override_rejects_move_to_credit_card(
+    session: AsyncSession,
+    test_user,
+    test_workspace,
+    test_account,
+):
+    bank_date = date.today()
+    reporting_date = bank_date - timedelta(days=1)
+    transaction = await _synced_transaction(
+        session,
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=test_account.id,
+        bank_date=bank_date,
+        reporting_date=reporting_date,
+    )
+    card = Account(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Unsupported reporting-date card",
+        type="credit_card",
+        balance=Decimal("0"),
+        currency="BRL",
+    )
+    session.add(card)
+    await session.commit()
+
+    with pytest.raises(
+        ValueError,
+        match="only supported for synchronized non-credit-card transactions",
+    ):
+        await update_transaction(
+            session,
+            transaction.id,
+            test_workspace.id,
+            test_user.id,
+            TransactionUpdate(account_id=card.id),
+        )
+
+    await session.refresh(transaction)
+    assert transaction.account_id == test_account.id
+    assert transaction.reporting_date_override == reporting_date
 
 
 @pytest.mark.asyncio
