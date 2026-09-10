@@ -120,6 +120,7 @@ def test_anthropic_tool_result_block():
     ("http://lmstudio:1234/v1/", "http://lmstudio:1234/v1"),
     ("https://api.openai.com/v1", "https://api.openai.com/v1"),
     ("https://api.groq.com/openai/v1", "https://api.groq.com/openai/v1"),
+    ("https://generativelanguage.googleapis.com/v1beta/openai/", "https://generativelanguage.googleapis.com/v1beta/openai"),
     ("https://api.example.com/v2", "https://api.example.com/v2"),
     ("https://api.example.com/beta", "https://api.example.com/beta"),
     ("https://api.example.com/", "https://api.example.com/v1"),

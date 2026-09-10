@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import AsyncIterator, Optional
 from urllib.parse import urlparse
 
@@ -30,7 +31,7 @@ def normalize_openai_base_url(url: str) -> str:
     Rules:
       - empty → returned as-is
       - trailing slashes stripped
-      - if any path segment looks like a version (`v1`, `v2`, `beta`,
+      - if any path segment looks like a version (`v1`, `v2`, `v1beta`, `beta`,
         `latest`, `api/v3`, etc.), leave the URL alone
       - otherwise, append `/v1`
     """
@@ -40,7 +41,7 @@ def normalize_openai_base_url(url: str) -> str:
     path_segments = [s for s in (urlparse(url).path or "").split("/") if s]
     for seg in path_segments:
         if (
-            (seg.startswith("v") and seg[1:].isdigit())
+            re.fullmatch(r"v\d+(?:(?:alpha|beta)\d*)?", seg)
             or seg in {"beta", "latest"}
         ):
             return url
@@ -59,6 +60,8 @@ def _serialize_messages(messages: list[ChatMessage]) -> list[dict]:
                     "id": tc.id,
                     "type": "function",
                     "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
+                    **({"extra_content": {"google": {"thought_signature": tc.thought_signature}}}
+                       if tc.thought_signature is not None else {}),
                 }
                 for tc in m.tool_calls
             ]
@@ -174,6 +177,13 @@ class OpenAIProvider(LLMProvider):
                                     "started": False,
                                     "pending_args": "",
                                 })
+                                # Gemini's OpenAI endpoint puts the opaque signature
+                                # beside function, potentially in a later delta.
+                                extra = tc.get("extra_content")
+                                google = extra.get("google") if isinstance(extra, dict) else None
+                                signature = google.get("thought_signature") if isinstance(google, dict) else None
+                                if isinstance(signature, str):
+                                    state["thought_signature"] = signature
                                 # First chunk usually carries both id and name;
                                 # some servers split the name across chunks.
                                 if tc.get("id") and not state["id"]:
@@ -212,7 +222,10 @@ class OpenAIProvider(LLMProvider):
                                 finish_reason = choice["finish_reason"]
                     for state in idx_state.values():
                         if state["started"]:
-                            yield ChatChunk(type="tool_call_end", tool_call_id=state["id"])
+                            yield ChatChunk(
+                                type="tool_call_end", tool_call_id=state["id"],
+                                thought_signature=state.get("thought_signature"),
+                            )
                     if usage:
                         yield ChatChunk(type="usage", usage=usage)
                     yield ChatChunk(type="finish", finish_reason=finish_reason or "stop")
