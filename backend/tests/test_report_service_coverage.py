@@ -229,6 +229,31 @@ async def test_income_expenses_basic_structure(session, test_user, test_workspac
         assert len(ct.series) == len(report.trend)
 
 
+async def test_income_expenses_uses_reporting_date_override(session, test_user, test_workspace):
+    bank_date = date.today().replace(day=1)
+    reporting_date = bank_date - timedelta(days=1)
+    account = await _make_account(session, test_user.id, "Reporting Date Account")
+    transaction = await _add_txn(
+        session,
+        test_user.id,
+        account.id,
+        100,
+        "debit",
+        bank_date,
+        source="sync",
+    )
+    transaction.reporting_date_override = reporting_date
+    await session.commit()
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, months=2, interval="monthly"
+    )
+    trend = {point.date: point.breakdowns for point in report.trend}
+
+    assert trend[reporting_date.strftime("%Y-%m")]["expenses"] == pytest.approx(100.0)
+    assert trend[bank_date.strftime("%Y-%m")]["expenses"] == pytest.approx(0.0)
+
+
 async def test_income_expenses_empty_data(session, test_user, test_workspace):
     """No transactions → zeroed summary, empty composition / category trend."""
     report = await get_income_expenses_report(
@@ -478,6 +503,34 @@ async def test_cash_flow_monthly_interval_aggregation(session, test_user, test_w
     for dp in report.trend:
         assert "inflow" in dp.breakdowns
         assert "outflow" in dp.breakdowns
+
+
+async def test_cash_flow_override_moves_reporting_bucket_not_balance(
+    session, test_user, test_workspace,
+):
+    account = await _make_account(session, test_user.id, "CF Reporting Date")
+    today = date.today()
+    bank_date = today - timedelta(days=1)
+    reporting_date = today + timedelta(days=2)
+    await _add_txn(
+        session, test_user.id, account.id, 1000, "credit",
+        today - timedelta(days=10), source="opening_balance",
+    )
+    transaction = await _add_txn(
+        session, test_user.id, account.id, 100, "debit", bank_date, source="sync",
+    )
+    transaction.reporting_date_override = reporting_date
+    await session.commit()
+
+    report = await get_cash_flow_report(
+        session, test_workspace.id, test_user.id, months=1, interval="daily",
+    )
+    trend = {point.date: point for point in report.trend}
+
+    assert trend[today.isoformat()].value == pytest.approx(900.0)
+    assert trend[reporting_date.isoformat()].breakdowns["outflow"] == pytest.approx(100.0)
+    assert trend[reporting_date.isoformat()].value == pytest.approx(900.0)
+    assert trend[(bank_date - timedelta(days=1)).isoformat()].value == pytest.approx(1000.0)
 
 
 async def test_cash_flow_weekly_interval_aggregation(session, test_user, test_workspace):

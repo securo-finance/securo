@@ -19,6 +19,7 @@ from app.services._query_filters import (
     owner_split_offset_by_category,
     owner_split_offset_pnl,
     reporting_date_col,
+    reporting_date_value,
     viewer_shared_pnl,
     viewer_shared_spending_by_category,
 )
@@ -986,10 +987,7 @@ async def get_monthly_trend(
     for tx in forecast_transactions:
         if not _counts_as_user_pnl_row(tx):
             continue
-        tx_report_date = (
-            tx.effective_bill_date
-            or (tx.effective_date if accounting_mode == "accrual" else tx.date)
-        )
+        tx_report_date = reporting_date_value(tx, accounting_mode)
         month_key = f"{tx_report_date.year:04d}-{tx_report_date.month:02d}"
         bucket = trend_map.setdefault(month_key, [0.0, 0.0])
         if tx.amount_primary is not None:
