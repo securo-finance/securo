@@ -194,7 +194,7 @@ async def test_override_rejects_unsupported_transactions(
 
 
 @pytest.mark.asyncio
-async def test_override_rejects_move_to_credit_card(
+async def test_override_rejects_scoped_move_when_sibling_has_override(
     session: AsyncSession,
     test_user,
     test_workspace,
@@ -202,7 +202,16 @@ async def test_override_rejects_move_to_credit_card(
 ):
     bank_date = date.today()
     reporting_date = bank_date - timedelta(days=1)
-    transaction = await _synced_transaction(
+    series_id = uuid.uuid4()
+    purchase_date = bank_date - timedelta(days=30)
+    anchor = await _synced_transaction(
+        session,
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        account_id=test_account.id,
+        bank_date=bank_date,
+    )
+    sibling = await _synced_transaction(
         session,
         user_id=test_user.id,
         workspace_id=test_workspace.id,
@@ -210,6 +219,12 @@ async def test_override_rejects_move_to_credit_card(
         bank_date=bank_date,
         reporting_date=reporting_date,
     )
+    for number, transaction in enumerate((anchor, sibling), start=1):
+        transaction.installment_series_id = series_id
+        transaction.installment_number = number
+        transaction.total_installments = 2
+        transaction.installment_purchase_date = purchase_date
+
     card = Account(
         id=uuid.uuid4(),
         user_id=test_user.id,
@@ -228,15 +243,18 @@ async def test_override_rejects_move_to_credit_card(
     ):
         await update_transaction(
             session,
-            transaction.id,
+            anchor.id,
             test_workspace.id,
             test_user.id,
-            TransactionUpdate(account_id=card.id),
+            TransactionUpdate(account_id=card.id, apply_to="all"),
         )
 
-    await session.refresh(transaction)
-    assert transaction.account_id == test_account.id
-    assert transaction.reporting_date_override == reporting_date
+    await session.refresh(anchor)
+    await session.refresh(sibling)
+    assert anchor.account_id == test_account.id
+    assert sibling.account_id == test_account.id
+    assert anchor.reporting_date_override is None
+    assert sibling.reporting_date_override == reporting_date
 
 
 @pytest.mark.asyncio
