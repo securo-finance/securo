@@ -842,6 +842,48 @@ async def _match_pluggy_category(
     return result.scalars().first()
 
 
+async def _find_installment_category(
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    txn_data,
+) -> Optional[uuid.UUID]:
+    """Reuse the latest user-selected category from an earlier installment.
+
+    Pluggy gives every parcel the original purchase date, installment count,
+    and total purchase amount. Together with the card account and transaction
+    type, those fields identify the purchase series without relying on the
+    description (whose ``03/12`` suffix changes every month).
+
+    Only earlier synced parcels qualify. This keeps manual installment series
+    separate and lets a user's most recent category correction become the
+    source of truth for the next imported parcel.
+    """
+    if (
+        txn_data.installment_number is None
+        or txn_data.total_installments is None
+        or txn_data.installment_total_amount is None
+        or txn_data.installment_purchase_date is None
+    ):
+        return None
+
+    result = await session.execute(
+        select(Transaction.category_id)
+        .where(
+            Transaction.account_id == account_id,
+            Transaction.source == "sync",
+            Transaction.category_id.is_not(None),
+            Transaction.installment_purchase_date == txn_data.installment_purchase_date,
+            Transaction.total_installments == txn_data.total_installments,
+            Transaction.installment_total_amount == txn_data.installment_total_amount,
+            Transaction.type == txn_data.type,
+            Transaction.installment_number < txn_data.installment_number,
+        )
+        .order_by(Transaction.installment_number.desc(), Transaction.date.desc())
+        .limit(1)
+    )
+    return result.scalars().first()
+
+
 async def get_connections(session: AsyncSession, workspace_id: uuid.UUID) -> list[BankConnection]:
     result = await session.execute(
         select(BankConnection)
@@ -1121,9 +1163,16 @@ async def handle_oauth_callback(
                             )
                 continue
 
-            category_id = await _match_pluggy_category(
-                session, workspace_id, txn_data.pluggy_category, enabled=use_provider_cats
+            category_id = await _find_installment_category(
+                session, account.id, txn_data
             )
+            if category_id is None:
+                category_id = await _match_pluggy_category(
+                    session,
+                    workspace_id,
+                    txn_data.pluggy_category,
+                    enabled=use_provider_cats,
+                )
             # Resolve payee entity from raw payee text
             payee_id = None
             if txn_data.payee:
@@ -1940,12 +1989,16 @@ async def sync_connection(
                 incoming_currency = (
                     txn_data.currency or acc_data.currency or user_currency
                 )
-                category_id = await _match_pluggy_category(
-                    session,
-                    workspace_id,
-                    txn_data.pluggy_category,
-                    enabled=use_provider_cats,
+                category_id = await _find_installment_category(
+                    session, account.id, txn_data
                 )
+                if category_id is None:
+                    category_id = await _match_pluggy_category(
+                        session,
+                        workspace_id,
+                        txn_data.pluggy_category,
+                        enabled=use_provider_cats,
+                    )
 
                 sync_payee_id = None
                 if txn_data.payee:
