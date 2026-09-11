@@ -467,3 +467,130 @@ async def get_budget_vs_actual(
         ))
 
     return sorted(comparisons, key=lambda x: float(x.actual_amount), reverse=True)
+
+
+async def copy_monthly_budgets(
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    source_month: date,
+    target_month: date,
+    adjustment_percentage: Decimal = Decimal("0.0"),
+    overwrite_existing: bool = False,
+) -> list[Budget]:
+    source_first = date(source_month.year, source_month.month, 1)
+    target_first = date(target_month.year, target_month.month, 1)
+
+    result = await db.execute(
+        select(Budget).where(
+            and_(
+                Budget.workspace_id == workspace_id,
+                Budget.user_id == user_id,
+                Budget.month == source_first,
+            )
+        )
+    )
+    source_budgets = result.scalars().all()
+
+    existing_target_res = await db.execute(
+        select(Budget).where(
+            and_(
+                Budget.workspace_id == workspace_id,
+                Budget.user_id == user_id,
+                Budget.month == target_first,
+            )
+        )
+    )
+    existing_target = {b.category_id: b for b in existing_target_res.scalars().all()}
+
+    created_or_updated: list[Budget] = []
+    multiplier = Decimal("1.0") + (adjustment_percentage / Decimal("100.0"))
+
+    for src in source_budgets:
+        new_amount = (src.amount * multiplier).quantize(Decimal("0.01"))
+        if src.category_id in existing_target:
+            if overwrite_existing:
+                tgt = existing_target[src.category_id]
+                tgt.amount = new_amount
+                tgt.is_recurring = src.is_recurring
+                created_or_updated.append(tgt)
+        else:
+            new_budget = Budget(
+                workspace_id=workspace_id,
+                user_id=user_id,
+                category_id=src.category_id,
+                amount=new_amount,
+                month=target_first,
+                is_recurring=src.is_recurring,
+            )
+            db.add(new_budget)
+            created_or_updated.append(new_budget)
+
+    await db.commit()
+    return created_or_updated
+
+
+async def get_budget_rollover_summary(
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    month: date,
+) -> dict:
+    vs_actuals = await get_budget_vs_actual(db, workspace_id, user_id, month)
+    total_budgeted = Decimal("0.00")
+    total_spent = Decimal("0.00")
+    categories_summary = []
+
+    for item in vs_actuals:
+        budgeted = item.budget_amount or Decimal("0.00")
+        spent = item.actual_amount
+        remaining = budgeted - spent
+        total_budgeted += budgeted
+        total_spent += spent
+        categories_summary.append({
+            "category_id": item.category_id,
+            "category_name": item.category_name,
+            "budgeted": budgeted,
+            "actual_spent": spent,
+            "remaining": remaining,
+            "carryover_eligible": remaining > Decimal("0.00"),
+        })
+
+    return {
+        "month": date(month.year, month.month, 1),
+        "total_budgeted": total_budgeted,
+        "total_spent": total_spent,
+        "net_surplus": total_budgeted - total_spent,
+        "categories": categories_summary,
+    }
+
+
+async def get_multi_month_forecast(
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+    user_id: uuid.UUID,
+    start_month: date,
+    num_months: int = 6,
+) -> dict:
+    items = []
+    cur_year = start_month.year
+    cur_month = start_month.month
+
+    for _ in range(num_months):
+        m_date = date(cur_year, cur_month, 1)
+        summary = await get_budget_rollover_summary(db, workspace_id, user_id, m_date)
+        items.append({
+            "month": m_date,
+            "projected_budget": summary["total_budgeted"],
+            "projected_spend": summary["total_spent"],
+            "projected_variance": summary["net_surplus"],
+        })
+        cur_month += 1
+        if cur_month > 12:
+            cur_month = 1
+            cur_year += 1
+
+    return {
+        "forecast_months": num_months,
+        "items": items,
+    }
