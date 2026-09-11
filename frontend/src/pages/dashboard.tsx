@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { getAccountLabel, getAccountName } from '@/lib/account-utils'
+import { getAccountLabel, getAccountName, sortAccountsByAbsoluteBalance } from '@/lib/account-utils'
 import { currentMonth, shiftMonth, monthLastDay, monthLabel, monthRange } from '@/lib/month-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
@@ -405,6 +405,10 @@ export default function DashboardPage() {
   const availableBalance = availableBalanceAccounts.reduce(
     (sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0,
   )
+  const sortedAvailableBalanceAccounts = useMemo(
+    () => sortAccountsByAbsoluteBalance(availableBalanceAccounts),
+    [availableBalanceAccounts],
+  )
   // While accounts are loading or failed to load, treat their balance
   // components as unavailable rather than silently rendering zero.
   const accountsUnavailable = accountsLoading || accountsError
@@ -670,9 +674,9 @@ export default function DashboardPage() {
               <p className={`text-3xl font-bold tabular-nums leading-tight ${availableBalance < 0 ? 'text-rose-500' : 'text-foreground'}`}>
                 {mask(formatCurrency(availableBalance, primaryCurrency, locale))}
               </p>
-              {availableBalanceAccounts.length > 0 && (
+              {sortedAvailableBalanceAccounts.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-3">
-                  {availableBalanceAccounts.map((acc) => {
+                  {sortedAvailableBalanceAccounts.map((acc) => {
                     const bal = Number(acc.balance_primary ?? acc.current_balance)
                     const balCurrency = acc.balance_primary != null ? primaryCurrency : acc.currency
                     // A link, not a click handler: the chip is a navigation
@@ -832,7 +836,7 @@ export default function DashboardPage() {
             {summaryLoading || accountsUnavailable ? (
               <Skeleton className="h-6 w-24" />
             ) : (
-              <p className={`text-xl font-bold tabular-nums ${totalBalance < 0 ? 'text-rose-500' : 'text-foreground'}`}>
+              <p className={`text-lg sm:text-xl font-bold tabular-nums ${totalBalance < 0 ? 'text-rose-500' : 'text-foreground'}`}>
                 {mask(formatCurrency(totalBalance, primaryCurrency, locale))}
               </p>
             )}
