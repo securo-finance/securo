@@ -484,6 +484,30 @@ async def test_budget_vs_actual_offsets_refunds(
             user_id=test_user.id,
             account_id=account.id,
             category_id=test_categories[0].id,
+            description="Previous month expense",
+            amount=Decimal("80"),
+            date=date(2025, 3, 10),
+            type="debit",
+            source="manual",
+            created_at=datetime.now(timezone.utc),
+        ),
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            account_id=account.id,
+            category_id=test_categories[0].id,
+            description="Previous month refund",
+            amount=Decimal("25"),
+            date=date(2025, 3, 12),
+            type="credit",
+            source="manual",
+            created_at=datetime.now(timezone.utc),
+        ),
+        Transaction(
+            id=uuid.uuid4(),
+            user_id=test_user.id,
+            account_id=account.id,
+            category_id=test_categories[0].id,
             description="Expense 1",
             amount=Decimal("100"),
             date=date(2025, 4, 10),
@@ -525,4 +549,5 @@ async def test_budget_vs_actual_offsets_refunds(
     cat0 = [c for c in comparisons if c.category_id == test_categories[0].id]
     assert len(cat0) == 1
     assert cat0[0].actual_amount == Decimal("120")
+    assert cat0[0].prev_month_amount == Decimal("55")
 
