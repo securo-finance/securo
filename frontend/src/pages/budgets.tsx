@@ -17,7 +17,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import type { Budget } from '@/types'
-import { Pencil, Trash2, Plus, Repeat, CalendarIcon, AlertCircle, Copy } from 'lucide-react'
+import { Pencil, Trash2, Plus, Repeat, CalendarIcon, AlertCircle } from 'lucide-react'
 import { format } from 'date-fns'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { MonthPicker } from '@/components/ui/monthpicker'
@@ -33,12 +33,6 @@ import { formatCurrency } from '@/lib/format'
 function currentMonth() {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-}
-
-function getPreviousMonth(monthStr: string) {
-  const [y, m] = monthStr.split('-').map(Number)
-  const d = new Date(y, m - 2, 1)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
 function monthLastDay(m: string) {
@@ -71,12 +65,6 @@ export default function BudgetsPage() {
   const [deleteScope, setDeleteScope] = useState<'future' | 'month' | 'all'>('future')
   const [isDeleting, setIsDeleting] = useState(false)
 
-  // Copy budgets modal state
-  const [copyDialogOpen, setCopyDialogOpen] = useState(false)
-  const [sourceMonth, setSourceMonth] = useState(() => getPreviousMonth(selectedMonth))
-  const [sourceMonthCalOpen, setSourceMonthCalOpen] = useState(false)
-  const [overwriteExisting, setOverwriteExisting] = useState(true)
-
   const monthStart = `${selectedMonth}-01`
   const monthEnd = `${selectedMonth}-${String(monthLastDay(selectedMonth)).padStart(2, '0')}`
 
@@ -88,12 +76,6 @@ export default function BudgetsPage() {
   const { data: comparisonList } = useQuery({
     queryKey: ['budgets-comparison', selectedMonth],
     queryFn: () => budgetsApi.comparison(monthParam),
-  })
-
-  const { data: sourceComparison, isLoading: sourceLoading } = useQuery({
-    queryKey: ['budgets-comparison', sourceMonth],
-    queryFn: () => budgetsApi.comparison(`${sourceMonth}-01`),
-    enabled: copyDialogOpen,
   })
 
   const { data: categoriesList } = useQuery({
@@ -137,26 +119,6 @@ export default function BudgetsPage() {
       queryClient.invalidateQueries({ queryKey: ['budgets'] })
       queryClient.invalidateQueries({ queryKey: ['budgets-comparison'] })
       toast.success(t('budgets.deleted', 'Budget deleted'))
-    },
-  })
-
-  const copyMutation = useMutation({
-    mutationFn: (data: { source_month: string; target_month: string; overwrite_existing: boolean }) =>
-      budgetsApi.copy(data),
-    onSuccess: (res) => {
-      queryClient.invalidateQueries({ queryKey: ['budgets'] })
-      queryClient.invalidateQueries({ queryKey: ['budgets-comparison'] })
-      setCopyDialogOpen(false)
-      if (res.copied_count === 0) {
-        toast.info(t('budgets.noSourceBudgets', 'No budgets found in the selected source month.'))
-      } else {
-        toast.success(
-          t('budgets.copySuccess', {
-            count: res.copied_count,
-            defaultValue: `${res.copied_count} budgets copied successfully`,
-          })
-        )
-      }
     },
     onError: () => toast.error(t('common.error')),
   })
@@ -208,21 +170,6 @@ export default function BudgetsPage() {
       }
     }
   }, [comparisonList])
-
-  const sourceBudgetedCategories = useMemo(() => {
-    if (!sourceComparison) return []
-    return sourceComparison.filter((b) => b.budget_amount !== null && b.budget_amount > 0)
-  }, [sourceComparison])
-
-  const sourceTotalPlanned = useMemo(() => {
-    return sourceBudgetedCategories.reduce((acc, b) => acc + Number(b.budget_amount ?? 0), 0)
-  }, [sourceBudgetedCategories])
-
-  const openCopyDialog = (customSourceMonth?: string) => {
-    setSourceMonth(customSourceMonth ?? getPreviousMonth(selectedMonth))
-    setOverwriteExisting(true)
-    setCopyDialogOpen(true)
-  }
 
   const openNewBudgetDialog = (categoryId?: string) => {
     setEditing(null)
@@ -396,7 +343,10 @@ export default function BudgetsPage() {
               <div className="text-sm text-muted-foreground mb-2">{t('budgets.executionRate', 'Execution')}</div>
               <div className="flex items-center gap-3">
                 <span className="text-[24px] font-semibold font-mono tabular-nums text-foreground">
-                  {kpis.executionRate.toFixed(1).replace('.', ',')}%
+                  {kpis.executionRate.toLocaleString(locale, {
+                    minimumFractionDigits: 1,
+                    maximumFractionDigits: 1,
+                  })}%
                 </span>
                 <div className="flex-1 max-w-[100px]">
                   <div className="h-2 w-full bg-[#333539] rounded-full overflow-hidden">
@@ -445,15 +395,6 @@ export default function BudgetsPage() {
           </h2>
           {canWrite && (
             <div className="flex items-center gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                className="border-[#27272A] bg-[#18181B] hover:bg-[#27272A]/50 text-foreground flex items-center gap-2 text-sm font-medium"
-                onClick={() => openCopyDialog()}
-              >
-                <Copy size={15} />
-                {t('budgets.copyPreviousMonth', 'Copy Previous Month')}
-              </Button>
               <button
                 className="bg-primary text-on-primary hover:bg-primary-container px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 cursor-pointer"
                 onClick={() => openNewBudgetDialog()}
@@ -563,25 +504,16 @@ export default function BudgetsPage() {
         ) : (
           <div className="py-12 px-6 flex flex-col items-center justify-center text-center">
             <div className="w-12 h-12 rounded-full bg-[#27272A]/50 border border-[#27272A] flex items-center justify-center text-muted-foreground mb-4">
-              <Copy size={20} className="opacity-70" />
+              <CalendarIcon size={20} className="opacity-70" />
             </div>
             <h3 className="text-base font-semibold text-foreground mb-1.5">
               {t('budgets.emptyStateTitle', 'You haven\'t set a budget for this month yet.')}
             </h3>
             <p className="text-xs text-muted-foreground max-w-md mb-6 leading-relaxed">
-              {t('budgets.emptyStateSubtitle', 'Create a budget manually or copy definitions from the previous month to get started.')}
+              {t('budgets.emptyStateSubtitle', 'Create a budget manually to get started.')}
             </p>
             {canWrite && (
               <div className="flex flex-wrap items-center justify-center gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="border-[#27272A] bg-[#18181B] hover:bg-[#27272A]/50 text-foreground flex items-center gap-2 text-sm"
-                  onClick={() => openCopyDialog()}
-                >
-                  <Copy size={15} />
-                  {t('budgets.copyPreviousMonth', 'Copy Previous Month')}
-                </Button>
                 <Button
                   type="button"
                   className="bg-primary text-on-primary hover:bg-primary-container flex items-center gap-2 text-sm"
@@ -885,176 +817,6 @@ export default function BudgetsPage() {
               </Button>
             </DialogFooter>
           </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Copy Budgets Dialog */}
-      <Dialog open={copyDialogOpen} onOpenChange={setCopyDialogOpen}>
-        <DialogContent className="sm:max-w-[480px]">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-semibold text-foreground flex items-center gap-2">
-              <Copy size={18} className="text-primary" />
-              {t('budgets.copyTitle', 'Copy Budgets')}
-            </DialogTitle>
-            <DialogDescription className="text-sm text-muted-foreground pt-1">
-              {t('budgets.copyDesc', { month: monthTitle, defaultValue: `Copy budget definitions into ${monthTitle}.` })}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-3">
-            {/* Source Month Picker */}
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {t('budgets.sourceMonth', 'Source Month')}
-              </Label>
-              <div className="flex items-center gap-2">
-                <Popover open={sourceMonthCalOpen} onOpenChange={setSourceMonthCalOpen}>
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      className="w-full inline-flex items-center justify-between border border-border rounded-lg px-3.5 py-2 text-sm bg-card text-foreground hover:bg-muted/50 transition-all cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2">
-                        <CalendarIcon className="size-4 text-muted-foreground" />
-                        <span className="font-medium">
-                          {monthLabel(sourceMonth, uiLocale).replace(/^\w/, c => c.toUpperCase())}
-                        </span>
-                      </div>
-                      <span className="text-xs text-muted-foreground font-mono">{sourceMonth}</span>
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent align="start" className="w-auto p-0">
-                    <MonthPicker
-                      locale={dateFnsLocale}
-                      selectedMonth={new Date(`${sourceMonth}-01T00:00:00`)}
-                      onMonthSelect={(date) => {
-                        if (!date) return
-                        setSourceMonth(format(date, 'yyyy-MM'))
-                        setSourceMonthCalOpen(false)
-                      }}
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-            </div>
-
-            {/* Source Month Summary Card */}
-            <div className="p-3.5 rounded-xl border border-[#27272A] bg-[#18181B]/80 text-sm">
-              {sourceLoading ? (
-                <div className="text-xs text-muted-foreground py-2 text-center">
-                  {t('common.loading', 'Loading...')}
-                </div>
-              ) : sourceBudgetedCategories.length > 0 ? (
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <div className="text-xs text-muted-foreground">
-                      {t('budgets.sourceSummaryLabel', 'Available to copy:')}
-                    </div>
-                    <div className="text-sm font-semibold text-foreground mt-0.5">
-                      {t('budgets.copySummary', {
-                        count: sourceBudgetedCategories.length,
-                        total: mask(formatCurrency(sourceTotalPlanned, userCurrency, locale)),
-                        defaultValue: `${sourceBudgetedCategories.length} categories (${mask(formatCurrency(sourceTotalPlanned, userCurrency, locale))})`,
-                      })}
-                    </div>
-                  </div>
-                  <div className="text-right font-mono text-sm font-semibold text-[#4edea3] tabular-nums">
-                    {mask(formatCurrency(sourceTotalPlanned, userCurrency, locale))}
-                  </div>
-                </div>
-              ) : (
-                <div className="text-xs text-[#ffb4ab] flex items-center gap-2">
-                  <AlertCircle size={14} />
-                  <span>{t('budgets.noSourceBudgets', 'No budgets found in the selected source month.')}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Overwrite / Merge Options */}
-            <div className="space-y-2">
-              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {t('budgets.conflictResolution', 'Existing Budgets')}
-              </Label>
-              
-              <div
-                className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-start gap-3 ${
-                  overwriteExisting
-                    ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                    : 'border-[#27272A] bg-[#18181B]/60 hover:bg-[#27272A]/40'
-                }`}
-                onClick={() => setOverwriteExisting(true)}
-              >
-                <div className="mt-0.5">
-                  <input
-                    type="radio"
-                    name="overwrite_option"
-                    checked={overwriteExisting}
-                    onChange={() => setOverwriteExisting(true)}
-                    className="text-primary focus:ring-primary h-4 w-4"
-                  />
-                </div>
-                <div className="flex-1">
-                  <div className="text-sm font-medium text-foreground">
-                    {t('budgets.overwriteExisting', 'Replace existing budgets')}
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                    {t('budgets.overwriteExistingDesc', 'Updates categories that already have a budget in this month.')}
-                  </div>
-                </div>
-              </div>
-
-              <div
-                className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-start gap-3 ${
-                  !overwriteExisting
-                    ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                    : 'border-[#27272A] bg-[#18181B]/60 hover:bg-[#27272A]/40'
-                }`}
-                onClick={() => setOverwriteExisting(false)}
-              >
-                <div className="mt-0.5">
-                  <input
-                    type="radio"
-                    name="overwrite_option"
-                    checked={!overwriteExisting}
-                    onChange={() => setOverwriteExisting(false)}
-                    className="text-primary focus:ring-primary h-4 w-4"
-                  />
-                </div>
-                <div className="flex-1">
-                  <div className="text-sm font-medium text-foreground">
-                    {t('budgets.onlyMissing', 'Copy only missing categories')}
-                  </div>
-                  <div className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                    {t('budgets.onlyMissingDesc', 'Preserves budgets already configured and only fills missing categories.')}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2 sm:gap-0 pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setCopyDialogOpen(false)}
-              disabled={copyMutation.isPending}
-            >
-              {t('common.cancel', 'Cancel')}
-            </Button>
-            <Button
-              type="button"
-              onClick={() => {
-                copyMutation.mutate({
-                  source_month: `${sourceMonth}-01`,
-                  target_month: monthParam,
-                  overwrite_existing: overwriteExisting,
-                })
-              }}
-              disabled={copyMutation.isPending || sourceLoading || sourceBudgetedCategories.length === 0}
-            >
-              {copyMutation.isPending ? t('common.loading', 'Loading...') : t('budgets.confirmCopy', 'Confirm & Copy')}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

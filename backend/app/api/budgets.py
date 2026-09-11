@@ -12,8 +12,6 @@ from app.core.workspace_context import (
     current_writable_workspace,
 )
 from app.schemas.budget import (
-    BudgetCopyRequest,
-    BudgetCopyResponse,
     BudgetCreate,
     BudgetRead,
     BudgetUpdate,
@@ -43,20 +41,6 @@ async def create_budget(
         return await budget_service.create_budget(session, ctx.workspace.id, ctx.user_id, data)
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-
-
-@router.post("/copy", response_model=BudgetCopyResponse)
-async def copy_budgets(
-    data: BudgetCopyRequest,
-    ctx: WorkspaceContext = Depends(current_writable_workspace),
-    session: AsyncSession = Depends(get_async_session),
-):
-    try:
-        return await budget_service.copy_budgets(session, ctx.workspace.id, ctx.user_id, data)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
 

@@ -1147,14 +1147,6 @@ export const budgets = {
     const { data } = await api.get('/budgets/comparison', { params: { month } })
     return data
   },
-  copy: async (payload: {
-    source_month: string
-    target_month: string
-    overwrite_existing?: boolean
-  }): Promise<{ copied_count: number; total_amount: number; budgets: Budget[] }> => {
-    const { data } = await api.post('/budgets/copy', payload)
-    return data
-  },
 }
 
 // Goals
