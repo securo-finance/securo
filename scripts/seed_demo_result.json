@@ -1,0 +1,49 @@
+{
+  "created_this_run": {
+    "categories_added": 2,
+    "accounts_updated": 1,
+    "accounts_created": 3,
+    "payees": 18,
+    "transactions": 145,
+    "transfers": 7,
+    "budgets": 9,
+    "goals": 3,
+    "assets": 3,
+    "recurring": 5,
+    "rules_added": 3
+  },
+  "final_totals": {
+    "accounts": 4,
+    "payees": 18,
+    "categories": 18,
+    "category_groups": 6,
+    "transactions_total": 159,
+    "budgets": 9,
+    "goals": 3,
+    "assets": 3,
+    "recurring": 5,
+    "rules": 9
+  },
+  "exercised": {
+    "dashboard_summary_balance_primary": 175443.34,
+    "dashboard_monthly_income": 4250.0,
+    "dashboard_monthly_expenses": 2497.3,
+    "/api/dashboard/spending-by-category": "list len=9",
+    "/api/dashboard/monthly-trend": "list len=4",
+    "/api/reports/net-worth": "keys=['summary', 'trend', 'meta', 'composition', 'category_trend']",
+    "/api/reports/income-expenses": "keys=['summary', 'trend', 'meta', 'composition', 'category_trend']",
+    "/api/reports/cash-flow": "keys=['summary', 'trend', 'meta', 'composition', 'category_trend']",
+    "/api/search": "keys=['query', 'results']",
+    "export_backup_bytes": 18413,
+    "transactions_export_bytes": 18386,
+    "onboarding_completed": true
+  },
+  "notes": [
+    "CSV/OFX import via multipart not exercised in this script (UI leftover / use /transactions import page)."
+  ],
+  "login": {
+    "email": "alex.rivera.demo@example.com",
+    "password": "DemoFinance2026!",
+    "auth": "POST /api/auth/login form username+password -> Bearer JWT"
+  }
+}

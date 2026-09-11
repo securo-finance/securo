@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from app.models.institution import Institution
     from app.models.loan_schedule import LoanAmortizationSchedule
     from app.models.loan_prepayment import LoanPrepayment
+    from app.models.loan_plan_commitment import LoanPlanCommitment
     from app.models.transaction import Transaction
 
 
@@ -84,4 +85,9 @@ class Account(Base):
     )
     loan_prepayments: Mapped[list["LoanPrepayment"]] = relationship(
         back_populates="account", cascade="all, delete-orphan"
+    )
+    loan_plan_commitments: Mapped[list["LoanPlanCommitment"]] = relationship(
+        foreign_keys="LoanPlanCommitment.account_id",
+        back_populates="account",
+        cascade="all, delete-orphan",
     )

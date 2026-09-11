@@ -185,7 +185,7 @@ export default function LoansPage() {
               <button
                 key={acc.id}
                 type="button"
-                onClick={() => navigate(`/accounts/${acc.id}`)}
+                onClick={() => navigate(`/loans/${acc.id}`)}
                 className="w-full text-left px-4 py-3 hover:bg-muted/30 flex items-center gap-3"
               >
                 <AccountIcon account={acc} size="md" />

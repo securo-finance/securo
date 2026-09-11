@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
@@ -101,7 +101,7 @@ class PrepaymentRead(BaseModel):
     schedule_version_after: int
     tenure_change_months: Optional[int]
     emi_change_amount: Optional[float]
-    created_at: date
+    created_at: date | datetime
 
     model_config = ConfigDict(from_attributes=True)
 

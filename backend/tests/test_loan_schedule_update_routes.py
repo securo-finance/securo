@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
+import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,15 +12,15 @@ from app.models.account import Account
 from app.models.loan_schedule import LoanAmortizationSchedule
 
 
-@pytest.fixture
-async def loan_account(db_session: AsyncSession, workspace_id: uuid.UUID) -> Account:
+@pytest_asyncio.fixture
+async def loan_account(db_session: AsyncSession, workspace_id: uuid.UUID, user_id: uuid.UUID) -> Account:
     """Create a test loan account."""
     account = Account(
         id=uuid.uuid4(),
         workspace_id=workspace_id,
         name="Test Loan",
-        account_type="liability",
-        subtype="loan",
+        type="loan",
+        user_id=user_id,
         balance=Decimal("-90000.00"),
         currency="INR",
         current_schedule_version=1,
@@ -30,7 +31,7 @@ async def loan_account(db_session: AsyncSession, workspace_id: uuid.UUID) -> Acc
     return account
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def schedule_entry(
     db_session: AsyncSession, loan_account: Account, workspace_id: uuid.UUID
 ) -> LoanAmortizationSchedule:
@@ -64,7 +65,7 @@ async def test_update_schedule_entry_due_date(
     """Test updating a schedule entry's due date."""
     new_date = date(2026, 9, 5)
     response = await client.patch(
-        f"/api/v1/schedule/{schedule_entry.id}",
+        f"/api/v1/loans/schedule/{schedule_entry.id}",
         json={"due_date": new_date.isoformat()},
         headers=auth_headers,
     )
@@ -82,7 +83,7 @@ async def test_update_schedule_entry_emi_amount(
 ):
     """Test updating a schedule entry's EMI amount."""
     response = await client.patch(
-        f"/api/v1/schedule/{schedule_entry.id}",
+        f"/api/v1/loans/schedule/{schedule_entry.id}",
         json={"emi_amount": "3500.00"},
         headers=auth_headers,
     )
@@ -122,7 +123,7 @@ async def test_bulk_update_dates_shift(
     await db_session.commit()
 
     response = await client.post(
-        "/api/v1/schedule/bulk-update-dates",
+        "/api/v1/loans/schedule/bulk-update-dates",
         json={
             "account_id": str(loan_account.id),
             "from_emi_number": 2,
@@ -165,7 +166,7 @@ async def test_bulk_update_dates_change_day(
     await db_session.commit()
 
     response = await client.post(
-        "/api/v1/schedule/bulk-update-dates",
+        "/api/v1/loans/schedule/bulk-update-dates",
         json={
             "account_id": str(loan_account.id),
             "from_emi_number": 1,
@@ -187,7 +188,7 @@ async def test_mark_entry_status(
 ):
     """Test marking a schedule entry's payment status."""
     response = await client.put(
-        f"/api/v1/schedule/{schedule_entry.id}/status",
+        f"/api/v1/loans/schedule/{schedule_entry.id}/status",
         json={"payment_status": "paid"},
         headers=auth_headers,
     )
@@ -205,7 +206,7 @@ async def test_mark_entry_status_invalid(
 ):
     """Test marking with invalid status."""
     response = await client.put(
-        f"/api/v1/schedule/{schedule_entry.id}/status",
+        f"/api/v1/loans/schedule/{schedule_entry.id}/status",
         json={"payment_status": "invalid_status"},
         headers=auth_headers,
     )
@@ -220,7 +221,7 @@ async def test_update_nonexistent_entry(
 ):
     """Test updating non-existent schedule entry."""
     response = await client.patch(
-        f"/api/v1/schedule/{uuid.uuid4()}",
+        f"/api/v1/loans/schedule/{uuid.uuid4()}",
         json={"due_date": "2026-09-15"},
         headers=auth_headers,
     )

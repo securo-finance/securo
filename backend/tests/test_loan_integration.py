@@ -16,6 +16,7 @@ async def test_complete_loan_lifecycle(
     db_session: AsyncSession,
     workspace_id: uuid.UUID,
     auth_headers: dict,
+    user_id: uuid.UUID,
 ):
     """Test complete loan lifecycle from creation to closure."""
 
@@ -24,8 +25,8 @@ async def test_complete_loan_lifecycle(
         id=uuid.uuid4(),
         workspace_id=workspace_id,
         name="Home Loan",
-        account_type="liability",
-        subtype="loan",
+        type="loan",
+        user_id=user_id,
         balance=Decimal("-1000000.00"),
         currency="INR",
         current_schedule_version=0,
@@ -36,7 +37,7 @@ async def test_complete_loan_lifecycle(
 
     # Step 2: Generate initial schedule
     response = await client.post(
-        "/api/v1/schedule/regenerate",
+        "/api/v1/loans/schedule/regenerate",
         json={
             "account_id": account_id,
             "from_emi_number": 1,
@@ -74,7 +75,7 @@ async def test_complete_loan_lifecycle(
     # Step 5: Mark first EMI as paid
     first_entry_id = schedule[0]["id"]
     response = await client.put(
-        f"/api/v1/schedule/{first_entry_id}/status",
+        f"/api/v1/loans/schedule/{first_entry_id}/status",
         json={"payment_status": "paid"},
         headers=auth_headers,
     )
@@ -147,6 +148,7 @@ async def test_bulk_operations_workflow(
     db_session: AsyncSession,
     workspace_id: uuid.UUID,
     auth_headers: dict,
+    user_id: uuid.UUID,
 ):
     """Test bulk operations across multiple loans."""
 
@@ -157,8 +159,8 @@ async def test_bulk_operations_workflow(
             id=uuid.uuid4(),
             workspace_id=workspace_id,
             name=f"Loan {i+1}",
-            account_type="liability",
-            subtype="loan",
+            type="loan",
+            user_id=user_id,
             balance=Decimal("-100000.00"),
             currency="INR",
             current_schedule_version=1,
@@ -169,7 +171,7 @@ async def test_bulk_operations_workflow(
 
         # Generate schedule for each
         await client.post(
-            "/api/v1/schedule/regenerate",
+            "/api/v1/loans/schedule/regenerate",
             json={
                 "account_id": str(account.id),
                 "from_emi_number": 1,
@@ -183,7 +185,7 @@ async def test_bulk_operations_workflow(
 
     # Bulk export all schedules
     response = await client.post(
-        "/api/v1/schedule/bulk-export",
+        "/api/v1/loans/schedule/bulk-export",
         json={"account_ids": account_ids},
         headers=auth_headers,
     )
@@ -206,6 +208,7 @@ async def test_schedule_validation_workflow(
     db_session: AsyncSession,
     workspace_id: uuid.UUID,
     auth_headers: dict,
+    user_id: uuid.UUID,
 ):
     """Test schedule validation after manual edits."""
 
@@ -214,8 +217,8 @@ async def test_schedule_validation_workflow(
         id=uuid.uuid4(),
         workspace_id=workspace_id,
         name="Test Loan",
-        account_type="liability",
-        subtype="loan",
+        type="loan",
+        user_id=user_id,
         balance=Decimal("-100000.00"),
         currency="INR",
         current_schedule_version=1,
@@ -225,7 +228,7 @@ async def test_schedule_validation_workflow(
 
     # Generate schedule
     await client.post(
-        "/api/v1/schedule/regenerate",
+        "/api/v1/loans/schedule/regenerate",
         json={
             "account_id": str(account.id),
             "from_emi_number": 1,
@@ -247,7 +250,7 @@ async def test_schedule_validation_workflow(
     # Update first entry
     first_entry = schedule[0]
     await client.patch(
-        f"/api/v1/schedule/{first_entry['id']}",
+        f"/api/v1/loans/schedule/{first_entry['id']}",
         json={"emi_amount": "9000.00"},
         headers=auth_headers,
     )

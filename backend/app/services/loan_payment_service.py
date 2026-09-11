@@ -156,6 +156,8 @@ async def simulate_prepayment(
     result = await session.execute(select(Account).where(Account.id == account_id))
     account = result.scalar_one()
 
+    from app.services.loan_schedule_service import calculate_emi as _calc_emi
+
     # Get current schedule to determine position
     schedule_result = await session.execute(
         select(LoanAmortizationSchedule)
@@ -166,6 +168,17 @@ async def simulate_prepayment(
         .order_by(LoanAmortizationSchedule.emi_number)
     )
     entries = list(schedule_result.scalars().all())
+
+    if account.emi_amount is not None:
+        effective_emi = account.emi_amount
+    elif entries:
+        effective_emi = entries[0].emi_amount
+    else:
+        effective_emi = _calc_emi(
+            account.original_principal or Decimal("0"),
+            account.interest_rate or Decimal("0"),
+            account.tenure_months or 1,
+        )
 
     # Find next EMI after prepayment date
     next_emi_idx = next((i for i, e in enumerate(entries) if e.due_date > prepayment_date), len(entries))
@@ -184,7 +197,7 @@ async def simulate_prepayment(
     # Option 1: Reduce EMI
     if remaining_months > 0:
         new_emi_reduce_emi = calculate_emi(new_principal, account.interest_rate, remaining_months)
-        emi_reduction = account.emi_amount - new_emi_reduce_emi
+        emi_reduction = effective_emi - new_emi_reduce_emi
 
         # Calculate interest saved (simplified: compare total interest)
         old_total_interest = sum(e.interest_component for e in entries[next_emi_idx:])
@@ -203,14 +216,14 @@ async def simulate_prepayment(
         interest_saved_emi = Decimal("0.00")
 
     # Option 2: Reduce Tenure
-    if account.emi_amount > 0:
+    if effective_emi > 0:
         # Calculate new tenure using EMI formula rearranged
         monthly_rate = account.interest_rate / Decimal("1200") if account.interest_rate > 0 else Decimal("0")
         if monthly_rate > 0:
             # n = log(EMI / (EMI - P*r)) / log(1 + r)
             import math
             r_float = float(monthly_rate)
-            emi_float = float(account.emi_amount)
+            emi_float = float(effective_emi)
             p_float = float(new_principal)
             if emi_float > p_float * r_float:
                 n_float = math.log(emi_float / (emi_float - p_float * r_float)) / math.log(1 + r_float)
@@ -218,7 +231,7 @@ async def simulate_prepayment(
             else:
                 new_tenure = remaining_months
         else:
-            new_tenure = int((new_principal / account.emi_amount).to_integral_value(rounding=ROUND_HALF_UP))
+            new_tenure = int((new_principal / effective_emi).to_integral_value(rounding=ROUND_HALF_UP))
 
         months_saved = remaining_months - new_tenure
         new_payoff_date = entries[next_emi_idx].due_date + timedelta(days=30 * new_tenure) if next_emi_idx < len(entries) else prepayment_date
@@ -229,7 +242,7 @@ async def simulate_prepayment(
         remaining = new_principal
         for _ in range(new_tenure):
             interest = (remaining * monthly_rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-            principal = account.emi_amount - interest
+            principal = effective_emi - interest
             new_total_interest += interest
             remaining -= principal
         interest_saved_tenure = old_total_interest - new_total_interest
@@ -239,22 +252,27 @@ async def simulate_prepayment(
         new_payoff_date = prepayment_date
         interest_saved_tenure = Decimal("0.00")
 
+    reduce_emi_option = {
+        "new_emi_amount": new_emi_reduce_emi,
+        "emi_reduction": emi_reduction,
+        "tenure_months": remaining_months,
+        "total_interest_saved": interest_saved_emi,
+        "sample_schedule": [],
+    }
+    reduce_tenure_option = {
+        "new_tenure_months": new_tenure,
+        "months_saved": months_saved,
+        "new_payoff_date": new_payoff_date,
+        "emi_amount": effective_emi,
+        "total_interest_saved": interest_saved_tenure,
+        "sample_schedule": [],
+    }
+    # Aliases expected by older route tests / some FE drafts
     return {
-        "reduce_emi_option": {
-            "new_emi_amount": new_emi_reduce_emi,
-            "emi_reduction": emi_reduction,
-            "tenure_months": remaining_months,
-            "total_interest_saved": interest_saved_emi,
-            "sample_schedule": [],
-        },
-        "reduce_tenure_option": {
-            "new_tenure_months": new_tenure,
-            "months_saved": months_saved,
-            "new_payoff_date": new_payoff_date,
-            "emi_amount": account.emi_amount,
-            "total_interest_saved": interest_saved_tenure,
-            "sample_schedule": [],
-        },
+        "reduce_emi_option": reduce_emi_option,
+        "reduce_tenure_option": reduce_tenure_option,
+        "reduce_emi": reduce_emi_option,
+        "reduce_tenure": reduce_tenure_option,
     }
 
 
@@ -306,7 +324,8 @@ async def record_prepayment(
         await regenerate_schedule(session, account_id, from_emi_number, new_params)
         await session.refresh(account)
 
-        emi_change = account.emi_amount - simulation["reduce_emi_option"]["new_emi_amount"]
+        current_emi = account.emi_amount or simulation["reduce_emi_option"].get("emi_amount")
+        emi_change = (current_emi - simulation["reduce_emi_option"]["new_emi_amount"]) if current_emi is not None else None
         tenure_change = None
 
         # Update account EMI
@@ -352,3 +371,34 @@ async def record_prepayment(
     await session.commit()
     await session.refresh(prepayment)
     return prepayment
+
+
+
+async def skip_emi(
+    session: AsyncSession,
+    entry_id: uuid.UUID,
+    shift_subsequent: bool = True,
+) -> LoanAmortizationSchedule:
+    """Mark an EMI as skipped; optionally push later due dates by one month."""
+    from dateutil.relativedelta import relativedelta
+
+    result = await session.execute(select(LoanAmortizationSchedule).where(LoanAmortizationSchedule.id == entry_id))
+    entry = result.scalar_one()
+    entry.payment_status = "skipped"
+    entry.notes = ((entry.notes or "") + " | EMI skipped").strip(" |")
+
+    if shift_subsequent:
+        later = await session.execute(
+            select(LoanAmortizationSchedule).where(
+                LoanAmortizationSchedule.account_id == entry.account_id,
+                LoanAmortizationSchedule.schedule_version == entry.schedule_version,
+                LoanAmortizationSchedule.emi_number > entry.emi_number,
+                LoanAmortizationSchedule.payment_status == "scheduled",
+            )
+        )
+        for later_entry in later.scalars().all():
+            later_entry.due_date = later_entry.due_date + relativedelta(months=1)
+
+    await session.commit()
+    await session.refresh(entry)
+    return entry

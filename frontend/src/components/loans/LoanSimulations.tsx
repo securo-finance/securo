@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Calculator, TrendingDown, DollarSign, Percent } from 'lucide-react';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency } from '@/lib/format';
 
 interface LoanSimulationsProps {
   accountId: string;
@@ -113,6 +113,7 @@ export function LoanSimulations({
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${localStorage.getItem('token')}`,
+          'X-Workspace-Id': localStorage.getItem('workspace_id') || '',
         },
         body: JSON.stringify({
           account_id: accountId,
@@ -143,6 +144,7 @@ export function LoanSimulations({
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${localStorage.getItem('token')}`,
+          'X-Workspace-Id': localStorage.getItem('workspace_id') || '',
         },
         body: JSON.stringify({
           account_id: accountId,
@@ -172,6 +174,7 @@ export function LoanSimulations({
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${localStorage.getItem('token')}`,
+          'X-Workspace-Id': localStorage.getItem('workspace_id') || '',
         },
         body: JSON.stringify({
           account_id: accountId,

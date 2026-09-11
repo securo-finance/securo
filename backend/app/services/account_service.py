@@ -309,6 +309,21 @@ async def create_account(
 
     await session.commit()
     await session.refresh(account)
+
+    # Auto-generate amortization schedule when loan fields are complete.
+    if is_loan and account.original_principal is not None and account.interest_rate is not None \
+            and account.tenure_months and account.disbursed_on:
+        from app.services.loan_schedule_service import generate_amortization_schedule
+        try:
+            await generate_amortization_schedule(session, account.id, version=1)
+            await session.refresh(account)
+        except Exception:
+            # Loan account still usable; schedule can be generated via API.
+            import logging
+            logging.getLogger(__name__).exception(
+                "Failed to auto-generate loan schedule for account %s", account.id
+            )
+
     return account
 
 

@@ -5,11 +5,12 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Download, RefreshCw, DollarSign } from 'lucide-react';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency } from '@/lib/format';
 import { LoanScheduleTable } from './LoanScheduleTable';
 import { PrepaymentDialog } from './PrepaymentDialog';
 import { LoanAnalyticsCharts } from './LoanAnalyticsCharts';
 import { LoanSimulations } from '@/components/loans/LoanSimulations';
+import { CombinedLoanSimulator } from '@/components/loans/CombinedLoanSimulator';
 import { useState } from 'react';
 
 interface LoanOverview {
@@ -25,7 +26,7 @@ interface LoanOverview {
 
 async function fetchLoanOverview(accountId: string): Promise<LoanOverview> {
   const response = await fetch(`/api/v1/loans/${accountId}/overview`, {
-    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+    headers: { Authorization: `Bearer ${localStorage.getItem('token')}`, 'X-Workspace-Id': localStorage.getItem('workspace_id') || '' },
   });
   if (!response.ok) throw new Error('Failed to fetch loan overview');
   return response.json();
@@ -33,7 +34,7 @@ async function fetchLoanOverview(accountId: string): Promise<LoanOverview> {
 
 async function exportScheduleCSV(accountId: string) {
   const response = await fetch(`/api/v1/loans/${accountId}/schedule/export`, {
-    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+    headers: { Authorization: `Bearer ${localStorage.getItem('token')}`, 'X-Workspace-Id': localStorage.getItem('workspace_id') || '' },
   });
   if (!response.ok) throw new Error('Failed to export schedule');
 
@@ -160,6 +161,7 @@ export function LoanDetailPage() {
           <TabsTrigger value="schedule">Schedule</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
           <TabsTrigger value="simulations">Simulations</TabsTrigger>
+          <TabsTrigger value="combined">Combined plan</TabsTrigger>
         </TabsList>
 
         <TabsContent value="schedule" className="mt-4">
@@ -179,6 +181,10 @@ export function LoanDetailPage() {
             remainingMonths={overview.emis_remaining}
           />
         </TabsContent>
+
+        <TabsContent value="combined" className="mt-4">
+          <CombinedLoanSimulator accountId={accountId!} />
+        </TabsContent>
       </Tabs>
 
       {/* Prepayment Dialog */}
@@ -191,3 +197,5 @@ export function LoanDetailPage() {
     </div>
   );
 }
+
+export default LoanDetailPage

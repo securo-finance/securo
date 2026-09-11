@@ -627,3 +627,19 @@ def _reset_provider_registry():
     yield
     _PROVIDERS.clear()
     _PROVIDERS.update(original)
+
+
+# --- Aliases for loan_* tests drafted against older fixture names ---
+@pytest_asyncio.fixture
+async def db_session(session: AsyncSession) -> AsyncSession:
+    return session
+
+
+@pytest.fixture
+def workspace_id(test_workspace: Workspace) -> uuid.UUID:
+    return test_workspace.id
+
+
+@pytest.fixture
+def user_id(test_user: User) -> uuid.UUID:
+    return test_user.id

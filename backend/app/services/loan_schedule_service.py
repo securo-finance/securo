@@ -103,6 +103,11 @@ async def generate_amortization_schedule(
         entries.append(entry)
         session.add(entry)
 
+    # Persist computed EMI on the account when the caller left it blank.
+    if account.emi_amount is None and entries:
+        account.emi_amount = entries[0].emi_amount
+    account.current_schedule_version = version
+
     await session.commit()
     return entries
 
@@ -242,8 +247,43 @@ async def regenerate_schedule(
     result = await session.execute(select(Account).where(Account.id == account_id))
     account = result.scalar_one()
 
-    new_version = account.current_schedule_version + 1
+    old_version = account.current_schedule_version
+    new_version = old_version + 1
     account.current_schedule_version = new_version
+
+    # Carry forward historical EMIs (paid/partial/etc.) into the new version so
+    # get_schedule(current) still shows progress after prepay/rate-change.
+    # Return value still lists only newly generated future EMIs.
+    if from_emi_number > 1:
+        hist_result = await session.execute(
+            select(LoanAmortizationSchedule)
+            .where(
+                LoanAmortizationSchedule.account_id == account_id,
+                LoanAmortizationSchedule.schedule_version == old_version,
+                LoanAmortizationSchedule.emi_number < from_emi_number,
+            )
+            .order_by(LoanAmortizationSchedule.emi_number)
+        )
+        for old in hist_result.scalars().all():
+            copied = LoanAmortizationSchedule(
+                id=uuid.uuid4(),
+                account_id=account_id,
+                workspace_id=account.workspace_id,
+                schedule_version=new_version,
+                emi_number=old.emi_number,
+                due_date=old.due_date,
+                principal_component=old.principal_component,
+                interest_component=old.interest_component,
+                emi_amount=old.emi_amount,
+                opening_balance=old.opening_balance,
+                closing_balance=old.closing_balance,
+                payment_status=old.payment_status,
+                actual_payment_date=old.actual_payment_date,
+                actual_amount_paid=old.actual_amount_paid,
+                linked_transaction_id=old.linked_transaction_id,
+                notes=old.notes,
+            )
+            session.add(copied)
 
     # Extract new parameters
     new_principal = new_params["new_principal_balance"]
@@ -261,7 +301,7 @@ async def regenerate_schedule(
 
     monthly_rate = new_rate / Decimal("1200") if new_rate > 0 else Decimal("0")
     remaining_principal = new_principal
-    entries = []
+    entries: list[LoanAmortizationSchedule] = []
 
     # Get the due date of the previous EMI to calculate subsequent dates
     if from_emi_number > 1:

@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
+import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,15 +12,15 @@ from app.models.account import Account
 from app.models.loan_schedule import LoanAmortizationSchedule
 
 
-@pytest.fixture
-async def loan_account(db_session: AsyncSession, workspace_id: uuid.UUID) -> Account:
+@pytest_asyncio.fixture
+async def loan_account(db_session: AsyncSession, workspace_id: uuid.UUID, user_id: uuid.UUID) -> Account:
     """Create a test loan account."""
     account = Account(
         id=uuid.uuid4(),
         workspace_id=workspace_id,
         name="Test Loan",
-        account_type="liability",
-        subtype="loan",
+        type="loan",
+        user_id=user_id,
         balance=Decimal("-90000.00"),
         currency="INR",
         current_schedule_version=1,
@@ -30,7 +31,7 @@ async def loan_account(db_session: AsyncSession, workspace_id: uuid.UUID) -> Acc
     return account
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def schedule_entries(
     db_session: AsyncSession, loan_account: Account, workspace_id: uuid.UUID
 ) -> list[LoanAmortizationSchedule]:

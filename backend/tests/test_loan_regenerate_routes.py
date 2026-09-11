@@ -4,6 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,15 +12,15 @@ from app.models.account import Account
 from app.models.loan_schedule import LoanAmortizationSchedule
 
 
-@pytest.fixture
-async def loan_account(db_session: AsyncSession, workspace_id: uuid.UUID) -> Account:
+@pytest_asyncio.fixture
+async def loan_account(db_session: AsyncSession, workspace_id: uuid.UUID, user_id: uuid.UUID) -> Account:
     """Create a test loan account with schedule."""
     account = Account(
         id=uuid.uuid4(),
         workspace_id=workspace_id,
         name="Test Loan",
-        account_type="liability",
-        subtype="loan",
+        type="loan",
+        user_id=user_id,
         balance=Decimal("-90000.00"),
         currency="INR",
         current_schedule_version=1,
@@ -60,7 +61,7 @@ async def test_regenerate_schedule_from_emi(
 ):
     """Test regenerating schedule from a specific EMI number."""
     response = await client.post(
-        "/api/v1/schedule/regenerate",
+        "/api/v1/loans/schedule/regenerate",
         json={
             "account_id": str(loan_account.id),
             "from_emi_number": 6,
@@ -87,7 +88,7 @@ async def test_regenerate_schedule_updates_account(
 ):
     """Test that regeneration updates account's current version."""
     await client.post(
-        "/api/v1/schedule/regenerate",
+        "/api/v1/loans/schedule/regenerate",
         json={
             "account_id": str(loan_account.id),
             "from_emi_number": 5,
@@ -126,7 +127,7 @@ async def test_regenerate_schedule_preserves_old_version(
 
     # Regenerate
     await client.post(
-        "/api/v1/schedule/regenerate",
+        "/api/v1/loans/schedule/regenerate",
         json={
             "account_id": str(loan_account.id),
             "from_emi_number": 6,
@@ -158,7 +159,7 @@ async def test_regenerate_schedule_invalid_emi_number(
 ):
     """Test regenerating from invalid EMI number."""
     response = await client.post(
-        "/api/v1/schedule/regenerate",
+        "/api/v1/loans/schedule/regenerate",
         json={
             "account_id": str(loan_account.id),
             "from_emi_number": 0,
@@ -180,7 +181,7 @@ async def test_regenerate_schedule_nonexistent_account(
 ):
     """Test regenerating schedule for non-existent account."""
     response = await client.post(
-        "/api/v1/schedule/regenerate",
+        "/api/v1/loans/schedule/regenerate",
         json={
             "account_id": str(uuid.uuid4()),
             "from_emi_number": 6,

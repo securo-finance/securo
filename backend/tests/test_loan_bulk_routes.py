@@ -4,6 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,8 +12,8 @@ from app.models.account import Account
 from app.models.loan_schedule import LoanAmortizationSchedule
 
 
-@pytest.fixture
-async def loan_accounts(db_session: AsyncSession, workspace_id: uuid.UUID) -> list[Account]:
+@pytest_asyncio.fixture
+async def loan_accounts(db_session: AsyncSession, workspace_id: uuid.UUID, user_id: uuid.UUID) -> list[Account]:
     """Create multiple test loan accounts with schedules."""
     accounts = []
     for i in range(3):
@@ -20,8 +21,8 @@ async def loan_accounts(db_session: AsyncSession, workspace_id: uuid.UUID) -> li
             id=uuid.uuid4(),
             workspace_id=workspace_id,
             name=f"Test Loan {i+1}",
-            account_type="liability",
-            subtype="loan",
+            type="loan",
+            user_id=user_id,
             balance=Decimal("-50000.00"),
             currency="INR",
             current_schedule_version=1,
@@ -76,7 +77,7 @@ async def test_bulk_mark_status_multiple_entries(
     entry_ids = [str(row[0]) for row in result.all()]
 
     response = await client.post(
-        "/api/v1/schedule/bulk-mark-status",
+        "/api/v1/loans/schedule/bulk-mark-status",
         json={
             "entry_ids": entry_ids,
             "payment_status": "paid",
@@ -97,7 +98,7 @@ async def test_bulk_delete_schedules(
 ):
     """Test bulk deletion of loan schedules (for cleanup/reset)."""
     response = await client.post(
-        "/api/v1/schedule/bulk-delete",
+        "/api/v1/loans/schedule/bulk-delete",
         json={
             "account_ids": [str(loan_accounts[0].id), str(loan_accounts[1].id)],
             "schedule_version": 1,
@@ -118,7 +119,7 @@ async def test_bulk_export_multiple_loans(
 ):
     """Test bulk exporting schedules for multiple loans as ZIP."""
     response = await client.post(
-        "/api/v1/schedule/bulk-export",
+        "/api/v1/loans/schedule/bulk-export",
         json={
             "account_ids": [str(acc.id) for acc in loan_accounts],
         },
@@ -136,7 +137,7 @@ async def test_bulk_operations_empty_list(
 ):
     """Test bulk operations with empty entry list."""
     response = await client.post(
-        "/api/v1/schedule/bulk-mark-status",
+        "/api/v1/loans/schedule/bulk-mark-status",
         json={
             "entry_ids": [],
             "payment_status": "paid",
@@ -157,7 +158,7 @@ async def test_bulk_mark_status_invalid_status(
 ):
     """Test bulk marking with invalid status."""
     response = await client.post(
-        "/api/v1/schedule/bulk-mark-status",
+        "/api/v1/loans/schedule/bulk-mark-status",
         json={
             "entry_ids": [str(uuid.uuid4())],
             "payment_status": "invalid_status",

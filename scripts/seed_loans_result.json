@@ -1,0 +1,314 @@
+{
+  "loans": {
+    "mortgage": {
+      "id": "2830dab0-0b4a-4967-8a34-56fb4ba1f8ea",
+      "name": "Home Mortgage \u2014 First National",
+      "loan_kind": "home",
+      "original_principal": "420000.00",
+      "interest_rate": "6.375",
+      "tenure_months": 360,
+      "emi_amount": 2620.25,
+      "emi_day": 1,
+      "disbursed_on": "2024-05-01",
+      "balance": "408289.62",
+      "schedule_rows": 360,
+      "emis_paid": 28,
+      "emis_remaining": 332,
+      "linked_tx_sample": [
+        "6b10ca43-3a9d-4acf-a3cc-8a082806b76c",
+        "07219b6c-e1f6-4387-b99a-640fb1b3eec8",
+        "c5a077bb-a9cd-454e-a031-3701a6f6fd40",
+        "0192b759-c890-4a53-b591-826f24fd59c4",
+        "8296a3b0-9164-43d9-8599-ad842c450495",
+        "646141c0-ab30-43bb-ab79-e408f0486aff"
+      ],
+      "overview": {
+        "progress_percent": 2.788185714285714,
+        "progress_pct": 2.788185714285714,
+        "emis_paid": 28,
+        "emis_remaining": 332,
+        "principal_paid": "11710.38",
+        "principal_remaining": "408289.62",
+        "interest_paid": "61656.62",
+        "interest_remaining": "461633.38",
+        "total_prepayments": "0",
+        "original_principal": "420000.0",
+        "current_outstanding": "408289.62",
+        "total_paid": "73367.0"
+      },
+      "prepayment": {
+        "id": "83b85c2d-fcdd-40d0-bbbd-13a736077204",
+        "amount": "15000.00",
+        "date": "2026-09-08",
+        "method": "reduce_tenure",
+        "transaction_id": "88b4cc13-f055-46e0-b8e2-26d34e4bc57f",
+        "simulate_keys": [
+          "reduce_emi_option",
+          "reduce_tenure_option",
+          "reduce_emi",
+          "reduce_tenure"
+        ],
+        "record": {
+          "schedule_version_before": 1,
+          "schedule_version_after": 2,
+          "tenure_change_months": 30,
+          "emi_change_amount": null
+        },
+        "balance_after": "393289.62"
+      }
+    },
+    "auto": {
+      "id": "dbd2a561-96ee-4dfa-b6be-dc475443152a",
+      "name": "Auto Loan \u2014 Honda Civic",
+      "loan_kind": "auto",
+      "original_principal": "28500.00",
+      "interest_rate": "5.90",
+      "tenure_months": 60,
+      "emi_amount": 549.66,
+      "emi_day": 15,
+      "disbursed_on": "2025-03-15",
+      "balance": "21257.21",
+      "schedule_rows": 60,
+      "emis_paid": 17,
+      "emis_remaining": 43,
+      "linked_tx_sample": [
+        "f610446c-1b9c-4efb-a2c2-74796ae4997e",
+        "ecf4838d-9ca8-4d03-bf56-b7a5c95abdf6",
+        "76636d14-1366-42b1-9377-3ac127d1abad",
+        "49b4b255-46c2-46bf-a9d4-bf26b8053071",
+        "4bab058c-1284-4f2f-a429-43d6facc3389",
+        "d35bdc72-888e-45e5-8b6b-0304658b02ca"
+      ],
+      "overview": {
+        "progress_percent": 25.413298245614037,
+        "progress_pct": 25.413298245614037,
+        "emis_paid": 17,
+        "emis_remaining": 43,
+        "principal_paid": "7242.79",
+        "principal_remaining": "21257.21",
+        "interest_paid": "2101.43",
+        "interest_remaining": "2378.17",
+        "total_prepayments": "0",
+        "original_principal": "28500.0",
+        "current_outstanding": "21257.21",
+        "total_paid": "9344.22"
+      },
+      "rate_change": {
+        "simulate": {
+          "current_rate": 5.9,
+          "new_rate": 5.4,
+          "rate_change": -0.5,
+          "effective_from": "2026-09-11",
+          "current_emi": 549.66,
+          "new_emi": 544.83,
+          "emi_change": -4.83,
+          "emi_change_percent": -0.878725030018557,
+          "outstanding_balance": 21257.21,
+          "remaining_months": 43,
+          "current_total_interest": 2378.17,
+          "new_total_interest": 2170.61,
+          "interest_difference": -207.56,
+          "is_favorable": true
+        },
+        "applied": {
+          "applied": true,
+          "old_rate": 5.9,
+          "new_rate": 5.4,
+          "strategy": "keep_tenure",
+          "simulation": {
+            "current_rate": 5.9,
+            "new_rate": 5.4,
+            "rate_change": -0.5,
+            "effective_from": "2026-09-11",
+            "current_emi": 549.66,
+            "new_emi": 544.83,
+            "emi_change": -4.83,
+            "emi_change_percent": -0.878725030018557,
+            "outstanding_balance": 21257.21,
+            "remaining_months": 43,
+            "current_total_interest": 2378.17,
+            "new_total_interest": 2170.61,
+            "interest_difference": -207.56,
+            "is_favorable": true
+          },
+          "new_schedule_version": 2,
+          "entries_created": 43
+        }
+      }
+    },
+    "personal": {
+      "id": "0367ced6-3092-4e09-88dd-6fe07991d6f4",
+      "name": "Personal Loan \u2014 QuickCash Demo",
+      "loan_kind": "personal",
+      "original_principal": "4500.00",
+      "interest_rate": "11.50",
+      "tenure_months": 24,
+      "emi_amount": 210.78,
+      "emi_day": 10,
+      "disbursed_on": "2026-01-10",
+      "balance": "3112.92",
+      "schedule_rows": 24,
+      "emis_paid": 8,
+      "emis_remaining": 16,
+      "linked_tx_sample": [
+        "cd962025-9132-41d6-a154-3cda418a8796",
+        "a68a342d-bc35-4b28-b3c3-1067da48ad89",
+        "8563064c-021b-44e4-b210-977666a83537",
+        "1072c3c4-ac98-4a7e-8a06-d1e3a6f05293",
+        "0b40d851-a20c-4a28-91e3-d8f99499b85f",
+        "e989b35c-435f-4c37-b220-d12e96498b58"
+      ],
+      "overview": {
+        "progress_percent": 30.823999999999995,
+        "progress_pct": 30.823999999999995,
+        "emis_paid": 8,
+        "emis_remaining": 16,
+        "principal_paid": "1387.08",
+        "principal_remaining": "3112.92",
+        "interest_paid": "299.16",
+        "interest_remaining": "259.56",
+        "total_prepayments": "0",
+        "original_principal": "4500.0",
+        "current_outstanding": "3112.92",
+        "total_paid": "1686.24"
+      },
+      "preclosure": {
+        "simulate": {
+          "closure_date": "2026-09-11",
+          "outstanding_principal": 3112.92,
+          "accrued_interest": 0.98,
+          "prepayment_penalty": 62.26,
+          "prepayment_penalty_rate": 2.0,
+          "total_payoff_amount": 3176.16,
+          "interest_saved": 259.56,
+          "net_savings": 197.3,
+          "paid_to_date": {
+            "principal": 1387.08,
+            "interest": 299.16,
+            "total": 1686.24
+          },
+          "remaining_emis": 16
+        },
+        "applied": {
+          "closed": true,
+          "account_id": "0367ced6-3092-4e09-88dd-6fe07991d6f4",
+          "quote": {
+            "closure_date": "2026-09-11",
+            "outstanding_principal": 3112.92,
+            "accrued_interest": 0.98,
+            "prepayment_penalty": 62.26,
+            "prepayment_penalty_rate": 2.0,
+            "total_payoff_amount": 3176.16,
+            "interest_saved": 259.56,
+            "net_savings": 197.3,
+            "paid_to_date": {
+              "principal": 1387.08,
+              "interest": 299.16,
+              "total": 1686.24
+            },
+            "remaining_emis": 16
+          }
+        }
+      }
+    }
+  },
+  "exercised": {
+    "early_payment_sim": {
+      "reduce_emi_new_emi": 2551.25,
+      "reduce_tenure_months_saved": 18
+    },
+    "dashboard": {
+      "next_due_payments": [
+        {
+          "account_id": "dbd2a561-96ee-4dfa-b6be-dc475443152a",
+          "account_name": "Auto Loan \u2014 Honda Civic",
+          "due_date": "2026-09-15",
+          "emi_amount": "549.66",
+          "days_until_due": 4
+        },
+        {
+          "account_id": "dbd2a561-96ee-4dfa-b6be-dc475443152a",
+          "account_name": "Auto Loan \u2014 Honda Civic",
+          "due_date": "2026-09-15",
+          "emi_amount": "544.83",
+          "days_until_due": 4
+        },
+        {
+          "account_id": "2830dab0-0b4a-4967-8a34-56fb4ba1f8ea",
+          "account_name": "Home Mortgage \u2014 First National",
+          "due_date": "2026-10-01",
+          "emi_amount": "2620.25",
+          "days_until_due": 20
+        },
+        {
+          "account_id": "2830dab0-0b4a-4967-8a34-56fb4ba1f8ea",
+          "account_name": "Home Mortgage \u2014 First National",
+          "due_date": "2026-10-01",
+          "emi_amount": "2620.25",
+          "days_until_due": 20
+        },
+        {
+          "account_id": "dbd2a561-96ee-4dfa-b6be-dc475443152a",
+          "account_name": "Auto Loan \u2014 Honda Civic",
+          "due_date": "2026-10-15",
+          "emi_amount": "549.66",
+          "days_until_due": 34
+        }
+      ],
+      "recent_payments": [
+        {
+          "account_name": "Personal Loan \u2014 QuickCash Demo",
+          "payment_date": "2026-09-10",
+          "amount_paid": "210.78"
+        },
+        {
+          "account_name": "Home Mortgage \u2014 First National",
+          "payment_date": "2026-09-01",
+          "amount_paid": "2620.25"
+        },
+        {
+          "account_name": "Auto Loan \u2014 Honda Civic",
+          "payment_date": "2026-08-15",
+          "amount_paid": "549.66"
+        },
+        {
+          "account_name": "Personal Loan \u2014 QuickCash Demo",
+          "payment_date": "2026-08-10",
+          "amount_paid": "210.78"
+        },
+        {
+          "account_name": "Home Mortgage \u2014 First National",
+          "payment_date": "2026-08-01",
+          "amount_paid": "2620.25"
+        }
+      ],
+      "alerts": [],
+      "total_monthly_emi": "3165.08",
+      "total_outstanding": "414546.83",
+      "active_loans_count": 2,
+      "ytd_principal_paid": null,
+      "ytd_interest_paid": null
+    },
+    "summary": {
+      "total_loans": 2,
+      "total_outstanding": "414546.83",
+      "total_monthly_emi": "3165.08",
+      "accounts": [
+        {
+          "id": "2830dab0-0b4a-4967-8a34-56fb4ba1f8ea",
+          "name": "Home Mortgage \u2014 First National",
+          "balance": "393289.62"
+        },
+        {
+          "id": "dbd2a561-96ee-4dfa-b6be-dc475443152a",
+          "name": "Auto Loan \u2014 Honda Civic",
+          "balance": "21257.21"
+        }
+      ]
+    },
+    "mortgage_schedule_rows": 302,
+    "mortgage_paid_rows": 0,
+    "mortgage_scheduled_rows": 302
+  },
+  "notes": []
+}

@@ -199,7 +199,8 @@ async def simulate_preclosure(
     # Calculate accrued interest till closure date
     if scheduled_entries:
         next_emi = scheduled_entries[0]
-        days_since_last_payment = (closure_date - (paid_entries[-1].actual_payment_date if paid_entries else account.start_date or closure_date)).days
+        anchor = paid_entries[-1].actual_payment_date if paid_entries else (account.disbursed_on or closure_date)
+        days_since_last_payment = (closure_date - anchor).days
 
         daily_rate = (account.interest_rate or Decimal("0")) / Decimal("36500")
         accrued_interest = (outstanding_principal * daily_rate * days_since_last_payment).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -309,4 +310,123 @@ async def simulate_interest_rate_change(
         "new_total_interest": float(new_total_interest),
         "interest_difference": float(interest_difference),
         "is_favorable": interest_difference < 0,
+    }
+
+
+
+async def apply_preclosure(
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    closure_date: Optional[date] = None,
+    create_payoff_transaction: bool = False,
+) -> dict:
+    """Close a loan using the preclosure quote: mark remaining EMIs skipped, zero balance."""
+    quote = await simulate_preclosure(session, account_id, closure_date)
+    result = await session.execute(select(Account).where(Account.id == account_id))
+    account = result.scalar_one()
+    if closure_date is None:
+        closure_date = date.today()
+
+    schedule_result = await session.execute(
+        select(LoanAmortizationSchedule).where(
+            LoanAmortizationSchedule.account_id == account_id,
+            LoanAmortizationSchedule.schedule_version == account.current_schedule_version,
+            LoanAmortizationSchedule.payment_status == "scheduled",
+        )
+    )
+    for entry in schedule_result.scalars().all():
+        entry.payment_status = "skipped"
+        entry.notes = (entry.notes or "") + f" | Pre-closed {closure_date.isoformat()}"
+
+    account.balance = Decimal("0.00")
+    account.is_closed = True
+    from datetime import datetime, timezone
+    account.closed_at = datetime.now(timezone.utc)
+    account.last_payment_date = closure_date
+    await session.commit()
+    return {"closed": True, "account_id": str(account_id), "quote": quote}
+
+
+async def apply_interest_rate_change(
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    new_interest_rate: Decimal,
+    effective_from_date: Optional[date] = None,
+    strategy: str = "keep_tenure",
+) -> dict:
+    """Apply a new interest rate and regenerate remaining schedule.
+
+    strategy:
+      - keep_tenure: recalculate EMI for remaining months
+      - keep_emi: recalculate tenure for current EMI (approx via regenerate with same EMI)
+    """
+    from app.services.loan_schedule_service import regenerate_schedule, calculate_emi
+
+    sim = await simulate_interest_rate_change(session, account_id, new_interest_rate, effective_from_date)
+    if sim.get("error"):
+        raise ValueError(sim["error"])
+
+    result = await session.execute(select(Account).where(Account.id == account_id))
+    account = result.scalar_one()
+
+    schedule_result = await session.execute(
+        select(LoanAmortizationSchedule)
+        .where(
+            LoanAmortizationSchedule.account_id == account_id,
+            LoanAmortizationSchedule.schedule_version == account.current_schedule_version,
+            LoanAmortizationSchedule.payment_status == "scheduled",
+        )
+        .order_by(LoanAmortizationSchedule.emi_number)
+        .limit(1)
+    )
+    next_entry = schedule_result.scalar_one_or_none()
+    if not next_entry:
+        raise ValueError("No future EMIs to regenerate")
+
+    remaining_months = int(sim["remaining_months"])
+    outstanding = Decimal(str(sim["outstanding_balance"]))
+    old_rate = account.interest_rate
+    account.interest_rate = new_interest_rate
+
+    if strategy == "keep_emi" and account.emi_amount:
+        new_params = {
+            "new_principal_balance": outstanding,
+            "new_interest_rate": new_interest_rate,
+            "new_emi_amount": account.emi_amount,
+            "new_tenure_months": None,  # regenerate will derive from EMI math if we pass tenure
+        }
+        # Derive tenure from EMI formula
+        monthly_rate = new_interest_rate / Decimal("1200") if new_interest_rate > 0 else Decimal("0")
+        if monthly_rate > 0:
+            import math
+            r = float(monthly_rate)
+            emi = float(account.emi_amount)
+            p = float(outstanding)
+            if emi > p * r:
+                tenure = int(math.ceil(math.log(emi / (emi - p * r)) / math.log(1 + r)))
+            else:
+                tenure = remaining_months
+        else:
+            tenure = int((outstanding / account.emi_amount).to_integral_value())
+        new_params["new_tenure_months"] = max(1, tenure)
+    else:
+        new_emi = calculate_emi(outstanding, new_interest_rate, remaining_months)
+        account.emi_amount = new_emi
+        new_params = {
+            "new_principal_balance": outstanding,
+            "new_interest_rate": new_interest_rate,
+            "new_tenure_months": remaining_months,
+            "new_emi_amount": new_emi,
+        }
+
+    entries = await regenerate_schedule(session, account_id, next_entry.emi_number, new_params)
+    await session.refresh(account)
+    return {
+        "applied": True,
+        "old_rate": float(old_rate or 0),
+        "new_rate": float(new_interest_rate),
+        "strategy": strategy,
+        "simulation": sim,
+        "new_schedule_version": account.current_schedule_version,
+        "entries_created": len(entries),
     }

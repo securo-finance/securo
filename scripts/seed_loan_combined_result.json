@@ -1,0 +1,66 @@
+{
+  "mortgage_id": "2830dab0-0b4a-4967-8a34-56fb4ba1f8ea",
+  "combined_kpis": {
+    "total_interest": 276332.38,
+    "baseline_interest": 398025.88,
+    "interest_saved": 121693.5,
+    "months_saved": 54,
+    "emi": 2620.25,
+    "payoff_date": "2047-05-01",
+    "baseline_payoff_date": "2051-11-01",
+    "scenario_months": 248,
+    "baseline_months": 302
+  },
+  "timeline_rows": 248,
+  "commitment": {
+    "id": "dbb0b383-3559-48a2-a63b-3b408fdad2f5",
+    "kind": "recurring_prepayment",
+    "amount": 200.0,
+    "start_date": "2026-10-01",
+    "budget_id": "cf3f071a-23c0-4f98-8b3e-2dd2e29d3eb1",
+    "recurring_transaction_id": "8fe8a870-096e-4e19-8f6e-5cfcff129015",
+    "status": "active"
+  },
+  "recurring_match": {
+    "id": "8fe8a870-096e-4e19-8f6e-5cfcff129015",
+    "user_id": "86f83bcc-9357-4d03-a7f6-d990134753bd",
+    "account_id": "f90badbc-2768-4858-9851-80bdb8562e55",
+    "category_id": "8b32233c-c876-4b84-8341-477132fd8beb",
+    "description": "Home Mortgage \u2014 First National extra principal (committed)",
+    "amount": "200.00",
+    "currency": "USD",
+    "type": "debit",
+    "frequency": "monthly",
+    "weekend_adjustment": "none",
+    "day_of_month": 1,
+    "start_date": "2026-10-01",
+    "end_date": null,
+    "is_active": true,
+    "auto_generate": true,
+    "next_occurrence": "2026-10-01",
+    "amount_primary": null,
+    "fx_rate_used": null
+  },
+  "budgets_sample_count": 10,
+  "projected_october": {
+    "count": 6,
+    "extra_principal_hits": [
+      {
+        "recurring_id": "8fe8a870-096e-4e19-8f6e-5cfcff129015",
+        "account_id": "f90badbc-2768-4858-9851-80bdb8562e55",
+        "description": "Home Mortgage \u2014 First National extra principal (committed)",
+        "amount": 200.0,
+        "amount_primary": null,
+        "currency": "USD",
+        "type": "debit",
+        "date": "2026-10-01",
+        "category_id": "8b32233c-c876-4b84-8341-477132fd8beb",
+        "category_name": "Housing",
+        "category_icon": "house",
+        "category_color": "#8B5CF6"
+      }
+    ]
+  },
+  "dashboard_projected_expenses": 22206.310000000005,
+  "ui_path": "http://localhost:3000/loans/2830dab0-0b4a-4967-8a34-56fb4ba1f8ea \u2192 Combined plan tab"
+}

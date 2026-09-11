@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, TrendingUp, Calendar } from 'lucide-react';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency } from '@/lib/format';
 import { Link } from 'react-router-dom';
 
 interface LoanDashboardData {
@@ -30,7 +30,7 @@ interface LoanDashboardData {
 
 async function fetchLoanDashboard(): Promise<LoanDashboardData> {
   const response = await fetch('/api/v1/loans/dashboard', {
-    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+    headers: { Authorization: `Bearer ${localStorage.getItem('token')}`, 'X-Workspace-Id': localStorage.getItem('workspace_id') || '' },
   });
   if (!response.ok) throw new Error('Failed to fetch loan dashboard');
   return response.json();

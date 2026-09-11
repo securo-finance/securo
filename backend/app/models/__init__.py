@@ -27,6 +27,7 @@ from app.models.group_settlement import GroupSettlement
 from app.models.collection import Collection, collection_accounts, collection_asset_groups
 from app.models.loan_schedule import LoanAmortizationSchedule  # noqa: F401
 from app.models.loan_prepayment import LoanPrepayment  # noqa: F401
+from app.models.loan_plan_commitment import LoanPlanCommitment  # noqa: F401
 
 # Side-effect import: register the before_insert listener that auto-stamps
 # workspace_id from user_id on financial entities. Imported last so all

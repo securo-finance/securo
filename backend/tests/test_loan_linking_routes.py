@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
+import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,15 +13,15 @@ from app.models.loan_schedule import LoanAmortizationSchedule
 from app.models.transaction import Transaction
 
 
-@pytest.fixture
-async def loan_account(db_session: AsyncSession, workspace_id: uuid.UUID) -> Account:
+@pytest_asyncio.fixture
+async def loan_account(db_session: AsyncSession, workspace_id: uuid.UUID, user_id: uuid.UUID) -> Account:
     """Create a test loan account."""
     account = Account(
         id=uuid.uuid4(),
         workspace_id=workspace_id,
         name="Test Loan",
-        account_type="liability",
-        subtype="loan",
+        type="loan",
+        user_id=user_id,
         balance=Decimal("-90000.00"),
         currency="INR",
         current_schedule_version=1,
@@ -31,7 +32,7 @@ async def loan_account(db_session: AsyncSession, workspace_id: uuid.UUID) -> Acc
     return account
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def schedule_entry(
     db_session: AsyncSession, loan_account: Account, workspace_id: uuid.UUID
 ) -> LoanAmortizationSchedule:
@@ -86,7 +87,7 @@ async def test_auto_link_transactions_exact_match(
 ):
     """Test auto-linking with exact date and amount match."""
     response = await client.post(
-        "/api/v1/schedule/auto-link",
+        "/api/v1/loans/schedule/auto-link",
         json={
             "account_id": str(loan_account.id),
             "date_tolerance_days": 3,
@@ -130,7 +131,7 @@ async def test_auto_link_transactions_high_confidence(
     await db_session.commit()
 
     response = await client.post(
-        "/api/v1/schedule/auto-link",
+        "/api/v1/loans/schedule/auto-link",
         json={
             "account_id": str(loan_account.id),
             "date_tolerance_days": 3,
@@ -157,7 +158,7 @@ async def test_manual_link_transaction(
 ):
     """Test manually linking a transaction to schedule entry."""
     response = await client.post(
-        f"/api/v1/schedule/{schedule_entry.id}/link",
+        f"/api/v1/loans/schedule/{schedule_entry.id}/link",
         json={"transaction_id": str(payment_transaction.id)},
         headers=auth_headers,
     )
@@ -176,7 +177,7 @@ async def test_manual_link_nonexistent_entry(
 ):
     """Test manually linking to non-existent schedule entry."""
     response = await client.post(
-        f"/api/v1/schedule/{uuid.uuid4()}/link",
+        f"/api/v1/loans/schedule/{uuid.uuid4()}/link",
         json={"transaction_id": str(payment_transaction.id)},
         headers=auth_headers,
     )
@@ -193,7 +194,7 @@ async def test_auto_link_no_matches(
 ):
     """Test auto-linking when no transactions match."""
     response = await client.post(
-        "/api/v1/schedule/auto-link",
+        "/api/v1/loans/schedule/auto-link",
         json={
             "account_id": str(loan_account.id),
             "date_tolerance_days": 1,

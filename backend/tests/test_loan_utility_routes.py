@@ -63,6 +63,7 @@ async def test_validate_schedule_integrity(
     db_session: AsyncSession,
     workspace_id: uuid.UUID,
     auth_headers: dict,
+    user_id: uuid.UUID,
 ):
     """Test schedule integrity validation."""
     # Create account with schedule
@@ -70,8 +71,8 @@ async def test_validate_schedule_integrity(
         id=uuid.uuid4(),
         workspace_id=workspace_id,
         name="Test Loan",
-        account_type="liability",
-        subtype="loan",
+        type="loan",
+        user_id=user_id,
         balance=Decimal("-90000.00"),
         currency="INR",
         current_schedule_version=1,
@@ -117,6 +118,7 @@ async def test_get_loan_summary(
     db_session: AsyncSession,
     workspace_id: uuid.UUID,
     auth_headers: dict,
+    user_id: uuid.UUID,
 ):
     """Test getting summary of all loans in workspace."""
     # Create multiple loan accounts
@@ -125,8 +127,8 @@ async def test_get_loan_summary(
             id=uuid.uuid4(),
             workspace_id=workspace_id,
             name=f"Loan {i+1}",
-            account_type="liability",
-            subtype="loan",
+            type="loan",
+            user_id=user_id,
             balance=Decimal("-50000.00"),
             currency="INR",
             current_schedule_version=1,

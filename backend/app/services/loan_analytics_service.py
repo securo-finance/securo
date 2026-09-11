@@ -217,7 +217,7 @@ async def get_dashboard_summary(session: AsyncSession, workspace_id: uuid.UUID) 
     ytd_result = await session.execute(ytd_query)
     ytd_row = ytd_result.one()
 
-    # Next due payments
+    # Next due payments (current schedule version only; skip closed loans)
     next_due_query = (
         select(LoanAmortizationSchedule)
         .join(Account, LoanAmortizationSchedule.account_id == Account.id)
@@ -225,6 +225,8 @@ async def get_dashboard_summary(session: AsyncSession, workspace_id: uuid.UUID) 
             LoanAmortizationSchedule.workspace_id == workspace_id,
             LoanAmortizationSchedule.payment_status == "scheduled",
             LoanAmortizationSchedule.due_date >= date.today(),
+            LoanAmortizationSchedule.schedule_version == Account.current_schedule_version,
+            Account.is_closed == False,  # noqa: E712
         )
         .order_by(LoanAmortizationSchedule.due_date)
         .limit(5)
