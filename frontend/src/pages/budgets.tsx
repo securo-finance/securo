@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
-import { monthLabel } from '@/lib/month-utils'
+import { monthLabel, shiftMonth } from '@/lib/month-utils'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { categories as categoriesApi, categoryGroups as groupsApi, budgets as budgetsApi } from '@/lib/api'
 import { toast } from 'sonner'
@@ -268,10 +268,7 @@ export default function BudgetsPage() {
               variant="outline"
               size="sm"
               className="h-8 px-2.5 text-xs gap-1"
-              onClick={() => {
-                const prev = getPreviousMonth(selectedMonth)
-                setSelectedMonth(prev)
-              }}
+              onClick={() => setSelectedMonth(shiftMonth(selectedMonth, -1))}
             >
               ←
             </Button>
@@ -302,11 +299,7 @@ export default function BudgetsPage() {
               variant="outline"
               size="sm"
               className="h-8 px-2.5 text-xs gap-1"
-              onClick={() => {
-                const [y, m] = selectedMonth.split('-').map(Number)
-                const d = new Date(y, m, 1)
-                setSelectedMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
-              }}
+              onClick={() => setSelectedMonth(shiftMonth(selectedMonth, 1))}
             >
               →
             </Button>
