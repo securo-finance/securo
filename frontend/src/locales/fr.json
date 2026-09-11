@@ -460,6 +460,7 @@
     "passkeySecondFactorPrompt": "Cliquez sur le bouton ci-dessous et suivez l'invite de clé de sécurité de votre navigateur.",
     "passkeysTitle": "Clés d'accès",
     "passkeysDescription": "Utilisez des clés de sécurité ou les clés d'accès de vos appareils pour vous connecter sans saisir votre mot de passe. Les clés d'accès enregistrées protègent également la connexion par mot de passe comme second facteur ; la connexion par clé d'accès seule ignore l'étape du code d'authentification, car la clé vérifie déjà la possession.",
+    "passkeysCleanupDescription": "La connexion locale est désactivée. Vous pouvez supprimer les clés d’accès enregistrées, mais pas en ajouter.",
     "passkeyLoadError": "Impossible de charger les clés d'accès",
     "passkeyUnsupported": "Ce navigateur ne prend pas en charge les clés d'accès.",
     "passkeyInsecureContext": "Les clés d'accès nécessitent une connexion sécurisée. Ouvrez Securo en HTTPS, ou sur http://localhost.",

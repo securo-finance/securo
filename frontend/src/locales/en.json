@@ -460,6 +460,7 @@
     "passkeySecondFactorPrompt": "Click the button below and follow your browser's security-key prompt.",
     "passkeysTitle": "Passkeys",
     "passkeysDescription": "Use security keys or device passkeys to sign in without entering your password. Enrolled passkeys also protect password sign-in as a second factor; passkey-only sign-in skips the authenticator-code step because the key already verifies possession.",
+    "passkeysCleanupDescription": "Local sign-in is disabled. You can remove saved passkeys, but cannot add new ones.",
     "passkeyLoadError": "Could not load passkeys",
     "passkeyUnsupported": "This browser does not support passkeys.",
     "passkeyInsecureContext": "Passkeys need a secure connection. Open Securo over HTTPS, or on http://localhost.",

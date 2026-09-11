@@ -460,6 +460,7 @@
     "passkeySecondFactorPrompt": "Clique no botão abaixo e siga a solicitação de chave de segurança do navegador.",
     "passkeysTitle": "Chaves de acesso",
     "passkeysDescription": "Use chaves de segurança ou chaves de acesso do dispositivo para entrar sem digitar sua senha. Chaves de acesso cadastradas também protegem o login por senha como segundo fator; o login somente por chave pula o código autenticador porque a chave já comprova a posse.",
+    "passkeysCleanupDescription": "O acesso local está desativado. Você pode remover chaves de acesso salvas, mas não adicionar novas.",
     "passkeyLoadError": "Não foi possível carregar as chaves de acesso",
     "passkeyUnsupported": "Este navegador não oferece suporte a passkeys.",
     "passkeyInsecureContext": "Passkeys exigem uma conexão segura. Abra o Securo por HTTPS ou em http://localhost.",

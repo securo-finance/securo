@@ -464,6 +464,7 @@
     "passkeySecondFactorPrompt": "Kliknij przycisk poniżej i postępuj zgodnie z prośbą przeglądarki o klucz bezpieczeństwa.",
     "passkeysTitle": "Klucze dostępu",
     "passkeysDescription": "Używaj kluczy bezpieczeństwa lub kluczy dostępu urządzenia, aby logować się bez wpisywania hasła. Zarejestrowane klucze chronią też logowanie hasłem jako drugi składnik; logowanie samym kluczem pomija kod z aplikacji, bo klucz już potwierdza posiadanie.",
+    "passkeysCleanupDescription": "Logowanie lokalne jest wyłączone. Możesz usuwać zapisane klucze dostępu, ale nie możesz dodawać nowych.",
     "passkeyLoadError": "Nie udało się załadować kluczy dostępu",
     "passkeyUnsupported": "Ta przeglądarka nie obsługuje kluczy dostępu.",
     "passkeyInsecureContext": "Klucze dostępu wymagają bezpiecznego połączenia. Otwórz Securo przez HTTPS lub na http://localhost.",

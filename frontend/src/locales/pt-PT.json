@@ -460,6 +460,7 @@
     "passkeySecondFactorPrompt": "Clica no botão abaixo e segue o pedido de chave de segurança do navegador.",
     "passkeysTitle": "Chaves de acesso",
     "passkeysDescription": "Utiliza chaves de segurança ou chaves de acesso do dispositivo para iniciar sessão sem introduzir a palavra-passe. As chaves de acesso registadas também protegem o início de sessão com palavra-passe como segundo fator; o início de sessão apenas com chave dispensa o código autenticador, uma vez que a chave já comprova a identidade.",
+    "passkeysCleanupDescription": "O início de sessão local está desativado. Pode remover chaves de acesso guardadas, mas não adicionar novas.",
     "passkeyLoadError": "Não foi possível carregar as chaves de acesso",
     "passkeyUnsupported": "Este navegador não suporta chaves de acesso.",
     "passkeyInsecureContext": "As chaves de acesso exigem uma ligação segura. Acede ao Securo através de HTTPS ou de http://localhost.",

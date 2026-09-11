@@ -460,6 +460,7 @@
     "passkeySecondFactorPrompt": "Klicke auf die Schaltfläche unten und folge den Anweisungen deines Browsers für den Sicherheitsschlüssel.",
     "passkeysTitle": "Passkeys",
     "passkeysDescription": "Verwende Sicherheitsschlüssel oder Geräte-Passkeys, um dich ohne Passwort anzumelden. Registrierte Passkeys schützen auch die Passwort-Anmeldung als zweiten Faktor; die Anmeldung nur mit Passkey überspringt den Authentifikator-Code-Schritt, da der Schlüssel bereits den Besitz nachweist.",
+    "passkeysCleanupDescription": "Die lokale Anmeldung ist deaktiviert. Sie können gespeicherte Passkeys entfernen, aber keine neuen hinzufügen.",
     "passkeyLoadError": "Passkeys konnten nicht geladen werden",
     "passkeyUnsupported": "Dieser Browser unterstützt keine Passkeys.",
     "passkeyInsecureContext": "Passkeys erfordern eine sichere Verbindung. Öffne Securo über HTTPS oder auf http://localhost.",

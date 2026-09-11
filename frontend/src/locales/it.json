@@ -460,6 +460,7 @@
     "passkeySecondFactorPrompt": "Fai clic sul pulsante qui sotto e segui la richiesta della chiave di sicurezza del browser.",
     "passkeysTitle": "Passkey",
     "passkeysDescription": "Usa chiavi di sicurezza o passkey del dispositivo per accedere senza inserire la password. Le passkey registrate proteggono anche l'accesso con password come secondo fattore; l'accesso solo con passkey salta il codice dell'app di autenticazione perché la chiave verifica già il possesso.",
+    "passkeysCleanupDescription": "L’accesso locale è disattivato. Puoi rimuovere le passkey salvate, ma non aggiungerne di nuove.",
     "passkeyLoadError": "Impossibile caricare le passkey",
     "passkeyUnsupported": "Questo browser non supporta le passkey.",
     "passkeyInsecureContext": "Le passkey richiedono una connessione sicura. Apri Securo tramite HTTPS o su http://localhost.",

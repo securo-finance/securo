@@ -20,6 +20,7 @@ import { Label } from '@/components/ui/label'
 interface PasskeyManagementDialogProps {
   open: boolean
   onClose: () => void
+  localAuthEnabled?: boolean
 }
 
 const FAILURE_KEYS: Record<PasskeyFailure, string> = {
@@ -33,7 +34,7 @@ const FAILURE_KEYS: Record<PasskeyFailure, string> = {
   unknown: 'auth.passkeyRegisterError',
 }
 
-export function PasskeyManagementDialog({ open, onClose }: PasskeyManagementDialogProps) {
+export function PasskeyManagementDialog({ open, onClose, localAuthEnabled = true }: PasskeyManagementDialogProps) {
   const { t } = useTranslation()
   const [passkeys, setPasskeys] = useState<Passkey[]>([])
   const [name, setName] = useState('')
@@ -42,7 +43,10 @@ export function PasskeyManagementDialog({ open, onClose }: PasskeyManagementDial
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [loadFailed, setLoadFailed] = useState(false)
-  const blocker = passkeyBlocker()
+  // The blocker only explains why registration is unavailable. With local auth
+  // off there is no registration form to explain, so the warning would be noise
+  // on top of the cleanup copy.
+  const blocker = localAuthEnabled ? passkeyBlocker() : null
 
   const loadPasskeys = useCallback(async () => {
     setLoading(true)
@@ -73,6 +77,7 @@ export function PasskeyManagementDialog({ open, onClose }: PasskeyManagementDial
 
   const handleRegister = async (event: React.FormEvent) => {
     event.preventDefault()
+    if (!localAuthEnabled) return
     const passkeyName = name.trim() || t('auth.defaultPasskeyName')
     setSaving(true)
     try {
@@ -111,7 +116,7 @@ export function PasskeyManagementDialog({ open, onClose }: PasskeyManagementDial
         </DialogHeader>
 
         <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">{t('auth.passkeysDescription')}</p>
+          <p className="text-sm text-muted-foreground">{t(localAuthEnabled ? 'auth.passkeysDescription' : 'auth.passkeysCleanupDescription')}</p>
 
           {blocker && (
             <div className="flex items-start gap-2.5 rounded-lg bg-amber-500/10 px-3 py-2.5 text-sm text-amber-700 dark:text-amber-300">
@@ -120,23 +125,25 @@ export function PasskeyManagementDialog({ open, onClose }: PasskeyManagementDial
             </div>
           )}
 
-          <form onSubmit={handleRegister} className="space-y-3 rounded-lg border p-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="passkey-name">{t('auth.passkeyName')}</Label>
-              <Input
-                id="passkey-name"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder={t('auth.passkeyNamePlaceholder')}
-                maxLength={100}
-                disabled={saving || !!blocker}
-              />
-            </div>
-            <Button type="submit" disabled={!!blocker || saving} className="w-full">
-              {saving && <Loader2 size={15} className="animate-spin" />}
-              {saving ? t('auth.passkeyWaiting') : t('auth.addPasskey')}
-            </Button>
-          </form>
+          {localAuthEnabled && (
+            <form onSubmit={handleRegister} className="space-y-3 rounded-lg border p-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="passkey-name">{t('auth.passkeyName')}</Label>
+                <Input
+                  id="passkey-name"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder={t('auth.passkeyNamePlaceholder')}
+                  maxLength={100}
+                  disabled={saving || !!blocker}
+                />
+              </div>
+              <Button type="submit" disabled={!!blocker || saving} className="w-full">
+                {saving && <Loader2 size={15} className="animate-spin" />}
+                {saving ? t('auth.passkeyWaiting') : t('auth.addPasskey')}
+              </Button>
+            </form>
+          )}
 
           <div className="space-y-2">
             {loading ? (

@@ -460,6 +460,7 @@
     "passkeySecondFactorPrompt": "下のボタンをクリックし、ブラウザのセキュリティキーのプロンプトに従ってください。",
     "passkeysTitle": "パスキー",
     "passkeysDescription": "セキュリティキーやデバイスのパスキーで、パスワードなしでサインインできます。登録済みのパスキーはパスワードログインの第二要素としても機能します。パスキーのみのサインインでは、キーが本人確認を代行するため認証コードの入力は省かれます。",
+    "passkeysCleanupDescription": "ローカルログインは無効です。保存済みのパスキーは削除できますが、新しく追加することはできません。",
     "passkeyLoadError": "パスキーを読み込めませんでした",
     "passkeyUnsupported": "このブラウザはパスキーに対応していません。",
     "passkeyInsecureContext": "パスキーにはセキュアな接続が必要です。HTTPSで開くか、http://localhostでSecuroを開いてください。",

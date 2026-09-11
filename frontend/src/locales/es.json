@@ -460,6 +460,7 @@
     "passkeySecondFactorPrompt": "Haz clic en el botón de abajo y sigue la solicitud de llave de seguridad del navegador.",
     "passkeysTitle": "Llaves de acceso",
     "passkeysDescription": "Usa llaves de seguridad o llaves de acceso del dispositivo para iniciar sesión sin introducir la contraseña. Las llaves registradas también protegen el inicio con contraseña como segundo factor; el inicio solo con llave omite el código autenticador porque la llave ya verifica la posesión.",
+    "passkeysCleanupDescription": "El inicio de sesión local está desactivado. Puede eliminar claves de acceso guardadas, pero no añadir nuevas.",
     "passkeyLoadError": "No se pudieron cargar las llaves de acceso",
     "passkeyUnsupported": "Este navegador no admite passkeys.",
     "passkeyInsecureContext": "Las passkeys requieren una conexión segura. Abre Securo por HTTPS o en http://localhost.",

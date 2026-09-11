@@ -464,6 +464,7 @@
     "passkeySecondFactorPrompt": "Klikni na tlačidlo nižšie a postupuj podľa výzvy prehliadača pre bezpečnostný kľúč.",
     "passkeysTitle": "Passkey",
     "passkeysDescription": "Prihlasuj sa bezpečnostnými kľúčmi alebo passkey zariadenia bez zadávania hesla. Zaregistrované passkey chránia aj prihlásenie heslom ako druhý faktor; prihlásenie len cez passkey preskočí krok s kódom z overovacej aplikácie, pretože kľúč už overuje vlastníctvo.",
+    "passkeysCleanupDescription": "Lokálne prihlásenie je vypnuté. Uložené prístupové kľúče môžete odstrániť, ale nemôžete pridávať nové.",
     "passkeyLoadError": "Passkey sa nepodarilo načítať",
     "passkeyUnsupported": "Tento prehliadač nepodporuje passkey.",
     "passkeyInsecureContext": "Passkey vyžadujú zabezpečené pripojenie. Otvor Securo cez HTTPS alebo na http://localhost.",

@@ -458,6 +458,7 @@
     "passkeySecondFactorPrompt": "Klik op de onderstaande knop en volg de prompt van de beveiligingssleutel van uw browser.",
     "passkeysTitle": "Passkeys",
     "passkeysDescription": "Gebruik beveiligingssleutels of passkeys van uw apparaat om in te loggen zonder uw wachtwoord in te voeren. Geregistreerde passkeys beschermen ook het inloggen met een wachtwoord als tweede factor; bij inloggen met alleen een passkey wordt de stap met de authenticatiecode overgeslagen, omdat de sleutel het bezit al verifieert.",
+    "passkeysCleanupDescription": "Lokaal aanmelden is uitgeschakeld. U kunt opgeslagen passkeys verwijderen, maar geen nieuwe toevoegen.",
     "passkeyLoadError": "Kan de passkeys niet laden",
     "passkeyUnsupported": "Deze browser ondersteunt geen passkeys.",
     "passkeyInsecureContext": "Passkeys hebben een beveiligde verbinding nodig. Open Securo via HTTPS of op http://localhost.",
