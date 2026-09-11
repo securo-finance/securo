@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import type { AxiosError } from 'axios'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { QRCodeSVG } from 'qrcode.react'
 import { useAuth } from '@/contexts/auth-context'
 import { auth } from '@/lib/api'
+import { isServerUnreachable } from '@/lib/auth-errors'
 import {
   Dialog,
   DialogContent,
@@ -78,8 +80,12 @@ export function TwoFactorSetup({ open, onClose }: TwoFactorSetupProps) {
       toast.success(t('auth.twoFactorDisabled'))
       if (user) updateUser({ ...user, is_2fa_enabled: false })
       handleClose()
-    } catch {
-      setError(t('auth.invalid2faCode'))
+    } catch (err) {
+      const detail = (err as AxiosError<{ detail?: string }>).response?.data?.detail
+      if (isServerUnreachable(err)) setError(t('auth.serverError'))
+      else if (detail === 'Invalid password') setError(t('auth.currentPasswordWrong'))
+      else if (detail === 'Invalid 2FA code') setError(t('auth.invalid2faCode'))
+      else setError(t('common.error'))
     } finally {
       setDisableLoading(false)
     }
@@ -111,6 +117,7 @@ export function TwoFactorSetup({ open, onClose }: TwoFactorSetupProps) {
               <Input
                 id="disable-password"
                 type="password"
+                autoComplete="current-password"
                 value={disablePassword}
                 onChange={(e) => setDisablePassword(e.target.value)}
                 required
@@ -122,6 +129,7 @@ export function TwoFactorSetup({ open, onClose }: TwoFactorSetupProps) {
                 id="disable-code"
                 type="text"
                 inputMode="numeric"
+                autoComplete="one-time-code"
                 value={disableCode}
                 onChange={(e) => setDisableCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 placeholder="000000"
@@ -130,7 +138,11 @@ export function TwoFactorSetup({ open, onClose }: TwoFactorSetupProps) {
                 required
               />
             </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {error && (
+              <p role="alert" className="text-sm text-destructive">
+                {error}
+              </p>
+            )}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={handleClose}>
                 {t('common.cancel')}
