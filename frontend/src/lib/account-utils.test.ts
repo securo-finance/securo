@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sortAccountsByDisplayName } from './account-utils'
+import { sortAccountsByAbsoluteBalance, sortAccountsByDisplayName } from './account-utils'
 
 describe('sortAccountsByDisplayName', () => {
   it('orders accounts by display name when present and falls back to name', () => {
@@ -22,5 +22,34 @@ describe('sortAccountsByDisplayName', () => {
     sortAccountsByDisplayName(accounts)
 
     expect(accounts.map((account) => account.name)).toEqual(['Zulu', 'Alpha'])
+  })
+})
+
+describe('sortAccountsByAbsoluteBalance', () => {
+  it('orders positive and negative balances by magnitude', () => {
+    const accounts = [
+      { id: 'small-positive', current_balance: '8.22' },
+      { id: 'largest-positive', current_balance: '6936.72' },
+      { id: 'large-negative', current_balance: '-1200.50' },
+      { id: 'zero', current_balance: '0' },
+    ]
+
+    expect(sortAccountsByAbsoluteBalance(accounts).map((account) => account.id)).toEqual([
+      'largest-positive',
+      'large-negative',
+      'small-positive',
+      'zero',
+    ])
+  })
+
+  it('does not mutate the API account list', () => {
+    const accounts = [
+      { id: 'small', current_balance: 10 },
+      { id: 'large', current_balance: 20 },
+    ]
+
+    sortAccountsByAbsoluteBalance(accounts)
+
+    expect(accounts.map((account) => account.id)).toEqual(['small', 'large'])
   })
 })
