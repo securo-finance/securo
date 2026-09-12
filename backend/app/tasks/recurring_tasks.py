@@ -4,7 +4,7 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
-from app.core.app_clock import use_timezone
+from app.core.app_clock import get_timezone, use_resolved_timezone
 from app.worker import celery_app
 from app.core.config import get_settings
 from app.models.user import User
@@ -26,19 +26,21 @@ async def _generate_all() -> int:
     try:
         total = 0
 
-        async with session_maker() as session, use_timezone(session):
+        async with session_maker() as session:
+            operation_timezone = await get_timezone(session)
             result = await session.execute(select(User.id))
             user_ids = [row[0] for row in result.all()]
 
-        for user_id in user_ids:
-            try:
-                async with session_maker() as session, use_timezone(session):
-                    count = await recurring_transaction_service.generate_pending(session, user_id)
-                    if count:
-                        logger.info("Generated %d recurring transactions for user %s", count, user_id)
-                        total += count
-            except Exception:
-                logger.exception("Failed to generate recurring transactions for user %s", user_id)
+        with use_resolved_timezone(operation_timezone):
+            for user_id in user_ids:
+                try:
+                    async with session_maker() as session:
+                        count = await recurring_transaction_service.generate_pending(session, user_id)
+                        if count:
+                            logger.info("Generated %d recurring transactions for user %s", count, user_id)
+                            total += count
+                except Exception:
+                    logger.exception("Failed to generate recurring transactions for user %s", user_id)
 
     finally:
         await engine.dispose()
