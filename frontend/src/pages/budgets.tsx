@@ -40,7 +40,7 @@ function monthLastDay(m: string) {
   return new Date(y, mon, 0).getDate()
 }
 
-const TH = 'text-[12px] font-mono font-medium tracking-wider text-muted-foreground uppercase py-4 px-6 border-b border-[#27272A]'
+const TH = 'text-[12px] font-mono font-medium tracking-wider text-muted-foreground uppercase py-4 px-6 border-b border-border'
 
 export default function BudgetsPage() {
   const { t, i18n } = useTranslation()
@@ -309,7 +309,7 @@ export default function BudgetsPage() {
 
       {/* Bento-style Monthly Budget Card */}
       {kpis && (
-        <div className="bg-[#18181B] border border-[#27272A] rounded-xl p-6 shadow-sm mb-8">
+        <div className="bg-card border border-border rounded-xl p-6 shadow-sm mb-8">
           <h2 className="text-[18px] font-semibold text-foreground mb-6">
             {t('budgets.monthlyBudget', 'Monthly Budget')}
           </h2>
@@ -328,7 +328,7 @@ export default function BudgetsPage() {
             </div>
             <div>
               <div className="text-sm text-muted-foreground mb-2">{t('budgets.available', 'Available')}</div>
-              <div className={`text-[24px] font-semibold font-mono tabular-nums ${kpis.available < 0 ? 'text-[#ffb4ab]' : 'text-[#4edea3]'}`}>
+              <div className={`text-[24px] font-semibold font-mono tabular-nums ${kpis.available < 0 ? 'text-rose-500 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                 {kpis.available > 0 ? '+' : ''}{mask(formatCurrency(kpis.available, userCurrency, locale))}
               </div>
             </div>
@@ -342,10 +342,10 @@ export default function BudgetsPage() {
                   })}%
                 </span>
                 <div className="flex-1 max-w-[100px]">
-                  <div className="h-2 w-full bg-[#333539] rounded-full overflow-hidden">
+                  <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
                     <div
                       className={`h-full transition-all duration-300 ${
-                        kpis.executionRate > 100 ? 'bg-[#ffb4ab]' : 'bg-[#4edea3]'
+                        kpis.executionRate > 100 ? 'bg-rose-500' : 'bg-emerald-500'
                       }`}
                       style={{ width: `${Math.min(kpis.executionRate, 100)}%` }}
                     />
@@ -355,22 +355,22 @@ export default function BudgetsPage() {
             </div>
           </div>
 
-          <div className="mt-6 pt-6 border-t border-[#27272A] flex flex-wrap gap-6 text-sm">
+          <div className="mt-6 pt-6 border-t border-border flex flex-wrap gap-6 text-sm">
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-[#4edea3]" />
+              <div className="w-2 h-2 rounded-full bg-emerald-500" />
               <span className="text-muted-foreground font-medium">
                 {kpis.within} {t('budgets.statusWithin', 'within')}
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-[#ffb4ab]" />
+              <div className="w-2 h-2 rounded-full bg-rose-500" />
               <span className="text-muted-foreground font-medium">
                 {kpis.exceeded} {t('budgets.statusExceeded', 'exceeded')}
               </span>
             </div>
             {unbudgeted.length > 0 && (
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-[#ffb3ad]" />
+                <div className="w-2 h-2 rounded-full bg-rose-500 dark:bg-rose-400" />
                 <span className="text-muted-foreground font-medium">
                   {unbudgeted.length} {t('budgets.statusUnbudgeted', 'sem orçamento')} ({mask(formatCurrency(kpis.totalUnbudgeted, userCurrency, locale))})
                 </span>
@@ -381,19 +381,20 @@ export default function BudgetsPage() {
       )}
 
       {/* Main Budget Details Card */}
-      <div className="bg-[#18181B] border border-[#27272A] rounded-xl overflow-hidden mb-8 shadow-sm">
-        <div className="p-6 border-b border-[#27272A] flex justify-between items-center bg-[#18181B] flex-wrap gap-4">
+      <div className="bg-card border border-border rounded-xl overflow-hidden mb-8 shadow-sm">
+        <div className="p-6 border-b border-border flex justify-between items-center bg-card flex-wrap gap-4">
           <h2 className="text-[18px] font-semibold text-foreground">
             {t('budgets.categoryBreakdown', 'Category Details')}
           </h2>
           {canWrite && (
             <div className="flex items-center gap-3">
-              <button
-                className="bg-primary text-on-primary hover:bg-primary-container px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 cursor-pointer"
+              <Button
+                size="sm"
+                className="h-9 px-4 rounded-lg text-sm font-medium gap-2 cursor-pointer"
                 onClick={() => openNewBudgetDialog()}
               >
                 <Plus size={18} /> {t('budgets.add', 'New Budget')}
-              </button>
+              </Button>
             </div>
           )}
         </div>
@@ -402,7 +403,7 @@ export default function BudgetsPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[700px]">
               <thead>
-                <tr className="bg-[#1a1c20]/50 border-b border-[#27272A]">
+                <tr className="bg-muted/40 border-b border-border">
                   <th className={`${TH} text-left`}>{t('budgets.category')}</th>
                   <th className={`${TH} text-right w-36`}>{t('budgets.planned', 'Planned')}</th>
                   <th className={`${TH} text-right w-36`}>{t('budgets.realized', 'Realized')}</th>
@@ -415,7 +416,7 @@ export default function BudgetsPage() {
                   )}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#27272A]/50 text-sm font-mono text-foreground">
+              <tbody className="divide-y divide-border text-sm font-mono text-foreground">
                 {budgeted.map((b) => {
                   const diff = Number(b.budget_amount ?? 0) - Number(b.actual_amount)
                   const pct = b.percentage_used ?? 0
@@ -423,7 +424,7 @@ export default function BudgetsPage() {
                   return (
                     <tr
                       key={b.category_id}
-                      className="hover:bg-[#333539]/20 transition-colors group cursor-pointer"
+                      className="hover:bg-muted/50 transition-colors group cursor-pointer"
                       onClick={() => handleCategoryClick(b.category_id, b.category_name)}
                     >
                       <td className="py-4 px-6">
@@ -443,23 +444,23 @@ export default function BudgetsPage() {
                       <td className="py-4 px-6 text-right tabular-nums text-foreground">
                         {mask(formatCurrency(b.actual_amount, userCurrency, locale))}
                       </td>
-                      <td className={`py-4 px-6 text-right tabular-nums font-semibold ${diff < 0 ? 'text-[#ffb4ab]' : 'text-[#4edea3]'}`}>
+                      <td className={`py-4 px-6 text-right tabular-nums font-semibold ${diff < 0 ? 'text-rose-500 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                         {diff < 0 ? '-' : ''}{mask(formatCurrency(Math.abs(diff), userCurrency, locale))}
                       </td>
                       <td className="py-4 px-6">
                         <div className="flex items-center gap-3">
                           <div className="flex-1">
-                            <div className="h-2 w-full bg-[#333539] rounded-full overflow-hidden">
+                            <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
                               <div
                                 className={`h-full transition-all duration-300 ${
-                                  pct > 100 ? 'bg-[#ffb4ab]' : 'bg-[#4edea3]'
+                                  pct > 100 ? 'bg-rose-500' : 'bg-emerald-500'
                                 }`}
                                 style={{ width: `${Math.min(pct, 100)}%` }}
                               />
                             </div>
                           </div>
                           <span className={`w-12 text-right text-xs font-bold tabular-nums ${
-                            pct > 100 ? 'text-[#ffb4ab]' : 'text-[#4edea3]'
+                            pct > 100 ? 'text-rose-500 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'
                           }`}>
                             {pct.toFixed(0)}%
                           </span>
@@ -477,7 +478,7 @@ export default function BudgetsPage() {
                               <Pencil size={14} />
                             </button>
                             <button
-                              className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors cursor-pointer"
+                              className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors cursor-pointer"
                               onClick={() => handleDeleteBudget(b.category_id, b.category_name, b.is_recurring)}
                               disabled={deleteMutation.isPending || isDeleting}
                               aria-label={t('common.delete')}
@@ -496,7 +497,7 @@ export default function BudgetsPage() {
           </div>
         ) : (
           <div className="py-12 px-6 flex flex-col items-center justify-center text-center">
-            <div className="w-12 h-12 rounded-full bg-[#27272A]/50 border border-[#27272A] flex items-center justify-center text-muted-foreground mb-4">
+            <div className="w-12 h-12 rounded-full bg-muted/60 border border-border flex items-center justify-center text-muted-foreground mb-4">
               <CalendarIcon size={20} className="opacity-70" />
             </div>
             <h3 className="text-base font-semibold text-foreground mb-1.5">
@@ -509,7 +510,7 @@ export default function BudgetsPage() {
               <div className="flex flex-wrap items-center justify-center gap-3">
                 <Button
                   type="button"
-                  className="bg-primary text-on-primary hover:bg-primary-container flex items-center gap-2 text-sm"
+                  className="flex items-center gap-2 text-sm"
                   onClick={() => openNewBudgetDialog()}
                 >
                   <Plus size={16} />
@@ -523,11 +524,11 @@ export default function BudgetsPage() {
 
       {/* Expenses without Budget Section */}
       {unbudgeted && unbudgeted.length > 0 && (
-        <div className="bg-[#18181B] border border-[#27272A] rounded-xl overflow-hidden mb-8 shadow-sm">
-          <div className="p-6 border-b border-[#27272A] bg-rose-500/5">
-            <div className="flex items-center gap-2 text-[#ffb3ad] mb-1">
+        <div className="bg-card border border-border rounded-xl overflow-hidden mb-8 shadow-sm">
+          <div className="p-6 border-b border-border bg-rose-500/5 dark:bg-rose-500/10">
+            <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400 mb-1">
               <AlertCircle size={18} />
-              <h2 className="text-[18px] font-semibold">
+              <h2 className="text-[18px] font-semibold text-foreground">
                 {t('budgets.unbudgetedExpenses', 'Expenses without Budget')}
               </h2>
             </div>
@@ -537,11 +538,11 @@ export default function BudgetsPage() {
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[600px]">
-              <tbody className="divide-y divide-[#27272A]/50 text-sm font-mono text-foreground">
+              <tbody className="divide-y divide-border text-sm font-mono text-foreground">
                 {unbudgeted.map((b) => (
                   <tr
                     key={b.category_id}
-                    className="hover:bg-[#333539]/20 transition-colors cursor-pointer"
+                    className="hover:bg-muted/50 transition-colors cursor-pointer"
                     onClick={() => handleCategoryClick(b.category_id, b.category_name)}
                   >
                     <td className="py-4 px-6 w-[250px]">
@@ -556,13 +557,13 @@ export default function BudgetsPage() {
                     <td className="py-4 px-6 text-right tabular-nums text-foreground font-semibold">
                       {mask(formatCurrency(b.actual_amount, userCurrency, locale))}
                     </td>
-                    <td className="py-4 px-6 text-right tabular-nums font-semibold text-[#ffb4ab]">
+                    <td className="py-4 px-6 text-right tabular-nums font-semibold text-rose-500 dark:text-rose-400">
                       -{mask(formatCurrency(b.actual_amount, userCurrency, locale))}
                     </td>
                     {canWrite && (
                       <td className="py-4 px-6 text-right pr-6" onClick={(e) => e.stopPropagation()}>
                         <button
-                          className="text-primary hover:text-primary-container text-xs font-semibold uppercase tracking-wider bg-transparent border-0 cursor-pointer"
+                          className="text-primary hover:text-primary/80 text-xs font-semibold uppercase tracking-wider bg-transparent border-0 cursor-pointer"
                           onClick={() => openNewBudgetDialog(b.category_id)}
                         >
                           {t('budgets.createBudgetAction', 'Create Budget')}
@@ -601,7 +602,7 @@ export default function BudgetsPage() {
               className={`p-4 rounded-xl border transition-all cursor-pointer flex items-start gap-3.5 ${
                 deleteScope === 'future'
                   ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                  : 'border-[#27272A] bg-[#18181B]/60 hover:bg-[#27272A]/40'
+                  : 'border-border bg-card hover:bg-muted/50'
               }`}
               onClick={() => setDeleteScope('future')}
             >
@@ -629,7 +630,7 @@ export default function BudgetsPage() {
               className={`p-4 rounded-xl border transition-all cursor-pointer flex items-start gap-3.5 ${
                 deleteScope === 'month'
                   ? 'border-primary bg-primary/5 ring-1 ring-primary'
-                  : 'border-[#27272A] bg-[#18181B]/60 hover:bg-[#27272A]/40'
+                  : 'border-border bg-card hover:bg-muted/50'
               }`}
               onClick={() => setDeleteScope('month')}
             >
@@ -657,7 +658,7 @@ export default function BudgetsPage() {
               className={`p-4 rounded-xl border transition-all cursor-pointer flex items-start gap-3.5 ${
                 deleteScope === 'all'
                   ? 'border-rose-500/60 bg-rose-500/5 ring-1 ring-rose-500/60'
-                  : 'border-[#27272A] bg-[#18181B]/60 hover:bg-[#27272A]/40'
+                  : 'border-border bg-card hover:bg-muted/50'
               }`}
               onClick={() => setDeleteScope('all')}
             >
