@@ -327,7 +327,14 @@ async def seed(
                 "payee": rng.choice(PAYEES),
             })
 
-        chunk = 2000  # asyncpg limit: 32767 params / 14 cols per tx = 2340 max
+        # asyncpg limit: 32767 bound params per statement. The dict below sets
+        # 14 columns, but Transaction has 4 more boolean flags plus created_at
+        # with Python-side defaults (description_is_rule_managed,
+        # transfer_amount_explicit, is_ignored, exclude_from_pnl, created_at) —
+        # SQLAlchemy binds those too since they're absent from the row dict, so
+        # the real per-row cost is 19, not 14. 1500 * 19 = 28,500, safely under
+        # the ceiling with room for the model gaining another flag or two.
+        chunk = 1500
         for i in range(0, len(tx_rows), chunk):
             await session.execute(pg_insert(Transaction).values(tx_rows[i : i + chunk]))
             done = min(i + chunk, n_tx)
