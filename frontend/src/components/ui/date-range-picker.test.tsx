@@ -173,8 +173,10 @@ describe('DateRangePicker — draft lifecycle', () => {
         onChange={onChange} label="Custom" />,
     )
     await user.click(screen.getByRole('button', { name: 'Custom' }))
-    await user.click(screen.getAllByRole('button', { name: '12', exact: true })[0])
-    await user.click(screen.getAllByRole('button', { name: '8', exact: true })[1])
+    // getByRole's `name` matches the whole accessible name exactly by
+    // default, so no `exact` option is needed (and this type doesn't have one).
+    await user.click(screen.getAllByRole('button', { name: '12' })[0])
+    await user.click(screen.getAllByRole('button', { name: '8' })[1])
     expect(onChange).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
     expect(onChange).toHaveBeenCalledExactlyOnceWith('2026-05-08', '2026-05-12')
