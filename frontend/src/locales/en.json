@@ -1637,7 +1637,7 @@
     "investments": "Investments",
     "moneyMap": "Money Map",
     "range30d": "30D",
-    "rangeCustom": "Custom",
+    "customRange": "Custom range",
     "pickCustomRange": "Pick a start and end date"
   },
   "payees": {

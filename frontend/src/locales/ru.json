@@ -1650,7 +1650,7 @@
     "investments": "Инвестиции",
     "moneyMap": "Money Map",
     "range30d": "30D",
-    "rangeCustom": "Свой",
+    "customRange": "Произвольный диапазон",
     "pickCustomRange": "Выберите дату начала и конца"
   },
   "payees": {

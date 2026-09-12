@@ -1637,7 +1637,7 @@
     "investments": "निवेश",
     "moneyMap": "मनी मैप",
     "range30d": "30D",
-    "rangeCustom": "कस्टम",
+    "customRange": "कस्टम सीमा",
     "pickCustomRange": "प्रारंभ और समाप्ति तिथि चुनें"
   },
   "payees": {

@@ -1638,7 +1638,7 @@
     "investments": "Investimenti",
     "moneyMap": "Mappa del Denaro",
     "range30d": "30D",
-    "rangeCustom": "Personalizzato",
+    "customRange": "Intervallo personalizzato",
     "pickCustomRange": "Scegli una data di inizio e fine"
   },
   "payees": {

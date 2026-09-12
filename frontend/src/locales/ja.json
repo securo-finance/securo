@@ -1637,7 +1637,7 @@
     "investments": "投資",
     "moneyMap": "マネーマップ",
     "range30d": "30日",
-    "rangeCustom": "カスタム",
+    "customRange": "期間を指定",
     "pickCustomRange": "開始日と終了日を選択"
   },
   "payees": {

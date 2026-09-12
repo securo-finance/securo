@@ -117,13 +117,21 @@ const RANGE_LABELS: Record<string, string> = {
   ytd: 'rangeYtd',
   '12m': 'range12m',
   '2y': 'range2y',
-  custom: 'rangeCustom',
+  custom: 'customRange',
 }
 
 // Sentinel key for the "custom range" preset. Kept out of the preset arrays
 // above so we can decide per-tab whether it's actually offered (cash flow,
 // which is a forecast, still uses forward-only presets).
 const CUSTOM_RANGE_KEY = 'custom'
+
+// The Custom segment starts pre-filled with the current calendar year rather
+// than an empty picker, so switching to it is one click instead of two dates
+// picked by hand.
+function defaultCustomRange(): { from: string; to: string } {
+  const year = new Date().getFullYear()
+  return { from: `${year}-01-01`, to: `${year}-12-31` }
+}
 
 interface ReportTab {
   key: string
@@ -554,32 +562,25 @@ export default function ReportsPage() {
                 </button>
               ))}
               {supportsCustomRange && (
-                <button
-                  key={CUSTOM_RANGE_KEY}
-                  onClick={() => { setRangeKey(CUSTOM_RANGE_KEY); setSelectedDate(null) }}
-                  className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
-                    isCustomRange
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                  }`}
-                >
-                  {t('reports.rangeCustom')}
-                </button>
+                <DateRangePicker
+                  variant="segment"
+                  active={isCustomRange}
+                  from={customFrom}
+                  to={customTo}
+                  defaultFrom={defaultCustomRange().from}
+                  defaultTo={defaultCustomRange().to}
+                  onOpen={() => { setRangeKey(CUSTOM_RANGE_KEY); setSelectedDate(null) }}
+                  onChange={(f, to) => {
+                    setCustomFrom(f)
+                    setCustomTo(to)
+                    setRangeKey(CUSTOM_RANGE_KEY)
+                    setSelectedDate(null)
+                  }}
+                  label={t('reports.customRange')}
+                  placeholder={t('reports.pickCustomRange')}
+                />
               )}
             </div>
-            {isCustomRange && (
-              <DateRangePicker
-                from={customFrom}
-                to={customTo}
-                onChange={(f, to) => {
-                  setCustomFrom(f)
-                  setCustomTo(to)
-                  setSelectedDate(null)
-                }}
-                label={t('reports.rangeCustom')}
-                placeholder={t('reports.pickCustomRange')}
-              />
-            )}
             <div className={`flex items-center rounded-lg border border-border bg-card overflow-hidden ${isMoneyMap ? 'hidden' : ''}`}>
               {intervalOptions.map((opt) => (
                 <button

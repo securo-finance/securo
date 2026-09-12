@@ -29,6 +29,27 @@ export interface DateRangePickerProps {
   size?: 'default' | 'sm'
   /** Trigger content when nothing is selected. */
   placeholder?: string
+  /**
+   * 'segment' renders the trigger as a plain segment cell (no border/icon of
+   * its own) so it can sit inside a segmented control, e.g. a range-preset
+   * button group, instead of appearing as a separate floating control.
+   */
+  variant?: 'button' | 'segment'
+  /** Segment highlight state; ignored for variant 'button'. */
+  active?: boolean
+  /**
+   * Fired as soon as the popover starts opening — before the calendar is
+   * shown — so a segment trigger can mark itself selected immediately,
+   * mirroring the other preset buttons it sits next to.
+   */
+  onOpen?: () => void
+  /**
+   * Applied via `onChange` the first time the picker opens with nothing
+   * selected yet, so a fresh "Custom" segment starts from a sensible range
+   * instead of an empty picker.
+   */
+  defaultFrom?: string
+  defaultTo?: string
 }
 
 /**
@@ -48,6 +69,11 @@ export function DateRangePicker({
   className,
   size = 'sm',
   placeholder,
+  variant = 'button',
+  active = false,
+  onOpen,
+  defaultFrom,
+  defaultTo,
 }: DateRangePickerProps) {
   const { t } = useTranslation()
   const dateLocale = useDisplayLocale()
@@ -63,8 +89,18 @@ export function DateRangePicker({
   // renders that react-hooks/set-state-in-effect flags.
   const handleOpenChange = (next: boolean) => {
     if (next) {
-      setDraftFrom(from)
-      setDraftTo(to)
+      onOpen?.()
+      // First open with nothing picked yet: seed from the caller's default
+      // (e.g. the current calendar year) instead of an empty calendar, and
+      // push it straight into the controlled value so the segment reflects
+      // it immediately, before the user touches a single day cell.
+      const seedFrom = from || to ? from : defaultFrom ?? from
+      const seedTo = from || to ? to : defaultTo ?? to
+      setDraftFrom(seedFrom)
+      setDraftTo(seedTo)
+      if (!from && !to && (seedFrom || seedTo)) {
+        onChange(seedFrom, seedTo)
+      }
     }
     setOpen(next)
   }
@@ -74,24 +110,47 @@ export function DateRangePicker({
     placeholder ?? t('transactions.filtersBar.pickRange')
   const triggerLabel =
     from || to ? formatRange(from, to, dateLocale) : emptyLabel
+  // Segment mode sits inline among short preset labels (6M, 1Y, …), so it
+  // drops the year even across a year boundary — the same compact form the
+  // transactions filter bar's applied-range chip uses. The year is still
+  // visible while the calendar is open, which is the only place picking it
+  // actually matters.
+  const compactLabel =
+    from || to ? formatCompactRange(from, to, dateLocale) : emptyLabel
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size={size}
-          className={cn(
-            'gap-1.5 whitespace-nowrap font-normal',
-            !(from || to) && 'text-muted-foreground',
-            className,
-          )}
-          aria-label={headerLabel}
-        >
-          <CalendarIcon size={14} />
-          {triggerLabel}
-        </Button>
+        {variant === 'segment' ? (
+          <button
+            type="button"
+            className={cn(
+              'px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors',
+              active
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
+              className,
+            )}
+            aria-label={headerLabel}
+          >
+            {active ? compactLabel : (label ?? emptyLabel)}
+          </button>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            size={size}
+            className={cn(
+              'gap-1.5 whitespace-nowrap font-normal',
+              !(from || to) && 'text-muted-foreground',
+              className,
+            )}
+            aria-label={headerLabel}
+          >
+            <CalendarIcon size={14} />
+            {triggerLabel}
+          </Button>
+        )}
       </PopoverTrigger>
       <PopoverContent
         align="end"
@@ -197,6 +256,19 @@ function formatRange(from: string, to: string, locale: string): string {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
+    })
+  if (from && to) return `${fmt(from)} — ${fmt(to)}`
+  if (from) return `≥ ${fmt(from)}`
+  return `≤ ${fmt(to)}`
+}
+
+// Mirrors the transactions filter bar's applied-range chip: day + short
+// month, no year, even when the range crosses a year boundary.
+function formatCompactRange(from: string, to: string, locale: string): string {
+  const fmt = (iso: string) =>
+    new Date(iso + 'T00:00:00').toLocaleDateString(locale, {
+      day: '2-digit',
+      month: 'short',
     })
   if (from && to) return `${fmt(from)} — ${fmt(to)}`
   if (from) return `≥ ${fmt(from)}`

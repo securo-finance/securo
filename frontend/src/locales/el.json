@@ -1692,7 +1692,7 @@
     "investments": "Επενδύσεις",
     "moneyMap": "Χάρτης χρημάτων",
     "range30d": "30Η",
-    "rangeCustom": "Προσαρμ.",
+    "customRange": "Προσαρμοσμένο εύρος",
     "pickCustomRange": "Επιλέξτε ημερομηνία έναρξης και λήξης"
   },
   "fiscal": {
