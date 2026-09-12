@@ -490,7 +490,7 @@ export default function GoalsPage() {
                 >
                   {supportedCurrencies?.map((c: { code: string; name: string; flag: string }) => (
                     <option key={c.code} value={c.code}>
-                      {c.flag} {c.name} ({c.code})
+                      {c.flag} {t(`currencies.${c.code}`, c.name)} ({c.code})
                     </option>
                   ))}
                 </select>

@@ -78,7 +78,7 @@ export function GroupForm({
             { code: defaultCurrency, symbol: defaultCurrency, name: defaultCurrency, flag: '' },
           ]).map((c) => (
             <option key={c.code} value={c.code}>
-              {c.flag} {c.name}
+              {c.flag} {t(`currencies.${c.code}`, c.name)}
             </option>
           ))}
         </select>

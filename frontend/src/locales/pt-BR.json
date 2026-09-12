@@ -1,4 +1,7 @@
 {
+  "currencies": {
+    "THB": "Baht tailandês"
+  },
   "workspace": {
     "settingsTitle": "Configurações do workspace",
     "settingsDescription": "Gerencie os detalhes do workspace e quem tem acesso.",

@@ -671,7 +671,7 @@ export default function AdminSettingsPage() {
                     <SelectContent>
                       {(supportedCurrencies ?? []).map((c) => (
                         <SelectItem key={c.code} value={c.code}>
-                          {c.flag} {c.code} — {c.name}
+                          {c.flag} {c.code} — {t(`currencies.${c.code}`, c.name)}
                         </SelectItem>
                       ))}
                     </SelectContent>
