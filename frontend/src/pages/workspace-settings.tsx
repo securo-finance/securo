@@ -420,7 +420,7 @@ export default function WorkspaceSettingsPage() {
                   {(supportedCurrencies ?? [{ code: editCurrency, symbol: editCurrency, name: editCurrency, flag: '' }]).map((c) => (
                     <SelectItem key={c.code} value={c.code}>
                       <span className="mr-2">{c.flag}</span>
-                      {c.name}
+                      {t(`currencies.${c.code}`, c.name)}
                     </SelectItem>
                   ))}
                 </SelectContent>

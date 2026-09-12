@@ -131,3 +131,14 @@ async def test_currencies_include_pkr_with_metadata(client: AsyncClient):
     assert pkr["symbol"] == "₨"
     assert pkr["name"] == "Pakistani Rupee"
     assert pkr["flag"] == "🇵🇰"
+
+@pytest.mark.asyncio
+async def test_currencies_include_thb_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    thb = next((currency for currency in data if currency["code"] == "THB"), None)
+
+    assert thb is not None
+    assert thb["symbol"] == "฿"
+    assert thb["name"] == "Thai Baht"
+    assert thb["flag"] == "🇹🇭"
