@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label'
 const calendarQueries = [
   'accounts', 'transactions', 'recurring', 'dashboard', 'reports', 'budgets', 'goals',
   'assets', 'asset-values', 'asset-trend', 'portfolio-trend', 'fx-rates',
+  'invoice', 'invoices', 'invoice-summary', 'invoice-facets', 'invoice-document',
 ]
 
 export function TimezoneSettings() {

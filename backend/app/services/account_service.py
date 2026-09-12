@@ -7,6 +7,7 @@ from sqlalchemy import case, delete, func, select, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import contains_eager
 
+from app.core.app_clock import app_today
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.credit_card_bill import CreditCardBill
@@ -50,7 +51,7 @@ def _opening_balance_values(account_type: str, balance: Decimal) -> tuple[Decima
 
 
 async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_closed: bool = False) -> list[dict]:
-    today = _Date.today()
+    today = app_today()
     # Subquery: compute current_balance per account from transactions in one pass
     # Use amount_primary only when tx currency differs from account currency
     # (converts foreign txs to account's reporting currency)
@@ -285,7 +286,7 @@ async def create_account(
             description="Saldo inicial",
             amount=amount,
             currency=data.currency,
-            date=data.balance_date or _Date.today(),
+            date=data.balance_date or app_today(),
             type=opening_type,
             source="opening_balance",
         )
@@ -412,7 +413,7 @@ async def update_account(
                     description="Saldo inicial",
                     amount=amount,
                     currency=account.currency,
-                    date=balance_date or _Date.today(),
+                    date=balance_date or app_today(),
                     type=opening_type,
                     source="opening_balance",
                 )
@@ -474,7 +475,7 @@ async def sync_opening_balance_for_connected_account(
     # are projections and must not change the synthetic opening transaction;
     # otherwise a later-dated row can shift the opening balance even though it
     # is not part of the provider's current balance yet.
-    balance_cutoff = _Date.today()
+    balance_cutoff = app_today()
 
     # For connected CC accounts the stored balance is positive debt and the UI
     # displays it negated (account_service.serialize_account). The sum of signed
@@ -540,7 +541,7 @@ async def sync_opening_balance_for_connected_account(
         )
     )
     oldest_date = oldest_result.scalar()
-    opening_date = (oldest_date - timedelta(days=1)) if oldest_date else _Date.today()
+    opening_date = (oldest_date - timedelta(days=1)) if oldest_date else app_today()
 
     # Sign convention matches the rest of the codebase: credit = +, debit = -
     # regardless of account type. A positive offset needs a credit to raise the
@@ -676,7 +677,7 @@ async def get_account_summary(
     if not account:
         return None
 
-    today = _Date.today()
+    today = app_today()
     if not date_from:
         date_from = today.replace(day=1)
     if not date_to:
@@ -1010,7 +1011,7 @@ async def _account_balance_at(
         .outerjoin(Category, Transaction.category_id == Category.id)
         .where(
             Transaction.account_id == account_id,
-            Transaction.date <= min(cutoff, _Date.today()),
+            Transaction.date <= min(cutoff, app_today()),
             Transaction.status == "posted",
             Transaction.is_ignored == False,
             or_(
@@ -1044,7 +1045,7 @@ async def _account_daily_balance_series(
             Transaction.account_id == account_id,
             Transaction.date >= date_from,
             Transaction.date <= date_to,
-            Transaction.date <= _Date.today(),
+            Transaction.date <= app_today(),
             Transaction.status == "posted",
             Transaction.is_ignored == False,
             or_(
@@ -1076,7 +1077,7 @@ async def get_account_balance_history(
     if not account:
         return None
 
-    today = _Date.today()
+    today = app_today()
     if not date_from:
         date_from = today.replace(day=1)
     if not date_to:

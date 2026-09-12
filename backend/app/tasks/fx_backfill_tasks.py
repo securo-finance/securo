@@ -6,12 +6,13 @@ from decimal import Decimal
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
-from app.worker import celery_app
+from app.core.app_clock import use_timezone
 from app.core.config import get_settings
 from app.models.transaction import Transaction
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.asset import Asset
 from app.models.user import User
+from app.worker import celery_app
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ async def _backfill_primary_amounts() -> dict:
     try:
         stats = {"transactions": 0, "recurring": 0, "assets": 0, "rates_synced": 0}
 
-        async with session_maker() as session:
+        async with session_maker() as session, use_timezone(session):
             # 1. Get all users up front so we can tell cross-currency rows apart.
             users_result = await session.execute(select(User))
             settings = get_settings()

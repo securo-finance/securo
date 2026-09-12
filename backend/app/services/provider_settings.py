@@ -61,15 +61,15 @@ async def resolve_settings(session: AsyncSession | None = None) -> Settings:
 
 
 def _field_present(settings: Settings, key: str) -> bool:
-    if getattr(settings, key):
-        return True
-    if key == "enable_banking_private_key" and settings.enable_banking_private_key_file:
-        try:
-            with Path(settings.enable_banking_private_key_file).open(encoding="utf-8") as key_file:
-                return bool(key_file.read(16000).strip())
-        except (OSError, ValueError, UnicodeError):
-            return False
-    return False
+    if key == "enable_banking_private_key":
+        key_file = (settings.enable_banking_private_key_file or "").strip()
+        if key_file:
+            try:
+                with Path(key_file).open(encoding="utf-8") as private_key:
+                    return bool(private_key.read(16000).strip())
+            except (OSError, ValueError, UnicodeError):
+                return False
+    return bool(getattr(settings, key))
 
 
 def is_configured(provider: str, settings: Settings) -> bool:

@@ -24,7 +24,18 @@ it('lets administrators retry a failed timezone load', async () => {
 
 it('refreshes date-sensitive data without invalidating unrelated settings', async () => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } })
-  const affected = [['reports'], ['goals'], ['accounts'], ['transactions'], ['recurring']]
+  const affected = [
+    ['reports'],
+    ['goals'],
+    ['accounts'],
+    ['transactions'],
+    ['recurring'],
+    ['invoice', 'invoice-id'],
+    ['invoices'],
+    ['invoice-summary'],
+    ['invoice-facets'],
+    ['invoice-document', 'invoice-id'],
+  ]
   const unrelated = [['admin', 'users'], ['admin', 'number-format'], ['categories'], ['connections', 'providers']]
   for (const key of [...affected, ...unrelated]) queryClient.setQueryData(key, [])
   const { user } = renderWithProviders(<TimezoneSettings />, { queryClient })

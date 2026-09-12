@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from unittest.mock import patch
 
 import pytest
@@ -103,12 +103,158 @@ async def test_timezone_changes_calendar_date_for_new_operations(session, clean_
 async def test_context_primer_uses_application_timezone(session, test_user):
     from app.agents.services.context_service import build_context_primer
 
-    session.add(AppSetting(key="timezone", value="America/Sao_Paulo"))
+    setting = AppSetting(key="timezone", value="America/Sao_Paulo")
+    session.add(setting)
     await session.commit()
-    with patch("app.agents.services.context_service.datetime", FixedDatetime):
-        primer = await build_context_primer(session, test_user)
+    with patch("app.core.app_clock.datetime", FixedDatetime):
+        async with use_timezone(session):
+            setting.value = "Asia/Tokyo"
+            await session.commit()
+            primer = await build_context_primer(session, test_user)
     assert "Today is 2026-05-18 (America/Sao_Paulo)" in primer
     assert "Timezone: America/Sao_Paulo" in primer
+
+
+@pytest.mark.asyncio
+async def test_account_service_uses_application_day_for_dates_and_balances(
+    session, test_user, test_workspace, monkeypatch
+):
+    from decimal import Decimal
+
+    from sqlalchemy import select
+
+    from app.models.transaction import Transaction
+    from app.schemas.account import AccountCreate
+    from app.services.account_service import create_account, get_accounts
+
+    class HostDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 5, 19)
+
+    monkeypatch.setenv("TZ", "UTC")
+    session.add(AppSetting(key="timezone", value="America/Sao_Paulo"))
+    await session.commit()
+    with (
+        patch("app.core.app_clock.datetime", FixedDatetime),
+        patch("app.services.account_service._Date", HostDate),
+    ):
+        async with use_timezone(session):
+            account = await create_account(
+                session,
+                test_workspace.id,
+                test_user.id,
+                AccountCreate(
+                    name="Local calendar account",
+                    type="checking",
+                    balance=Decimal("100.00"),
+                    currency="BRL",
+                ),
+            )
+            opening = await session.scalar(
+                select(Transaction).where(
+                    Transaction.account_id == account.id,
+                    Transaction.source == "opening_balance",
+                )
+            )
+            assert opening is not None
+            assert opening.date == date(2026, 5, 18)
+
+            session.add(
+                Transaction(
+                    user_id=test_user.id,
+                    workspace_id=test_workspace.id,
+                    account_id=account.id,
+                    description="Tomorrow locally",
+                    amount=Decimal("50.00"),
+                    currency="BRL",
+                    date=date(2026, 5, 19),
+                    type="credit",
+                    source="manual",
+                )
+            )
+            await session.commit()
+            [serialized] = await get_accounts(session, test_workspace.id)
+
+    assert serialized["current_balance"] == 100.0
+
+
+@pytest.mark.asyncio
+async def test_fx_backfill_worker_uses_application_timezone(
+    session, test_workspace, monkeypatch
+):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from app.models.user import User
+    from app.tasks import fx_backfill_tasks
+
+    monkeypatch.setenv("TZ", "UTC")
+    session.add(AppSetting(key="timezone", value="America/Sao_Paulo"))
+    await session.commit()
+    observed_days = []
+    original_select = fx_backfill_tasks.select
+
+    def observing_select(*entities):
+        if entities and entities[0] is User:
+            observed_days.append(app_today())
+        return original_select(*entities)
+
+    maker = async_sessionmaker(session.bind, expire_on_commit=False)
+    with (
+        patch("app.core.app_clock.datetime", FixedDatetime),
+        patch.object(fx_backfill_tasks, "select", side_effect=observing_select),
+        patch.object(
+            fx_backfill_tasks,
+            "_make_session_maker",
+            return_value=(SimpleNamespace(dispose=AsyncMock()), maker),
+        ),
+    ):
+        await fx_backfill_tasks._backfill_primary_amounts()
+
+    assert observed_days == [date(2026, 5, 18)]
+
+
+@pytest.mark.asyncio
+async def test_tesouro_cache_warm_uses_application_timezone(
+    session, test_workspace, monkeypatch
+):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from app.core.config import get_settings
+    from app.main import _warm_tesouro_cache
+
+    monkeypatch.setenv("TZ", "UTC")
+    monkeypatch.setattr(get_settings(), "tesouro_direto_enabled", True)
+    test_workspace.default_currency = "BRL"
+    session.add(AppSetting(key="timezone", value="America/Sao_Paulo"))
+    await session.commit()
+    observed_days = []
+
+    async def get_available_bonds():
+        observed_days.append(app_today())
+        return []
+
+    provider = SimpleNamespace(
+        get_available_bonds=AsyncMock(side_effect=get_available_bonds)
+    )
+    maker = async_sessionmaker(session.bind, expire_on_commit=False)
+    with (
+        patch("app.core.app_clock.datetime", FixedDatetime),
+        patch("app.core.database.async_session_maker", maker),
+        patch(
+            "app.providers.tesouro_direto.get_tesouro_direto_provider",
+            return_value=provider,
+        ),
+    ):
+        await _warm_tesouro_cache()
+
+    assert observed_days == [date(2026, 5, 18)]
 
 
 @pytest.mark.asyncio

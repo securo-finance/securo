@@ -1,6 +1,6 @@
 """Application calendar dates; persisted timestamps continue to use UTC."""
 
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from datetime import date, datetime
 import logging
@@ -43,14 +43,26 @@ async def get_timezone(session: AsyncSession) -> ZoneInfo:
     return environment_timezone()
 
 
+def app_timezone() -> ZoneInfo:
+    """Return the timezone captured for this operation, or the process fallback."""
+    return _timezone.get() or environment_timezone()
+
+
 def app_today() -> date:
-    return datetime.now(_timezone.get() or environment_timezone()).date()
+    return datetime.now(app_timezone()).date()
 
 
-@asynccontextmanager
-async def use_timezone(session: AsyncSession):
-    token = _timezone.set(await get_timezone(session))
+@contextmanager
+def use_resolved_timezone(timezone: ZoneInfo):
+    """Carry an already resolved timezone across an operation boundary."""
+    token = _timezone.set(timezone)
     try:
         yield
     finally:
         _timezone.reset(token)
+
+
+@asynccontextmanager
+async def use_timezone(session: AsyncSession):
+    with use_resolved_timezone(await get_timezone(session)):
+        yield

@@ -207,6 +207,39 @@ async def test_private_key_fallback_requires_a_readable_nonempty_file(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("file_contents", [None, ""])
+async def test_private_key_file_takes_precedence_over_raw_environment_key(
+    session, clean_db, monkeypatch, tmp_path, file_contents
+):
+    from app.providers import all_known_providers
+    from app.services.provider_settings import provider_status, resolve_settings
+
+    key_file = tmp_path / "environment.pem"
+    if file_contents is not None:
+        key_file.write_text(file_contents, encoding="utf-8")
+    monkeypatch.setattr(get_settings(), "enable_banking_app_id", "environment-app-id")
+    monkeypatch.setattr(
+        get_settings(), "enable_banking_private_key", SecretStr("raw-environment-key")
+    )
+    monkeypatch.setattr(get_settings(), "enable_banking_private_key_file", str(key_file))
+
+    status = next(
+        provider
+        for provider in await provider_status(session)
+        if provider["name"] == "enable_banking"
+    )
+    assert status["configured"] is False
+    assert (
+        status["fields"]["enable_banking_private_key"]["environment_configured"]
+        is False
+    )
+    available = all_known_providers(await resolve_settings(session))
+    assert next(
+        provider for provider in available if provider["name"] == "enable_banking"
+    )["configured"] is False
+
+
+@pytest.mark.asyncio
 async def test_unconfigured_fx_refresh_is_explicit(client, auth_headers, monkeypatch):
     monkeypatch.setattr(get_settings(), "openexchangerates_app_id", "")
     response = await client.post("/api/fx-rates/refresh", headers=auth_headers)
@@ -277,6 +310,7 @@ async def test_invalid_values_do_not_echo_secrets(client, admin_auth_headers):
 async def test_pluggy_reauthenticates_after_credential_change(session, clean_db):
     from app.services.provider_settings import resolve_settings, update_provider
     from app.providers import get_provider
+    from app.providers.pluggy import PluggyProvider
 
     requests = []
 
@@ -296,6 +330,7 @@ async def test_pluggy_reauthenticates_after_credential_change(session, clean_db)
                 session, "pluggy", {"pluggy_client_id": "test-id", "pluggy_client_secret": secret}
             )
             provider = get_provider("pluggy", settings=await resolve_settings(session))
+            assert isinstance(provider, PluggyProvider)
             assert await provider._ensure_api_key() == secret + "-token"
     assert [request["clientSecret"] for request in requests] == ["first-secret", "second-secret"]
 
