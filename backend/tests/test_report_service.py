@@ -390,24 +390,23 @@ async def test_net_worth_report_ytd_starts_at_current_year(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("interval", ["daily", "weekly", "monthly", "yearly"])
 async def test_net_worth_report_custom_range_pins_window(
-    session: AsyncSession, test_user, test_workspace
+    session: AsyncSession, test_user, test_workspace, interval
 ):
     """Explicit start_date/end_date override the preset window."""
     start = date(2022, 3, 1)
     end = date(2022, 6, 30)
     report = await get_net_worth_report(
         session, test_workspace.id, test_user.id,
-        months=6, interval="monthly",
+        months=6, interval=interval,
         start_date=start, end_date=end,
     )
 
-    # Monthly bucket labels are YYYY-MM; first should land in the picked month
-    # and the trend must not stretch beyond the picked end month.
-    assert report.trend[0].date == "2022-03"
-    assert report.trend[-1].date == "2022-06"
-    for point in report.trend:
-        assert "2022-03" <= point.date <= "2022-06"
+    expected = [_format_date_label(point, interval)
+                for point in _date_points(start, end, interval)]
+    assert [point.date for point in report.trend] == expected
+    assert report.trend[-1].date == _format_date_label(end, interval)
 
 
 # ---------------------------------------------------------------------------
@@ -2743,3 +2742,87 @@ async def test_cash_flow_chart_includes_past_history(
     delta_days = (today - first_date).days
     # _PAST_HISTORY_MONTHS = 1 (28–31 days depending on month).
     assert 27 <= delta_days <= 32
+
+
+@pytest.mark.parametrize('endpoint,service_name', [
+    ('net-worth', 'get_net_worth_report'),
+    ('income-expenses', 'get_income_expenses_report'),
+])
+@pytest.mark.parametrize('start_offset,end_offset,status', [
+    (-1, 1, 422), (0, 0, 200), (-3659, 0, 200), (-3660, 0, 422),
+    (None, 0, 422), (-1, None, 422), (0, -1, 422),
+])
+async def test_historical_api_custom_range_boundaries(
+    client, auth_headers, monkeypatch, endpoint, service_name,
+    start_offset, end_offset, status,
+):
+    from app.api import reports as reports_api
+
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 9, 12)
+
+    monkeypatch.setattr(reports_api, 'date', FixedDate)
+    report = ReportResponse(
+        summary=ReportSummary(primary_value=0, change_amount=0, change_percent=None,
+                              breakdowns=[]),
+        trend=[], meta=ReportMeta(type=endpoint, series_keys=[], currency='USD',
+                                 interval='monthly'),
+        composition=[], category_trend=[],
+    )
+    service = AsyncMock(return_value=report)
+    monkeypatch.setattr(report_service, service_name, service)
+    params = {}
+    for name, offset in [('start_date', start_offset), ('end_date', end_offset)]:
+        if offset is not None:
+            params[name] = (FixedDate.today() + timedelta(days=offset)).isoformat()
+    response = await client.get(f'/api/reports/{endpoint}', params=params, headers=auth_headers)
+    assert response.status_code == status, response.text
+    if status == 200:
+        service.assert_awaited_once()
+        assert service.call_args.kwargs['start_date'].isoformat() == params['start_date']
+        assert service.call_args.kwargs['end_date'].isoformat() == params['end_date']
+    else:
+        service.assert_not_awaited()
+        assert isinstance(response.json()['detail'], str)
+
+
+@pytest.mark.parametrize('endpoint,service_name', [
+    ('net-worth', 'get_net_worth_report'),
+    ('income-expenses', 'get_income_expenses_report'),
+])
+async def test_custom_dates_override_indian_yearly_ytd(
+    client, auth_headers, monkeypatch, endpoint, service_name,
+):
+    context = SimpleNamespace(
+        workspace=SimpleNamespace(id=uuid.uuid4(), tax_jurisdiction='IN'),
+        user_id=uuid.uuid4(), user=SimpleNamespace(primary_currency='INR'),
+    )
+
+    async def override_workspace():
+        return context
+
+    report = ReportResponse(
+        summary=ReportSummary(primary_value=0, change_amount=0, change_percent=None,
+                              breakdowns=[]),
+        trend=[], meta=ReportMeta(type=endpoint, series_keys=[], currency='INR',
+                                 interval='yearly'), composition=[], category_trend=[],
+    )
+    service = AsyncMock(return_value=report)
+    monkeypatch.setattr(report_service, service_name, service)
+    app.dependency_overrides[current_workspace] = override_workspace
+    try:
+        params = {'period': 'ytd', 'interval': 'yearly'}
+        rejected = await client.get(f'/api/reports/{endpoint}', params=params,
+                                    headers=auth_headers)
+        assert rejected.status_code == 422
+        service.assert_not_awaited()
+        params.update(start_date='2022-03-10', end_date='2022-06-15')
+        accepted = await client.get(f'/api/reports/{endpoint}', params=params,
+                                    headers=auth_headers)
+        assert accepted.status_code == 200, accepted.text
+        assert service.call_args.kwargs['period'] is None
+        assert service.call_args.kwargs['financial_year_start_month'] == 4
+    finally:
+        app.dependency_overrides.pop(current_workspace, None)

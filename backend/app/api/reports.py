@@ -38,9 +38,9 @@ def _resolve_custom_range(
 ) -> tuple[date | None, date | None]:
     """Validate a user-supplied custom range and return the (start, end) pair.
 
-    Both endpoints must be provided together; the range must be non-empty and
-    stay within :data:`_MAX_CUSTOM_RANGE_DAYS`. Returns ``(None, None)`` when
-    neither is set, so callers can fall back to the preset windows.
+    Both endpoints must be provided together; the range must be non-empty,
+    end no later than today and stay within :data:`_MAX_CUSTOM_RANGE_DAYS`.
+    Returns ``(None, None)`` when neither is set, so callers can use presets.
     """
     if start_date is None and end_date is None:
         return None, None
@@ -53,6 +53,11 @@ def _resolve_custom_range(
         raise HTTPException(
             status_code=422,
             detail="end_date must be on or after start_date",
+        )
+    if end_date > date.today():
+        raise HTTPException(
+            status_code=422,
+            detail="end_date must be on or before today",
         )
     span_days = (end_date - start_date).days + 1
     if span_days > _MAX_CUSTOM_RANGE_DAYS:
@@ -78,11 +83,14 @@ async def get_net_worth(
     session: AsyncSession = Depends(get_async_session),
 ):
     financial_year_start_month = _financial_year_start_month(ctx.workspace.tax_jurisdiction)
-    _reject_unsupported_fiscal_year_report(period, interval, financial_year_start_month)
     custom_start, custom_end = _resolve_custom_range(start_date, end_date)
+    effective_period = None if custom_start is not None else period
+    _reject_unsupported_fiscal_year_report(
+        effective_period, interval, financial_year_start_month
+    )
     return await report_service.get_net_worth_report(
         session, ctx.workspace.id, ctx.user_id, months, interval, ctx.user.primary_currency,
-        account_ids=account_ids, asset_group_ids=asset_group_ids, period=period,
+        account_ids=account_ids, asset_group_ids=asset_group_ids, period=effective_period,
         financial_year_start_month=financial_year_start_month,
         start_date=custom_start, end_date=custom_end,
     )
@@ -103,15 +111,18 @@ async def get_income_expenses(
     """`days` overrides `months` with an exact rolling window ending today.
 
     Alternatively `start_date`/`end_date` (both required together) pin the
-    window to an explicit calendar range, overriding `months`, `period`, and
-    `days`.
+    window to an explicit historical calendar range, overriding `months`,
+    `period`, and `days`. Custom ranges include actuals only, without estimates.
     """
     financial_year_start_month = _financial_year_start_month(ctx.workspace.tax_jurisdiction)
-    _reject_unsupported_fiscal_year_report(period, interval, financial_year_start_month)
     custom_start, custom_end = _resolve_custom_range(start_date, end_date)
+    effective_period = None if custom_start is not None else period
+    _reject_unsupported_fiscal_year_report(
+        effective_period, interval, financial_year_start_month
+    )
     return await report_service.get_income_expenses_report(
         session, ctx.workspace.id, ctx.user_id, months, interval, ctx.user.primary_currency,
-        account_ids=account_ids, period=period, days=days,
+        account_ids=account_ids, period=effective_period, days=days,
         financial_year_start_month=financial_year_start_month,
         start_date=custom_start, end_date=custom_end,
     )
