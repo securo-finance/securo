@@ -2007,6 +2007,9 @@
       "dateFormatMdyDesc": "Monat zuerst, z.B. 06/04/2026.",
       "dateFormatYmd": "Jahr / Monat / Tag",
       "dateFormatYmdDesc": "ISO-Reihenfolge, z.B. 2026-06-04.",
+      "timezoneTitle": "Datum und Uhrzeit",
+      "timezone": "Anwendungszeitzone",
+      "timezoneHelp": "Kalenderdaten, wiederkehrende Transaktionen, geplante Aufgaben und der KI-Kontext verwenden diese Zeitzone. Änderungen gelten für neue Anfragen und Aufgaben.",
       "updated": "Einstellung aktualisiert"
     }
   },

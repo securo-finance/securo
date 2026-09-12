@@ -6,6 +6,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
+from app.core.app_clock import app_today, get_timezone, use_resolved_timezone, use_timezone
 from app.worker import celery_app
 from app.core.config import get_settings
 from app.models.asset import Asset
@@ -45,10 +46,10 @@ async def _apply_growth_rules() -> int:
     """Apply growth rules for all assets that have valuation_method='growth_rule'."""
     engine, session_maker = _make_session_maker()
     try:
-        today = date.today()
         total = 0
 
         async with session_maker() as session:
+            operation_timezone = await get_timezone(session)
             result = await session.execute(
                 select(Asset).where(
                     Asset.valuation_method == "growth_rule",
@@ -61,64 +62,66 @@ async def _apply_growth_rules() -> int:
             )
             assets = list(result.scalars().all())
 
-        for asset in assets:
-            try:
-                async with session_maker() as session:
-                    # Get latest value
-                    val_result = await session.execute(
-                        select(AssetValue)
-                        .where(AssetValue.asset_id == asset.id)
-                        .order_by(AssetValue.date.desc(), AssetValue.id.desc())
-                        .limit(1)
-                    )
-                    latest = val_result.scalar_one_or_none()
-                    if not latest:
-                        continue
-
-                    # Check if growth should start
-                    if asset.growth_start_date and today < asset.growth_start_date:
-                        continue
-
-                    # Generate all missed periods in a loop
-                    current_date = latest.date
-                    current_amount = float(latest.amount)
-                    created = 0
-
-                    while True:
-                        next_due = _next_due_date(current_date, asset.growth_frequency)
-                        if next_due > today:
-                            break
-
-                        if asset.growth_type == "percentage":
-                            current_amount = current_amount * (1 + float(asset.growth_rate) / 100)
-                        elif asset.growth_type == "absolute":
-                            current_amount = current_amount + float(asset.growth_rate)
-                        else:
-                            break
-
-                        new_value = AssetValue(
-                            asset_id=asset.id,
-                            amount=Decimal(str(round(current_amount, 6))),
-                            date=next_due,
-                            source="rule",
+        with use_resolved_timezone(operation_timezone):
+            today = app_today()
+            for asset in assets:
+                try:
+                    async with session_maker() as session:
+                        # Get latest value
+                        val_result = await session.execute(
+                            select(AssetValue)
+                            .where(AssetValue.asset_id == asset.id)
+                            .order_by(AssetValue.date.desc(), AssetValue.id.desc())
+                            .limit(1)
                         )
-                        session.add(new_value)
-                        current_date = next_due
-                        created += 1
+                        latest = val_result.scalar_one_or_none()
+                        if not latest:
+                            continue
 
-                        # Safety limit to avoid infinite loops
-                        if created >= 1000:
-                            break
+                        # Check if growth should start
+                        if asset.growth_start_date and today < asset.growth_start_date:
+                            continue
 
-                    if created > 0:
-                        await session.commit()
-                        total += created
-                        logger.info(
-                            "Growth rule applied for asset %s: %d values created, latest=%.2f",
-                            asset.id, created, current_amount,
-                        )
-            except Exception:
-                logger.exception("Failed to apply growth rule for asset %s", asset.id)
+                        # Generate all missed periods in a loop
+                        current_date = latest.date
+                        current_amount = float(latest.amount)
+                        created = 0
+
+                        while True:
+                            next_due = _next_due_date(current_date, asset.growth_frequency)
+                            if next_due > today:
+                                break
+
+                            if asset.growth_type == "percentage":
+                                current_amount = current_amount * (1 + float(asset.growth_rate) / 100)
+                            elif asset.growth_type == "absolute":
+                                current_amount = current_amount + float(asset.growth_rate)
+                            else:
+                                break
+
+                            new_value = AssetValue(
+                                asset_id=asset.id,
+                                amount=Decimal(str(round(current_amount, 6))),
+                                date=next_due,
+                                source="rule",
+                            )
+                            session.add(new_value)
+                            current_date = next_due
+                            created += 1
+
+                            # Safety limit to avoid infinite loops
+                            if created >= 1000:
+                                break
+
+                        if created > 0:
+                            await session.commit()
+                            total += created
+                            logger.info(
+                                "Growth rule applied for asset %s: %d values created, latest=%.2f",
+                                asset.id, created, current_amount,
+                            )
+                except Exception:
+                    logger.exception("Failed to apply growth rule for asset %s", asset.id)
 
     finally:
         await engine.dispose()
@@ -141,7 +144,7 @@ async def _refresh_market_prices() -> dict[str, int]:
     """
     engine, session_maker = _make_session_maker()
     try:
-        async with session_maker() as session:
+        async with session_maker() as session, use_timezone(session):
             return await refresh_all_market_prices(session)
     finally:
         await engine.dispose()

@@ -1499,6 +1499,10 @@ export const admin = {
     const { data } = await api.patch(`/admin/settings/${key}`, { value })
     return data
   },
+  timezone: async (): Promise<{ timezone: string; available: string[] }> => {
+    const { data } = await api.get('/admin/timezone')
+    return data
+  },
   registrationStatus: async (): Promise<{ enabled: boolean }> => {
     const { data } = await api.get('/admin/registration-status')
     return data

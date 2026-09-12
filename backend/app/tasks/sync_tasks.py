@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.core.app_clock import get_timezone, use_resolved_timezone, use_timezone
 from app.worker import celery_app
 from app.core.config import get_settings
 from app.models.bank_connection import BankConnection
@@ -31,6 +32,7 @@ async def _sync_all() -> int:
         synced = 0
 
         async with session_maker() as session:
+            operation_timezone = await get_timezone(session)
             result = await session.execute(
                 select(
                     BankConnection.id, BankConnection.user_id, BankConnection.last_sync_at
@@ -48,17 +50,18 @@ async def _sync_all() -> int:
             cutoff.isoformat(),
         )
 
-        for conn_id, user_id, last_sync in connections:
-            try:
-                logger.info("Syncing connection %s (last_sync=%s)", conn_id, last_sync)
-                await _sync_one(session_maker, conn_id, user_id)
-                synced += 1
-            except ProviderNotConfiguredError as exc:
-                # Actionable one-liner instead of a buried traceback: this
-                # means THIS process is missing the provider's configuration.
-                logger.error("Skipping connection %s: %s", conn_id, exc)
-            except Exception:
-                logger.exception("Background sync failed for connection %s", conn_id)
+        with use_resolved_timezone(operation_timezone):
+            for conn_id, user_id, last_sync in connections:
+                try:
+                    logger.info("Syncing connection %s (last_sync=%s)", conn_id, last_sync)
+                    await _sync_one(session_maker, conn_id, user_id)
+                    synced += 1
+                except ProviderNotConfiguredError as exc:
+                    # Actionable one-liner instead of a buried traceback: this
+                    # means THIS process is missing the provider's configuration.
+                    logger.error("Skipping connection %s: %s", conn_id, exc)
+                except Exception:
+                    logger.exception("Background sync failed for connection %s", conn_id)
 
         return synced
     finally:
@@ -101,7 +104,7 @@ def sync_single_connection(connection_id: str, user_id: str) -> dict:
 async def _sync_one_celery(connection_id: str, user_id: str) -> None:
     engine, session_maker = _make_session_maker()
     try:
-        async with session_maker() as session:
+        async with session_maker() as session, use_timezone(session):
             conn_uuid = uuid.UUID(connection_id)
             workspace_id = await session.scalar(
                 select(BankConnection.workspace_id).where(BankConnection.id == conn_uuid)

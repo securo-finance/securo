@@ -68,6 +68,7 @@ async def _warm_tesouro_cache() -> None:
             return
         from sqlalchemy import select
 
+        from app.core.app_clock import get_timezone, use_resolved_timezone
         from app.core.database import async_session_maker
         from app.models.workspace import Workspace
 
@@ -75,13 +76,15 @@ async def _warm_tesouro_cache() -> None:
             has_brl = await session.scalar(
                 select(Workspace.id).where(Workspace.default_currency == "BRL").limit(1)
             )
-        if not has_brl:
-            return
+            if not has_brl:
+                return
+            operation_timezone = await get_timezone(session)
 
         from app.providers.tesouro_direto import get_tesouro_direto_provider
 
-        await get_tesouro_direto_provider().get_available_bonds()
-        logger.info("Startup: warmed Tesouro Direto price cache")
+        with use_resolved_timezone(operation_timezone):
+            await get_tesouro_direto_provider().get_available_bonds()
+            logger.info("Startup: warmed Tesouro Direto price cache")
     except Exception:
         logger.exception("Startup: Tesouro Direto cache warm failed")
 

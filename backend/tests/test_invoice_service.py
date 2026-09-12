@@ -8,11 +8,13 @@ allocation table really is N:N — the claim the whole schema rests on.
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import use_resolved_timezone
 from app.models.account import Account
 from app.models.invoice import Invoice, InvoiceAllocation
 from app.models.transaction import Transaction
@@ -397,6 +399,20 @@ class TestAgingBuckets:
         summary = await svc.aging_summary(session, workspace.id, TODAY)
         assert summary["outstanding"] == Decimal("500.00")
         assert live.id in {i.id for i in summary["upcoming"]}
+
+    async def test_received_this_month_uses_the_application_timezone(
+        self, session: AsyncSession, workspace, test_user, credit
+    ):
+        invoice = await create(session, workspace, test_user)
+        allocated = await svc.allocate(session, invoice, credit.id, Decimal("100.00"))
+        allocated.allocated_at = datetime(2026, 9, 1, 1, tzinfo=timezone.utc)
+        await session.commit()
+
+        with use_resolved_timezone(ZoneInfo("America/Bahia")):
+            summary = await svc.aging_summary(session, workspace.id, date(2026, 9, 1))
+
+        # 01:00 UTC is still August 31 in Bahia, so it is not September cash.
+        assert summary["received_this_month"] == Decimal("0.00")
 
 
 @pytest.mark.asyncio

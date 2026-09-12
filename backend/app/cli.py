@@ -11,10 +11,11 @@ from app.models.user import User
 
 async def generate_recurring() -> None:
     """Generate pending recurring transactions for all users."""
+    from app.core.app_clock import use_timezone
     from app.models.user import User as UserModel
     from app.services import recurring_transaction_service
 
-    async with async_session_maker() as session:
+    async with async_session_maker() as session, use_timezone(session):
         result = await session.execute(select(UserModel))
         users = result.scalars().all()
         total = 0

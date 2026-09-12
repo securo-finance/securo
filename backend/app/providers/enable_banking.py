@@ -23,6 +23,7 @@ import httpx
 from jose import jwt
 
 from app.agents.services.crypto import decrypt, encrypt
+from app.core.app_clock import app_today
 from app.core.config import get_settings
 from app.providers.base import (
     AccountData,
@@ -543,8 +544,8 @@ class EnableBankingProvider(BankProvider):
         payee_source: str = "auto",
     ) -> list[TransactionData]:
         _ = self._session_id(credentials)  # surface expired credentials early
-        date_from = (since or (date.today() - timedelta(days=DEFAULT_HISTORY_DAYS))).isoformat()
-        date_to = date.today().isoformat()
+        date_from = (since or (app_today() - timedelta(days=DEFAULT_HISTORY_DAYS))).isoformat()
+        date_to = app_today().isoformat()
         transactions: list[TransactionData] = []
         continuation_key: Optional[str] = None
         seen_continuation_keys: set[str] = set()

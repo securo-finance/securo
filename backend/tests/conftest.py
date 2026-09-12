@@ -137,8 +137,11 @@ async def clean_db(session: AsyncSession):
 
 
 async def override_get_async_session() -> AsyncGenerator[AsyncSession, None]:
+    from app.core.app_clock import use_timezone
+
     async with TestSessionLocal() as session:
-        yield session
+        async with use_timezone(session):
+            yield session
 
 
 # Override the dependency
