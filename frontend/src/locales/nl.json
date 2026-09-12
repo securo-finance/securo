@@ -780,7 +780,9 @@
         "thisMonth": "Deze maand",
         "last90": "Laatste 90 dagen",
         "thisYear": "Dit jaar"
-      }
+      },
+      "futureDateError": "Einddatum mag niet na vandaag liggen",
+      "rangeTooWideError": "Bereik is te breed (max. {{years}} jaar)"
     },
     "listView": "Lijst",
     "calendarView": "Kalender",
@@ -1638,7 +1640,10 @@
     "amount": "Bedrag",
     "investments": "Investeringen",
     "moneyMap": "Geld kaart",
-    "range30d": "30D"
+    "range30d": "30D",
+    "customRange": "Aangepast bereik",
+    "pickCustomRange": "Kies een start- en einddatum",
+    "loadError": "Rapport laden mislukt"
   },
   "payees": {
     "addFavorite": "Toevoegen aan favorieten",

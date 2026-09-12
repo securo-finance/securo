@@ -780,7 +780,9 @@
         "thisMonth": "今月",
         "last90": "過去90日間",
         "thisYear": "今年"
-      }
+      },
+      "futureDateError": "終了日は今日より後の日付にできません",
+      "rangeTooWideError": "範囲が広すぎます(最大{{years}}年)"
     },
     "listView": "リスト",
     "calendarView": "カレンダー",
@@ -1636,7 +1638,10 @@
     "amount": "金額",
     "investments": "投資",
     "moneyMap": "マネーマップ",
-    "range30d": "30日"
+    "range30d": "30日",
+    "customRange": "期間を指定",
+    "pickCustomRange": "開始日と終了日を選択",
+    "loadError": "レポートの読み込みに失敗しました"
   },
   "payees": {
     "addFavorite": "お気に入りに追加",

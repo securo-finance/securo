@@ -813,7 +813,9 @@
         "thisMonth": "Bieżący miesiąc",
         "last90": "Ostatnie 90 dni",
         "thisYear": "Bieżący rok"
-      }
+      },
+      "futureDateError": "Data końcowa nie może przypadać po dzisiejszej dacie",
+      "rangeTooWideError": "Zakres jest zbyt szeroki (maks. {{years}} lat)"
     },
     "bulkAddTags": "Dodaj tagi",
     "bulkRemoveTags": "Usuń tagi",
@@ -1721,7 +1723,10 @@
     "amount": "Kwota",
     "investments": "Inwestycje",
     "moneyMap": "Mapa Pieniędzy",
-    "range30d": "30D"
+    "range30d": "30D",
+    "customRange": "Zakres niestandardowy",
+    "pickCustomRange": "Wybierz datę początkową i końcową",
+    "loadError": "Nie udało się załadować raportu"
   },
   "payees": {
     "addFavorite": "Dodaj do ulubionych",

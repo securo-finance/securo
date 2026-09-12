@@ -780,7 +780,9 @@
         "thisMonth": "इस महीने",
         "last90": "पिछले 90 दिन",
         "thisYear": "इस साल"
-      }
+      },
+      "futureDateError": "समाप्ति तिथि आज के बाद नहीं हो सकती",
+      "rangeTooWideError": "सीमा बहुत बड़ी है (अधिकतम {{years}} वर्ष)"
     },
     "listView": "सूची",
     "calendarView": "कैलेंडर",
@@ -1636,7 +1638,10 @@
     "amount": "राशि",
     "investments": "निवेश",
     "moneyMap": "मनी मैप",
-    "range30d": "30D"
+    "range30d": "30D",
+    "customRange": "कस्टम सीमा",
+    "pickCustomRange": "प्रारंभ और समाप्ति तिथि चुनें",
+    "loadError": "रिपोर्ट लोड करने में विफल"
   },
   "payees": {
     "addFavorite": "पसंदीदा में जोड़ें",

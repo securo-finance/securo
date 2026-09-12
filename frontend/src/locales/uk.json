@@ -790,7 +790,9 @@
         "thisMonth": "Цей місяць",
         "last90": "Останні 90 днів",
         "thisYear": "Цей рік"
-      }
+      },
+      "futureDateError": "Дата завершення не може бути пізніше сьогодні",
+      "rangeTooWideError": "Діапазон надто широкий (макс. {{years}} років)"
     },
     "listView": "Список",
     "calendarView": "Календар",
@@ -1649,7 +1651,10 @@
     "amount": "Сума",
     "investments": "Інвестиції",
     "moneyMap": "Money Map",
-    "range30d": "30Д"
+    "range30d": "30Д",
+    "customRange": "Довільний діапазон",
+    "pickCustomRange": "Виберіть дату початку та кінця",
+    "loadError": "Не вдалося завантажити звіт"
   },
   "payees": {
     "addFavorite": "Додати до обраного",

@@ -776,7 +776,9 @@
         "thisMonth": "Questo mese",
         "last90": "Ultimi 90 giorni",
         "thisYear": "Quest'anno"
-      }
+      },
+      "futureDateError": "La data di fine non può essere successiva a oggi",
+      "rangeTooWideError": "L'intervallo è troppo ampio (max {{years}} anni)"
     },
     "bulkAddTags": "Aggiungi tag",
     "bulkRemoveTags": "Rimuovi tag",
@@ -1637,7 +1639,10 @@
     "amount": "Importo",
     "investments": "Investimenti",
     "moneyMap": "Mappa del Denaro",
-    "range30d": "30D"
+    "range30d": "30D",
+    "customRange": "Intervallo personalizzato",
+    "pickCustomRange": "Scegli una data di inizio e fine",
+    "loadError": "Impossibile caricare il report"
   },
   "payees": {
     "addFavorite": "Aggiungi ai preferiti",

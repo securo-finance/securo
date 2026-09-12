@@ -780,7 +780,9 @@
         "thisMonth": "Diesen Monat",
         "last90": "Letzte 90 Tage",
         "thisYear": "Dieses Jahr"
-      }
+      },
+      "futureDateError": "Enddatum darf nicht in der Zukunft liegen",
+      "rangeTooWideError": "Zeitraum ist zu groß (max. {{years}} Jahre)"
     },
     "listView": "Liste",
     "calendarView": "Kalender",
@@ -1637,7 +1639,10 @@
     "amount": "Betrag",
     "investments": "Investitionen",
     "moneyMap": "Geld-Karte",
-    "range30d": "30T"
+    "range30d": "30T",
+    "customRange": "Benutzerdefinierter Zeitraum",
+    "pickCustomRange": "Start- und Enddatum wählen",
+    "loadError": "Bericht konnte nicht geladen werden"
   },
   "payees": {
     "addFavorite": "Zu Favoriten hinzufügen",
