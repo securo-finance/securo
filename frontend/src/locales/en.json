@@ -576,8 +576,6 @@
     "addToExistingRuleTitle": "Add transaction to rule",
     "addToExistingRuleDescription": "Choose an active category rule and add this transaction description as another future match.",
     "existingRule": "Existing rule",
-    "matchOperator": "Match type",
-    "matchText": "Description match",
     "assignRule": "Add to rule",
     "noExistingRules": "No active category rules available",
     "addedToExistingRule": "Rule updated. Future matches will use this category.",

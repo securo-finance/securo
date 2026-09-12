@@ -576,8 +576,6 @@
     "addToExistingRuleTitle": "Voeg transactie toe aan regel",
     "addToExistingRuleDescription": "Kies een actieve categorieregel en voeg deze transactiebeschrijving toe als een nieuwe toekomstige match.",
     "existingRule": "Bestaande regel",
-    "matchOperator": "Overeenkomsttype",
-    "matchText": "Beschrijving komt overeen",
     "assignRule": "Toevoegen aan regel",
     "noExistingRules": "Geen actieve categorieregels beschikbaar",
     "addedToExistingRule": "Regel bijgewerkt. Toekomstige wedstrijden zullen deze categorie gebruiken.",
