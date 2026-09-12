@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { localDateString } from '@/lib/date-utils'
+import { formatDateRange } from '@/lib/date-range-format'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import { useDateLocale, useDisplayLocale } from '@/hooks/use-display-locale'
 
@@ -142,14 +143,14 @@ export function DateRangePicker({
   const emptyLabel =
     placeholder ?? t('transactions.filtersBar.pickRange')
   const triggerLabel =
-    from || to ? formatRange(from, to, dateLocale) : emptyLabel
+    from || to ? formatDateRange(from, to, dateLocale) : emptyLabel
   // Segment mode sits inline among short preset labels (6M, 1Y, …), so it
   // drops the year even across a year boundary — the same compact form the
   // transactions filter bar's applied-range chip uses. The year is still
   // visible while the calendar is open, which is the only place picking it
   // actually matters.
   const compactLabel =
-    from || to ? formatCompactRange(from, to, dateLocale) : emptyLabel
+    from || to ? formatDateRange(from, to, dateLocale, { compact: true }) : emptyLabel
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
@@ -197,7 +198,7 @@ export function DateRangePicker({
           </p>
           <p className="mt-0.5 text-[11px] text-muted-foreground/70">
             {draftFrom || draftTo
-              ? formatRange(draftFrom, draftTo, dateLocale)
+              ? formatDateRange(draftFrom, draftTo, dateLocale)
               : emptyLabel}
           </p>
         </div>
@@ -279,29 +280,4 @@ export function DateRangePicker({
       </PopoverContent>
     </Popover>
   )
-}
-
-function formatRange(from: string, to: string, locale: string): string {
-  const fmt = (iso: string) =>
-    new Date(iso + 'T00:00:00').toLocaleDateString(locale, {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    })
-  if (from && to) return `${fmt(from)} — ${fmt(to)}`
-  if (from) return `≥ ${fmt(from)}`
-  return `≤ ${fmt(to)}`
-}
-
-// Mirrors the transactions filter bar's applied-range chip: day + short
-// month, no year, even when the range crosses a year boundary.
-function formatCompactRange(from: string, to: string, locale: string): string {
-  const fmt = (iso: string) =>
-    new Date(iso + 'T00:00:00').toLocaleDateString(locale, {
-      day: '2-digit',
-      month: 'short',
-    })
-  if (from && to) return `${fmt(from)} — ${fmt(to)}`
-  if (from) return `≥ ${fmt(from)}`
-  return `≤ ${fmt(to)}`
 }

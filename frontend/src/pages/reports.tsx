@@ -142,13 +142,36 @@ interface ReportTab {
   key: string
   labelKey: string
   enabled: boolean
+  rangeOptions: readonly RangeOption[]
+  intervalOptions: readonly { key: string; value: string }[]
+  /** Cash flow is a forward-only forecast, so it's the only tab that can't offer a past-only calendar range. */
+  supportsCustomRange: boolean
+  /** Preset selected when switching to this tab drops the current preset, or when Reset+Apply clears a custom range on it. */
+  fallbackRangeKey: string
+  fallbackInterval: string
 }
 
 const REPORT_TABS: ReportTab[] = [
-  { key: 'net_worth', labelKey: 'reports.netWorth', enabled: true },
-  { key: 'income_expenses', labelKey: 'reports.incomeExpenses', enabled: true },
-  { key: 'cash_flow', labelKey: 'reports.cashFlow', enabled: true },
-  { key: 'money_map', labelKey: 'reports.moneyMap', enabled: true },
+  {
+    key: 'net_worth', labelKey: 'reports.netWorth', enabled: true,
+    rangeOptions: HISTORICAL_RANGE_OPTIONS, intervalOptions: HISTORICAL_INTERVAL_OPTIONS,
+    supportsCustomRange: true, fallbackRangeKey: '1y', fallbackInterval: 'monthly',
+  },
+  {
+    key: 'income_expenses', labelKey: 'reports.incomeExpenses', enabled: true,
+    rangeOptions: HISTORICAL_RANGE_OPTIONS, intervalOptions: HISTORICAL_INTERVAL_OPTIONS,
+    supportsCustomRange: true, fallbackRangeKey: '1y', fallbackInterval: 'monthly',
+  },
+  {
+    key: 'cash_flow', labelKey: 'reports.cashFlow', enabled: true,
+    rangeOptions: FORWARD_RANGE_OPTIONS, intervalOptions: CASH_FLOW_INTERVAL_OPTIONS,
+    supportsCustomRange: false, fallbackRangeKey: '6m', fallbackInterval: 'daily',
+  },
+  {
+    key: 'money_map', labelKey: 'reports.moneyMap', enabled: true,
+    rangeOptions: MONEY_MAP_RANGE_OPTIONS, intervalOptions: HISTORICAL_INTERVAL_OPTIONS,
+    supportsCustomRange: true, fallbackRangeKey: '3m', fallbackInterval: 'monthly',
+  },
 ]
 
 export default function ReportsPage() {
@@ -189,16 +212,12 @@ export default function ReportsPage() {
   // The Money Map (Sankey) tab is driven by the same income/expenses
   // composition, aggregated over the selected historical range.
   const isMoneyMap = activeTab === 'money_map'
-  const rangeOptions = isCashFlow
-    ? FORWARD_RANGE_OPTIONS
-    : isMoneyMap
-      ? MONEY_MAP_RANGE_OPTIONS
-      : HISTORICAL_RANGE_OPTIONS
+  const rangeOptions = currentTab.rangeOptions
   // Cash flow's forecast presets don't make sense with a past-only calendar
   // range, so custom is only offered for the historical tabs (Net Worth,
   // Income vs Expenses, Money Map).
-  const supportsCustomRange = !isCashFlow
-  const intervalOptions = isCashFlow ? CASH_FLOW_INTERVAL_OPTIONS : HISTORICAL_INTERVAL_OPTIONS
+  const supportsCustomRange = currentTab.supportsCustomRange
+  const intervalOptions = currentTab.intervalOptions
   const isCustomRange = supportsCustomRange && rangeKey === CUSTOM_RANGE_KEY
   const hasCustomRange = isCustomRange && !!customFrom && !!customTo
   const selectedRange = rangeOptions.find((r) => r.key === rangeKey) ?? rangeOptions[0]
@@ -225,26 +244,20 @@ export default function ReportsPage() {
   const apiEnd = hasCustomRange ? customTo : undefined
 
   const handleSelectTab = (key: string) => {
+    const nextTab = REPORT_TABS.find((tab) => tab.key === key) ?? REPORT_TABS[0]
     setActiveTab(key)
     setCompositionView(key === 'net_worth' ? 'netWorth' : 'net')
     setSparklinePage(0)
     setSelectedDate(null)
-    // Clamp months/interval to options supported by the new tab
-    const nextRanges = key === 'cash_flow'
-      ? FORWARD_RANGE_OPTIONS
-      : key === 'money_map'
-        ? MONEY_MAP_RANGE_OPTIONS
-        : HISTORICAL_RANGE_OPTIONS
-    const nextSupportsCustom = key !== 'cash_flow'
+    // Clamp the range/interval preset to what the new tab supports.
     const stillValid =
-      (rangeKey === CUSTOM_RANGE_KEY && nextSupportsCustom) ||
-      nextRanges.some((r) => r.key === rangeKey)
+      (rangeKey === CUSTOM_RANGE_KEY && nextTab.supportsCustomRange) ||
+      nextTab.rangeOptions.some((r) => r.key === rangeKey)
     if (!stillValid) {
-      setRangeKey(key === 'cash_flow' ? '6m' : key === 'money_map' ? '3m' : '1y')
+      setRangeKey(nextTab.fallbackRangeKey)
     }
-    const nextIntervals = key === 'cash_flow' ? CASH_FLOW_INTERVAL_OPTIONS : HISTORICAL_INTERVAL_OPTIONS
-    if (!nextIntervals.some((i) => i.value === interval)) {
-      setInterval(key === 'cash_flow' ? 'daily' : 'monthly')
+    if (!nextTab.intervalOptions.some((i) => i.value === interval)) {
+      setInterval(nextTab.fallbackInterval)
     }
   }
 
@@ -579,7 +592,7 @@ export default function ReportsPage() {
                   onChange={(f, to) => {
                     setCustomFrom(f)
                     setCustomTo(to)
-                    setRangeKey(f && to ? CUSTOM_RANGE_KEY : isMoneyMap ? '3m' : '1y')
+                    setRangeKey(f && to ? CUSTOM_RANGE_KEY : currentTab.fallbackRangeKey)
                     setSelectedDate(null)
                   }}
                   label={t('reports.customRange')}

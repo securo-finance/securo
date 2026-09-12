@@ -133,13 +133,20 @@ async def _net_worth_at(
     primary_currency: str = "USD",
     account_ids: Optional[list[uuid.UUID]] = None,
     asset_group_ids: Optional[list[uuid.UUID]] = None,
+    accounts: Optional[list[Account]] = None,
 ) -> ReportDataPoint:
     """Compute a single net worth snapshot at a given date, converted to primary currency.
 
     Under a Collection filter (``account_ids`` set), only those accounts are
     summed and only assets in the collection's wallets (``asset_group_ids``)
-    are included."""
-    accounts = await _get_open_accounts(session, workspace_id, account_ids)
+    are included.
+
+    ``accounts`` lets a caller that already fetched the (date-independent) open
+    account list for this workspace/filter pass it in, instead of re-querying
+    it for every snapshot in a multi-point trend. Omit it to fetch as before.
+    """
+    if accounts is None:
+        accounts = await _get_open_accounts(session, workspace_id, account_ids)
 
     accounts_total = 0.0
     liabilities_total = 0.0
@@ -317,10 +324,17 @@ async def get_net_worth_report(
 
     points = _date_points(start, axis_end, interval)
 
+    # Fetch the open-account list once: it does not depend on the snapshot
+    # date, so every point below reuses it instead of re-querying it.
+    accounts = await _get_open_accounts(session, workspace_id, account_ids)
+
     # Compute snapshot at each date point
     trend: list[ReportDataPoint] = []
     for point in points:
-        dp = await _net_worth_at(session, workspace_id, point, primary_currency, account_ids, asset_group_ids)
+        dp = await _net_worth_at(
+            session, workspace_id, point, primary_currency, account_ids, asset_group_ids,
+            accounts=accounts,
+        )
         dp.date = _format_date_label(point, interval)
         dp.change = round(dp.value - trend[-1].value, 2) if trend else None
         trend.append(dp)
@@ -329,7 +343,17 @@ async def get_net_worth_report(
     current = trend[-1] if trend else ReportDataPoint(
         date="", value=0, breakdowns={"accounts": 0, "assets": 0, "liabilities": 0}
     )
-    baseline = await _net_worth_at(session, workspace_id, start, primary_currency, account_ids, asset_group_ids)
+    # The first trend point's *actual* cutoff (`points[0]`, before its `.date`
+    # was overwritten with a formatted label) equals `start` for every
+    # interval except monthly, which snaps to month-end. Only reuse it then —
+    # an approximate match would silently swap in the wrong day's snapshot.
+    if trend and points[0] == start:
+        baseline = trend[0]
+    else:
+        baseline = await _net_worth_at(
+            session, workspace_id, start, primary_currency, account_ids, asset_group_ids,
+            accounts=accounts,
+        )
     previous = baseline if trend else current
 
     change_amount = current.value - previous.value
