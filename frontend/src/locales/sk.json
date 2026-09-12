@@ -588,8 +588,6 @@
     "addToExistingRuleTitle": "Pridať transakciu do pravidla",
     "addToExistingRuleDescription": "Vyber aktívne pravidlo kategórie a pridaj popis tejto transakcie ako ďalšiu budúcu zhodu.",
     "existingRule": "Existujúce pravidlo",
-    "matchOperator": "Typ zhody",
-    "matchText": "Zhoda popisu",
     "assignRule": "Pridať do pravidla",
     "noExistingRules": "Nie sú dostupné žiadne aktívne pravidlá kategórií",
     "addedToExistingRule": "Pravidlo aktualizované. Budúce zhody dostanú túto kategóriu.",

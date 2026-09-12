@@ -33,20 +33,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { CategorySelect } from '@/components/category-select'
+import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { TransactionAttachments } from '@/components/transaction-attachments'
 import type { AttachmentPreview } from '@/components/transaction-attachments'
 import { TransactionSplitsSection } from '@/components/transaction-splits-section'
 import { buildInstallmentSeriesInput, hasNonStatusChange, isManualInstallmentSeriesRow } from '@/lib/installment-series'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
-import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, Rule, RuleCondition } from '@/types'
+import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, Rule, RuleCondition, RuleConditionNode } from '@/types'
 import { toast } from 'sonner'
 
 export type SaveAction = 'save' | 'saveAndNew' | 'saveAndDuplicate'
@@ -73,6 +67,26 @@ function canExtendRuleFromTransaction(rule: Rule): boolean {
   // grouped rule matches. Those are edited from the rules page instead.
   if (hasConditionGroups(rule.conditions)) return false
   return rule.is_active && !!getRuleCategoryId(rule) && (rule.conditions_op === 'or' || rule.conditions.length <= 1)
+}
+
+/** Appends a "description contains" condition for this transaction, unless the
+ * rule already has an equivalent one. Also flips a single-condition rule to OR
+ * so the new condition extends the match instead of narrowing it. */
+function buildExtendedRuleConditions(
+  rule: Rule,
+  description: string,
+): { conditions: RuleConditionNode[]; conditionsOp: 'and' | 'or'; isDuplicate: boolean } {
+  const newCondition: RuleCondition = { field: 'description', op: 'contains', value: description }
+  const isDuplicate = flattenConditions(rule.conditions).some(existing =>
+    existing.field === newCondition.field &&
+    existing.op === newCondition.op &&
+    normalizeRuleMatchValue(existing.value) === normalizeRuleMatchValue(newCondition.value)
+  )
+  return {
+    conditions: isDuplicate ? rule.conditions : [...rule.conditions, newCondition],
+    conditionsOp: rule.conditions.length <= 1 ? 'or' : rule.conditions_op,
+    isDuplicate,
+  }
 }
 
 export function TransactionDialog({
@@ -512,12 +526,27 @@ function TransactionForm({
   const [recurringLinked, setRecurringLinked] = useState(seed?.recurring_transaction_id != null)
   const [unlinkingRecurring, setUnlinkingRecurring] = useState(false)
   const [addToRuleOpen, setAddToRuleOpen] = useState(false)
+  const [extendRuleTarget, setExtendRuleTarget] = useState<Rule | null>(null)
 
   const { data: rulesList, isLoading: rulesLoading } = useQuery({
     queryKey: ['rules'],
     queryFn: rulesApi.list,
     enabled: !!transaction && !!onCreateRule,
   })
+  // Hidden categories can still be the target of an existing rule; the picker's
+  // grouping and the rule editor's "current category" lookup both need them.
+  const { data: allCategoriesList } = useQuery({
+    queryKey: ['categories', 'management'],
+    queryFn: categoriesApi.listIncludingHidden,
+    enabled: !!transaction && !!onCreateRule,
+  })
+  const { data: allCategoryGroupsList } = useQuery({
+    queryKey: ['categoryGroups', 'management'],
+    queryFn: categoryGroupsApi.listIncludingHidden,
+    enabled: !!transaction && !!onCreateRule,
+  })
+  const displayCategories = allCategoriesList ?? categories
+  const displayCategoryGroups = allCategoryGroupsList ?? categoryGroups
 
   // Counterpart leg of a transfer. Fetched lazily so only transfer dialogs
   // pay for it — the list response carries just the shared pair id.
@@ -531,28 +560,28 @@ function TransactionForm({
     [rulesList],
   )
 
-  const extendRuleMutation = useMutation({
-    mutationFn: async ({
-      rule,
-      condition,
-    }: {
-      rule: Rule
-      condition: RuleCondition
-    }) => {
-      const duplicate = flattenConditions(rule.conditions).some(existing =>
-        existing.field === condition.field &&
-        existing.op === condition.op &&
-        normalizeRuleMatchValue(existing.value) === normalizeRuleMatchValue(condition.value)
-      )
-      if (duplicate) {
-        throw new Error('duplicate-condition')
-      }
+  // Picking an existing rule opens the same rich editor used for creating a
+  // rule (RuleDialog), pre-filled with that rule's data plus the extra
+  // "description contains" condition — instead of a separate, cut-down form.
+  const extendRuleDialogProps = useMemo(() => {
+    if (!extendRuleTarget || !transaction) return null
+    const { conditions, conditionsOp } = buildExtendedRuleConditions(extendRuleTarget, transaction.description)
+    return {
+      rule: { ...extendRuleTarget, conditions_op: conditionsOp },
+      initialData: { conditions } as RuleDialogInitialData,
+    }
+  }, [extendRuleTarget, transaction])
 
-      return rulesApi.update(rule.id, {
-        conditions_op: rule.conditions.length <= 1 ? 'or' : rule.conditions_op,
-        conditions: [...rule.conditions, condition],
-      })
-    },
+  function handlePickRuleToExtend(rule: Rule) {
+    if (transaction && buildExtendedRuleConditions(rule, transaction.description).isDuplicate) {
+      toast.info(t('transactions.duplicateRuleCondition'))
+    }
+    setExtendRuleTarget(rule)
+    setAddToRuleOpen(false)
+  }
+
+  const updateRuleMutation = useMutation({
+    mutationFn: (data: Partial<Rule>) => rulesApi.update(extendRuleTarget!.id, data),
     onSuccess: (updatedRule) => {
       const targetCategoryId = getRuleCategoryId(updatedRule)
       if (targetCategoryId) setCategoryId(targetCategoryId)
@@ -561,19 +590,15 @@ function TransactionForm({
       if (applied > 0) {
         invalidateFinancialQueries(queryClient)
       }
-      setAddToRuleOpen(false)
+      setExtendRuleTarget(null)
       toast.success(
         applied > 0
           ? t('rules.updatedAndApplied', { count: applied })
           : t('transactions.addedToExistingRule'),
       )
     },
-    onError: (error) => {
-      if (error instanceof Error && error.message === 'duplicate-condition') {
-        toast.info(t('transactions.duplicateRuleCondition'))
-      } else {
-        toast.error(t('common.error'))
-      }
+    onError: () => {
+      toast.error(t('common.error'))
     },
   })
 
@@ -1344,7 +1369,7 @@ function TransactionForm({
                     variant="outline"
                     aria-label={t('transactions.ruleActions')}
                     className="rounded-l-none border-l-0 px-1.5 sm:px-2 has-[>svg]:px-1.5 sm:has-[>svg]:px-2 h-8 sm:h-9"
-                    disabled={extendRuleMutation.isPending}
+                    disabled={updateRuleMutation.isPending}
                   >
                     <ChevronDown size={14} />
                   </Button>
@@ -1404,13 +1429,26 @@ function TransactionForm({
         <AddTransactionToRuleDialog
           open={true}
           onOpenChange={setAddToRuleOpen}
-          transactionDescription={transaction.description}
           rules={extendableRules}
+          categories={displayCategories}
+          categoryGroups={displayCategoryGroups}
+          loadingRules={rulesLoading}
+          onSubmit={handlePickRuleToExtend}
+        />
+      )}
+      {extendRuleDialogProps && (
+        <RuleDialog
+          open={true}
+          onClose={() => setExtendRuleTarget(null)}
+          rule={extendRuleDialogProps.rule}
           categories={categories}
           categoryGroups={categoryGroups}
-          loadingRules={rulesLoading}
-          loading={extendRuleMutation.isPending}
-          onSubmit={({ rule, condition }) => extendRuleMutation.mutate({ rule, condition })}
+          currentCategories={displayCategories}
+          accounts={sortedAccounts}
+          payees={payeesList ?? []}
+          onSave={(data) => updateRuleMutation.mutate(data)}
+          loading={updateRuleMutation.isPending}
+          initialData={extendRuleDialogProps.initialData}
         />
       )}
     </form>
@@ -1420,39 +1458,23 @@ function TransactionForm({
 function AddTransactionToRuleDialog({
   open,
   onOpenChange,
-  transactionDescription,
   rules,
-  categories,
-  categoryGroups,
+  categories: displayCategories,
+  categoryGroups: displayCategoryGroups,
   loadingRules,
-  loading,
   onSubmit,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  transactionDescription: string
   rules: Rule[]
   categories: Category[]
   categoryGroups: CategoryGroup[]
   loadingRules: boolean
-  loading: boolean
-  onSubmit: (data: { rule: Rule; condition: RuleCondition }) => void
+  onSubmit: (rule: Rule) => void
 }) {
   const { t } = useTranslation()
   const [ruleId, setRuleId] = useState('')
   const [openCombobox, setOpenCombobox] = useState(false)
-  const [matchOp, setMatchOp] = useState<'contains' | 'starts_with'>('contains')
-  const [matchText, setMatchText] = useState(transactionDescription)
-  const { data: allCategories } = useQuery({
-    queryKey: ['categories', 'management'],
-    queryFn: categoriesApi.listIncludingHidden,
-  })
-  const { data: allCategoryGroups } = useQuery({
-    queryKey: ['categoryGroups', 'management'],
-    queryFn: categoryGroupsApi.listIncludingHidden,
-  })
-  const displayCategories = allCategories ?? categories
-  const displayCategoryGroups = allCategoryGroups ?? categoryGroups
 
   const effectiveRuleId = ruleId && rules.some(rule => rule.id === ruleId)
     ? ruleId
@@ -1502,15 +1524,8 @@ function AddTransactionToRuleDialog({
     // propagation the submit event bubbles up the React tree (portals preserve
     // it) and also triggers the parent transaction save.
     event.stopPropagation()
-    if (!selectedRule || !matchText.trim()) return
-    onSubmit({
-      rule: selectedRule,
-      condition: {
-        field: 'description',
-        op: matchOp,
-        value: matchText.trim(),
-      },
-    })
+    if (!selectedRule) return
+    onSubmit(selectedRule)
   }
 
   return (
@@ -1529,7 +1544,7 @@ function AddTransactionToRuleDialog({
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  disabled={loadingRules || loading || rules.length === 0}
+                  disabled={loadingRules || rules.length === 0}
                   className="flex w-full items-center justify-between gap-2 rounded-md border border-input bg-card px-3 py-2 text-sm text-left shadow-xs transition-[color,box-shadow] outline-hidden focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30 dark:hover:bg-input/50 h-9 cursor-pointer"
                 >
                   <span className="flex-1 truncate text-left">
@@ -1586,45 +1601,16 @@ function AddTransactionToRuleDialog({
             )}
           </div>
 
-          <div className="grid grid-cols-[auto_1fr] gap-3">
-            <div className="space-y-2">
-              <Label className="whitespace-nowrap">{t('transactions.matchOperator')}</Label>
-              <Select
-                value={matchOp}
-                onValueChange={(value) => setMatchOp(value as 'contains' | 'starts_with')}
-                disabled={loading}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="contains">{t('rules.opContains')}</SelectItem>
-                  <SelectItem value="starts_with">{t('rules.opStartsWith')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2 min-w-0">
-              <Label>{t('transactions.matchText')}</Label>
-              <Input
-                value={matchText}
-                onChange={(event) => setMatchText(event.target.value)}
-                disabled={loading}
-                autoFocus
-              />
-            </div>
-          </div>
-
           <DialogFooter className="pt-2">
             <Button
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
-              disabled={loading}
             >
               {t('common.cancel')}
             </Button>
-            <Button type="submit" disabled={!selectedRule || !matchText.trim() || loading}>
-              {loading ? t('common.loading') : t('transactions.assignRule')}
+            <Button type="submit" disabled={!selectedRule}>
+              {t('transactions.assignRule')}
             </Button>
           </DialogFooter>
         </form>
