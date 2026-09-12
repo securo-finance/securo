@@ -782,7 +782,7 @@
         "thisYear": "इस साल"
       },
       "futureDateError": "समाप्ति तिथि आज के बाद नहीं हो सकती",
-      "rangeTooWideError": "सीमा बहुत बड़ी है (अधिकतम {{days}} दिन)"
+      "rangeTooWideError": "सीमा बहुत बड़ी है (अधिकतम {{years}} वर्ष)"
     },
     "listView": "सूची",
     "calendarView": "कैलेंडर",

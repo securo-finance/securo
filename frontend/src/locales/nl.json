@@ -782,7 +782,7 @@
         "thisYear": "Dit jaar"
       },
       "futureDateError": "Einddatum mag niet na vandaag liggen",
-      "rangeTooWideError": "Bereik is te breed (max. {{days}} dagen)"
+      "rangeTooWideError": "Bereik is te breed (max. {{years}} jaar)"
     },
     "listView": "Lijst",
     "calendarView": "Kalender",

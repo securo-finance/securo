@@ -197,12 +197,12 @@ describe('Reports page — query failure', () => {
     await waitFor(() => expect(api.reports.netWorth).toHaveBeenCalledTimes(1))
 
     api.reports.netWorth.mockRejectedValueOnce({
-      response: { data: { detail: 'Custom range is too wide (max 3660 days)' } },
+      response: { data: { detail: 'Custom range is too wide (max 10 years)' } },
     })
     await user.click(screen.getByRole('button', { name: t('reports.customRange') }))
     await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
 
-    expect(await screen.findByText('Custom range is too wide (max 3660 days)')).toBeInTheDocument()
+    expect(await screen.findByText('Custom range is too wide (max 10 years)')).toBeInTheDocument()
     // The prior successful report must not linger under the error.
     expect(screen.queryByText(t('reports.trend'), { exact: false })).not.toBeInTheDocument()
     // Tabs and range controls stay usable so the user can correct the request.

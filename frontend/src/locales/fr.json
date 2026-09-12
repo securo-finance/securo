@@ -782,7 +782,7 @@
         "thisYear": "Cette année"
       },
       "futureDateError": "La date de fin ne peut pas être postérieure à aujourd'hui",
-      "rangeTooWideError": "La période est trop large (max. {{days}} jours)"
+      "rangeTooWideError": "La période est trop large (max. {{years}} ans)"
     },
     "listView": "Liste",
     "calendarView": "Calendrier",

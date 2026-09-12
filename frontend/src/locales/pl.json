@@ -815,7 +815,7 @@
         "thisYear": "Bieżący rok"
       },
       "futureDateError": "Data końcowa nie może przypadać po dzisiejszej dacie",
-      "rangeTooWideError": "Zakres jest zbyt szeroki (maks. {{days}} dni)"
+      "rangeTooWideError": "Zakres jest zbyt szeroki (maks. {{years}} lat)"
     },
     "bulkAddTags": "Dodaj tagi",
     "bulkRemoveTags": "Usuń tagi",

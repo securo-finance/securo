@@ -23,6 +23,7 @@ from app.schemas.report import (
 )
 from app.services import report_service
 from app.api.reports import (
+    _add_years,
     _financial_year_start_month,
     _reject_unsupported_fiscal_year_report,
 )
@@ -2744,12 +2745,24 @@ async def test_cash_flow_chart_includes_past_history(
     assert 27 <= delta_days <= 32
 
 
+def test_add_years_clamps_leap_day():
+    """Feb 29 + N years clamps to Feb 28 when the target year isn't leap."""
+    assert _add_years(date(2016, 2, 29), 10) == date(2026, 2, 28)
+    # Target year is also a leap year, so Feb 29 survives untouched.
+    assert _add_years(date(2020, 2, 29), 4) == date(2024, 2, 29)
+    assert _add_years(date(2016, 9, 12), 10) == date(2026, 9, 12)
+
+
 @pytest.mark.parametrize('endpoint,service_name', [
     ('net-worth', 'get_net_worth_report'),
     ('income-expenses', 'get_income_expenses_report'),
 ])
 @pytest.mark.parametrize('start_offset,end_offset,status', [
-    (-1, 1, 422), (0, 0, 200), (-3659, 0, 200), (-3660, 0, 422),
+    # FixedDate.today() is 2026-09-12; -3652 days is exactly 2016-09-12, the
+    # 10-calendar-year anniversary. One day further back crosses it, even
+    # though the day-count difference (3653 vs. 3652) understates the effect
+    # of the two leap days (2020, 2024) inside the window.
+    (-1, 1, 422), (0, 0, 200), (-3652, 0, 200), (-3653, 0, 422),
     (None, 0, 422), (-1, None, 422), (0, -1, 422),
 ])
 async def test_historical_api_custom_range_boundaries(

@@ -959,7 +959,7 @@
         "thisYear": "Αυτό το έτος"
       },
       "futureDateError": "Η ημερομηνία λήξης δεν μπορεί να είναι μετά από σήμερα",
-      "rangeTooWideError": "Το εύρος είναι πολύ μεγάλο (έως {{days}} ημέρες)"
+      "rangeTooWideError": "Το εύρος είναι πολύ μεγάλο (έως {{years}} χρόνια)"
     },
     "listView": "Λίστα",
     "calendarView": "Ημερολόγιο",

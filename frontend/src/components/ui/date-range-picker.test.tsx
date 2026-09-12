@@ -274,29 +274,29 @@ describe('DateRangePicker — draft validation', () => {
     expect(onChange).toHaveBeenCalledExactlyOnceWith('2026-06-01', '2026-06-15')
   })
 
-  it('accepts the inclusive maxRangeDays boundary', async () => {
+  it('accepts the inclusive maxRangeYears boundary (the calendar-year anniversary)', async () => {
     const onChange = vi.fn()
     const { user } = renderWithProviders(
-      <DateRangePicker from="2026-01-01" to="2026-01-10"
-        onChange={onChange} label="Custom" maxRangeDays={10} />,
+      <DateRangePicker from="2016-01-01" to="2026-01-01"
+        onChange={onChange} label="Custom" maxRangeYears={10} />,
     )
     await user.click(screen.getByRole('button', { name: 'Custom' }))
     expect(
-      screen.queryByText(t('transactions.filtersBar.rangeTooWideError', { days: 10 })),
+      screen.queryByText(t('transactions.filtersBar.rangeTooWideError', { years: 10 })),
     ).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
-    expect(onChange).toHaveBeenCalledExactlyOnceWith('2026-01-01', '2026-01-10')
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('2016-01-01', '2026-01-01')
   })
 
-  it('rejects a range one day past maxRangeDays and disables Apply', async () => {
+  it('rejects a range one day past the maxRangeYears anniversary and disables Apply', async () => {
     const onChange = vi.fn()
     const { user } = renderWithProviders(
-      <DateRangePicker from="2026-01-01" to="2026-01-11"
-        onChange={onChange} label="Custom" maxRangeDays={10} />,
+      <DateRangePicker from="2016-01-01" to="2026-01-02"
+        onChange={onChange} label="Custom" maxRangeYears={10} />,
     )
     await user.click(screen.getByRole('button', { name: 'Custom' }))
     expect(
-      screen.getByText(t('transactions.filtersBar.rangeTooWideError', { days: 10 })),
+      screen.getByText(t('transactions.filtersBar.rangeTooWideError', { years: 10 })),
     ).toBeInTheDocument()
     const apply = screen.getByRole('button', { name: t('transactions.filtersBar.apply') })
     expect(apply).toBeDisabled()
@@ -304,27 +304,39 @@ describe('DateRangePicker — draft validation', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('computes the day span across a daylight-saving transition without an off-by-one', async () => {
+  it('accepts a leap-day start date through its clamped (Feb 28) anniversary', async () => {
     const onChange = vi.fn()
-    // 2026-03-08 is the US spring-forward transition; a millisecond-based
-    // 24h-per-day division would lose an hour here and risks miscounting
-    // the span by a day depending on the viewer's timezone.
+    // date-fns's addYears clamps Feb 29 + 10y to Feb 28 (2026 isn't a leap
+    // year), matching the backend's _add_years helper exactly.
     const { user } = renderWithProviders(
-      <DateRangePicker from="2026-03-07" to="2026-03-09"
-        onChange={onChange} label="Custom" maxRangeDays={3} />,
+      <DateRangePicker from="2016-02-29" to="2026-02-28"
+        onChange={onChange} label="Custom" maxRangeYears={10} />,
     )
     await user.click(screen.getByRole('button', { name: 'Custom' }))
     expect(
-      screen.queryByText(t('transactions.filtersBar.rangeTooWideError', { days: 3 })),
+      screen.queryByText(t('transactions.filtersBar.rangeTooWideError', { years: 10 })),
     ).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: t('transactions.filtersBar.apply') })).toBeEnabled()
+  })
+
+  it('rejects a leap-day start date one day past its clamped anniversary', async () => {
+    const onChange = vi.fn()
+    const { user } = renderWithProviders(
+      <DateRangePicker from="2016-02-29" to="2026-03-01"
+        onChange={onChange} label="Custom" maxRangeYears={10} />,
+    )
+    await user.click(screen.getByRole('button', { name: 'Custom' }))
+    expect(
+      screen.getByText(t('transactions.filtersBar.rangeTooWideError', { years: 10 })),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('transactions.filtersBar.apply') })).toBeDisabled()
   })
 
   it('normalizes a reversed draft before validating and applying', async () => {
     const onChange = vi.fn()
     const { user } = renderWithProviders(
       <DateRangePicker from="2026-06-10" to="2026-06-01"
-        onChange={onChange} label="Custom" disallowFuture maxRangeDays={30} />,
+        onChange={onChange} label="Custom" disallowFuture maxRangeYears={5} />,
     )
     await user.click(screen.getByRole('button', { name: 'Custom' }))
     const apply = screen.getByRole('button', { name: t('transactions.filtersBar.apply') })
@@ -337,7 +349,7 @@ describe('DateRangePicker — draft validation', () => {
     const onChange = vi.fn()
     const { user } = renderWithProviders(
       <DateRangePicker from="2026-06-01" to="2026-06-10"
-        onChange={onChange} label="Custom" disallowFuture maxRangeDays={30} />,
+        onChange={onChange} label="Custom" disallowFuture maxRangeYears={5} />,
     )
     await user.click(screen.getByRole('button', { name: 'Custom' }))
     await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.reset') }))

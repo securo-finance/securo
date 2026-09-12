@@ -127,10 +127,11 @@ const RANGE_LABELS: Record<string, string> = {
 // which is a forecast, still uses forward-only presets).
 const CUSTOM_RANGE_KEY = 'custom'
 
-// Mirrors the backend's `_MAX_CUSTOM_RANGE_DAYS` (backend/app/api/reports.py)
+// Mirrors the backend's `_MAX_CUSTOM_RANGE_YEARS` (backend/app/api/reports.py)
 // so a too-wide pick is rejected in the picker instead of round-tripping to
-// the API for the same 422.
-const CUSTOM_RANGE_MAX_DAYS = 3660
+// the API for the same 422. A calendar-year anniversary, not a fixed day
+// count, so leap days inside the window can't push the cap past 10 years.
+const CUSTOM_RANGE_MAX_YEARS = 10
 
 // Seed a historical draft from January 1 through today; Apply commits it.
 function defaultCustomRange(): { from: string; to: string } {
@@ -588,7 +589,7 @@ export default function ReportsPage() {
                   defaultFrom={customDefaults.from}
                   defaultTo={customDefaults.to}
                   disallowFuture
-                  maxRangeDays={CUSTOM_RANGE_MAX_DAYS}
+                  maxRangeYears={CUSTOM_RANGE_MAX_YEARS}
                   onChange={(f, to) => {
                     setCustomFrom(f)
                     setCustomTo(to)

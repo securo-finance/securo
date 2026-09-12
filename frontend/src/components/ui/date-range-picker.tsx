@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlertCircle, Calendar as CalendarIcon } from 'lucide-react'
-import { differenceInCalendarDays } from 'date-fns'
+import { addYears } from 'date-fns'
 
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
@@ -52,8 +52,13 @@ export interface DateRangePickerProps {
   defaultTo?: string
   /** Reject a candidate range whose (normalized) end date is after today. */
   disallowFuture?: boolean
-  /** Reject a candidate range whose inclusive day span exceeds this many days. */
-  maxRangeDays?: number
+  /**
+   * Reject a candidate range whose end date is more than this many calendar
+   * years after the start date (the 10-year anniversary, not a fixed day
+   * count — leap days inside the window would otherwise let a day-count cap
+   * drift past the intended boundary).
+   */
+  maxRangeYears?: number
 }
 
 /**
@@ -79,7 +84,7 @@ export function DateRangePicker({
   defaultFrom,
   defaultTo,
   disallowFuture = false,
-  maxRangeDays,
+  maxRangeYears,
 }: DateRangePickerProps) {
   const { t } = useTranslation()
   const dateLocale = useDisplayLocale()
@@ -107,16 +112,13 @@ export function DateRangePicker({
     if (disallowFuture && draftEnd > localDateString()) {
       return t('transactions.filtersBar.futureDateError')
     }
-    if (maxRangeDays && draftStart && draftEnd) {
-      // Calendar-day difference rather than a millisecond division, which
-      // can miscount by a day across a daylight-saving transition.
-      const spanDays =
-        differenceInCalendarDays(
-          new Date(draftEnd + 'T00:00:00'),
-          new Date(draftStart + 'T00:00:00'),
-        ) + 1
-      if (spanDays > maxRangeDays) {
-        return t('transactions.filtersBar.rangeTooWideError', { days: maxRangeDays })
+    if (maxRangeYears && draftStart && draftEnd) {
+      // Compare against the calendar-year anniversary of the start date,
+      // not a fixed day count — a day count would let leap days inside the
+      // window push the effective cap past the intended N years.
+      const maxEnd = addYears(new Date(draftStart + 'T00:00:00'), maxRangeYears)
+      if (new Date(draftEnd + 'T00:00:00') > maxEnd) {
+        return t('transactions.filtersBar.rangeTooWideError', { years: maxRangeYears })
       }
     }
     return null

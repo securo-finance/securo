@@ -782,7 +782,7 @@
         "thisYear": "今年"
       },
       "futureDateError": "終了日は今日より後の日付にできません",
-      "rangeTooWideError": "範囲が広すぎます(最大{{days}}日間)"
+      "rangeTooWideError": "範囲が広すぎます(最大{{years}}年)"
     },
     "listView": "リスト",
     "calendarView": "カレンダー",

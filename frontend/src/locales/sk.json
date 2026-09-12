@@ -830,7 +830,7 @@
         "thisYear": "Tento rok"
       },
       "futureDateError": "Dátum konca nemôže byť neskôr ako dnes",
-      "rangeTooWideError": "Rozsah je príliš široký (max. {{days}} dní)"
+      "rangeTooWideError": "Rozsah je príliš široký (max. {{years}} rokov)"
     },
     "listView": "Zoznam",
     "calendarView": "Kalendár",

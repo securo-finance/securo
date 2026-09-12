@@ -15,7 +15,19 @@ router = APIRouter(prefix="/api/reports", tags=["reports"])
 # Cap the user-picked custom range so wide windows can't tie up the DB with
 # per-day snapshot fan-out. Ten years covers every realistic personal-finance
 # question and stays inside the existing daily-interval budget.
-_MAX_CUSTOM_RANGE_DAYS = 3660
+_MAX_CUSTOM_RANGE_YEARS = 10
+
+
+def _add_years(value: date, years: int) -> date:
+    """Add whole calendar years to a date.
+
+    Clamps Feb 29 to Feb 28 when the target year isn't a leap year, so the
+    result is always a valid calendar date rather than raising.
+    """
+    try:
+        return value.replace(year=value.year + years)
+    except ValueError:
+        return date(value.year + years, 2, 28)
 
 
 def _financial_year_start_month(tax_jurisdiction: str | None) -> int:
@@ -39,8 +51,9 @@ def _resolve_custom_range(
     """Validate a user-supplied custom range and return the (start, end) pair.
 
     Both endpoints must be provided together; the range must be non-empty,
-    end no later than today and stay within :data:`_MAX_CUSTOM_RANGE_DAYS`.
-    Returns ``(None, None)`` when neither is set, so callers can use presets.
+    end no later than today and stay within :data:`_MAX_CUSTOM_RANGE_YEARS`
+    calendar years of start_date. Returns ``(None, None)`` when neither is
+    set, so callers can use presets.
     """
     if start_date is None and end_date is None:
         return None, None
@@ -59,12 +72,12 @@ def _resolve_custom_range(
             status_code=422,
             detail="end_date must be on or before today",
         )
-    span_days = (end_date - start_date).days + 1
-    if span_days > _MAX_CUSTOM_RANGE_DAYS:
+    max_end_date = _add_years(start_date, _MAX_CUSTOM_RANGE_YEARS)
+    if end_date > max_end_date:
         raise HTTPException(
             status_code=422,
             detail=(
-                f"Custom range is too wide (max {_MAX_CUSTOM_RANGE_DAYS} days)"
+                f"Custom range is too wide (max {_MAX_CUSTOM_RANGE_YEARS} years)"
             ),
         )
     return start_date, end_date

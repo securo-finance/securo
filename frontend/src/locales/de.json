@@ -782,7 +782,7 @@
         "thisYear": "Dieses Jahr"
       },
       "futureDateError": "Enddatum darf nicht in der Zukunft liegen",
-      "rangeTooWideError": "Zeitraum ist zu groß (max. {{days}} Tage)"
+      "rangeTooWideError": "Zeitraum ist zu groß (max. {{years}} Jahre)"
     },
     "listView": "Liste",
     "calendarView": "Kalender",

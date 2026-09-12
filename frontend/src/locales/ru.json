@@ -792,7 +792,7 @@
         "thisYear": "Этот год"
       },
       "futureDateError": "Дата окончания не может быть позже сегодняшнего дня",
-      "rangeTooWideError": "Диапазон слишком широкий (макс. {{days}} дней)"
+      "rangeTooWideError": "Диапазон слишком широкий (макс. {{years}} лет)"
     },
     "listView": "Список",
     "calendarView": "Календарь",

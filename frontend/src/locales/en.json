@@ -782,7 +782,7 @@
         "thisYear": "This year"
       },
       "futureDateError": "End date can't be after today",
-      "rangeTooWideError": "Range is too wide (max {{days}} days)"
+      "rangeTooWideError": "Range is too wide (max {{years}} years)"
     },
     "listView": "List",
     "calendarView": "Calendar",

@@ -792,7 +792,7 @@
         "thisYear": "Цей рік"
       },
       "futureDateError": "Дата завершення не може бути пізніше сьогодні",
-      "rangeTooWideError": "Діапазон надто широкий (макс. {{days}} днів)"
+      "rangeTooWideError": "Діапазон надто широкий (макс. {{years}} років)"
     },
     "listView": "Список",
     "calendarView": "Календар",

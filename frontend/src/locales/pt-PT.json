@@ -778,7 +778,7 @@
         "thisYear": "Este ano"
       },
       "futureDateError": "A data final não pode ser posterior a hoje",
-      "rangeTooWideError": "O intervalo é demasiado amplo (máx. {{days}} dias)"
+      "rangeTooWideError": "O intervalo é demasiado amplo (máx. {{years}} anos)"
     },
     "listView": "Lista",
     "calendarView": "Calendário",

@@ -778,7 +778,7 @@
         "thisYear": "Este año"
       },
       "futureDateError": "La fecha de fin no puede ser posterior a hoy",
-      "rangeTooWideError": "El rango es demasiado amplio (máx. {{days}} días)"
+      "rangeTooWideError": "El rango es demasiado amplio (máx. {{years}} años)"
     },
     "bulkAddTags": "Añadir etiquetas",
     "bulkRemoveTags": "Eliminar etiquetas",
