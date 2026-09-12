@@ -2006,6 +2006,9 @@
       "dateFormatMdyDesc": "月が先。例: 06/04/2026。",
       "dateFormatYmd": "年 / 月 / 日",
       "dateFormatYmdDesc": "ISO順。例: 2026-06-04。",
+      "timezoneTitle": "日付と時刻",
+      "timezone": "アプリケーションのタイムゾーン",
+      "timezoneHelp": "日付、定期取引、スケジュールされたタスク、AIのコンテキストにこのタイムゾーンを使用します。変更は新しいリクエストとジョブに適用されます。",
       "updated": "設定を更新しました"
     }
   },

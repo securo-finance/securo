@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import UserManager, current_active_user, current_superuser, get_user_manager
 from app.core.auth_policy import require_local_auth_enabled
 from app.core.database import get_async_session
-from app.core.app_clock import get_timezone
+from app.core.app_clock import app_timezone
 from app.models.user import User
 from app.schemas.admin import (
     AdminUserCreate,
@@ -17,6 +17,7 @@ from app.schemas.admin import (
     AdminUserUpdate,
     AppSettingRead,
     AppSettingUpdate,
+    TimezoneSettingRead,
 )
 from app.services import admin_service
 
@@ -166,15 +167,15 @@ async def update_setting(
     return AppSettingRead.model_validate(setting)
 
 
-@router.get("/timezone")
+@router.get("/timezone", response_model=TimezoneSettingRead)
 async def timezone_setting(
-    session: AsyncSession = Depends(get_async_session),
+    _session: AsyncSession = Depends(get_async_session),
     _user: User = Depends(current_superuser),
 ):
-    return {
-        "timezone": str(await get_timezone(session)),
-        "available": sorted(available_timezones()),
-    }
+    return TimezoneSettingRead(
+        timezone=str(app_timezone()),
+        available=sorted(available_timezones()),
+    )
 
 
 @router.get("/registration-status")

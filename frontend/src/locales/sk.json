@@ -2138,6 +2138,9 @@
       "dateFormatMdyDesc": "Najprv mesiac, napr. 06/04/2026.",
       "dateFormatYmd": "Rok / Mesiac / Deň",
       "dateFormatYmdDesc": "Poradie ISO, napr. 2026-06-04.",
+      "timezoneTitle": "Dátum a čas",
+      "timezone": "Časové pásmo aplikácie",
+      "timezoneHelp": "Dátumy, opakované transakcie, naplánované úlohy a kontext AI používajú toto časové pásmo. Zmeny platia pre nové požiadavky a úlohy.",
       "updated": "Nastavenie aktualizované"
     }
   },

@@ -2007,6 +2007,9 @@
       "dateFormatMdyDesc": "Mes primero, p. ej. 06/04/2026.",
       "dateFormatYmd": "Año / Mes / Día",
       "dateFormatYmdDesc": "Orden ISO, p. ej. 2026-06-04.",
+      "timezoneTitle": "Fecha y hora",
+      "timezone": "Zona horaria de la aplicación",
+      "timezoneHelp": "Las fechas, las transacciones recurrentes, las tareas programadas y el contexto de IA utilizan esta zona horaria. Los cambios se aplican a las nuevas solicitudes y tareas.",
       "updated": "Configuración actualizada"
     }
   },

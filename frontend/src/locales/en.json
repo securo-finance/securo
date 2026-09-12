@@ -2006,6 +2006,9 @@
       "dateFormatMdyDesc": "Month first, e.g. 06/04/2026.",
       "dateFormatYmd": "Year / Month / Day",
       "dateFormatYmdDesc": "ISO order, e.g. 2026-06-04.",
+      "timezoneTitle": "Date and time",
+      "timezone": "Application timezone",
+      "timezoneHelp": "Calendar dates, recurring transactions, scheduled work and AI context use this timezone. Changes apply to new requests and jobs.",
       "updated": "Setting updated"
     }
   },

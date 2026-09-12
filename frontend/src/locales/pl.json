@@ -2106,6 +2106,9 @@
       "dateFormatMdyDesc": "Najpierw miesiąc, np. 06/04/2026.",
       "dateFormatYmd": "Rok / Miesiąc / Dzień",
       "dateFormatYmdDesc": "Kolejność ISO, np. 2026-06-04.",
+      "timezoneTitle": "Data i godzina",
+      "timezone": "Strefa czasowa aplikacji",
+      "timezoneHelp": "Daty, transakcje cykliczne, zaplanowane zadania i kontekst AI korzystają z tej strefy czasowej. Zmiany dotyczą nowych żądań i zadań.",
       "updated": "Zaktualizowano ustawienie"
     }
   },

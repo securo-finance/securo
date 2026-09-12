@@ -44,3 +44,8 @@ class AppSettingRead(BaseModel):
 
 class AppSettingUpdate(BaseModel):
     value: str
+
+
+class TimezoneSettingRead(BaseModel):
+    timezone: str
+    available: list[str]
