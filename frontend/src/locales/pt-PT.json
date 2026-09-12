@@ -776,7 +776,9 @@
         "thisMonth": "Este mês",
         "last90": "Últimos 90 dias",
         "thisYear": "Este ano"
-      }
+      },
+      "futureDateError": "A data final não pode ser posterior a hoje",
+      "rangeTooWideError": "O intervalo é demasiado amplo (máx. {{days}} dias)"
     },
     "listView": "Lista",
     "calendarView": "Calendário",
@@ -1639,7 +1641,8 @@
     "moneyMap": "Mapa do Dinheiro",
     "range30d": "30D",
     "customRange": "Período personalizado",
-    "pickCustomRange": "Escolha uma data inicial e final"
+    "pickCustomRange": "Escolha uma data inicial e final",
+    "loadError": "Falha ao carregar o relatório"
   },
   "payees": {
     "addFavorite": "Adicionar aos favoritos",

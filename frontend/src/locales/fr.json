@@ -780,7 +780,9 @@
         "thisMonth": "Ce mois-ci",
         "last90": "90 derniers jours",
         "thisYear": "Cette année"
-      }
+      },
+      "futureDateError": "La date de fin ne peut pas être postérieure à aujourd'hui",
+      "rangeTooWideError": "La période est trop large (max. {{days}} jours)"
     },
     "listView": "Liste",
     "calendarView": "Calendrier",
@@ -1639,7 +1641,8 @@
     "moneyMap": "Carte de l'argent",
     "range30d": "30J",
     "customRange": "Plage personnalisée",
-    "pickCustomRange": "Choisir une date de début et de fin"
+    "pickCustomRange": "Choisir une date de début et de fin",
+    "loadError": "Échec du chargement du rapport"
   },
   "payees": {
     "addFavorite": "Ajouter aux favoris",

@@ -190,3 +190,51 @@ it('preserves saved custom dates across supported tabs and preset dismissal', as
   await waitFor(() => expect(api.reports.netWorth.mock.calls.at(-1)?.slice(-2))
     .toEqual(['2026-01-01', '2026-09-12']))
 })
+
+describe('Reports page — query failure', () => {
+  it('surfaces a rejected custom range instead of showing stale numbers', async () => {
+    const { user } = renderWithProviders(<ReportsPage />)
+    await waitFor(() => expect(api.reports.netWorth).toHaveBeenCalledTimes(1))
+
+    api.reports.netWorth.mockRejectedValueOnce({
+      response: { data: { detail: 'Custom range is too wide (max 3660 days)' } },
+    })
+    await user.click(screen.getByRole('button', { name: t('reports.customRange') }))
+    await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
+
+    expect(await screen.findByText('Custom range is too wide (max 3660 days)')).toBeInTheDocument()
+    // The prior successful report must not linger under the error.
+    expect(screen.queryByText(t('reports.trend'), { exact: false })).not.toBeInTheDocument()
+    // Tabs and range controls stay usable so the user can correct the request.
+    expect(screen.getByRole('button', { name: t('reports.range1y') })).toBeInTheDocument()
+  })
+
+  it('shows a generic fallback for a network failure and recovers via Retry', async () => {
+    const { user } = renderWithProviders(<ReportsPage />)
+    await waitFor(() => expect(api.reports.netWorth).toHaveBeenCalledTimes(1))
+
+    api.reports.netWorth.mockRejectedValueOnce(new Error('network error'))
+    await user.click(screen.getByRole('button', { name: t('reports.range6m') }))
+
+    expect(await screen.findByText(t('reports.loadError'))).toBeInTheDocument()
+
+    api.reports.netWorth.mockResolvedValueOnce(emptyReport('net_worth'))
+    await user.click(screen.getByRole('button', { name: t('common.retry') }))
+
+    await waitFor(() => expect(screen.queryByText(t('reports.loadError'))).not.toBeInTheDocument())
+  })
+
+  it('recovers by changing the range after a rejected selection', async () => {
+    const { user } = renderWithProviders(<ReportsPage />)
+    await waitFor(() => expect(api.reports.netWorth).toHaveBeenCalledTimes(1))
+
+    api.reports.netWorth.mockRejectedValueOnce({ response: { data: { detail: 'end_date must be on or before today' } } })
+    await user.click(screen.getByRole('button', { name: t('reports.customRange') }))
+    await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
+    expect(await screen.findByText('end_date must be on or before today')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: t('reports.range6m') }))
+    await waitFor(() => expect(screen.queryByText('end_date must be on or before today')).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: t('reports.range6m') })).toHaveClass('bg-primary')
+  })
+})

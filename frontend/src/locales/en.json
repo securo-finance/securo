@@ -780,7 +780,9 @@
         "thisMonth": "This month",
         "last90": "Last 90 days",
         "thisYear": "This year"
-      }
+      },
+      "futureDateError": "End date can't be after today",
+      "rangeTooWideError": "Range is too wide (max {{days}} days)"
     },
     "listView": "List",
     "calendarView": "Calendar",
@@ -1638,7 +1640,8 @@
     "moneyMap": "Money Map",
     "range30d": "30D",
     "customRange": "Custom range",
-    "pickCustomRange": "Pick a start and end date"
+    "pickCustomRange": "Pick a start and end date",
+    "loadError": "Failed to load report"
   },
   "payees": {
     "addFavorite": "Add to favorites",

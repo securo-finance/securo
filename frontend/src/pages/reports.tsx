@@ -18,8 +18,9 @@ import {
   ReferenceLine,
   ResponsiveContainer,
 } from 'recharts'
-import { HelpCircle, X } from 'lucide-react'
+import { AlertCircle, HelpCircle, X } from 'lucide-react'
 import { reports } from '@/lib/api'
+import { extractApiError } from '@/lib/api-errors'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { DateRangePicker } from '@/components/ui/date-range-picker'
@@ -125,6 +126,11 @@ const RANGE_LABELS: Record<string, string> = {
 // above so we can decide per-tab whether it's actually offered (cash flow,
 // which is a forecast, still uses forward-only presets).
 const CUSTOM_RANGE_KEY = 'custom'
+
+// Mirrors the backend's `_MAX_CUSTOM_RANGE_DAYS` (backend/app/api/reports.py)
+// so a too-wide pick is rejected in the picker instead of round-tripping to
+// the API for the same 422.
+const CUSTOM_RANGE_MAX_DAYS = 3660
 
 // Seed a historical draft from January 1 through today; Apply commits it.
 function defaultCustomRange(): { from: string; to: string } {
@@ -242,7 +248,7 @@ export default function ReportsPage() {
     }
   }
 
-  const { data, isLoading } = useQuery<ReportResponse>({
+  const { data, isLoading, isError, error, refetch } = useQuery<ReportResponse>({
     queryKey: ['reports', activeTab, rangeKey, months, period ?? null, days ?? null, interval, isCashFlow ? cashFlowBaseline : false, activeAccountIds, activeWalletIds, apiStart ?? null, apiEnd ?? null],
     queryFn: () =>
       isCashFlow
@@ -568,6 +574,8 @@ export default function ReportsPage() {
                   to={customTo}
                   defaultFrom={customDefaults.from}
                   defaultTo={customDefaults.to}
+                  disallowFuture
+                  maxRangeDays={CUSTOM_RANGE_MAX_DAYS}
                   onChange={(f, to) => {
                     setCustomFrom(f)
                     setCustomTo(to)
@@ -626,6 +634,26 @@ export default function ReportsPage() {
         ))}
       </div>
 
+      {isError && (
+        <div className="flex items-center justify-between gap-3 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 rounded-lg px-4 py-2.5 mb-5">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <AlertCircle size={16} className="shrink-0 text-rose-600 dark:text-rose-400" />
+            <span className="text-sm text-rose-900 dark:text-rose-200 truncate">
+              {extractApiError(error, t('reports.loadError'))}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => refetch()}
+            className="shrink-0 text-sm font-semibold text-rose-600 dark:text-rose-400 hover:underline"
+          >
+            {t('common.retry')}
+          </button>
+        </div>
+      )}
+
+      {!isError && (
+      <>
       {/* Hero Card */}
       <div className="bg-card rounded-xl border border-border shadow-sm mb-5">
         <div className="px-5 py-4">
@@ -1522,6 +1550,8 @@ export default function ReportsPage() {
           )}
         </div>
       </div>
+      </>
+      )}
       </>
       )}
     </div>

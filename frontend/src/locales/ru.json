@@ -790,7 +790,9 @@
         "thisMonth": "Этот месяц",
         "last90": "Последние 90 дней",
         "thisYear": "Этот год"
-      }
+      },
+      "futureDateError": "Дата окончания не может быть позже сегодняшнего дня",
+      "rangeTooWideError": "Диапазон слишком широкий (макс. {{days}} дней)"
     },
     "listView": "Список",
     "calendarView": "Календарь",
@@ -1651,7 +1653,8 @@
     "moneyMap": "Money Map",
     "range30d": "30D",
     "customRange": "Произвольный диапазон",
-    "pickCustomRange": "Выберите дату начала и конца"
+    "pickCustomRange": "Выберите дату начала и конца",
+    "loadError": "Не удалось загрузить отчёт"
   },
   "payees": {
     "addFavorite": "Добавить в избранное",

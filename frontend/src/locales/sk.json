@@ -828,7 +828,9 @@
         "thisMonth": "Tento mesiac",
         "last90": "Posledných 90 dní",
         "thisYear": "Tento rok"
-      }
+      },
+      "futureDateError": "Dátum konca nemôže byť neskôr ako dnes",
+      "rangeTooWideError": "Rozsah je príliš široký (max. {{days}} dní)"
     },
     "listView": "Zoznam",
     "calendarView": "Kalendár",
@@ -1750,7 +1752,8 @@
     "moneyMap": "Mapa peňazí",
     "range30d": "30D",
     "customRange": "Vlastný rozsah",
-    "pickCustomRange": "Vyberte dátum začiatku a konca"
+    "pickCustomRange": "Vyberte dátum začiatku a konca",
+    "loadError": "Nepodarilo sa načítať prehľad"
   },
   "payees": {
     "addFavorite": "Pridať do obľúbených",

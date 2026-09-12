@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Calendar as CalendarIcon } from 'lucide-react'
+import { AlertCircle, Calendar as CalendarIcon } from 'lucide-react'
+import { differenceInCalendarDays } from 'date-fns'
 
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
@@ -48,6 +49,10 @@ export interface DateRangePickerProps {
    */
   defaultFrom?: string
   defaultTo?: string
+  /** Reject a candidate range whose (normalized) end date is after today. */
+  disallowFuture?: boolean
+  /** Reject a candidate range whose inclusive day span exceeds this many days. */
+  maxRangeDays?: number
 }
 
 /**
@@ -72,6 +77,8 @@ export function DateRangePicker({
   onOpen,
   defaultFrom,
   defaultTo,
+  disallowFuture = false,
+  maxRangeDays,
 }: DateRangePickerProps) {
   const { t } = useTranslation()
   const dateLocale = useDisplayLocale()
@@ -79,6 +86,40 @@ export function DateRangePicker({
   const [open, setOpen] = useState(false)
   const [draftFrom, setDraftFrom] = useState(from)
   const [draftTo, setDraftTo] = useState(to)
+
+  // Mirrors the Apply-time normalization (a one-sided pick mirrors into the
+  // other bound; a reversed pick swaps) so validation always judges the same
+  // range Apply would actually commit.
+  const normalizeDraft = (f: string, toDate: string): { from: string; to: string } => {
+    const nextFrom = f || toDate
+    const nextTo = toDate || f
+    return nextFrom && nextTo && nextFrom > nextTo
+      ? { from: nextTo, to: nextFrom }
+      : { from: nextFrom, to: nextTo }
+  }
+  const normalizedDraft = normalizeDraft(draftFrom, draftTo)
+
+  // An empty draft is always valid — it's how Apply clears a saved range.
+  const draftError = (() => {
+    const { from: draftStart, to: draftEnd } = normalizedDraft
+    if (!draftStart && !draftEnd) return null
+    if (disallowFuture && draftEnd > localDateString()) {
+      return t('transactions.filtersBar.futureDateError')
+    }
+    if (maxRangeDays && draftStart && draftEnd) {
+      // Calendar-day difference rather than a millisecond division, which
+      // can miscount by a day across a daylight-saving transition.
+      const spanDays =
+        differenceInCalendarDays(
+          new Date(draftEnd + 'T00:00:00'),
+          new Date(draftStart + 'T00:00:00'),
+        ) + 1
+      if (spanDays > maxRangeDays) {
+        return t('transactions.filtersBar.rangeTooWideError', { days: maxRangeDays })
+      }
+    }
+    return null
+  })()
 
   // Reset the drafts every time the popover opens so a preset switch above
   // the picker (which mutates the controlled `from`/`to` props) doesn't
@@ -192,6 +233,12 @@ export function DateRangePicker({
             />
           </div>
         </div>
+        {draftError && (
+          <div className="flex items-center gap-1.5 px-3 pb-2 text-[11px] text-rose-600 dark:text-rose-400">
+            <AlertCircle size={12} className="shrink-0" />
+            <span>{draftError}</span>
+          </div>
+        )}
         <div className="flex items-center justify-between gap-2 border-t border-border/70 px-3 py-2">
           <button
             type="button"
@@ -219,16 +266,9 @@ export function DateRangePicker({
             <Button
               type="button"
               size="sm"
+              disabled={!!draftError}
               onClick={() => {
-                // Normalize: if user only picked one bound, mirror it into
-                // the other so downstream code always sees a full range.
-                const nextFrom = draftFrom || draftTo
-                const nextTo = draftTo || draftFrom
-                if (nextFrom && nextTo && nextFrom > nextTo) {
-                  onChange(nextTo, nextFrom)
-                } else {
-                  onChange(nextFrom, nextTo)
-                }
+                onChange(normalizedDraft.from, normalizedDraft.to)
                 setOpen(false)
               }}
             >

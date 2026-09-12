@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 
 import { DateRangePicker } from '@/components/ui/date-range-picker'
@@ -234,5 +234,114 @@ describe('DateRangePicker — draft lifecycle', () => {
     expect(onChange).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
     expect(onChange).toHaveBeenCalledExactlyOnceWith(expectedFrom, expectedTo)
+  })
+})
+
+describe('DateRangePicker — draft validation', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 5, 15)) // June 15, 2026
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('rejects a range ending after today and disables Apply', async () => {
+    const onChange = vi.fn()
+    const { user } = renderWithProviders(
+      <DateRangePicker from="2026-06-01" to="2026-06-16"
+        onChange={onChange} label="Custom" disallowFuture />,
+    )
+    await user.click(screen.getByRole('button', { name: 'Custom' }))
+    expect(screen.getByText(t('transactions.filtersBar.futureDateError'))).toBeInTheDocument()
+    const apply = screen.getByRole('button', { name: t('transactions.filtersBar.apply') })
+    expect(apply).toBeDisabled()
+    await user.click(apply)
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('allows a range ending exactly today', async () => {
+    const onChange = vi.fn()
+    const { user } = renderWithProviders(
+      <DateRangePicker from="2026-06-01" to="2026-06-15"
+        onChange={onChange} label="Custom" disallowFuture />,
+    )
+    await user.click(screen.getByRole('button', { name: 'Custom' }))
+    expect(screen.queryByText(t('transactions.filtersBar.futureDateError'))).not.toBeInTheDocument()
+    const apply = screen.getByRole('button', { name: t('transactions.filtersBar.apply') })
+    expect(apply).toBeEnabled()
+    await user.click(apply)
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('2026-06-01', '2026-06-15')
+  })
+
+  it('accepts the inclusive maxRangeDays boundary', async () => {
+    const onChange = vi.fn()
+    const { user } = renderWithProviders(
+      <DateRangePicker from="2026-01-01" to="2026-01-10"
+        onChange={onChange} label="Custom" maxRangeDays={10} />,
+    )
+    await user.click(screen.getByRole('button', { name: 'Custom' }))
+    expect(
+      screen.queryByText(t('transactions.filtersBar.rangeTooWideError', { days: 10 })),
+    ).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('2026-01-01', '2026-01-10')
+  })
+
+  it('rejects a range one day past maxRangeDays and disables Apply', async () => {
+    const onChange = vi.fn()
+    const { user } = renderWithProviders(
+      <DateRangePicker from="2026-01-01" to="2026-01-11"
+        onChange={onChange} label="Custom" maxRangeDays={10} />,
+    )
+    await user.click(screen.getByRole('button', { name: 'Custom' }))
+    expect(
+      screen.getByText(t('transactions.filtersBar.rangeTooWideError', { days: 10 })),
+    ).toBeInTheDocument()
+    const apply = screen.getByRole('button', { name: t('transactions.filtersBar.apply') })
+    expect(apply).toBeDisabled()
+    await user.click(apply)
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('computes the day span across a daylight-saving transition without an off-by-one', async () => {
+    const onChange = vi.fn()
+    // 2026-03-08 is the US spring-forward transition; a millisecond-based
+    // 24h-per-day division would lose an hour here and risks miscounting
+    // the span by a day depending on the viewer's timezone.
+    const { user } = renderWithProviders(
+      <DateRangePicker from="2026-03-07" to="2026-03-09"
+        onChange={onChange} label="Custom" maxRangeDays={3} />,
+    )
+    await user.click(screen.getByRole('button', { name: 'Custom' }))
+    expect(
+      screen.queryByText(t('transactions.filtersBar.rangeTooWideError', { days: 3 })),
+    ).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: t('transactions.filtersBar.apply') })).toBeEnabled()
+  })
+
+  it('normalizes a reversed draft before validating and applying', async () => {
+    const onChange = vi.fn()
+    const { user } = renderWithProviders(
+      <DateRangePicker from="2026-06-10" to="2026-06-01"
+        onChange={onChange} label="Custom" disallowFuture maxRangeDays={30} />,
+    )
+    await user.click(screen.getByRole('button', { name: 'Custom' }))
+    const apply = screen.getByRole('button', { name: t('transactions.filtersBar.apply') })
+    expect(apply).toBeEnabled()
+    await user.click(apply)
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('2026-06-01', '2026-06-10')
+  })
+
+  it('keeps an empty draft applicable for clearing even with validation props set', async () => {
+    const onChange = vi.fn()
+    const { user } = renderWithProviders(
+      <DateRangePicker from="2026-06-01" to="2026-06-10"
+        onChange={onChange} label="Custom" disallowFuture maxRangeDays={30} />,
+    )
+    await user.click(screen.getByRole('button', { name: 'Custom' }))
+    await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.reset') }))
+    const apply = screen.getByRole('button', { name: t('transactions.filtersBar.apply') })
+    expect(apply).toBeEnabled()
+    await user.click(apply)
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('', '')
   })
 })
