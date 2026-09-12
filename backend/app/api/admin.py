@@ -1,5 +1,6 @@
 import uuid
 import re
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import UserManager, current_active_user, current_superuser, get_user_manager
 from app.core.auth_policy import require_local_auth_enabled
 from app.core.database import get_async_session
+from app.core.app_clock import get_timezone
 from app.models.user import User
 from app.schemas.admin import (
     AdminUserCreate,
@@ -28,6 +30,7 @@ ALLOWED_SETTINGS = {
     "theme_color_dark",
     "number_format",
     "date_format",
+    "timezone",
 }
 
 
@@ -133,6 +136,11 @@ async def update_setting(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Setting '{key}' is not configurable",
         )
+    if key == "timezone":
+        try:
+            ZoneInfo(data.value)
+        except (ZoneInfoNotFoundError, ValueError):
+            raise HTTPException(status_code=400, detail="Invalid IANA timezone")
     SETTING_VALIDATORS = {
         "registration_enabled": {"true", "false"},
         "credit_card_accounting_mode": {"cash", "accrual"},
@@ -156,6 +164,17 @@ async def update_setting(
 
     setting = await admin_service.set_app_setting(session, key, data.value)
     return AppSettingRead.model_validate(setting)
+
+
+@router.get("/timezone")
+async def timezone_setting(
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    return {
+        "timezone": str(await get_timezone(session)),
+        "available": sorted(available_timezones()),
+    }
 
 
 @router.get("/registration-status")
