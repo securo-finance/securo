@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.core.app_clock import use_timezone
 from app.worker import celery_app
 from app.core.config import get_settings
 from app.models.bank_connection import BankConnection
@@ -30,7 +31,7 @@ async def _sync_all() -> int:
         cutoff = datetime.now(timezone.utc) - STALE_THRESHOLD
         synced = 0
 
-        async with session_maker() as session:
+        async with session_maker() as session, use_timezone(session):
             result = await session.execute(
                 select(
                     BankConnection.id, BankConnection.user_id, BankConnection.last_sync_at
@@ -67,7 +68,7 @@ async def _sync_all() -> int:
 
 async def _sync_one(session_maker, connection_id: uuid.UUID, user_id: uuid.UUID) -> None:
     """Sync a single connection. Error status is set by sync_connection itself."""
-    async with session_maker() as session:
+    async with session_maker() as session, use_timezone(session):
         workspace_id = await session.scalar(
             select(BankConnection.workspace_id).where(BankConnection.id == connection_id)
         )
@@ -101,7 +102,7 @@ def sync_single_connection(connection_id: str, user_id: str) -> dict:
 async def _sync_one_celery(connection_id: str, user_id: str) -> None:
     engine, session_maker = _make_session_maker()
     try:
-        async with session_maker() as session:
+        async with session_maker() as session, use_timezone(session):
             conn_uuid = uuid.UUID(connection_id)
             workspace_id = await session.scalar(
                 select(BankConnection.workspace_id).where(BankConnection.id == conn_uuid)

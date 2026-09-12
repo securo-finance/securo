@@ -79,4 +79,7 @@ async def call_tool(
     spec = REGISTRY.get(name)
     if spec is None:
         raise KeyError(f"unknown tool: {name}")
-    return await spec.handler(session=session, ctx=ctx, **(arguments or {}))
+    from app.core.app_clock import use_timezone
+
+    async with use_timezone(session):
+        return await spec.handler(session=session, ctx=ctx, **(arguments or {}))

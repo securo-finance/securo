@@ -6,6 +6,7 @@ from typing import Optional
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
 from app.models.recurring_transaction import RecurringTransaction
@@ -236,7 +237,7 @@ async def generate_pending(
     If up_to is None, defaults to today. This allows the dashboard to pre-generate
     transactions for future months when the user navigates ahead.
     Returns the count of transactions generated."""
-    cutoff = up_to or date.today()
+    cutoff = up_to or app_today()
 
     result = await session.execute(
         select(RecurringTransaction)

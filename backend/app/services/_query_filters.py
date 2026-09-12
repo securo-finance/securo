@@ -11,6 +11,7 @@ from typing import Optional
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.account import Account
 from app.models.category import Category
 from app.models.transaction import Transaction
@@ -296,7 +297,7 @@ async def owner_split_offset_pnl(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
-            date_col <= date.today(),
+            date_col <= app_today(),
             Transaction.status == "posted",
             counts_as_user_pnl(),
         )
@@ -376,7 +377,7 @@ async def owner_split_offset_by_category(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
-            date_col <= date.today(),
+            date_col <= app_today(),
             Transaction.status == "posted",
             counts_as_user_pnl(),
         )
@@ -460,7 +461,7 @@ async def viewer_shared_pnl(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
-            date_col <= date.today(),
+            date_col <= app_today(),
             Transaction.status == "posted",
             counts_as_pnl(),
         )
@@ -539,7 +540,7 @@ async def viewer_shared_spending_by_category(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
-            date_col <= date.today(),
+            date_col <= app_today(),
             Transaction.status == "posted",
             counts_as_pnl(),
         )
