@@ -67,6 +67,7 @@ const CURRENCY_LOCALE: Record<string, string> = {
   TRY: 'tr-TR',
   PKR: 'en-PK',
   MDL: 'ro-MD',
+  THB: 'th-TH',
 }
 
 /**
