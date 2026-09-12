@@ -30,6 +30,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import type { ReportResponse, CategoryTrendItem } from '@/types'
 import { formatCurrency } from '@/lib/format'
+import { localDateString } from '@/lib/date-utils'
 
 // A small qualitative palette of well-separated hues for the composition
 // detail ring. Capped to a handful of slices, distinct colours make each
@@ -125,12 +126,10 @@ const RANGE_LABELS: Record<string, string> = {
 // which is a forecast, still uses forward-only presets).
 const CUSTOM_RANGE_KEY = 'custom'
 
-// The Custom segment starts pre-filled with the current calendar year rather
-// than an empty picker, so switching to it is one click instead of two dates
-// picked by hand.
+// Seed a historical draft from January 1 through today; Apply commits it.
 function defaultCustomRange(): { from: string; to: string } {
-  const year = new Date().getFullYear()
-  return { from: `${year}-01-01`, to: `${year}-12-31` }
+  const today = new Date()
+  return { from: `${today.getFullYear()}-01-01`, to: localDateString(today) }
 }
 
 interface ReportTab {
@@ -153,6 +152,7 @@ export default function ReportsPage() {
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
 
+  const customDefaults = defaultCustomRange()
   const [rangeKey, setRangeKey] = useState('1y')
   const [interval, setInterval] = useState('monthly')
   // Custom range endpoints (YYYY-MM-DD) — populated when the user opens the
@@ -250,8 +250,7 @@ export default function ReportsPage() {
         : activeTab === 'income_expenses' || isMoneyMap
           ? reports.incomeExpenses(months, interval, acctIds, period, days, apiStart, apiEnd)
           : reports.netWorth(months, interval, acctIds, walletIds, period, apiStart, apiEnd),
-    // A custom range that's opened but not yet confirmed shouldn't fire a
-    // query with stale preset values — wait until both endpoints exist.
+    // Only request a custom report with both committed endpoints.
     enabled: currentTab.enabled && !(noAccounts && activeTab !== 'net_worth') && (!isCustomRange || hasCustomRange),
   })
 
@@ -567,13 +566,12 @@ export default function ReportsPage() {
                   active={isCustomRange}
                   from={customFrom}
                   to={customTo}
-                  defaultFrom={defaultCustomRange().from}
-                  defaultTo={defaultCustomRange().to}
-                  onOpen={() => { setRangeKey(CUSTOM_RANGE_KEY); setSelectedDate(null) }}
+                  defaultFrom={customDefaults.from}
+                  defaultTo={customDefaults.to}
                   onChange={(f, to) => {
                     setCustomFrom(f)
                     setCustomTo(to)
-                    setRangeKey(CUSTOM_RANGE_KEY)
+                    setRangeKey(f && to ? CUSTOM_RANGE_KEY : isMoneyMap ? '3m' : '1y')
                     setSelectedDate(null)
                   }}
                   label={t('reports.customRange')}

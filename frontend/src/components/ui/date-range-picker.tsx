@@ -39,14 +39,12 @@ export interface DateRangePickerProps {
   active?: boolean
   /**
    * Fired as soon as the popover starts opening — before the calendar is
-   * shown — so a segment trigger can mark itself selected immediately,
-   * mirroring the other preset buttons it sits next to.
+   * shown. This is a notification only; committed values change on Apply.
    */
   onOpen?: () => void
   /**
-   * Applied via `onChange` the first time the picker opens with nothing
-   * selected yet, so a fresh "Custom" segment starts from a sensible range
-   * instead of an empty picker.
+   * Seed the drafts when the picker opens with no committed selection.
+   * Defaults are committed only when the user clicks Apply.
    */
   defaultFrom?: string
   defaultTo?: string
@@ -90,17 +88,11 @@ export function DateRangePicker({
   const handleOpenChange = (next: boolean) => {
     if (next) {
       onOpen?.()
-      // First open with nothing picked yet: seed from the caller's default
-      // (e.g. the current calendar year) instead of an empty calendar, and
-      // push it straight into the controlled value so the segment reflects
-      // it immediately, before the user touches a single day cell.
+      // Seed only drafts; closing without Apply leaves the controlled range intact.
       const seedFrom = from || to ? from : defaultFrom ?? from
       const seedTo = from || to ? to : defaultTo ?? to
       setDraftFrom(seedFrom)
       setDraftTo(seedTo)
-      if (!from && !to && (seedFrom || seedTo)) {
-        onChange(seedFrom, seedTo)
-      }
     }
     setOpen(next)
   }
@@ -227,7 +219,6 @@ export function DateRangePicker({
             <Button
               type="button"
               size="sm"
-              disabled={!draftFrom && !draftTo}
               onClick={() => {
                 // Normalize: if user only picked one bound, mirror it into
                 // the other so downstream code always sees a full range.

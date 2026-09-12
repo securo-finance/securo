@@ -77,7 +77,7 @@ describe('DateRangePicker — segment variant', () => {
     )
   })
 
-  it('fires onOpen and seeds an empty range from the given default as soon as it opens', async () => {
+  it('seeds drafts on open and commits defaults only on Apply', async () => {
     const onOpen = vi.fn()
     const onChange = vi.fn()
     const { user } = renderWithProviders(
@@ -97,11 +97,11 @@ describe('DateRangePicker — segment variant', () => {
     await user.click(screen.getByRole('button', { name: 'Custom' }))
 
     expect(onOpen).toHaveBeenCalledTimes(1)
-    expect(onChange).toHaveBeenCalledTimes(1)
-    expect(onChange).toHaveBeenCalledWith('2026-01-01', '2026-12-31')
+    expect(onChange).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('2026-01-01', '2026-12-31')
 
-    // The popover itself opens pre-filled with that same default range.
-    expect(await screen.findByText(t('transactions.filtersBar.fromLabel'))).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('does not overwrite an already-picked range when reopened', async () => {
@@ -161,5 +161,78 @@ describe('DateRangePicker — standalone button variant (regression)', () => {
     await user.click(await screen.findByRole('button', { name: t('transactions.filtersBar.apply') }))
 
     expect(onChange).toHaveBeenCalledWith('2026-05-01', '2026-05-15')
+  })
+})
+
+
+describe('DateRangePicker — draft lifecycle', () => {
+  it('keeps calendar selections in draft state until Apply', async () => {
+    const onChange = vi.fn()
+    const { user } = renderWithProviders(
+      <DateRangePicker from="2026-05-01" to="2026-05-15"
+        onChange={onChange} label="Custom" />,
+    )
+    await user.click(screen.getByRole('button', { name: 'Custom' }))
+    await user.click(screen.getAllByRole('button', { name: '12', exact: true })[0])
+    await user.click(screen.getAllByRole('button', { name: '8', exact: true })[1])
+    expect(onChange).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('2026-05-08', '2026-05-12')
+  })
+
+  it.each(['Cancel', 'Escape', 'outside'] as const)(
+    '%s discards edits and restores committed dates on reopening', async (dismiss) => {
+      const onChange = vi.fn()
+      const { user } = renderWithProviders(
+        <DateRangePicker from="2026-05-01" to="2026-05-15"
+          onChange={onChange} label="Custom" />,
+      )
+      const trigger = screen.getByRole('button', { name: 'Custom' })
+      await user.click(trigger)
+      await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.reset') }))
+      if (dismiss === 'Cancel') {
+        await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.cancel') }))
+      } else if (dismiss === 'Escape') {
+        await user.keyboard('{Escape}')
+      } else {
+        await user.click(document.body)
+      }
+      expect(onChange).not.toHaveBeenCalled()
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      await user.click(trigger)
+      await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
+      expect(onChange).toHaveBeenCalledExactlyOnceWith('2026-05-01', '2026-05-15')
+    },
+  )
+
+  it('Reset only clears drafts; Apply commits the empty range', async () => {
+    const onChange = vi.fn()
+    const { user } = renderWithProviders(
+      <DateRangePicker from="2026-05-01" to="2026-05-15"
+        onChange={onChange} label="Custom" />,
+    )
+    await user.click(screen.getByRole('button', { name: 'Custom' }))
+    await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.reset') }))
+    expect(onChange).not.toHaveBeenCalled()
+    const apply = screen.getByRole('button', { name: t('transactions.filtersBar.apply') })
+    expect(apply).toBeEnabled()
+    await user.click(apply)
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('', '')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['2026-05-15', '2026-05-01', '2026-05-01', '2026-05-15'],
+    ['2026-05-15', '', '2026-05-15', '2026-05-15'],
+    ['', '2026-05-15', '2026-05-15', '2026-05-15'],
+  ])('normalizes %s → %s on Apply', async (from, to, expectedFrom, expectedTo) => {
+    const onChange = vi.fn()
+    const { user } = renderWithProviders(
+      <DateRangePicker from={from} to={to} onChange={onChange} label="Custom" />,
+    )
+    await user.click(screen.getByRole('button', { name: 'Custom' }))
+    expect(onChange).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: t('transactions.filtersBar.apply') }))
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(expectedFrom, expectedTo)
   })
 })
