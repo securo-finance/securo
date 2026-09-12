@@ -1649,7 +1649,9 @@
     "amount": "Сума",
     "investments": "Інвестиції",
     "moneyMap": "Money Map",
-    "range30d": "30Д"
+    "range30d": "30Д",
+    "rangeCustom": "Свій",
+    "pickCustomRange": "Виберіть дату початку та кінця"
   },
   "payees": {
     "addFavorite": "Додати до обраного",

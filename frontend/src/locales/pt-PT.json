@@ -1637,7 +1637,9 @@
     "amount": "Valor",
     "investments": "Investimentos",
     "moneyMap": "Mapa do Dinheiro",
-    "range30d": "30D"
+    "range30d": "30D",
+    "rangeCustom": "Personalizado",
+    "pickCustomRange": "Escolha uma data inicial e final"
   },
   "payees": {
     "addFavorite": "Adicionar aos favoritos",

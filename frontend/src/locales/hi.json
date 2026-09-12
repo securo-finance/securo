@@ -1636,7 +1636,9 @@
     "amount": "राशि",
     "investments": "निवेश",
     "moneyMap": "मनी मैप",
-    "range30d": "30D"
+    "range30d": "30D",
+    "rangeCustom": "कस्टम",
+    "pickCustomRange": "प्रारंभ और समाप्ति तिथि चुनें"
   },
   "payees": {
     "addFavorite": "पसंदीदा में जोड़ें",

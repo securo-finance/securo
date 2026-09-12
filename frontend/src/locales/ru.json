@@ -1649,7 +1649,9 @@
     "amount": "Сумма",
     "investments": "Инвестиции",
     "moneyMap": "Money Map",
-    "range30d": "30D"
+    "range30d": "30D",
+    "rangeCustom": "Свой",
+    "pickCustomRange": "Выберите дату начала и конца"
   },
   "payees": {
     "addFavorite": "Добавить в избранное",

@@ -1636,7 +1636,9 @@
     "amount": "Amount",
     "investments": "Investments",
     "moneyMap": "Money Map",
-    "range30d": "30D"
+    "range30d": "30D",
+    "rangeCustom": "Custom",
+    "pickCustomRange": "Pick a start and end date"
   },
   "payees": {
     "addFavorite": "Add to favorites",

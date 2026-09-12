@@ -1691,7 +1691,9 @@
     "amount": "Ποσό",
     "investments": "Επενδύσεις",
     "moneyMap": "Χάρτης χρημάτων",
-    "range30d": "30Η"
+    "range30d": "30Η",
+    "rangeCustom": "Προσαρμ.",
+    "pickCustomRange": "Επιλέξτε ημερομηνία έναρξης και λήξης"
   },
   "fiscal": {
     "kind": {

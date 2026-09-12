@@ -1748,7 +1748,9 @@
     "amount": "Suma",
     "investments": "Investície",
     "moneyMap": "Mapa peňazí",
-    "range30d": "30D"
+    "range30d": "30D",
+    "rangeCustom": "Vlastný",
+    "pickCustomRange": "Vyberte dátum začiatku a konca"
   },
   "payees": {
     "addFavorite": "Pridať do obľúbených",

@@ -64,12 +64,18 @@ def _report_start_date(
     period: str | None = None,
     days: int | None = None,
     financial_year_start_month: int = 1,
+    start_date: date | None = None,
 ) -> date:
     """Resolve historical report start date.
 
-    `days` requests an exact rolling window ending today (inclusive), instead of
-    the month-aligned window the `months` ranges use.
+    An explicit ``start_date`` wins over every other selector so a caller can
+    pin the window to a calendar range. `days` requests an exact rolling window
+    ending today (inclusive), instead of the month-aligned window the `months`
+    ranges use.
     """
+    if start_date is not None:
+        return start_date
+
     if days:
         return today - timedelta(days=days - 1)
 
@@ -291,14 +297,17 @@ async def get_net_worth_report(
     asset_group_ids: Optional[list[uuid.UUID]] = None,
     period: str | None = None,
     financial_year_start_month: int = 1,
+    start_date: date | None = None,
+    end_date: date | None = None,
 ) -> ReportResponse:
     """Build a full ReportResponse for net worth over time."""
     # A wallet-only collection (wallets, no accounts) still filters.
     if asset_group_ids is not None and account_ids is None:
         account_ids = []
-    today = date.today()
+    today = end_date or date.today()
     start = _report_start_date(
-        today, months, period, financial_year_start_month=financial_year_start_month
+        today, months, period, financial_year_start_month=financial_year_start_month,
+        start_date=start_date,
     )
 
     # Get user's primary currency
@@ -397,17 +406,20 @@ async def get_income_expenses_report(
     period: str | None = None,
     days: int | None = None,
     financial_year_start_month: int = 1,
+    start_date: date | None = None,
+    end_date: date | None = None,
 ) -> ReportResponse:
     """Build a ReportResponse for income vs expenses over time."""
     filtered = account_ids is not None
     acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
-    today = date.today()
+    today = end_date or date.today()
     start = _report_start_date(
         today,
         months,
         period=period,
         days=days,
         financial_year_start_month=financial_year_start_month,
+        start_date=start_date,
     )
 
     # Get user's primary currency + global reporting mode

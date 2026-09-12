@@ -389,6 +389,27 @@ async def test_net_worth_report_ytd_starts_at_current_year(
     assert all(point.date.startswith(str(date.today().year)) for point in report.trend)
 
 
+@pytest.mark.asyncio
+async def test_net_worth_report_custom_range_pins_window(
+    session: AsyncSession, test_user, test_workspace
+):
+    """Explicit start_date/end_date override the preset window."""
+    start = date(2022, 3, 1)
+    end = date(2022, 6, 30)
+    report = await get_net_worth_report(
+        session, test_workspace.id, test_user.id,
+        months=6, interval="monthly",
+        start_date=start, end_date=end,
+    )
+
+    # Monthly bucket labels are YYYY-MM; first should land in the picked month
+    # and the trend must not stretch beyond the picked end month.
+    assert report.trend[0].date == "2022-03"
+    assert report.trend[-1].date == "2022-06"
+    for point in report.trend:
+        assert "2022-03" <= point.date <= "2022-06"
+
+
 # ---------------------------------------------------------------------------
 # API-level tests: /reports/net-worth
 # ---------------------------------------------------------------------------
@@ -574,6 +595,7 @@ async def test_income_expenses_api_accepts_ytd_period(client, auth_headers, monk
     async def fake_report(
         session, workspace_id, user_id, months, interval, currency,
         account_ids=None, period=None, days=None, financial_year_start_month=1,
+        start_date=None, end_date=None,
     ):
         assert months == 12
         assert interval == "monthly"
@@ -616,6 +638,7 @@ async def test_income_expenses_api_forwards_days_window(client, auth_headers, mo
     async def fake_report(
         session, workspace_id, user_id, months, interval, currency,
         account_ids=None, period=None, days=None, financial_year_start_month=1,
+        start_date=None, end_date=None,
     ):
         seen["days"] = days
         return ReportResponse(
@@ -649,6 +672,60 @@ async def test_income_expenses_api_forwards_days_window(client, auth_headers, mo
     resp = await client.get(
         "/api/reports/income-expenses",
         params={"days": 0},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_income_expenses_api_forwards_custom_range(client, auth_headers, monkeypatch):
+    """start_date/end_date override presets and reach the service."""
+    seen: dict = {}
+
+    async def fake_report(
+        session, workspace_id, user_id, months, interval, currency,
+        account_ids=None, period=None, days=None, financial_year_start_month=1,
+        start_date=None, end_date=None,
+    ):
+        seen["start"] = start_date
+        seen["end"] = end_date
+        return ReportResponse(
+            summary=ReportSummary(primary_value=0, change_amount=0, change_percent=None, breakdowns=[]),
+            trend=[],
+            meta=ReportMeta(type="income_expenses", series_keys=[], currency=currency, interval=interval),
+            composition=[],
+            category_trend=[],
+        )
+
+    monkeypatch.setattr(report_service, "get_income_expenses_report", fake_report)
+
+    resp = await client.get(
+        "/api/reports/income-expenses",
+        params={"start_date": "2022-01-01", "end_date": "2022-06-30"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert seen["start"] == date(2022, 1, 1)
+    assert seen["end"] == date(2022, 6, 30)
+
+
+@pytest.mark.asyncio
+async def test_income_expenses_api_rejects_partial_custom_range(client, auth_headers):
+    """Both start_date and end_date must be provided together."""
+    resp = await client.get(
+        "/api/reports/income-expenses",
+        params={"start_date": "2022-01-01"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_income_expenses_api_rejects_reversed_custom_range(client, auth_headers):
+    """end_date must be on or after start_date."""
+    resp = await client.get(
+        "/api/reports/income-expenses",
+        params={"start_date": "2022-06-30", "end_date": "2022-01-01"},
         headers=auth_headers,
     )
     assert resp.status_code == 422

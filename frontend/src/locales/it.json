@@ -1637,7 +1637,9 @@
     "amount": "Importo",
     "investments": "Investimenti",
     "moneyMap": "Mappa del Denaro",
-    "range30d": "30D"
+    "range30d": "30D",
+    "rangeCustom": "Personalizzato",
+    "pickCustomRange": "Scegli una data di inizio e fine"
   },
   "payees": {
     "addFavorite": "Aggiungi ai preferiti",

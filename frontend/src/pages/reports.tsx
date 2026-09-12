@@ -22,6 +22,7 @@ import { HelpCircle, X } from 'lucide-react'
 import { reports } from '@/lib/api'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
+import { DateRangePicker } from '@/components/ui/date-range-picker'
 import { PageHeader } from '@/components/page-header'
 import { CashflowSankey } from '@/components/reports/CashflowSankey'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -116,7 +117,13 @@ const RANGE_LABELS: Record<string, string> = {
   ytd: 'rangeYtd',
   '12m': 'range12m',
   '2y': 'range2y',
+  custom: 'rangeCustom',
 }
+
+// Sentinel key for the "custom range" preset. Kept out of the preset arrays
+// above so we can decide per-tab whether it's actually offered (cash flow,
+// which is a forecast, still uses forward-only presets).
+const CUSTOM_RANGE_KEY = 'custom'
 
 interface ReportTab {
   key: string
@@ -140,6 +147,12 @@ export default function ReportsPage() {
 
   const [rangeKey, setRangeKey] = useState('1y')
   const [interval, setInterval] = useState('monthly')
+  // Custom range endpoints (YYYY-MM-DD) — populated when the user opens the
+  // Custom preset and confirms a date range. Preserved across tab switches
+  // that still support custom ranges so the picker doesn't forget its
+  // selection while the user compares views.
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
   const [activeTab, setActiveTab] = useState('net_worth')
   const [compositionView, setCompositionView] = useState<string>('netWorth')
   const [sparklineView, setSparklineView] = useState<'byExpenses' | 'byIncome'>('byExpenses')
@@ -167,11 +180,35 @@ export default function ReportsPage() {
     : isMoneyMap
       ? MONEY_MAP_RANGE_OPTIONS
       : HISTORICAL_RANGE_OPTIONS
+  // Cash flow's forecast presets don't make sense with a past-only calendar
+  // range, so custom is only offered for the historical tabs (Net Worth,
+  // Income vs Expenses, Money Map).
+  const supportsCustomRange = !isCashFlow
   const intervalOptions = isCashFlow ? CASH_FLOW_INTERVAL_OPTIONS : HISTORICAL_INTERVAL_OPTIONS
+  const isCustomRange = supportsCustomRange && rangeKey === CUSTOM_RANGE_KEY
+  const hasCustomRange = isCustomRange && !!customFrom && !!customTo
   const selectedRange = rangeOptions.find((r) => r.key === rangeKey) ?? rangeOptions[0]
-  const months = selectedRange.months
-  const period = selectedRange.period
-  const days = selectedRange.days
+  // In custom mode, translate the picked span into an equivalent `months`
+  // value so downstream logic (interval bucketing, forecast fan-out) keeps
+  // working. Backend uses start_date/end_date directly when they're set.
+  const customMonths = hasCustomRange
+    ? Math.max(
+        1,
+        Math.min(
+          24,
+          Math.ceil(
+            (new Date(customTo + 'T00:00:00').getTime() -
+              new Date(customFrom + 'T00:00:00').getTime()) /
+              (1000 * 60 * 60 * 24 * 30),
+          ),
+        ),
+      )
+    : selectedRange.months
+  const months = isCustomRange ? customMonths : selectedRange.months
+  const period = isCustomRange ? undefined : selectedRange.period
+  const days = isCustomRange ? undefined : selectedRange.days
+  const apiStart = hasCustomRange ? customFrom : undefined
+  const apiEnd = hasCustomRange ? customTo : undefined
 
   const handleSelectTab = (key: string) => {
     setActiveTab(key)
@@ -184,7 +221,11 @@ export default function ReportsPage() {
       : key === 'money_map'
         ? MONEY_MAP_RANGE_OPTIONS
         : HISTORICAL_RANGE_OPTIONS
-    if (!nextRanges.some((r) => r.key === rangeKey)) {
+    const nextSupportsCustom = key !== 'cash_flow'
+    const stillValid =
+      (rangeKey === CUSTOM_RANGE_KEY && nextSupportsCustom) ||
+      nextRanges.some((r) => r.key === rangeKey)
+    if (!stillValid) {
       setRangeKey(key === 'cash_flow' ? '6m' : key === 'money_map' ? '3m' : '1y')
     }
     const nextIntervals = key === 'cash_flow' ? CASH_FLOW_INTERVAL_OPTIONS : HISTORICAL_INTERVAL_OPTIONS
@@ -194,14 +235,16 @@ export default function ReportsPage() {
   }
 
   const { data, isLoading } = useQuery<ReportResponse>({
-    queryKey: ['reports', activeTab, rangeKey, months, period ?? null, days ?? null, interval, isCashFlow ? cashFlowBaseline : false, activeAccountIds, activeWalletIds],
+    queryKey: ['reports', activeTab, rangeKey, months, period ?? null, days ?? null, interval, isCashFlow ? cashFlowBaseline : false, activeAccountIds, activeWalletIds, apiStart ?? null, apiEnd ?? null],
     queryFn: () =>
       isCashFlow
         ? reports.cashFlow(months, interval, cashFlowBaseline, acctIds)
         : activeTab === 'income_expenses' || isMoneyMap
-          ? reports.incomeExpenses(months, interval, acctIds, period, days)
-          : reports.netWorth(months, interval, acctIds, walletIds, period),
-    enabled: currentTab.enabled && !(noAccounts && activeTab !== 'net_worth'),
+          ? reports.incomeExpenses(months, interval, acctIds, period, days, apiStart, apiEnd)
+          : reports.netWorth(months, interval, acctIds, walletIds, period, apiStart, apiEnd),
+    // A custom range that's opened but not yet confirmed shouldn't fire a
+    // query with stale preset values — wait until both endpoints exist.
+    enabled: currentTab.enabled && !(noAccounts && activeTab !== 'net_worth') && (!isCustomRange || hasCustomRange),
   })
 
   const summary = data?.summary
@@ -510,7 +553,33 @@ export default function ReportsPage() {
                   {t(`reports.${RANGE_LABELS[opt.key]}`)}
                 </button>
               ))}
+              {supportsCustomRange && (
+                <button
+                  key={CUSTOM_RANGE_KEY}
+                  onClick={() => { setRangeKey(CUSTOM_RANGE_KEY); setSelectedDate(null) }}
+                  className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    isCustomRange
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+                  }`}
+                >
+                  {t('reports.rangeCustom')}
+                </button>
+              )}
             </div>
+            {isCustomRange && (
+              <DateRangePicker
+                from={customFrom}
+                to={customTo}
+                onChange={(f, to) => {
+                  setCustomFrom(f)
+                  setCustomTo(to)
+                  setSelectedDate(null)
+                }}
+                label={t('reports.rangeCustom')}
+                placeholder={t('reports.pickCustomRange')}
+              />
+            )}
             <div className={`flex items-center rounded-lg border border-border bg-card overflow-hidden ${isMoneyMap ? 'hidden' : ''}`}>
               {intervalOptions.map((opt) => (
                 <button

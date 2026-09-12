@@ -1637,7 +1637,9 @@
     "amount": "Betrag",
     "investments": "Investitionen",
     "moneyMap": "Geld-Karte",
-    "range30d": "30T"
+    "range30d": "30T",
+    "rangeCustom": "Benutzerdef.",
+    "pickCustomRange": "Start- und Enddatum wählen"
   },
   "payees": {
     "addFavorite": "Zu Favoriten hinzufügen",

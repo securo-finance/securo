@@ -1636,7 +1636,9 @@
     "amount": "金額",
     "investments": "投資",
     "moneyMap": "マネーマップ",
-    "range30d": "30日"
+    "range30d": "30日",
+    "rangeCustom": "カスタム",
+    "pickCustomRange": "開始日と終了日を選択"
   },
   "payees": {
     "addFavorite": "お気に入りに追加",

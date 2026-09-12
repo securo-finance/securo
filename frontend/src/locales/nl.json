@@ -1638,7 +1638,9 @@
     "amount": "Bedrag",
     "investments": "Investeringen",
     "moneyMap": "Geld kaart",
-    "range30d": "30D"
+    "range30d": "30D",
+    "rangeCustom": "Aangepast",
+    "pickCustomRange": "Kies een start- en einddatum"
   },
   "payees": {
     "addFavorite": "Toevoegen aan favorieten",

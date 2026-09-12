@@ -1637,7 +1637,9 @@
     "amount": "Montant",
     "investments": "Investissements",
     "moneyMap": "Carte de l'argent",
-    "range30d": "30J"
+    "range30d": "30J",
+    "rangeCustom": "Personnalisé",
+    "pickCustomRange": "Choisir une date de début et de fin"
   },
   "payees": {
     "addFavorite": "Ajouter aux favoris",
