@@ -529,6 +529,11 @@ export function RuleDialog({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    // Dialog renders its content through a portal, but React still bubbles
+    // events along the component tree rather than the DOM tree, so without
+    // this the submit would also reach the transaction form wrapping this
+    // dialog and trigger an unrelated save of it.
+    e.stopPropagation()
     if (hasBlankCondition || hasInvalidDescriptionAction) return
     onSave({
       name,
