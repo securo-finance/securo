@@ -568,7 +568,15 @@ function TransactionForm({
     const { conditions, conditionsOp } = buildExtendedRuleConditions(extendRuleTarget, transaction.description)
     return {
       rule: { ...extendRuleTarget, conditions_op: conditionsOp },
-      initialData: { conditions } as RuleDialogInitialData,
+      // The user is extending this rule specifically so it covers the
+      // transaction they're editing right now, so default to applying the
+      // rule's category to matching existing transactions (including this
+      // one) instead of leaving it stuck on its old category.
+      initialData: {
+        conditions,
+        applyToExisting: true,
+        overwriteExistingCategories: true,
+      } as RuleDialogInitialData,
     }
   }, [extendRuleTarget, transaction])
 
@@ -1090,8 +1098,8 @@ function TransactionForm({
           <CategorySelect
             value={categoryId}
             onChange={setCategoryId}
-            categories={categories}
-            groups={categoryGroups}
+            categories={displayCategories}
+            groups={displayCategoryGroups}
             currentCategory={seed?.category}
             allowNone={true}
             className="bg-card"

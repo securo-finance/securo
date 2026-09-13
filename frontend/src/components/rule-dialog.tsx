@@ -408,6 +408,8 @@ export interface RuleDialogInitialData {
   name?: string
   conditions?: RuleConditionNode[]
   actions?: RuleAction[]
+  applyToExisting?: boolean
+  overwriteExistingCategories?: boolean
 }
 
 export function RuleDialog({
@@ -444,8 +446,10 @@ export function RuleDialog({
   // preserves the rule's own state instead of resetting it to on, and so
   // the preview can still say "this will match, but the rule is off".
   const [isActive] = useState(rule?.is_active ?? true)
-  const [applyToExisting, setApplyToExisting] = useState(!rule)
-  const [overwriteExistingCategories, setOverwriteExistingCategories] = useState(false)
+  const [applyToExisting, setApplyToExisting] = useState(initialData?.applyToExisting ?? !rule)
+  const [overwriteExistingCategories, setOverwriteExistingCategories] = useState(
+    initialData?.overwriteExistingCategories ?? false
+  )
   const [previewOpen, setPreviewOpen] = useState(false)
 
   function updateCondition(i: number, field: keyof RuleCondition, val: string | number) {
