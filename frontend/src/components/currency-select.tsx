@@ -43,6 +43,7 @@ export const CURRENCIES = [
   { code: 'SGD', flag: '\u{1F1F8}\u{1F1EC}', symbol: 'S$' },
   { code: 'TRY', flag: '\u{1F1F9}\u{1F1F7}', symbol: '₺' },
   { code: 'PKR', flag: '\u{1F1F5}\u{1F1F0}', symbol: '₨' },
+  { code: 'MYR', flag: '\u{1F1F2}\u{1F1FE}', symbol: 'RM' },
 ] as const
 
 interface CurrencySelectProps {
