@@ -131,3 +131,15 @@ async def test_currencies_include_pkr_with_metadata(client: AsyncClient):
     assert pkr["symbol"] == "₨"
     assert pkr["name"] == "Pakistani Rupee"
     assert pkr["flag"] == "🇵🇰"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_cny_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    cny = next((currency for currency in data if currency["code"] == "CNY"), None)
+
+    assert cny is not None
+    assert cny["symbol"] == "¥"
+    assert cny["name"] == "Chinese Yuan"
+    assert cny["flag"] == "🇨🇳"
