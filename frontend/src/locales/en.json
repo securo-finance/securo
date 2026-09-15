@@ -2452,5 +2452,8 @@
     "importConfirmTitle": "Import matching rules?",
     "importConfirmDescription": "File {{file}} contains {{count}} rules.",
     "importOverwriteWarning": "Importing replaces the matching rules this workspace has now, including their order. This cannot be undone."
+  },
+  "currencies": {
+    "AED": "UAE Dirham"
   }
 }

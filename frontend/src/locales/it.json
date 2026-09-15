@@ -2453,5 +2453,8 @@
     "importConfirmTitle": "Importare le regole di riconciliazione?",
     "importConfirmDescription": "Il file {{file}} contiene {{count}} regole.",
     "importOverwriteWarning": "L'importazione sostituisce le regole di riconciliazione di questo spazio, incluso il loro ordine. Non è reversibile."
+  },
+  "currencies": {
+    "AED": "Dirham degli EAU"
   }
 }

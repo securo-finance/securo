@@ -2452,5 +2452,8 @@
     "importConfirmTitle": "मिलान नियम इंपोर्ट करें?",
     "importConfirmDescription": "फ़ाइल {{file}} में {{count}} नियम हैं।",
     "importOverwriteWarning": "इंपोर्ट करने पर इस वर्कस्पेस के मौजूदा मिलान नियम, उनके क्रम सहित, बदल जाएँगे। यह वापस नहीं किया जा सकता।"
+  },
+  "currencies": {
+    "AED": "यूएई दिरहम"
   }
 }

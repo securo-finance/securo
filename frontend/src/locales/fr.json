@@ -2453,5 +2453,8 @@
     "importConfirmTitle": "Importer les règles de rapprochement ?",
     "importConfirmDescription": "Le fichier {{file}} contient {{count}} règles.",
     "importOverwriteWarning": "L'import remplace les règles de rapprochement de cet espace, y compris leur ordre. C'est irréversible."
+  },
+  "currencies": {
+    "AED": "Dirham des Émirats arabes unis"
   }
 }

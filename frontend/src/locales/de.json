@@ -2453,5 +2453,8 @@
     "importConfirmTitle": "Abgleichsregeln importieren?",
     "importConfirmDescription": "Die Datei {{file}} enthält {{count}} Regeln.",
     "importOverwriteWarning": "Der Import ersetzt die Abgleichsregeln dieses Arbeitsbereichs samt ihrer Reihenfolge. Das lässt sich nicht rückgängig machen."
+  },
+  "currencies": {
+    "AED": "VAE-Dirham"
   }
 }

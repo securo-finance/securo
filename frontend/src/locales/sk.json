@@ -2592,5 +2592,8 @@
     "importConfirmTitle": "Importovať pravidlá párovania?",
     "importConfirmDescription": "Súbor {{file}} obsahuje {{count}} pravidiel.",
     "importOverwriteWarning": "Import nahradí pravidlá párovania tohto priestoru vrátane ich poradia. Nedá sa to vrátiť."
+  },
+  "currencies": {
+    "AED": "Dirham SAE"
   }
 }

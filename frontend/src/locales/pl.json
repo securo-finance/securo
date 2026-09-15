@@ -2558,5 +2558,8 @@
     "importConfirmTitle": "Zaimportować reguły dopasowania?",
     "importConfirmDescription": "Plik {{file}} zawiera {{count}} reguł.",
     "importOverwriteWarning": "Import zastępuje reguły dopasowania tej przestrzeni wraz z ich kolejnością. Tego nie da się cofnąć."
+  },
+  "currencies": {
+    "AED": "Dirham ZEA"
   }
 }

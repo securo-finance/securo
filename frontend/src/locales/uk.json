@@ -2465,5 +2465,8 @@
     "importConfirmTitle": "Імпортувати правила зіставлення?",
     "importConfirmDescription": "Файл {{file}} містить правил: {{count}}.",
     "importOverwriteWarning": "Імпорт замінює правила зіставлення цього простору разом з їхнім порядком. Скасувати не можна."
+  },
+  "currencies": {
+    "AED": "Дирхам ОАЕ"
   }
 }

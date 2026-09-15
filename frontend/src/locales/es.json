@@ -2453,5 +2453,8 @@
     "importConfirmTitle": "¿Importar reglas de conciliación?",
     "importConfirmDescription": "El archivo {{file}} contiene {{count}} reglas.",
     "importOverwriteWarning": "La importación reemplaza las reglas de conciliación de este espacio, incluido su orden. No se puede deshacer."
+  },
+  "currencies": {
+    "AED": "Dírham de los EAU"
   }
 }

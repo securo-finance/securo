@@ -2452,5 +2452,8 @@
     "importConfirmTitle": "照合ルールをインポートしますか?",
     "importConfirmDescription": "ファイル{{file}}には{{count}}件のルールが含まれています。",
     "importOverwriteWarning": "インポートすると、このワークスペースの現在の照合ルールが順序ごと置き換わります。この操作は取り消せません。"
+  },
+  "currencies": {
+    "AED": "UAEディルハム"
   }
 }

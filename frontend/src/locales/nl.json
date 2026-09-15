@@ -2454,5 +2454,8 @@
     "importConfirmTitle": "Koppelregels importeren?",
     "importConfirmDescription": "Bestand {{file}} bevat {{count}} regels.",
     "importOverwriteWarning": "Importeren vervangt de koppelregels van deze werkruimte, inclusief hun volgorde. Dit kan niet ongedaan worden gemaakt."
+  },
+  "currencies": {
+    "AED": "VAE-dirham"
   }
 }
