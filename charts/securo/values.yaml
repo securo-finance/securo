@@ -184,12 +184,12 @@ persistence:
     storageClass: ""
     accessMode: ReadWriteOnce
   agentKnowledge:
-    enabled: true
+    enabled: false
     size: 5Gi
     storageClass: ""
     accessMode: ReadWriteOnce
   agentEmbeddingModels:
-    enabled: true
+    enabled: false
     size: 5Gi
     storageClass: ""
     accessMode: ReadWriteOnce

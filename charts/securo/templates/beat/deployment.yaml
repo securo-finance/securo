@@ -44,11 +44,11 @@ spec:
             - name: attachments
               mountPath: /app/data/attachments
             {{- end }}
-            {{- if .Values.persistence.agentKnowledge.enabled }}
+            {{- if and (eq (.Values.config.agentsEnabled | toString) "true") .Values.persistence.agentKnowledge.enabled }}
             - name: agent-knowledge
               mountPath: /app/data/agent_knowledge
             {{- end }}
-            {{- if .Values.persistence.agentEmbeddingModels.enabled }}
+            {{- if and (eq (.Values.config.agentsEnabled | toString) "true") .Values.persistence.agentEmbeddingModels.enabled }}
             - name: agent-embedding-models
               mountPath: /app/data/embedding_models
             {{- end }}
@@ -62,12 +62,12 @@ spec:
           persistentVolumeClaim:
             claimName: {{ include "securo.fullname" . }}-attachments
         {{- end }}
-        {{- if .Values.persistence.agentKnowledge.enabled }}
+        {{- if and (eq (.Values.config.agentsEnabled | toString) "true") .Values.persistence.agentKnowledge.enabled }}
         - name: agent-knowledge
           persistentVolumeClaim:
             claimName: {{ include "securo.fullname" . }}-agent-knowledge
         {{- end }}
-        {{- if .Values.persistence.agentEmbeddingModels.enabled }}
+        {{- if and (eq (.Values.config.agentsEnabled | toString) "true") .Values.persistence.agentEmbeddingModels.enabled }}
         - name: agent-embedding-models
           persistentVolumeClaim:
             claimName: {{ include "securo.fullname" . }}-agent-embedding-models
