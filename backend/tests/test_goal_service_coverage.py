@@ -7,6 +7,7 @@ each tracking_type, enrich currency conversion, get/update/delete/summary).
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -156,19 +157,10 @@ def test_monthly_contribution_normal():
 def test_monthly_contribution_months_clamped_to_one():
     # Target date in the same calendar month but a later day -> months == 0,
     # clamped to 1 (line 111). today < target_date so we don't hit the past branch.
-    today = date.today()
-    if today.day < 28:
-        target = today.replace(day=28)
-        val = _compute_monthly_contribution(Decimal("0"), Decimal("500"), target)
-        assert val == 500.0  # remaining / 1 month
-    else:
-        # Last days of month: just assert it returns a value (same-month edge)
-        target = today + timedelta(days=1)
-        if target.month == today.month:
-            val = _compute_monthly_contribution(Decimal("0"), Decimal("500"), target)
-            assert val == 500.0
-        else:
-            pytest.skip("month boundary makes same-month clamp untestable today")
+    with patch("app.services.goal_service.date", wraps=date) as clock:
+        clock.today.return_value = date(2026, 1, 15)
+        val = _compute_monthly_contribution(Decimal("0"), Decimal("500"), date(2026, 1, 28))
+    assert val == 500.0  # remaining / 1 month
 
 
 # ---------------------------------------------------------------------------

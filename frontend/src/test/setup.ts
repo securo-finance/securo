@@ -11,6 +11,22 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
 import { afterEach, vi } from 'vitest'
+import { createElement, type ComponentProps } from 'react'
+
+vi.mock('recharts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('recharts')>()
+  return {
+    ...actual,
+    // Use the same test viewport before the first ResizeObserver notification.
+    // Keep the actual container/charts so their SVG rendering is exercised.
+    ResponsiveContainer(props: ComponentProps<typeof actual.ResponsiveContainer>) {
+      return createElement(actual.ResponsiveContainer, {
+        initialDimension: { width: 800, height: 300 },
+        ...props,
+      })
+    },
+  }
+})
 
 // Testing Library only auto-cleans when vitest runs with `globals: true`, and
 // this project imports `describe`/`it`/`expect` explicitly instead. Unmount by
@@ -45,9 +61,36 @@ class MockObserver {
   }
 }
 
-// Recharts' ResponsiveContainer and several Radix primitives construct one of
-// these on mount.
-globalThis.ResizeObserver = MockObserver as unknown as typeof ResizeObserver
+// jsdom has no layout. Give chart containers a deterministic viewport while
+// retaining normal jsdom measurements for every other element.
+const getBoundingClientRect = HTMLElement.prototype.getBoundingClientRect
+HTMLElement.prototype.getBoundingClientRect = function () {
+  return this.classList.contains('recharts-responsive-container')
+    ? DOMRect.fromRect({ width: 800, height: 300 })
+    : getBoundingClientRect.call(this)
+}
+
+class MockResizeObserver {
+  private callback: ResizeObserverCallback
+
+  constructor(callback: ResizeObserverCallback) {
+    this.callback = callback
+  }
+
+  observe(target: Element) {
+    const contentRect = target.getBoundingClientRect()
+    const size = [{ inlineSize: contentRect.width, blockSize: contentRect.height }]
+    this.callback([{
+      target, contentRect, borderBoxSize: size, contentBoxSize: size,
+      devicePixelContentBoxSize: size,
+    }], this)
+  }
+
+  unobserve() {}
+  disconnect() {}
+}
+
+globalThis.ResizeObserver = MockResizeObserver
 globalThis.IntersectionObserver =
   MockObserver as unknown as typeof IntersectionObserver
 

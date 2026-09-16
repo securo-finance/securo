@@ -51,6 +51,8 @@ class ToolCall:
     id: str
     name: str
     arguments: dict[str, Any]
+    # Opaque Gemini signature; replay unchanged, never pass to the tool itself.
+    thought_signature: Optional[str] = None
 
 
 @dataclass
@@ -87,6 +89,8 @@ class ChatChunk:
     args_delta: Optional[str] = None  # incremental JSON args while streaming
     finish_reason: Optional[str] = None
     usage: Optional[Usage] = None
+    # Delivered on tool_call_end, after all streaming deltas have arrived.
+    thought_signature: Optional[str] = None
 
 
 @dataclass
@@ -147,6 +151,8 @@ class LLMProvider(ABC):
             elif chunk.type == "tool_call_args_delta" and chunk.tool_call_id:
                 tc = tool_calls.setdefault(chunk.tool_call_id, {"id": chunk.tool_call_id, "name": chunk.tool_name or "", "args_buf": ""})
                 tc["args_buf"] += chunk.args_delta or ""
+            elif chunk.type == "tool_call_end" and chunk.tool_call_id in tool_calls:
+                tool_calls[chunk.tool_call_id]["thought_signature"] = chunk.thought_signature
             elif chunk.type == "finish" and chunk.finish_reason:
                 finish = chunk.finish_reason
             elif chunk.type == "usage" and chunk.usage:
@@ -158,7 +164,10 @@ class LLMProvider(ABC):
                 args = json.loads(tc["args_buf"]) if tc["args_buf"] else {}
             except json.JSONDecodeError:
                 args = {"_raw": tc["args_buf"]}
-            parsed_calls.append(ToolCall(id=tc["id"], name=tc["name"], arguments=args))
+            parsed_calls.append(ToolCall(
+                id=tc["id"], name=tc["name"], arguments=args,
+                thought_signature=tc.get("thought_signature"),
+            ))
         return ChatResponse(content="".join(text_parts), tool_calls=parsed_calls, finish_reason=finish, usage=usage)
 
     @abstractmethod

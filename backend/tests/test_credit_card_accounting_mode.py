@@ -1934,12 +1934,13 @@ class TestBillTotalIgnoresReportingExclusions:
         assert summary["monthly_expenses"] == 100.0
 
     @pytest.mark.asyncio
-    async def test_transfer_like_refund_shows_in_both_card_numbers(
+    async def test_transfer_like_credit_does_not_shrink_the_bill(
         self, session, test_user, test_workspace, cc_account, transfer_category
     ):
-        """The card's four totals answer to one rule, so a refund the bank
-        credited nets against the bill *and* surfaces as income. Splitting
-        the rule between them would let the two disagree."""
+        """An unpaired card payment (no matching transfer leg) is normally
+        filed under a transfer-like category. Unlike a debit in that same
+        category, the credit must not net against the bill or an ordinary
+        repayment would read as new debt shrinking, cycle after cycle."""
         await _make_tx(
             session, test_user.id, cc_account.id,
             date(2026, 4, 3), Decimal("100"), tx_type="debit",
@@ -1957,8 +1958,8 @@ class TestBillTotalIgnoresReportingExclusions:
         )
 
         assert summary is not None
-        assert summary["monthly_income"] == 50.0
-        assert summary["monthly_expenses"] == 50.0
+        assert summary["monthly_income"] == 0.0
+        assert summary["monthly_expenses"] == 100.0
 
     @pytest.mark.asyncio
     async def test_ignored_category_purchase_also_leaves_the_bill(
