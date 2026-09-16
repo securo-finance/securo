@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { payees as payeesApi, transactions as transactionsApi } from '@/lib/api'
+import { useDisplayLocale } from '@/hooks/use-display-locale'
+import { useQuery, useMutation, useQueryClient, type Query } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
+import { payees as payeesApi } from '@/lib/api'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -44,12 +44,17 @@ import {
 import { cn } from '@/lib/utils'
 import { PageHeader } from '@/components/page-header'
 import { calculateRangeSelection } from '@/lib/selection-utils'
-import { Search, Star, Merge, Trash2, ArrowRight, ListFilter, X, Check, Pencil, Plus, ArrowDown, ArrowUp } from 'lucide-react'
-import { usePrivacyMode } from '@/hooks/use-privacy-mode'
-import { useAuth } from '@/contexts/auth-context'
+import { PayeeDetailDialog } from '@/components/payee-detail-dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Search, Star, Merge, Trash2, ListFilter, X, Check, Pencil, Plus, ArrowDown, ArrowUp } from 'lucide-react'
 import { useWorkspace } from '@/contexts/workspace-context'
 import type { Payee } from '@/types'
-import { formatCurrency } from '@/lib/format'
 import { payeeErrorMessage } from '@/lib/payee-error-message'
 import {
   INITIAL_SORT_DIRECTIONS,
@@ -60,16 +65,14 @@ import {
   type PayeeSortBy,
 } from '@/lib/payee-sorting'
 
+const PAGE_SIZES = [10, 20, 50, 100]
+const DEFAULT_PAGE_SIZE = 20
+
 export default function PayeesPage() {
   const { t } = useTranslation()
   const [searchParams] = useSearchParams()
-  const navigate = useNavigate()
   const locale = useDisplayLocale()
-  const dateLocale = useDateLocale()
-  const { mask } = usePrivacyMode()
-  const { user } = useAuth()
   const { canWrite } = useWorkspace()
-  const userCurrency = user?.preferences?.currency_display ?? 'USD'
   // No entry for an unset type: most rows come from sync, which cannot know
   // a legal nature from a bank descriptor, and a badge reading "unknown" on
   // hundreds of rows is noise rather than information.
@@ -93,21 +96,43 @@ export default function PayeesPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [payeesToDelete, setPayeesToDelete] = useState<string[]>([])
   const [sort, setSort] = useState<PayeeSort>(() => loadPayeeSort())
-  const prevSearchRef = useRef<string | null>(null)
-  const summaryRef = useRef<HTMLDivElement>(null)
+  // Seeded from the URL so a link to page 3 lands on page 3. Page size is a
+  // preference rather than a location, so it lives in storage instead.
+  const [page, setPage] = useState(() => Math.max(1, Number(searchParams.get('page')) || 1))
+  const [pageSize, setPageSize] = useState<number>(() => {
+    try {
+      // Only a size we actually offer. A stale or hand-edited entry of "0"
+      // makes totalPages Infinity and of "abc" makes it NaN, and either way
+      // the slice below comes back empty and the table renders no rows over
+      // data that loaded fine.
+      const stored = Number(localStorage.getItem('securo.payees.pageSize'))
+      return PAGE_SIZES.includes(stored) ? stored : DEFAULT_PAGE_SIZE
+    } catch {
+      return DEFAULT_PAGE_SIZE
+    }
+  })
+  const [previousSearch, setPreviousSearch] = useState(() => searchParams.toString())
+  // Declared here rather than next to its guard below: the URL-sync block
+  // primes it, and a `const` cannot be touched above its own declaration.
+  const [selectionFilter, setSelectionFilter] = useState({ searchQuery, filterType, filterFavorites })
 
-  // Sync state from URL when navigating
-  useEffect(() => {
-    const searchStr = searchParams.toString()
-    if (prevSearchRef.current === searchStr) return
-    prevSearchRef.current = searchStr
-
+  // Navigation replaces the draft and applied filters together.
+  const currentSearch = searchParams.toString()
+  if (previousSearch !== currentSearch) {
+    setPreviousSearch(currentSearch)
     const nextQ = searchParams.get('q') ?? ''
     setSearch(nextQ)
     setSearchQuery(nextQ)
-    setFilterType(searchParams.get('type') ?? '')
-    setFilterFavorites(searchParams.get('is_favorite') === 'true')
-  }, [searchParams])
+    const nextType = searchParams.get('type') ?? ''
+    const nextFavorites = searchParams.get('is_favorite') === 'true'
+    setFilterType(nextType)
+    setFilterFavorites(nextFavorites)
+    setPage(Math.max(1, Number(searchParams.get('page')) || 1))
+    // Filters and page arrived together, so this is not a filter *change*.
+    // Priming the guard below stops it from throwing away the page the same
+    // URL just asked for.
+    setSelectionFilter({ searchQuery: nextQ, filterType: nextType, filterFavorites: nextFavorites })
+  }
 
   // Sync states back to URL searchParams
   useEffect(() => {
@@ -116,6 +141,7 @@ export default function PayeesPage() {
         ['q', searchQuery],
         ['type', filterType],
         ['is_favorite', filterFavorites ? 'true' : ''],
+        ['page', page > 1 ? String(page) : ''],
       ].filter(([, v]) => v && v.length),
     )
 
@@ -124,7 +150,7 @@ export default function PayeesPage() {
       '',
       params.size ? `?${params}` : window.location.pathname,
     )
-  }, [searchQuery, filterType, filterFavorites])
+  }, [searchQuery, filterType, filterFavorites, page])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -136,21 +162,20 @@ export default function PayeesPage() {
     }
   }, [search])
 
-  // Clear selection on filter or search query change
-  useEffect(() => {
+  if (selectionFilter.searchQuery !== searchQuery || selectionFilter.filterType !== filterType || selectionFilter.filterFavorites !== filterFavorites) {
+    setSelectionFilter({ searchQuery, filterType, filterFavorites })
     setSelectedIds(new Set())
     setLastSelectedId(null)
-  }, [searchQuery, filterType, filterFavorites])
+    setPage(1)
+  }
 
   useEffect(() => {
-    if (!summaryPayee) return
-
-    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    summaryRef.current?.scrollIntoView({
-      behavior: prefersReducedMotion ? 'auto' : 'smooth',
-      block: 'start',
-    })
-  }, [summaryPayee])
+    try {
+      localStorage.setItem('securo.payees.pageSize', String(pageSize))
+    } catch {
+      // A disabled or full storage must not prevent changing the page size.
+    }
+  }, [pageSize])
 
   useEffect(() => {
     try {
@@ -201,18 +226,6 @@ export default function PayeesPage() {
     }),
   })
 
-  const { data: summaryData, isLoading: summaryLoading } = useQuery({
-    queryKey: ['payees', summaryPayee, 'summary'],
-    queryFn: () => payeesApi.summary(summaryPayee!),
-    enabled: !!summaryPayee,
-  })
-
-  const { data: recentTxData } = useQuery({
-    queryKey: ['payees', summaryPayee, 'recent-transactions'],
-    queryFn: () => transactionsApi.list({ payee_id: summaryPayee!, limit: 5 }),
-    enabled: !!summaryPayee,
-  })
-
   const createMutation = useMutation({
     mutationFn: (data: PayeeWritePayload & { name: string }) => payeesApi.create(data),
     onSuccess: () => {
@@ -260,7 +273,28 @@ export default function PayeesPage() {
   const favoriteMutation = useMutation({
     mutationFn: ({ id, is_favorite }: { id: string; is_favorite: boolean }) =>
       payeesApi.update(id, { is_favorite }),
-    onSuccess: () => {
+    onMutate: async ({ id, is_favorite }) => {
+      // Array-shaped caches only. `['payees']` is a prefix that also matches
+      // `['payees', id, 'summary']`, whose data is an object, and mapping over
+      // that would throw. Every page that lists payees caches an array under
+      // this prefix, so they all stay in step for free.
+      const listFilter = {
+        queryKey: ['payees'],
+        predicate: (query: Query) => Array.isArray(query.state.data),
+      }
+      await queryClient.cancelQueries(listFilter)
+      const snapshots = queryClient.getQueriesData<Payee[]>(listFilter)
+      queryClient.setQueriesData<Payee[]>(listFilter, (old) =>
+        old?.map((payee) => (payee.id === id ? { ...payee, is_favorite } : payee)),
+      )
+      return { snapshots }
+    },
+    onError: (_error, _variables, context) => {
+      for (const [key, data] of context?.snapshots ?? []) queryClient.setQueryData(key, data)
+      toast.error(t('payees.favoriteError'))
+    },
+    // Prefix invalidation is safe here: it only marks stale and refetches.
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['payees'] })
     },
   })
@@ -375,6 +409,24 @@ export default function PayeesPage() {
     [payeesList, sort, locale, typeLabels],
   )
 
+  // Sorting runs first, so paging walks the list the user actually sees.
+  const totalPages = Math.max(1, Math.ceil(sortedPayees.length / pageSize))
+  const safePage = Math.min(page, totalPages)
+  const pageItems = sortedPayees.slice((safePage - 1) * pageSize, safePage * pageSize)
+
+  // Resolved from the full filtered list, not from `pageItems`: the dialog must
+  // survive a page change made behind it, and a row deleted elsewhere in the
+  // list should close it rather than show a stale name.
+  const detailPayee = summaryPayee ? sortedPayees.find(payee => payee.id === summaryPayee) ?? null : null
+
+  // Deleting the last page's contents strands `page` past the end. `safePage`
+  // already covers what renders; this keeps the state and the URL honest.
+  // Adjusted during render, like the two guards above, so the URL is written
+  // once instead of once per stale value. Gated on the list having arrived:
+  // during the first fetch there are no rows, `totalPages` is 1, and clamping
+  // then would throw away the page a deep link just asked for.
+  if (payeesList && page > totalPages) setPage(totalPages)
+
   const toggleSort = (by: PayeeSortBy) => {
     setSort((current) => {
       if (current.by !== by) return { by, direction: INITIAL_SORT_DIRECTIONS[by] }
@@ -384,23 +436,27 @@ export default function PayeesPage() {
 
   const toggleSelect = (id: string, isShiftKey: boolean = false) => {
     setSelectedIds(prev =>
-      calculateRangeSelection(prev, lastSelectedId, id, sortedPayees, isShiftKey)
+      calculateRangeSelection(prev, lastSelectedId, id, pageItems, isShiftKey)
     )
     setLastSelectedId(id)
   }
 
-  const toggleSelectAll = () => {
-    if (!sortedPayees.length) return
-    const allSelected = sortedPayees.every(payee => selectedIds.has(payee.id))
-    if (allSelected) {
-      setSelectedIds(new Set())
-    } else {
-      setSelectedIds(new Set(sortedPayees.map(payee => payee.id)))
-    }
-  }
+  const allSelected = pageItems.length > 0 && pageItems.every(payee => selectedIds.has(payee.id))
+  const someSelected = pageItems.some(payee => selectedIds.has(payee.id)) && !allSelected
 
-  const allSelected = sortedPayees.length > 0 && sortedPayees.every(payee => selectedIds.has(payee.id))
-  const someSelected = sortedPayees.some(payee => selectedIds.has(payee.id)) && !allSelected
+  const toggleSelectAll = () => {
+    if (!pageItems.length) return
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      // Add or remove only this page: the selection itself spans pages, so
+      // clearing it wholesale would silently drop rows picked elsewhere.
+      for (const payee of pageItems) {
+        if (allSelected) next.delete(payee.id)
+        else next.add(payee.id)
+      }
+      return next
+    })
+  }
 
   return (
     <div>
@@ -596,91 +652,6 @@ export default function PayeesPage() {
         )}
       </div>
 
-      {/* Summary panel, above the table on purpose: a workspace whose payees
-          were created by sync has hundreds of rows, and a panel rendered after
-          the table opens below the fold, which reads as the click doing nothing. */}
-      {summaryPayee && (
-        <div ref={summaryRef} className="scroll-mt-16 bg-card rounded-xl border border-border shadow-sm p-5 mb-4">
-          {summaryLoading ? (
-            <Skeleton className="h-24 w-full" />
-          ) : summaryData ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-bold">{summaryData.payee.name}</h3>
-                <Button variant="ghost" size="sm" onClick={() => setSummaryPayee(null)}>
-                  &times;
-                </Button>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div>
-                  <p className="text-xs text-muted-foreground">{t('payees.totalSpent')}</p>
-                  <p className="text-lg font-bold text-rose-500 tabular-nums">
-                    {mask(formatCurrency(summaryData.total_spent, userCurrency, locale))}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">{t('payees.totalReceived')}</p>
-                  <p className="text-lg font-bold text-emerald-600 tabular-nums">
-                    {mask(formatCurrency(summaryData.total_received, userCurrency, locale))}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">{t('payees.transactionCount')}</p>
-                  <p className="text-lg font-bold tabular-nums">{summaryData.transaction_count}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">{t('payees.lastTransaction')}</p>
-                  <p className="text-sm font-medium">
-                    {summaryData.last_transaction_date
-                      ? new Date(summaryData.last_transaction_date + 'T00:00:00').toLocaleDateString(dateLocale)
-                      : '—'}
-                  </p>
-                </div>
-              </div>
-              {summaryData.most_common_category && (
-                <p className="text-xs text-muted-foreground">
-                  {t('payees.topCategory')}: <span className="font-medium text-foreground">{summaryData.most_common_category.name}</span>
-                </p>
-              )}
-
-              {/* Recent transactions */}
-              {recentTxData && recentTxData.items.length > 0 && (
-                <div className="pt-3 border-t border-border space-y-2">
-                  <p className="text-xs font-medium text-muted-foreground">{t('dashboard.recentTransactions')}</p>
-                  <div className="divide-y divide-border rounded-lg border border-border overflow-hidden">
-                    {recentTxData.items.map((tx) => (
-                      <div key={tx.id} className="flex items-center justify-between px-3 py-2 bg-background text-sm">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-foreground truncate">{tx.description}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(tx.date + 'T00:00:00').toLocaleDateString(dateLocale)}
-                            {tx.category?.name && <> · {tx.category.name}</>}
-                          </p>
-                        </div>
-                        <span className={`text-sm font-semibold tabular-nums ml-3 ${tx.type === 'debit' ? 'text-rose-500' : 'text-emerald-600'}`}>
-                          {mask(formatCurrency(tx.amount, tx.currency, locale))}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  {recentTxData.total > 5 && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="w-full text-xs text-muted-foreground hover:text-foreground gap-1"
-                      onClick={() => navigate(`/transactions?payee_id=${summaryPayee}`)}
-                    >
-                      {t('payees.viewAllTransactions', { count: recentTxData.total })}
-                      <ArrowRight size={12} />
-                    </Button>
-                  )}
-                </div>
-              )}
-            </div>
-          ) : null}
-        </div>
-      )}
-
       {/* Table */}
       <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden mb-4">
         {isLoading ? (
@@ -690,6 +661,7 @@ export default function PayeesPage() {
             ))}
           </div>
         ) : (
+          <>
           <Table>
             <TableHeader>
               <TableRow className="border-b border-border hover:bg-transparent">
@@ -707,7 +679,7 @@ export default function PayeesPage() {
                 <TableHead className="text-xs font-medium text-muted-foreground py-3 w-[32px]" />
                 <TableHead
                   aria-sort={sort.by === 'name' ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}
-                  className="text-xs font-medium text-muted-foreground py-3"
+                  className="text-xs font-medium text-muted-foreground py-3 w-full max-w-0"
                 >
                   <button
                     type="button"
@@ -751,7 +723,7 @@ export default function PayeesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sortedPayees.map((payee) => (
+              {pageItems.map((payee) => (
                 <TableRow
                   key={payee.id}
                   className={`cursor-pointer hover:bg-muted border-b border-border last:border-0 ${
@@ -797,10 +769,10 @@ export default function PayeesPage() {
                       />
                     )}
                   </TableCell>
-                  <TableCell className="py-2.5">
-                    <span className="text-sm font-semibold text-foreground">{payee.name}</span>
+                  <TableCell className="py-2.5 max-w-0 w-full">
+                    <p className="text-sm font-semibold text-foreground truncate" title={payee.name}>{payee.name}</p>
                     {payee.notes && (
-                      <p className="text-xs text-muted-foreground mt-0.5 truncate max-w-[300px]">{payee.notes}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5 truncate" title={payee.notes}>{payee.notes}</p>
                     )}
                   </TableCell>
                   <TableCell className="hidden py-2.5 text-left md:table-cell">
@@ -847,8 +819,75 @@ export default function PayeesPage() {
               )}
             </TableBody>
           </Table>
+
+          {/* Pagination. Inside the card so the strip reads as part of the
+              table rather than as loose controls under it. */}
+          {sortedPayees.length > 10 && (
+            <div className="px-5 py-3 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-4">
+              {totalPages > 1 ? (
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={safePage <= 1}
+                    onClick={() => setPage(safePage - 1)}
+                  >
+                    {t('common.previous')}
+                  </Button>
+                  <span className="text-sm text-muted-foreground tabular-nums">
+                    {safePage} / {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={safePage >= totalPages}
+                    onClick={() => setPage(safePage + 1)}
+                  >
+                    {t('common.next')}
+                  </Button>
+                </div>
+              ) : (
+                <div className="hidden sm:block" />
+              )}
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">{t('common.rowsPerPage')}</span>
+                <Select
+                  value={String(pageSize)}
+                  onValueChange={(value) => {
+                    setPageSize(Number(value))
+                    setPage(1)
+                  }}
+                >
+                  <SelectTrigger className="w-[70px] h-8 text-xs">
+                    <SelectValue placeholder={pageSize} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAGE_SIZES.map((value) => (
+                      <SelectItem key={value} value={String(value)}>{value}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+          </>
         )}
       </div>
+
+      {/* Payee detail. Edit and Delete open on top of it rather than replacing
+          it, so cancelling either lands back on the payee instead of the
+          bare table. */}
+      <PayeeDetailDialog
+        payee={detailPayee}
+        canWrite={canWrite}
+        onOpenChange={(open) => { if (!open) setSummaryPayee(null) }}
+        onEdit={openEdit}
+        onDelete={(payee) => {
+          setPayeesToDelete([payee.id])
+          setDeleteDialogOpen(true)
+        }}
+      />
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

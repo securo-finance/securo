@@ -15,7 +15,7 @@
  * Page context: each send forwards a `page_context` snapshot built
  * from the active page's registration (or a synthesized fallback).
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Dialog as DialogPrimitive } from 'radix-ui'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
@@ -140,12 +140,14 @@ export function GlobalChatPanel({ open, onOpenChange }: Props) {
   // When the panel opens, default the inner view to chat (history view
   // is opt-in). Conversation itself is NOT reset — the user explicitly
   // clicks + to start a new one.
-  useEffect(() => {
+  const [panelSource, setPanelSource] = useState<{ open: typeof open } | null>(null)
+  if (!panelSource || panelSource.open !== open) {
+    setPanelSource({ open })
     if (open) {
       setView('chat')
       setFocusBump((n) => n + 1)
     }
-  }, [open])
+  }
 
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
