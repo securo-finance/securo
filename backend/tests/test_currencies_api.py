@@ -194,3 +194,15 @@ async def test_currencies_include_cny_with_metadata(client: AsyncClient):
     assert cny["symbol"] == "¥"
     assert cny["name"] == "Chinese Yuan"
     assert cny["flag"] == "🇨🇳"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_jmd_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    jmd = next((currency for currency in data if currency["code"] == "JMD"), None)
+
+    assert jmd is not None
+    assert jmd["symbol"] == "J$"
+    assert jmd["name"] == "Jamaican Dollar"
+    assert jmd["flag"] == "🇯🇲"

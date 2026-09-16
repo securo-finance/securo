@@ -46,6 +46,7 @@ CURRENCY_META = {
     "THB": {"symbol": "\u0e3f", "name": "Thai Baht", "flag": "\U0001F1F9\U0001F1ED"},
     "EGP": {"symbol": "E£", "name": "Egyptian Pound", "flag": "\U0001F1EA\U0001F1EC"},
     "MYR": {"symbol": "RM", "name": "Malaysian Ringgit", "flag": "\U0001F1F2\U0001F1FE"},
+    "JMD": {"symbol": "J$", "name": "Jamaican Dollar", "flag": "\U0001F1EF\U0001F1F2"},
 }
 
 
