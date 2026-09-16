@@ -4,12 +4,12 @@ import { formatDateRange } from './date-range-format'
 
 describe('formatDateRange', () => {
   it('formats a closed range with the year by default', () => {
-    expect(formatDateRange('2025-09-26', '2026-01-30', 'en-US')).toBe('Sep 26, 2025 — Jan 30, 2026')
+    expect(formatDateRange('2025-09-26', '2026-01-30', 'en-US')).toBe('Sep 26, 2025 - Jan 30, 2026')
   })
 
   it('drops the year in compact mode, even across a year boundary', () => {
     expect(formatDateRange('2025-09-26', '2026-01-30', 'en-US', { compact: true })).toBe(
-      'Sep 26 — Jan 30',
+      'Sep 26 - Jan 30',
     )
   })
 

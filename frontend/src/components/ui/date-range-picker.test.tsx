@@ -53,7 +53,7 @@ describe('DateRangePicker — segment variant', () => {
     // the same compact (no-year) form as the transactions filter bar's
     // applied-range chip.
     const trigger = screen.getByRole('button', { name: 'Custom' })
-    expect(trigger).toHaveTextContent(`${fmtCompact('2026-03-01')} — ${fmtCompact('2026-03-10')}`)
+    expect(trigger).toHaveTextContent(`${fmtCompact('2026-03-01')} - ${fmtCompact('2026-03-10')}`)
     expect(trigger).not.toHaveTextContent('2026')
   })
 
@@ -73,7 +73,7 @@ describe('DateRangePicker — segment variant', () => {
     // would need to disambiguate — the segment still drops it, since the
     // year is visible while the calendar itself is open.
     expect(screen.getByRole('button', { name: 'Custom' })).toHaveTextContent(
-      `${fmtCompact('2025-09-26')} — ${fmtCompact('2026-01-30')}`,
+      `${fmtCompact('2025-09-26')} - ${fmtCompact('2026-01-30')}`,
     )
   })
 

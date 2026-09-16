@@ -89,7 +89,7 @@ describe('Reports page — Custom range segment', () => {
       })
     expect(
       screen.getByRole('button', { name: t('reports.customRange') }),
-    ).toHaveTextContent(`${fmt(`${year}-01-01`)} — ${fmt('2026-09-12')}`)
+    ).toHaveTextContent(`${fmt(`${year}-01-01`)} - ${fmt('2026-09-12')}`)
   })
 
   it('is not offered on the Cash Flow tab', async () => {

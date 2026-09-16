@@ -23,7 +23,7 @@ export function formatDateRange(
       month: 'short',
       ...(compact ? {} : { year: 'numeric' as const }),
     })
-  if (from && to) return `${fmt(from)} — ${fmt(to)}`
+  if (from && to) return `${fmt(from)} - ${fmt(to)}`
   if (from) return `≥ ${fmt(from)}`
   return `≤ ${fmt(to)}`
 }
