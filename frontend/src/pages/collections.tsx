@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -168,12 +168,14 @@ function CollectionDialog({
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [selectedWallets, setSelectedWallets] = useState<Set<string>>(new Set())
 
-  useEffect(() => {
+  const [formSource, setFormSource] = useState<{ collection: typeof collection; open: typeof open } | null>(null)
+  if (!formSource || formSource.collection !== collection || formSource.open !== open) {
+    setFormSource({ collection, open })
     setName(collection?.name ?? '')
     setColor(collection?.color ?? SWATCHES[0])
     setSelected(new Set(collection?.account_ids ?? []))
     setSelectedWallets(new Set(collection?.wallet_ids ?? []))
-  }, [collection, open])
+  }
 
   const toggleIn = (setter: typeof setSelected) => (id: string) =>
     setter((prev) => {

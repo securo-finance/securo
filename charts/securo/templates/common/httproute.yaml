@@ -14,6 +14,13 @@ spec:
     - matches:
         - path:
             type: PathPrefix
+            value: /api
+      backendRefs:
+        - name: {{ include "securo.fullname" . }}-backend
+          port: {{ .Values.backend.service.port }}
+    - matches:
+        - path:
+            type: PathPrefix
             value: /
       backendRefs:
         - name: {{ include "securo.fullname" . }}-frontend

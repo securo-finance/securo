@@ -3,10 +3,12 @@ import hashlib
 import io
 import re
 import uuid
+import warnings
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from decimal import Decimal
 
+from bs4 import XMLParsedAsHTMLWarning
 from ofxparse import OfxParser
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,7 +19,7 @@ from app.models.category import Category
 from app.models.rule import Rule
 from app.models.transaction import Transaction
 from app.schemas.transaction import TransactionImport, FailedRow
-from app.services import recurring_match_service
+from app.services import reconciliation_service, recurring_match_service
 from app.services.credit_card_service import apply_effective_date
 from app.services.category_service import get_hidden_category_ids
 from app.services.rule_engine import apply_rule_actions, evaluate_conditions, merge_notes
@@ -139,7 +141,25 @@ def _is_balance_summary_row(description: str | None) -> bool:
 def parse_ofx(content: bytes) -> list[TransactionImport]:
     """Parse OFX file content and return transactions."""
     content = _preprocess_ofx(content)
-    ofx = OfxParser.parse(io.BytesIO(content))
+    # ofxparse 0.21 intentionally parses normalized SGML/XML with html.parser
+    # and still calls BeautifulSoup's findAll alias. Keep this compatibility
+    # boundary local; remove it when ofxparse adopts the supported soup API.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=(
+                r"^Call to deprecated method findAll\. \(Replaced by find_all\) "
+                r"-- Deprecated since version 4\.0\.0\.$"
+            ),
+            category=DeprecationWarning,
+            module=r"^ofxparse\.ofxparse$",
+        )
+        warnings.filterwarnings(
+            "ignore",
+            category=XMLParsedAsHTMLWarning,
+            module=r"^ofxparse\.ofxparse$",
+        )
+        ofx = OfxParser.parse(io.BytesIO(content))
     transactions = []
 
     for account in ofx.accounts:
@@ -745,6 +765,7 @@ async def import_transactions(
     }
 
     imported = 0
+    landed: list[Transaction] = []
     skipped = 0
     effective_format = (detected_format or source or "").lower()
     should_detect_duplicates = detect_duplicates if effective_format == "csv" else True
@@ -904,9 +925,16 @@ async def import_transactions(
             await stamp_primary_amount(session, user_id, incoming)
 
         imported += 1
+        landed.append(incoming)
 
     # Update import log with actual imported count
     import_log.transaction_count = imported
+
+    # Invoices last, and as one batch. Unlike the recurring match above:
+    # which upgrades a placeholder in place and so must happen before the
+    # row is written: settling an invoice creates an allocation pointing
+    # at a transaction, which has to exist first.
+    await reconciliation_service.match_incoming(session, workspace_id, landed)
 
     await session.commit()
     return imported, skipped, excluded_count, import_log.id

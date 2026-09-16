@@ -10,6 +10,7 @@ Pattern:
   - We patch `_provider_for` and pass our fake MCP into AgentExecutor.
 """
 import uuid
+from copy import deepcopy
 from typing import AsyncIterator
 from unittest.mock import patch
 
@@ -45,10 +46,12 @@ class _ScriptedProvider(LLMProvider):
     def __init__(self, turns: list[list[ChatChunk]]):
         super().__init__(api_key="x")
         self._turns = list(turns)
+        self.requests = []
 
     async def chat_stream(  # type: ignore[override]
         self, messages, *, model, tools=None, temperature=0.4, max_tokens=None
     ) -> AsyncIterator[ChatChunk]:
+        self.requests.append(deepcopy(messages))
         if not self._turns:
             # No more scripted turns — emit a generic finish.
             yield ChatChunk(type="finish", finish_reason="stop")
@@ -160,7 +163,8 @@ async def test_usage_row_recorded(session, test_user, test_agent, test_conversat
     assert float(rows[0].cost_usd) > 0
 
 
-async def test_tool_call_dispatch_and_result_persisted(session, test_user, test_agent, test_conversation):
+@pytest.mark.parametrize("signature", [None, "opaque-signature+/=="])
+async def test_tool_call_dispatch_and_result_persisted(session, test_user, test_agent, test_conversation, signature):
     """LLM emits a tool call; executor runs it via fake MCP and feeds the
     result back; second turn returns a plain answer."""
     tools = [ToolHandle(server="securo", name="list_accounts", description="d", parameters={"type": "object"})]
@@ -173,7 +177,7 @@ async def test_tool_call_dispatch_and_result_persisted(session, test_user, test_
         [
             ChatChunk(type="tool_call_start", tool_call_id="t1", tool_name="securo__list_accounts"),
             ChatChunk(type="tool_call_args_delta", tool_call_id="t1", args_delta="{}"),
-            ChatChunk(type="tool_call_end", tool_call_id="t1"),
+            ChatChunk(type="tool_call_end", tool_call_id="t1", thought_signature=signature),
             ChatChunk(type="usage", usage=Usage(input_tokens=20, output_tokens=5)),
             ChatChunk(type="finish", finish_reason="tool_calls"),
         ],
@@ -219,6 +223,24 @@ async def test_tool_call_dispatch_and_result_persisted(session, test_user, test_
         select(LlmUsage).where(LlmUsage.conversation_id == test_conversation.id)
     )).scalars().all()
     assert len(usage_rows) == 2
+
+    saved_call = msgs[1].tool_calls[0]
+    if signature is None:
+        assert "thought_signature" not in saved_call
+    else:
+        assert saved_call["thought_signature"] == signature
+    replayed = [tc for m in provider.requests[1] for tc in m.tool_calls]
+    assert replayed[0].thought_signature == signature
+
+    # Start a separate request so history is reconstructed from persisted JSON.
+    session.expire(msgs[1])
+    with _patch_provider(provider):
+        await _drain(
+            executor, session=session, agent=test_agent, user_id=test_user.id,
+            conversation_id=test_conversation.id, user_message="thanks",
+        )
+    restored = [tc for m in provider.requests[2] for tc in m.tool_calls]
+    assert restored[0].thought_signature == signature
 
 
 async def test_provider_auth_error_surfaced_as_friendly_message(
