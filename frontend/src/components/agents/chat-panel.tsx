@@ -1,3 +1,4 @@
+import { isProposalData, isProposalToolName } from '@/lib/agent-proposals'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ShellLogo } from '@/components/shell-logo'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -9,7 +10,7 @@ import type { Agent, AgentMessage } from '@/lib/api'
 import { streamChat, type AgentStreamEvent } from '@/lib/agents-stream'
 import { Markdown } from '@/components/agents/markdown'
 import { ToolDebugChip } from '@/components/agents/tool-debug-chip'
-import { ProposalCard, isProposalData, isProposalToolName } from '@/components/agents/proposal-card'
+import { ProposalCard } from '@/components/agents/proposal-card'
 
 interface Props {
   agent: Agent
