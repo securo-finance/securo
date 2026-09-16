@@ -143,6 +143,36 @@ async def test_currencies_include_mdl_with_metadata(client: AsyncClient):
     assert mdl["symbol"] == "L"
     assert mdl["name"] == "Moldovan Leu"
     assert mdl["flag"] == "🇲🇩"
+async def test_currencies_include_aed_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    aed = next((currency for currency in data if currency["code"] == "AED"), None)
+
+    assert aed is not None
+    assert aed["symbol"] == "د.إ"
+    assert aed["name"] == "UAE Dirham"
+    assert aed["flag"] == "🇦🇪"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_thb_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    thb = next((currency for currency in data if currency["code"] == "THB"), None)
+
+    assert thb is not None
+    assert thb["symbol"] == "฿"
+    assert thb["name"] == "Thai Baht"
+    assert thb["flag"] == "🇹🇭"
+async def test_currencies_include_egp_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    egp = next((currency for currency in data if currency["code"] == "EGP"), None)
+
+    assert egp is not None
+    assert egp["symbol"] == "E£"
+    assert egp["name"] == "Egyptian Pound"
+    assert egp["flag"] == "🇪🇬"
 async def test_currencies_include_myr_with_metadata(client: AsyncClient):
     response = await client.get("/api/currencies")
     data = response.json()

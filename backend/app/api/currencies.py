@@ -42,6 +42,9 @@ CURRENCY_META = {
     "TRY": {"symbol": "₺", "name": "Turkish Lira", "flag": "\U0001F1F9\U0001F1F7"},
     "PKR": {"symbol": "₨", "name": "Pakistani Rupee", "flag": "\U0001F1F5\U0001F1F0"},
     "MDL": {"symbol": "L", "name": "Moldovan Leu", "flag": "\U0001F1F2\U0001F1E9"},
+    "AED": {"symbol": "د.إ", "name": "UAE Dirham", "flag": "\U0001F1E6\U0001F1EA"},
+    "THB": {"symbol": "\u0e3f", "name": "Thai Baht", "flag": "\U0001F1F9\U0001F1ED"},
+    "EGP": {"symbol": "E£", "name": "Egyptian Pound", "flag": "\U0001F1EA\U0001F1EC"},
     "MYR": {"symbol": "RM", "name": "Malaysian Ringgit", "flag": "\U0001F1F2\U0001F1FE"},
 }
 
