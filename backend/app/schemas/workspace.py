@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.models.workspace import WorkspaceKind
 
@@ -34,8 +34,7 @@ class WorkspaceRead(BaseModel):
     # sees a module the server thinks is off.
     enabled_modules: list[str] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class WorkspaceCreate(BaseModel):
@@ -76,8 +75,7 @@ class MemberRead(BaseModel):
     role: str
     joined_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class MemberInvite(BaseModel):

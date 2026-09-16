@@ -119,3 +119,48 @@ async def test_currencies_include_try_with_metadata(client: AsyncClient):
     assert turkish_lira["symbol"] == "₺"
     assert turkish_lira["name"] == "Turkish Lira"
     assert turkish_lira["flag"] == "🇹🇷"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_pkr_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    pkr = next((currency for currency in data if currency["code"] == "PKR"), None)
+
+    assert pkr is not None
+    assert pkr["symbol"] == "₨"
+    assert pkr["name"] == "Pakistani Rupee"
+    assert pkr["flag"] == "🇵🇰"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_mdl_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    mdl = next((currency for currency in data if currency["code"] == "MDL"), None)
+
+    assert mdl is not None
+    assert mdl["symbol"] == "L"
+    assert mdl["name"] == "Moldovan Leu"
+    assert mdl["flag"] == "🇲🇩"
+async def test_currencies_include_aed_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    aed = next((currency for currency in data if currency["code"] == "AED"), None)
+
+    assert aed is not None
+    assert aed["symbol"] == "د.إ"
+    assert aed["name"] == "UAE Dirham"
+    assert aed["flag"] == "🇦🇪"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_thb_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    thb = next((currency for currency in data if currency["code"] == "THB"), None)
+
+    assert thb is not None
+    assert thb["symbol"] == "฿"
+    assert thb["name"] == "Thai Baht"
+    assert thb["flag"] == "🇹🇭"

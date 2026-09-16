@@ -15,5 +15,6 @@ from mcp_server.tools import (  # noqa: F401
     lifecycle,
     groups,
     forecast,
+    rules,
 )
 

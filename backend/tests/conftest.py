@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import AsyncGenerator
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 # --- Agents test setup (must run BEFORE app.main is imported) ---------------
 # Force the optional agents feature on for the test process so the routes
@@ -12,6 +12,10 @@ from unittest.mock import AsyncMock, patch
 os.environ.setdefault("AGENTS_ENABLED", "true")
 os.environ.setdefault("AGENTS_MCP_JWT_SECRET", "test-secret-not-for-production")
 os.environ.setdefault("AGENTS_BUILTIN_MCP_URL", "http://test-mcp:8765/mcp")
+# Tests use synthetic credentials, never local deployment secrets. Explicit
+# Settings(_secrets_dir=...) tests still exercise secret-file loading.
+os.environ["SECRET_KEY"] = "synthetic-test-signing-key-not-for-production"
+os.environ["CREDENTIALS_DIRECTORY"] = ""
 
 # pgvector's Vector type only compiles on PostgreSQL. Tests use SQLite, so
 # we shim it with JSON before any model module imports it. Production runs
@@ -93,10 +97,23 @@ engine = create_async_engine(
 TestSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
-# SQLite doesn't support PostgreSQL UUID type natively — SQLAlchemy handles the
-# mapping automatically when we create tables via Base.metadata (it converts
-# PostgreSQL UUID to CHAR(32)). We just need to make sure we use string-based
-# UUID comparisons.
+# The models declare ids with the PostgreSQL UUID type, and on SQLite the
+# DDL comes out as a literal `UUID`. SQLite does not know that type, so the
+# column gets NUMERIC affinity, and any stored text that parses as a number
+# is silently converted to one. A uuid4 hex made only of digits, or of digits
+# with a single "e" ("6778776194704156e000000000000016" is valid scientific
+# notation), comes back as a float and uuid.UUID() raises. With tens of
+# thousands of ids per run that hit roughly one run in ten, on whatever test
+# happened to draw the number. Declaring the column as CHAR(32) gives it TEXT
+# affinity, which is what the hex string needs. Test-only: Postgres keeps its
+# native type.
+from sqlalchemy.dialects.postgresql import UUID as _PgUUID  # noqa: E402
+from sqlalchemy.ext.compiler import compiles  # noqa: E402
+
+
+@compiles(_PgUUID, "sqlite")
+def _pg_uuid_as_text_on_sqlite(type_, compiler, **kw):
+    return "CHAR(32)"
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session", autouse=True)
@@ -559,12 +576,14 @@ async def test_user_with_2fa(session: AsyncSession, clean_db) -> User:
 def _mock_redis():
     """Provide a no-op Redis mock so rate limiting never blocks tests."""
     mock = AsyncMock()
-    # Pipeline mock that always reports 0 prior requests (never rate-limits)
-    pipe_mock = AsyncMock()
-    pipe_mock.zremrangebyscore = AsyncMock()
-    pipe_mock.zcard = AsyncMock()
-    pipe_mock.zadd = AsyncMock()
-    pipe_mock.expire = AsyncMock()
+    # Pipeline commands are synchronous/chained on redis-py's pipeline; only
+    # execute() is awaited. Match that contract so requests create no unawaited
+    # mock coroutines, while still reporting zero prior requests.
+    pipe_mock = MagicMock()
+    pipe_mock.zremrangebyscore = MagicMock(return_value=pipe_mock)
+    pipe_mock.zcard = MagicMock(return_value=pipe_mock)
+    pipe_mock.zadd = MagicMock(return_value=pipe_mock)
+    pipe_mock.expire = MagicMock(return_value=pipe_mock)
     pipe_mock.execute = AsyncMock(return_value=[0, 0, True, True])
     mock.pipeline = lambda: pipe_mock
     # Key-value ops for 2FA temp tokens
