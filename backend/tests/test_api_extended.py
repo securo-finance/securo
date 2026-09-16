@@ -194,8 +194,7 @@ async def test_install_rule_pack(client: AsyncClient, auth_headers, test_categor
     # First list packs to get a valid code
     packs_resp = await client.get("/api/rules/packs", headers=auth_headers)
     packs = packs_resp.json()
-    if not packs:
-        pytest.skip("No rule packs available")
+    assert packs, "the bundled rule packs must be available"
 
     pack_code = packs[0]["code"]
     response = await client.post(

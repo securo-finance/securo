@@ -22,8 +22,8 @@ from app.providers.base import (
     ProviderUserActionRequired,
     TransactionData,
 )
+from app.services.text_similarity import token_overlap
 from app.services.connection_service import (
-    _description_similarity,
     _match_pluggy_category,
     create_connect_token,
     delete_connection,
@@ -78,31 +78,31 @@ async def _make_category(
 
 
 def test_description_similarity_identical():
-    assert _description_similarity("hello world", "hello world") == 1.0
+    assert token_overlap("hello world", "hello world") == 1.0
 
 
 def test_description_similarity_partial():
-    score = _description_similarity("hello world foo", "hello world bar")
+    score = token_overlap("hello world foo", "hello world bar")
     assert 0.0 < score < 1.0
 
 
 def test_description_similarity_no_overlap():
-    assert _description_similarity("abc", "xyz") == 0.0
+    assert token_overlap("abc", "xyz") == 0.0
 
 
 def test_description_similarity_none():
-    assert _description_similarity(None, "hello") == 0.0
-    assert _description_similarity("hello", None) == 0.0
-    assert _description_similarity(None, None) == 0.0
+    assert token_overlap(None, "hello") == 0.0
+    assert token_overlap("hello", None) == 0.0
+    assert token_overlap(None, None) == 0.0
 
 
 def test_description_similarity_empty():
-    assert _description_similarity("", "hello") == 0.0
-    assert _description_similarity("hello", "") == 0.0
+    assert token_overlap("", "hello") == 0.0
+    assert token_overlap("hello", "") == 0.0
 
 
 def test_description_similarity_case_insensitive():
-    score = _description_similarity("Hello World", "hello world")
+    score = token_overlap("Hello World", "hello world")
     assert score == 1.0
 
 

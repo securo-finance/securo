@@ -106,11 +106,9 @@ async def update_recurring_transaction(
 
     update_data = data.model_dump(exclude_unset=True)
 
-    if (
-        "weekend_adjustment" in update_data
-        and update_data["weekend_adjustment"] is None
-    ):
-        raise ValueError("weekend_adjustment is required")
+    for required in ("weekend_adjustment", "start_date", "frequency"):
+        if required in update_data and update_data[required] is None:
+            raise ValueError(f"{required} is required")
 
     # A recurring transaction must always have an account — reject an explicit
     # null, and verify ownership of any new account_id.
@@ -121,8 +119,22 @@ async def update_recurring_transaction(
         if new_account_id != recurring.account_id:
             await _verify_account_in_workspace(session, workspace_id, new_account_id)
 
+    schedule_changed = any(
+        key in update_data and update_data[key] != getattr(recurring, key)
+        for key in _SCHEDULE_FIELDS
+    )
+    previous_next_occurrence = recurring.next_occurrence
+
     for key, value in update_data.items():
         setattr(recurring, key, value)
+
+    if schedule_changed:
+        recurring.next_occurrence = _first_occurrence_on_or_after(
+            recurring.start_date,
+            recurring.frequency,
+            intended_day=recurring.day_of_month or recurring.start_date.day,
+            floor=previous_next_occurrence,
+        )
 
     await session.commit()
     await session.refresh(recurring)
@@ -179,6 +191,28 @@ def _advance_date(
 
     # Preserve the existing monthly fallback for unknown legacy values.
     return _advance_months(current, 1, target_day)
+
+
+# Fields the occurrence schedule is derived from; changing any of them moves
+# the next_occurrence pointer.
+_SCHEDULE_FIELDS = ("start_date", "day_of_month", "frequency")
+
+
+def _first_occurrence_on_or_after(
+    start: date, frequency: str, intended_day: Optional[int], floor: date,
+) -> date:
+    """Return the first occurrence of the schedule on or after ``floor``.
+
+    The schedule starts at ``start``, as on creation. ``floor`` is the pointer
+    before the edit: every occurrence before it was already generated or
+    matched, so the new pointer never moves behind it. That keeps an edit from
+    backfilling past periods or repeating one that was already charged, while a
+    ``start`` later than ``floor`` still defers the rule to ``start``.
+    """
+    current = start
+    while current < floor:
+        current = _advance_date(current, frequency, intended_day=intended_day)
+    return current
 
 
 def adjust_weekend_date(

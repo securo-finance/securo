@@ -34,6 +34,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
+import { InvoiceSuggestions } from '@/components/invoice-suggestions'
 import {
   IconAction,
   SectionCard,
@@ -544,6 +545,11 @@ export default function InvoiceDetailPage() {
               </div>
             </SectionCard>
           )}
+
+          {/* Above the payments, because it is a question about them and
+              because an answer here changes the list below. Renders
+              nothing when nothing is waiting. */}
+          <InvoiceSuggestions invoiceId={invoice.id} canWrite={canWrite} />
 
           <SectionCard>
             <SectionHeader
