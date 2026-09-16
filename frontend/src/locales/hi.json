@@ -576,8 +576,6 @@
     "addToExistingRuleTitle": "लेन-देन को नियम में जोड़ें",
     "addToExistingRuleDescription": "कोई सक्रिय श्रेणी नियम चुनें और इस लेन-देन के विवरण को भविष्य के एक और मिलान के रूप में जोड़ें।",
     "existingRule": "मौजूदा नियम",
-    "matchOperator": "मिलान प्रकार",
-    "matchText": "विवरण मिलान",
     "assignRule": "नियम में जोड़ें",
     "noExistingRules": "कोई सक्रिय श्रेणी नियम उपलब्ध नहीं",
     "addedToExistingRule": "नियम अपडेट हुआ। भविष्य के मिलान इस श्रेणी का उपयोग करेंगे।",

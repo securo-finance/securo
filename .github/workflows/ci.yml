@@ -61,7 +61,7 @@ jobs:
           # the lock) and hand it to pip with hash checking, so CI installs
           # exactly the audited versions.
           # renovate: datasource=pypi depName=uv
-          pip install -q uv==0.12.10
+          pip install -q uv==0.12.15
           uv export --frozen --all-extras --no-emit-project -o /tmp/requirements-dev.txt
           pip install --require-hashes -r /tmp/requirements-dev.txt
           pip install --no-deps -e .
@@ -189,7 +189,7 @@ jobs:
         if: steps.helm-changes.outputs.run_helm == 'true'
         uses: azure/setup-helm@v5
         with:
-          version: v4.2.4
+          version: v4.3.0
 
       - name: Lint Helm Chart
         if: steps.helm-changes.outputs.run_helm == 'true'

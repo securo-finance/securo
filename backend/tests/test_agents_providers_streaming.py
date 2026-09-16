@@ -1,5 +1,5 @@
 """Coverage for the streaming chat + embed paths in
-app/agents/providers/{ollama,anthropic}.py. Both providers open
+app/agents/providers/{openai,ollama,anthropic}.py. These providers open
 httpx.AsyncClient.stream(...) inline, so we replace AsyncClient with a
 fake whose stream() yields a pre-baked SSE/JSONL response.
 """
@@ -23,6 +23,8 @@ from app.agents.providers.base import (
     ToolDefinition,
 )
 from app.agents.providers.ollama import OllamaProvider
+from app.agents.providers.openai import OpenAIProvider
+from app.agents.providers.openai_compatible import OpenAICompatibleProvider
 
 
 # --------------------------------------------------------------------- httpx fake
@@ -87,6 +89,62 @@ def _fake_httpx(monkeypatch):
     monkeypatch.setattr(ollama_module.httpx, "AsyncClient", _FakeAsyncClient)
     monkeypatch.setattr(anthropic_module.httpx, "AsyncClient", _FakeAsyncClient)
     yield
+
+
+# --------------------------------------------------------------------- OpenAI-compatible: chat_stream
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider_class", [OpenAICompatibleProvider, OpenAIProvider])
+@pytest.mark.parametrize("signature_timing", ["first", "late", "absent"])
+async def test_openai_tool_signatures_survive_multiple_rounds(provider_class, signature_timing):
+    """Keep signatures on their own calls across parallel and sequential tools."""
+    def response(deltas):
+        return _FakeStreamResponse(status_code=200, lines=[
+            "data: " + json.dumps({"choices": [{"delta": delta}]}) for delta in deltas
+        ] + ['data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}', "data: [DONE]"])
+
+    signature_a = "opaque-A+/=="
+    first = {"index": 0, "id": "a", "function": {"name": "lookup", "arguments": '{"city":'}}
+    extra_a = {"google": {"thought_signature": signature_a}}
+    if signature_timing == "first":
+        first["extra_content"] = extra_a
+    deltas = [
+        {"tool_calls": [first]},
+        {"tool_calls": [{"index": 1, "id": "b", "function": {"name": "lookup", "arguments": "{}"}}]},
+        {"tool_calls": [{"index": 0, "function": {"arguments": '"Paris"}'}}]},
+    ]
+    if signature_timing == "late":
+        deltas.append({"tool_calls": [{"index": 0, "extra_content": extra_a}]})
+    second_call = {"index": 0, "id": "c", "function": {"name": "lookup", "arguments": "{}"}}
+    if signature_timing != "absent":
+        second_call["extra_content"] = {"google": {"thought_signature": "opaque-B=="}}
+    _FakeAsyncClient.queue_stream.extend([
+        response(deltas), response([{"tool_calls": [second_call]}]),
+        response([{"content": "Done"}]),
+    ])
+    provider = provider_class(base_url="https://generativelanguage.googleapis.com/v1beta/openai")
+    messages = [ChatMessage(role="user", content="Look up cities")]
+    for round_index in range(2):
+        result = await provider.chat(messages, model="gemini-test")
+        if round_index == 0:
+            assert [tc.id for tc in result.tool_calls] == ["a", "b"]
+            assert result.tool_calls[0].arguments == {"city": "Paris"}
+        messages.append(ChatMessage(role="assistant", tool_calls=result.tool_calls))
+        messages.extend(ChatMessage(role="tool", tool_call_id=tc.id, content="ok") for tc in result.tool_calls)
+    await provider.chat(messages, model="gemini-test")
+
+    assert len(_FakeAsyncClient.posted) == 3
+    for url, payload in _FakeAsyncClient.posted:
+        assert url == "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+        for message in payload["messages"]:
+            for call in message.get("tool_calls", []):
+                if signature_timing == "absent" or call["id"] == "b":
+                    assert set(call) == {"id", "type", "function"}
+                else:
+                    expected = signature_a if call["id"] == "a" else "opaque-B=="
+                    assert call["extra_content"] == {"google": {"thought_signature": expected}}
+    final_calls = [tc for m in _FakeAsyncClient.posted[-1][1]["messages"] for tc in m.get("tool_calls", [])]
+    assert [tc["id"] for tc in final_calls] == ["a", "b", "c"]
 
 
 # --------------------------------------------------------------------- Ollama: chat_stream
