@@ -121,7 +121,7 @@ def _raise_if_oversell(transactions: list[AssetTransaction]) -> None:
         attempted, available = over
         fmt = lambda q: f"{q:.6f}".rstrip("0").rstrip(".")  # noqa: E731
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=(
                 f"Cannot sell {fmt(attempted)} units — only {fmt(available)} held at that date. "
                 "Short positions aren't supported."
@@ -233,17 +233,17 @@ async def list_workspace_transactions(
 def _validate(kind: str, quantity: Decimal, price: Decimal) -> None:
     if kind not in _VALID_KINDS:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="kind must be 'buy' or 'sell'",
         )
     if quantity is None or quantity <= 0:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="quantity must be > 0",
         )
     if price is None or price < 0:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="price must be >= 0",
         )
 

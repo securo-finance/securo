@@ -1,6 +1,6 @@
 from datetime import datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -18,11 +18,11 @@ class _RedisStore:
         self.getdel = AsyncMock(side_effect=self._getdel)
         self.set = AsyncMock(side_effect=self._set)
         self.delete = AsyncMock(side_effect=self._delete)
-        pipe = AsyncMock()
-        pipe.zremrangebyscore = AsyncMock()
-        pipe.zcard = AsyncMock()
-        pipe.zadd = AsyncMock()
-        pipe.expire = AsyncMock()
+        pipe = MagicMock()
+        pipe.zremrangebyscore = MagicMock(return_value=pipe)
+        pipe.zcard = MagicMock(return_value=pipe)
+        pipe.zadd = MagicMock(return_value=pipe)
+        pipe.expire = MagicMock(return_value=pipe)
         pipe.execute = AsyncMock(return_value=[0, 0, True, True])
         self.pipeline = lambda: pipe
 
