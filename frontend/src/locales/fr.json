@@ -576,8 +576,6 @@
     "addToExistingRuleTitle": "Ajouter la transaction à une règle",
     "addToExistingRuleDescription": "Choisissez une règle de catégorisation active et ajoutez cette description de transaction comme correspondance future.",
     "existingRule": "Règle existante",
-    "matchOperator": "Type de correspondance",
-    "matchText": "Correspondance de description",
     "assignRule": "Ajouter à la règle",
     "noExistingRules": "Aucune règle de catégorisation active disponible",
     "addedToExistingRule": "Règle mise à jour. Les correspondances futures utiliseront cette catégorie.",
@@ -2453,8 +2451,5 @@
     "importConfirmTitle": "Importer les règles de rapprochement ?",
     "importConfirmDescription": "Le fichier {{file}} contient {{count}} règles.",
     "importOverwriteWarning": "L'import remplace les règles de rapprochement de cet espace, y compris leur ordre. C'est irréversible."
-  },
-  "currencies": {
-    "AED": "Dirham des Émirats arabes unis"
   }
 }

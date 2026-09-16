@@ -576,8 +576,6 @@
     "addToExistingRuleTitle": "Transaktion zur Regel hinzufügen",
     "addToExistingRuleDescription": "Wähle eine aktive Kategorieregel aus und füge diese Transaktionsbeschreibung als weiteres zukünftiges Suchkriterium hinzu.",
     "existingRule": "Bestehende Regel",
-    "matchOperator": "Übereinstimmungstyp",
-    "matchText": "Beschreibungs-Übereinstimmung",
     "assignRule": "Zur Regel hinzufügen",
     "noExistingRules": "Keine aktiven Kategorieregeln verfügbar",
     "addedToExistingRule": "Regel aktualisiert. Zukünftige Übereinstimmungen werden diese Kategorie verwenden.",
@@ -2453,8 +2451,5 @@
     "importConfirmTitle": "Abgleichsregeln importieren?",
     "importConfirmDescription": "Die Datei {{file}} enthält {{count}} Regeln.",
     "importOverwriteWarning": "Der Import ersetzt die Abgleichsregeln dieses Arbeitsbereichs samt ihrer Reihenfolge. Das lässt sich nicht rückgängig machen."
-  },
-  "currencies": {
-    "AED": "VAE-Dirham"
   }
 }

@@ -576,8 +576,6 @@
     "addToExistingRuleTitle": "Agregar transacción a una regla",
     "addToExistingRuleDescription": "Elige una regla de categoría activa y agrega la descripción de esta transacción como otra coincidencia futura.",
     "existingRule": "Regla existente",
-    "matchOperator": "Tipo de coincidencia",
-    "matchText": "Coincidencia en descripción",
     "assignRule": "Agregar a regla",
     "noExistingRules": "No hay reglas de categoría activas disponibles",
     "addedToExistingRule": "Regla actualizada. Las próximas coincidencias usarán esta categoría.",
@@ -2453,8 +2451,5 @@
     "importConfirmTitle": "¿Importar reglas de conciliación?",
     "importConfirmDescription": "El archivo {{file}} contiene {{count}} reglas.",
     "importOverwriteWarning": "La importación reemplaza las reglas de conciliación de este espacio, incluido su orden. No se puede deshacer."
-  },
-  "currencies": {
-    "AED": "Dírham de los EAU"
   }
 }

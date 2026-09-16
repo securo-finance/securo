@@ -576,8 +576,6 @@
     "addToExistingRuleTitle": "Voeg transactie toe aan regel",
     "addToExistingRuleDescription": "Kies een actieve categorieregel en voeg deze transactiebeschrijving toe als een nieuwe toekomstige match.",
     "existingRule": "Bestaande regel",
-    "matchOperator": "Overeenkomsttype",
-    "matchText": "Beschrijving komt overeen",
     "assignRule": "Toevoegen aan regel",
     "noExistingRules": "Geen actieve categorieregels beschikbaar",
     "addedToExistingRule": "Regel bijgewerkt. Toekomstige wedstrijden zullen deze categorie gebruiken.",
@@ -2454,8 +2452,5 @@
     "importConfirmTitle": "Koppelregels importeren?",
     "importConfirmDescription": "Bestand {{file}} bevat {{count}} regels.",
     "importOverwriteWarning": "Importeren vervangt de koppelregels van deze werkruimte, inclusief hun volgorde. Dit kan niet ongedaan worden gemaakt."
-  },
-  "currencies": {
-    "AED": "VAE-dirham"
   }
 }

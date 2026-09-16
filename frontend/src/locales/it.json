@@ -576,8 +576,6 @@
     "addToExistingRuleTitle": "Aggiungi transazione a una regola",
     "addToExistingRuleDescription": "Scegli una regola di categoria attiva e aggiungi la descrizione di questa transazione come futura corrispondenza.",
     "existingRule": "Regola esistente",
-    "matchOperator": "Tipo di corrispondenza",
-    "matchText": "Corrispondenza descrizione",
     "assignRule": "Aggiungi alla regola",
     "noExistingRules": "Nessuna regola di categoria attiva disponibile",
     "addedToExistingRule": "Regola aggiornata. Le prossime corrispondenze useranno questa categoria.",
@@ -2453,8 +2451,5 @@
     "importConfirmTitle": "Importare le regole di riconciliazione?",
     "importConfirmDescription": "Il file {{file}} contiene {{count}} regole.",
     "importOverwriteWarning": "L'importazione sostituisce le regole di riconciliazione di questo spazio, incluso il loro ordine. Non è reversibile."
-  },
-  "currencies": {
-    "AED": "Dirham degli EAU"
   }
 }

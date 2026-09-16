@@ -155,6 +155,9 @@ export function ProposalCard({ toolCallId, data }: Props) {
 }
 
 function kindTitle(kind: ProposalKind, t: ReturnType<typeof useTranslation>['t']): string {
+  if (kind === 'create_rule') return t('rules.newRule')
+  if (kind === 'update_rule') return t('rules.editRule')
+  if (kind === 'delete_rule') return t('rules.confirmDeleteTitle')
   return t(`agents.proposal.kind.${kind}`)
 }
 
@@ -182,6 +185,14 @@ function renderSummary(kind: ProposalKind, d: ProposalData, t: ReturnType<typeof
         pattern: String(p.match_pattern ?? '?'),
         category: String((p.category_name as string) ?? p.category_id ?? '?'),
       })
+    case 'create_rule':
+      return `“${String(p.name ?? '?')}”`
+    case 'update_rule': {
+      const changes = (d.changes || {}) as Record<string, unknown>
+      return `${String(tgt.name ?? '?')} → ${Object.keys(changes).join(', ')}`
+    }
+    case 'delete_rule':
+      return `“${String(tgt.name ?? '?')}”`
     case 'create_transaction':
       return t('agents.proposal.summary.createTransaction', {
         description: String(p.description ?? '?'),
@@ -311,6 +322,20 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
         is_active: true,
       })
       return r.id
+    }
+    case 'create_rule': {
+      const r = await rules.create(p as unknown as Parameters<typeof rules.create>[0])
+      return r.id
+    }
+    case 'update_rule': {
+      const id = String((data.target as Record<string, unknown>).id)
+      await rules.update(id, (data.changes || {}) as Parameters<typeof rules.update>[1])
+      return id
+    }
+    case 'delete_rule': {
+      const id = String((data.target as Record<string, unknown>).id)
+      await rules.delete(id)
+      return id
     }
     case 'create_transaction': {
       // If the proposal includes group splits, translate the agent's

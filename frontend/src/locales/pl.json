@@ -586,8 +586,6 @@
     "addToExistingRuleTitle": "Dodaj transakcję do reguły",
     "addToExistingRuleDescription": "Wybierz aktywną regułę kategorii i dodaj opis tej transakcji jako kolejne przyszłe dopasowanie.",
     "existingRule": "Istniejąca reguła",
-    "matchOperator": "Typ dopasowania",
-    "matchText": "Dopasowanie opisu",
     "assignRule": "Dodaj do reguły",
     "noExistingRules": "Brak aktywnych reguł kategorii",
     "addedToExistingRule": "Reguła zaktualizowana. Przyszłe dopasowania użyją tej kategorii.",
@@ -2558,8 +2556,5 @@
     "importConfirmTitle": "Zaimportować reguły dopasowania?",
     "importConfirmDescription": "Plik {{file}} zawiera {{count}} reguł.",
     "importOverwriteWarning": "Import zastępuje reguły dopasowania tej przestrzeni wraz z ich kolejnością. Tego nie da się cofnąć."
-  },
-  "currencies": {
-    "AED": "Dirham ZEA"
   }
 }
