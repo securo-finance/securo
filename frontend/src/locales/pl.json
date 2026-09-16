@@ -586,8 +586,6 @@
     "addToExistingRuleTitle": "Dodaj transakcję do reguły",
     "addToExistingRuleDescription": "Wybierz aktywną regułę kategorii i dodaj opis tej transakcji jako kolejne przyszłe dopasowanie.",
     "existingRule": "Istniejąca reguła",
-    "matchOperator": "Typ dopasowania",
-    "matchText": "Dopasowanie opisu",
     "assignRule": "Dodaj do reguły",
     "noExistingRules": "Brak aktywnych reguł kategorii",
     "addedToExistingRule": "Reguła zaktualizowana. Przyszłe dopasowania użyją tej kategorii.",
