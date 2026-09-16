@@ -8,8 +8,8 @@ fixing the UI labels separately, so the accounting terms are only ever used
 correctly. This migration preserves each deployment's existing behavior —
 only the stored value's name changes, not what it does.
 
-Revision ID: 086
-Revises: 085
+Revision ID: 090
+Revises: 089
 Create Date: 2026-09-03
 """
 
@@ -18,8 +18,8 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
-revision: str = "086"
-down_revision: Union[str, None] = "085"
+revision: str = "090"
+down_revision: Union[str, None] = "089"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
