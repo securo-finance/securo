@@ -164,6 +164,24 @@ async def test_currencies_include_thb_with_metadata(client: AsyncClient):
     assert thb["symbol"] == "฿"
     assert thb["name"] == "Thai Baht"
     assert thb["flag"] == "🇹🇭"
+async def test_currencies_include_egp_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    egp = next((currency for currency in data if currency["code"] == "EGP"), None)
+
+    assert egp is not None
+    assert egp["symbol"] == "E£"
+    assert egp["name"] == "Egyptian Pound"
+    assert egp["flag"] == "🇪🇬"
+async def test_currencies_include_myr_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    myr = next((currency for currency in data if currency["code"] == "MYR"), None)
+
+    assert myr is not None
+    assert myr["symbol"] == "RM"
+    assert myr["name"] == "Malaysian Ringgit"
+    assert myr["flag"] == "🇲🇾"
 
 
 @pytest.mark.asyncio
