@@ -22,6 +22,7 @@ from app.services._query_filters import (
     viewer_shared_pnl,
     viewer_shared_spending_by_category,
 )
+from app.services import invoice_forecast_service
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.recurring_transaction_service import get_occurrences_in_range
 from app.services.asset_service import get_asset_values_at
@@ -309,6 +310,28 @@ async def get_summary(
             projected_balance[account_currency] = (
                 projected_balance.get(account_currency, 0.0) + float(signed)
             )
+
+        # Money promised but not yet moved. An invoice is a claim rather
+        # than a movement, so it never entered here for free, and adding
+        # it before matching existed would have counted the same money
+        # twice: the open invoice and the pending bank credit that pays
+        # it. Only the *unallocated* balance is carried, so the moment a
+        # payment is linked the claim shrinks and the transaction above
+        # carries the forecast alone.
+        #
+        # Filtered by account? No. A claim has no account until it is
+        # paid, so narrowing the dashboard to one account cannot include
+        # it without inventing where the money will land.
+        # `is None`, not falsy: a collection holding only wallets narrows
+        # the report to an empty set of bank accounts, and an empty list
+        # means filtered to nothing rather than not filtered at all.
+        if account_ids is None:
+            for claim in await invoice_forecast_service.claims_in_range(
+                session, workspace_id, projection_start, month_end
+            ):
+                projected_balance[claim.currency] = (
+                    projected_balance.get(claim.currency, 0.0) + float(claim.signed)
+                )
 
     # Monthly income and expenses — exclude opening_balance so initial deposits
     # don't inflate the month's income figure. counts_as_user_pnl() skips

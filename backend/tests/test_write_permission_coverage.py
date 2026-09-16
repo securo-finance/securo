@@ -21,6 +21,7 @@ change it should survive.
 import pytest
 from fastapi.routing import APIRoute
 
+from app.core.auth import current_superuser
 from app.main import app
 
 MUTATING = {"POST", "PATCH", "PUT", "DELETE"}
@@ -96,6 +97,22 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     ("POST", "/api/fx-rates/refresh"): "refreshes instance-wide FX rates, no workspace data",
 }
 
+# These routes establish authentication (or end it), so requiring an existing
+# user would prevent the operation. All other exemptions still require a user.
+PUBLIC_ROUTES = {
+    ("POST", path) for path in (
+        "/login", "/logout", "/register", "/forgot-password", "/reset-password",
+        "/2fa/verify", "/passkeys/authenticate/options", "/passkeys/authenticate/verify",
+        "/passkeys/2fa/options", "/passkeys/2fa/verify", "/api/setup/create-admin",
+    )
+}
+WORKSPACE_READ_ROUTES = {
+    ("POST", path) for path in (
+        "/api/transactions/import/preview", "/api/assets/import/preview",
+        "/api/rules/preview", "/api/export/backup",
+    )
+}
+
 
 def _api_routes(routes):
     """Descend through FastAPI's lazily-included routers.
@@ -123,6 +140,10 @@ def _dependency_names(route: APIRoute) -> set[str]:
         seen.add(id(dependant))
         if dependant.call is not None:
             names.add(getattr(dependant.call, "__name__", str(dependant.call)))
+            # fastapi-users gives active-user and superuser closures the same
+            # name; compare identity before recording the stricter decision.
+            if dependant.call is current_superuser:
+                names.add("current_superuser")
         stack.extend(dependant.dependencies)
     return names
 
@@ -147,11 +168,20 @@ def test_the_walk_actually_finds_the_routes():
     "method,path", ALL_MUTATING, ids=[f"{m} {p}" for m, p in ALL_MUTATING]
 )
 def test_a_mutating_route_declares_a_permission_decision(method, path):
-    if (method, path) in ALLOWLIST:
-        pytest.skip(f"allowlisted: {ALLOWLIST[(method, path)]}")
-
     route = next(r for m, p, r in _mutating_routes() if (m, p) == (method, path))
     names = _dependency_names(route)
+    if (method, path) in ALLOWLIST:
+        assert ALLOWLIST[(method, path)].strip(), "an exemption needs a reason"
+        assert not names & WRITE_GATES, "remove the redundant write-gate exemption"
+        if (method, path) in PUBLIC_ROUTES:
+            assert "current_user_dependency" not in names, "login cannot require an existing user"
+        else:
+            assert "current_user_dependency" in names, "the exemption still requires authentication"
+        if (method, path) in WORKSPACE_READ_ROUTES:
+            assert "current_workspace" in names, "read-only does not mean cross-workspace"
+        if path.startswith("/api/admin/"):
+            assert "current_superuser" in names, "instance administration requires a superuser"
+        return
     assert names & WRITE_GATES, (
         f"{method} {path} mutates but reaches no write gate.\n"
         f"Add `ctx: WorkspaceContext = Depends(current_writable_workspace)`, "
@@ -165,6 +195,7 @@ def test_the_allowlist_has_no_stale_entries():
     reusing the path."""
     stale = sorted(set(ALLOWLIST) - set(ALL_MUTATING))
     assert stale == [], f"allowlist entries matching no route: {stale}"
+    assert PUBLIC_ROUTES | WORKSPACE_READ_ROUTES <= set(ALLOWLIST)
 
 
 def test_nothing_allowlisted_is_already_gated():

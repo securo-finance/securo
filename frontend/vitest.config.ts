@@ -11,9 +11,12 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify('0.0.0-test'),
   },
   resolve: {
-    alias: {
-      '@': path.resolve(import.meta.dirname, './src'),
-    },
+    alias: [
+      { find: '@', replacement: path.resolve(import.meta.dirname, './src') },
+      // The application uses the browser build; Node/jsdom needs PDF.js's
+      // supported Node entry point when testing real module imports.
+      { find: /^pdfjs-dist$/, replacement: 'pdfjs-dist/legacy/build/pdf.mjs' },
+    ],
   },
   test: {
     // jsdom for everything, not only the component tests. The pure-function

@@ -204,7 +204,16 @@ async def credit(session: AsyncSession, workspace, test_user) -> Transaction:
 
 
 async def create(session, workspace, user, **data):
-    payload = {"total": Decimal("1000.00"), "due_date": TODAY + timedelta(days=10)}
+    # `issue_date` is pinned to the module's TODAY rather than left to
+    # `create_invoice`'s wall-clock default. Without it the helper builds a
+    # due date from a frozen TODAY while the service stamps the real date, so
+    # every test here starts failing on its own once real time passes
+    # TODAY + 10 days, for no reason to do with the ledger.
+    payload = {
+        "total": Decimal("1000.00"),
+        "issue_date": TODAY,
+        "due_date": TODAY + timedelta(days=10),
+    }
     payload.update(data)
     invoice = await svc.create_invoice(session, workspace.id, user.id, payload)
     await session.commit()

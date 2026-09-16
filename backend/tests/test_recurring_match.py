@@ -12,6 +12,7 @@ from app.models.account import Account
 from app.models.transaction import Transaction
 from app.schemas.recurring_transaction import RecurringTransactionCreate
 from app.services import recurring_match_service as rms
+from app.services.text_similarity import token_overlap
 from app.services.recurring_transaction_service import (
     create_recurring_transaction,
     generate_pending,
@@ -76,17 +77,37 @@ async def _add_tx(session, test_user, test_workspace, account, **kw):
 
 
 def test_description_similarity():
-    assert rms._description_similarity("Netflix Sub", "netflix sub") == 1.0
-    assert rms._description_similarity("Netflix", "Spotify") == 0.0
-    assert rms._description_similarity(None, "x") == 0.0
+    """One implementation now, shared by the matching engine and the
+    bank-sync fuzzy merge. The bar it sets did not move."""
+    assert token_overlap("Netflix Sub", "netflix sub") == 1.0
+    assert token_overlap("Netflix", "Spotify") == 0.0
+    assert token_overlap(None, "x") == 0.0
 
 
 def test_match_window():
-    assert rms._match_window("weekly") == (2, 2)
-    assert rms._match_window("monthly") == (3, 5)
-    assert rms._match_window("yearly") == (3, 5)
-    assert rms._match_window("biweekly") == (3, 5)
-    assert rms._match_window("semiannual") == (3, 5)
+    """The windows are policy now rather than a function, and they are the
+    same windows.
+
+    Only weekly narrows, and the reason is arithmetic rather than taste: a
+    weekly bill sits seven days from its neighbours, and the shipped
+    window spans eight (three before, five after), so a charge could match
+    the wrong occurrence. Every other frequency is far enough apart that
+    the shipped window cannot reach the next one, which is why they all
+    read the same and why a new frequency needs no entry here unless its
+    occurrences fall closer together than eight days.
+    """
+    from app.services import reconciliation_policy
+
+    def window(frequency: str) -> tuple[int, int]:
+        rule = reconciliation_policy.for_recurring(frequency)["strategies"][0]["when"]
+        return rule["date"]["before_days"], rule["date"]["after_days"]
+
+    assert window("weekly") == (2, 2)
+    assert window("monthly") == (3, 5)
+    assert window("yearly") == (3, 5)
+    # Fourteen and one hundred and eighty days apart: nothing to narrow.
+    assert window("biweekly") == (3, 5)
+    assert window("semiannual") == (3, 5)
 
 
 # ---------------------------------------------------------------------------
