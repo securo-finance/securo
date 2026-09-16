@@ -10,6 +10,7 @@ import { localDateString } from '@/lib/date-utils'
 import { applyTransactionToBalance, excludeMaterializedProjections, transactionAmountForBalance } from '@/lib/account-detail-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
+import { closeDateForBill, isOpenCycleWindow } from '@/lib/credit-card-cycle'
 import { toast } from 'sonner'
 import type { CreditCardBill, ProjectedTransaction, Transaction } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -157,31 +158,6 @@ function creditCardCycleLabel(
   return format(bill, 'MMM yyyy', { locale: dateFnsLocale })
 }
 
-/** Return the [start, end] dates of the billing cycle that CONTAINS `reference`.
- * Brazilian convention: a transaction ON the close day belongs to the NEXT
- * cycle, so the cycle boundaries are [previous close day, next close day − 1].
- * Falls back to "previous month → today" when no closeDay is configured. */
-/** Derive a bill's cycle close date from the account's statement_close_day.
- * Pluggy doesn't expose the close date directly, but it's recoverable: the
- * close is the most recent occurrence of close_day on or before the bill's
- * due_date. Falls back to due_date when close_day is not configured. */
-function closeDateForBill(billDueDate: string, closeDay: number | null | undefined): string {
-  if (!closeDay) return billDueDate
-  const due = parseISO(billDueDate + 'T00:00:00')
-  const y = due.getFullYear()
-  const m = due.getMonth()
-  const lastThis = new Date(y, m + 1, 0).getDate()
-  const sameMonth = new Date(y, m, Math.min(closeDay, lastThis))
-  if (sameMonth.getTime() <= due.getTime()) {
-    return format(sameMonth, 'yyyy-MM-dd')
-  }
-  const py = m === 0 ? y - 1 : y
-  const pm = m === 0 ? 11 : m - 1
-  const lastPrev = new Date(py, pm + 1, 0).getDate()
-  return format(new Date(py, pm, Math.min(closeDay, lastPrev)), 'yyyy-MM-dd')
-}
-
-
 /** Build the [start, end] range a credit-card transaction would belong to
  * when the cycle is anchored on a real bill (issue #92). The bill's due_date
  * is the period end; the start is the day after the previous bill's due_date,
@@ -199,6 +175,10 @@ function rangeForBill(
 }
 
 
+/** Return the [start, end] dates of the billing cycle that CONTAINS `reference`.
+ * Brazilian convention: a transaction ON the close day belongs to the NEXT
+ * cycle, so the cycle boundaries are [previous close day, next close day − 1].
+ * Falls back to "previous month → today" when no closeDay is configured. */
 function creditCardCycleBoundaries(
   closeDay: number | null | undefined,
   reference: Date,
@@ -260,6 +240,17 @@ function daysUntil(dateStr: string): number {
   return Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
 }
 
+/** Label a window that belongs to no bill and is not the open cycle, which is
+ * what a hand-edited date range produces. Naming it after a bill month would
+ * claim it is a statement it is not, so it says what it actually is. The year
+ * only shows up when the range crosses one, to keep the header narrow. */
+function cycleRangeLabel(from: string, to: string, i18nLanguage: string): string {
+  const dfLocale = resolveDateFnsLocale(i18nLanguage)
+  const pattern = from.slice(0, 4) === to.slice(0, 4) ? 'dd MMM' : "dd MMM ''yy"
+  const at = (d: string) => format(parseISO(d + 'T00:00:00'), pattern, { locale: dfLocale })
+  return `${at(from)} - ${at(to)}`
+}
+
 function utilizationColor(pct: number): string {
   if (pct >= 90) return 'bg-rose-500'
   if (pct >= 70) return 'bg-amber-400'
@@ -316,11 +307,36 @@ export default function AccountDetailPage() {
     if (!billsAsc.length) return null
     return billsAsc.find(b => b.due_date === filterTo) ?? null
   }, [billsAsc, filterTo])
-  // True when the user is on the trailing in-progress cycle (CC has bills,
-  // but the current view doesn't match any of them). Backend uses this to
-  // exclude already-billed txs from the cycle window so they don't double-
+  // True when the user is on the trailing in-progress cycle. Backend uses this
+  // to exclude already-billed txs from the cycle window so they don't double-
   // count against the in-progress bar/total.
-  const isInProgressCycle = !activeBill && billsAsc.length > 0
+  //
+  // Not matching a bill is necessary but nowhere near sufficient: any window
+  // the user picks by hand misses the equality check above, and asking for
+  // unbilled transactions over a period that already closed drops the charges
+  // those bills carry. Widening a cycle by five days used to shrink its total,
+  // which is the one thing a wider window must never do. So the window also
+  // has to start inside the cycle that is still open, which is what the
+  // next-cycle arrow produces and a hand-edited range over history does not.
+  const isInProgressCycle = useMemo(() => {
+    if (activeBill || !billsAsc.length) return false
+    const newestBill = billsAsc[billsAsc.length - 1]
+    return isOpenCycleWindow(filterFrom, newestBill.due_date, account?.statement_close_day)
+  }, [activeBill, billsAsc, filterFrom, account?.statement_close_day])
+
+  // A window this page computed, as opposed to one the user picked in the
+  // date fields. Every cycle range here comes out of creditCardCycleBoundaries
+  // (the arrows, the timeline bars and the initial default all route through
+  // it), so asking it for the cycle containing this window's end hands the
+  // window back when it is one of them. A card with no close day has no cycles
+  // to compare against, so it keeps the label it has always had.
+  const isCycleMathWindow = useMemo(() => {
+    const closeDay = account?.statement_close_day
+    if (!closeDay) return true
+    if (!filterFrom || !filterTo) return false
+    const cycle = creditCardCycleBoundaries(closeDay, parseISO(filterTo + 'T00:00:00'))
+    return cycle.start === filterFrom && cycle.end === filterTo
+  }, [account?.statement_close_day, filterFrom, filterTo])
 
   const [cycleSource, setCycleSource] = useState<{ account: typeof account; bills: typeof bills } | null>(null)
   if (!cycleSource || cycleSource.account !== account || cycleSource.bills !== bills) {
@@ -930,7 +946,9 @@ export default function AccountDetailPage() {
                       ? format(parseISO(activeBill.due_date + 'T00:00:00'), 'MMM yyyy', {
                           locale: resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language),
                         })
-                      : creditCardCycleLabel(filterTo, account?.payment_due_day, i18n.language)}
+                      : isCycleMathWindow
+                        ? creditCardCycleLabel(filterTo, account?.payment_due_day, i18n.language)
+                        : cycleRangeLabel(filterFrom, filterTo, i18n.resolvedLanguage ?? i18n.language)}
                   </button>
                 </PopoverTrigger>
                 <PopoverContent align="center" className="w-auto p-3 space-y-3">

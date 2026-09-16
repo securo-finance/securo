@@ -576,8 +576,6 @@
     "addToExistingRuleTitle": "取引をルールに追加",
     "addToExistingRuleDescription": "有効なカテゴリルールを選び、この取引の摘要を今後の一致条件に追加します。",
     "existingRule": "既存のルール",
-    "matchOperator": "一致方法",
-    "matchText": "摘要の一致",
     "assignRule": "ルールに追加",
     "noExistingRules": "利用できる有効なカテゴリルールはありません",
     "addedToExistingRule": "ルールを更新しました。今後の一致にはこのカテゴリが使われます。",

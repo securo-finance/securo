@@ -576,8 +576,6 @@
     "addToExistingRuleTitle": "Agregar transacción a una regla",
     "addToExistingRuleDescription": "Elige una regla de categoría activa y agrega la descripción de esta transacción como otra coincidencia futura.",
     "existingRule": "Regla existente",
-    "matchOperator": "Tipo de coincidencia",
-    "matchText": "Coincidencia en descripción",
     "assignRule": "Agregar a regla",
     "noExistingRules": "No hay reglas de categoría activas disponibles",
     "addedToExistingRule": "Regla actualizada. Las próximas coincidencias usarán esta categoría.",

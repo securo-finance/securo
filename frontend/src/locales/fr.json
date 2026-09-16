@@ -576,8 +576,6 @@
     "addToExistingRuleTitle": "Ajouter la transaction à une règle",
     "addToExistingRuleDescription": "Choisissez une règle de catégorisation active et ajoutez cette description de transaction comme correspondance future.",
     "existingRule": "Règle existante",
-    "matchOperator": "Type de correspondance",
-    "matchText": "Correspondance de description",
     "assignRule": "Ajouter à la règle",
     "noExistingRules": "Aucune règle de catégorisation active disponible",
     "addedToExistingRule": "Règle mise à jour. Les correspondances futures utiliseront cette catégorie.",
