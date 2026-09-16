@@ -143,6 +143,15 @@ async def test_currencies_include_mdl_with_metadata(client: AsyncClient):
     assert mdl["symbol"] == "L"
     assert mdl["name"] == "Moldovan Leu"
     assert mdl["flag"] == "🇲🇩"
+async def test_currencies_include_aed_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    aed = next((currency for currency in data if currency["code"] == "AED"), None)
+
+    assert aed is not None
+    assert aed["symbol"] == "د.إ"
+    assert aed["name"] == "UAE Dirham"
+    assert aed["flag"] == "🇦🇪"
 
 
 @pytest.mark.asyncio
