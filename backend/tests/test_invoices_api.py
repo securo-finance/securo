@@ -10,8 +10,9 @@ Two things these tests exist to pin down, beyond the usual CRUD:
      UI does, computed from allocations and the due date.
 """
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
@@ -21,6 +22,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.account import Account
 from app.models.payee import Payee
 from app.models.transaction import Transaction
+
+
+@pytest.fixture
+def invoice_today():
+    """Pin the service clock so UTC/local midnight cannot change expectations."""
+    with patch("app.services.invoice_service.datetime", wraps=datetime) as clock:
+        clock.now.return_value = datetime(2026, 1, 15, tzinfo=timezone.utc)
+        yield clock.now.return_value.date()
 
 
 @pytest_asyncio.fixture
@@ -338,13 +347,13 @@ async def test_unlinking_restores_both_sides(client: AsyncClient, biz_headers, i
 
 
 @pytest.mark.asyncio
-async def test_overdue_needs_no_job(client: AsyncClient, biz_headers):
+async def test_overdue_needs_no_job(client: AsyncClient, biz_headers, invoice_today):
     """The point of deriving: nothing ran, and it still reads overdue."""
     invoice = await _create(
         client,
         biz_headers,
-        issue_date=str(date.today() - timedelta(days=40)),
-        due_date=str(date.today() - timedelta(days=10)),
+        issue_date=str(invoice_today - timedelta(days=40)),
+        due_date=str(invoice_today - timedelta(days=10)),
     )
     resp = await client.get(f"/api/invoices/{invoice['id']}", headers=biz_headers)
     assert resp.json()["state"] == "overdue"
@@ -565,13 +574,15 @@ async def test_competence_date_defaults_to_issue_but_can_diverge(
 
 
 @pytest.mark.asyncio
-async def test_due_date_defaults_to_payment_terms(client: AsyncClient, biz_headers):
+async def test_due_date_defaults_to_payment_terms(
+    client: AsyncClient, biz_headers, invoice_today
+):
     await client.patch(
         "/api/invoices/settings", headers=biz_headers, json={"default_payment_terms_days": 7}
     )
     resp = await client.post("/api/invoices", headers=biz_headers, json={"total": "10.00"})
     assert resp.status_code == 201, resp.text
-    assert resp.json()["due_date"] == str(date.today() + timedelta(days=7))
+    assert resp.json()["due_date"] == str(invoice_today + timedelta(days=7))
 
 
 @pytest.mark.asyncio
@@ -1428,3 +1439,134 @@ async def test_one_payment_advertises_every_invoice_it_settled(
         first["id"], second["id"],
     }
     assert sum(Decimal(link["amount"]) for link in row["invoice_links"]) == Decimal("1000.00")
+
+
+# ---------------------------------------------------------------------------
+# The document that was issued stays the document that was issued
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_issuing_files_the_pdf_so_it_stops_drifting(
+    client: AsyncClient, biz_headers, session: AsyncSession, inflow, client_payee
+):
+    """The renderer prints Paid and Balance as soon as money moves, so an
+    invoice sent showing a total of 3000 came back, after a payment,
+    showing a balance instead. A different document at the same address,
+    including the public link the client was given.
+
+    Filing it at issue makes the answer a stored file. A file cannot
+    drift.
+    """
+    invoice = await _create(client, biz_headers, payee_id=str(client_payee.id))
+
+    before = await client.get(f"/api/invoices/{invoice['id']}/pdf", headers=biz_headers)
+    assert before.status_code == 200, before.text
+    original = before.content
+    assert original.startswith(b"%PDF")
+
+    resp = await client.post(
+        f"/api/invoices/{invoice['id']}/allocations",
+        headers=biz_headers,
+        json={"transaction_id": str(inflow.id), "amount": "1000.00"},
+    )
+    assert resp.status_code == 201, resp.text
+
+    after = await client.get(f"/api/invoices/{invoice['id']}/pdf", headers=biz_headers)
+    assert after.status_code == 200
+    assert after.content == original, "the document a client holds must not change"
+
+
+@pytest.mark.asyncio
+async def test_the_filed_document_is_the_one_the_shared_link_serves(
+    client: AsyncClient, biz_headers, session: AsyncSession, inflow, client_payee
+):
+    """The failure that motivated this: the link handed to a client is
+    public and permanent, so it is the worst place for content to move."""
+    invoice = await _create(client, biz_headers, payee_id=str(client_payee.id))
+    listing = await client.get(
+        f"/api/invoices/{invoice['id']}/attachments", headers=biz_headers
+    )
+    assert listing.status_code == 200, listing.text
+    filed = listing.json()
+    assert len(filed) == 1
+    assert filed[0]["is_primary"] is True
+    assert filed[0]["source"] == "issued"
+    assert filed[0]["filename"].endswith(".pdf")
+
+
+@pytest.mark.asyncio
+async def test_a_draft_files_nothing_until_it_is_issued(
+    client: AsyncClient, biz_headers, session: AsyncSession, client_payee
+):
+    """A draft's numbers are still moving, and it was never sent."""
+    draft = await _create(
+        client, biz_headers, payee_id=str(client_payee.id), as_draft=True
+    )
+    listing = await client.get(
+        f"/api/invoices/{draft['id']}/attachments", headers=biz_headers
+    )
+    assert listing.json() == []
+
+    issued = await client.post(
+        f"/api/invoices/{draft['id']}/issue", headers=biz_headers
+    )
+    assert issued.status_code == 200, issued.text
+
+    listing = await client.get(
+        f"/api/invoices/{draft['id']}/attachments", headers=biz_headers
+    )
+    assert len(listing.json()) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_document_somebody_already_filed_is_never_overwritten(
+    client: AsyncClient, biz_headers, session: AsyncSession, client_payee
+):
+    """A signed copy, or the version that actually went by email, is the
+    original. Ours would be a second opinion about a document that has
+    one.
+
+    Marking it primary is the act that says so: an ordinary upload
+    against an invoice we wrote is supplementary paper, and the guard is
+    deliberately keyed to that flag rather than to "any file is here".
+    """
+    draft = await _create(
+        client, biz_headers, payee_id=str(client_payee.id), as_draft=True
+    )
+    upload = await client.post(
+        f"/api/invoices/{draft['id']}/attachments",
+        headers=biz_headers,
+        files={"file": ("assinada.pdf", b"%PDF-1.4 the real one", "application/pdf")},
+        data={"kind": "bill", "is_primary": "true"},
+    )
+    assert upload.status_code == 201, upload.text
+    assert upload.json()["is_primary"] is True
+
+    await client.post(f"/api/invoices/{draft['id']}/issue", headers=biz_headers)
+
+    served = await client.get(f"/api/invoices/{draft['id']}/pdf", headers=biz_headers)
+    assert served.content == b"%PDF-1.4 the real one"
+
+
+@pytest.mark.asyncio
+async def test_an_imported_document_is_never_given_a_page_we_wrote(
+    client: AsyncClient, biz_headers, session: AsyncSession, client_payee
+):
+    """We did not write it. Rendering our own page over a supplier's bill
+    produces something that looks official and is not."""
+    imported = await _create(
+        client,
+        biz_headers,
+        payee_id=str(client_payee.id),
+        origin="imported",
+        external_source="supplier",
+        external_number="FAT-9931",
+    )
+    listing = await client.get(
+        f"/api/invoices/{imported['id']}/attachments", headers=biz_headers
+    )
+    assert listing.json() == [], "nothing of ours was filed against it"
+
+    served = await client.get(
+        f"/api/invoices/{imported['id']}/pdf", headers=biz_headers
+    )
+    assert served.status_code == 409

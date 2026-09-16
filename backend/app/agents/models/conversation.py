@@ -50,7 +50,7 @@ class Message(Base):
     role: Mapped[str] = mapped_column(String(20))
     content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    # When role="assistant" with tool calls, list of {id,name,arguments}.
+    # When role="assistant", list of {id,name,arguments,thought_signature?}.
     tool_calls: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     # When role="tool", payload is {tool_call_id, server, name, result, error?}.
     tool_result: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
