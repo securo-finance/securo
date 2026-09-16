@@ -14,30 +14,7 @@ import {
   transactions,
 } from '@/lib/api'
 
-type ProposalKind =
-  | 'categorize'
-  | 'create_category'
-  | 'create_budget'
-  | 'create_payee_rule'
-  | 'create_transaction'
-  | 'create_recurring_transaction'
-  | 'update_recurring_transaction'
-  | 'cancel_recurring_transaction'
-  | 'create_goal'
-
-interface ProposalData {
-  kind?: ProposalKind
-  proposed?: Record<string, unknown>
-  target?: Record<string, unknown>
-  changes?: Record<string, unknown>
-  affected?: { id: string; description?: string; amount?: number; currency?: string }[]
-  affected_count?: number
-  target_category?: { id: string; name: string }
-  name_collision?: { id: string; name: string }
-  mode?: 'deactivate' | 'delete'
-  apply_endpoint?: string
-  error?: string
-}
+import type { ProposalKind, ProposalData } from '@/lib/agent-proposals'
 
 interface Props {
   toolCallId: string
@@ -178,6 +155,9 @@ export function ProposalCard({ toolCallId, data }: Props) {
 }
 
 function kindTitle(kind: ProposalKind, t: ReturnType<typeof useTranslation>['t']): string {
+  if (kind === 'create_rule') return t('rules.newRule')
+  if (kind === 'update_rule') return t('rules.editRule')
+  if (kind === 'delete_rule') return t('rules.confirmDeleteTitle')
   return t(`agents.proposal.kind.${kind}`)
 }
 
@@ -205,6 +185,14 @@ function renderSummary(kind: ProposalKind, d: ProposalData, t: ReturnType<typeof
         pattern: String(p.match_pattern ?? '?'),
         category: String((p.category_name as string) ?? p.category_id ?? '?'),
       })
+    case 'create_rule':
+      return `“${String(p.name ?? '?')}”`
+    case 'update_rule': {
+      const changes = (d.changes || {}) as Record<string, unknown>
+      return `${String(tgt.name ?? '?')} → ${Object.keys(changes).join(', ')}`
+    }
+    case 'delete_rule':
+      return `“${String(tgt.name ?? '?')}”`
     case 'create_transaction':
       return t('agents.proposal.summary.createTransaction', {
         description: String(p.description ?? '?'),
@@ -335,6 +323,20 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
       })
       return r.id
     }
+    case 'create_rule': {
+      const r = await rules.create(p as unknown as Parameters<typeof rules.create>[0])
+      return r.id
+    }
+    case 'update_rule': {
+      const id = String((data.target as Record<string, unknown>).id)
+      await rules.update(id, (data.changes || {}) as Parameters<typeof rules.update>[1])
+      return id
+    }
+    case 'delete_rule': {
+      const id = String((data.target as Record<string, unknown>).id)
+      await rules.delete(id)
+      return id
+    }
     case 'create_transaction': {
       // If the proposal includes group splits, translate the agent's
       // {member_id, share_amount, share_pct} preview into the API's
@@ -408,23 +410,4 @@ async function applyProposal(data: ProposalData): Promise<string | void> {
       return g.id
     }
   }
-}
-
-/** Heuristic: a tool result is a proposal if its data has a known kind. */
-export function isProposalData(data: unknown): data is ProposalData {
-  if (!data || typeof data !== 'object') return false
-  const k = (data as { kind?: unknown }).kind
-  return typeof k === 'string' && [
-    'categorize', 'create_category', 'create_budget', 'create_payee_rule',
-    'create_transaction', 'create_recurring_transaction',
-    'update_recurring_transaction', 'cancel_recurring_transaction',
-    'create_goal',
-  ].includes(k)
-}
-
-/** Treat the data as a proposal even when only `error` is present, since
- * a proposal that failed validation should still render a small error card
- * instead of a generic tool-debug chip. */
-export function isProposalToolName(name: string): boolean {
-  return name.includes('propose_')
 }

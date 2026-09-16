@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFi
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
+from app.models.invoice import Invoice
 from app.models.workspace import Workspace
 from app.core.module_gate import require_module, require_module_write
 from app.core.workspace_context import WorkspaceContext
@@ -33,11 +34,14 @@ from app.schemas.invoice import (
     ShareLinkRead,
 )
 from app.services import (
+    invoice_archive,
     invoice_attachment_service,
     invoice_logo_service,
     invoice_document,
     invoice_pdf,
     invoice_service,
+    reconciliation_history_service,
+    reconciliation_service,
 )
 from app.services.invoice_service import InvoiceError
 from app.services.module_service import ModuleId
@@ -211,6 +215,32 @@ async def list_invoices(
     return [_serialize(inv) for inv in invoices]
 
 
+async def _settle_from_money_already_there(
+    session: AsyncSession, invoice: Invoice
+) -> None:
+    """Look back at payments that arrived before this document existed.
+
+    The client pays, and the nota follows days later: common enough here
+    that a matcher which only looked forward would miss a good share of
+    the traffic. Nothing about the money changes when the invoice is
+    written, so this is the only moment anything would re-examine it.
+
+    Called from the router rather than from `invoice_service`, which
+    matching already depends on. Failing to find a match is the ordinary
+    outcome and never affects the response.
+
+    **Committed either way.** Looking back can end in a link, in a
+    question for the queue, or in nothing, and only the first of those
+    returns anything. Committing on the return value alone threw away
+    every suggestion this moment raised, which is the outcome that needed
+    saving most: a rule set to suggest would have done nothing here while
+    doing its job on the other trigger, the exact silent switch the queue
+    exists to prevent.
+    """
+    await reconciliation_service.match_for_invoice(session, invoice)
+    await session.commit()
+
+
 @router.post("", response_model=InvoiceRead, status_code=status.HTTP_201_CREATED)
 async def create_invoice(
     payload: InvoiceCreate,
@@ -228,7 +258,15 @@ async def create_invoice(
         raise _http(exc)
     await session.commit()
     invoice = await _load(session, invoice.id, ctx.workspace.id)
-    return _serialize(invoice)
+    # A workspace that opens invoices on creation issues them here, so the
+    # document has to be filed here too. Both doors, or the one that is
+    # missed silently goes back to a PDF that drifts.
+    await invoice_archive.file_issued_document(
+        session, invoice, ctx.workspace, ctx.user_id
+    )
+    await session.commit()
+    await _settle_from_money_already_there(session, invoice)
+    return _serialize(await _load(session, invoice.id, ctx.workspace.id))
 
 
 @router.get("/{invoice_id}", response_model=InvoiceRead)
@@ -289,6 +327,16 @@ async def issue_invoice(
     except InvoiceError as exc:
         raise _http(exc)
     await session.commit()
+    # Filed while the figures still say what was sent. From here the
+    # answer to "what did we send" is a stored file rather than a
+    # re-rendering that depends on what has happened since.
+    await invoice_archive.file_issued_document(
+        session, invoice, ctx.workspace, ctx.user_id
+    )
+    await session.commit()
+    await _settle_from_money_already_there(
+        session, await _load(session, invoice_id, ctx.workspace.id)
+    )
     return _serialize(await _load(session, invoice_id, ctx.workspace.id))
 
 
@@ -349,9 +397,26 @@ async def create_allocation(
 ):
     invoice = await _load(session, invoice_id, ctx.workspace.id)
     try:
-        await invoice_service.allocate(session, invoice, payload.transaction_id, payload.amount)
+        allocation = await invoice_service.allocate(
+            session, invoice, payload.transaction_id, payload.amount
+        )
     except InvoiceError as exc:
         raise _http(exc)
+    # `linked` with a user is a person doing it by hand; `linked` with none
+    # is the rules acting on their own. One verb, and the column that
+    # already answers the question the history is organised around.
+    # Without this the stream could show an unlink with no link before it.
+    await reconciliation_history_service.record(
+        session,
+        ctx.workspace.id,
+        "linked",
+        expectation_kind="invoice",
+        expectation_id=invoice.id,
+        amount=allocation.amount,
+        transaction_id=payload.transaction_id,
+        strategy_id=allocation.method,
+        user_id=ctx.user_id,
+    )
     await session.commit()
     return _serialize(await _load(session, invoice_id, ctx.workspace.id))
 
@@ -364,10 +429,26 @@ async def remove_allocation(
     session: AsyncSession = Depends(get_async_session),
 ):
     invoice = await _load(session, invoice_id, ctx.workspace.id)
+    # Read before it goes: unallocating deletes the row, so without this
+    # the fact that a match was made and then undone is indistinguishable
+    # from one that was never made at all.
+    undone = next((a for a in invoice.allocations if a.id == allocation_id), None)
     try:
         await invoice_service.unallocate(session, invoice, allocation_id)
     except InvoiceError as exc:
         raise _http(exc)
+    if undone is not None:
+        await reconciliation_history_service.record(
+            session,
+            ctx.workspace.id,
+            "unlinked",
+            expectation_kind="invoice",
+            expectation_id=invoice.id,
+            amount=undone.amount,
+            transaction_id=undone.transaction_id,
+            strategy_id=undone.method,
+            user_id=ctx.user_id,
+        )
     await session.commit()
     return _serialize(await _load(session, invoice_id, ctx.workspace.id))
 

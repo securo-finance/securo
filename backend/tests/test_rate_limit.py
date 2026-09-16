@@ -2,6 +2,58 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
+from starlette.requests import Request
+
+from app.core.rate_limit import resolve_client_ip
+
+
+def _request(client_host, forwarded_for=None):
+    headers = [(b"x-forwarded-for", forwarded_for.encode())] if forwarded_for else []
+    scope = {
+        "type": "http",
+        "client": (client_host, 12345) if client_host else None,
+        "headers": headers,
+    }
+    return Request(scope)
+
+
+def test_resolve_client_ip_untrusted_uses_socket_peer():
+    """trusted_proxy_hops=0 (default) ignores X-Forwarded-For entirely."""
+    request = _request("172.26.0.3", forwarded_for="1.2.3.4")
+    assert resolve_client_ip(request, trusted_proxy_hops=0) == "172.26.0.3"
+
+
+def test_resolve_client_ip_no_socket_peer_is_unknown():
+    request = _request(None)
+    assert resolve_client_ip(request, trusted_proxy_hops=0) == "unknown"
+
+
+def test_resolve_client_ip_one_trusted_hop():
+    """One trusted proxy (nginx): the header it set is the real client."""
+    request = _request("172.26.0.3", forwarded_for="203.0.113.9")
+    assert resolve_client_ip(request, trusted_proxy_hops=1) == "203.0.113.9"
+
+
+def test_resolve_client_ip_ignores_client_supplied_prefix():
+    """A client-forged leading entry must not override the trusted hop."""
+    request = _request("172.26.0.3", forwarded_for="1.1.1.1, 203.0.113.9")
+    assert resolve_client_ip(request, trusted_proxy_hops=1) == "203.0.113.9"
+
+
+def test_resolve_client_ip_two_trusted_hops():
+    request = _request("172.26.0.3", forwarded_for="203.0.113.9, 10.0.0.5")
+    assert resolve_client_ip(request, trusted_proxy_hops=2) == "203.0.113.9"
+
+
+def test_resolve_client_ip_short_chain_is_unknown():
+    """Fewer hops than configured means the trust setting doesn't match reality."""
+    request = _request("172.26.0.3", forwarded_for="10.0.0.5")
+    assert resolve_client_ip(request, trusted_proxy_hops=2) == "unknown"
+
+
+def test_resolve_client_ip_missing_header_is_unknown():
+    request = _request("172.26.0.3")
+    assert resolve_client_ip(request, trusted_proxy_hops=1) == "unknown"
 
 
 @pytest.fixture(autouse=True)

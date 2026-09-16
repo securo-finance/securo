@@ -13,7 +13,12 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { invoices as invoicesApi } from '@/lib/api'
-import { documentProvenance, formatFileSize, previewKind } from '@/lib/invoice-utils'
+import {
+  documentProvenance,
+  formatFileSize,
+  ISSUED_BY_US,
+  previewKind,
+} from '@/lib/invoice-utils'
 import { useDateLocale } from '@/hooks/use-display-locale'
 import { cn } from '@/lib/utils'
 import type { InvoiceAttachment, InvoiceAttachmentKind } from '@/types'
@@ -74,9 +79,15 @@ export function InvoiceDocumentBrowser({
     queryFn: () => invoicesApi.attachments.list(invoiceId),
   })
 
+  // Issuing files the page as it read at that moment, and that file is
+  // the document from then on. Listing the live render beside it shows
+  // one invoice twice under one name, and the live one is precisely the
+  // copy that drifts as payments land, which is what filing was for.
+  const filedAtIssue = attachments.some((a) => a.source === ISSUED_BY_US)
+
   // An import with nothing filed has no page at all: drawing ours would
   // invent a document a supplier issued and we were never handed.
-  const showOurPage = origin !== 'imported' && ourPage !== null
+  const showOurPage = origin !== 'imported' && ourPage !== null && !filedAtIssue
 
   const active = useMemo(() => {
     if (selected === OUR_PAGE && showOurPage) return OUR_PAGE
@@ -239,6 +250,12 @@ export function InvoiceDocumentBrowser({
                   provenance={(() => {
                     const from = documentProvenance(attachment.source)
                     const arrived = showArrival(attachment.created_at)
+                    if (from.kind === 'ours') {
+                      // The same words the live render carried before it
+                      // was filed, so nothing about the row changes when
+                      // the drawing becomes a file.
+                      return t('invoices.documents.rendered', { date: arrived })
+                    }
                     return from.kind === 'system'
                       ? t('invoices.documents.fromSystem', { source: from.name, date: arrived })
                       : t('invoices.documents.fromUpload', { date: arrived })

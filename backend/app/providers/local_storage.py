@@ -20,7 +20,9 @@ class LocalStorageProvider(StorageProvider):
     def _full_path(self, storage_key: str) -> Path:
         base = self._base_path().resolve()
         full = (base / storage_key).resolve()
-        if not str(full).startswith(str(base)):
+        try:
+            full.relative_to(base)
+        except ValueError:
             raise ValueError("Invalid storage key")
         return full
 

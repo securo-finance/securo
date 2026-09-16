@@ -111,6 +111,7 @@ backend:
 
 # Frontend configuration
 frontend:
+  backendUrl: ""
   replicaCount: 1
   image:
     repository: ghcr.io/securo-finance/securo-frontend
