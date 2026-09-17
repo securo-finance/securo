@@ -115,6 +115,9 @@ it('collapses the desktop sidebar and persists the preference', async () => {
   expect(screen.getByRole('button', { name: t('nav.expandSidebar') })).toHaveAttribute('aria-expanded', 'false')
   expect(document.querySelector('aside')).toHaveAttribute('data-collapsed', 'true')
   expect(document.querySelector('main')).toHaveClass('lg:ml-16')
+
+  await user.click(screen.getByRole('button', { name: /Synthetic workspace/ }))
+  expect(screen.getByRole('menuitem', { name: /Workspace settings/ })).toBeInTheDocument()
 })
 
 it('restores a collapsed desktop sidebar from local storage', () => {
