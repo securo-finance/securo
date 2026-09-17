@@ -126,7 +126,9 @@
     "groupAdmin": "Администрирование",
     "groupAgents": "ИИ",
     "agents": "Агенты",
-    "aiAgents": "ИИ-агенты"
+    "aiAgents": "ИИ-агенты",
+    "collapseSidebar": "Свернуть боковую панель",
+    "expandSidebar": "Развернуть боковую панель"
   },
   "invoices": {
     "title": "Invoices",

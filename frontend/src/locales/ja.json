@@ -126,7 +126,9 @@
     "groupAdmin": "管理",
     "groupAgents": "AI",
     "agents": "エージェント",
-    "aiAgents": "AIエージェント"
+    "aiAgents": "AIエージェント",
+    "collapseSidebar": "サイドバーを折りたたむ",
+    "expandSidebar": "サイドバーを展開する"
   },
   "invoices": {
     "title": "請求書",

@@ -89,6 +89,7 @@ function openMenu(surface: string) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.removeItem('securo.sidebar.collapsed')
   state.user = { ...state.user, is_2fa_enabled: true }
   state.auth.oidcConfig.mockResolvedValue({
     enabled: true,
@@ -100,6 +101,29 @@ beforeEach(() => {
   ])
   state.auth.disable2fa.mockResolvedValue({})
   state.auth.deletePasskey.mockResolvedValue(undefined)
+})
+
+it('collapses the desktop sidebar and persists the preference', async () => {
+  const { user } = renderWithProviders(<AppLayout />)
+
+  const toggle = screen.getByRole('button', { name: t('nav.collapseSidebar') })
+  expect(toggle).toHaveAttribute('aria-expanded', 'true')
+
+  await user.click(toggle)
+
+  expect(localStorage.getItem('securo.sidebar.collapsed')).toBe('true')
+  expect(screen.getByRole('button', { name: t('nav.expandSidebar') })).toHaveAttribute('aria-expanded', 'false')
+  expect(document.querySelector('aside')).toHaveAttribute('data-collapsed', 'true')
+  expect(document.querySelector('main')).toHaveClass('lg:ml-16')
+})
+
+it('restores a collapsed desktop sidebar from local storage', () => {
+  localStorage.setItem('securo.sidebar.collapsed', 'true')
+
+  renderWithProviders(<AppLayout />)
+
+  expect(screen.getByRole('button', { name: t('nav.expandSidebar') })).toHaveAttribute('aria-expanded', 'false')
+  expect(document.querySelector('main')).toHaveClass('lg:ml-16')
 })
 
 it.each(['desktop', 'mobile'])(

@@ -126,7 +126,9 @@
     "groupAdmin": "Administração",
     "groupAgents": "IA",
     "agents": "Agentes",
-    "aiAgents": "Agentes de IA"
+    "aiAgents": "Agentes de IA",
+    "collapseSidebar": "Recolher barra lateral",
+    "expandSidebar": "Expandir barra lateral"
   },
   "invoices": {
     "title": "Cobranças",
