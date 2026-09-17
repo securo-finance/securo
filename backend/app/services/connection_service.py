@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.app_clock import app_today
 from app.core.config import get_settings
 from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
@@ -275,7 +276,7 @@ async def _sync_holdings(
         return
 
     source = connection.provider
-    today = date.today()
+    today = app_today()
 
     # Find-or-create the wallet(s) that own this connection's holdings. A
     # holding carrying its owning account (SimpleFIN — issue #345) gets one

@@ -450,7 +450,9 @@ class SimpleFinProvider(BankProvider):
         since: Optional[date] = None,
         payee_source: str = "auto",
     ) -> list[TransactionData]:
-        end_date = date.today()
+        # SimpleFIN request windows are epoch-based and use UTC boundaries,
+        # independent of Securo's configurable application calendar.
+        end_date = datetime.now(timezone.utc).date()
         if since is None:
             start_date = end_date - timedelta(days=SIMPLEFIN_INITIAL_HISTORY_DAYS)
         else:

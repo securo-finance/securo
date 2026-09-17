@@ -16,5 +16,8 @@ class Base(DeclarativeBase):
 
 
 async def get_async_session() -> AsyncIterator[AsyncSession]:
+    from app.core.app_clock import use_timezone
+
     async with async_session_maker() as session:
-        yield session
+        async with use_timezone(session):
+            yield session

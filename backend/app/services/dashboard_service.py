@@ -7,6 +7,7 @@ from sqlalchemy import select, func, case, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.app_clock import app_today
 from app.core.config import get_settings
 from app.models.account import Account
 from app.models.bank_connection import BankConnection
@@ -167,7 +168,7 @@ async def _get_forecast_transactions(
     if account_ids is not None and len(account_ids) == 0:
         return []
 
-    today = date.today()
+    today = app_today()
     bucket_date = range_date_col if range_date_col is not None else Transaction.date
     stmt = (
         select(Transaction)
@@ -218,10 +219,10 @@ async def get_summary(
     asset_group_ids: Optional[list[uuid.UUID]] = None,
 ) -> DashboardSummary:
     if not month:
-        month = date.today().replace(day=1)
+        month = app_today().replace(day=1)
 
     month_start, month_end = _month_range(month)
-    today = date.today()
+    today = app_today()
 
     # Collection filter (issue #105): show the *raw* P&L/balances of the
     # collection's accounts, plus the assets in its wallets (asset_group_ids);
@@ -718,10 +719,10 @@ async def get_spending_by_category(
     account_ids: Optional[list[uuid.UUID]] = None,
 ) -> list[SpendingByCategory]:
     if not month:
-        month = date.today().replace(day=1)
+        month = app_today().replace(day=1)
 
     month_start, month_end = _month_range(month)
-    today = date.today()
+    today = app_today()
     filtered = account_ids is not None
     acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
 
@@ -935,7 +936,7 @@ async def get_monthly_trend(
 ) -> list[MonthlyTrend]:
     filtered = account_ids is not None
     acct_filter = [Transaction.account_id.in_(account_ids)] if filtered else []
-    today = date.today()
+    today = app_today()
     accounting_mode = await get_credit_card_accounting_mode(session)
     report_date = reporting_date_col(accounting_mode)
     month_label = func.to_char(report_date, 'YYYY-MM').label('month')
@@ -1075,7 +1076,7 @@ async def get_projected_transactions(
         range_start, range_end = from_date, to_date + timedelta(days=1)
     else:
         if not month:
-            month = date.today().replace(day=1)
+            month = app_today().replace(day=1)
         range_start, range_end = _month_range(month)
 
     # Get user's primary currency for live conversion
@@ -1266,7 +1267,7 @@ async def _account_balance_at(
     current cutoff: their provider balance is returned verbatim so it keeps
     matching the bank app. Forecast callers add pending/future rows separately.
     """
-    today = date.today()
+    today = app_today()
     balance_cutoff = min(cutoff, today)
     if account.connection_id:
         # Start from the provider's authoritative current balance
@@ -1350,7 +1351,7 @@ async def _total_balance_by_currency(
     if not accounts:
         return {}
 
-    today = date.today()
+    today = app_today()
     balance_cutoff = min(cutoff, today)
     connected = [account for account in accounts if account.connection_id]
     manual = [account for account in accounts if not account.connection_id]
@@ -1495,7 +1496,7 @@ async def _daily_balance_deltas_by_date(
             Account.is_closed == False,
             Transaction.date >= start,
             Transaction.date < end,
-            Transaction.date <= date.today(),
+            Transaction.date <= app_today(),
             Transaction.is_ignored == False,
             *status_filter,
             or_(
@@ -1549,13 +1550,13 @@ async def get_balance_history(
     account_ids: Optional[list[uuid.UUID]] = None,
 ) -> BalanceHistory:
     if not month:
-        month = date.today().replace(day=1)
+        month = app_today().replace(day=1)
 
     month_start, month_end = _month_range(month)
     prev_month_start = (month_start - timedelta(days=1)).replace(day=1)
     prev_month_end = month_start
 
-    today = date.today()
+    today = app_today()
     is_current = month_start.year == today.year and month_start.month == today.month
     days_in_month = (month_end - month_start).days
     cutoff_day = today.day if is_current else days_in_month

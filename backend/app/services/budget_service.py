@@ -6,6 +6,7 @@ from typing import Optional
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.budget import Budget
 from app.models.category import Category
 from app.models.category_group import CategoryGroup
@@ -229,7 +230,7 @@ async def get_budget_vs_actual(
     month: Optional[date] = None,
 ) -> list[BudgetVsActual]:
     if not month:
-        month = date.today().replace(day=1)
+        month = app_today().replace(day=1)
 
     month_start = month.replace(day=1)
     if month.month == 12:
@@ -277,7 +278,7 @@ async def get_budget_vs_actual(
             report_date >= month_start,
             report_date < month_end,
             Transaction.category_id.isnot(None),
-            report_date <= date.today(),
+            report_date <= app_today(),
             Transaction.status == "posted",
             counts_as_user_pnl(),
         )
@@ -363,7 +364,7 @@ async def get_budget_vs_actual(
             report_date >= prev_month_start,
             report_date < prev_month_end,
             Transaction.category_id.isnot(None),
-            report_date <= date.today(),
+            report_date <= app_today(),
             Transaction.status == "posted",
             counts_as_user_pnl(),
         )

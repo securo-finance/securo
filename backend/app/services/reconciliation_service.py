@@ -38,7 +38,7 @@ of their own, and this module simply runs what comes back.
 from __future__ import annotations
 
 import uuid
-from datetime import date, timedelta
+from datetime import timedelta
 from decimal import Decimal
 from typing import Optional
 
@@ -46,6 +46,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.app_clock import app_today
 from app.models.invoice import Invoice, InvoiceAllocation
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
@@ -174,7 +175,7 @@ async def _open_invoices(
             selectinload(Invoice.payee),
         )
     )
-    today = date.today()
+    today = app_today()
     return [
         invoice
         for invoice in result.unique().scalars().all()
@@ -450,7 +451,7 @@ async def match_for_invoice(
         session, invoice.workspace_id, NODE
     )
     wanted = set(policy.get("scope", {}).get("candidate_states", []))
-    if invoice_service.derive_state(invoice, date.today()) not in wanted:
+    if invoice_service.derive_state(invoice, app_today()) not in wanted:
         return None
 
     policy["strategies"] = [

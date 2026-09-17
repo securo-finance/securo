@@ -3,6 +3,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
+from app.core.app_clock import use_timezone
 from app.worker import celery_app
 from app.core.config import get_settings
 
@@ -22,7 +23,7 @@ async def _sync_fx_rates() -> int:
 
     engine, session_maker = _make_session_maker()
     try:
-        async with session_maker() as session:
+        async with session_maker() as session, use_timezone(session):
             count = await sync_rates(session)
         return count
     finally:
@@ -39,24 +40,24 @@ async def _restamp_recurring_fx() -> int:
 
     engine, session_maker = _make_session_maker()
     try:
-        async with session_maker() as session:
+        async with session_maker() as session, use_timezone(session):
             users = (await session.execute(select(User))).scalars().all()
-        count = 0
-        for user in users:
-            primary = user.primary_currency
-            result = await session.execute(
-                select(RecurringTransaction).where(
-                    RecurringTransaction.user_id == user.id,
-                    RecurringTransaction.is_active == True,
-                    RecurringTransaction.currency != primary,
+            count = 0
+            for user in users:
+                primary = user.primary_currency
+                result = await session.execute(
+                    select(RecurringTransaction).where(
+                        RecurringTransaction.user_id == user.id,
+                        RecurringTransaction.is_active == True,
+                        RecurringTransaction.currency != primary,
+                    )
                 )
-            )
-            for rec in result.scalars().all():
-                await stamp_primary_amount(
-                    session, user.id, rec, date_field="start_date",
-                )
-                count += 1
-        await session.commit()
+                for rec in result.scalars().all():
+                    await stamp_primary_amount(
+                        session, user.id, rec, date_field="start_date",
+                    )
+                    count += 1
+            await session.commit()
     finally:
         await engine.dispose()
     return count
@@ -85,7 +86,7 @@ async def _restamp_fallback_transactions() -> int:
     settings = get_settings()
     engine, session_maker = _make_session_maker()
     try:
-        async with session_maker() as session:
+        async with session_maker() as session, use_timezone(session):
             users = {
                 u.id: u.primary_currency
                 for u in (await session.execute(select(User))).scalars().all()
