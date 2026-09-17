@@ -233,7 +233,7 @@ async def delete_category(
     session: AsyncSession, category_id: uuid.UUID, workspace_id: uuid.UUID
 ) -> bool:
     category = await get_category(session, category_id, workspace_id)
-    if not category or category.is_system:
+    if not category:
         return False
 
     try:
@@ -245,3 +245,4 @@ async def delete_category(
             "Category is still in use and cannot be deleted. Remove its references first."
         ) from exc
     return True
+
