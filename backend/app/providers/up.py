@@ -259,7 +259,7 @@ class UpBankProvider(BankProvider):
                 
             # Fetch transactions
             data = await self._request(credentials, "GET", url, **kwargs)
-            params = None  # Set params to None as page links embed their own params
+            params: dict | None = None  # Set params to None as page links embed their own params
 
             # Loop through transactions and add them into transactions
             for txn in data.get("data", []):            
