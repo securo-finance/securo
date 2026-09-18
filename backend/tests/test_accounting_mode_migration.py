@@ -6,7 +6,7 @@ _MIGRATION_PATH = (
     Path(__file__).resolve().parent.parent
     / "alembic"
     / "versions"
-    / "086_rename_accounting_mode_values.py"
+    / "090_rename_accounting_mode_values.py"
 )
 _SPEC = importlib.util.spec_from_file_location("accounting_mode_migration", _MIGRATION_PATH)
 assert _SPEC is not None and _SPEC.loader is not None
