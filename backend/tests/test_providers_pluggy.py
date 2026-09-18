@@ -65,6 +65,40 @@ async def test_parser_captures_full_installment_metadata():
 
 
 @pytest.mark.asyncio
+async def test_parser_captures_only_masked_card_number():
+    """The transaction keeps only the card tail, never the provider PAN."""
+    result = await _fetch([
+        {
+            "id": "tx-card-1",
+            "description": "RESTAURANT",
+            "amount": -42,
+            "date": "2026-04-10",
+            "type": "DEBIT",
+            "creditCardMetadata": {"cardNumber": "**** **** **** 8172"},
+        }
+    ])
+
+    assert result[0].card_masked_number == "8172"
+    assert len(result[0].card_masked_number) == 4
+
+
+@pytest.mark.asyncio
+async def test_parser_missing_or_short_card_number_leaves_field_none():
+    result = await _fetch([
+        {
+            "id": "tx-card-none",
+            "description": "NO CARD",
+            "amount": -42,
+            "date": "2026-04-10",
+            "type": "DEBIT",
+            "creditCardMetadata": {"cardNumber": "123"},
+        }
+    ])
+
+    assert result[0].card_masked_number is None
+
+
+@pytest.mark.asyncio
 async def test_parser_no_credit_card_metadata_leaves_fields_none():
     """Non-CC txns (no creditCardMetadata) get null installment fields."""
     result = await _fetch([

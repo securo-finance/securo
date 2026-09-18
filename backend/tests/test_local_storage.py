@@ -124,4 +124,3 @@ async def test_path_traversal_prefix_collision_blocked(local_storage, storage_di
     sibling_evil = f"../{Path(storage_dir).name}_evil/stolen.txt"
     with pytest.raises(ValueError, match="Invalid storage key"):
         await local_storage.upload(sibling_evil, b"evil", "text/plain")
-
