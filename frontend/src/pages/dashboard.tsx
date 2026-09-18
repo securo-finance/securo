@@ -392,30 +392,26 @@ export default function DashboardPage() {
   const projectedBalance = summary?.projected_balance_primary ?? Object.values(summary?.projected_balance ?? {}).reduce((a, b) => a + Number(b), 0)
   const hasProjectedBalance = Math.abs(projectedBalance - totalBalance) >= 0.01
   const assetsValue = summary?.assets_value_primary ?? Object.values(summary?.assets_value ?? {}).reduce((a, b) => a + b, 0)
+  const investmentAccountsValue = summary?.investment_accounts_primary
+    ?? Object.values(summary?.investment_accounts ?? {}).reduce((a, b) => a + Number(b), 0)
 
-  // Available balance: checking/savings accounts only — what's actually
-  // spendable today, as opposed to `totalBalance` (net worth: accounts +
-  // investments - open card bills). Scoped to the active Collection filter,
-  // same as the rest of the dashboard.
+  // Available balance: checking/savings/wallet — spendable / near-liquid cash.
+  // Investment brokerage accounts are excluded (issue #959); they show under
+  // net worth as "Investment accounts", not as available cash.
   const availableBalanceAccounts = useMemo(() => {
     const all = accountsList ?? []
     const scoped = activeAccountIds ? all.filter((a) => activeAccountIds.includes(a.id)) : all
-    return scoped.filter((a) => a.type === 'checking' || a.type === 'savings')
+    return scoped.filter((a) => a.type === 'checking' || a.type === 'savings' || a.type === 'wallet')
   }, [accountsList, activeAccountIds])
-  const availableBalance = availableBalanceAccounts.reduce(
+  const availableBalanceFromAccounts = availableBalanceAccounts.reduce(
     (sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0,
   )
+  const availableBalance = summary?.cash_balance_primary ?? availableBalanceFromAccounts
   // While accounts are loading or failed to load, treat their balance
   // components as unavailable rather than silently rendering zero.
   const accountsUnavailable = accountsLoading || accountsError
   const creditCardBalance = (accountsList ?? [])
     .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type === 'credit_card')
-    .reduce((sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0)
-  // Net worth's "Available balance" breakdown row: every non-card account
-  // (unlike the headline `availableBalance`, which is checking/savings only),
-  // so it reconciles with `totalBalance` — which sums all account types.
-  const nonCardAccountsBalance = (accountsList ?? [])
-    .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type !== 'credit_card')
     .reduce((sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0)
 
   // Savings rate & projection
@@ -656,7 +652,7 @@ export default function DashboardPage() {
 
       {/* Hero Card: Available Balance + secondary indicators */}
       <div className="bg-card rounded-xl border border-border shadow-sm mb-5 px-5 pt-5 pb-4">
-        {/* Available balance in checking/savings accounts */}
+        {/* Available balance in checking/savings/wallet accounts */}
         <div className="pb-4 mb-4 border-b border-border">
           <p className="text-xs font-semibold text-muted-foreground mb-1">{t('dashboard.availableBalance')}</p>
           {summaryLoading || accountsUnavailable ? (
@@ -801,9 +797,15 @@ export default function DashboardPage() {
                   <p>{t('dashboard.netWorthTooltip')}</p>
                   <div className="mt-1.5 pt-1.5 border-t border-background/20 space-y-0.5">
                     <div className="flex justify-between gap-3">
-                      <span>{t('dashboard.availableBalance')}</span>
-                      <span>{mask(formatCurrency(nonCardAccountsBalance, primaryCurrency, locale))}</span>
+                      <span>{t('dashboard.cashBalance')}</span>
+                      <span>{mask(formatCurrency(availableBalance, primaryCurrency, locale))}</span>
                     </div>
+                    {Math.abs(investmentAccountsValue) >= 0.01 && (
+                      <div className="flex justify-between gap-3">
+                        <span>{t('dashboard.investmentAccounts')}</span>
+                        <span>{mask(formatCurrency(investmentAccountsValue, primaryCurrency, locale))}</span>
+                      </div>
+                    )}
                     {assetsValue > 0 && (
                       <div className="flex justify-between gap-3">
                         <span>{t('dashboard.assetsValue')}</span>

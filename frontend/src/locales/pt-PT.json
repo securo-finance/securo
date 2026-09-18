@@ -491,7 +491,7 @@
     "greetingEvening": "Boa noite",
     "availableBalance": "Saldo disponível em contas",
     "netWorth": "Património líquido",
-    "netWorthTooltip": "Contas + investimentos, descontando faturas de cartão em aberto.",
+    "netWorthTooltip": "Caixa + contas de investimento + património investido, descontando faturas de cartão em aberto. O investimento não conta como dinheiro disponível.",
     "creditCardBalance": "Faturas de cartão em aberto",
     "pendingSharesOwe": "Líquido {{net}} após dívidas de grupo ({{owed}} pendente)",
     "pendingSharesOwed": "Líquido {{net}} incluindo {{owed}} a receber",
@@ -550,7 +550,9 @@
     "fxRateUsed": "Taxa de câmbio: {{rate}}",
     "refreshRates": "Atualizar taxas de câmbio",
     "ratesRefreshed": "Taxas de câmbio atualizadas",
-    "ratesError": "Erro ao atualizar taxas de câmbio"
+    "ratesError": "Erro ao atualizar taxas de câmbio",
+    "cashBalance": "Caixa",
+    "investmentAccounts": "Contas de investimento"
   },
   "transactions": {
     "title": "Transações",

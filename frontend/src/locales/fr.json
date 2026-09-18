@@ -491,7 +491,7 @@
     "greetingEvening": "Bonsoir",
     "availableBalance": "Solde disponible en compte",
     "netWorth": "Valeur nette",
-    "netWorthTooltip": "Comptes + investissements, moins les factures de carte ouvertes.",
+    "netWorthTooltip": "Liquidités + comptes d'investissement + actifs investis, moins les factures de carte ouvertes. L'investissement n'est pas traité comme de l'argent disponible.",
     "creditCardBalance": "Factures de carte ouvertes",
     "pendingSharesOwe": "Net {{net}} après dettes de groupe ({{owed}} en attente)",
     "pendingSharesOwed": "Net {{net}} incluant {{owed}} qui vous sont dus",
@@ -550,7 +550,9 @@
     "fxRateUsed": "Taux de change : {{rate}}",
     "refreshRates": "Actualiser les taux de change",
     "ratesRefreshed": "Taux de change mis à jour",
-    "ratesError": "Échec de la mise à jour des taux de change"
+    "ratesError": "Échec de la mise à jour des taux de change",
+    "cashBalance": "Liquidités",
+    "investmentAccounts": "Comptes d'investissement"
   },
   "transactions": {
     "title": "Transactions",

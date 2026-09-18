@@ -491,7 +491,7 @@
     "greetingEvening": "こんばんは",
     "availableBalance": "利用可能残高",
     "netWorth": "純資産",
-    "netWorthTooltip": "口座+投資から、未払いのクレジットカード請求を差し引いた額。",
+    "netWorthTooltip": "現金＋投資口座＋投資資産から、未払いのクレジットカード請求を差し引いた額。投資は利用可能残高として扱いません。",
     "creditCardBalance": "未払いのクレジットカード請求",
     "pendingSharesOwe": "グループの貸し借りを反映した純額 {{net}}({{owed}}件未精算)",
     "pendingSharesOwed": "あなたへの未回収{{owed}}を含む純額 {{net}}",
@@ -550,7 +550,9 @@
     "fxRateUsed": "為替レート: {{rate}}",
     "refreshRates": "為替レートを更新",
     "ratesRefreshed": "為替レートを更新しました",
-    "ratesError": "為替レートの更新に失敗しました"
+    "ratesError": "為替レートの更新に失敗しました",
+    "cashBalance": "現金",
+    "investmentAccounts": "投資口座"
   },
   "transactions": {
     "title": "取引",
