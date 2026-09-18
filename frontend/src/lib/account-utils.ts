@@ -18,6 +18,21 @@ export function sortAccountsByDisplayName<
 }
 
 /**
+ * Return a presentation-only copy with the largest account balances first.
+ * Debt accounts participate by magnitude, matching the balance list in the
+ * sidebar, while invalid/missing balances sort as zero.
+ */
+export function sortAccountsByAbsoluteBalance<
+  T extends { current_balance?: number | string | null },
+>(accounts: readonly T[]): T[] {
+  return [...accounts].sort((left, right) => {
+    const leftBalance = Number(left.current_balance) || 0
+    const rightBalance = Number(right.current_balance) || 0
+    return Math.abs(rightBalance) - Math.abs(leftBalance)
+  })
+}
+
+/**
  * The bank's identifier for an account, masked to its last 4 chars, e.g. "•••• 1234".
  *
  * Banks commonly report every account under the same label (often the holder's
