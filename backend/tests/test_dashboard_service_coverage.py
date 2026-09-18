@@ -607,3 +607,50 @@ async def test_balance_at_multi_currency_conversion(session, test_user, test_wor
     total = await _balance_at(session, test_workspace.id, today, primary_currency_hint="BRL")
     # 500 BRL + (100 USD * 5.0 = 500 BRL) = 1000
     assert total == pytest.approx(1000.0, abs=5.0)
+
+
+@pytest.mark.asyncio
+async def test_summary_splits_cash_from_investment_accounts(session, test_user, test_workspace):
+    """Cash (checking/savings/wallet) must not include brokerage investment accounts.
+
+    Net worth (total_balance) still includes investment accounts; they are just
+    labelled separately so the UI never calls them available cash (#959).
+    """
+    today = date.today()
+    checking = await _make_account(
+        session, test_user.id, test_workspace.id, acc_type="checking", name="Checking",
+    )
+    savings = await _make_account(
+        session, test_user.id, test_workspace.id, acc_type="savings", name="Savings",
+    )
+    wallet = await _make_account(
+        session, test_user.id, test_workspace.id, acc_type="wallet", name="Cash",
+    )
+    investment = await _make_account(
+        session, test_user.id, test_workspace.id, acc_type="investment", name="Broker",
+    )
+    await _add_txn(
+        session, test_user.id, checking.id, test_workspace.id, 1000, "credit", today,
+        source="opening_balance",
+    )
+    await _add_txn(
+        session, test_user.id, savings.id, test_workspace.id, 500, "credit", today,
+        source="opening_balance",
+    )
+    await _add_txn(
+        session, test_user.id, wallet.id, test_workspace.id, 50, "credit", today,
+        source="opening_balance",
+    )
+    await _add_txn(
+        session, test_user.id, investment.id, test_workspace.id, 8000, "credit", today,
+        source="opening_balance",
+    )
+
+    summary = await get_summary(session, test_workspace.id, test_user.id, month=today.replace(day=1))
+
+    assert summary.cash_balance.get("BRL") == pytest.approx(1550.0)
+    assert summary.cash_balance_primary == pytest.approx(1550.0)
+    assert summary.investment_accounts.get("BRL") == pytest.approx(8000.0)
+    assert summary.investment_accounts_primary == pytest.approx(8000.0)
+    # Net worth still includes investment accounts (no assets in this fixture).
+    assert summary.total_balance.get("BRL") == pytest.approx(9550.0)

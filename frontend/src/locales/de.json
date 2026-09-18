@@ -491,7 +491,7 @@
     "greetingEvening": "Guten Abend",
     "availableBalance": "Verfügbarer Kontostand",
     "netWorth": "Nettovermögen",
-    "netWorthTooltip": "Konten + Investitionen, abzüglich offener Kreditkartenrechnungen.",
+    "netWorthTooltip": "Bargeld + Anlagekonten + investiertes Vermögen, abzüglich offener Kreditkartenrechnungen. Anlagen gelten nicht als verfügbares Geld.",
     "creditCardBalance": "Offene Kreditkartenrechnungen",
     "pendingSharesOwe": "Netto {{net}} nach Gruppenschulden ({{owed}} ausstehend)",
     "pendingSharesOwed": "Netto {{net}} einschließlich {{owed}}, die dir geschuldet werden",
@@ -550,7 +550,9 @@
     "fxRateUsed": "Wechselkurs: {{rate}}",
     "refreshRates": "Wechselkurse aktualisieren",
     "ratesRefreshed": "Wechselkurse aktualisiert",
-    "ratesError": "Fehler beim Aktualisieren der Wechselkurse"
+    "ratesError": "Fehler beim Aktualisieren der Wechselkurse",
+    "cashBalance": "Bargeld",
+    "investmentAccounts": "Anlagekonten"
   },
   "transactions": {
     "title": "Transaktionen",

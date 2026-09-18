@@ -696,6 +696,12 @@ export interface DashboardSummary {
   pending_categorization_amount: number
   assets_value: Record<string, number>
   assets_value_primary: number
+  /** Checking + savings + wallet (spendable / near-liquid). */
+  cash_balance?: Record<string, number>
+  cash_balance_primary?: number
+  /** Accounts with type=investment (brokerage cash), distinct from assets_value. */
+  investment_accounts?: Record<string, number>
+  investment_accounts_primary?: number
   primary_currency: string
   // Net pending balance from group splits in primary currency.
   // Negative = net liability, positive = net receivable. Already
