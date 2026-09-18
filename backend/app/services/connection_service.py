@@ -37,7 +37,8 @@ from app.providers.base import (
 )
 from app.services import oauth_state
 from app.services import admin_service
-from app.services import recurring_match_service
+from app.services import reconciliation_service, recurring_match_service
+from app.services.text_similarity import token_overlap
 from app.services.account_service import (
     _simplefin_to_internal_balance,
     sync_opening_balance_for_connected_account,
@@ -879,6 +880,48 @@ async def _match_pluggy_category(
     return result.scalars().first()
 
 
+async def _find_installment_category(
+    session: AsyncSession,
+    account_id: uuid.UUID,
+    txn_data,
+) -> Optional[uuid.UUID]:
+    """Reuse the latest user-selected category from an earlier installment.
+
+    Pluggy gives every parcel the original purchase date, installment count,
+    and total purchase amount. Together with the card account and transaction
+    type, those fields identify the purchase series without relying on the
+    description (whose ``03/12`` suffix changes every month).
+
+    Only earlier synced parcels qualify. This keeps manual installment series
+    separate and lets a user's most recent category correction become the
+    source of truth for the next imported parcel.
+    """
+    if (
+        txn_data.installment_number is None
+        or txn_data.total_installments is None
+        or txn_data.installment_total_amount is None
+        or txn_data.installment_purchase_date is None
+    ):
+        return None
+
+    result = await session.execute(
+        select(Transaction.category_id)
+        .where(
+            Transaction.account_id == account_id,
+            Transaction.source == "sync",
+            Transaction.category_id.is_not(None),
+            Transaction.installment_purchase_date == txn_data.installment_purchase_date,
+            Transaction.total_installments == txn_data.total_installments,
+            Transaction.installment_total_amount == txn_data.installment_total_amount,
+            Transaction.type == txn_data.type,
+            Transaction.installment_number < txn_data.installment_number,
+        )
+        .order_by(Transaction.installment_number.desc(), Transaction.date.desc())
+        .limit(1)
+    )
+    return result.scalars().first()
+
+
 async def get_connections(session: AsyncSession, workspace_id: uuid.UUID) -> list[BankConnection]:
     result = await session.execute(
         select(BankConnection)
@@ -1164,9 +1207,16 @@ async def handle_oauth_callback(
                             )
                 continue
 
-            category_id = await _match_pluggy_category(
-                session, workspace_id, txn_data.pluggy_category, enabled=use_provider_cats
+            category_id = await _find_installment_category(
+                session, account.id, txn_data
             )
+            if category_id is None:
+                category_id = await _match_pluggy_category(
+                    session,
+                    workspace_id,
+                    txn_data.pluggy_category,
+                    enabled=use_provider_cats,
+                )
             # Resolve payee entity from raw payee text
             payee_id = None
             if txn_data.payee:
@@ -1236,6 +1286,19 @@ async def handle_oauth_callback(
     # Detect transfer pairs among newly synced transactions
     await detect_transfer_pairs(session, workspace_id, candidate_ids=new_tx_ids)
 
+    # And settle what this money was promised against, once the rows exist.
+    if new_tx_ids:
+        landed = list(
+            (
+                await session.execute(
+                    select(Transaction).where(Transaction.id.in_(new_tx_ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        await reconciliation_service.match_incoming(session, workspace_id, landed)
+
     # Investment holdings live on /investments — separate endpoint from
     # /accounts. Pulled after account setup when enabled so holdings are
     # available on the Assets page immediately after the widget closes.
@@ -1246,18 +1309,6 @@ async def handle_oauth_callback(
     await session.commit()
     await session.refresh(connection)
     return connection
-
-
-def _description_similarity(a: str | None, b: str | None) -> float:
-    """Token overlap ratio between two descriptions."""
-    if not a or not b:
-        return 0.0
-    tokens_a = set(a.lower().split())
-    tokens_b = set(b.lower().split())
-    if not tokens_a or not tokens_b:
-        return 0.0
-    intersection = tokens_a & tokens_b
-    return len(intersection) / max(len(tokens_a), len(tokens_b))
 
 
 async def _fuzzy_match_manual(
@@ -1287,7 +1338,7 @@ async def _fuzzy_match_manual(
     best_match = None
     best_score = 0.0
     for candidate in candidates:
-        score = _description_similarity(
+        score = token_overlap(
             candidate.original_description or candidate.description,
             txn_data.description,
         )
@@ -1369,7 +1420,7 @@ async def _find_synced_duplicate(
     for candidate in result.scalars():
         if candidate.external_id and candidate.external_id.startswith("bill_charge:"):
             continue
-        if _description_similarity(
+        if token_overlap(
             candidate.original_description or candidate.description,
             txn_data.description,
         ) >= 0.7:
@@ -1428,7 +1479,7 @@ async def _cleanup_phantom_duplicates(
             )
         )
         for sibling in sibling_result.scalars():
-            if _description_similarity(
+            if token_overlap(
                 sibling.original_description or sibling.description,
                 tx.original_description or tx.description,
             ) >= 0.9:
@@ -2000,12 +2051,16 @@ async def sync_connection(
                 incoming_currency = (
                     txn_data.currency or acc_data.currency or user_currency
                 )
-                category_id = await _match_pluggy_category(
-                    session,
-                    workspace_id,
-                    txn_data.pluggy_category,
-                    enabled=use_provider_cats,
+                category_id = await _find_installment_category(
+                    session, account.id, txn_data
                 )
+                if category_id is None:
+                    category_id = await _match_pluggy_category(
+                        session,
+                        workspace_id,
+                        txn_data.pluggy_category,
+                        enabled=use_provider_cats,
+                    )
 
                 sync_payee_id = None
                 if txn_data.payee:
@@ -2146,6 +2201,25 @@ async def sync_connection(
         # Detect transfer pairs among newly synced transactions
         if new_tx_ids:
             await detect_transfer_pairs(session, workspace_id, candidate_ids=new_tx_ids)
+
+            # Then settle whatever this money was promised against. It runs
+            # after the rows are written, not inside the loop: the recurring
+            # match upgrades a placeholder in place, while an invoice link is
+            # a row pointing at a transaction that has to exist first. It is
+            # also a single batch, so the candidate invoices are loaded once
+            # per sync rather than once per transaction.
+            landed = list(
+                (
+                    await session.execute(
+                        select(Transaction).where(Transaction.id.in_(new_tx_ids))
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            await reconciliation_service.match_incoming(
+                session, workspace_id, landed
+            )
 
         # Clean up phantom duplicates: providers occasionally double-report the
         # same payment with different ids. Once transfer detection has paired

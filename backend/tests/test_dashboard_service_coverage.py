@@ -37,6 +37,18 @@ from app.services.dashboard_service import (
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture
+def projection_today(monkeypatch):
+    """Keep current-month projection cases away from the last day of a month."""
+    class ProjectionDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 1, 15)
+
+    monkeypatch.setattr("app.services.dashboard_service.date", ProjectionDate)
+    return ProjectionDate.today()
+
+
 async def _seed_fx(session, today=None):
     """USD->BRL=5.0, USD->EUR=0.9, USD->USD=1.0."""
     today = today or date.today()
@@ -384,18 +396,17 @@ async def test_daily_deltas_multi_currency(session, test_user, test_workspace):
 
 
 @pytest.mark.asyncio
-async def test_balance_history_with_future_projections(session, test_user, test_workspace):
-    today = date.today()
+async def test_balance_history_with_future_projections(
+    session, test_user, test_workspace, projection_today
+):
+    today = projection_today
     month_start = today.replace(day=1)
     acc = await _make_account(session, test_user.id, test_workspace.id, currency="BRL")
     await _add_txn(session, test_user.id, acc.id, test_workspace.id, 1000, "credit", month_start, source="opening_balance")
 
     # Daily recurring whose next occurrence is in the future -> future days
-    # get projection deltas (lines 979-985). Skip on the last day of the month
-    # when no future days remain.
+    # get projection deltas even when the suite runs at a month boundary.
     next_day = today + timedelta(days=1)
-    if next_day.month != today.month:
-        pytest.skip("no future days left in current month")
     rec = RecurringTransaction(
         id=uuid.uuid4(), user_id=test_user.id, workspace_id=test_workspace.id,
         description="Daily", amount=Decimal("5"), type="credit",
@@ -470,14 +481,11 @@ async def test_monthly_trend(session, test_user, test_workspace):
 
 @pytest.mark.asyncio
 async def test_summary_current_month_projection_only_adjusts_projected_balance(
-    session, test_user, test_workspace
+    session, test_user, test_workspace, projection_today
 ):
     """Future recurring rows affect projected, never current, balance."""
-    today = date.today()
+    today = projection_today
     month_start = today.replace(day=1)
-    # Only run when there's at least one future day in the month.
-    if (month_start + timedelta(days=40)).replace(day=1) - timedelta(days=1) <= today:
-        pytest.skip("no future days left in current month")
 
     acc = await _make_account(session, test_user.id, test_workspace.id, currency="BRL")
     await _add_txn(session, test_user.id, acc.id, test_workspace.id, 1000, "credit", month_start, source="opening_balance")
