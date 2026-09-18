@@ -27,6 +27,10 @@ secret:
   enableBankingAppId: ""
   enableBankingPrivateKey: "" # Content of the PEM file
 
+  # TrueLayer
+  truelayerClientId: ""
+  truelayerClientSecret: ""
+
   # OIDC
   oidcClientId: ""
   oidcClientSecret: ""
@@ -52,6 +56,10 @@ config:
   enableBankingOauthRedirectUri: ""
   simplefinEnabled: "false"
   simplefinApiUrl: "https://beta-bridge.simplefin.org"
+  truelayerAuthUrl: "https://auth.truelayer.com"
+  truelayerApiUrl: "https://api.truelayer.com/data/v1"
+  # Leave empty to auto-compute from global.domain
+  truelayerRedirectUri: ""
   oidcEnabled: "false"
   oidcProviderName: "OIDC"
   oidcDiscoveryUrl: ""

@@ -972,6 +972,9 @@
       },
       "simplefin": {
         "description": "Банки США и других стран через SimpleFIN Bridge"
+      },
+      "truelayer": {
+        "description": "Банки Великобритании и Европы через TrueLayer open banking"
       }
     },
     "reconnected": "Банк успешно переподключён"
