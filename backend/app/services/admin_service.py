@@ -262,7 +262,7 @@ async def get_credit_card_accounting_mode(session: AsyncSession) -> str:
     relative to standard accounting usage (issue #821).
 
     Also accepts the pre-#821 'cash'/'accrual' values, normalizing them to
-    their new equivalents. Migration 086 rewrites the stored row, but a
+    their new equivalents. Migration 090 rewrites the stored row, but a
     rolling deploy can run new application code against the old row for a
     window (e.g. the Helm chart's Alembic Job runs as a post-upgrade hook,
     after new pods already serve traffic) — without this, a stored 'accrual'

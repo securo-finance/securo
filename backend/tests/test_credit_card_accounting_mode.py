@@ -366,7 +366,7 @@ class TestGlobalSetting:
 
     @pytest.mark.asyncio
     async def test_normalizes_legacy_cash_value(self, session, clean_db):
-        # Rolling deploy: new app code can read the row before migration 086
+        # Rolling deploy: new app code can read the row before migration 090
         # rewrites it (issue #821 follow-up). Must resolve to the same
         # behavior the legacy value described, not the bare default.
         await admin_service.set_app_setting(session, "credit_card_accounting_mode", "cash")
