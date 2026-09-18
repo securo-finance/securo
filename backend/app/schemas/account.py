@@ -67,6 +67,7 @@ class AccountRead(AccountBase):
     minimum_payment: Optional[float] = None
     card_brand: Optional[str] = None
     card_level: Optional[str] = None
+    shared_balance_group: Optional[str] = None
     is_closed: bool = False
     closed_at: Optional[datetime] = None
 

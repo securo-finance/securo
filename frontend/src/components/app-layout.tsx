@@ -189,7 +189,12 @@ export function AppLayout() {
   const visibleAccounts = activeAccountIds
     ? allAccounts.filter((a) => activeAccountIds.includes(a.id))
     : allAccounts
+  const sharedBalanceGroups = new Set<string>()
   const totalBalance = visibleAccounts.reduce((sum, a) => {
+    if (a.shared_balance_group) {
+      if (sharedBalanceGroups.has(a.shared_balance_group)) return sum
+      sharedBalanceGroups.add(a.shared_balance_group)
+    }
     return sum + Number(a.balance_primary ?? a.current_balance)
   }, 0)
   const versionA11yLabel = t('app.versionAriaLabel', { version: APP_VERSION })
@@ -455,6 +460,7 @@ export function AppLayout() {
                           <span className="block truncate font-medium">{getAccountName(acc)}</span>
                           <span className="block text-[10px] text-sidebar-muted/60">
                             {t(`accounts.type${typeKey}`)}
+                            {acc.shared_balance_group && ` · ${t('accounts.sharedCreditBalance')}`}
                           </span>
                         </div>
                         <div className="text-right shrink-0 ml-2">
@@ -529,21 +535,21 @@ export function AppLayout() {
 
       {showTour && <OnboardingTour onComplete={handleTourComplete} />}
       {localAuthEnabled && (
-        <>
-          <ChangePasswordDialog
-            open={changePasswordOpen}
-            onClose={() => setChangePasswordOpen(false)}
-          />
-          <TwoFactorSetup
-            open={twoFactorOpen}
-            onClose={() => setTwoFactorOpen(false)}
-          />
-          <PasskeyManagementDialog
-            open={passkeysOpen}
-            onClose={() => setPasskeysOpen(false)}
-          />
-        </>
+        <ChangePasswordDialog
+          open={changePasswordOpen}
+          onClose={() => setChangePasswordOpen(false)}
+        />
       )}
+      <TwoFactorSetup
+        open={twoFactorOpen}
+        onClose={() => setTwoFactorOpen(false)}
+        localAuthEnabled={localAuthEnabled}
+      />
+      <PasskeyManagementDialog
+        open={passkeysOpen}
+        onClose={() => setPasskeysOpen(false)}
+        localAuthEnabled={localAuthEnabled}
+      />
       <BackupDialog open={backupOpen} onClose={() => setBackupOpen(false)} />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       {/* Slide-over global chat — opened from the sidebar pill or via
@@ -581,6 +587,7 @@ function UserMenu({
   isAdmin?: boolean
   agentsEnabled?: boolean
 }) {
+  const { user } = useAuth()
   const { t, i18n } = useTranslation()
   const nav = useNavigate()
   const currentLang = resolveSupportedLang(i18n.resolvedLanguage ?? i18n.language)
@@ -615,30 +622,33 @@ function UserMenu({
           </>
         )}
         {localAuthEnabled && (
-          <>
-            <DropdownMenuItem
-              onClick={onChangePassword}
-              className="flex items-center gap-2"
-            >
-              <KeyRound size={14} />
-              {t('auth.changePassword')}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={onTwoFactor}
-              className="flex items-center gap-2"
-            >
-              <ShieldCheck size={14} />
-              {t('auth.twoFactorTitle')}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={onPasskeys}
-              className="flex items-center gap-2"
-            >
-              <Fingerprint size={14} />
-              {t('auth.passkeysTitle')}
-            </DropdownMenuItem>
-          </>
+          <DropdownMenuItem
+            onClick={onChangePassword}
+            className="flex items-center gap-2"
+          >
+            <KeyRound size={14} />
+            {t('auth.changePassword')}
+          </DropdownMenuItem>
         )}
+        {/* Enrolled factors outlive the switch to OIDC-only. Hiding these
+            entries would strand the user with a factor and no way to remove
+            it, since the product has no recovery codes. */}
+        {(localAuthEnabled || user?.is_2fa_enabled) && (
+          <DropdownMenuItem
+            onClick={onTwoFactor}
+            className="flex items-center gap-2"
+          >
+            <ShieldCheck size={14} />
+            {t(localAuthEnabled ? 'auth.twoFactorTitle' : 'auth.disable2fa')}
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem
+          onClick={onPasskeys}
+          className="flex items-center gap-2"
+        >
+          <Fingerprint size={14} />
+          {t('auth.passkeysTitle')}
+        </DropdownMenuItem>
         <DropdownMenuItem
           onClick={onBackup}
           className="flex items-center gap-2"

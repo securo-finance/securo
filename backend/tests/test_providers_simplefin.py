@@ -183,6 +183,38 @@ async def test_auth_errlist_raises_user_action_required():
 
 
 @pytest.mark.asyncio
+async def test_auth_errlist_with_usable_accounts_is_soft_warning(caplog):
+    """A stale SimpleFIN sub-connection must not block healthy accounts."""
+    import logging as stdlogging
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "errlist": [
+                    {"code": "con.auth", "msg": "Apple Card auth required", "conn_id": "APPLE"}
+                ],
+                "accounts": [
+                    {
+                        "id": "acc-healthy",
+                        "name": "Healthy Checking",
+                        "currency": "USD",
+                        "balance": "42.00",
+                    }
+                ],
+            },
+        )
+
+    creds = {"access_url": "https://u:p@bridge.example/simplefin"}
+    provider = SimpleFinProvider()
+    with caplog.at_level(stdlogging.WARNING, logger="app.providers.simplefin"), _patched_client(handler):
+        accounts = await provider.get_accounts(creds)
+
+    assert [acc.external_id for acc in accounts] == ["acc-healthy"]
+    assert any("con.auth" in rec.getMessage() for rec in caplog.records)
+
+
+@pytest.mark.asyncio
 async def test_act_failed_is_soft_warning(caplog):
     """``act.failed`` is transient — keep going, just log."""
     import logging as stdlogging
@@ -240,6 +272,45 @@ async def test_accounts_request_moves_url_userinfo_to_auth_header():
 async def test_missing_access_url_raises_session_expired():
     with pytest.raises(SessionExpiredError):
         await SimpleFinProvider().get_accounts({})
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_auth_errlist_with_requested_account_is_soft_warning(caplog):
+    """A top-level auth warning must not block requested-account transactions."""
+    import logging as stdlogging
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.params.get("account") == "acc-healthy"
+        return httpx.Response(
+            200,
+            json={
+                "errlist": [
+                    {"code": "con.auth", "msg": "Apple Card auth required", "conn_id": "APPLE"}
+                ],
+                "accounts": [
+                    {
+                        "id": "acc-healthy",
+                        "transactions": [
+                            {
+                                "id": "tx-healthy",
+                                "amount": "-12.34",
+                                "posted": 1672531200,
+                                "description": "Coffee",
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+
+    creds = {"access_url": "https://u:p@bridge.example/simplefin"}
+    with caplog.at_level(stdlogging.WARNING, logger="app.providers.simplefin"), _patched_client(handler):
+        txns = await SimpleFinProvider().get_transactions(
+            creds, "acc-healthy", since=date(2023, 1, 1)
+        )
+
+    assert [txn.external_id for txn in txns] == ["tx-healthy"]
+    assert any("con.auth" in rec.getMessage() for rec in caplog.records)
 
 
 # ----- transactions -----------------------------------------------------------
@@ -361,6 +432,29 @@ async def test_get_transactions_chunks_long_windows():
     with _patched_client(handler):
         await SimpleFinProvider().get_transactions(creds, "acc-1", since=long_ago)
     assert len(calls) >= 3  # 200 days / 90-day window
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_followup_rewinds_one_valid_full_window():
+    calls: list[tuple[int, int]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((
+            int(request.url.params["start-date"]),
+            int(request.url.params["end-date"]),
+        ))
+        return httpx.Response(
+            200, json={"accounts": [{"id": "acc-1", "transactions": []}]}
+        )
+
+    creds = {"access_url": "https://u:p@bridge.example/simplefin"}
+    with _patched_client(handler):
+        await SimpleFinProvider().get_transactions(
+            creds, "acc-1", since=date.today() - timedelta(days=14)
+        )
+
+    assert len(calls) == 1
+    assert calls[0][1] - calls[0][0] == 45 * 24 * 60 * 60
 
 
 # ----- holdings ---------------------------------------------------------------
