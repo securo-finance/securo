@@ -126,7 +126,9 @@
     "groupAdmin": "Administratie",
     "groupAgents": "AI",
     "agents": "Agents",
-    "aiAgents": "AI-agents"
+    "aiAgents": "AI-agents",
+    "collapseSidebar": "Zijbalk inklappen",
+    "expandSidebar": "Zijbalk uitklappen"
   },
   "invoices": {
     "title": "Invoices",

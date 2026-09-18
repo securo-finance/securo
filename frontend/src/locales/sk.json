@@ -126,7 +126,9 @@
     "groupAdmin": "Administrácia",
     "groupAgents": "AI",
     "agents": "Agenti",
-    "aiAgents": "AI agenti"
+    "aiAgents": "AI agenti",
+    "collapseSidebar": "Zbaliť bočný panel",
+    "expandSidebar": "Rozbaliť bočný panel"
   },
   "invoices": {
     "title": "Faktúry",

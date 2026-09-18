@@ -126,7 +126,9 @@
     "groupAdmin": "प्रशासन",
     "groupAgents": "AI",
     "agents": "एजेंट",
-    "aiAgents": "AI एजेंट"
+    "aiAgents": "AI एजेंट",
+    "collapseSidebar": "साइडबार छोटा करें",
+    "expandSidebar": "साइडबार बड़ा करें"
   },
   "invoices": {
     "title": "इनवॉइस",
