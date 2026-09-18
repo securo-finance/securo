@@ -70,28 +70,31 @@ def counts_in_current_balance(as_of: date):
 
 
 def reporting_date_col(accounting_mode: str):
-    """The date column a transaction should be *bucketed by* in period
-    aggregations (dashboard, reports, budgets).
+    """Return the SQL date expression used for period attribution.
 
-    Honors the manual credit-card cycle override (`effective_bill_date`)
-    FIRST — regardless of accounting mode — because that's the whole point
-    of the override: the user hand-corrected which invoice a purchase
-    belongs to (issue #92). When there's no override, fall back to
-    `effective_date` in accrual mode or the raw purchase `date` in cash
-    mode.
-
-    This mirrors the ordering used by the transaction list and the credit
-    card bill view, so a transaction lands in the same month everywhere the
-    user looks. Aggregations that skipped the override summed credit-card
-    spend under the purchase month instead of the invoice month (issue
-    #232).
+    A user-supplied reporting override wins first while the provider `date`
+    remains immutable bank truth. Credit-card bill overrides retain their
+    existing priority over the cash/accrual base date.
     """
     base = (
         Transaction.effective_date
         if accounting_mode == "accrual"
         else Transaction.date
     )
-    return func.coalesce(Transaction.effective_bill_date, base)
+    return func.coalesce(
+        Transaction.reporting_date_override,
+        Transaction.effective_bill_date,
+        base,
+    )
+
+
+def reporting_date_value(transaction: Transaction, accounting_mode: str) -> date:
+    """Python equivalent of :func:`reporting_date_col` for loaded rows."""
+    return (
+        transaction.reporting_date_override
+        or transaction.effective_bill_date
+        or (transaction.effective_date if accounting_mode == "accrual" else transaction.date)
+    )
 
 
 def is_not_ignored():
@@ -263,10 +266,7 @@ async def owner_split_offset_pnl(
             )
         )
     )
-    date_col = func.coalesce(
-        Transaction.effective_bill_date,
-        Transaction.effective_date if use_effective_date else Transaction.date,
-    )
+    date_col = reporting_date_col("accrual" if use_effective_date else "cash")
 
     result = await session.execute(
         select(
@@ -352,10 +352,7 @@ async def owner_split_offset_by_category(
             )
         )
     )
-    date_col = func.coalesce(
-        Transaction.effective_bill_date,
-        Transaction.effective_date if use_effective_date else Transaction.date,
-    )
+    date_col = reporting_date_col("accrual" if use_effective_date else "cash")
 
     result = await session.execute(
         select(
@@ -431,10 +428,7 @@ async def viewer_shared_pnl(
         GroupMember.linked_user_id == user_id,
         GroupMember.is_self.is_(False),
     )
-    date_col = func.coalesce(
-        Transaction.effective_bill_date,
-        Transaction.effective_date if use_effective_date else Transaction.date,
-    )
+    date_col = reporting_date_col("accrual" if use_effective_date else "cash")
 
     result = await session.execute(
         select(
@@ -520,10 +514,7 @@ async def viewer_shared_spending_by_category(
         GroupMember.linked_user_id == user_id,
         GroupMember.is_self.is_(False),
     )
-    date_col = func.coalesce(
-        Transaction.effective_bill_date,
-        Transaction.effective_date if use_effective_date else Transaction.date,
-    )
+    date_col = reporting_date_col("accrual" if use_effective_date else "cash")
 
     result = await session.execute(
         select(

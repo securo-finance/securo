@@ -109,6 +109,9 @@ class TransactionUpdate(BaseModel):
     # CC bucketing override (issue #92). Empty string / explicit null clears
     # it back to auto. Only meaningful for credit-card accounts.
     effective_bill_date: Optional[_Date] = None
+    # Optional period-attribution correction. This intentionally does not alter
+    # bank-date/credit-card-cycle behavior without mutating provider truth.
+    reporting_date_override: Optional[_Date] = None
     # When provided, replaces the transaction's splits wholesale. Pass
     # an object with an empty `splits` list to clear them.
     splits: Optional[TransactionSplitsInput] = None
@@ -186,6 +189,7 @@ class TransactionRead(TransactionBase):
     installment_series_id: Optional[uuid.UUID] = None
     bill_id: Optional[uuid.UUID] = None
     effective_bill_date: Optional[_Date] = None
+    reporting_date_override: Optional[_Date] = None
     recurring_transaction_id: Optional[uuid.UUID] = None
     splits: list[TransactionSplitRead] = []
     # Shared-transaction view fields. Set per-request when the viewer
