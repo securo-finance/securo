@@ -43,3 +43,39 @@ class BudgetVsActual(BaseModel):
     projected_prev_month_amount: Decimal = Decimal("0")
     percentage_used: Optional[float] = None
     is_recurring: bool = False
+
+
+class BudgetCopyMonthRequest(BaseModel):
+    source_month: _Date
+    target_month: _Date
+    adjustment_percentage: Decimal = Decimal("0.0")
+    overwrite_existing: bool = False
+
+
+class BudgetRolloverCategory(BaseModel):
+    category_id: uuid.UUID
+    category_name: str
+    budgeted: Decimal
+    actual_spent: Decimal
+    remaining: Decimal
+    carryover_eligible: bool
+
+
+class BudgetRolloverSummaryResponse(BaseModel):
+    month: _Date
+    total_budgeted: Decimal
+    total_spent: Decimal
+    net_surplus: Decimal
+    categories: list[BudgetRolloverCategory]
+
+
+class BudgetMultiMonthForecastItem(BaseModel):
+    month: _Date
+    projected_budget: Decimal
+    projected_spend: Decimal
+    projected_variance: Decimal
+
+
+class BudgetForecastResponse(BaseModel):
+    forecast_months: int
+    items: list[BudgetMultiMonthForecastItem]
