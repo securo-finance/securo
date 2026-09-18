@@ -1412,6 +1412,7 @@ async def _total_balance_by_currency(
             )
 
     totals: dict[str, float] = {}
+    balances: dict[uuid.UUID, float] = {}
     for account in accounts:
         if account.connection_id:
             bal = float(account.balance)
@@ -1423,7 +1424,24 @@ async def _total_balance_by_currency(
                     bal -= connected_pending.get(account.id, 0.0)
         else:
             bal = manual_sums.get(account.id, 0.0)
-        totals[account.currency] = totals.get(account.currency, 0) + bal
+        balances[account.id] = bal
+
+    grouped: dict[str, list[Account]] = {}
+    for account in accounts:
+        key = account.shared_balance_group or str(account.id)
+        grouped.setdefault(key, []).append(account)
+
+    for group in grouped.values():
+        total = sum(balances[account.id] for account in group)
+        if len(group) > 1 and group[0].shared_balance_group:
+            # Every card in the group carries the same shared debt, so `total`
+            # counts it len(group) times; strip the duplicates.
+            current_shared = await _account_balance_at(
+                session, group[0], today, include_pending=include_pending
+            )
+            total -= current_shared * (len(group) - 1)
+        currency = group[0].currency
+        totals[currency] = totals.get(currency, 0) + total
     return totals
 
 

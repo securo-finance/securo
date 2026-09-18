@@ -305,6 +305,57 @@ async def test_total_balance_by_currency(session: AsyncSession, test_user, test_
     assert totals.get("USD", 0) == pytest.approx(500.0)
 
 
+@pytest.mark.asyncio
+async def test_total_balance_counts_shared_credit_balance_once(
+    session, test_user, test_workspace, test_connection,
+):
+    group = "pluggy:connection:shared-credit"
+    first = await _make_account(
+        session, test_user.id, "Shared Visa", acc_type="credit_card", balance="300.00",
+        connection_id=test_connection.id,
+    )
+    second = await _make_account(
+        session, test_user.id, "Shared Mastercard", acc_type="credit_card", balance="300.00",
+        connection_id=test_connection.id,
+    )
+    first.workspace_id = test_workspace.id
+    second.workspace_id = test_workspace.id
+    first.shared_balance_group = group
+    second.shared_balance_group = group
+    await session.commit()
+
+    totals = await _total_balance_by_currency(session, test_workspace.id, date.today())
+
+    assert totals["BRL"] == pytest.approx(-300.0)
+
+
+@pytest.mark.asyncio
+async def test_total_balance_backtracks_shared_credit_balance_across_all_cards(
+    session, test_user, test_workspace, test_connection,
+):
+    group = "pluggy:connection:shared-credit"
+    first = await _make_account(
+        session, test_user.id, "Shared Visa", acc_type="credit_card", balance="300.00",
+        connection_id=test_connection.id,
+    )
+    second = await _make_account(
+        session, test_user.id, "Shared Mastercard", acc_type="credit_card", balance="300.00",
+        connection_id=test_connection.id,
+    )
+    for account in (first, second):
+        account.workspace_id = test_workspace.id
+        account.shared_balance_group = group
+    await session.commit()
+    await _add_txn(session, test_user.id, first.id, 50, "debit", date.today())
+    await _add_txn(session, test_user.id, second.id, 25, "debit", date.today())
+
+    totals = await _total_balance_by_currency(
+        session, test_workspace.id, date.today() - timedelta(days=1)
+    )
+
+    assert totals["BRL"] == pytest.approx(-225.0)
+
+
 # ---------------------------------------------------------------------------
 # get_summary
 # ---------------------------------------------------------------------------

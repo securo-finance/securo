@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 # initial sync (since=None) we walk backwards in chunks of this size; for
 # follow-up syncs the sync layer's typical 30-90 day window fits in one call.
 SIMPLEFIN_MAX_WINDOW_DAYS = 90
-SIMPLEFIN_DEFAULT_HISTORY_DAYS = 90
+SIMPLEFIN_DEFAULT_HISTORY_DAYS = 45  # routine overlap, not the per-request cap
 SIMPLEFIN_INITIAL_HISTORY_DAYS = 365  # ~1 year backfill on first connect
 SIMPLEFIN_HTTP_TIMEOUT = 60.0
 
@@ -152,18 +152,21 @@ def _ticker(value: Any) -> Optional[str]:
     return value.strip().upper()[:32] or None
 
 
-def _surface_errors(errlist: list[dict], context: str) -> None:
-    """Raise a typed exception for auth errors; log everything else.
+def _surface_errors(
+    errlist: list[dict], context: str, *, has_usable_data: bool = False
+) -> list[dict]:
+    """Raise for auth errors only when the response has no usable data.
 
-    SimpleFIN's spec says: *Always show those errors to your end users.* For
-    the codes the user can act on (re-auth), we raise so the API layer can
-    flip the connection status. For the rest we log and continue — the
-    response usually still has usable data alongside the warnings.
+    SimpleFIN's spec says: *Always show those errors to your end users.* The
+    Bridge can return top-level ``con.auth`` warnings for one institution while
+    still returning fresh account data for other institutions under the same
+    Access URL. In that partial-success case, log the warning and keep the sync
+    moving so one stale sub-connection does not block every healthy account.
     """
     if not errlist:
-        return
+        return []
     reauth = [e for e in errlist if (e.get("code") or "").lower() in _REAUTH_ERROR_CODES]
-    if reauth:
+    if reauth and not has_usable_data:
         first = reauth[0]
         raise ProviderUserActionRequired(
             first.get("msg") or first.get("message") or "Reauthorize at SimpleFIN Bridge",
@@ -177,10 +180,14 @@ def _surface_errors(errlist: list[dict], context: str) -> None:
             entry.get("code"),
             entry.get("msg") or entry.get("message"),
         )
+    return reauth
 
 
 class SimpleFinProvider(BankProvider):
     """SimpleFIN Bridge connector."""
+
+    def __init__(self) -> None:
+        self.action_required_warnings: list[dict] = []
 
     @property
     def name(self) -> str:
@@ -439,7 +446,12 @@ class SimpleFinProvider(BankProvider):
 
     async def get_accounts(self, credentials: dict) -> list[AccountData]:
         payload = await self._fetch_accounts(credentials, pending=False)
-        _surface_errors(payload.get("errlist") or [], context="get_accounts")
+        warnings = _surface_errors(
+            payload.get("errlist") or [],
+            context="get_accounts",
+            has_usable_data=bool(payload.get("accounts") or []),
+        )
+        self.action_required_warnings.extend(warnings)
         _, accounts = self._parse_accounts(payload)
         return accounts
 
@@ -454,30 +466,47 @@ class SimpleFinProvider(BankProvider):
         if since is None:
             start_date = end_date - timedelta(days=SIMPLEFIN_INITIAL_HISTORY_DAYS)
         else:
-            start_date = since
+            # The Bridge can expose bank transactions weeks after their posted
+            # date. Always re-read one full provider window so delayed rows are
+            # eventually recovered instead of aging out of the sync cursor.
+            start_date = min(
+                since,
+                end_date - timedelta(days=SIMPLEFIN_DEFAULT_HISTORY_DAYS - 1),
+            )
         # Walk the request window in 90-day chunks (SimpleFIN's per-call cap).
         transactions: list[TransactionData] = []
         seen_ids: set[str] = set()
         cursor = start_date
-        while cursor <= end_date:
-            chunk_end = min(cursor + timedelta(days=SIMPLEFIN_MAX_WINDOW_DAYS), end_date)
+        end_exclusive = end_date + timedelta(days=1)
+        while cursor < end_exclusive:
+            chunk_end = min(
+                cursor + timedelta(days=SIMPLEFIN_MAX_WINDOW_DAYS),
+                end_exclusive,
+            )
             payload = await self._fetch_accounts(
                 credentials,
                 start_date=cursor,
-                end_date=chunk_end + timedelta(days=1),
+                end_date=chunk_end,
                 account_id=account_external_id,
                 pending=True,
             )
-            _surface_errors(payload.get("errlist") or [], context="get_transactions")
-            for raw_acc in payload.get("accounts") or []:
-                if str(raw_acc.get("id") or "") != account_external_id:
-                    continue
+            matching_accounts = [
+                raw_acc for raw_acc in payload.get("accounts") or []
+                if str(raw_acc.get("id") or "") == account_external_id
+            ]
+            warnings = _surface_errors(
+                payload.get("errlist") or [],
+                context="get_transactions",
+                has_usable_data=bool(matching_accounts),
+            )
+            self.action_required_warnings.extend(warnings)
+            for raw_acc in matching_accounts:
                 for raw_txn in raw_acc.get("transactions") or []:
                     parsed = self._build_transaction(raw_txn, payee_source)
                     if parsed and parsed.external_id not in seen_ids:
                         seen_ids.add(parsed.external_id)
                         transactions.append(parsed)
-            cursor = chunk_end + timedelta(days=1)
+            cursor = chunk_end
         return transactions
 
     @staticmethod
@@ -524,7 +553,12 @@ class SimpleFinProvider(BankProvider):
 
     async def get_holdings(self, credentials: dict) -> list[HoldingData]:
         payload = await self._fetch_accounts(credentials, pending=False)
-        _surface_errors(payload.get("errlist") or [], context="get_holdings")
+        warnings = _surface_errors(
+            payload.get("errlist") or [],
+            context="get_holdings",
+            has_usable_data=bool(payload.get("accounts") or []),
+        )
+        self.action_required_warnings.extend(warnings)
         holdings: list[HoldingData] = []
         for raw_acc in payload.get("accounts") or []:
             acc_currency = raw_acc.get("currency") or "USD"

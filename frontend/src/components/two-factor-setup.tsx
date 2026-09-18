@@ -20,9 +20,10 @@ import { Label } from '@/components/ui/label'
 interface TwoFactorSetupProps {
   open: boolean
   onClose: () => void
+  localAuthEnabled?: boolean
 }
 
-export function TwoFactorSetup({ open, onClose }: TwoFactorSetupProps) {
+export function TwoFactorSetup({ open, onClose, localAuthEnabled = true }: TwoFactorSetupProps) {
   const { t } = useTranslation()
   const { user, updateUser } = useAuth()
   const is2faEnabled = user?.is_2fa_enabled ?? false
@@ -41,6 +42,7 @@ export function TwoFactorSetup({ open, onClose }: TwoFactorSetupProps) {
   const [disableLoading, setDisableLoading] = useState(false)
 
   const handleSetup = async () => {
+    if (!localAuthEnabled) return
     setSetupLoading(true)
     setError('')
     try {
@@ -57,6 +59,7 @@ export function TwoFactorSetup({ open, onClose }: TwoFactorSetupProps) {
 
   const handleEnable = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!localAuthEnabled) return
     setSetupLoading(true)
     setError('')
     try {
@@ -156,6 +159,11 @@ export function TwoFactorSetup({ open, onClose }: TwoFactorSetupProps) {
       </Dialog>
     )
   }
+
+  // Enrollment is a local-credential feature: with local auth off the backend
+  // refuses /2fa/setup, so the dialog exists only to let an already-enrolled
+  // user disable 2FA.
+  if (!localAuthEnabled) return null
 
   // Enable flow
   return (

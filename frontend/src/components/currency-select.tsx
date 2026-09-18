@@ -49,6 +49,8 @@ export const CURRENCIES = [
   { code: 'EGP', flag: '\u{1F1EA}\u{1F1EC}', symbol: 'E£' },
   { code: 'MYR', flag: '\u{1F1F2}\u{1F1FE}', symbol: 'RM' },
   { code: 'CNY', flag: '\u{1F1E8}\u{1F1F3}', symbol: '¥' },
+  { code: 'SAR', flag: '\u{1F1F8}\u{1F1E6}', symbol: 'ر.س' },
+  { code: 'QAR', flag: '\u{1F1F6}\u{1F1E6}', symbol: 'ر.ق' },
   { code: 'JMD', flag: '\u{1F1EF}\u{1F1F2}', symbol: 'J$' },
 ] as const
 

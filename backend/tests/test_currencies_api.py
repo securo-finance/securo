@@ -197,6 +197,27 @@ async def test_currencies_include_cny_with_metadata(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_currencies_include_sar_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    sar = next((currency for currency in data if currency["code"] == "SAR"), None)
+
+    assert sar is not None
+    assert sar["symbol"] == "ر.س"
+    assert sar["name"] == "Saudi Riyal"
+    assert sar["flag"] == "🇸🇦"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_qar_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    qar = next((currency for currency in data if currency["code"] == "QAR"), None)
+
+    assert qar is not None
+    assert qar["symbol"] == "ر.ق"
+    assert qar["name"] == "Qatari Riyal"
+    assert qar["flag"] == "🇶🇦"
 async def test_currencies_include_jmd_with_metadata(client: AsyncClient):
     response = await client.get("/api/currencies")
     data = response.json()
