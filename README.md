@@ -37,6 +37,11 @@ docker compose up --build
 
 Open [http://localhost:3000](http://localhost:3000) and create an account. That's it.
 
+Running Securo just for yourself or your household? There is an optional
+[all-in-one deployment](docs/deploy-all-in-one.md) that collapses the stack to three
+containers and needs a single volume, which also makes it the one to use on hosts that allow
+only one volume per service.
+
 <p align="center">
   <img src="docs/screenshot.png" width="800" alt="Securo dashboard" />
 </p>
