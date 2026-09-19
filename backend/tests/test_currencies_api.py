@@ -227,3 +227,15 @@ async def test_currencies_include_jmd_with_metadata(client: AsyncClient):
     assert jmd["symbol"] == "J$"
     assert jmd["name"] == "Jamaican Dollar"
     assert jmd["flag"] == "🇯🇲"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_rsd_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    rsd = next((currency for currency in data if currency["code"] == "RSD"), None)
+
+    assert rsd is not None
+    assert rsd["symbol"] == "RSD"
+    assert rsd["name"] == "Serbian Dinar"
+    assert rsd["flag"] == "🇷🇸"
