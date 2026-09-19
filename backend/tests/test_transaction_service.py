@@ -447,12 +447,12 @@ async def test_get_transactions_date_filter_respects_accounting_mode(
 
     # Accrual mode: both buckets shift to the bill-due month.
     accrual_april, _, _ = await get_transactions(
-        session, test_workspace.id, test_user.id, accounting_mode="accrual", **april_window
+        session, test_workspace.id, test_user.id, accounting_mode="invoice_due_date", **april_window
     )
     assert {t.description for t in accrual_april} == {"CC purchase", "Regular"}
 
     accrual_march, _, _ = await get_transactions(
-        session, test_workspace.id, test_user.id, accounting_mode="accrual", **march_window
+        session, test_workspace.id, test_user.id, accounting_mode="invoice_due_date", **march_window
     )
     assert {t.description for t in accrual_march} == set()
 

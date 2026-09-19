@@ -535,7 +535,6 @@
     "drillDownShownTotal": "दिखाया गया कुल",
     "drillDownEmpty": "कोई लेन-देन नहीं मिला",
     "drillDownClose": "बंद करें",
-    "accrualNote": "क्रेडिट-कार्ड लेन-देन बिल की देय तिथि के अनुसार समूहित होते हैं (प्रोद्भवन मोड)।",
     "savingsRate": "बचत दर",
     "savingsRateCaption": "इस महीने की आय का बचाया गया हिस्सा",
     "spendingProjection": "इस रफ़्तार से, आप महीने के अंत तक {{amount}} खर्च करेंगे",
@@ -550,7 +549,8 @@
     "fxRateUsed": "FX दर: {{rate}}",
     "refreshRates": "FX दरें रीफ़्रेश करें",
     "ratesRefreshed": "FX दरें अपडेट हुईं",
-    "ratesError": "FX दरें अपडेट करने में विफल"
+    "ratesError": "FX दरें अपडेट करने में विफल",
+    "invoiceDueDateNote": "क्रेडिट कार्ड के लेन-देन बिल की देय तिथि के अनुसार समूहित हैं (नकद आधार)।"
   },
   "transactions": {
     "title": "लेन-देन",
@@ -1979,10 +1979,6 @@
       "registrationDesc": "बंद होने पर, केवल व्यवस्थापक ही नए उपयोगकर्ता खाते बना सकते हैं।",
       "accountingTitle": "लेखांकन",
       "accountingSubtitle": "डैशबोर्ड, रिपोर्ट और बजट में क्रेडिट कार्ड लेन-देन कैसे गिने जाते हैं।",
-      "accountingCash": "नकद आधार",
-      "accountingCashDesc": "क्रेडिट कार्ड खरीद उसी दिन गिनी जाती है जिस दिन वे होती हैं (डिफ़ॉल्ट)।",
-      "accountingAccrual": "प्रोद्भवन आधार",
-      "accountingAccrualDesc": "क्रेडिट कार्ड खरीद बिल की देय तिथि पर गिनी जाती है — असल नकदी प्रवाह दर्शाती है।",
       "providerCategoriesTitle": "श्रेणियाँ",
       "providerCategories": "इंटीग्रेशन श्रेणियाँ उपयोग करें",
       "providerCategoriesDesc": "बंद होने पर, सिंक किए गए लेन-देन अवर्गीकृत आते हैं ताकि केवल आपके नियम लागू हों।",
@@ -2006,7 +2002,11 @@
       "dateFormatMdyDesc": "महीना पहले, जैसे 06/04/2026।",
       "dateFormatYmd": "वर्ष / महीना / दिन",
       "dateFormatYmdDesc": "ISO क्रम, जैसे 2026-06-04।",
-      "updated": "सेटिंग अपडेट हुई"
+      "updated": "सेटिंग अपडेट हुई",
+      "accountingPurchaseDate": "उपचय आधार",
+      "accountingPurchaseDateDesc": "क्रेडिट कार्ड की खरीदारी उसी दिन गिनी जाती है जिस दिन होती है (डिफ़ॉल्ट)।",
+      "accountingInvoiceDueDate": "नकद आधार",
+      "accountingInvoiceDueDateDesc": "क्रेडिट कार्ड की खरीदारी बिल की देय तिथि पर गिनी जाती है, जो वास्तविक नकदी प्रवाह दर्शाती है।"
     }
   },
   "onboarding": {
