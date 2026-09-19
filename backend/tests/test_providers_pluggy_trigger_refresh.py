@@ -206,7 +206,7 @@ async def test_default_trigger_refresh_returns_skipped():
         async def get_oauth_url(self, *a, **kw):  # type: ignore[override]
             return ""
 
-        async def handle_oauth_callback(self, code):  # type: ignore[override]
+        async def handle_oauth_callback(self, code, state=None):  # type: ignore[override]
             raise NotImplementedError
 
         async def get_accounts(self, credentials):  # type: ignore[override]
