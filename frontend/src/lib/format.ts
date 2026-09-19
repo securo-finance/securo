@@ -74,6 +74,7 @@ const CURRENCY_LOCALE: Record<string, string> = {
   SAR: 'en-SA',
   QAR: 'en-QA',
   JMD: 'en-JM',
+  RSD: 'sr-RS',
 }
 
 /**
