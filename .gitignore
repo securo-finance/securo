@@ -18,3 +18,18 @@ docker-compose.override.yml
 # downloaded ONNX embedding models, transaction attachments). User data
 # — never commit.
 backend/data/
+
+# Auto-added by github-engineer
+__pycache__/
+*.pyc
+*.pyd
+*.obj
+*.egg-info/
+build/
+dist/
+*.so
+*.whl
+*.egg
+nem_stats.c
+*.exp
+*.lib

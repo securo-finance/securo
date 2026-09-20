@@ -362,3 +362,105 @@ async def test_both_sides_imported_together(session: AsyncSession, test_user, te
     await session.refresh(debit)
     await session.refresh(credit)
     assert debit.transfer_pair_id == credit.transfer_pair_id
+
+
+# ---------------------------------------------------------------------------
+# Ambiguous match (issue #973)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_same_amount_same_day_skips_pairing(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """Two debits of the same amount on the same day with one credit must NOT pair.
+
+    When two debits are equidistant from the same credit, the match is
+    ambiguous and should be skipped rather than picking arbitrarily.
+    """
+    acc_bnp = await _make_account(session, test_user.id, "BNP Checking")
+    acc_fortuneo = await _make_account(session, test_user.id, "Fortuneo")
+    today = date.today()
+
+    debit1 = await _add_txn(
+        session, test_user.id, acc_bnp.id, 100, "debit", today,
+    )
+    debit2 = await _add_txn(
+        session, test_user.id, acc_bnp.id, 100, "debit", today,
+    )
+    # Single credit arriving 2 days later
+    credit = await _add_txn(
+        session, test_user.id, acc_fortuneo.id, 100, "credit",
+        today + timedelta(days=2),
+    )
+
+    pairs = await detect_transfer_pairs(session, test_workspace.id)
+    await session.commit()
+
+    # Neither debit should be paired — both are equally close
+    assert pairs == 0
+    await session.refresh(debit1)
+    await session.refresh(debit2)
+    await session.refresh(credit)
+    assert debit1.transfer_pair_id is None
+    assert debit2.transfer_pair_id is None
+    assert credit.transfer_pair_id is None
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_two_credits_same_amount_same_day_skips_pairing(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """One debit with two equidistant credits must NOT pair."""
+    acc_bnp = await _make_account(session, test_user.id, "BNP Checking 2")
+    acc_fortuneo = await _make_account(session, test_user.id, "Fortuneo 2")
+    acc_tr = await _make_account(session, test_user.id, "Trade Republic 2")
+    today = date.today()
+
+    debit = await _add_txn(
+        session, test_user.id, acc_bnp.id, 100, "debit", today,
+    )
+    credit1 = await _add_txn(
+        session, test_user.id, acc_fortuneo.id, 100, "credit",
+        today + timedelta(days=2),
+    )
+    credit2 = await _add_txn(
+        session, test_user.id, acc_tr.id, 100, "credit",
+        today + timedelta(days=2),
+    )
+
+    pairs = await detect_transfer_pairs(session, test_workspace.id)
+    await session.commit()
+
+    assert pairs == 0
+    await session.refresh(debit)
+    await session.refresh(credit1)
+    await session.refresh(credit2)
+    assert debit.transfer_pair_id is None
+    assert credit1.transfer_pair_id is None
+    assert credit2.transfer_pair_id is None
+
+
+@pytest.mark.asyncio
+async def test_unambiguous_pair_still_works_with_different_deltas(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """When one credit is clearly closer to a debit than another, pairing proceeds."""
+    acc1 = await _make_account(session, test_user.id, "Unambig A")
+    acc2 = await _make_account(session, test_user.id, "Unambig B")
+    acc3 = await _make_account(session, test_user.id, "Unambig C")
+    today = date.today()
+
+    debit = await _add_txn(session, test_user.id, acc1.id, 100, "debit", today)
+    # Close credit (same day)
+    close = await _add_txn(session, test_user.id, acc2.id, 100, "credit", today)
+    # Far credit (2 days later)
+    await _add_txn(session, test_user.id, acc3.id, 100, "credit", today + timedelta(days=2))
+
+    pairs = await detect_transfer_pairs(session, test_workspace.id)
+    await session.commit()
+    assert pairs == 1
+
+    await session.refresh(debit)
+    await session.refresh(close)
+    assert debit.transfer_pair_id == close.transfer_pair_id

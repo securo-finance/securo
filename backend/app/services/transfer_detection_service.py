@@ -75,49 +75,91 @@ async def detect_transfer_pairs(
     # credits that are in candidate_ids (avoid pairing two old transactions).
     candidate_id_set = set(candidate_ids) if candidate_ids else None
 
-    # Build a lookup: amount -> list of credits
-    credit_by_amount: dict[float, list[Transaction]] = defaultdict(list)
-    for c in credits:
-        credit_by_amount[abs(float(c.amount))].append(c)
+    # ponytail: amount-bucketed iterative closest-date matching;
+    # skipped: description-based disambiguation, add when description NLP/heuristics needed.
+    debits_by_amount: dict[float, list[Transaction]] = defaultdict(list)
+    for d in all_debits:
+        debits_by_amount[abs(float(d.amount))].append(d)
 
-    paired_credit_ids: set[uuid.UUID] = set()
-    paired_debit_ids: set[uuid.UUID] = set()
+    credits_by_amount: dict[float, list[Transaction]] = defaultdict(list)
+    for c in credits:
+        credits_by_amount[abs(float(c.amount))].append(c)
+
     pairs_created = 0
 
-    for debit in all_debits:
-        debit_amount = abs(float(debit.amount))
-        amount_candidates = credit_by_amount.get(debit_amount, [])
+    def _is_valid(debit: Transaction, credit: Transaction) -> bool:
+        if credit.account_id == debit.account_id:
+            return False
+        if candidate_id_set and debit.id not in candidate_id_set and credit.id not in candidate_id_set:
+            return False
+        return abs((credit.date - debit.date).days) <= date_tolerance_days
 
-        is_reverse_debit = candidate_id_set is not None and debit.id not in candidate_id_set
+    for amount, group_debits in debits_by_amount.items():
+        group_credits = credits_by_amount.get(amount)
+        if not group_credits:
+            continue
 
-        # Find closest-date match in a different account
-        best_match: Optional[Transaction] = None
-        best_delta: Optional[int] = None
+        unpaired_debits = list(group_debits)
+        unpaired_credits = list(group_credits)
 
-        for credit in amount_candidates:
-            if credit.id in paired_credit_ids:
-                continue
-            if credit.account_id == debit.account_id:
-                continue
-            # Reverse debits may only match credits from candidate_ids
-            if is_reverse_debit and candidate_id_set and credit.id not in candidate_id_set:
-                continue
+        while unpaired_debits and unpaired_credits:
+            # Find unique closest credit for each debit
+            best_credit_for_debit: dict[uuid.UUID, Optional[Transaction]] = {}
+            for d in unpaired_debits:
+                min_delta: Optional[int] = None
+                best_c: Optional[Transaction] = None
+                tied = False
+                for c in unpaired_credits:
+                    if not _is_valid(d, c):
+                        continue
+                    delta = abs((c.date - d.date).days)
+                    if min_delta is None or delta < min_delta:
+                        min_delta = delta
+                        best_c = c
+                        tied = False
+                    elif delta == min_delta:
+                        tied = True
+                best_credit_for_debit[d.id] = best_c if (best_c and not tied) else None
 
-            delta = abs((credit.date - debit.date).days)
-            if delta > date_tolerance_days:
-                continue
+            # Find unique closest debit for each credit
+            best_debit_for_credit: dict[uuid.UUID, Optional[Transaction]] = {}
+            for c in unpaired_credits:
+                min_delta: Optional[int] = None
+                best_d: Optional[Transaction] = None
+                tied = False
+                for d in unpaired_debits:
+                    if not _is_valid(d, c):
+                        continue
+                    delta = abs((c.date - d.date).days)
+                    if min_delta is None or delta < min_delta:
+                        min_delta = delta
+                        best_d = d
+                        tied = False
+                    elif delta == min_delta:
+                        tied = True
+                best_debit_for_credit[c.id] = best_d if (best_d and not tied) else None
 
-            if best_delta is None or delta < best_delta:
-                best_match = credit
-                best_delta = delta
+            # Commit only when the winner is mutually unique
+            matched_debit_ids: set[uuid.UUID] = set()
+            matched_credit_ids: set[uuid.UUID] = set()
 
-        if best_match:
-            pair_id = uuid.uuid4()
-            debit.transfer_pair_id = pair_id
-            best_match.transfer_pair_id = pair_id
-            paired_credit_ids.add(best_match.id)
-            paired_debit_ids.add(debit.id)
-            pairs_created += 1
+            for d in unpaired_debits:
+                c = best_credit_for_debit.get(d.id)
+                if not c:
+                    continue
+                if best_debit_for_credit.get(c.id) == d:
+                    pair_id = uuid.uuid4()
+                    d.transfer_pair_id = pair_id
+                    c.transfer_pair_id = pair_id
+                    matched_debit_ids.add(d.id)
+                    matched_credit_ids.add(c.id)
+                    pairs_created += 1
+
+            if not matched_debit_ids:
+                break
+
+            unpaired_debits = [d for d in unpaired_debits if d.id not in matched_debit_ids]
+            unpaired_credits = [c for c in unpaired_credits if c.id not in matched_credit_ids]
 
     return pairs_created
 
