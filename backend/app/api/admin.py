@@ -135,7 +135,7 @@ async def update_setting(
         )
     SETTING_VALIDATORS = {
         "registration_enabled": {"true", "false"},
-        "credit_card_accounting_mode": {"cash", "accrual"},
+        "credit_card_accounting_mode": {"purchase_date", "invoice_due_date"},
         "use_provider_categories": {"true", "false"},
         "number_format": {"auto", "comma_dot", "dot_comma", "space_comma"},
         "date_format": {"auto", "dmy", "mdy", "ymd"},

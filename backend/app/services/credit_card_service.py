@@ -105,10 +105,11 @@ def compute_effective_date(
     statement_close_day: Optional[int],
     payment_due_day: Optional[int],
 ) -> date:
-    """Return the *cash-flow* date for a credit card transaction.
+    """Return the invoice-due date for a credit card transaction.
 
-    In accrual reporting mode, a credit card purchase doesn't impact cash flow
-    on the purchase date — it impacts cash flow when the bill is paid. This
+    When the app is configured to report credit-card spend by invoice due
+    date rather than purchase date, a purchase doesn't impact cash flow on
+    the purchase date — it impacts cash flow when the bill is paid. This
     helper computes that "effective" date:
 
       1. Find the cycle the transaction belongs to: the next statement close
