@@ -61,6 +61,7 @@ export function TransactionAttachments({
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const nextUploadId = useRef(0)
   const lastClickedRef = useRef<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -280,7 +281,7 @@ export function TransactionAttachments({
         toast.error(t('transactions.attachmentTooLarge'))
         continue
       }
-      const optimisticId = `optimistic-${crypto.randomUUID()}`
+      const optimisticId = `optimistic-${nextUploadId.current++}`
       uploadMutation.mutate({ file, optimisticId })
       uploaded++
     }
