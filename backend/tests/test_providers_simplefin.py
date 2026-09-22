@@ -502,6 +502,40 @@ async def test_get_holdings_parses_investment_data():
     assert (h.metadata or {}).get("symbol") == "AAPL"
     # Also promoted to the dedicated column, not just the metadata blob.
     assert h.ticker == "AAPL"
+    # Reported total cost basis wins over the per-share purchase price.
+    assert h.purchase_price == Decimal("55.00")
+
+
+@pytest.mark.asyncio
+async def test_get_holdings_purchase_price_is_total_cost_when_only_per_share_given():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "accounts": [
+                    {
+                        "id": "acc-1",
+                        "currency": "USD",
+                        "holdings": [
+                            {
+                                "id": "h-1",
+                                "symbol": "PYPL",
+                                "market_value": "2100.80",
+                                "shares": "40",
+                                "purchase_price": "61.69",
+                            },
+                            {"id": "h-2", "market_value": "10", "shares": "1"},
+                        ],
+                    }
+                ]
+            },
+        )
+
+    creds = {"access_url": "https://u:p@bridge.example/simplefin"}
+    with _patched_client(handler):
+        holdings = await SimpleFinProvider().get_holdings(creds)
+    assert holdings[0].purchase_price == Decimal("2467.60")
+    assert holdings[1].purchase_price is None
 
 
 @pytest.mark.asyncio

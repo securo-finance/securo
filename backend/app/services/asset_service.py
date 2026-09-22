@@ -977,6 +977,9 @@ async def get_asset_values_at(
         scope_filter,
         Asset.is_archived == False,
         Asset.sell_date.is_(None),
+        # SimpleFIN's account balance already includes an investment account's
+        # holdings, so counting the synced holding assets again double-counts.
+        Asset.source != "simplefin",
     )
     if group_ids:
         stmt = stmt.where(Asset.group_id.in_(group_ids))

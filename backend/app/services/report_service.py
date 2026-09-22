@@ -99,6 +99,9 @@ async def _asset_value_at(
         Asset.workspace_id == workspace_id,
         Asset.is_archived == False,
         Asset.sell_date.is_(None),
+        # SimpleFIN's account balance already includes an investment account's
+        # holdings, so counting the synced holding assets again double-counts.
+        Asset.source != "simplefin",
     )
     if group_ids is not None:
         asset_stmt = asset_stmt.where(Asset.group_id.in_(group_ids))
@@ -185,6 +188,9 @@ async def _net_worth_at(
         Asset.workspace_id == workspace_id,
         Asset.is_archived == False,
         Asset.sell_date.is_(None),
+        # SimpleFIN's account balance already includes an investment account's
+        # holdings, so counting the synced holding assets again double-counts.
+        Asset.source != "simplefin",
     )
     if filtered:
         asset_stmt = asset_stmt.where(Asset.group_id.in_(asset_group_ids or []))

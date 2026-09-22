@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 # follow-up syncs the sync layer's typical 30-90 day window fits in one call.
 SIMPLEFIN_MAX_WINDOW_DAYS = 90
 SIMPLEFIN_DEFAULT_HISTORY_DAYS = 45  # routine overlap, not the per-request cap
-SIMPLEFIN_INITIAL_HISTORY_DAYS = 365  # ~1 year backfill on first connect
+SIMPLEFIN_INITIAL_HISTORY_DAYS = 730  # ~2 year backfill on first connect
 SIMPLEFIN_HTTP_TIMEOUT = 60.0
 
 # Error codes that signal the user must re-authorize via the Bridge (the
@@ -139,6 +139,23 @@ def _iso_currency(value: Any, fallback: Optional[str]) -> Optional[str]:
     if isinstance(value, str) and len(value) == 3 and value.isalpha():
         return value.upper()
     return fallback
+
+
+def _total_cost(raw: dict) -> Optional[Decimal]:
+    """Total amount paid for a holding, which is what ``assets.purchase_price`` holds.
+
+    SimpleFIN's ``purchase_price`` is per share, so using it directly makes
+    gain/loss ``market_value - price_per_share``. Prefer the reported total
+    ``cost_basis``; otherwise scale the per-share price by the share count.
+    """
+    cost_basis = _to_decimal(raw.get("cost_basis"))
+    if cost_basis is not None:
+        return cost_basis
+    price = _to_decimal(raw.get("purchase_price"))
+    shares = _to_decimal(raw.get("shares"))
+    if price is None or shares is None:
+        return None
+    return price * shares
 
 
 def _ticker(value: Any) -> Optional[str]:
@@ -582,7 +599,7 @@ class SimpleFinProvider(BankProvider):
                         unit_price=market_value / shares
                         if (shares := _to_decimal(raw.get("shares")))
                         else None,
-                        purchase_price=_to_decimal(raw.get("purchase_price")),
+                        purchase_price=_total_cost(raw),
                         purchase_date=_epoch_to_date(raw.get("created")),
                         isin=raw.get("isin"),
                         metadata={

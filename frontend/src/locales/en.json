@@ -1561,6 +1561,7 @@
     "chartByAsset": "By Asset",
     "chartGroupMode": "Chart grouping",
     "chartDrawMode": "Chart drawing",
+    "chartBars": "Bars",
     "chartStacked": "Stacked",
     "chartLines": "Lines",
     "portfolioValue": "Portfolio Value",

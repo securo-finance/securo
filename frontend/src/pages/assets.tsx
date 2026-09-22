@@ -45,6 +45,9 @@ import {
 import {
   AreaChart,
   Area,
+  BarChart,
+  Bar,
+  Cell,
   XAxis,
   YAxis,
   Tooltip as RechartsTooltip,
@@ -1708,8 +1711,8 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
   // the default drawing style, while letting users switch to true lines when
   // they need to compare each wallet/asset's own value instead of the running
   // cumulative total.
-  const [mode, setMode] = useState<'wallet' | 'asset'>('wallet')
-  const [drawMode, setDrawMode] = useState<'stacked' | 'lines'>('stacked')
+  const [mode, setMode] = useState<'wallet' | 'asset'>('asset')
+  const [drawMode, setDrawMode] = useState<'stacked' | 'lines' | 'bars'>('bars')
   const isStacked = drawMode === 'stacked'
 
   const formatCompact = (v: number) => {
@@ -1801,6 +1804,16 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
       return bv - av || a.name.localeCompare(b.name)
     })
   }, [series, displayTrend])
+  // Bar view: one bar per series at its latest value, largest first.
+  const barData = useMemo(() => {
+    const lastRow = displayTrend[displayTrend.length - 1]
+    return sortedSeries.map(s => ({
+      key: s.key,
+      name: s.name,
+      color: s.color,
+      value: lastRow ? ((lastRow[s.key] as number) ?? 0) : 0,
+    }))
+  }, [sortedSeries, displayTrend])
 
   return (
     <div className="border border-border rounded-xl bg-card shadow-sm p-5">
@@ -1829,6 +1842,14 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
             <div role="group" aria-label={t('assets.chartDrawMode')} className="inline-flex items-center rounded-lg border border-border p-0.5 bg-muted/40">
               <button
                 type="button"
+                aria-pressed={drawMode === 'bars'}
+                onClick={() => setDrawMode('bars')}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${drawMode === 'bars' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                {t('assets.chartBars')}
+              </button>
+              <button
+                type="button"
                 aria-pressed={drawMode === 'stacked'}
                 onClick={() => setDrawMode('stacked')}
                 className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${drawMode === 'stacked' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
@@ -1853,6 +1874,51 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
           </p>
         </div>
       </div>
+      {drawMode === 'bars' ? (
+      <div className="h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={barData} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" strokeOpacity={0.5} />
+            <XAxis
+              dataKey="name"
+              interval={0}
+              tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
+              axisLine={false}
+              tickLine={false}
+              tickFormatter={(v: string) => (v.length > 12 ? `${v.slice(0, 11)}…` : v)}
+            />
+            <YAxis
+              tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
+              axisLine={false}
+              tickLine={false}
+              width={56}
+              tickFormatter={(v: number) => mask(formatCompact(v))}
+            />
+            <RechartsTooltip
+              cursor={{ fill: 'var(--muted)', fillOpacity: 0.4 }}
+              content={({ active, payload }) => {
+                if (!active || !payload?.length) return null
+                const item = payload[0].payload as { name: string; value: number; color: string }
+                return (
+                  <div style={{ background: 'var(--card)', color: 'var(--foreground)', border: '1px solid var(--border)', borderRadius: '0.75rem', fontSize: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)', padding: '10px 12px' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: item.color, display: 'inline-block' }} />
+                      {item.name}
+                    </span>
+                    <span style={{ fontVariantNumeric: 'tabular-nums' }}>{mask(formatCurrency(item.value, currency, loc))}</span>
+                  </div>
+                )
+              }}
+            />
+            <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={56}>
+              {barData.map(d => (
+                <Cell key={d.key} fill={d.color} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      ) : (
       <div className="h-56">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={displayTrend} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
@@ -1934,6 +2000,7 @@ function PortfolioChart({ data, wallets, currency, locale: loc, dateLocale: date
           </AreaChart>
         </ResponsiveContainer>
       </div>
+      )}
       {/* Legend */}
       <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 px-1">
         {sortedSeries.map(s => (
