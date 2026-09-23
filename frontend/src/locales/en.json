@@ -1026,6 +1026,7 @@
     "noManualAccounts": "No manual accounts yet",
     "noBankConnections": "No bank connections",
     "noAccountsFound": "No accounts found",
+    "emptyFiltered": "Nothing matches this filter.",
     "accountName": "Account name",
     "displayName": "Display name",
     "displayNameHint": "Overrides the default provider name everywhere in the app.",

@@ -310,7 +310,9 @@ export default function AccountsPage() {
               </div>
             ) : (
               <div className="px-5 py-8 text-center">
-                <p className="text-sm text-muted-foreground">{t('accounts.noManualAccounts')}</p>
+                <p className="text-sm text-muted-foreground">
+                  {t(activeAccountIds ? 'accounts.emptyFiltered' : 'accounts.noManualAccounts')}
+                </p>
               </div>
             )}
           </div>
@@ -457,7 +459,9 @@ export default function AccountsPage() {
                       </div>
                     ) : (
                       <div className="px-5 py-4">
-                        <p className="text-sm text-muted-foreground">{t('accounts.noAccountsFound')}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {t(activeAccountIds ? 'accounts.emptyFiltered' : 'accounts.noAccountsFound')}
+                        </p>
                       </div>
                     )}
                   </div>

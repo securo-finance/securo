@@ -143,12 +143,7 @@ describe('i18n locale files', () => {
         const keys = new Set(flattenKeys(JSON.parse(readRaw(locale))))
         // A key is covered if the locale has the key directly OR has at least one
         // i18next plural form of it (e.g. _one/_few/_many/_other for Polish).
-        // Some locales intentionally use the unsuffixed fallback for a key that
-        // English pluralizes, so compare plural keys by their shared base.
-        const missing = [...enKeys].filter((key) => {
-          const base = pluralBase(key) ?? key
-          return !hasKeyOrPluralForms(keys, base)
-        })
+        const missing = [...enKeys].filter((k) => !hasKeyOrPluralForms(keys, k))
         expect(missing, `Keys missing in ${locale}:`).toEqual([])
       })
     }
@@ -168,8 +163,8 @@ describe('i18n locale files', () => {
         // choose between reading correctly and passing here.
         const extra = [...keys].filter((k) => {
           if (enKeys.has(k)) return false
-          const base = pluralBase(k) ?? k
-          return !hasKeyOrPluralForms(enKeys, base)
+          const base = pluralBase(k)
+          return !(base && hasKeyOrPluralForms(enKeys, base))
         })
         expect(extra, `Extra keys in ${locale} not in en:`).toEqual([])
       })

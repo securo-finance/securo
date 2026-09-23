@@ -1027,6 +1027,7 @@
     "noManualAccounts": "Noch keine manuellen Konten",
     "noBankConnections": "Keine Bankverbindungen",
     "noAccountsFound": "Keine Konten gefunden",
+    "emptyFiltered": "Zu diesem Filter passt nichts.",
     "accountName": "Kontoname",
     "displayName": "Anzeigename",
     "displayNameHint": "Überschreibt den Standardnamen des Anbieters überall in der App.",

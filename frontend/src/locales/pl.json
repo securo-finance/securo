@@ -1070,6 +1070,7 @@
     "noManualAccounts": "Brak kont ręcznych",
     "noBankConnections": "Brak połączeń bankowych",
     "noAccountsFound": "Nie znaleziono kont",
+    "emptyFiltered": "Nic nie pasuje do tego filtra.",
     "accountName": "Nazwa konta",
     "displayName": "Nazwa wyświetlana",
     "displayNameHint": "Zastępuje domyślną nazwę dostawcy wszędzie w aplikacji.",
