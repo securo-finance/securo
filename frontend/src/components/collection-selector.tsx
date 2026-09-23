@@ -1,6 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { useLocation, useNavigate } from 'react-router-dom'
-import { appliesCollectionFilter } from '@/lib/collection-filter-scope'
+import { useNavigate } from 'react-router-dom'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,14 +26,9 @@ import { Check, ChevronsUpDown, Layers, Settings2, X } from 'lucide-react'
 export function CollectionSelector({ variant = 'sidebar' }: { variant?: 'sidebar' | 'header' }) {
   const { t } = useTranslation()
   const nav = useNavigate()
-  const { pathname } = useLocation()
   const { collections, activeCollection, setActiveCollectionId } = useCollectionFilter()
 
   if (collections.length === 0) return null
-  // The header bar states what the page below it is scoped to, so it only
-  // belongs on pages the filter actually scopes. The sidebar placement is
-  // part of the nav and stays put.
-  if (variant === 'header' && !appliesCollectionFilter(pathname)) return null
 
   const menu = (
     <DropdownMenuContent align={variant === 'header' ? 'start' : 'start'} className="w-72">
