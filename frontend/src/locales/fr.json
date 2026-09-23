@@ -65,7 +65,8 @@
     "versionAriaLabel": "Version en cours d'exécution {{version}}",
     "versionLabel": "Version {{version}}",
     "updateAvailable": "Mise à jour disponible",
-    "updateAvailableHint": "Une version plus récente ({{version}}) est disponible sur GitHub"
+    "updateAvailableHint": "Une version plus récente ({{version}}) est disponible sur GitHub",
+    "toggleMenu": "Afficher/masquer le menu"
   },
   "cmdk": {
     "title": "Palette de commandes",
@@ -126,7 +127,9 @@
     "groupAdmin": "Administration",
     "groupAgents": "IA",
     "agents": "Agents",
-    "aiAgents": "Agents IA"
+    "aiAgents": "Agents IA",
+    "collapseSidebar": "Réduire la barre latérale",
+    "expandSidebar": "Développer la barre latérale"
   },
   "invoices": {
     "title": "Invoices",
@@ -290,7 +293,40 @@
       "payable_not_shareable": "Une facture reçue ne peut pas être partagée.",
       "discount_exceeds_total": "La remise dépasse le montant facturé.",
       "no_document_filed": "Ce document a été émis ailleurs. Joignez le fichier reçu.",
-      "already_imported": "Ce document a déjà été importé."
+      "already_imported": "Ce document a déjà été importé.",
+      "term_lines_required": "Une condition a besoin d'au moins une ligne.",
+      "term_empty": "Une condition doit facturer quelque chose.",
+      "term_in_use": "Une facture a déjà été émise sous cette condition. Ajoutez une nouvelle condition à partir d'une date ultérieure.",
+      "term_before_start": "Une condition ne peut pas commencer avant l'accord.",
+      "term_date_taken": "Une autre condition commence déjà à cette date.",
+      "last_term": "Un accord a besoin d'au moins une condition.",
+      "term_not_found": "Condition introuvable.",
+      "schedule_ended": "Cet accord est terminé et ne peut plus changer.",
+      "schedule_locked": "La fréquence, la date de début et la devise sont figées dès qu'une facture existe sous cet accord.",
+      "schedule_has_invoices": "Des factures ont été émises sous cet accord. Terminez-le au lieu de le supprimer.",
+      "schedule_not_active": "Seul un accord actif émet des factures.",
+      "invalid_frequency": "Fréquence inconnue.",
+      "invalid_end_type": "Condition de fin inconnue.",
+      "invalid_end_reason": "Motif de fin inconnu.",
+      "end_date_required": "Indiquez à quelle date l'accord se termine.",
+      "end_count_required": "Indiquez après combien de factures l'accord se termine.",
+      "end_before_start": "L'accord ne peut pas se terminer avant de commencer.",
+      "name_required": "Donnez un nom à l'accord.",
+      "not_issued": "Seule une facture émise peut démarrer un accord.",
+      "already_linked": "Cette facture appartient déjà à un accord.",
+      "invoice_void": "Une facture annulée ne peut pas couvrir une période.",
+      "payee_mismatch": "La facture et l'accord désignent des clients différents.",
+      "not_a_period": "Cette date n'est pas le début d'une période de cet accord.",
+      "beyond_end": "Cette période est postérieure à la fin de l'accord.",
+      "period_taken": "Une autre facture couvre déjà cette période.",
+      "start_after_invoice": "L'accord ne peut pas commencer après cette facture.",
+      "invoice_not_found": "Facture introuvable.",
+      "no_term": "Aucune condition n'est en vigueur pour cette période.",
+      "no_author": "Cet accord n'a pas d'auteur au nom duquel émettre les factures.",
+      "negative_discount": "Une remise ne peut pas être négative.",
+      "first_term": "Le prix en vigueur depuis le début ne peut être ni déplacé ni supprimé. Modifiez-le, ou ajoutez un nouveau prix à partir d'une date ultérieure.",
+      "not_receivable": "Seule une facture que vous avez émise peut appartenir à un accord.",
+      "period_already_issued": "Cette période vient d'être émise. Actualisez pour la voir."
     },
     "comingNext": "Facturez vos clients et suivez ce qui a été payé et ce qui reste ouvert. C'est la prochaine chose en construction.",
     "document": {
@@ -372,7 +408,160 @@
       "fromSystem": "De {{source}} · {{date}}",
       "fromUpload": "Importé · {{date}}"
     },
-    "draftSaved": "Brouillon enregistré"
+    "draftSaved": "Brouillon enregistré",
+    "suggestions": {
+      "title_one": "Un paiement peut solder cette facture",
+      "title_other": "{{count}} paiements peuvent solder cette facture",
+      "wouldApply": "appliquerait {{amount}}",
+      "alsoCovers_one": "couvre aussi {{count}} autre facture",
+      "alsoCovers_other": "couvre aussi {{count}} autres factures"
+    },
+    "schedules": {
+      "title": "Récurrentes",
+      "new": "Nouvelle facture récurrente",
+      "newDescription": "Un accord avec un client pour le facturer à chaque période. Les factures sont rédigées pour vous, le jour même.",
+      "backToList": "Retour aux récurrentes",
+      "empty": "Aucune facture récurrente pour l'instant. Créez-en une, ou ouvrez une facture et choisissez \"Répéter cette facture\".",
+      "emptyFiltered": "Rien ici avec ce statut.",
+      "created": "Facture récurrente créée",
+      "saved": "Modifications enregistrées",
+      "deleted": "Facture récurrente supprimée",
+      "paused": "En pause. Rien ne sera facturé tant que vous ne la reprenez pas.",
+      "resumed": "Reprise à partir de la prochaine période.",
+      "ended": "Accord terminé",
+      "generated_one": "Facture émise",
+      "generated_other": "{{count}} factures émises",
+      "termSaved": "Prix enregistré",
+      "termRemoved": "Changement de prix supprimé",
+      "linked": "Facture liée à l'accord",
+      "unlinked": "Facture détachée de l'accord",
+      "recurringInvoice": "Facture récurrente",
+      "monthlyPreview": "Environ {{amount}} par mois.",
+      "since": "depuis le {{date}}",
+      "untilDate": "jusqu'au {{date}}",
+      "untilCount_one": "{{count}} facture au total",
+      "untilCount_other": "{{count}} factures au total",
+      "endedOn": "terminé le {{date}} ({{reason}})",
+      "pausedByFailures": "En pause après des échecs répétés. Vérifiez les conditions et reprenez.",
+      "editTitle": "Modifier la facture récurrente",
+      "editDescription": "Le nom, le client, les conditions et la date de fin.",
+      "editLockedDescription": "Des factures ont été émises sous cet accord, donc sa fréquence et sa date de début sont figées. Tout le reste peut changer.",
+      "endTitle": "Terminer cet accord ?",
+      "endDescription": "Plus aucune facture ne sera émise. Celles déjà émises restent exactement telles quelles. Indiquez le motif : c'est la seule chose que les factures ne pourront pas vous dire plus tard.",
+      "linkTitle": "Lier une facture existante",
+      "linkDescription": "Une facture que vous avez rédigée à la main pour l'une des périodes de cet accord. Elle garde son numéro, sa date et ses paiements ; elle apprend seulement à quelle période elle correspond.",
+      "noCandidates": "Aucune facture non liée pour ce client dans cette devise.",
+      "makeRecurringDescription": "Cette facture devient une période d'un nouvel accord, et les suivantes sont rédigées pour vous. Sa propre date, {{date}}, est la première période, sauf si vous indiquez que l'accord a commencé plus tôt.",
+      "filter": {
+        "all": "Toutes",
+        "active": "Actives",
+        "paused": "En pause",
+        "ended": "Terminées"
+      },
+      "state": {
+        "active": "Actif",
+        "past_due": "En retard",
+        "paused": "En pause",
+        "paused_failures": "Attention requise",
+        "ended": "Terminé"
+      },
+      "frequency": {
+        "weekly": "Hebdomadaire",
+        "biweekly": "Toutes les 2 semaines",
+        "monthly": "Mensuelle",
+        "quarterly": "Trimestrielle",
+        "semiannual": "Tous les 6 mois",
+        "yearly": "Annuelle"
+      },
+      "endType": {
+        "never": "Jamais",
+        "on_date": "À une date",
+        "after_count": "Après un nombre de factures"
+      },
+      "endReason": {
+        "canceled_by_client": "Annulé par le client",
+        "canceled_by_us": "Annulé par nous",
+        "completed": "Arrivé à son terme",
+        "unpaid": "Impayé",
+        "other": "Autre"
+      },
+      "summary": {
+        "monthly": "Récurrent mensuel",
+        "yearly": "Par an",
+        "lost": "Perdu sur les 30 derniers jours",
+        "endedRecently_one": "{{count}} accord terminé",
+        "endedRecently_other": "{{count}} accords terminés",
+        "pastDue": "En retard",
+        "pastDueHint": "accords avec une facture en retard",
+        "activeCount_one": "{{count}} accord actif",
+        "activeCount_other": "{{count}} accords actifs",
+        "none": "Rien de récurrent pour l'instant"
+      },
+      "column": {
+        "name": "Accord",
+        "cadence": "Cadence",
+        "monthly": "Par mois",
+        "next": "Prochaine facture",
+        "invoices": "Factures",
+        "status": "Statut",
+        "period": "Période"
+      },
+      "figure": {
+        "invoiced": "Facturé",
+        "paid": "Encaissé",
+        "pastDue_one": "{{count}} facture en retard",
+        "pastDue_other": "{{count}} factures en retard"
+      },
+      "field": {
+        "name": "Nom",
+        "namePlaceholder": "Offre Pro, forfait mensuel, hébergement",
+        "frequency": "Fréquence",
+        "startDate": "Commence le",
+        "startDateHint": "Une date antérieure à la facture laisse la place pour lier celles d'avant.",
+        "paymentTerms": "Délai de paiement (jours)",
+        "currency": "Devise",
+        "ends": "Se termine",
+        "endDate": "Date de fin",
+        "endCount": "Nombre de factures",
+        "endReason": "Motif",
+        "endedAt": "Terminé le",
+        "invoice": "Facture",
+        "invoicePlaceholder": "Choisir une facture",
+        "period": "Période",
+        "periodPlaceholder": "Choisir une période"
+      },
+      "action": {
+        "changePrice": "Changer le prix",
+        "generate": "Émettre la prochaine maintenant",
+        "pause": "Mettre en pause",
+        "resume": "Reprendre",
+        "end": "Terminer l'accord",
+        "linkInvoice": "Lier une facture",
+        "link": "Lier",
+        "makeRecurring": "Répéter cette facture",
+        "unlink": "Retirer de l'accord"
+      },
+      "terms": {
+        "title": "Prix",
+        "description": "Ce que l'accord facture par période, et à partir de quand. Un changement s'applique dès la première période qui commence à sa date ou après ; rien n'est calculé au prorata.",
+        "from": "À partir du {{date}}",
+        "current": "En vigueur",
+        "upcoming": "À venir",
+        "perMonth": "{{amount}} par mois",
+        "editTitle": "Modifier le changement de prix",
+        "changeDescription": "Enregistrez un nouveau prix à partir d'une date. Les périodes déjà facturées gardent ce qui leur a été facturé ; le changement commence avec la première période à cette date ou après, en entier.",
+        "effectiveFrom": "À partir du",
+        "nextPeriodHint": "La prochaine période commence le {{date}}.",
+        "discount": "Remise",
+        "preview": "{{period}} par période, environ {{monthly}} par mois."
+      },
+      "invoices": {
+        "title": "Factures",
+        "description": "Une par période, rédigée le jour même. Une facture rédigée à la main peut aussi être liée.",
+        "empty": "Aucune facture sous cet accord pour l'instant.",
+        "emptyNext": "Aucune facture pour l'instant. La première sera rédigée le {{date}}."
+      }
+    }
   },
   "collections": {
     "title": "Collections",
@@ -457,6 +646,7 @@
     "passkeySecondFactorPrompt": "Cliquez sur le bouton ci-dessous et suivez l'invite de clé de sécurité de votre navigateur.",
     "passkeysTitle": "Clés d'accès",
     "passkeysDescription": "Utilisez des clés de sécurité ou les clés d'accès de vos appareils pour vous connecter sans saisir votre mot de passe. Les clés d'accès enregistrées protègent également la connexion par mot de passe comme second facteur ; la connexion par clé d'accès seule ignore l'étape du code d'authentification, car la clé vérifie déjà la possession.",
+    "passkeysCleanupDescription": "La connexion locale est désactivée. Vous pouvez supprimer les clés d’accès enregistrées, mais pas en ajouter.",
     "passkeyLoadError": "Impossible de charger les clés d'accès",
     "passkeyUnsupported": "Ce navigateur ne prend pas en charge les clés d'accès.",
     "passkeyInsecureContext": "Les clés d'accès nécessitent une connexion sécurisée. Ouvrez Securo en HTTPS, ou sur http://localhost.",
@@ -573,8 +763,6 @@
     "addToExistingRuleTitle": "Ajouter la transaction à une règle",
     "addToExistingRuleDescription": "Choisissez une règle de catégorisation active et ajoutez cette description de transaction comme correspondance future.",
     "existingRule": "Règle existante",
-    "matchOperator": "Type de correspondance",
-    "matchText": "Correspondance de description",
     "assignRule": "Ajouter à la règle",
     "noExistingRules": "Aucune règle de catégorisation active disponible",
     "addedToExistingRule": "Règle mise à jour. Les correspondances futures utiliseront cette catégorie.",
@@ -777,7 +965,9 @@
         "thisMonth": "Ce mois-ci",
         "last90": "90 derniers jours",
         "thisYear": "Cette année"
-      }
+      },
+      "futureDateError": "La date de fin ne peut pas être postérieure à aujourd'hui",
+      "rangeTooWideError": "La période est trop large (max. {{years}} ans)"
     },
     "listView": "Liste",
     "calendarView": "Calendrier",
@@ -811,7 +1001,10 @@
     "calendarTransfersExcluded": "Les virements ne comptent pas comme revenus ou dépenses",
     "invoiceBadge": "Invoice {{number}}",
     "invoiceBadgeNoNumber": "Invoice",
-    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it."
+    "invoiceBadgeTooltip": "Cette transaction solde une facture. Ouvrir.",
+    "suggestionBadge": "Question",
+    "suggestionBadgeTooltip": "Un paiement peut solder cette facture. Ouvrez la file pour répondre.",
+    "clearGroupFilter": "Effacer le filtre de groupe"
   },
   "accounts": {
     "title": "Comptes",
@@ -886,6 +1079,7 @@
     "expenses": "Dépenses",
     "projectedBalance": "Solde projeté",
     "notSettled": "Non réglé",
+    "sharedCreditBalance": "Ligne de crédit partagée",
     "projectedIncome": "Revenus projetés",
     "projectedExpenses": "Dépenses projetées",
     "thisMonth": "Ce mois-ci",
@@ -957,7 +1151,12 @@
         "description": "Banques américaines et internationales via SimpleFIN Bridge"
       }
     },
-    "reconnected": "Banque reconnectée avec succès"
+    "reconnected": "Banque reconnectée avec succès",
+    "connectionStatus": {
+      "active": "Active",
+      "error": "Erreur",
+      "expired": "Expirée"
+    }
   },
   "connections": {
     "settings": "Paramètres de connexion",
@@ -1141,6 +1340,7 @@
     "createMissingCategories": "Créer aussi les catégories par défaut dont le pack a besoin",
     "duplicateName": "Une règle portant ce nom existe déjà",
     "sectionTitle": "Règles de catégorisation",
+    "sectionHint": "Comment catégoriser les transactions.",
     "resetAndReapplyAll": "Réinitialiser et réappliquer",
     "confirmResetAndReapplyAll": "Réinitialiser les catégories, les notes et les descriptions gérées par des règles des transactions correspondantes, puis réappliquer toutes les règles actives ?",
     "add": "Ajouter",
@@ -1183,7 +1383,10 @@
     "ignoreActionHint": "(aucune valeur requise)",
     "selectCategory": "Sélectionner une catégorie...",
     "selectAccount": "Sélectionner un compte...",
-    "ruleActive": "Règle active",
+    "turnOn": "Activer",
+    "turnOff": "Désactiver",
+    "turnedOn": "Règle activée",
+    "turnedOff": "Règle désactivée",
     "noConditions": "(aucune condition)",
     "noActions": "(aucune action)",
     "fieldDescription": "Description",
@@ -1194,6 +1397,7 @@
     "fieldAccount": "Compte",
     "fieldPayee": "Bénéficiaire",
     "fieldDate": "Date",
+    "fieldStatus": "Statut",
     "opContains": "contient",
     "opNotContains": "ne contient pas",
     "opEquals": "est égal à",
@@ -1205,6 +1409,8 @@
     "opIsNot": "n'est pas",
     "typeExpense": "Dépense (débit)",
     "typeIncome": "Revenu (crédit)",
+    "statusPending": "En attente",
+    "statusPosted": "Comptabilisée",
     "valuePlaceholder": "Valeur...",
     "sortLabel": "Trier par",
     "sortBy_priority": "Priorité",
@@ -1218,7 +1424,12 @@
     "importConfirmTitle": "Importer les règles de catégorisation ?",
     "importConfirmDescription": "Le fichier {{file}} contient {{count}} règles.",
     "importOverwriteWarning": "L'importation écrasera vos règles de catégorisation actuelles. Cette action est irréversible.",
-    "confirmOverwriteImport": "Écraser et importer"
+    "confirmOverwriteImport": "Écraser et importer",
+    "tab": {
+      "rules": "Règles",
+      "queue": "En attente de vous",
+      "history": "Historique"
+    }
   },
   "categories": {
     "title": "Catégories",
@@ -1623,11 +1834,15 @@
     "amount": "Montant",
     "investments": "Investissements",
     "moneyMap": "Carte de l'argent",
-    "range30d": "30J"
+    "range30d": "30J",
+    "customRange": "Plage personnalisée",
+    "pickCustomRange": "Choisir une date de début et de fin",
+    "loadError": "Échec du chargement du rapport"
   },
   "payees": {
     "addFavorite": "Ajouter aux favoris",
     "removeFavorite": "Retirer des favoris",
+    "favoriteError": "Impossible de mettre à jour le favori",
     "title": "Bénéficiaires",
     "section": "Configuration",
     "payee": "Bénéficiaire",
@@ -1756,7 +1971,11 @@
     "previous": "Précédent",
     "next": "Suivant",
     "rowsPerPage": "Lignes par page",
-    "noResults": "Aucun résultat"
+    "noResults": "Aucun résultat",
+    "preview": "Aperçu",
+    "download": "Télécharger",
+    "closePreview": "Fermer l'aperçu",
+    "remove": "Supprimer"
   },
   "splitGroups": {
     "title": "Groupes",
@@ -2056,7 +2275,8 @@
       "openSettings": "Paramètres de l'agent",
       "empty": "Choisissez un agent et commencez une conversation avec vos données financières.",
       "openAgents": "Aller aux agents",
-      "noConversations": "Aucune conversation pour l'instant."
+      "noConversations": "Aucune conversation pour l'instant.",
+      "backToChat": "Retour au chat"
     },
     "form": {
       "createTitle": "Nouvel agent",
@@ -2242,6 +2462,234 @@
         "title": "Aucune connexion pour l'instant",
         "subtitle": "Ajoutez une connexion pour pointer Securo vers votre Ollama local, OpenAI, Anthropic, ou tout point de terminaison compatible OpenAI."
       }
+    }
+  },
+  "reconciliation": {
+    "node": {
+      "invoices": "Factures",
+      "invoicesHint": "face à ce que vous avez à encaisser et à payer",
+      "recurring": "Récurrents",
+      "recurringHint": "face à ce que vous attendiez déjà",
+      "inactive": "Non utilisée ici",
+      "transfers": "Virements",
+      "transfersHint": "entre vos propres comptes"
+    },
+    "rule": {
+      "sameClientExact": "Personne connue, montant exact",
+      "netOfWithholding": "Personne connue, payé net de retenue",
+      "exactAmountAnyClient": "Montant exact, n'importe qui",
+      "similarDescription": "Montant proche et libellé semblable",
+      "sameAccountExact": "Même compte, montant exact",
+      "unknown": "Règle",
+      "partPayment": "Personne connue, une partie du montant",
+      "severalInvoices": "Personne connue, plusieurs factures à la fois",
+      "destinationNamed": "La description nomme l'autre compte",
+      "exactAmountNearby": "Montant exact, date proche",
+      "closeAmountWiderWindow": "Montant proche, fenêtre élargie"
+    },
+    "outcome": {
+      "link": "Rattache seule",
+      "suggest": "Propose"
+    },
+    "cond": {
+      "samePayee": "la personne est celle de la facture",
+      "sameAccount": "le même compte",
+      "amountExact": "le montant correspond exactement",
+      "amountTolerance": "le montant est à {{percent}}% près",
+      "amountRatio": "le montant correspond net de retenue",
+      "window": "jusqu'à {{before}} jours en avance, {{after}} en retard",
+      "similarity": "le libellé se ressemble au moins de {{min}}",
+      "none": "aucune condition",
+      "accounts": "sur {{names}}",
+      "payees": "pour {{names}}",
+      "moneyIn": "argent entrant",
+      "moneyOut": "argent sortant",
+      "foreign": "en devise étrangère",
+      "currencyIn": "en {{codes}}",
+      "atLeast": "à partir de {{value}}",
+      "atMost": "jusqu'à {{value}}",
+      "textContains": "le relevé indique « {{text}} »",
+      "textExcludes": "le relevé n'indique pas « {{text}} »",
+      "onArrival": "quand l'argent entre ou sort",
+      "onIssue": "quand une facture est émise",
+      "amountPartial": "le montant couvre une partie de ce qui est dû",
+      "amountSet": "jusqu'à {{count}} factures en font le total",
+      "differentAccount": "deux comptes différents",
+      "accountTypes": "un des côtés est un compte de type {{kinds}}",
+      "accountNamed": "une des descriptions nomme l'autre compte",
+      "closestDate": "la date la plus proche l'emporte",
+      "uniqueCandidate": "un seul candidat convient"
+    },
+    "newRule": "Nouvelle règle de correspondance",
+    "saved": "Règle enregistrée",
+    "reset": "Règle rétablie",
+    "restore": "Revenir au réglage par défaut",
+    "changed": "Modifiée",
+    "yours": "La vôtre",
+    "field": {
+      "name": "Nom",
+      "namePlaceholder": "ex. : Personne connue, montant proche",
+      "outcome": "Ce qu'elle fait quand elle correspond",
+      "outcomeHint": "Rattacher règle tout seul. Proposer l'envoie dans la liste ci-dessous, pour que vous confirmiez.",
+      "counterparty": "Qui a payé ou été payé",
+      "amount": "Montant",
+      "window": "Écart autorisé entre les dates",
+      "windowHint": "Le retard se compte depuis l'échéance, l'avance depuis le jour d'émission de la facture : payer le lendemain de l'émission n'est pas des semaines en avance.",
+      "beforeDays": "Jours en avance",
+      "afterDays": "Jours en retard",
+      "similarity": "Ressemblance du libellé",
+      "similarityHint": "De 0 à 1. Laissez vide pour ignorer le libellé.",
+      "similarityOff": "désactivé",
+      "scope": "Quand cette règle s'applique",
+      "scopeHint": "Laissez vide pour tout couvrir",
+      "accounts": "Comptes bancaires",
+      "anyAccount": "N'importe quel compte",
+      "payees": "Personnes",
+      "anyPayee": "N'importe qui",
+      "direction": "Entrée ou sortie",
+      "currencyScope": "Uniquement ces devises",
+      "currencyPlaceholder": "ex. : USD, EUR",
+      "foreignOnly": "Uniquement les devises autres que celle de cet espace",
+      "amountBand": "Uniquement les montants dans cette plage",
+      "noMinimum": "pas de minimum",
+      "noMaximum": "pas de maximum",
+      "text": "Libellé du relevé",
+      "textContains": "doit contenir…",
+      "textExcludes": "ne doit pas contenir…",
+      "textHint": "Plusieurs, séparés par des virgules, signifie n'importe lequel.",
+      "trigger": "Quand nous cherchons",
+      "triggerHint": "La correspondance a lieu à deux moments, et les indices ne sont pas les mêmes.",
+      "amountMatch": "À quel point le montant doit correspondre",
+      "amountMatchHint": "Comparé à ce qui reste dû, pas au total d'origine.",
+      "amountBandHint": "À propos du paiement lui-même : une taille que vous voulez, ou non, voir traitée par cette règle.",
+      "transferSignals": "Ce qui en fait un virement",
+      "transferSignalsHint": "Les deux côtés sont toujours sur des comptes différents. Ici vous dites quoi d'autre doit être vrai avant de faire confiance à la paire.",
+      "accountTypes": "Seulement quand un des côtés est l'un de ceux-ci",
+      "amountMatchHintTransfer": "Comparé à l'autre côté, dans la même devise. Des devises différentes ne s'apparient jamais seules ; vous pouvez toujours relier les deux côtés à la main.",
+      "windowHintTransfer": "L'argent arrive rarement le jour où il est parti. Les deux côtés se comptent depuis l'autre écriture, donc deux jours de chaque côté couvrent un week-end."
+    },
+    "counterparty": {
+      "any": "N'importe qui",
+      "samePayee": "La personne de la facture"
+    },
+    "amount": {
+      "exact": "Exactement le montant dû",
+      "tolerance": "Dans une marge",
+      "ratio": "Net de retenue à la source",
+      "ratioHint": "Utilise les taux de retenue de votre pays. Tant qu'il n'y en a pas, la règle ne correspond à rien.",
+      "partial": "Une partie de ce qui est dû",
+      "partialHint": "Pour qui paie en plusieurs fois. Ce qui reste demeure ouvert, et le paiement suivant tombe juste.",
+      "set": "Plusieurs factures additionnées",
+      "setHint": "Pour un paiement qui couvre plus d'une facture. Si plusieurs combinaisons tombent juste, nous demandons plutôt que de choisir.",
+      "setMax": "Au plus ce nombre de factures",
+      "setFee": "Admettre des frais de",
+      "setFeeHint": "Une part de la valeur des factures, pour un paiement qui circule net de commission. Zéro signifie que le total doit être exact."
+    },
+    "queue": {
+      "title": "En attente de vous",
+      "hint": "Correspondances qui attendent votre confirmation.",
+      "empty": "Rien à vérifier. Tout a été rapproché tout seul.",
+      "aPayment": "Un paiement",
+      "maySettle": "règle peut-être {{name}}",
+      "mayBe": "est peut-être {{name}}",
+      "accept": "Rattacher",
+      "declineHint": "Ce n'est pas ça. Cette paire ne sera plus proposée.",
+      "linked": "Rattaché",
+      "declined": "Écarté. Nous ne redemanderons pas",
+      "covers": "couvre",
+      "mayPairWith": "est peut-être l'autre moitié de {{name}}",
+      "kind": {
+        "transaction": "Virement",
+        "invoice": "Facture",
+        "recurring": "Récurrent"
+      }
+    },
+    "evidence": {
+      "amountExact": "le montant correspond exactement",
+      "amountOff": "attendu {{expected}}, mouvementé {{moved}}",
+      "knownPayer": "personne connue",
+      "unknownPayer": "personne non identifiée",
+      "sameDay": "même jour",
+      "daysApart_one": "{{count}} jour d'écart",
+      "daysApart_other": "{{count}} jours d'écart"
+    },
+    "direction": {
+      "any": "Peu importe",
+      "in": "Argent entrant",
+      "out": "Argent sortant"
+    },
+    "step": {
+      "what": "Ce qu'est cette règle",
+      "which": "Quel argent elle regarde",
+      "whichHint": "Laissez tout vide et elle regarde tout l'argent",
+      "match": "Quand cela compte comme une correspondance",
+      "matchHint": "À quel point le paiement et la promesse doivent correspondre",
+      "matchHintTransfer": "À quel point les deux écritures doivent se rapprocher"
+    },
+    "trigger": {
+      "money_arrives": "Quand l'argent entre ou sort",
+      "money_arrivesHint": "Le paiement apparaît sur le relevé et nous cherchons la facture qu'il solde.",
+      "invoice_issued": "Quand une facture est émise",
+      "invoice_issuedHint": "Le paiement est arrivé avant et la facture après, alors nous regardons en arrière, vers l'argent déjà là.",
+      "both": "Aux deux moments",
+      "bothHint": "La règle vaut dans les deux sens."
+    },
+    "history": {
+      "title": "Ce que la correspondance automatique a fait",
+      "hint": "Du plus récent.",
+      "byPerson": "par vous",
+      "byRules": "par les règles",
+      "more": "Afficher {{count}} de plus",
+      "less": "Afficher moins",
+      "action": {
+        "linked": "Rattaché à {{name}}",
+        "accepted": "Suggestion acceptée pour {{name}}",
+        "suggested": "Proposé pour {{name}}",
+        "declined": "Suggestion écartée pour {{name}}",
+        "expired": "Suggestion expirée : {{name}}",
+        "unlinked": "Détaché de {{name}}"
+      },
+      "empty": "Rien pour l'instant. Cela se remplit à mesure que la correspondance rattache, demande et reçoit une réponse."
+    },
+    "moveUp": "Essayer celle-ci plus tôt",
+    "moveDown": "Essayer celle-ci plus tard",
+    "pair": {
+      "owed": "Ce qui est dû",
+      "arrived": "Ce qui a bougé",
+      "draftInvoice": "Facture en brouillon",
+      "recurringBill": "Dépense récurrente",
+      "noMoney": "Aucune opération ici.",
+      "stillOpen": "reste dû",
+      "thisPayment": "ce paiement",
+      "wasApplied": "appliqué",
+      "wouldRemain": "resterait",
+      "wouldClose": "la solde",
+      "thePayment": "le paiement",
+      "acrossInvoices": "sur {{count}} factures",
+      "dueOn": "échéance {{date}}",
+      "totalOf": "total de {{amount}}",
+      "otherLeg": "L'autre côté",
+      "thisLeg": "Ce côté",
+      "otherLegAmount": "sur l'autre côté",
+      "thisLegAmount": "sur ce côté"
+    },
+    "discarded": "Supprimées de cet espace :",
+    "noneLeft": "Plus aucune règle dans cet ensemble. Rien n'est rattaché automatiquement ici.",
+    "confirmDeleteTitle": "Supprimer cette règle ?",
+    "confirmDeleteDescription": "« {{name}} » ne décide plus rien. S'il s'agit d'une des nôtres, vous pourrez la rétablir plus tard.",
+    "exported": "Règles de correspondance téléchargées",
+    "imported": "{{imported}} règles importées ({{skipped}} ignorées)",
+    "invalidImportFile": "Ce n'est pas un fichier de règles de correspondance",
+    "importConfirmTitle": "Importer les règles de correspondance ?",
+    "importConfirmDescription": "Le fichier {{file}} contient {{count}} règles.",
+    "importOverwriteWarning": "L'import remplace les règles de cet ensemble, y compris leur ordre. C'est irréversible.",
+    "card": {
+      "transfers": "Règles de Virement",
+      "transfersHint": "Comment nous décidons que deux écritures sont un même virement entre vos comptes.",
+      "invoices": "Règles de Facture",
+      "invoicesHint": "Comment nous décidons quel paiement règle quelle facture.",
+      "recurring": "Règles Récurrentes",
+      "recurringHint": "Comment nous décidons qu’un prélèvement est la facture que vous attendiez."
     }
   }
 }

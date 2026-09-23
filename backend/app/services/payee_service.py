@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional, cast
 
-from sqlalchemy import CursorResult, case, select, func, update, delete
+from sqlalchemy import CursorResult, case, literal, select, func, update, delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -66,6 +66,23 @@ async def get_payee(session: AsyncSession, payee_id: uuid.UUID, workspace_id: uu
     return result.scalar_one_or_none()
 
 
+
+def _same_name_as(name: str):
+    """The predicate the uq_payees_workspace_id_lower_name index enforces,
+    with both sides folded by the database.
+
+    Folding the incoming name in Python instead looks equivalent and is not:
+    `lower()` follows the database's locale, and a cluster created with the
+    C locale (a common default in Kubernetes Postgres charts, unlike the
+    en_US.utf8 our compose file gets) leaves every non-ASCII capital alone
+    where Python folds it. "MÜLLER GmbH" then never matched itself: the
+    lookup missed, the insert hit the index, the retry missed again, and a
+    whole bank sync went down over one counterparty (#678). Sending the name
+    through the same `lower(trim())` the index uses makes lookup and
+    constraint agree by construction, whatever the locale.
+    """
+    return func.lower(func.trim(Payee.name)) == func.lower(func.trim(literal(name)))
+
 async def get_or_create_payee(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -95,7 +112,7 @@ async def get_or_create_payee(
     # lookup hits the same row the unique constraint would reject.
     lookup = select(Payee).where(
         Payee.workspace_id == workspace_id,
-        func.lower(func.trim(Payee.name)) == name.lower(),
+        _same_name_as(name),
     )
     result = await session.execute(lookup)
     payee = result.scalar_one_or_none()
@@ -196,7 +213,7 @@ async def create_payee(
     existing = await session.execute(
         select(Payee).where(
             Payee.workspace_id == workspace_id,
-            func.lower(func.trim(Payee.name)) == name.lower(),
+            _same_name_as(name),
         )
     )
     if existing.scalar_one_or_none():
@@ -242,7 +259,7 @@ async def update_payee(
         existing = await session.execute(
             select(Payee).where(
                 Payee.workspace_id == workspace_id,
-                func.lower(func.trim(Payee.name)) == name.lower(),
+                _same_name_as(name),
                 Payee.id != payee_id,
             )
         )

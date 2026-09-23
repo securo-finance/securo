@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, Ban, Check, CheckCircle2, CircleSlash, Copy, Download, Link2,
-  MoreHorizontal, Pencil, RotateCcw, Send, Share2, Trash2, Unlink,
+  MoreHorizontal, Pencil, Repeat, RotateCcw, Send, Share2, Trash2, Unlink,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -34,6 +34,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { PageHeader } from '@/components/page-header'
+import { InvoiceSuggestions } from '@/components/invoice-suggestions'
 import {
   IconAction,
   SectionCard,
@@ -44,7 +45,15 @@ import {
 import { InvoiceDocumentView } from '@/components/invoice-document'
 import { InvoiceDocumentBrowser } from '@/components/invoice-documents'
 import { InvoiceLineEditor } from '@/components/invoice-line-editor'
-import type { Invoice, InvoiceDirection, InvoiceLineInput } from '@/types'
+import { EndConditionFields, SchedulePeriodChip } from '@/components/invoice-schedule-ui'
+import { FREQUENCIES, endPayload } from '@/lib/invoice-schedule-utils'
+import type {
+  Invoice,
+  InvoiceDirection,
+  InvoiceLineInput,
+  InvoiceScheduleEndType,
+  InvoiceScheduleFrequency,
+} from '@/types'
 import { cn } from '@/lib/utils'
 import { formatCurrency } from '@/lib/format'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
@@ -89,6 +98,7 @@ export default function InvoiceDetailPage() {
 
   const [linkOpen, setLinkOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
+  const [recurringOpen, setRecurringOpen] = useState(false)
   const [tab, setTab] = useState<Tab>('details')
   const [copied, setCopied] = useState(false)
 
@@ -126,6 +136,12 @@ export default function InvoiceDetailPage() {
     void queryClient.invalidateQueries({ queryKey: ['invoices'] })
     void queryClient.invalidateQueries({ queryKey: ['invoice-summary'] })
     void queryClient.invalidateQueries({ queryKey: ['invoice-facets'] })
+    // An invoice of an agreement changes what the agreement reads:
+    // issuing it moves "invoiced", a payment moves "received".
+    void queryClient.invalidateQueries({ queryKey: ['invoice-schedule'] })
+    void queryClient.invalidateQueries({ queryKey: ['invoice-schedule-invoices'] })
+    void queryClient.invalidateQueries({ queryKey: ['invoice-schedules'] })
+    void queryClient.invalidateQueries({ queryKey: ['invoice-schedule-summary'] })
   }
 
   const onError = (error: unknown) => {
@@ -154,6 +170,15 @@ export default function InvoiceDetailPage() {
       toast.success(t('invoices.deleted'))
       refresh()
       navigate('/invoices')
+    },
+    onError,
+  })
+  const unlinkScheduleMutation = useMutation({
+    mutationFn: () => invoicesApi.unlinkSchedule(id),
+    onSuccess: () => {
+      toast.success(t('invoices.schedules.unlinked'))
+      refresh()
+      void queryClient.invalidateQueries({ queryKey: ['invoice-schedules'] })
     },
     onError,
   })
@@ -230,6 +255,14 @@ export default function InvoiceDetailPage() {
   const shareUrl = invoice.share_token
     ? `${window.location.origin}/i/${invoice.share_token}`
     : null
+  // "Repeat this": an issued receivable that is not already a period of
+  // an agreement. A draft has nothing agreed yet, and a bill received is
+  // the supplier's to repeat.
+  const canRecur =
+    invoice.direction === 'receivable' &&
+    invoice.status !== 'draft' &&
+    invoice.status !== 'void' &&
+    !invoice.schedule_id
 
   return (
     <div>
@@ -321,7 +354,9 @@ export default function InvoiceDetailPage() {
                   were indistinguishable, and giving "void" the same
                   weight as "mark as paid" is how someone voids by
                   reflex. */}
-              {(actions.canWriteOff ||
+              {(canRecur ||
+                invoice.schedule_id ||
+                actions.canWriteOff ||
                 actions.canReopen ||
                 actions.canVoid ||
                 actions.canDelete) && (
@@ -340,6 +375,26 @@ export default function InvoiceDetailPage() {
                     align="end"
                     className="w-[220px] p-1 bg-card border border-border rounded-xl shadow-md"
                   >
+                    {canRecur && (
+                      <DropdownMenuItem
+                        onClick={() => setRecurringOpen(true)}
+                        data-testid="invoice-make-recurring"
+                        className="gap-2 text-sm"
+                      >
+                        <Repeat className="h-4 w-4 text-muted-foreground" />
+                        {t('invoices.schedules.action.makeRecurring')}
+                      </DropdownMenuItem>
+                    )}
+                    {invoice.schedule_id && (
+                      <DropdownMenuItem
+                        onClick={() => unlinkScheduleMutation.mutate()}
+                        data-testid="invoice-unlink-schedule"
+                        className="gap-2 text-sm"
+                      >
+                        <Unlink className="h-4 w-4 text-muted-foreground" />
+                        {t('invoices.schedules.action.unlink')}
+                      </DropdownMenuItem>
+                    )}
                     {actions.canWriteOff && (
                       <DropdownMenuItem
                         onClick={() => writeOffMutation.mutate()}
@@ -404,6 +459,7 @@ export default function InvoiceDetailPage() {
             {t('invoices.daysLate', { count: invoice.days_overdue })}
           </span>
         )}
+        <SchedulePeriodChip invoice={invoice} />
       </div>
 
       {tab === 'document' ? (
@@ -545,6 +601,11 @@ export default function InvoiceDetailPage() {
             </SectionCard>
           )}
 
+          {/* Above the payments, because it is a question about them and
+              because an answer here changes the list below. Renders
+              nothing when nothing is waiting. */}
+          <InvoiceSuggestions invoiceId={invoice.id} canWrite={canWrite} />
+
           <SectionCard>
             <SectionHeader
               title={t('invoices.payments')}
@@ -627,6 +688,26 @@ export default function InvoiceDetailPage() {
         showTax={(settings?.tax_fields ?? 'hidden') !== 'hidden'}
         currency={currency}
         onSaved={refresh}
+      />
+
+      <MakeRecurringDialog
+
+        key={recurringOpen ? 'recurring-open' : 'recurring-closed'}
+
+        open={recurringOpen}
+
+        onOpenChange={setRecurringOpen}
+
+        invoice={invoice}
+
+        onCreated={(scheduleId) => {
+
+          refresh()
+
+          navigate(`/invoices/schedules/${scheduleId}`)
+
+        }}
+
       />
 
       <LinkPaymentDialog
@@ -929,6 +1010,133 @@ function EditDraftDialog({
             data-testid="edit-submit"
           >
             {t('common.save')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function MakeRecurringDialog({
+  open,
+  onOpenChange,
+  invoice,
+  onCreated,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  invoice: Invoice
+  onCreated: (scheduleId: string) => void
+}) {
+  const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  const dateLocale = useDateLocale()
+  const [name, setName] = useState(invoice.lines[0]?.description ?? invoice.payee?.name ?? '')
+  const [frequency, setFrequency] = useState<InvoiceScheduleFrequency>('monthly')
+  // The invoice's own date by default. Earlier makes this invoice a
+  // later period, so the ones billed by hand before it can be linked.
+  const [startDate, setStartDate] = useState(invoice.issue_date)
+  const [endType, setEndType] = useState<InvoiceScheduleEndType>('never')
+  const [endDate, setEndDate] = useState('')
+  const [endCount, setEndCount] = useState('')
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      invoicesApi.makeRecurring(invoice.id, {
+        frequency,
+        name: name.trim() || undefined,
+        start_date: startDate,
+        ...endPayload(endType, endDate, endCount),
+      }),
+    onSuccess: (schedule) => {
+      toast.success(t('invoices.schedules.created'))
+      void queryClient.invalidateQueries({ queryKey: ['invoice-schedules'] })
+      void queryClient.invalidateQueries({ queryKey: ['invoice-schedule-summary'] })
+      onOpenChange(false)
+      onCreated(schedule.id)
+    },
+    onError: (error) => {
+      const key = invoiceErrorKey(error)
+      toast.error(key ? t(key, t('invoices.errors.generic')) : t('invoices.errors.generic'))
+    },
+  })
+
+  const ready =
+    name.trim().length > 0 &&
+    Boolean(startDate) &&
+    (endType !== 'on_date' || Boolean(endDate)) &&
+    (endType !== 'after_count' || Number(endCount) >= 1)
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{t('invoices.schedules.action.makeRecurring')}</DialogTitle>
+          <DialogDescription>
+            {t('invoices.schedules.makeRecurringDescription', {
+              date: new Date(`${invoice.issue_date}T00:00:00`).toLocaleDateString(dateLocale),
+            })}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="recurring-name">{t('invoices.schedules.field.name')}</Label>
+            <Input
+              id="recurring-name"
+              data-testid="recurring-name-input"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={t('invoices.schedules.field.namePlaceholder')}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>{t('invoices.schedules.field.frequency')}</Label>
+              <Select value={frequency} onValueChange={(v) => setFrequency(v as InvoiceScheduleFrequency)}>
+                <SelectTrigger data-testid="recurring-frequency-select">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {FREQUENCIES.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {t(`invoices.schedules.frequency.${value}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="recurring-start">{t('invoices.schedules.field.startDate')}</Label>
+              <Input
+                id="recurring-start"
+                data-testid="recurring-start-input"
+                type="date"
+                max={invoice.issue_date}
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+              <p className="text-[11px] text-muted-foreground">{t('invoices.schedules.field.startDateHint')}</p>
+            </div>
+          </div>
+          <EndConditionFields
+            idPrefix="recurring"
+            endType={endType}
+            endDate={endDate}
+            endCount={endCount}
+            onChange={(next) => {
+              setEndType(next.endType)
+              setEndDate(next.endDate)
+              setEndCount(next.endCount)
+            }}
+          />
+        </div>
+        <DialogFooter className="gap-2">
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+            {t('common.cancel')}
+          </Button>
+          <Button onClick={() => mutation.mutate()} disabled={!ready || mutation.isPending} data-testid="recurring-submit">
+            <Repeat className="h-4 w-4 mr-1.5" />
+            {t('invoices.schedules.action.makeRecurring')}
           </Button>
         </DialogFooter>
       </DialogContent>

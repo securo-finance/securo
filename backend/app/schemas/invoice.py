@@ -138,6 +138,17 @@ class InvoicePayee(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class InvoiceScheduleRef(BaseModel):
+    """Just enough of the agreement to label the invoice with it."""
+
+    id: uuid.UUID
+    name: str
+    frequency: str
+    status: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class InvoiceRead(BaseModel):
     id: uuid.UUID
     payee_id: Optional[uuid.UUID]
@@ -176,6 +187,13 @@ class InvoiceRead(BaseModel):
     #: can open. Null until someone asks for one, and null again once
     #: revoked.
     share_token: Optional[str] = None
+    #: Which agreement and period this invoice answers for, when it
+    #: was born from or linked to one. Provenance only.
+    schedule_id: Optional[uuid.UUID] = None
+    schedule: Optional[InvoiceScheduleRef] = None
+    sequence: Optional[int] = None
+    period_start: Optional[_Date] = None
+    period_end: Optional[_Date] = None
     lines: list[InvoiceLineRead] = []
     allocations: list[InvoiceAllocationRead] = []
     created_at: datetime

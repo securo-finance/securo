@@ -321,6 +321,7 @@ async def list_invoices(
     year: Optional[int] = None,
     direction: str = DEFAULT_DIRECTION,
     payee_id: Optional[uuid.UUID] = None,
+    schedule_id: Optional[uuid.UUID] = None,
     q: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
@@ -342,6 +343,8 @@ async def list_invoices(
     query = _apply_year(query, year)
     if payee_id:
         query = query.where(Invoice.payee_id == payee_id)
+    if schedule_id:
+        query = query.where(Invoice.schedule_id == schedule_id)
     if q:
         pattern = f"%{q.lower()}%"
         query = query.where(func.lower(Invoice.notes).like(pattern))

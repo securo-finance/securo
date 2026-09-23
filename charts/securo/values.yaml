@@ -111,6 +111,7 @@ backend:
 
 # Frontend configuration
 frontend:
+  backendUrl: ""
   replicaCount: 1
   image:
     repository: ghcr.io/securo-finance/securo-frontend
@@ -182,6 +183,9 @@ persistence:
     size: 5Gi
     storageClass: ""
     accessMode: ReadWriteOnce
+  # Both agent volumes are created only when config.agentsEnabled is true,
+  # so leaving these on costs a workspace that never enabled agents nothing,
+  # and a workspace that did keeps the volume it already has across upgrades.
   agentKnowledge:
     enabled: true
     size: 5Gi

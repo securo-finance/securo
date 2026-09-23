@@ -432,12 +432,12 @@ async def create_asset(
     if data.valuation_method == "market_price":
         if not data.ticker:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="ticker is required for market_price assets",
             )
         if data.units is None or data.units <= 0:
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="units (quantity) must be > 0 for market_price assets",
             )
         provider = market_provider or get_market_price_provider()
@@ -619,6 +619,17 @@ async def create_asset(
     return _asset_to_read(asset, latest, count, tx_count or 0)
 
 
+# Fields a ledger-backed holding derives from its transactions (see
+# asset_transaction_service.recompute_and_cache); an asset update ignores them.
+_LEDGER_DERIVED_FIELDS = (
+    "units",
+    "purchase_price",
+    "purchase_date",
+    "sell_date",
+    "sell_price",
+)
+
+
 async def update_asset(
     session: AsyncSession,
     asset_id: uuid.UUID,
@@ -638,6 +649,19 @@ async def update_asset(
     update_data = data.model_dump(exclude_unset=True)
     # Prevent changing valuation_method on existing assets
     update_data.pop("valuation_method", None)
+
+    tx_count = await session.scalar(
+        select(func.count()).select_from(AssetTransaction).where(AssetTransaction.asset_id == asset.id)
+    ) or 0
+    # Ledger-backed holdings derive their position (units, cost basis, buy and
+    # sell dates) from the transactions ledger. Editing the holding itself
+    # (e.g. renaming it) must never overwrite those cached values, or the cost
+    # basis is lost and the holding looks like it has no buys (issue #965).
+    is_ledger = asset.average_price is not None or tx_count > 0
+    if is_ledger:
+        for key in _LEDGER_DERIVED_FIELDS:
+            update_data.pop(key, None)
+
     for key, value in update_data.items():
         setattr(asset, key, value)
 
@@ -699,7 +723,7 @@ async def update_asset(
     await session.refresh(asset)
     latest = await _get_latest_value(session, asset.id)
     count = await _get_value_count(session, asset.id)
-    return _asset_to_read(asset, latest, count)
+    return _asset_to_read(asset, latest, count, tx_count)
 
 
 async def delete_asset(

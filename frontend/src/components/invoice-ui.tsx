@@ -33,14 +33,21 @@ export function SectionCard({
 
 export function SectionHeader({
   title,
+  description,
   action,
 }: {
   title: string
+  /** One line under the title, for a section whose rule is not obvious
+   *  from its rows (what a "term" is, say). */
+  description?: string
   action?: React.ReactNode
 }) {
   return (
     <div className="px-4 sm:px-5 py-4 border-b border-border flex flex-wrap items-center justify-between gap-2">
-      <p className="text-sm font-semibold text-foreground">{title}</p>
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-foreground">{title}</p>
+        {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
+      </div>
       {action}
     </div>
   )

@@ -65,7 +65,8 @@
     "versionAriaLabel": "Running version {{version}}",
     "versionLabel": "Version {{version}}",
     "updateAvailable": "Update Available",
-    "updateAvailableHint": "A newer release ({{version}}) is available on GitHub"
+    "updateAvailableHint": "A newer release ({{version}}) is available on GitHub",
+    "toggleMenu": "Toggle menu"
   },
   "cmdk": {
     "title": "Command palette",
@@ -126,7 +127,9 @@
     "groupAdmin": "Administration",
     "groupAgents": "AI",
     "agents": "Agents",
-    "aiAgents": "AI Agents"
+    "aiAgents": "AI Agents",
+    "collapseSidebar": "Collapse sidebar",
+    "expandSidebar": "Expand sidebar"
   },
   "invoices": {
     "title": "Invoices",
@@ -290,7 +293,40 @@
       "payable_not_shareable": "A bill you received cannot be shared.",
       "discount_exceeds_total": "The discount is larger than the amount being billed.",
       "no_document_filed": "This document was issued elsewhere. Attach the file that was received.",
-      "already_imported": "This document has already been imported."
+      "already_imported": "This document has already been imported.",
+      "term_lines_required": "A term needs at least one line.",
+      "term_empty": "A term must bill something.",
+      "term_in_use": "An invoice was already issued under this term. Add a new term from a later date.",
+      "term_before_start": "A term cannot start before the agreement does.",
+      "term_date_taken": "Another term already starts on that date.",
+      "last_term": "An agreement needs at least one term.",
+      "term_not_found": "Term not found.",
+      "schedule_ended": "This agreement has ended and can no longer change.",
+      "schedule_locked": "The frequency, start date and currency are fixed once an invoice exists under this agreement.",
+      "schedule_has_invoices": "Invoices were issued under this agreement. End it instead of deleting it.",
+      "schedule_not_active": "Only an active agreement emits invoices.",
+      "invalid_frequency": "Unknown frequency.",
+      "invalid_end_type": "Unknown end condition.",
+      "invalid_end_reason": "Unknown end reason.",
+      "end_date_required": "Say on which date the agreement ends.",
+      "end_count_required": "Say after how many invoices the agreement ends.",
+      "end_before_start": "The agreement cannot end before it starts.",
+      "name_required": "Give the agreement a name.",
+      "not_issued": "Only an issued invoice can start an agreement.",
+      "already_linked": "This invoice already belongs to an agreement.",
+      "invoice_void": "A voided invoice cannot answer for a period.",
+      "payee_mismatch": "The invoice and the agreement name different clients.",
+      "not_a_period": "That date is not the start of a period of this agreement.",
+      "beyond_end": "That period is after the agreement ends.",
+      "period_taken": "Another invoice already answers for that period.",
+      "start_after_invoice": "The agreement cannot start after this invoice.",
+      "invoice_not_found": "Invoice not found.",
+      "no_term": "No term is in force for this period.",
+      "no_author": "This agreement has no author to issue invoices as.",
+      "negative_discount": "A discount cannot be negative.",
+      "first_term": "The price in force from the start cannot be moved or removed. Change it, or add a new price from a later date.",
+      "not_receivable": "Only an invoice you issued can belong to an agreement.",
+      "period_already_issued": "This period was just issued. Refresh to see it."
     },
     "comingNext": "Bill your clients and keep track of what has been paid and what is still open. This is the next thing being built.",
     "document": {
@@ -372,7 +408,160 @@
       "fromSystem": "From {{source}} · {{date}}",
       "fromUpload": "Uploaded · {{date}}"
     },
-    "draftSaved": "Draft saved"
+    "draftSaved": "Draft saved",
+    "suggestions": {
+      "title_one": "A payment may settle this invoice",
+      "title_other": "{{count}} payments may settle this invoice",
+      "wouldApply": "would apply {{amount}}",
+      "alsoCovers_one": "also covers {{count}} other invoice",
+      "alsoCovers_other": "also covers {{count}} other invoices"
+    },
+    "schedules": {
+      "title": "Recurring",
+      "new": "New recurring invoice",
+      "newDescription": "An agreement with a client to bill them every period. The invoices are written for you, on the day.",
+      "backToList": "Back to recurring",
+      "empty": "No recurring invoices yet. Set one up, or open an invoice and choose \"Repeat this invoice\".",
+      "emptyFiltered": "Nothing here with this status.",
+      "created": "Recurring invoice created",
+      "saved": "Changes saved",
+      "deleted": "Recurring invoice deleted",
+      "paused": "Paused. Nothing will be billed until you resume it.",
+      "resumed": "Resumed from the next period on.",
+      "ended": "Agreement ended",
+      "generated_one": "Invoice issued",
+      "generated_other": "{{count}} invoices issued",
+      "termSaved": "Price saved",
+      "termRemoved": "Price change removed",
+      "linked": "Invoice linked to the agreement",
+      "unlinked": "Invoice unlinked from the agreement",
+      "recurringInvoice": "Recurring invoice",
+      "monthlyPreview": "About {{amount}} a month.",
+      "since": "since {{date}}",
+      "untilDate": "until {{date}}",
+      "untilCount_one": "{{count}} invoice in total",
+      "untilCount_other": "{{count}} invoices in total",
+      "endedOn": "ended {{date}} ({{reason}})",
+      "pausedByFailures": "Paused after repeated failures. Check the terms and resume.",
+      "editTitle": "Edit recurring invoice",
+      "editDescription": "The name, the client, the terms and when it ends.",
+      "editLockedDescription": "Invoices were issued under this agreement, so its frequency and start date are fixed. Everything else can change.",
+      "endTitle": "End this agreement?",
+      "endDescription": "No more invoices will be issued. The ones already issued stay exactly as they are. Say why: it is the one thing the invoices cannot tell you later.",
+      "linkTitle": "Link an existing invoice",
+      "linkDescription": "An invoice you wrote by hand for one of this agreement's periods. It keeps its number, its date and its payments; it only learns which period it was for.",
+      "noCandidates": "No unlinked invoice for this client in this currency.",
+      "makeRecurringDescription": "This invoice becomes one period of a new agreement, and the next ones are written for you. Its own date, {{date}}, is the first period unless you say the agreement started earlier.",
+      "filter": {
+        "all": "All",
+        "active": "Active",
+        "paused": "Paused",
+        "ended": "Ended"
+      },
+      "state": {
+        "active": "Active",
+        "past_due": "Past due",
+        "paused": "Paused",
+        "paused_failures": "Needs attention",
+        "ended": "Ended"
+      },
+      "frequency": {
+        "weekly": "Weekly",
+        "biweekly": "Every 2 weeks",
+        "monthly": "Monthly",
+        "quarterly": "Quarterly",
+        "semiannual": "Every 6 months",
+        "yearly": "Yearly"
+      },
+      "endType": {
+        "never": "Never",
+        "on_date": "On a date",
+        "after_count": "After a number of invoices"
+      },
+      "endReason": {
+        "canceled_by_client": "Canceled by the client",
+        "canceled_by_us": "Canceled by us",
+        "completed": "Ran its course",
+        "unpaid": "Unpaid",
+        "other": "Other"
+      },
+      "summary": {
+        "monthly": "Monthly recurring",
+        "yearly": "Per year",
+        "lost": "Lost in the last 30 days",
+        "endedRecently_one": "{{count}} agreement ended",
+        "endedRecently_other": "{{count}} agreements ended",
+        "pastDue": "Past due",
+        "pastDueHint": "agreements with a late invoice",
+        "activeCount_one": "{{count}} active agreement",
+        "activeCount_other": "{{count}} active agreements",
+        "none": "Nothing recurring yet"
+      },
+      "column": {
+        "name": "Agreement",
+        "cadence": "Cadence",
+        "monthly": "Per month",
+        "next": "Next invoice",
+        "invoices": "Invoices",
+        "status": "Status",
+        "period": "Period"
+      },
+      "figure": {
+        "invoiced": "Invoiced",
+        "paid": "Received",
+        "pastDue_one": "{{count}} invoice past due",
+        "pastDue_other": "{{count}} invoices past due"
+      },
+      "field": {
+        "name": "Name",
+        "namePlaceholder": "Pro plan, monthly retainer, hosting",
+        "frequency": "Frequency",
+        "startDate": "Starts on",
+        "startDateHint": "Earlier than the invoice makes room to link the ones before it.",
+        "paymentTerms": "Payment terms (days)",
+        "currency": "Currency",
+        "ends": "Ends",
+        "endDate": "End date",
+        "endCount": "Number of invoices",
+        "endReason": "Reason",
+        "endedAt": "Ended on",
+        "invoice": "Invoice",
+        "invoicePlaceholder": "Choose an invoice",
+        "period": "Period",
+        "periodPlaceholder": "Choose a period"
+      },
+      "action": {
+        "changePrice": "Change price",
+        "generate": "Issue next now",
+        "pause": "Pause",
+        "resume": "Resume",
+        "end": "End agreement",
+        "linkInvoice": "Link invoice",
+        "link": "Link",
+        "makeRecurring": "Repeat this invoice",
+        "unlink": "Remove from agreement"
+      },
+      "terms": {
+        "title": "Price",
+        "description": "What the agreement bills per period, and from when. A change applies from the first period starting on or after its date; nothing is prorated.",
+        "from": "From {{date}}",
+        "current": "Current",
+        "upcoming": "Upcoming",
+        "perMonth": "{{amount}} a month",
+        "editTitle": "Edit price change",
+        "changeDescription": "Record a new price from a date on. Periods already invoiced keep what they were billed; the change starts with the first period on or after the date, in full.",
+        "effectiveFrom": "From",
+        "nextPeriodHint": "The next period starts {{date}}.",
+        "discount": "Discount",
+        "preview": "{{period}} per period, about {{monthly}} a month."
+      },
+      "invoices": {
+        "title": "Invoices",
+        "description": "One per period, written on the day. An invoice you wrote by hand can be linked too.",
+        "empty": "No invoice under this agreement yet.",
+        "emptyNext": "No invoice yet. The first one is written on {{date}}."
+      }
+    }
   },
   "collections": {
     "title": "Collections",
@@ -455,6 +644,7 @@
     "passkeySecondFactorPrompt": "Click the button below and follow your browser's security-key prompt.",
     "passkeysTitle": "Passkeys",
     "passkeysDescription": "Use security keys or device passkeys to sign in without entering your password. Enrolled passkeys also protect password sign-in as a second factor; passkey-only sign-in skips the authenticator-code step because the key already verifies possession.",
+    "passkeysCleanupDescription": "Local sign-in is disabled. You can remove saved passkeys, but cannot add new ones.",
     "passkeyLoadError": "Could not load passkeys",
     "passkeyUnsupported": "This browser does not support passkeys.",
     "passkeyInsecureContext": "Passkeys need a secure connection. Open Securo over HTTPS, or on http://localhost.",
@@ -505,7 +695,7 @@
     "spendingByCategory": "Spending by Category",
     "monthlyTrend": "Monthly Trend",
     "budgetVsActual": "Budget vs Actual",
-    "balanceFlow": "Balance Flow",
+    "balanceFlow": "Balance Evolution",
     "balanceFlowVsPrev": "In {{month}} on day {{day}}: {{amount}} ({{delta}})",
     "balancePeriodVariation": "Period change",
     "balanceCurrentMonthLegend": "Current month",
@@ -571,8 +761,6 @@
     "addToExistingRuleTitle": "Add transaction to rule",
     "addToExistingRuleDescription": "Choose an active category rule and add this transaction description as another future match.",
     "existingRule": "Existing rule",
-    "matchOperator": "Match type",
-    "matchText": "Description match",
     "assignRule": "Add to rule",
     "noExistingRules": "No active category rules available",
     "addedToExistingRule": "Rule updated. Future matches will use this category.",
@@ -775,7 +963,9 @@
         "thisMonth": "This month",
         "last90": "Last 90 days",
         "thisYear": "This year"
-      }
+      },
+      "futureDateError": "End date can't be after today",
+      "rangeTooWideError": "Range is too wide (max {{years}} years)"
     },
     "listView": "List",
     "calendarView": "Calendar",
@@ -809,7 +999,10 @@
     "calendarTransfersExcluded": "Transfers are not counted as income or expenses",
     "invoiceBadge": "Invoice {{number}}",
     "invoiceBadgeNoNumber": "Invoice",
-    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it."
+    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it.",
+    "suggestionBadge": "Question",
+    "suggestionBadgeTooltip": "A payment may settle this. Open the queue to answer.",
+    "clearGroupFilter": "Clear group filter"
   },
   "accounts": {
     "title": "Accounts",
@@ -883,6 +1076,7 @@
     "expenses": "Expenses",
     "projectedBalance": "Projected Balance",
     "notSettled": "Not settled",
+    "sharedCreditBalance": "Shared credit line",
     "projectedIncome": "Projected Income",
     "projectedExpenses": "Projected Expenses",
     "thisMonth": "This month",
@@ -954,7 +1148,12 @@
         "description": "US and international banks via SimpleFIN Bridge"
       }
     },
-    "reconnected": "Bank reconnected successfully"
+    "reconnected": "Bank reconnected successfully",
+    "connectionStatus": {
+      "active": "Active",
+      "error": "Error",
+      "expired": "Expired"
+    }
   },
   "connections": {
     "settings": "Connection settings",
@@ -1138,6 +1337,7 @@
     "createMissingCategories": "Also create default categories the pack needs",
     "duplicateName": "A rule with this name already exists",
     "sectionTitle": "Categorization Rules",
+    "sectionHint": "How to categorize transactions.",
     "resetAndReapplyAll": "Reset and reapply",
     "confirmResetAndReapplyAll": "Reset matching transaction categories, notes, and rule-managed descriptions, then reapply all active rules?",
     "add": "Add",
@@ -1180,7 +1380,10 @@
     "ignoreActionHint": "(no value needed)",
     "selectCategory": "Select category...",
     "selectAccount": "Select account...",
-    "ruleActive": "Active rule",
+    "turnOn": "Turn on",
+    "turnOff": "Turn off",
+    "turnedOn": "Rule turned on",
+    "turnedOff": "Rule turned off",
     "noConditions": "(no conditions)",
     "noActions": "(no actions)",
     "fieldDescription": "Description",
@@ -1191,6 +1394,7 @@
     "fieldAccount": "Account",
     "fieldPayee": "Payee",
     "fieldDate": "Date",
+    "fieldStatus": "Status",
     "opContains": "contains",
     "opNotContains": "does not contain",
     "opEquals": "equals",
@@ -1202,6 +1406,8 @@
     "opIsNot": "is not",
     "typeExpense": "Expense (debit)",
     "typeIncome": "Income (credit)",
+    "statusPending": "Pending",
+    "statusPosted": "Posted",
     "valuePlaceholder": "Value...",
     "sortLabel": "Sort by",
     "sortBy_priority": "Priority",
@@ -1215,7 +1421,12 @@
     "importConfirmTitle": "Import categorization rules?",
     "importConfirmDescription": "File {{file}} contains {{count}} rules.",
     "importOverwriteWarning": "Importing will overwrite your current categorization rules. This cannot be undone.",
-    "confirmOverwriteImport": "Overwrite and import"
+    "confirmOverwriteImport": "Overwrite and import",
+    "tab": {
+      "rules": "Rules",
+      "queue": "Waiting for you",
+      "history": "History"
+    }
   },
   "categories": {
     "title": "Categories",
@@ -1620,11 +1831,15 @@
     "amount": "Amount",
     "investments": "Investments",
     "moneyMap": "Money Map",
-    "range30d": "30D"
+    "range30d": "30D",
+    "customRange": "Custom range",
+    "pickCustomRange": "Pick a start and end date",
+    "loadError": "Failed to load report"
   },
   "payees": {
     "addFavorite": "Add to favorites",
     "removeFavorite": "Remove from favorites",
+    "favoriteError": "Could not update favorite",
     "title": "Payees",
     "section": "Setup",
     "payee": "Payee",
@@ -1753,7 +1968,11 @@
     "previous": "Previous",
     "next": "Next",
     "rowsPerPage": "Rows per page",
-    "noResults": "No results"
+    "noResults": "No results",
+    "preview": "Preview",
+    "download": "Download",
+    "closePreview": "Close preview",
+    "remove": "Remove"
   },
   "splitGroups": {
     "title": "Groups",
@@ -2053,7 +2272,8 @@
       "openSettings": "Agent settings",
       "empty": "Choose an agent and start a conversation with your financial data.",
       "openAgents": "Go to Agents",
-      "noConversations": "No conversations yet."
+      "noConversations": "No conversations yet.",
+      "backToChat": "Back to chat"
     },
     "form": {
       "createTitle": "New agent",
@@ -2239,6 +2459,234 @@
         "title": "No connections yet",
         "subtitle": "Add a connection to point Securo at your local Ollama, OpenAI, Anthropic, or any OpenAI-compatible endpoint."
       }
+    }
+  },
+  "reconciliation": {
+    "node": {
+      "invoices": "Invoices",
+      "invoicesHint": "against what you have to receive and to pay",
+      "recurring": "Recurring",
+      "recurringHint": "against what you were already expecting",
+      "inactive": "Not in use here",
+      "transfers": "Transfers",
+      "transfersHint": "between your own accounts"
+    },
+    "rule": {
+      "sameClientExact": "Known person, exact amount",
+      "netOfWithholding": "Known person, paid net of withholding",
+      "exactAmountAnyClient": "Exact amount, anyone",
+      "similarDescription": "Close amount and similar description",
+      "sameAccountExact": "Same account, exact amount",
+      "unknown": "Rule",
+      "partPayment": "Known person, part of the amount",
+      "severalInvoices": "Known person, several invoices at once",
+      "destinationNamed": "The description names the other account",
+      "exactAmountNearby": "Exact amount, nearby date",
+      "closeAmountWiderWindow": "Close amount, wider window"
+    },
+    "outcome": {
+      "link": "Links",
+      "suggest": "Suggests"
+    },
+    "cond": {
+      "samePayee": "the person is the one on the invoice",
+      "sameAccount": "the same account",
+      "amountExact": "the amount matches exactly",
+      "amountTolerance": "the amount is within {{percent}}%",
+      "amountRatio": "the amount matches net of withholding",
+      "window": "up to {{before}} days early, {{after}} days late",
+      "similarity": "the description is at least {{min}} similar",
+      "none": "no conditions",
+      "accounts": "in {{names}}",
+      "payees": "for {{names}}",
+      "moneyIn": "money coming in",
+      "moneyOut": "money going out",
+      "foreign": "in a foreign currency",
+      "currencyIn": "in {{codes}}",
+      "atLeast": "at least {{value}}",
+      "atMost": "at most {{value}}",
+      "textContains": "the statement says “{{text}}”",
+      "textExcludes": "the statement does not say “{{text}}”",
+      "onArrival": "when money comes in or goes out",
+      "onIssue": "when an invoice is issued",
+      "amountPartial": "the amount covers part of what is owed",
+      "amountSet": "up to {{count}} invoices add up to it",
+      "differentAccount": "two different accounts",
+      "accountTypes": "one side is a {{kinds}} account",
+      "accountNamed": "one description names the other account",
+      "closestDate": "the closest date wins",
+      "uniqueCandidate": "only one candidate fits"
+    },
+    "newRule": "New matching rule",
+    "saved": "Rule saved",
+    "reset": "Rule restored",
+    "restore": "Restore what we ship",
+    "changed": "Changed",
+    "yours": "Yours",
+    "field": {
+      "name": "Name",
+      "namePlaceholder": "e.g. Known person, close amount",
+      "outcome": "What it does when it matches",
+      "outcomeHint": "Link binds the payment on its own. Suggest sends it to the queue below for you to confirm.",
+      "counterparty": "Who paid or was paid",
+      "amount": "Amount",
+      "window": "How far apart the dates may be",
+      "windowHint": "Late is counted from the due date, early from the day the invoice was written, so paying the day after issue is not weeks early.",
+      "beforeDays": "Days early",
+      "afterDays": "Days late",
+      "similarity": "Description similarity",
+      "similarityHint": "From 0 to 1. Leave empty to ignore the description entirely.",
+      "similarityOff": "off",
+      "scope": "When this rule applies",
+      "scopeHint": "Leave empty to apply to everything",
+      "accounts": "Bank accounts",
+      "anyAccount": "Any account",
+      "payees": "People",
+      "anyPayee": "Anyone",
+      "direction": "Money in or out",
+      "currencyScope": "Only these currencies",
+      "currencyPlaceholder": "e.g. USD, EUR",
+      "foreignOnly": "Only currencies other than the one this workspace uses",
+      "amountBand": "Only amounts in this range",
+      "noMinimum": "no minimum",
+      "noMaximum": "no maximum",
+      "text": "Statement text",
+      "textContains": "must contain…",
+      "textExcludes": "must not contain…",
+      "textHint": "Several, separated by commas, means any of them.",
+      "trigger": "When we look",
+      "triggerHint": "Matching happens at two moments, and the evidence is not the same in both.",
+      "amountMatch": "How close the amount must be",
+      "amountMatchHint": "Compared against what is still owed, not the original total.",
+      "amountBandHint": "About the payment itself: a size you do or do not want this rule handling.",
+      "transferSignals": "What makes it a transfer",
+      "transferSignalsHint": "The two legs are always on different accounts. These say what else has to be true before the pair is trusted.",
+      "accountTypes": "Only when one side is one of these",
+      "amountMatchHintTransfer": "Compared against the other leg, in the same currency. Different currencies never pair on their own; you can still link the two legs by hand.",
+      "windowHintTransfer": "Money rarely lands on the day it left. Both sides are counted from the other record, so two days either way covers a weekend."
+    },
+    "counterparty": {
+      "any": "Anyone",
+      "samePayee": "The person on the invoice"
+    },
+    "amount": {
+      "exact": "Exactly the amount owed",
+      "tolerance": "Within a margin",
+      "ratio": "Net of withholding tax",
+      "ratioHint": "Uses the withholding rates for your country. Nothing matches until those are set.",
+      "partial": "Part of what is owed",
+      "partialHint": "For payments made in instalments. What is left stays open, and the next payment matches it exactly.",
+      "set": "Several invoices added up",
+      "setHint": "For a payment that covers more than one invoice. If more than one combination adds up, we ask instead of choosing.",
+      "setMax": "At most this many invoices",
+      "setFee": "Allow for a fee of",
+      "setFeeHint": "A share of what the invoices are worth, for a payment that moves net of a cut. Zero means the total must be exact."
+    },
+    "queue": {
+      "title": "Waiting for you",
+      "hint": "Matches that need your confirmation.",
+      "empty": "Nothing to review. Everything matched on its own.",
+      "aPayment": "A payment",
+      "maySettle": "may settle {{name}}",
+      "mayBe": "may be {{name}}",
+      "accept": "Link",
+      "declineHint": "Not a match. This pair will not be suggested again.",
+      "linked": "Linked",
+      "declined": "Dismissed. We will not ask again",
+      "covers": "covers",
+      "mayPairWith": "may be the other half of {{name}}",
+      "kind": {
+        "transaction": "Transfer",
+        "invoice": "Invoice",
+        "recurring": "Recurring"
+      }
+    },
+    "evidence": {
+      "amountExact": "amount matches exactly",
+      "amountOff": "expected {{expected}}, moved {{moved}}",
+      "knownPayer": "known person",
+      "unknownPayer": "person not identified",
+      "sameDay": "same day",
+      "daysApart_one": "{{count}} day apart",
+      "daysApart_other": "{{count}} days apart"
+    },
+    "direction": {
+      "any": "Either",
+      "in": "Money coming in",
+      "out": "Money going out"
+    },
+    "step": {
+      "what": "What this rule is",
+      "which": "Which money it looks at",
+      "whichHint": "Leave everything empty and it looks at all of it",
+      "match": "When it counts as a match",
+      "matchHint": "How closely the payment and the promise have to fit",
+      "matchHintTransfer": "How close the two records have to be"
+    },
+    "trigger": {
+      "money_arrives": "When money comes in or goes out",
+      "money_arrivesHint": "The payment shows up on the statement and we look for the invoice it settles.",
+      "invoice_issued": "When an invoice is issued",
+      "invoice_issuedHint": "The payment came first and the invoice follows, so we look back at money already there.",
+      "both": "Both moments",
+      "bothHint": "The rule is trusted either way round."
+    },
+    "history": {
+      "title": "What matching did",
+      "hint": "Newest first.",
+      "byPerson": "by you",
+      "byRules": "by the rules",
+      "more": "Show {{count}} more",
+      "less": "Show fewer",
+      "action": {
+        "linked": "Linked to {{name}}",
+        "accepted": "Suggestion accepted for {{name}}",
+        "suggested": "Offered against {{name}}",
+        "declined": "Suggestion dismissed for {{name}}",
+        "expired": "Suggestion expired: {{name}}",
+        "unlinked": "Unlinked from {{name}}"
+      },
+      "empty": "Nothing yet. This fills in as matching links, asks and is answered."
+    },
+    "moveUp": "Try this one earlier",
+    "moveDown": "Try this one later",
+    "pair": {
+      "owed": "What is owed",
+      "arrived": "What moved",
+      "draftInvoice": "Draft invoice",
+      "recurringBill": "Recurring bill",
+      "noMoney": "No transaction on this one.",
+      "stillOpen": "still open",
+      "thisPayment": "this payment",
+      "wasApplied": "applied",
+      "wouldRemain": "would remain",
+      "wouldClose": "closes it",
+      "thePayment": "the payment",
+      "acrossInvoices": "across {{count}} invoices",
+      "dueOn": "due {{date}}",
+      "totalOf": "{{amount}} total",
+      "otherLeg": "The other leg",
+      "thisLeg": "This one",
+      "otherLegAmount": "on the other leg",
+      "thisLegAmount": "on this one"
+    },
+    "discarded": "Deleted from this workspace:",
+    "noneLeft": "No matching rules left in this set. Nothing here is matched automatically.",
+    "confirmDeleteTitle": "Delete this rule?",
+    "confirmDeleteDescription": "\"{{name}}\" stops deciding anything. You can bring it back later if it is one of ours.",
+    "exported": "Matching rules downloaded",
+    "imported": "Imported {{imported}} rules ({{skipped}} skipped)",
+    "invalidImportFile": "That is not a matching-rules file",
+    "importConfirmTitle": "Import matching rules?",
+    "importConfirmDescription": "File {{file}} contains {{count}} rules.",
+    "importOverwriteWarning": "Importing replaces the matching rules this workspace has now, including their order. This cannot be undone.",
+    "card": {
+      "transfers": "Transfer rules",
+      "transfersHint": "How we decide that two records are one transfer between your own accounts.",
+      "invoices": "Invoice rules",
+      "invoicesHint": "How we decide which payment settles which invoice.",
+      "recurring": "Recurring rules",
+      "recurringHint": "How we decide that a charge is the bill you were already expecting."
     }
   }
 }

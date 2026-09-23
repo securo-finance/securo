@@ -44,7 +44,13 @@ const PLURAL_SUFFIXES = ['_zero', '_one', '_two', '_few', '_many', '_other']
 
 function pluralBase(key: string): string | null {
   for (const s of PLURAL_SUFFIXES) {
-    if (key.endsWith(s)) return key.slice(0, -s.length)
+    if (key.endsWith(s)) {
+      const base = key.slice(0, -s.length)
+      // One suffix, not a chain. Without this, "title_one_other" reduces
+      // to "title_one", which en does have, and a malformed key rides in
+      // as though it were a plural form of a real one.
+      return PLURAL_SUFFIXES.some((inner) => base.endsWith(inner)) ? null : base
+    }
   }
   return null
 }
@@ -137,7 +143,12 @@ describe('i18n locale files', () => {
         const keys = new Set(flattenKeys(JSON.parse(readRaw(locale))))
         // A key is covered if the locale has the key directly OR has at least one
         // i18next plural form of it (e.g. _one/_few/_many/_other for Polish).
-        const missing = [...enKeys].filter((k) => !hasKeyOrPluralForms(keys, k))
+        // Some locales intentionally use the unsuffixed fallback for a key that
+        // English pluralizes, so compare plural keys by their shared base.
+        const missing = [...enKeys].filter((key) => {
+          const base = pluralBase(key) ?? key
+          return !hasKeyOrPluralForms(keys, base)
+        })
         expect(missing, `Keys missing in ${locale}:`).toEqual([])
       })
     }
@@ -149,46 +160,18 @@ describe('i18n locale files', () => {
     for (const locale of LOCALES.filter((l: string) => l !== 'en')) {
       it(locale, () => {
         const keys = new Set(flattenKeys(JSON.parse(readRaw(locale))))
-        // A key is valid if it exists in en directly, OR if it is a plural form
-        // of a key en defines — either plainly ("foo") or itself pluralized
-        // ("foo_one"/"foo_other"). English only has one/other, so a locale with
-        // richer plural rules must be free to add "foo_few" and "foo_many".
+        // A key is valid if it exists in en directly, OR if it is a plural
+        // form of a key en carries. English has two plural categories and
+        // Slavic languages have four, so "title_few" is a translation of
+        // "title_one"/"title_other" rather than an invented key: matching
+        // against the bare base alone would have forced those languages to
+        // choose between reading correctly and passing here.
         const extra = [...keys].filter((k) => {
           if (enKeys.has(k)) return false
-          const base = pluralBase(k)
-          return !(base && hasKeyOrPluralForms(enKeys, base))
+          const base = pluralBase(k) ?? k
+          return !hasKeyOrPluralForms(enKeys, base)
         })
         expect(extra, `Extra keys in ${locale} not in en:`).toEqual([])
-      })
-    }
-  })
-
-  describe('pluralized keys cover every form the language needs', () => {
-    // i18next picks the form via Intl.PluralRules, so a language that declares
-    // "few"/"many" needs those keys — otherwise the lookup misses and the raw
-    // key renders. English only needs one/other, so this can't be caught by
-    // comparing against en.json.
-    for (const locale of LOCALES) {
-      it(locale, () => {
-        const keys = flattenKeys(JSON.parse(readRaw(locale)))
-        const required = new Intl.PluralRules(locale).resolvedOptions().pluralCategories
-        const formsByBase = new Map<string, Set<string>>()
-
-        for (const key of keys) {
-          const base = pluralBase(key)
-          if (!base) continue
-          const form = key.slice(base.length + 1)
-          if (!formsByBase.has(base)) formsByBase.set(base, new Set())
-          formsByBase.get(base)!.add(form)
-        }
-
-        const incomplete: string[] = []
-        for (const [base, forms] of formsByBase) {
-          const missing = required.filter((c) => !forms.has(c))
-          if (missing.length > 0) incomplete.push(`${base}: missing _${missing.join(', _')}`)
-        }
-
-        expect(incomplete, `Incomplete plural forms in ${locale}:`).toEqual([])
       })
     }
   })

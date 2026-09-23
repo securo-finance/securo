@@ -7,6 +7,7 @@ import {
   ChevronDown,
   Plus,
   Receipt,
+  Repeat,
   Settings2,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -156,6 +157,19 @@ export default function InvoicesPage() {
         title={t('invoices.title')}
         action={
           <div className="flex items-center gap-2">
+            {/* Only on the receivable side: an agreement is something we
+                bill, and the payable ledger has nothing to emit. */}
+            {direction === 'receivable' && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate('/invoices/schedules')}
+                data-testid="invoice-schedules-button"
+              >
+                <Repeat className="h-4 w-4 mr-1.5" />
+                {t('invoices.schedules.title')}
+              </Button>
+            )}
             <Button
               variant="outline"
               size="sm"
@@ -420,7 +434,17 @@ export default function InvoicesPage() {
                     className="border-b border-border last:border-0 hover:bg-muted transition-colors cursor-pointer"
                   >
                     <td className="py-3 pl-4 sm:pl-5">
-                      <div className="text-sm font-medium text-foreground truncate">
+                      <div className="flex items-center gap-1.5 text-sm font-medium text-foreground truncate">
+                        {/* A recurring invoice says so with a glyph, not a
+                            column: the list is about money, and which
+                            agreement it came from is one hop away. */}
+                        {invoice.schedule_id && (
+                          <Repeat
+                            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                            aria-label={t('invoices.schedules.recurringInvoice')}
+                            data-testid="invoice-row-recurring"
+                          />
+                        )}
                         {invoice.payee?.name ?? (
                           <span className="text-muted-foreground">
                             {direction === 'payable'

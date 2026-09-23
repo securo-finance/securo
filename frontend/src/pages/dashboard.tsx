@@ -900,7 +900,7 @@ export default function DashboardPage() {
         )
       )}
 
-      {/* Charts: Category Spending Bars + Balance Flow */}
+      {/* Charts: Category Spending Bars + Balance Evolution */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5" style={{ gridAutoRows: 'minmax(380px, auto)' }}>
         {/* Category Spending Bars */}
         <div className="bg-card rounded-xl border border-border shadow-sm flex flex-col max-h-[420px]">

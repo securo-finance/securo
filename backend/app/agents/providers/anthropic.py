@@ -98,11 +98,12 @@ class AnthropicProvider(LLMProvider):
     ) -> AsyncIterator[ChatChunk]:
         url = f"{self.base_url.rstrip('/')}/messages"
         system, rest = _split_system(messages)
+        # `temperature` is intentionally not sent: current Claude models reject it
+        # with "temperature is deprecated for this model" (issue #542).
         payload: dict = {
             "model": model,
             "messages": _serialize_messages(rest),
             "max_tokens": max_tokens or 4096,
-            "temperature": temperature,
             "stream": True,
         }
         if system:

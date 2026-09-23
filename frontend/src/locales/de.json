@@ -65,7 +65,8 @@
     "versionAriaLabel": "Läuft mit Version {{version}}",
     "versionLabel": "Version {{version}}",
     "updateAvailable": "Update verfügbar",
-    "updateAvailableHint": "Eine neuere Version ({{version}}) ist auf GitHub verfügbar"
+    "updateAvailableHint": "Eine neuere Version ({{version}}) ist auf GitHub verfügbar",
+    "toggleMenu": "Menü umschalten"
   },
   "cmdk": {
     "title": "Befehlspalette",
@@ -126,7 +127,9 @@
     "groupAdmin": "Administration",
     "groupAgents": "KI",
     "agents": "Agenten",
-    "aiAgents": "KI-Agenten"
+    "aiAgents": "KI-Agenten",
+    "collapseSidebar": "Seitenleiste einklappen",
+    "expandSidebar": "Seitenleiste ausklappen"
   },
   "invoices": {
     "title": "Invoices",
@@ -290,7 +293,40 @@
       "payable_not_shareable": "Eine erhaltene Rechnung kann nicht geteilt werden.",
       "discount_exceeds_total": "Der Rabatt ist größer als der berechnete Betrag.",
       "no_document_filed": "Dieses Dokument wurde anderswo ausgestellt. Hängen Sie die erhaltene Datei an.",
-      "already_imported": "Dieses Dokument wurde bereits importiert."
+      "already_imported": "Dieses Dokument wurde bereits importiert.",
+      "term_lines_required": "Eine Kondition braucht mindestens eine Position.",
+      "term_empty": "Eine Kondition muss etwas berechnen.",
+      "term_in_use": "Unter dieser Kondition wurde bereits eine Rechnung ausgestellt. Fügen Sie eine neue Kondition ab einem späteren Datum hinzu.",
+      "term_before_start": "Eine Kondition kann nicht vor der Vereinbarung beginnen.",
+      "term_date_taken": "An diesem Datum beginnt bereits eine andere Kondition.",
+      "last_term": "Eine Vereinbarung braucht mindestens eine Kondition.",
+      "term_not_found": "Kondition nicht gefunden.",
+      "schedule_ended": "Diese Vereinbarung ist beendet und kann nicht mehr geändert werden.",
+      "schedule_locked": "Häufigkeit, Startdatum und Währung sind fest, sobald eine Rechnung unter dieser Vereinbarung existiert.",
+      "schedule_has_invoices": "Unter dieser Vereinbarung wurden Rechnungen ausgestellt. Beenden Sie sie, statt sie zu löschen.",
+      "schedule_not_active": "Nur eine aktive Vereinbarung stellt Rechnungen aus.",
+      "invalid_frequency": "Unbekannte Häufigkeit.",
+      "invalid_end_type": "Unbekannte Endbedingung.",
+      "invalid_end_reason": "Unbekannter Endgrund.",
+      "end_date_required": "Geben Sie an, an welchem Datum die Vereinbarung endet.",
+      "end_count_required": "Geben Sie an, nach wie vielen Rechnungen die Vereinbarung endet.",
+      "end_before_start": "Die Vereinbarung kann nicht enden, bevor sie beginnt.",
+      "name_required": "Geben Sie der Vereinbarung einen Namen.",
+      "not_issued": "Nur eine ausgestellte Rechnung kann eine Vereinbarung beginnen.",
+      "already_linked": "Diese Rechnung gehört bereits zu einer Vereinbarung.",
+      "invoice_void": "Eine stornierte Rechnung kann keine Periode abdecken.",
+      "payee_mismatch": "Rechnung und Vereinbarung nennen unterschiedliche Kunden.",
+      "not_a_period": "Dieses Datum ist nicht der Beginn einer Periode dieser Vereinbarung.",
+      "beyond_end": "Diese Periode liegt nach dem Ende der Vereinbarung.",
+      "period_taken": "Eine andere Rechnung deckt diese Periode bereits ab.",
+      "start_after_invoice": "Die Vereinbarung kann nicht nach dieser Rechnung beginnen.",
+      "invoice_not_found": "Rechnung nicht gefunden.",
+      "no_term": "Für diese Periode gilt keine Kondition.",
+      "no_author": "Diese Vereinbarung hat keinen Autor, in dessen Namen Rechnungen ausgestellt werden.",
+      "negative_discount": "Ein Rabatt kann nicht negativ sein.",
+      "first_term": "Der Preis, der ab Beginn gilt, kann weder verschoben noch entfernt werden. Ändern Sie ihn oder fügen Sie einen neuen Preis ab einem späteren Datum hinzu.",
+      "not_receivable": "Nur eine von Ihnen ausgestellte Rechnung kann zu einer Vereinbarung gehören.",
+      "period_already_issued": "Dieser Zeitraum wurde gerade ausgestellt. Aktualisieren Sie die Seite, um ihn zu sehen."
     },
     "comingNext": "Stelle deinen Kunden Rechnungen und behalte im Blick, was bezahlt ist und was offen bleibt. Das ist das Nächste, was gebaut wird.",
     "document": {
@@ -372,7 +408,160 @@
       "fromSystem": "Von {{source}} · {{date}}",
       "fromUpload": "Hochgeladen · {{date}}"
     },
-    "draftSaved": "Entwurf gespeichert"
+    "draftSaved": "Entwurf gespeichert",
+    "suggestions": {
+      "title_one": "Eine Zahlung könnte diese Rechnung begleichen",
+      "title_other": "{{count}} Zahlungen könnten diese Rechnung begleichen",
+      "wouldApply": "würde {{amount}} anrechnen",
+      "alsoCovers_one": "deckt auch {{count}} weitere Rechnung",
+      "alsoCovers_other": "deckt auch {{count}} weitere Rechnungen"
+    },
+    "schedules": {
+      "title": "Wiederkehrend",
+      "new": "Neue wiederkehrende Rechnung",
+      "newDescription": "Eine Vereinbarung mit einem Kunden, ihm jede Periode eine Rechnung zu stellen. Die Rechnungen werden am Stichtag für Sie erstellt.",
+      "backToList": "Zurück zu Wiederkehrend",
+      "empty": "Noch keine wiederkehrenden Rechnungen. Richten Sie eine ein, oder öffnen Sie eine Rechnung und wählen Sie \"Diese Rechnung wiederholen\".",
+      "emptyFiltered": "Nichts mit diesem Status.",
+      "created": "Wiederkehrende Rechnung erstellt",
+      "saved": "Änderungen gespeichert",
+      "deleted": "Wiederkehrende Rechnung gelöscht",
+      "paused": "Pausiert. Es wird nichts berechnet, bis Sie sie fortsetzen.",
+      "resumed": "Ab der nächsten Periode fortgesetzt.",
+      "ended": "Vereinbarung beendet",
+      "generated_one": "Rechnung ausgestellt",
+      "generated_other": "{{count}} Rechnungen ausgestellt",
+      "termSaved": "Preis gespeichert",
+      "termRemoved": "Preisänderung entfernt",
+      "linked": "Rechnung mit der Vereinbarung verknüpft",
+      "unlinked": "Rechnung von der Vereinbarung gelöst",
+      "recurringInvoice": "Wiederkehrende Rechnung",
+      "monthlyPreview": "Etwa {{amount}} pro Monat.",
+      "since": "seit {{date}}",
+      "untilDate": "bis {{date}}",
+      "untilCount_one": "{{count}} Rechnung insgesamt",
+      "untilCount_other": "{{count}} Rechnungen insgesamt",
+      "endedOn": "beendet am {{date}} ({{reason}})",
+      "pausedByFailures": "Nach wiederholten Fehlern pausiert. Prüfen Sie die Konditionen und setzen Sie fort.",
+      "editTitle": "Wiederkehrende Rechnung bearbeiten",
+      "editDescription": "Name, Kunde, Konditionen und Ende.",
+      "editLockedDescription": "Unter dieser Vereinbarung wurden bereits Rechnungen ausgestellt, daher sind Häufigkeit und Startdatum fest. Alles andere kann sich ändern.",
+      "endTitle": "Diese Vereinbarung beenden?",
+      "endDescription": "Es werden keine weiteren Rechnungen ausgestellt. Die bereits ausgestellten bleiben genau so, wie sie sind. Geben Sie den Grund an: Er ist das Einzige, was die Rechnungen später nicht verraten.",
+      "linkTitle": "Vorhandene Rechnung verknüpfen",
+      "linkDescription": "Eine Rechnung, die Sie von Hand für eine Periode dieser Vereinbarung erstellt haben. Sie behält Nummer, Datum und Zahlungen; sie erfährt nur, zu welcher Periode sie gehört.",
+      "noCandidates": "Keine unverknüpfte Rechnung für diesen Kunden in dieser Währung.",
+      "makeRecurringDescription": "Diese Rechnung wird zu einer Periode einer neuen Vereinbarung, und die nächsten werden für Sie erstellt. Ihr Datum, {{date}}, ist die erste Periode, sofern die Vereinbarung nicht früher begonnen hat.",
+      "filter": {
+        "all": "Alle",
+        "active": "Aktiv",
+        "paused": "Pausiert",
+        "ended": "Beendet"
+      },
+      "state": {
+        "active": "Aktiv",
+        "past_due": "Überfällig",
+        "paused": "Pausiert",
+        "paused_failures": "Braucht Aufmerksamkeit",
+        "ended": "Beendet"
+      },
+      "frequency": {
+        "weekly": "Wöchentlich",
+        "biweekly": "Alle 2 Wochen",
+        "monthly": "Monatlich",
+        "quarterly": "Vierteljährlich",
+        "semiannual": "Alle 6 Monate",
+        "yearly": "Jährlich"
+      },
+      "endType": {
+        "never": "Nie",
+        "on_date": "An einem Datum",
+        "after_count": "Nach einer Anzahl Rechnungen"
+      },
+      "endReason": {
+        "canceled_by_client": "Vom Kunden gekündigt",
+        "canceled_by_us": "Von uns gekündigt",
+        "completed": "Regulär ausgelaufen",
+        "unpaid": "Nicht bezahlt",
+        "other": "Sonstiges"
+      },
+      "summary": {
+        "monthly": "Monatlich wiederkehrend",
+        "yearly": "Pro Jahr",
+        "lost": "Verloren in den letzten 30 Tagen",
+        "endedRecently_one": "{{count}} Vereinbarung beendet",
+        "endedRecently_other": "{{count}} Vereinbarungen beendet",
+        "pastDue": "Überfällig",
+        "pastDueHint": "Vereinbarungen mit einer überfälligen Rechnung",
+        "activeCount_one": "{{count}} aktive Vereinbarung",
+        "activeCount_other": "{{count}} aktive Vereinbarungen",
+        "none": "Noch nichts Wiederkehrendes"
+      },
+      "column": {
+        "name": "Vereinbarung",
+        "cadence": "Rhythmus",
+        "monthly": "Pro Monat",
+        "next": "Nächste Rechnung",
+        "invoices": "Rechnungen",
+        "status": "Status",
+        "period": "Periode"
+      },
+      "figure": {
+        "invoiced": "In Rechnung gestellt",
+        "paid": "Erhalten",
+        "pastDue_one": "{{count}} Rechnung überfällig",
+        "pastDue_other": "{{count}} Rechnungen überfällig"
+      },
+      "field": {
+        "name": "Name",
+        "namePlaceholder": "Pro-Plan, monatliche Pauschale, Hosting",
+        "frequency": "Häufigkeit",
+        "startDate": "Beginnt am",
+        "startDateHint": "Ein Datum vor der Rechnung schafft Platz, um die vorherigen zu verknüpfen.",
+        "paymentTerms": "Zahlungsziel (Tage)",
+        "currency": "Währung",
+        "ends": "Endet",
+        "endDate": "Enddatum",
+        "endCount": "Anzahl Rechnungen",
+        "endReason": "Grund",
+        "endedAt": "Beendet am",
+        "invoice": "Rechnung",
+        "invoicePlaceholder": "Rechnung wählen",
+        "period": "Periode",
+        "periodPlaceholder": "Periode wählen"
+      },
+      "action": {
+        "changePrice": "Preis ändern",
+        "generate": "Nächste jetzt ausstellen",
+        "pause": "Pausieren",
+        "resume": "Fortsetzen",
+        "end": "Vereinbarung beenden",
+        "linkInvoice": "Rechnung verknüpfen",
+        "link": "Verknüpfen",
+        "makeRecurring": "Diese Rechnung wiederholen",
+        "unlink": "Aus der Vereinbarung entfernen"
+      },
+      "terms": {
+        "title": "Preis",
+        "description": "Was die Vereinbarung pro Periode berechnet, und ab wann. Eine Änderung gilt ab der ersten Periode, die an oder nach ihrem Datum beginnt; nichts wird anteilig berechnet.",
+        "from": "Ab {{date}}",
+        "current": "Aktuell",
+        "upcoming": "Bevorstehend",
+        "perMonth": "{{amount}} pro Monat",
+        "editTitle": "Preisänderung bearbeiten",
+        "changeDescription": "Erfassen Sie einen neuen Preis ab einem Datum. Bereits berechnete Perioden behalten ihren Betrag; die Änderung beginnt mit der ersten Periode an oder nach dem Datum, in voller Höhe.",
+        "effectiveFrom": "Ab",
+        "nextPeriodHint": "Die nächste Periode beginnt am {{date}}.",
+        "discount": "Rabatt",
+        "preview": "{{period}} pro Periode, etwa {{monthly}} pro Monat."
+      },
+      "invoices": {
+        "title": "Rechnungen",
+        "description": "Eine pro Periode, am Stichtag erstellt. Eine von Hand erstellte Rechnung kann ebenfalls verknüpft werden.",
+        "empty": "Noch keine Rechnung unter dieser Vereinbarung.",
+        "emptyNext": "Noch keine Rechnung. Die erste wird am {{date}} erstellt."
+      }
+    }
   },
   "collections": {
     "title": "Sammlungen",
@@ -455,6 +644,7 @@
     "passkeySecondFactorPrompt": "Klicke auf die Schaltfläche unten und folge den Anweisungen deines Browsers für den Sicherheitsschlüssel.",
     "passkeysTitle": "Passkeys",
     "passkeysDescription": "Verwende Sicherheitsschlüssel oder Geräte-Passkeys, um dich ohne Passwort anzumelden. Registrierte Passkeys schützen auch die Passwort-Anmeldung als zweiten Faktor; die Anmeldung nur mit Passkey überspringt den Authentifikator-Code-Schritt, da der Schlüssel bereits den Besitz nachweist.",
+    "passkeysCleanupDescription": "Die lokale Anmeldung ist deaktiviert. Sie können gespeicherte Passkeys entfernen, aber keine neuen hinzufügen.",
     "passkeyLoadError": "Passkeys konnten nicht geladen werden",
     "passkeyUnsupported": "Dieser Browser unterstützt keine Passkeys.",
     "passkeyInsecureContext": "Passkeys erfordern eine sichere Verbindung. Öffne Securo über HTTPS oder auf http://localhost.",
@@ -571,8 +761,6 @@
     "addToExistingRuleTitle": "Transaktion zur Regel hinzufügen",
     "addToExistingRuleDescription": "Wähle eine aktive Kategorieregel aus und füge diese Transaktionsbeschreibung als weiteres zukünftiges Suchkriterium hinzu.",
     "existingRule": "Bestehende Regel",
-    "matchOperator": "Übereinstimmungstyp",
-    "matchText": "Beschreibungs-Übereinstimmung",
     "assignRule": "Zur Regel hinzufügen",
     "noExistingRules": "Keine aktiven Kategorieregeln verfügbar",
     "addedToExistingRule": "Regel aktualisiert. Zukünftige Übereinstimmungen werden diese Kategorie verwenden.",
@@ -775,7 +963,9 @@
         "thisMonth": "Diesen Monat",
         "last90": "Letzte 90 Tage",
         "thisYear": "Dieses Jahr"
-      }
+      },
+      "futureDateError": "Enddatum darf nicht in der Zukunft liegen",
+      "rangeTooWideError": "Zeitraum ist zu groß (max. {{years}} Jahre)"
     },
     "listView": "Liste",
     "calendarView": "Kalender",
@@ -809,7 +999,10 @@
     "calendarTransfersExcluded": "Umbuchungen zählen nicht als Einnahmen oder Ausgaben",
     "invoiceBadge": "Invoice {{number}}",
     "invoiceBadgeNoNumber": "Invoice",
-    "invoiceBadgeTooltip": "This transaction settles an invoice. Open it."
+    "invoiceBadgeTooltip": "Diese Transaktion begleicht eine Rechnung. Öffnen.",
+    "suggestionBadge": "Frage",
+    "suggestionBadgeTooltip": "Eine Zahlung könnte diese Rechnung begleichen. Öffnen Sie die Warteschlange.",
+    "clearGroupFilter": "Gruppenfilter entfernen"
   },
   "accounts": {
     "title": "Konten",
@@ -884,6 +1077,7 @@
     "expenses": "Ausgaben",
     "projectedBalance": "Prognostizierter Saldo",
     "notSettled": "Nicht abgerechnet",
+    "sharedCreditBalance": "Geteilte Kreditlinie",
     "projectedIncome": "Prognostizierte Einnahmen",
     "projectedExpenses": "Prognostizierte Ausgaben",
     "thisMonth": "Diesen Monat",
@@ -955,7 +1149,12 @@
         "description": "US-amerikanische und internationale Banken via SimpleFIN Bridge"
       }
     },
-    "reconnected": "Bank erfolgreich erneut verbunden"
+    "reconnected": "Bank erfolgreich erneut verbunden",
+    "connectionStatus": {
+      "active": "Aktiv",
+      "error": "Fehler",
+      "expired": "Abgelaufen"
+    }
   },
   "connections": {
     "settings": "Verbindungseinstellungen",
@@ -1139,6 +1338,7 @@
     "createMissingCategories": "Auch die benötigten Standardkategorien erstellen",
     "duplicateName": "Eine Regel mit diesem Namen existiert bereits",
     "sectionTitle": "Kategorisierungsregeln",
+    "sectionHint": "Wie Transaktionen kategorisiert werden.",
     "resetAndReapplyAll": "Zurücksetzen und erneut anwenden",
     "confirmResetAndReapplyAll": "Kategorien, Notizen und durch Regeln geänderte Beschreibungen übereinstimmender Transaktionen zurücksetzen und anschließend alle aktiven Regeln erneut anwenden?",
     "add": "Hinzufügen",
@@ -1181,7 +1381,10 @@
     "ignoreActionHint": "(kein Wert erforderlich)",
     "selectCategory": "Kategorie auswählen...",
     "selectAccount": "Konto auswählen...",
-    "ruleActive": "Regel aktiv",
+    "turnOn": "Einschalten",
+    "turnOff": "Ausschalten",
+    "turnedOn": "Regel aktiviert",
+    "turnedOff": "Regel deaktiviert",
     "noConditions": "(keine Bedingungen)",
     "noActions": "(keine Aktionen)",
     "fieldDescription": "Beschreibung",
@@ -1192,6 +1395,7 @@
     "fieldAccount": "Konto",
     "fieldPayee": "Zahlungsempfänger",
     "fieldDate": "Datum",
+    "fieldStatus": "Status",
     "opContains": "enthält",
     "opNotContains": "enthält nicht",
     "opEquals": "ist gleich",
@@ -1203,6 +1407,8 @@
     "opIsNot": "ist nicht",
     "typeExpense": "Ausgabe (Soll)",
     "typeIncome": "Einnahme (Haben)",
+    "statusPending": "Ausstehend",
+    "statusPosted": "Gebucht",
     "valuePlaceholder": "Wert...",
     "sortLabel": "Sortieren nach",
     "sortBy_priority": "Priorität",
@@ -1216,7 +1422,12 @@
     "importConfirmTitle": "Kategorisierungsregeln importieren?",
     "importConfirmDescription": "Die Datei {{file}} enthält {{count}} Regeln.",
     "importOverwriteWarning": "Der Import überschreibt deine aktuellen Kategorisierungsregeln. Dies kann nicht rückgängig gemacht werden.",
-    "confirmOverwriteImport": "Überschreiben und importieren"
+    "confirmOverwriteImport": "Überschreiben und importieren",
+    "tab": {
+      "rules": "Regeln",
+      "queue": "Wartet auf Sie",
+      "history": "Verlauf"
+    }
   },
   "categories": {
     "title": "Kategorien",
@@ -1621,11 +1832,15 @@
     "amount": "Betrag",
     "investments": "Investitionen",
     "moneyMap": "Geld-Karte",
-    "range30d": "30T"
+    "range30d": "30T",
+    "customRange": "Benutzerdefinierter Zeitraum",
+    "pickCustomRange": "Start- und Enddatum wählen",
+    "loadError": "Bericht konnte nicht geladen werden"
   },
   "payees": {
     "addFavorite": "Zu Favoriten hinzufügen",
     "removeFavorite": "Aus Favoriten entfernen",
+    "favoriteError": "Favorit konnte nicht aktualisiert werden",
     "title": "Zahlungsempfänger",
     "section": "Einrichtung",
     "payee": "Zahlungsempfänger",
@@ -1754,7 +1969,11 @@
     "previous": "Vorherige",
     "next": "Nächste",
     "rowsPerPage": "Zeilen pro Seite",
-    "noResults": "Keine Ergebnisse"
+    "noResults": "Keine Ergebnisse",
+    "preview": "Vorschau",
+    "download": "Herunterladen",
+    "closePreview": "Vorschau schließen",
+    "remove": "Entfernen"
   },
   "splitGroups": {
     "title": "Gruppen",
@@ -2054,7 +2273,8 @@
       "openSettings": "Agenteneinstellungen",
       "empty": "Wähle einen Agenten und starte ein Gespräch über deine Finanzdaten.",
       "openAgents": "Gehe zu Agenten",
-      "noConversations": "Noch keine Konversationen."
+      "noConversations": "Noch keine Konversationen.",
+      "backToChat": "Zurück zum Chat"
     },
     "form": {
       "createTitle": "Neuer Agent",
@@ -2240,6 +2460,234 @@
         "title": "Noch keine Verbindungen",
         "subtitle": "Füge eine Verbindung hinzu, um Securo auf dein lokales Ollama, OpenAI, Anthropic oder einen OpenAI-kompatiblen Endpunkt zu verweisen."
       }
+    }
+  },
+  "reconciliation": {
+    "node": {
+      "invoices": "Rechnungen",
+      "invoicesHint": "gegen das, was Sie einnehmen und zahlen müssen",
+      "recurring": "Wiederkehrend",
+      "recurringHint": "gegen das, was Sie ohnehin erwartet haben",
+      "inactive": "Hier nicht in Gebrauch",
+      "transfers": "Überweisungen",
+      "transfersHint": "zwischen Ihren eigenen Konten"
+    },
+    "rule": {
+      "sameClientExact": "Bekannte Person, exakter Betrag",
+      "netOfWithholding": "Bekannte Person, mit Quellensteuer gezahlt",
+      "exactAmountAnyClient": "Exakter Betrag, beliebige Person",
+      "similarDescription": "Ähnlicher Betrag und ähnlicher Text",
+      "sameAccountExact": "Gleiches Konto, exakter Betrag",
+      "unknown": "Regel",
+      "partPayment": "Bekannte Person, Teil des Betrags",
+      "severalInvoices": "Bekannte Person, mehrere Rechnungen auf einmal",
+      "destinationNamed": "Die Beschreibung nennt das andere Konto",
+      "exactAmountNearby": "Exakter Betrag, naher Termin",
+      "closeAmountWiderWindow": "Ähnlicher Betrag, größeres Fenster"
+    },
+    "outcome": {
+      "link": "Verknüpft selbst",
+      "suggest": "Schlägt vor"
+    },
+    "cond": {
+      "samePayee": "die Person ist die auf der Rechnung",
+      "sameAccount": "dasselbe Konto",
+      "amountExact": "der Betrag stimmt genau",
+      "amountTolerance": "der Betrag liegt innerhalb von {{percent}}%",
+      "amountRatio": "der Betrag stimmt abzüglich Quellensteuer",
+      "window": "bis zu {{before}} Tage früher, {{after}} Tage später",
+      "similarity": "der Text ist mindestens {{min}} ähnlich",
+      "none": "keine Bedingungen",
+      "accounts": "auf {{names}}",
+      "payees": "für {{names}}",
+      "moneyIn": "eingehendes Geld",
+      "moneyOut": "ausgehendes Geld",
+      "foreign": "in Fremdwährung",
+      "currencyIn": "in {{codes}}",
+      "atLeast": "ab {{value}}",
+      "atMost": "bis {{value}}",
+      "textContains": "im Auszug steht „{{text}}“",
+      "textExcludes": "im Auszug steht nicht „{{text}}“",
+      "onArrival": "wenn Geld eingeht oder abgeht",
+      "onIssue": "wenn eine Rechnung gestellt wird",
+      "amountPartial": "der Betrag deckt einen Teil des Offenen",
+      "amountSet": "bis zu {{count}} Rechnungen ergeben die Summe",
+      "differentAccount": "zwei verschiedene Konten",
+      "accountTypes": "eine Seite ist ein Konto vom Typ {{kinds}}",
+      "accountNamed": "eine der Beschreibungen nennt das andere Konto",
+      "closestDate": "das nächstliegende Datum gewinnt",
+      "uniqueCandidate": "nur ein Kandidat passt"
+    },
+    "newRule": "Neue Abgleichregel",
+    "saved": "Regel gespeichert",
+    "reset": "Regel zurückgesetzt",
+    "restore": "Auf Standard zurücksetzen",
+    "changed": "Geändert",
+    "yours": "Ihre",
+    "field": {
+      "name": "Name",
+      "namePlaceholder": "z. B. Bekannte Person, ähnlicher Betrag",
+      "outcome": "Was passiert, wenn sie zutrifft",
+      "outcomeHint": "Verknüpfen bucht von selbst. Vorschlagen schickt es in die Liste unten, damit Sie es bestätigen.",
+      "counterparty": "Wer gezahlt oder erhalten hat",
+      "amount": "Betrag",
+      "window": "Zulässiger Abstand zwischen den Daten",
+      "windowHint": "Verspätung zählt ab dem Fälligkeitstag, Vorauszahlung ab dem Tag der Rechnungsstellung, wer also einen Tag nach Ausstellung zahlt, ist nicht Wochen zu früh.",
+      "beforeDays": "Tage früher",
+      "afterDays": "Tage später",
+      "similarity": "Textähnlichkeit",
+      "similarityHint": "Von 0 bis 1. Leer lassen, um den Text zu ignorieren.",
+      "similarityOff": "aus",
+      "scope": "Wann diese Regel gilt",
+      "scopeHint": "Leer lassen, damit sie für alles gilt",
+      "accounts": "Bankkonten",
+      "anyAccount": "Beliebiges Konto",
+      "payees": "Personen",
+      "anyPayee": "Beliebige Person",
+      "direction": "Ein- oder Ausgang",
+      "currencyScope": "Nur in diesen Währungen",
+      "currencyPlaceholder": "z. B. USD, EUR",
+      "foreignOnly": "Nur Währungen außer der dieses Arbeitsbereichs",
+      "amountBand": "Nur Beträge in diesem Bereich",
+      "noMinimum": "kein Minimum",
+      "noMaximum": "kein Maximum",
+      "text": "Text im Kontoauszug",
+      "textContains": "muss enthalten …",
+      "textExcludes": "darf nicht enthalten …",
+      "textHint": "Mehrere, durch Kommas getrennt, bedeutet eines davon.",
+      "trigger": "Wann wir suchen",
+      "triggerHint": "Der Abgleich passiert zu zwei Zeitpunkten, und die Indizien sind nicht dieselben.",
+      "amountMatch": "Wie genau der Betrag stimmen muss",
+      "amountMatchHint": "Verglichen mit dem noch offenen Betrag, nicht mit der ursprünglichen Summe.",
+      "amountBandHint": "Über die Zahlung selbst: eine Größe, die diese Regel behandeln soll oder eben nicht.",
+      "transferSignals": "Was es zu einer Überweisung macht",
+      "transferSignalsHint": "Die beiden Seiten liegen immer auf verschiedenen Konten. Hier legen Sie fest, was sonst noch zutreffen muss, bevor dem Paar vertraut wird.",
+      "accountTypes": "Nur wenn eine Seite eines davon ist",
+      "amountMatchHintTransfer": "Verglichen mit der anderen Seite, in derselben Währung. Verschiedene Währungen werden nie von allein gepaart; Sie können die beiden Seiten weiterhin von Hand verknüpfen.",
+      "windowHintTransfer": "Geld kommt selten am selben Tag an, an dem es abging. Beide Seiten zählen ab dem anderen Eintrag, zwei Tage je Seite decken also ein Wochenende ab."
+    },
+    "counterparty": {
+      "any": "Beliebig",
+      "samePayee": "Die Person auf der Rechnung"
+    },
+    "amount": {
+      "exact": "Genau der offene Betrag",
+      "tolerance": "Innerhalb einer Toleranz",
+      "ratio": "Abzüglich Quellensteuer",
+      "ratioHint": "Nutzt die Quellensteuersätze Ihres Landes. Solange es keine gibt, trifft die Regel auf nichts zu.",
+      "partial": "Ein Teil des offenen Betrags",
+      "partialHint": "Für alle, die in Raten zahlen. Was übrig bleibt, bleibt offen, und die nächste Zahlung passt genau.",
+      "set": "Mehrere Rechnungen zusammen",
+      "setHint": "Für eine Zahlung, die mehr als eine Rechnung deckt. Passt mehr als eine Kombination, fragen wir, statt zu wählen.",
+      "setMax": "Höchstens so viele Rechnungen",
+      "setFee": "Gebühr zulassen von",
+      "setFeeHint": "Ein Anteil am Rechnungswert, für eine Zahlung, die netto nach Abzug fließt. Null bedeutet, die Summe muss exakt sein."
+    },
+    "queue": {
+      "title": "Wartet auf Sie",
+      "hint": "Zuordnungen, die Ihre Bestätigung brauchen.",
+      "empty": "Nichts zu prüfen. Alles hat von selbst gepasst.",
+      "aPayment": "Eine Zahlung",
+      "maySettle": "begleicht vielleicht {{name}}",
+      "mayBe": "ist vielleicht {{name}}",
+      "accept": "Verknüpfen",
+      "declineHint": "Passt nicht. Dieses Paar wird nicht erneut vorgeschlagen.",
+      "linked": "Verknüpft",
+      "declined": "Verworfen. Wir fragen nicht noch einmal",
+      "covers": "deckt",
+      "mayPairWith": "könnte die andere Hälfte von {{name}} sein",
+      "kind": {
+        "transaction": "Überweisung",
+        "invoice": "Rechnung",
+        "recurring": "Wiederkehrend"
+      }
+    },
+    "evidence": {
+      "amountExact": "Betrag stimmt genau",
+      "amountOff": "erwartet {{expected}}, bewegt {{moved}}",
+      "knownPayer": "bekannte Person",
+      "unknownPayer": "Person nicht erkannt",
+      "sameDay": "gleicher Tag",
+      "daysApart_one": "{{count}} Tag Abstand",
+      "daysApart_other": "{{count}} Tage Abstand"
+    },
+    "direction": {
+      "any": "Egal",
+      "in": "Eingehendes Geld",
+      "out": "Ausgehendes Geld"
+    },
+    "step": {
+      "what": "Was diese Regel ist",
+      "which": "Welches Geld sie ansieht",
+      "whichHint": "Alles leer lassen, dann sieht sie alles an",
+      "match": "Wann es als Treffer gilt",
+      "matchHint": "Wie genau Zahlung und Versprechen zusammenpassen müssen",
+      "matchHintTransfer": "Wie nah die beiden Einträge beieinander liegen müssen"
+    },
+    "trigger": {
+      "money_arrives": "Wenn Geld eingeht oder abgeht",
+      "money_arrivesHint": "Die Zahlung taucht im Kontoauszug auf und wir suchen die Rechnung, die sie begleicht.",
+      "invoice_issued": "Wenn eine Rechnung gestellt wird",
+      "invoice_issuedHint": "Die Zahlung kam zuerst und die Rechnung danach, also schauen wir zurück auf Geld, das schon da war.",
+      "both": "Zu beiden Zeitpunkten",
+      "bothHint": "Die Regel gilt in beide Richtungen."
+    },
+    "history": {
+      "title": "Was der Abgleich getan hat",
+      "hint": "Neueste zuerst.",
+      "byPerson": "von Ihnen",
+      "byRules": "von den Regeln",
+      "more": "{{count}} weitere anzeigen",
+      "less": "Weniger anzeigen",
+      "action": {
+        "linked": "Mit {{name}} verknüpft",
+        "accepted": "Vorschlag für {{name}} angenommen",
+        "suggested": "Für {{name}} vorgeschlagen",
+        "declined": "Vorschlag für {{name}} verworfen",
+        "expired": "Vorschlag abgelaufen: {{name}}",
+        "unlinked": "Von {{name}} getrennt"
+      },
+      "empty": "Noch nichts. Das füllt sich, während der Abgleich verknüpft, fragt und beantwortet wird."
+    },
+    "moveUp": "Diese früher prüfen",
+    "moveDown": "Diese später prüfen",
+    "pair": {
+      "owed": "Was offen ist",
+      "arrived": "Was sich bewegt hat",
+      "draftInvoice": "Rechnungsentwurf",
+      "recurringBill": "Wiederkehrende Rechnung",
+      "noMoney": "Keine Buchung dazu.",
+      "stillOpen": "noch offen",
+      "thisPayment": "diese Zahlung",
+      "wasApplied": "angerechnet",
+      "wouldRemain": "bliebe offen",
+      "wouldClose": "gleicht sie aus",
+      "thePayment": "die Zahlung",
+      "acrossInvoices": "auf {{count}} Rechnungen",
+      "dueOn": "fällig {{date}}",
+      "totalOf": "Gesamt {{amount}}",
+      "otherLeg": "Die andere Seite",
+      "thisLeg": "Diese Seite",
+      "otherLegAmount": "auf der anderen Seite",
+      "thisLegAmount": "auf dieser Seite"
+    },
+    "discarded": "Aus diesem Arbeitsbereich gelöscht:",
+    "noneLeft": "Keine Abgleichsregeln mehr in dieser Gruppe. Hier wird nichts automatisch zugeordnet.",
+    "confirmDeleteTitle": "Diese Regel löschen?",
+    "confirmDeleteDescription": "„{{name}}“ entscheidet nichts mehr. Wenn es eine unserer Regeln ist, können Sie sie später zurückholen.",
+    "exported": "Abgleichsregeln heruntergeladen",
+    "imported": "{{imported}} Regeln importiert ({{skipped}} übersprungen)",
+    "invalidImportFile": "Das ist keine Datei mit Abgleichsregeln",
+    "importConfirmTitle": "Abgleichsregeln importieren?",
+    "importConfirmDescription": "Die Datei {{file}} enthält {{count}} Regeln.",
+    "importOverwriteWarning": "Der Import ersetzt die Abgleichsregeln dieses Arbeitsbereichs samt ihrer Reihenfolge. Das lässt sich nicht rückgängig machen.",
+    "card": {
+      "transfers": "Überweisungsregeln",
+      "transfersHint": "Wie wir entscheiden, dass zwei Einträge eine Überweisung zwischen Ihren Konten sind.",
+      "invoices": "Rechnungsregeln",
+      "invoicesHint": "Wie wir entscheiden, welche Zahlung welche Rechnung begleicht.",
+      "recurring": "Regeln für Wiederkehrendes",
+      "recurringHint": "Wie wir entscheiden, dass eine Buchung die erwartete Rechnung ist."
     }
   }
 }

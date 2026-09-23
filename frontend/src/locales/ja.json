@@ -65,7 +65,8 @@
     "versionAriaLabel": "実行中のバージョン: {{version}}",
     "versionLabel": "バージョン {{version}}",
     "updateAvailable": "更新があります",
-    "updateAvailableHint": "新しいリリース({{version}})がGitHubで利用可能です"
+    "updateAvailableHint": "新しいリリース({{version}})がGitHubで利用可能です",
+    "toggleMenu": "メニューの切り替え"
   },
   "cmdk": {
     "title": "コマンドパレット",
@@ -126,7 +127,9 @@
     "groupAdmin": "管理",
     "groupAgents": "AI",
     "agents": "エージェント",
-    "aiAgents": "AIエージェント"
+    "aiAgents": "AIエージェント",
+    "collapseSidebar": "サイドバーを折りたたむ",
+    "expandSidebar": "サイドバーを展開する"
   },
   "invoices": {
     "title": "請求書",
@@ -290,7 +293,40 @@
       "payable_not_shareable": "受領した請求書は共有できません。",
       "discount_exceeds_total": "割引額が請求金額を超えています。",
       "no_document_filed": "この書類は他で発行されたものです。受領したファイルを添付してください。",
-      "already_imported": "この書類はすでにインポート済みです。"
+      "already_imported": "この書類はすでにインポート済みです。",
+      "term_lines_required": "条件には少なくとも1つの明細が必要です。",
+      "term_empty": "条件には請求する内容が必要です。",
+      "term_in_use": "この条件で請求書がすでに発行されています。それより後の日付から新しい条件を追加してください。",
+      "term_before_start": "条件を契約の開始前に始めることはできません。",
+      "term_date_taken": "その日付から始まる別の条件がすでにあります。",
+      "last_term": "契約には少なくとも1つの条件が必要です。",
+      "term_not_found": "条件が見つかりません。",
+      "schedule_ended": "この契約は終了しているため、変更できません。",
+      "schedule_locked": "この契約で請求書が存在する場合、頻度、開始日、通貨は変更できません。",
+      "schedule_has_invoices": "この契約で請求書が発行されています。削除ではなく終了してください。",
+      "schedule_not_active": "請求書を発行できるのは有効な契約のみです。",
+      "invalid_frequency": "不明な頻度です。",
+      "invalid_end_type": "不明な終了条件です。",
+      "invalid_end_reason": "不明な終了理由です。",
+      "end_date_required": "契約が終了する日付を指定してください。",
+      "end_count_required": "契約が何件の請求書で終了するかを指定してください。",
+      "end_before_start": "契約を開始前に終了することはできません。",
+      "name_required": "契約に名前を付けてください。",
+      "not_issued": "契約を開始できるのは発行済みの請求書のみです。",
+      "already_linked": "この請求書はすでに契約に属しています。",
+      "invoice_void": "無効化された請求書を期間に割り当てることはできません。",
+      "payee_mismatch": "請求書と契約のクライアントが異なります。",
+      "not_a_period": "その日付はこの契約の期間の開始日ではありません。",
+      "beyond_end": "その期間は契約の終了後です。",
+      "period_taken": "その期間にはすでに別の請求書が割り当てられています。",
+      "start_after_invoice": "契約をこの請求書より後に開始することはできません。",
+      "invoice_not_found": "請求書が見つかりません。",
+      "no_term": "この期間に有効な条件がありません。",
+      "no_author": "この契約には請求書を発行する作成者がいません。",
+      "negative_discount": "割引を負の値にすることはできません。",
+      "first_term": "開始時から有効な料金は移動も削除もできません。変更するか、より後の日付から新しい料金を追加してください。",
+      "not_receivable": "契約に含められるのは、あなたが発行した請求書のみです。",
+      "period_already_issued": "この期間はたった今発行されました。更新して確認してください。"
     },
     "comingNext": "クライアントに請求し、支払い済みのものと未払いのものを管理します。現在開発中の次の機能です。",
     "document": {
@@ -372,7 +408,160 @@
       "fromSystem": "{{source}}から · {{date}}",
       "fromUpload": "アップロード · {{date}}"
     },
-    "draftSaved": "下書きを保存しました"
+    "draftSaved": "下書きを保存しました",
+    "suggestions": {
+      "title_one": "この請求書を消し込める支払いがあります",
+      "title_other": "この請求書を消し込める支払いが{{count}}件あります",
+      "wouldApply": "{{amount}}を充当します",
+      "alsoCovers_one": "他に{{count}}件の請求書もカバーします",
+      "alsoCovers_other": "他に{{count}}件の請求書もカバーします"
+    },
+    "schedules": {
+      "title": "定期請求",
+      "new": "新しい定期請求書",
+      "newDescription": "クライアントに期間ごとに請求する契約です。請求書は当日に自動で作成されます。",
+      "backToList": "定期請求に戻る",
+      "empty": "定期請求書はまだありません。新しく作成するか、請求書を開いて「この請求書を繰り返す」を選んでください。",
+      "emptyFiltered": "このステータスのものはありません。",
+      "created": "定期請求書を作成しました",
+      "saved": "変更を保存しました",
+      "deleted": "定期請求書を削除しました",
+      "paused": "一時停止しました。再開するまで請求は行われません。",
+      "resumed": "次の期間から再開します。",
+      "ended": "契約を終了しました",
+      "generated_one": "請求書を発行しました",
+      "generated_other": "{{count}}件の請求書を発行しました",
+      "termSaved": "価格を保存しました",
+      "termRemoved": "価格変更を削除しました",
+      "linked": "請求書を契約に紐付けました",
+      "unlinked": "請求書の契約への紐付けを解除しました",
+      "recurringInvoice": "定期請求書",
+      "monthlyPreview": "月あたり約{{amount}}。",
+      "since": "{{date}}から",
+      "untilDate": "{{date}}まで",
+      "untilCount_one": "合計{{count}}件の請求書",
+      "untilCount_other": "合計{{count}}件の請求書",
+      "endedOn": "{{date}}に終了（{{reason}}）",
+      "pausedByFailures": "失敗が続いたため一時停止しました。条件を確認して再開してください。",
+      "editTitle": "定期請求書を編集",
+      "editDescription": "名前、クライアント、条件、終了時期。",
+      "editLockedDescription": "この契約で請求書が発行済みのため、頻度と開始日は変更できません。それ以外は変更できます。",
+      "endTitle": "この契約を終了しますか？",
+      "endDescription": "今後の請求書は発行されません。発行済みの請求書はそのまま残ります。理由を記録してください。請求書だけでは後から分からない唯一の情報です。",
+      "linkTitle": "既存の請求書を紐付ける",
+      "linkDescription": "この契約のいずれかの期間について手動で作成した請求書です。番号、日付、入金はそのままで、どの期間のものかが記録されるだけです。",
+      "noCandidates": "このクライアントのこの通貨で、未紐付けの請求書はありません。",
+      "makeRecurringDescription": "この請求書は新しい契約の1期間分となり、以降の請求書は自動で作成されます。契約がそれより前に始まっていたと指定しない限り、この請求書の日付{{date}}が最初の期間になります。",
+      "filter": {
+        "all": "すべて",
+        "active": "有効",
+        "paused": "一時停止中",
+        "ended": "終了"
+      },
+      "state": {
+        "active": "有効",
+        "past_due": "期限超過",
+        "paused": "一時停止中",
+        "paused_failures": "要確認",
+        "ended": "終了"
+      },
+      "frequency": {
+        "weekly": "毎週",
+        "biweekly": "2週間ごと",
+        "monthly": "毎月",
+        "quarterly": "四半期ごと",
+        "semiannual": "6か月ごと",
+        "yearly": "毎年"
+      },
+      "endType": {
+        "never": "終了しない",
+        "on_date": "指定日に",
+        "after_count": "指定件数の発行後に"
+      },
+      "endReason": {
+        "canceled_by_client": "クライアントによる解約",
+        "canceled_by_us": "こちらからの解約",
+        "completed": "満了",
+        "unpaid": "未払い",
+        "other": "その他"
+      },
+      "summary": {
+        "monthly": "月次定期収入",
+        "yearly": "年あたり",
+        "lost": "過去30日間の喪失分",
+        "endedRecently_one": "{{count}}件の契約が終了",
+        "endedRecently_other": "{{count}}件の契約が終了",
+        "pastDue": "期限超過",
+        "pastDueHint": "期限超過の請求書がある契約",
+        "activeCount_one": "{{count}}件の有効な契約",
+        "activeCount_other": "{{count}}件の有効な契約",
+        "none": "定期請求はまだありません"
+      },
+      "column": {
+        "name": "契約",
+        "cadence": "周期",
+        "monthly": "月あたり",
+        "next": "次回の請求書",
+        "invoices": "請求書",
+        "status": "ステータス",
+        "period": "期間"
+      },
+      "figure": {
+        "invoiced": "請求済み",
+        "paid": "入金済み",
+        "pastDue_one": "{{count}}件の請求書が期限超過",
+        "pastDue_other": "{{count}}件の請求書が期限超過"
+      },
+      "field": {
+        "name": "名前",
+        "namePlaceholder": "Proプラン、月額顧問料、ホスティング",
+        "frequency": "頻度",
+        "startDate": "開始日",
+        "startDateHint": "請求書より前の日付にすると、それ以前の請求書も紐付けられます。",
+        "paymentTerms": "支払期限（日数）",
+        "currency": "通貨",
+        "ends": "終了",
+        "endDate": "終了日",
+        "endCount": "請求書の件数",
+        "endReason": "理由",
+        "endedAt": "終了日",
+        "invoice": "請求書",
+        "invoicePlaceholder": "請求書を選択",
+        "period": "期間",
+        "periodPlaceholder": "期間を選択"
+      },
+      "action": {
+        "changePrice": "価格を変更",
+        "generate": "次回分を今すぐ発行",
+        "pause": "一時停止",
+        "resume": "再開",
+        "end": "契約を終了",
+        "linkInvoice": "請求書を紐付ける",
+        "link": "紐付ける",
+        "makeRecurring": "この請求書を繰り返す",
+        "unlink": "契約から外す"
+      },
+      "terms": {
+        "title": "価格",
+        "description": "この契約が期間ごとに請求する金額と、その適用開始日です。変更は指定日以降に始まる最初の期間から適用され、日割り計算は行われません。",
+        "from": "{{date}}から",
+        "current": "現在",
+        "upcoming": "予定",
+        "perMonth": "月あたり{{amount}}",
+        "editTitle": "価格変更を編集",
+        "changeDescription": "指定日以降の新しい価格を記録します。請求済みの期間はそのままの金額で、変更は指定日以降に始まる最初の期間から全額適用されます。",
+        "effectiveFrom": "適用開始",
+        "nextPeriodHint": "次の期間は{{date}}に始まります。",
+        "discount": "割引",
+        "preview": "期間あたり{{period}}、月あたり約{{monthly}}。"
+      },
+      "invoices": {
+        "title": "請求書",
+        "description": "期間ごとに1件、当日に作成されます。手動で作成した請求書も紐付けできます。",
+        "empty": "この契約の請求書はまだありません。",
+        "emptyNext": "請求書はまだありません。最初の請求書は{{date}}に作成されます。"
+      }
+    }
   },
   "collections": {
     "title": "コレクション",
@@ -453,6 +642,7 @@
     "passkeySecondFactorPrompt": "下のボタンをクリックし、ブラウザのセキュリティキーのプロンプトに従ってください。",
     "passkeysTitle": "パスキー",
     "passkeysDescription": "セキュリティキーやデバイスのパスキーで、パスワードなしでサインインできます。登録済みのパスキーはパスワードログインの第二要素としても機能します。パスキーのみのサインインでは、キーが本人確認を代行するため認証コードの入力は省かれます。",
+    "passkeysCleanupDescription": "ローカルログインは無効です。保存済みのパスキーは削除できますが、新しく追加することはできません。",
     "passkeyLoadError": "パスキーを読み込めませんでした",
     "passkeyUnsupported": "このブラウザはパスキーに対応していません。",
     "passkeyInsecureContext": "パスキーにはセキュアな接続が必要です。HTTPSで開くか、http://localhostでSecuroを開いてください。",
@@ -503,7 +693,7 @@
     "spendingByCategory": "カテゴリ別支出",
     "monthlyTrend": "月間推移",
     "budgetVsActual": "予算と実績",
-    "balanceFlow": "残高フロー",
+    "balanceFlow": "残高推移",
     "balanceFlowVsPrev": "{{month}}の{{day}}日目: {{amount}}({{delta}})",
     "balancePeriodVariation": "期間の変化",
     "balanceCurrentMonthLegend": "今月",
@@ -569,8 +759,6 @@
     "addToExistingRuleTitle": "取引をルールに追加",
     "addToExistingRuleDescription": "有効なカテゴリルールを選び、この取引の摘要を今後の一致条件に追加します。",
     "existingRule": "既存のルール",
-    "matchOperator": "一致方法",
-    "matchText": "摘要の一致",
     "assignRule": "ルールに追加",
     "noExistingRules": "利用できる有効なカテゴリルールはありません",
     "addedToExistingRule": "ルールを更新しました。今後の一致にはこのカテゴリが使われます。",
@@ -773,7 +961,9 @@
         "thisMonth": "今月",
         "last90": "過去90日間",
         "thisYear": "今年"
-      }
+      },
+      "futureDateError": "終了日は今日より後の日付にできません",
+      "rangeTooWideError": "範囲が広すぎます(最大{{years}}年)"
     },
     "listView": "リスト",
     "calendarView": "カレンダー",
@@ -807,7 +997,10 @@
     "calendarTransfersExcluded": "振替は収入・支出にカウントされません",
     "invoiceBadge": "請求書 {{number}}",
     "invoiceBadgeNoNumber": "請求書",
-    "invoiceBadgeTooltip": "この取引は請求書を決済しています。開く。"
+    "invoiceBadgeTooltip": "この取引は請求書を決済しています。開く。",
+    "suggestionBadge": "要確認",
+    "suggestionBadgeTooltip": "これが何かを消し込む可能性があります。キューを開いて回答してください。",
+    "clearGroupFilter": "グループフィルターを解除"
   },
   "accounts": {
     "title": "口座",
@@ -881,6 +1074,7 @@
     "expenses": "支出",
     "projectedBalance": "予測残高",
     "notSettled": "未決済",
+    "sharedCreditBalance": "共有クレジットライン",
     "projectedIncome": "予測収入",
     "projectedExpenses": "予測支出",
     "thisMonth": "今月",
@@ -952,7 +1146,12 @@
         "description": "SimpleFIN Bridge経由の米国および国際的な銀行"
       }
     },
-    "reconnected": "銀行に再接続しました"
+    "reconnected": "銀行に再接続しました",
+    "connectionStatus": {
+      "active": "有効",
+      "error": "エラー",
+      "expired": "期限切れ"
+    }
   },
   "connections": {
     "settings": "接続設定",
@@ -1178,7 +1377,6 @@
     "ignoreActionHint": "(値は不要)",
     "selectCategory": "カテゴリを選択...",
     "selectAccount": "口座を選択...",
-    "ruleActive": "有効なルール",
     "noConditions": "(条件なし)",
     "noActions": "(操作なし)",
     "fieldDescription": "摘要",
@@ -1189,6 +1387,7 @@
     "fieldAccount": "口座",
     "fieldPayee": "取引相手",
     "fieldDate": "日付",
+    "fieldStatus": "ステータス",
     "opContains": "次を含む",
     "opNotContains": "次を含まない",
     "opEquals": "次に等しい",
@@ -1200,6 +1399,8 @@
     "opIsNot": "ではない",
     "typeExpense": "支出(借方)",
     "typeIncome": "収入(貸方)",
+    "statusPending": "保留中",
+    "statusPosted": "確定",
     "valuePlaceholder": "値...",
     "sortLabel": "並べ替え",
     "sortBy_priority": "優先度",
@@ -1213,7 +1414,17 @@
     "importConfirmTitle": "分類ルールをインポートしますか?",
     "importConfirmDescription": "ファイル{{file}}には{{count}}件のルールが含まれています。",
     "importOverwriteWarning": "インポートすると現在の分類ルールを上書きします。この操作は取り消せません。",
-    "confirmOverwriteImport": "上書きしてインポート"
+    "confirmOverwriteImport": "上書きしてインポート",
+    "sectionHint": "取引を分類する方法です。",
+    "turnOn": "有効にする",
+    "turnOff": "無効にする",
+    "turnedOn": "ルールを有効にしました",
+    "turnedOff": "ルールを無効にしました",
+    "tab": {
+      "rules": "ルール",
+      "queue": "要対応",
+      "history": "履歴"
+    }
   },
   "categories": {
     "title": "カテゴリ",
@@ -1618,7 +1829,10 @@
     "amount": "金額",
     "investments": "投資",
     "moneyMap": "マネーマップ",
-    "range30d": "30日"
+    "range30d": "30日",
+    "customRange": "期間を指定",
+    "pickCustomRange": "開始日と終了日を選択",
+    "loadError": "レポートの読み込みに失敗しました"
   },
   "payees": {
     "addFavorite": "お気に入りに追加",
@@ -1646,6 +1860,7 @@
     "edit": "取引相手を編集",
     "created": "取引相手を作成しました",
     "updated": "取引相手を更新しました",
+    "favoriteError": "お気に入りを更新できませんでした",
     "deleted": "取引相手を削除しました",
     "empty": "取引相手はまだいません",
     "searchPlaceholder": "取引相手を検索...",
@@ -1751,7 +1966,11 @@
     "previous": "前へ",
     "next": "次へ",
     "rowsPerPage": "1ページの行数",
-    "noResults": "結果はありません"
+    "noResults": "結果はありません",
+    "preview": "プレビュー",
+    "download": "ダウンロード",
+    "closePreview": "プレビューを閉じる",
+    "remove": "削除"
   },
   "splitGroups": {
     "title": "グループ",
@@ -2051,7 +2270,8 @@
       "openSettings": "エージェント設定",
       "empty": "エージェントを選んで、財務データとの会話を始めましょう。",
       "openAgents": "エージェントへ",
-      "noConversations": "会話はまだありません。"
+      "noConversations": "会話はまだありません。",
+      "backToChat": "チャットに戻る"
     },
     "form": {
       "createTitle": "新規エージェント",
@@ -2237,6 +2457,234 @@
         "title": "接続はまだありません",
         "subtitle": "接続を追加して、ローカルのOllama、OpenAI、Anthropic、任意のOpenAI互換エンドポイントをSecuroに指し示してください。"
       }
+    }
+  },
+  "reconciliation": {
+    "node": {
+      "invoices": "請求書",
+      "invoicesHint": "受け取る分と支払う分に対して",
+      "recurring": "定期取引",
+      "recurringHint": "すでに予定していたものに対して",
+      "inactive": "ここでは使いません",
+      "transfers": "振替",
+      "transfersHint": "自分の口座のあいだ"
+    },
+    "rule": {
+      "sameClientExact": "既知の相手、金額が一致",
+      "netOfWithholding": "既知の相手、源泉徴収後の入金",
+      "exactAmountAnyClient": "金額が一致、相手は問わない",
+      "similarDescription": "金額が近く摘要も類似",
+      "sameAccountExact": "同じ口座、金額が一致",
+      "unknown": "ルール",
+      "partPayment": "既知の相手、金額の一部",
+      "severalInvoices": "既知の相手、複数の請求書をまとめて",
+      "destinationNamed": "摘要がもう一方の口座名を含む",
+      "exactAmountNearby": "金額が一致し、日付が近い",
+      "closeAmountWiderWindow": "金額が近く、期間が広い"
+    },
+    "outcome": {
+      "link": "自動連結",
+      "suggest": "提案"
+    },
+    "cond": {
+      "samePayee": "取引相手が請求書と同じ",
+      "sameAccount": "同じ口座",
+      "amountExact": "金額が完全に一致",
+      "amountTolerance": "金額が{{percent}}%以内",
+      "amountRatio": "源泉徴収を差し引いた金額が一致",
+      "window": "{{before}}日前から{{after}}日後まで",
+      "similarity": "摘要が{{min}}以上類似",
+      "none": "条件なし",
+      "accounts": "{{names}}で",
+      "payees": "{{names}}向け",
+      "moneyIn": "入金",
+      "moneyOut": "出金",
+      "foreign": "外貨で",
+      "currencyIn": "{{codes}}で",
+      "atLeast": "{{value}}以上",
+      "atMost": "{{value}}以下",
+      "textContains": "明細に「{{text}}」を含む",
+      "textExcludes": "明細に「{{text}}」を含まない",
+      "onArrival": "入金または出金があったとき",
+      "onIssue": "請求書を発行したとき",
+      "amountPartial": "金額が未回収分の一部を満たす",
+      "amountSet": "最大{{count}}件の請求書の合計が一致",
+      "differentAccount": "異なる2つの口座",
+      "accountTypes": "一方が{{kinds}}の口座",
+      "accountNamed": "いずれかの摘要がもう一方の口座名を含む",
+      "closestDate": "最も近い日付が優先",
+      "uniqueCandidate": "候補が1件だけ"
+    },
+    "newRule": "新しい照合ルール",
+    "saved": "ルールを保存しました",
+    "reset": "ルールを元に戻しました",
+    "restore": "標準の内容に戻す",
+    "changed": "変更済み",
+    "yours": "独自",
+    "field": {
+      "name": "名前",
+      "namePlaceholder": "例: 既知の相手、金額が近い",
+      "outcome": "一致したときの動作",
+      "outcomeHint": "自動連結はその場で消し込みます。提案は下のキューに送り、確認を求めます。",
+      "counterparty": "支払った側、または受け取った側",
+      "amount": "金額",
+      "window": "日付のずれをどこまで許すか",
+      "windowHint": "遅れは支払期日から、早さは請求書を作成した日から数えます。発行の翌日に支払われても数週間早いことにはなりません。",
+      "beforeDays": "何日前まで",
+      "afterDays": "何日後まで",
+      "similarity": "摘要の類似度",
+      "similarityHint": "0から1まで。空欄にすると摘要を見ません。",
+      "similarityOff": "無効",
+      "scope": "このルールを適用する範囲",
+      "scopeHint": "空欄ならすべてに適用します",
+      "accounts": "銀行口座",
+      "anyAccount": "すべての口座",
+      "payees": "取引相手",
+      "anyPayee": "すべての相手",
+      "direction": "入金か出金か",
+      "currencyScope": "これらの通貨のみ",
+      "currencyPlaceholder": "例: USD, EUR",
+      "foreignOnly": "このワークスペースの通貨以外のみ",
+      "amountBand": "この範囲の金額のみ",
+      "noMinimum": "下限なし",
+      "noMaximum": "上限なし",
+      "text": "明細の摘要",
+      "textContains": "含む必要がある…",
+      "textExcludes": "含んではいけない…",
+      "textHint": "カンマで区切ると、そのいずれかという意味になります。",
+      "trigger": "照合するタイミング",
+      "triggerHint": "照合は2つの場面で行われ、手がかりはそれぞれ異なります。",
+      "amountMatch": "金額がどれだけ近い必要があるか",
+      "amountMatchHint": "元の合計ではなく、未回収の残額と比べます。",
+      "amountBandHint": "支払いそのものについて。このルールに扱わせたい、あるいは扱わせたくない金額の大きさです。",
+      "transferSignals": "振替と見なす条件",
+      "transferSignalsHint": "両側は常に別の口座にあります。ここでは、その組み合わせを信頼する前に満たすべき条件を指定します。",
+      "accountTypes": "一方が次のいずれかの場合のみ",
+      "amountMatchHintTransfer": "同じ通貨で、もう一方と比較します。通貨が異なる場合は自動では組みません。両方を手動で結び付けることはできます。",
+      "windowHintTransfer": "お金が出た日に届くことはまれです。両側とももう一方の記録から数えるため、前後2日で週末をまかなえます。"
+    },
+    "counterparty": {
+      "any": "誰でも",
+      "samePayee": "請求書の取引相手"
+    },
+    "amount": {
+      "exact": "未回収額とちょうど同じ",
+      "tolerance": "一定の範囲内",
+      "ratio": "源泉徴収を差し引いた額",
+      "ratioHint": "お使いの国の源泉徴収率を使います。設定されるまで何も一致しません。",
+      "partial": "未回収額の一部",
+      "partialHint": "分割で支払われる場合に使います。残りは未回収のまま残り、次の支払いがちょうど一致します。",
+      "set": "複数の請求書の合計",
+      "setHint": "複数の請求書をまとめて支払う場合に使います。合計の合う組み合わせが2通り以上あるときは、選ばずに確認します。",
+      "setMax": "請求書は最大でこの件数",
+      "setFee": "手数料の許容",
+      "setFeeHint": "請求書の金額に対する割合です。手数料を差し引いて入出金される支払い向け。0なら合計がぴったり一致する必要があります。"
+    },
+    "queue": {
+      "title": "要対応",
+      "hint": "確認が必要な照合です。",
+      "empty": "確認するものはありません。すべて自動で照合されました。",
+      "aPayment": "ある支払い",
+      "maySettle": "が{{name}}を消し込む可能性があります",
+      "mayBe": "が{{name}}である可能性があります",
+      "accept": "結びつける",
+      "declineHint": "一致しません。この組み合わせは二度と提案されません。",
+      "linked": "結びつけました",
+      "declined": "却下しました。二度と確認しません",
+      "covers": "がカバーする範囲",
+      "mayPairWith": "{{name}} のもう一方かもしれません",
+      "kind": {
+        "transaction": "振替",
+        "invoice": "請求書",
+        "recurring": "定期"
+      }
+    },
+    "evidence": {
+      "amountExact": "金額が完全に一致",
+      "amountOff": "想定{{expected}}、実際{{moved}}",
+      "knownPayer": "既知の相手",
+      "unknownPayer": "相手を特定できず",
+      "sameDay": "同じ日",
+      "daysApart_one": "{{count}}日差",
+      "daysApart_other": "{{count}}日差"
+    },
+    "direction": {
+      "any": "どちらでも",
+      "in": "入金",
+      "out": "出金"
+    },
+    "step": {
+      "what": "このルールの内容",
+      "which": "どの入出金を見るか",
+      "whichHint": "すべて空欄にすると、すべてを見ます",
+      "match": "一致とみなす条件",
+      "matchHint": "支払いと請求がどれだけ近い必要があるか",
+      "matchHintTransfer": "2つの記録がどれだけ近い必要があるか"
+    },
+    "trigger": {
+      "money_arrives": "入金または出金があったとき",
+      "money_arrivesHint": "支払いが明細に現れた時点で、それが消し込む請求書を探します。",
+      "invoice_issued": "請求書を発行したとき",
+      "invoice_issuedHint": "支払いが先で請求書が後の場合です。すでにあった入出金をさかのぼって探します。",
+      "both": "どちらの場面でも",
+      "bothHint": "このルールはどちらの向きでも使います。"
+    },
+    "history": {
+      "title": "照合が行ったこと",
+      "hint": "新しい順。",
+      "byPerson": "あなたの操作",
+      "byRules": "ルールによる",
+      "more": "さらに{{count}}件表示",
+      "less": "表示を減らす",
+      "action": {
+        "linked": "{{name}}と結びつけました",
+        "accepted": "{{name}}への提案を承認しました",
+        "suggested": "{{name}}に対して提案しました",
+        "declined": "{{name}}への提案を却下しました",
+        "expired": "提案が期限切れになりました: {{name}}",
+        "unlinked": "{{name}}との結びつきを解除しました"
+      },
+      "empty": "まだ何もありません。照合が結びつけ、確認を求め、回答されるにつれて埋まります。"
+    },
+    "moveUp": "これをもっと先に試す",
+    "moveDown": "これをもっと後に試す",
+    "pair": {
+      "owed": "未回収の内容",
+      "arrived": "動いたお金",
+      "draftInvoice": "下書きの請求書",
+      "recurringBill": "定期の支払い",
+      "noMoney": "これに対応する取引はありません。",
+      "stillOpen": "未回収",
+      "thisPayment": "この支払い",
+      "wasApplied": "充当済み",
+      "wouldRemain": "残る金額",
+      "wouldClose": "消し込みます",
+      "thePayment": "その支払い",
+      "acrossInvoices": "請求書{{count}}件にわたって",
+      "dueOn": "期日 {{date}}",
+      "totalOf": "合計 {{amount}}",
+      "otherLeg": "もう一方",
+      "thisLeg": "こちら",
+      "otherLegAmount": "もう一方の金額",
+      "thisLegAmount": "こちらの金額"
+    },
+    "discarded": "このワークスペースで削除済み:",
+    "noneLeft": "このセットに照合ルールは残っていません。ここでは自動で照合されません。",
+    "confirmDeleteTitle": "このルールを削除しますか?",
+    "confirmDeleteDescription": "「{{name}}」は何も判断しなくなります。標準のルールであれば後で戻せます。",
+    "exported": "照合ルールをダウンロードしました",
+    "imported": "{{imported}}件のルールをインポートしました({{skipped}}件スキップ)",
+    "invalidImportFile": "照合ルールのファイルではありません",
+    "importConfirmTitle": "照合ルールをインポートしますか?",
+    "importConfirmDescription": "ファイル{{file}}には{{count}}件のルールが含まれています。",
+    "importOverwriteWarning": "インポートすると、このワークスペースの現在の照合ルールが順序ごと置き換わります。この操作は取り消せません。",
+    "card": {
+      "transfers": "振替のルール",
+      "transfersHint": "2つの記録が自分の口座間の同じ振替だと判断する方法。",
+      "invoices": "請求書のルール",
+      "invoicesHint": "どの入金がどの請求書を消し込むかを判断する方法。",
+      "recurring": "定期のルール",
+      "recurringHint": "ある引き落としが予定していた支払いだと判断する方法。"
     }
   }
 }

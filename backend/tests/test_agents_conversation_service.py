@@ -164,3 +164,27 @@ async def test_delete_conversation_removes_row(session, test_user, test_workspac
     )
     assert await svc.delete_conversation(session, conv.id, test_workspace.id) is True
     assert await svc.get_conversation(session, conv.id, test_workspace.id) is None
+
+
+@pytest.mark.asyncio
+async def test_list_messages_window_keeps_newest_turns(session, test_user, test_workspace, test_agent):
+    """Regression: with more messages than `limit`, the returned window must
+    end at the NEWEST message. The executor replays this window to the LLM —
+    when the limit selected the oldest rows instead, the model never saw the
+    user's latest question in long conversations and re-answered stale ones."""
+    conv = await svc.create_conversation(
+        session, workspace_id=test_workspace.id, user_id=test_user.id, agent_id=test_agent.id,
+    )
+    for i in range(30):
+        await svc.append_message(
+            session, conversation_id=conv.id,
+            role="user" if i % 2 == 0 else "assistant",
+            content=f"msg-{i}",
+        )
+
+    msgs = await svc.list_messages(session, conv.id, limit=10)
+
+    assert len(msgs) == 10
+    assert [m.content for m in msgs] == [f"msg-{i}" for i in range(20, 30)]
+    ordinals = [m.ordinal for m in msgs]
+    assert ordinals == sorted(ordinals)

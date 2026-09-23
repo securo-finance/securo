@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { workspaces as workspacesApi } from '@/lib/api'
 import { resolveSupportedLang } from '@/lib/i18n'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -85,6 +86,8 @@ interface AccountMenuProps {
   agentsEnabled: boolean
   /** True when local password/passkey auth is enabled. */
   localAuthEnabled: boolean
+  /** Compact the trigger to its workspace icon on desktop. */
+  collapsed?: boolean
 }
 
 /**
@@ -104,6 +107,7 @@ export function WorkspaceSwitcher({
   onUpdateAvailable,
   agentsEnabled,
   localAuthEnabled,
+  collapsed = false,
 }: AccountMenuProps) {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
@@ -151,14 +155,21 @@ export function WorkspaceSwitcher({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-sm hover:bg-sidebar-accent transition-colors text-left">
+          <button
+            className={cn(
+              'flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-sm hover:bg-sidebar-accent transition-colors text-left',
+              collapsed && 'lg:justify-center lg:px-2',
+            )}
+            aria-label={current.name}
+            title={current.name}
+          >
             <CategoryIcon
               icon={workspaceIcon(current)}
               color={workspaceColor(current)}
               size="sm"
               className="shrink-0"
             />
-            <div className="flex-1 min-w-0">
+            <div className={cn('flex-1 min-w-0', collapsed && 'lg:hidden')}>
               <p className="text-xs font-semibold truncate">{current.name}</p>
               <p className="text-[10px] text-sidebar-muted/70 truncate">
                 {user.email}
@@ -167,7 +178,7 @@ export function WorkspaceSwitcher({
                 )}
               </p>
             </div>
-            <ChevronsUpDown size={13} className="text-sidebar-muted/60 shrink-0" />
+            <ChevronsUpDown size={13} className={cn('text-sidebar-muted/60 shrink-0', collapsed && 'lg:hidden')} />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-64" side="top">
@@ -234,30 +245,30 @@ export function WorkspaceSwitcher({
 
           {/* Account actions */}
           {localAuthEnabled && (
-            <>
-              <DropdownMenuItem
-                onClick={onChangePassword}
-                className="flex items-center gap-2"
-              >
-                <KeyRound size={14} />
-                {t('auth.changePassword')}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={onTwoFactor}
-                className="flex items-center gap-2"
-              >
-                <ShieldCheck size={14} />
-                {t('auth.twoFactorTitle')}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={onPasskeys}
-                className="flex items-center gap-2"
-              >
-                <Fingerprint size={14} />
-                {t('auth.passkeysTitle')}
-              </DropdownMenuItem>
-            </>
+            <DropdownMenuItem
+              onClick={onChangePassword}
+              className="flex items-center gap-2"
+            >
+              <KeyRound size={14} />
+              {t('auth.changePassword')}
+            </DropdownMenuItem>
           )}
+          {(localAuthEnabled || user.is_2fa_enabled) && (
+            <DropdownMenuItem
+              onClick={onTwoFactor}
+              className="flex items-center gap-2"
+            >
+              <ShieldCheck size={14} />
+              {t(localAuthEnabled ? 'auth.twoFactorTitle' : 'auth.disable2fa')}
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem
+            onClick={onPasskeys}
+            className="flex items-center gap-2"
+          >
+            <Fingerprint size={14} />
+            {t('auth.passkeysTitle')}
+          </DropdownMenuItem>
           <DropdownMenuItem
             onClick={onBackup}
             className="flex items-center gap-2"

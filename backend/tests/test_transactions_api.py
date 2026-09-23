@@ -370,6 +370,43 @@ async def test_create_transaction(
     assert data["description"] == "Almoço restaurante"
     assert data["source"] == "manual"
     assert data["category_id"] == str(test_categories[0].id)
+    assert data["external_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_transaction_persists_external_id(
+    client: AsyncClient, auth_headers, test_account: Account, test_categories: list[Category]
+):
+    response = await client.post(
+        "/api/transactions",
+        headers=auth_headers,
+        json={
+            "account_id": str(test_account.id),
+            "category_id": str(test_categories[0].id),
+            "description": "External ID transaction",
+            "amount": "32.50",
+            "date": "2026-02-20",
+            "type": "debit",
+            "external_id": "client-tx-api-001",
+        },
+    )
+    assert response.status_code == 201
+    created = response.json()
+    assert created["external_id"] == "client-tx-api-001"
+
+    transaction_id = created["id"]
+    response = await client.get(
+        f"/api/transactions/{transaction_id}", headers=auth_headers
+    )
+    assert response.status_code == 200
+    assert response.json()["external_id"] == "client-tx-api-001"
+
+    response = await client.get(
+        f"/api/transactions?account_id={test_account.id}", headers=auth_headers
+    )
+    assert response.status_code == 200
+    listed = next(item for item in response.json()["items"] if item["id"] == transaction_id)
+    assert listed["external_id"] == "client-tx-api-001"
 
 
 @pytest.mark.asyncio

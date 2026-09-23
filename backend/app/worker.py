@@ -27,6 +27,13 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.recurring_tasks.generate_all_recurring",
         "schedule": 60 * 60,  # every hour; generate_pending is idempotent (advances next_occurrence)
     },
+    "generate-recurring-invoices-daily": {
+        "task": "app.tasks.invoice_schedule_tasks.generate_recurring_invoices",
+        # Hourly, like recurring transactions: a period is emitted the
+        # first run after its date, and the cursor plus the unique
+        # (schedule, sequence) make every later run a no-op.
+        "schedule": 60 * 60,
+    },
     "apply-asset-growth-daily": {
         "task": "app.tasks.asset_tasks.apply_asset_growth_rules",
         "schedule": 60 * 60,  # every hour; idempotent (checks last value date)
@@ -58,6 +65,7 @@ celery_app.conf.beat_schedule = {
 celery_app.conf.include = [
     "app.tasks.sync_tasks",
     "app.tasks.recurring_tasks",
+    "app.tasks.invoice_schedule_tasks",
     "app.tasks.asset_tasks",
     "app.tasks.fx_rate_tasks",
     # Optional agents module — registering the import is harmless when

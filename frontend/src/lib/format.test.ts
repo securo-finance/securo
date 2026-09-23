@@ -31,6 +31,8 @@ describe('resolveDisplayLocale', () => {
     expect(resolveDisplayLocale('auto', 'BRL')).toBe('pt-BR')
     expect(resolveDisplayLocale('auto', 'EUR')).toBe('de-DE')
     expect(resolveDisplayLocale('auto', 'JPY')).toBe('ja-JP')
+    expect(resolveDisplayLocale('auto', 'INR')).toBe('en-IN')
+    expect(resolveDisplayLocale('auto', 'RSD')).toBe('sr-RS')
   })
 
   it('treats a missing number format like auto', () => {
@@ -61,6 +63,7 @@ describe('resolveDateOrder', () => {
     expect(resolveDateOrder('auto', 'auto', 'USD')).toBe('mdy')
     expect(resolveDateOrder('auto', 'auto', 'BRL')).toBe('dmy')
     expect(resolveDateOrder('auto', 'auto', 'EUR')).toBe('dmy')
+    expect(resolveDateOrder('auto', 'auto', 'INR')).toBe('dmy')
   })
 
   it('defaults to day-first when nothing is configured', () => {
@@ -105,6 +108,7 @@ describe('formatCurrency', () => {
     expect(normalize(formatCurrency(1234.5, 'USD', 'en-US'))).toBe('$1,234.50')
     expect(normalize(formatCurrency(1234.5, 'BRL', 'pt-BR'))).toBe('R$ 1.234,50')
     expect(normalize(formatCurrency(1234.5, 'EUR', 'de-DE'))).toBe('1.234,50 €')
+    expect(normalize(formatCurrency(100000, 'INR', 'en-IN'))).toBe('₹1,00,000.00')
   })
 
   it('keeps each currency at its own precision', () => {

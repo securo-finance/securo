@@ -23,9 +23,6 @@ from app.services.attachment_service import (
 )
 
 
-pytestmark = pytest.mark.asyncio
-
-
 # ---------------------------------------------------------------------------
 # sanitize_filename — pure function
 # ---------------------------------------------------------------------------

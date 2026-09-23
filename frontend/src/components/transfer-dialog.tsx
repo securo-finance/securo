@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { getAccountLabel, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { localDateString } from '@/lib/date-utils'
@@ -50,20 +50,19 @@ export function TransferDialog({
   const [notes, setNotes] = useState('')
   const [destinationAmount, setDestinationAmount] = useState('')
 
-  // Reset form when dialog opens
-  const resetForm = useCallback(() => {
-    setFromAccountId(defaultFromAccountId || firstAccountId)
-    setToAccountId('')
-    setAmount('')
-    setDate(localDateString())
-    setDescription('')
-    setNotes('')
-    setDestinationAmount('')
-  }, [defaultFromAccountId, firstAccountId])
-
-  useEffect(() => {
-    if (open) resetForm()
-  }, [open, resetForm])
+  const [formSource, setFormSource] = useState<{ open: boolean; defaultFromAccountId?: string; firstAccountId: string } | null>(null)
+  if (!formSource || formSource.open !== open || formSource.defaultFromAccountId !== defaultFromAccountId || formSource.firstAccountId !== firstAccountId) {
+    setFormSource({ open, defaultFromAccountId, firstAccountId })
+    if (open) {
+      setFromAccountId(defaultFromAccountId || firstAccountId)
+      setToAccountId('')
+      setAmount('')
+      setDate(localDateString())
+      setDescription('')
+      setNotes('')
+      setDestinationAmount('')
+    }
+  }
 
   const fromAccount = accounts.find((a) => a.id === fromAccountId)
   const toAccount = accounts.find((a) => a.id === toAccountId)

@@ -36,6 +36,7 @@ import { WorkspaceSwitcher } from '@/components/workspace-switcher'
 import { navItems, visibleNavItems, type NavItem } from '@/lib/nav-items'
 import {
   Menu,
+  ChevronLeft,
   ChevronRight,
   Eye,
   EyeOff,
@@ -62,6 +63,8 @@ import { Bot, Search, Sparkles } from 'lucide-react'
 import { setThemeBasedOnSystem } from '@/lib/theme-utils'
 import { useLocalAuthEnabled } from '@/hooks/use-local-auth'
 import { formatCurrency } from '@/lib/format'
+
+const SIDEBAR_COLLAPSED_STORAGE_KEY = 'securo.sidebar.collapsed'
 
 /** Placeholder rows shown while the workspace's module list is in flight. */
 function NavSkeleton() {
@@ -93,6 +96,9 @@ export function AppLayout() {
   const { theme, setTheme, resolvedTheme } = useTheme()
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(
+    () => localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true',
+  )
   const [accountsExpanded, setAccountsExpanded] = useState(true)
   const [accountsShowAll, setAccountsShowAll] = useState(false)
   const { privacyMode, togglePrivacyMode, mask } = usePrivacyMode()
@@ -177,6 +183,13 @@ export function AppLayout() {
     : typeof window !== 'undefined' &&
       window.matchMedia?.('(prefers-color-scheme: dark)').matches
   const toggleTheme = () => setTheme(isDark ? 'light' : 'dark')
+  const toggleDesktopSidebar = () => {
+    setDesktopSidebarCollapsed((collapsed) => {
+      const next = !collapsed
+      localStorage.setItem(SIDEBAR_COLLAPSED_STORAGE_KEY, String(next))
+      return next
+    })
+  }
 
   const { data: accountsList } = useQuery({
     queryKey: ['accounts'],
@@ -189,7 +202,12 @@ export function AppLayout() {
   const visibleAccounts = activeAccountIds
     ? allAccounts.filter((a) => activeAccountIds.includes(a.id))
     : allAccounts
+  const sharedBalanceGroups = new Set<string>()
   const totalBalance = visibleAccounts.reduce((sum, a) => {
+    if (a.shared_balance_group) {
+      if (sharedBalanceGroups.has(a.shared_balance_group)) return sum
+      sharedBalanceGroups.add(a.shared_balance_group)
+    }
     return sum + Number(a.balance_primary ?? a.current_balance)
   }, 0)
   const versionA11yLabel = t('app.versionAriaLabel', { version: APP_VERSION })
@@ -201,7 +219,7 @@ export function AppLayout() {
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
           className="text-sidebar-muted hover:text-sidebar-foreground transition-colors"
-          aria-label="Toggle menu"
+          aria-label={t('app.toggleMenu')}
         >
           <Menu size={20} />
         </button>
@@ -281,15 +299,24 @@ export function AppLayout() {
 
         {/* Sidebar */}
         <aside
+          data-collapsed={desktopSidebarCollapsed}
           className={cn(
-            'fixed inset-y-0 left-0 z-50 w-60 bg-sidebar border-r border-sidebar-border flex flex-col transform transition-transform lg:translate-x-0 shrink-0',
+            'group/sidebar fixed inset-y-0 left-0 z-50 w-60 bg-sidebar border-r border-sidebar-border flex flex-col transform transition-[transform,width] duration-300 ease-in-out motion-reduce:transition-none lg:translate-x-0 shrink-0',
             sidebarOpen ? 'translate-x-0' : '-translate-x-full',
+            desktopSidebarCollapsed ? 'lg:w-16' : 'lg:w-60',
           )}
         >
           {/* Logo — clickable link to the dashboard. Replaces the
               dedicated 'Painel' nav item so the sidebar stays focused
               on the main destinations. */}
-          <div className="flex h-16 min-h-16 items-center justify-between px-5 border-b border-sidebar-border shrink-0">
+          {/* Collapsed on desktop, the header becomes a column: logo on
+              top, then the same privacy / chat / theme buttons stacked,
+              so nothing the expanded header offers goes missing in the
+              rail. */}
+          <div className={cn(
+            'flex h-16 min-h-16 items-center justify-between px-5 border-b border-sidebar-border shrink-0',
+            desktopSidebarCollapsed && 'lg:h-auto lg:min-h-0 lg:flex-col lg:justify-center lg:gap-2 lg:px-0 lg:py-3',
+          )}>
             <Link
               to="/"
               className="flex items-center gap-2.5 -mx-1 px-1 py-1 rounded-md hover:bg-sidebar-accent transition-colors"
@@ -298,14 +325,23 @@ export function AppLayout() {
               title={t('nav.dashboard')}
             >
               <ShellLogo size={24} className="text-primary shrink-0" />
-              <span className="font-bold text-lg text-sidebar-foreground tracking-tight">
+              <span className={cn(
+                'font-bold text-lg text-sidebar-foreground tracking-tight',
+                desktopSidebarCollapsed && 'lg:hidden',
+              )}>
                 {t('app.name')}
               </span>
             </Link>
-            <div className="flex items-center gap-0.5">
+            <div className={cn(
+              'flex items-center gap-0.5',
+              desktopSidebarCollapsed && 'lg:flex-col lg:gap-1',
+            )}>
               <button
                 onClick={togglePrivacyMode}
-                className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1 rounded-md hover:bg-sidebar-accent"
+                className={cn(
+                  'text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1 rounded-md hover:bg-sidebar-accent',
+                  desktopSidebarCollapsed && 'lg:flex lg:h-9 lg:w-9 lg:items-center lg:justify-center lg:p-0 lg:[&>svg]:h-[18px] lg:[&>svg]:w-[18px]',
+                )}
                 title={privacyMode ? t('privacy.show') : t('privacy.hide')}
                 aria-label={privacyMode ? t('privacy.show') : t('privacy.hide')}
               >
@@ -317,7 +353,10 @@ export function AppLayout() {
               {chatAvailable && (
                 <button
                   onClick={() => setChatOpen(true)}
-                  className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1 rounded-md hover:bg-sidebar-accent"
+                  className={cn(
+                    'text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1 rounded-md hover:bg-sidebar-accent',
+                    desktopSidebarCollapsed && 'lg:flex lg:h-9 lg:w-9 lg:items-center lg:justify-center lg:p-0 lg:[&>svg]:h-[18px] lg:[&>svg]:w-[18px]',
+                  )}
                   title={`${t('agents.globalChat.title', 'Chat')} (${isMac ? '⌘J' : 'Ctrl+J'})`}
                   aria-label={t('agents.globalChat.openHint', 'Open chat (⌘J)')}
                 >
@@ -326,7 +365,10 @@ export function AppLayout() {
               )}
               <button
                 onClick={toggleTheme}
-                className="text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1 rounded-md hover:bg-sidebar-accent"
+                className={cn(
+                  'text-sidebar-muted hover:text-sidebar-foreground transition-colors p-1 rounded-md hover:bg-sidebar-accent',
+                  desktopSidebarCollapsed && 'lg:flex lg:h-9 lg:w-9 lg:items-center lg:justify-center lg:p-0 lg:[&>svg]:h-[18px] lg:[&>svg]:w-[18px]',
+                )}
                 title={
                   isDark ? t('settings.themeLight') : t('settings.themeDark')
                 }
@@ -339,8 +381,23 @@ export function AppLayout() {
             </div>
           </div>
 
+          {/* The collapse handle sits on the sidebar's edge, halfway out,
+              vertically centred in the viewport: the border is the thing
+              that moves, so that is where the control lives. Shown on
+              hover and on keyboard focus so it never crowds the header. */}
+          <button
+            type="button"
+            onClick={toggleDesktopSidebar}
+            className="hidden lg:flex absolute top-1/2 -right-3 -translate-y-1/2 h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/sidebar:opacity-100"
+            title={desktopSidebarCollapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
+            aria-label={desktopSidebarCollapsed ? t('nav.expandSidebar') : t('nav.collapseSidebar')}
+            aria-expanded={!desktopSidebarCollapsed}
+          >
+            {desktopSidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+          </button>
+
           {/* Command palette trigger */}
-          <div className="px-3 pt-3">
+          <div className={cn('px-3 pt-3', desktopSidebarCollapsed && 'lg:px-2')}>
             <button
               type="button"
               onClick={() => setPaletteOpen(true)}
@@ -348,12 +405,13 @@ export function AppLayout() {
                 'group flex w-full items-center gap-2 rounded-lg border border-sidebar-border/80 bg-sidebar-accent/40 px-3 py-2',
                 'text-[12.5px] text-sidebar-muted transition-all',
                 'hover:bg-sidebar-accent hover:text-sidebar-foreground hover:border-sidebar-border',
+                desktopSidebarCollapsed && 'lg:justify-center lg:px-0',
               )}
               aria-label={t('cmdk.triggerAria')}
             >
               <Search size={13} className="shrink-0" />
-              <span className="flex-1 text-left">{t('cmdk.triggerLabel')}</span>
-              <kbd className="hidden lg:inline-flex h-[17px] items-center rounded border border-sidebar-border bg-sidebar px-1 font-mono text-[9.5px] font-semibold text-sidebar-muted/80">
+              <span className={cn('flex-1 text-left', desktopSidebarCollapsed && 'lg:hidden')}>{t('cmdk.triggerLabel')}</span>
+              <kbd className={cn('hidden lg:inline-flex h-[17px] items-center rounded border border-sidebar-border bg-sidebar px-1 font-mono text-[9.5px] font-semibold text-sidebar-muted/80', desktopSidebarCollapsed && 'lg:hidden')}>
                 {isMac ? '⌘' : 'Ctrl'}&nbsp;K
               </kbd>
             </button>
@@ -361,7 +419,7 @@ export function AppLayout() {
 
           <div className="flex-1 min-h-0 overflow-y-auto">
           {/* Nav */}
-          <nav className="flex flex-col gap-0.5 px-3 pt-1 pb-3" data-tour="sidebar">
+          <nav className={cn('flex flex-col gap-0.5 px-3 pt-1 pb-3', desktopSidebarCollapsed && 'lg:items-center lg:gap-1 lg:px-0 lg:pt-3')} data-tour="sidebar">
             {/* Which modules this workspace shows is resolved server-side,
                 so until the workspace list lands there is no honest answer
                 — a placeholder beats both an empty sidebar and a guess. */}
@@ -374,7 +432,10 @@ export function AppLayout() {
                 // from the search trigger.
                 const isFirstSep = idx === 0
                 return (
-                  <div key={`sep-${idx}`} className={cn(isFirstSep ? 'pt-1 pb-1 px-3' : 'pt-3 pb-1 px-3')}>
+                  <div key={`sep-${idx}`} className={cn(
+                    isFirstSep ? 'pt-1 pb-1 px-3' : 'pt-3 pb-1 px-3',
+                    desktopSidebarCollapsed && 'lg:hidden',
+                  )}>
                     <span className="text-[10px] uppercase tracking-[0.12em] font-semibold text-sidebar-muted/50">
                       {t(item.labelKey)}
                     </span>
@@ -393,11 +454,14 @@ export function AppLayout() {
                   to={item.path}
                   data-tour={`nav-${item.key}`}
                   onClick={() => setSidebarOpen(false)}
+                  title={t(`nav.${item.key}`)}
+                  aria-label={t(`nav.${item.key}`)}
                   className={cn(
                     'flex items-center gap-3 text-[13px] font-medium transition-all rounded-lg px-3 py-2',
                     isActive
                       ? 'bg-primary/[0.08] text-primary border-l-[3px] border-primary pl-[9px]'
                       : 'text-sidebar-muted hover:bg-sidebar-accent hover:text-sidebar-foreground',
+                    desktopSidebarCollapsed && 'lg:h-10 lg:w-10 lg:justify-center lg:border-l-0 lg:px-0 lg:pl-0',
                   )}
                 >
                   <Icon
@@ -405,9 +469,10 @@ export function AppLayout() {
                     className={cn(
                       'shrink-0',
                       isActive ? 'text-primary' : 'text-sidebar-muted',
+                      desktopSidebarCollapsed && 'lg:h-5 lg:w-5',
                     )}
                   />
-                  <span>{t(`nav.${item.key}`)}</span>
+                  <span className={cn(desktopSidebarCollapsed && 'lg:hidden')}>{t(`nav.${item.key}`)}</span>
                 </Link>
               )
             })}
@@ -415,7 +480,7 @@ export function AppLayout() {
 
           {/* Account list in sidebar */}
           {allAccounts.length > 0 && (
-            <div className="px-3 pb-2 mt-2">
+            <div className={cn('px-3 pb-2 mt-2', desktopSidebarCollapsed && 'lg:hidden')}>
               <button
                 onClick={() => setAccountsExpanded(!accountsExpanded)}
                 className="flex items-center justify-between w-full px-3 py-2 hover:text-sidebar-foreground transition-colors"
@@ -455,6 +520,7 @@ export function AppLayout() {
                           <span className="block truncate font-medium">{getAccountName(acc)}</span>
                           <span className="block text-[10px] text-sidebar-muted/60">
                             {t(`accounts.type${typeKey}`)}
+                            {acc.shared_balance_group && ` · ${t('accounts.sharedCreditBalance')}`}
                           </span>
                         </div>
                         <div className="text-right shrink-0 ml-2">
@@ -484,14 +550,16 @@ export function AppLayout() {
           )}
           </div>
 
-          <UpdateAvailableBanner onOpen={() => setUpdateDialogOpen(true)} />
+          <div className={cn(desktopSidebarCollapsed && 'lg:hidden')}>
+            <UpdateAvailableBanner onOpen={() => setUpdateDialogOpen(true)} />
+          </div>
 
           {/* Merged account + workspace menu — one trigger at the
               bottom of the sidebar shows the active workspace as the
               primary identity, the user email + role as the secondary
               line, and combines workspace switching with all the
               account actions that used to live in a separate dropdown. */}
-          <div className="px-3 pt-1">
+          <div className={cn('px-3 pt-1', desktopSidebarCollapsed && 'lg:px-2')}>
             <WorkspaceSwitcher
               onChangePassword={() => setChangePasswordOpen(true)}
               onTwoFactor={() => setTwoFactorOpen(true)}
@@ -500,10 +568,11 @@ export function AppLayout() {
               onBackup={() => setBackupOpen(true)}
               onUpdateAvailable={() => setUpdateDialogOpen(true)}
               agentsEnabled={agentsEnabled}
+              collapsed={desktopSidebarCollapsed}
             />
           </div>
 
-          <div className="px-3 pb-3 pt-1">
+          <div className={cn('px-3 pb-3 pt-1', desktopSidebarCollapsed && 'lg:hidden')}>
             <div
               className="text-[11px] leading-4 text-sidebar-muted/70 text-center"
               role="note"
@@ -517,7 +586,10 @@ export function AppLayout() {
         </aside>
 
         {/* Main content */}
-        <main className="flex-1 min-h-screen overflow-x-hidden lg:ml-60">
+        <main className={cn(
+          'flex-1 min-h-screen overflow-x-hidden transition-[margin] duration-300 ease-in-out motion-reduce:transition-none',
+          desktopSidebarCollapsed ? 'lg:ml-16' : 'lg:ml-60',
+        )}>
           <div className="p-6 max-w-7xl mx-auto">
             {/* Active-collection filter (issue #105): sticky bar above the
                 content so the scope is visible right where the data is. */}
@@ -529,21 +601,21 @@ export function AppLayout() {
 
       {showTour && <OnboardingTour onComplete={handleTourComplete} />}
       {localAuthEnabled && (
-        <>
-          <ChangePasswordDialog
-            open={changePasswordOpen}
-            onClose={() => setChangePasswordOpen(false)}
-          />
-          <TwoFactorSetup
-            open={twoFactorOpen}
-            onClose={() => setTwoFactorOpen(false)}
-          />
-          <PasskeyManagementDialog
-            open={passkeysOpen}
-            onClose={() => setPasskeysOpen(false)}
-          />
-        </>
+        <ChangePasswordDialog
+          open={changePasswordOpen}
+          onClose={() => setChangePasswordOpen(false)}
+        />
       )}
+      <TwoFactorSetup
+        open={twoFactorOpen}
+        onClose={() => setTwoFactorOpen(false)}
+        localAuthEnabled={localAuthEnabled}
+      />
+      <PasskeyManagementDialog
+        open={passkeysOpen}
+        onClose={() => setPasskeysOpen(false)}
+        localAuthEnabled={localAuthEnabled}
+      />
       <BackupDialog open={backupOpen} onClose={() => setBackupOpen(false)} />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       {/* Slide-over global chat — opened from the sidebar pill or via
@@ -581,6 +653,7 @@ function UserMenu({
   isAdmin?: boolean
   agentsEnabled?: boolean
 }) {
+  const { user } = useAuth()
   const { t, i18n } = useTranslation()
   const nav = useNavigate()
   const currentLang = resolveSupportedLang(i18n.resolvedLanguage ?? i18n.language)
@@ -615,30 +688,33 @@ function UserMenu({
           </>
         )}
         {localAuthEnabled && (
-          <>
-            <DropdownMenuItem
-              onClick={onChangePassword}
-              className="flex items-center gap-2"
-            >
-              <KeyRound size={14} />
-              {t('auth.changePassword')}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={onTwoFactor}
-              className="flex items-center gap-2"
-            >
-              <ShieldCheck size={14} />
-              {t('auth.twoFactorTitle')}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={onPasskeys}
-              className="flex items-center gap-2"
-            >
-              <Fingerprint size={14} />
-              {t('auth.passkeysTitle')}
-            </DropdownMenuItem>
-          </>
+          <DropdownMenuItem
+            onClick={onChangePassword}
+            className="flex items-center gap-2"
+          >
+            <KeyRound size={14} />
+            {t('auth.changePassword')}
+          </DropdownMenuItem>
         )}
+        {/* Enrolled factors outlive the switch to OIDC-only. Hiding these
+            entries would strand the user with a factor and no way to remove
+            it, since the product has no recovery codes. */}
+        {(localAuthEnabled || user?.is_2fa_enabled) && (
+          <DropdownMenuItem
+            onClick={onTwoFactor}
+            className="flex items-center gap-2"
+          >
+            <ShieldCheck size={14} />
+            {t(localAuthEnabled ? 'auth.twoFactorTitle' : 'auth.disable2fa')}
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem
+          onClick={onPasskeys}
+          className="flex items-center gap-2"
+        >
+          <Fingerprint size={14} />
+          {t('auth.passkeysTitle')}
+        </DropdownMenuItem>
         <DropdownMenuItem
           onClick={onBackup}
           className="flex items-center gap-2"

@@ -205,7 +205,7 @@ def _normalize_header(value: str) -> str:
     Accents come off because a Brazilian export writes `Preço` and `Operação`,
     and a header that only differs by a diacritic is the same header.
     """
-    folded = _strip_accents(value.strip().lower().replace('_', ' '))
+    folded = _strip_accents(value.strip().lower().replace('_', ' ').replace('*', '').replace('#', ''))
     return ' '.join(folded.split())
 
 

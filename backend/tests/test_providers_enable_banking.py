@@ -22,6 +22,8 @@ from app.providers.base import (
     mask_last4,
 )
 from app.providers.enable_banking import (
+    DEFAULT_HISTORY_DAYS,
+    FALLBACK_HISTORY_DAYS,
     EnableBankingProvider,
     _account_identifier,
     _map_cash_account_type,
@@ -416,6 +418,106 @@ async def test_get_transactions_stops_on_repeated_continuation_key(eb_keys, capl
     assert requests[1].url.params["continuation_key"] == "cursor-a"
     assert [transaction.external_id for transaction in transactions] == ["looped-tx-1"]
     assert "pagination loop detected" in caplog.text
+
+
+_WRONG_PERIOD_BODY = {
+    "code": 422,
+    "message": "Wrong transactions period requested",
+    "detail": {"message": "Requested time period out of bound."},
+    "error": "WRONG_TRANSACTIONS_PERIOD",
+}
+_CREDENTIALS = {"session_id": "sess-x", "valid_until": "2099-01-01T00:00:00Z"}
+
+
+def _span_days(request: httpx.Request) -> int:
+    """Inclusive number of days covered by a transactions request."""
+    start = date.fromisoformat(request.url.params["date_from"])
+    end = date.fromisoformat(request.url.params["date_to"])
+    return (end - start).days + 1
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_default_window_is_90_days_inclusive(eb_keys):
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"transactions": []})
+
+    with _patch_client(provider, handler):
+        await provider.get_transactions(_CREDENTIALS, "acc-1")
+
+    assert len(requests) == 1
+    assert requests[0].url.params["date_to"] == date.today().isoformat()
+    assert _span_days(requests[0]) == DEFAULT_HISTORY_DAYS == 90
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_retries_shorter_window_on_wrong_period(eb_keys):
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if _span_days(request) > FALLBACK_HISTORY_DAYS:
+            return httpx.Response(422, json=_WRONG_PERIOD_BODY)
+        return httpx.Response(
+            200,
+            json={
+                "transactions": [
+                    {
+                        "entry_reference": "tx-1",
+                        "status": "BOOK",
+                        "transaction_amount": {"amount": "5.00", "currency": "EUR"},
+                        "credit_debit_indicator": "DBIT",
+                        "booking_date": date.today().isoformat(),
+                    }
+                ]
+            },
+        )
+
+    with _patch_client(provider, handler):
+        transactions = await provider.get_transactions(_CREDENTIALS, "acc-1")
+
+    assert [_span_days(r) for r in requests] == [
+        DEFAULT_HISTORY_DAYS,
+        FALLBACK_HISTORY_DAYS,
+    ]
+    assert [t.external_id for t in transactions] == ["tx-1"]
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_wrong_period_with_explicit_since_raises(eb_keys):
+    """An explicit ``since`` is the caller's choice; never silently shorten it."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(422, json=_WRONG_PERIOD_BODY)
+
+    with _patch_client(provider, handler), pytest.raises(httpx.HTTPStatusError):
+        await provider.get_transactions(
+            _CREDENTIALS, "acc-1", date.today() - timedelta(days=200)
+        )
+
+    assert len(requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_other_422_is_not_retried(eb_keys):
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(422, json={"code": 422, "error": "SOMETHING_ELSE"})
+
+    with _patch_client(provider, handler), pytest.raises(httpx.HTTPStatusError):
+        await provider.get_transactions(_CREDENTIALS, "acc-1")
+
+    assert len(requests) == 1
 
 
 @pytest.mark.asyncio

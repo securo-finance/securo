@@ -346,6 +346,12 @@ class AgentExecutor:
         #      6. Conversation history
         #      7. The new user message (appended in step 4 below)
         history = await conversation_service.list_messages(session, conversation_id, limit=agent.max_history_messages * 2 + 2)
+        # The window can open mid-turn: a turn with parallel tool calls has an
+        # odd number of rows, so the cut can land on a tool result whose
+        # assistant call fell outside it. Providers reject an orphaned tool
+        # result, so replay from the first user message in the window.
+        while history and history[0].role != "user":
+            history.pop(0)
         messages: list[ChatMessage] = []
         # Runtime guardrail goes FIRST and applies to every conversation,
         # regardless of agent settings or per-agent system prompt. Locks
@@ -386,7 +392,10 @@ class AgentExecutor:
         for m in history:
             tcs = []
             for raw in (m.tool_calls or []):
-                tcs.append(ToolCall(id=raw.get("id"), name=raw.get("name"), arguments=raw.get("arguments") or {}))
+                tcs.append(ToolCall(
+                    id=raw.get("id"), name=raw.get("name"), arguments=raw.get("arguments") or {},
+                    thought_signature=raw.get("thought_signature"),
+                ))
             tool_call_id = (m.tool_result or {}).get("tool_call_id") if m.role == "tool" else None
             content = m.content
             if m.role == "tool":
@@ -477,7 +486,10 @@ class AgentExecutor:
                     args = json.loads(tc["args_buf"]) if tc["args_buf"] else {}
                 except json.JSONDecodeError:
                     args = {"_raw": tc["args_buf"]}
-                assembled_calls.append(ToolCall(id=tc["id"], name=tc["name"], arguments=args))
+                assembled_calls.append(ToolCall(
+                    id=tc["id"], name=tc["name"], arguments=args,
+                    thought_signature=tc.get("thought_signature"),
+                ))
 
             # Persist assistant turn.
             assistant_msg = await conversation_service.append_message(
@@ -485,7 +497,11 @@ class AgentExecutor:
                 conversation_id=conversation_id,
                 role="assistant",
                 content=assistant_text or None,
-                tool_calls=[{"id": c.id, "name": c.name, "arguments": c.arguments} for c in assembled_calls] or None,
+                tool_calls=[{
+                    "id": c.id, "name": c.name, "arguments": c.arguments,
+                    **({"thought_signature": c.thought_signature}
+                       if c.thought_signature is not None else {}),
+                } for c in assembled_calls] or None,
                 input_tokens=usage_input or None,
                 output_tokens=usage_output or None,
             )
@@ -599,6 +615,8 @@ async def _process_chunk(chunk: ChatChunk, text_buf: list[str], open_calls: dict
     elif chunk.type == "tool_call_args_delta" and chunk.tool_call_id:
         tc = open_calls.setdefault(chunk.tool_call_id, {"id": chunk.tool_call_id, "name": "", "args_buf": ""})
         tc["args_buf"] += chunk.args_delta or ""
+    elif chunk.type == "tool_call_end" and chunk.tool_call_id in open_calls:
+        open_calls[chunk.tool_call_id]["thought_signature"] = chunk.thought_signature
 
 
 async def _safe_call_tool(

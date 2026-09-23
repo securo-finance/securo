@@ -22,6 +22,7 @@ from app.services._query_filters import (
     viewer_shared_pnl,
     viewer_shared_spending_by_category,
 )
+from app.services import invoice_forecast_service
 from app.services.admin_service import get_credit_card_accounting_mode
 from app.services.recurring_transaction_service import get_occurrences_in_range
 from app.services.asset_service import get_asset_values_at
@@ -309,6 +310,28 @@ async def get_summary(
             projected_balance[account_currency] = (
                 projected_balance.get(account_currency, 0.0) + float(signed)
             )
+
+        # Money promised but not yet moved. An invoice is a claim rather
+        # than a movement, so it never entered here for free, and adding
+        # it before matching existed would have counted the same money
+        # twice: the open invoice and the pending bank credit that pays
+        # it. Only the *unallocated* balance is carried, so the moment a
+        # payment is linked the claim shrinks and the transaction above
+        # carries the forecast alone.
+        #
+        # Filtered by account? No. A claim has no account until it is
+        # paid, so narrowing the dashboard to one account cannot include
+        # it without inventing where the money will land.
+        # `is None`, not falsy: a collection holding only wallets narrows
+        # the report to an empty set of bank accounts, and an empty list
+        # means filtered to nothing rather than not filtered at all.
+        if account_ids is None:
+            for claim in await invoice_forecast_service.claims_in_range(
+                session, workspace_id, projection_start, month_end
+            ):
+                projected_balance[claim.currency] = (
+                    projected_balance.get(claim.currency, 0.0) + float(claim.signed)
+                )
 
     # Monthly income and expenses — exclude opening_balance so initial deposits
     # don't inflate the month's income figure. counts_as_user_pnl() skips
@@ -1389,6 +1412,7 @@ async def _total_balance_by_currency(
             )
 
     totals: dict[str, float] = {}
+    balances: dict[uuid.UUID, float] = {}
     for account in accounts:
         if account.connection_id:
             bal = float(account.balance)
@@ -1400,7 +1424,24 @@ async def _total_balance_by_currency(
                     bal -= connected_pending.get(account.id, 0.0)
         else:
             bal = manual_sums.get(account.id, 0.0)
-        totals[account.currency] = totals.get(account.currency, 0) + bal
+        balances[account.id] = bal
+
+    grouped: dict[str, list[Account]] = {}
+    for account in accounts:
+        key = account.shared_balance_group or str(account.id)
+        grouped.setdefault(key, []).append(account)
+
+    for group in grouped.values():
+        total = sum(balances[account.id] for account in group)
+        if len(group) > 1 and group[0].shared_balance_group:
+            # Every card in the group carries the same shared debt, so `total`
+            # counts it len(group) times; strip the duplicates.
+            current_shared = await _account_balance_at(
+                session, group[0], today, include_pending=include_pending
+            )
+            total -= current_shared * (len(group) - 1)
+        currency = group[0].currency
+        totals[currency] = totals.get(currency, 0) + total
     return totals
 
 

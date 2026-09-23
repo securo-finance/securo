@@ -46,6 +46,7 @@ from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.invoice_attachment import InvoiceAttachment
+    from app.models.invoice_schedule import InvoiceSchedule
     from app.models.payee import Payee
     from app.models.transaction import Transaction
 
@@ -159,6 +160,22 @@ class Invoice(Base):
             name="ck_invoices_number_matches_status",
         ),
         CheckConstraint("total >= 0", name="ck_invoices_total_non_negative"),
+        # One invoice per period of an agreement. This is what makes the
+        # generation job idempotent: a retry that tries to emit period 7
+        # again hits the index instead of creating a second invoice.
+        # Drafts and one-off invoices carry NULLs and are exempt.
+        UniqueConstraint("schedule_id", "sequence", name="uq_invoices_schedule_sequence"),
+        # An invoice either answers for a period of an agreement, saying
+        # which one and when, or it does not belong to any. Half-linked
+        # rows would be invoices that count towards a schedule without a
+        # period to be counted in.
+        CheckConstraint(
+            "(schedule_id IS NULL AND sequence IS NULL"
+            " AND period_start IS NULL AND period_end IS NULL)"
+            " OR (schedule_id IS NOT NULL AND sequence IS NOT NULL"
+            " AND period_start IS NOT NULL AND period_end IS NOT NULL)",
+            name="ck_invoices_schedule_fields",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -247,6 +264,25 @@ class Invoice(Base):
     # revoke one. Unique so the public lookup is a single indexed read.
     share_token: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, unique=True)
 
+    # Which agreement this invoice answers for, and which period of it.
+    # Provenance and grouping only: the invoice is an ordinary invoice
+    # in every other respect, and nothing in the arithmetic reads these.
+    # SET NULL because the invoice is money and outlives the agreement.
+    #
+    # `sequence` is 1-based and is the period's index from the
+    # schedule's anchor; `period_start` / `period_end` are the same fact
+    # as dates, inclusive on both ends, stored so a reader never has to
+    # walk the calendar to label a row "September 2026".
+    schedule_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("invoice_schedules.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    sequence: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    period_start: Mapped[Optional[_date]] = mapped_column(Date, nullable=True)
+    period_end: Mapped[Optional[_date]] = mapped_column(Date, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -281,6 +317,9 @@ class Invoice(Base):
         cascade="all, delete-orphan",
         order_by="InvoiceAttachment.created_at",
         lazy="selectin",
+    )
+    schedule: Mapped[Optional["InvoiceSchedule"]] = relationship(
+        back_populates="invoices", lazy="joined"
     )
 
 

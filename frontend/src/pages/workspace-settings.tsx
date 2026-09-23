@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDateLocale } from '@/hooks/use-display-locale'
@@ -97,15 +97,19 @@ export default function WorkspaceSettingsPage() {
   const [removeTarget, setRemoveTarget] = useState<WorkspaceMember | null>(null)
   const [archiveOpen, setArchiveOpen] = useState(false)
 
-  useEffect(() => {
-    if (!current) return
-    setEditName(current.name)
-    setEditCurrency(current.default_currency)
-    setEditLocale(current.locale ?? '')
-    setEditJurisdiction(current.tax_jurisdiction ?? '')
-    setEditIcon(current.icon ?? DEFAULT_WORKSPACE_ICON)
-    setEditColor(current.color ?? DEFAULT_WORKSPACE_COLOR)
-  }, [current?.id, current?.name, current?.default_currency, current?.locale, current?.tax_jurisdiction, current?.icon, current?.color])
+  const formKey = JSON.stringify([current?.id, current?.name, current?.default_currency, current?.locale, current?.tax_jurisdiction, current?.icon, current?.color])
+  const [previousFormKey, setPreviousFormKey] = useState<string | null>(null)
+  if (formKey !== previousFormKey) {
+    setPreviousFormKey(formKey)
+    if (current) {
+      setEditName(current.name)
+      setEditCurrency(current.default_currency)
+      setEditLocale(current.locale ?? '')
+      setEditJurisdiction(current.tax_jurisdiction ?? '')
+      setEditIcon(current.icon ?? DEFAULT_WORKSPACE_ICON)
+      setEditColor(current.color ?? DEFAULT_WORKSPACE_COLOR)
+    }
+  }
 
   // Which jurisdictions ship a pack. An empty choice is valid, not missing:
   // with none set, documents are stored as free text with no mask.
@@ -347,14 +351,14 @@ export default function WorkspaceSettingsPage() {
               <>
                 <div className="space-y-1.5">
                   <Label className="text-[13px]">
-                    {t('workspace.icon', 'Ícone')}
+                    {t('workspace.icon', 'Icon')}
                   </Label>
                   <Popover>
                     <PopoverTrigger asChild>
                       <button
                         type="button"
                         className="h-10 w-10 rounded-lg border border-input flex items-center justify-center hover:bg-muted/40 transition-colors shrink-0"
-                        title={t('workspace.icon', 'Ícone')}
+                        title={t('workspace.icon', 'Icon')}
                       >
                         <CategoryIcon icon={editIcon} color={editColor} size="sm" />
                       </button>
@@ -366,7 +370,7 @@ export default function WorkspaceSettingsPage() {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="ws-color" className="text-[13px]">
-                    {t('groups.color', 'Cor')}
+                    {t('groups.color', 'Color')}
                   </Label>
                   <input
                     id="ws-color"
@@ -374,7 +378,7 @@ export default function WorkspaceSettingsPage() {
                     value={editColor}
                     onChange={(e) => setEditColor(e.target.value)}
                     className="h-10 w-10 p-1 rounded-lg cursor-pointer border border-input bg-card shrink-0"
-                    title={t('groups.color', 'Cor')}
+                    title={t('groups.color', 'Color')}
                   />
                 </div>
               </>

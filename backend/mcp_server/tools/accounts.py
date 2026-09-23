@@ -89,9 +89,12 @@ async def get_account_summary(
     )
     if summary is None:
         return {"error": "account not found"}
-    # Normalize numeric fields.
-    for k in list(summary.keys()):
-        v = summary[k]
-        if hasattr(v, "isoformat"):
-            summary[k] = v.isoformat()
-    return summary
+    return {
+        "account_id": str(summary["account_id"]),
+        "current_balance": num(summary.get("current_balance")),
+        "opening_balance": num(summary.get("opening_balance")),
+        "monthly_income": num(summary.get("monthly_income")),
+        "monthly_expenses": num(summary.get("monthly_expenses")),
+        "projected_income": num(summary.get("projected_income")),
+        "projected_expenses": num(summary.get("projected_expenses")),
+    }

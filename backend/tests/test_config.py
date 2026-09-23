@@ -25,10 +25,11 @@ def test_env_file_is_anchored_to_backend_dir():
     assert backend_env in tuple(Path(p) for p in env_files)
 
 
-def test_env_file_with_unknown_keys_still_loads(tmp_path: Path, secrets: Path):
+def test_env_file_with_unknown_keys_still_loads(tmp_path: Path, secrets: Path, monkeypatch):
     """The .env is shared with Docker Compose and the optional modules, so it
     holds keys Settings doesn't declare (COMPOSE_PROFILES, FRONTEND_PORT,
     AGENTS_*). Unknown keys must be ignored, not abort startup."""
+    monkeypatch.delenv("SECRET_KEY")
     env_file = tmp_path / ".env"
     env_file.write_text(
         "SECRET_KEY=from-env-file\n"

@@ -6,6 +6,8 @@ import { transactions as transactionsApi, dashboard, admin } from '@/lib/api'
 import { AlertTriangle, Clock, Info, Paperclip, X } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
+import { sumDrillDownTotals } from '@/lib/drill-down-totals'
+import { hasOpenDialog, isInsideOverlayLayer } from '@/lib/overlay-layers'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuth } from '@/contexts/auth-context'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -144,23 +146,27 @@ export function TransactionDrillDown({
     return items
   }, [data, projectedTxs, filter])
 
-  // Close on Escape
+  // Close on Escape, unless the key belongs to a dialog opened from the
+  // panel (Radix marks the Escape it handled as defaultPrevented).
   useEffect(() => {
     if (!filter) return
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key !== 'Escape' || e.defaultPrevented || hasOpenDialog()) return
+      onClose()
     }
     document.addEventListener('keydown', handleKey)
     return () => document.removeEventListener('keydown', handleKey)
   }, [filter, onClose])
 
-  // Close on click outside
+  // Close on click outside. The transaction dialog opened from a row, and its
+  // popovers and selects, are portaled to the body; clicks there keep the
+  // panel open so the next row can be edited once the dialog closes.
   useEffect(() => {
     if (!filter) return
     const handleClick = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        onClose()
-      }
+      if (!panelRef.current || panelRef.current.contains(e.target as Node)) return
+      if (isInsideOverlayLayer(e.target) || hasOpenDialog()) return
+      onClose()
     }
     // Delay to avoid closing immediately from the click that opened it
     const timer = setTimeout(() => {
@@ -176,25 +182,14 @@ export function TransactionDrillDown({
   // amount_primary; if it's missing we can't convert, so skip the row
   // instead of adding a raw foreign amount as if it were primary. This
   // matches how get_summary computes monthly_*_primary on the backend.
-  const { absTotal, postedTotal, pendingTotal } = displayItems.reduce(
-    (totals, item) => {
-      // For foreign-currency rows, skip missing conversions rather than
-      // treating the raw amount as the user's primary currency.
-      const amount = item.currency === userCurrency
-        ? Math.abs(item.amount)
-        : item.amountPrimary != null
-          ? Math.abs(item.amountPrimary)
-          : 0
+  const { absTotal, postedTotal, pendingTotal, projectedTotal } =
+    sumDrillDownTotals(displayItems, userCurrency)
 
-      totals.absTotal += amount
-      if (item.isPending) totals.pendingTotal += amount
-      if (item.transaction?.status === 'posted') totals.postedTotal += amount
-      return totals
-    },
-    { absTotal: 0, postedTotal: 0, pendingTotal: 0 },
-  )
-
-  const hasPendingTransactions = displayItems.some((item) => item.isPending)
+  // Break the total down whenever some of it is money that has not settled,
+  // whether it is pending or still only projected. Gating on pending alone
+  // hid the projected line from a panel that happened to have no pending row,
+  // even though the total it sits under already counted the projection.
+  const hasUnsettledTotal = pendingTotal > 0 || projectedTotal > 0
 
   return (
     <>
@@ -316,7 +311,7 @@ export function TransactionDrillDown({
         {/* Footer */}
         {displayItems.length > 0 && (
           <div className="px-5 py-3 border-t border-border bg-muted/50 shrink-0">
-            {hasPendingTransactions ? (
+            {hasUnsettledTotal ? (
               <div className="space-y-1">
                 <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
                   <span>{t('dashboard.drillDownSettledTotal')}</span>
@@ -326,9 +321,15 @@ export function TransactionDrillDown({
                   <span>{t('dashboard.drillDownPendingTotal')}</span>
                   <span className="tabular-nums text-foreground">{mask(formatCurrency(pendingTotal, userCurrency, locale))}</span>
                 </div>
+                {projectedTotal > 0 && (
+                  <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
+                    <span>{t('transactions.projected')}</span>
+                    <span className="tabular-nums text-foreground">{mask(formatCurrency(projectedTotal, userCurrency, locale))}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-4 border-t border-border pt-2 mt-2">
                   <span className="text-xs font-medium text-muted-foreground">{t('dashboard.drillDownShownTotal')}</span>
-                  <span className="text-sm font-bold tabular-nums text-foreground">{mask(formatCurrency(postedTotal + pendingTotal, userCurrency, locale))}</span>
+                  <span className="text-sm font-bold tabular-nums text-foreground">{mask(formatCurrency(absTotal, userCurrency, locale))}</span>
                 </div>
               </div>
             ) : (

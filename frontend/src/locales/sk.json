@@ -65,7 +65,8 @@
     "versionAriaLabel": "Spustená verzia {{version}}",
     "versionLabel": "Verzia {{version}}",
     "updateAvailable": "Dostupná aktualizácia",
-    "updateAvailableHint": "Na GitHube je dostupná novšia verzia ({{version}})"
+    "updateAvailableHint": "Na GitHube je dostupná novšia verzia ({{version}})",
+    "toggleMenu": "Prepnúť menu"
   },
   "cmdk": {
     "title": "Príkazová paleta",
@@ -126,7 +127,9 @@
     "groupAdmin": "Administrácia",
     "groupAgents": "AI",
     "agents": "Agenti",
-    "aiAgents": "AI agenti"
+    "aiAgents": "AI agenti",
+    "collapseSidebar": "Zbaliť bočný panel",
+    "expandSidebar": "Rozbaliť bočný panel"
   },
   "invoices": {
     "title": "Faktúry",
@@ -290,7 +293,40 @@
       "payable_not_shareable": "Prijatú faktúru nemožno zdieľať.",
       "discount_exceeds_total": "Zľava je vyššia než účtovaná suma.",
       "no_document_filed": "Tento dokument bol vystavený inde. Priložte prijatý súbor.",
-      "already_imported": "Tento dokument už bol importovaný."
+      "already_imported": "Tento dokument už bol importovaný.",
+      "term_lines_required": "Podmienka potrebuje aspoň jednu položku.",
+      "term_empty": "Podmienka musí niečo fakturovať.",
+      "term_in_use": "Podľa tejto podmienky už bola vystavená faktúra. Pridajte novú podmienku od neskoršieho dátumu.",
+      "term_before_start": "Podmienka nemôže začať skôr než dohoda.",
+      "term_date_taken": "V tomto dátume už začína iná podmienka.",
+      "last_term": "Dohoda potrebuje aspoň jednu podmienku.",
+      "term_not_found": "Podmienka sa nenašla.",
+      "schedule_ended": "Táto dohoda bola ukončená a už sa nedá meniť.",
+      "schedule_locked": "Frekvencia, dátum začiatku a mena sú pevné, len čo v tejto dohode existuje faktúra.",
+      "schedule_has_invoices": "V rámci tejto dohody boli vystavené faktúry. Ukončite ju namiesto odstránenia.",
+      "schedule_not_active": "Faktúry vystavuje len aktívna dohoda.",
+      "invalid_frequency": "Neznáma frekvencia.",
+      "invalid_end_type": "Neznáma podmienka ukončenia.",
+      "invalid_end_reason": "Neznámy dôvod ukončenia.",
+      "end_date_required": "Uveďte, ku ktorému dátumu dohoda končí.",
+      "end_count_required": "Uveďte, po koľkých faktúrach dohoda končí.",
+      "end_before_start": "Dohoda nemôže skončiť skôr, než začne.",
+      "name_required": "Dajte dohode názov.",
+      "not_issued": "Dohodu môže začať len vystavená faktúra.",
+      "already_linked": "Táto faktúra už patrí k dohode.",
+      "invoice_void": "Stornovaná faktúra nemôže pokrývať obdobie.",
+      "payee_mismatch": "Faktúra a dohoda uvádzajú rôznych klientov.",
+      "not_a_period": "Tento dátum nie je začiatkom obdobia tejto dohody.",
+      "beyond_end": "Toto obdobie je po ukončení dohody.",
+      "period_taken": "Toto obdobie už pokrýva iná faktúra.",
+      "start_after_invoice": "Dohoda nemôže začať po tejto faktúre.",
+      "invoice_not_found": "Faktúra sa nenašla.",
+      "no_term": "Pre toto obdobie neplatí žiadna podmienka.",
+      "no_author": "Táto dohoda nemá autora, v mene ktorého by sa vystavovali faktúry.",
+      "negative_discount": "Zľava nemôže byť záporná.",
+      "first_term": "Cenu platnú od začiatku nemožno presunúť ani odstrániť. Zmeňte ju alebo pridajte novú cenu od neskoršieho dátumu.",
+      "not_receivable": "K dohode môže patriť iba faktúra, ktorú ste vystavili vy.",
+      "period_already_issued": "Toto obdobie bolo práve vystavené. Obnovte stránku, aby ste ho videli."
     },
     "comingNext": "Fakturujte klientom a majte prehľad o tom, čo je zaplatené a čo ešte otvorené. Toto sa práve stavia.",
     "document": {
@@ -372,7 +408,164 @@
       "fromSystem": "Z {{source}} · {{date}}",
       "fromUpload": "Nahrané · {{date}}"
     },
-    "draftSaved": "Koncept uložený"
+    "draftSaved": "Koncept uložený",
+    "suggestions": {
+      "title_one": "Platba môže uhradiť túto faktúru",
+      "title_few": "{{count}} platby môžu vyrovnať túto faktúru",
+      "title_many": "{{count}} platieb môže vyrovnať túto faktúru",
+      "title_other": "{{count}} platieb môže uhradiť túto faktúru",
+      "alsoCovers_one": "pokrýva aj {{count}} ďalšiu faktúru",
+      "alsoCovers_few": "a ďalšie {{count}} faktúry",
+      "alsoCovers_many": "a ďalších {{count}} faktúr",
+      "alsoCovers_other": "pokrýva aj {{count}} ďalších faktúr",
+      "wouldApply": "použila by {{amount}}"
+    },
+    "schedules": {
+      "title": "Opakované",
+      "new": "Nová opakovaná faktúra",
+      "newDescription": "Dohoda s klientom o fakturácii každé obdobie. Faktúry sa vystavia za vás, v daný deň.",
+      "backToList": "Späť na opakované",
+      "empty": "Zatiaľ žiadne opakované faktúry. Vytvorte jednu, alebo otvorte faktúru a zvoľte \"Opakovať túto faktúru\".",
+      "emptyFiltered": "Nič s týmto stavom.",
+      "created": "Opakovaná faktúra vytvorená",
+      "saved": "Zmeny uložené",
+      "deleted": "Opakovaná faktúra odstránená",
+      "paused": "Pozastavené. Nič sa nebude fakturovať, kým ju neobnovíte.",
+      "resumed": "Obnovené od nasledujúceho obdobia.",
+      "ended": "Dohoda ukončená",
+      "generated_one": "Faktúra vystavená",
+      "generated_other": "Vystavených faktúr: {{count}}",
+      "termSaved": "Cena uložená",
+      "termRemoved": "Zmena ceny odstránená",
+      "linked": "Faktúra priradená k dohode",
+      "unlinked": "Faktúra odpojená od dohody",
+      "recurringInvoice": "Opakovaná faktúra",
+      "monthlyPreview": "Približne {{amount}} mesačne.",
+      "since": "od {{date}}",
+      "untilDate": "do {{date}}",
+      "untilCount_one": "{{count}} faktúra celkom",
+      "untilCount_other": "Faktúr celkom: {{count}}",
+      "endedOn": "ukončená {{date}} ({{reason}})",
+      "pausedByFailures": "Pozastavené po opakovaných zlyhaniach. Skontrolujte podmienky a obnovte.",
+      "editTitle": "Upraviť opakovanú faktúru",
+      "editDescription": "Názov, klient, podmienky a kedy končí.",
+      "editLockedDescription": "V rámci tejto dohody už boli vystavené faktúry, takže frekvencia a dátum začiatku sú pevné. Všetko ostatné sa dá zmeniť.",
+      "endTitle": "Ukončiť túto dohodu?",
+      "endDescription": "Ďalšie faktúry sa už nevystavia. Tie už vystavené zostanú presne také, aké sú. Uveďte dôvod: je to jediná vec, ktorú vám faktúry neskôr nepovedia.",
+      "linkTitle": "Priradiť existujúcu faktúru",
+      "linkDescription": "Faktúra, ktorú ste vystavili ručne za jedno z období tejto dohody. Zachová si číslo, dátum a platby; len sa dozvie, ktorého obdobia sa týka.",
+      "noCandidates": "Žiadna nepriradená faktúra pre tohto klienta v tejto mene.",
+      "makeRecurringDescription": "Táto faktúra sa stane jedným obdobím novej dohody a ďalšie sa vystavia za vás. Jej dátum, {{date}}, je prvým obdobím, pokiaľ neuvediete, že dohoda začala skôr.",
+      "filter": {
+        "all": "Všetky",
+        "active": "Aktívne",
+        "paused": "Pozastavené",
+        "ended": "Ukončené"
+      },
+      "state": {
+        "active": "Aktívna",
+        "past_due": "Po splatnosti",
+        "paused": "Pozastavená",
+        "paused_failures": "Vyžaduje pozornosť",
+        "ended": "Ukončená"
+      },
+      "frequency": {
+        "weekly": "Týždenne",
+        "biweekly": "Každé 2 týždne",
+        "monthly": "Mesačne",
+        "quarterly": "Štvrťročne",
+        "semiannual": "Každých 6 mesiacov",
+        "yearly": "Ročne"
+      },
+      "endType": {
+        "never": "Nikdy",
+        "on_date": "K dátumu",
+        "after_count": "Po určitom počte faktúr"
+      },
+      "endReason": {
+        "canceled_by_client": "Zrušená klientom",
+        "canceled_by_us": "Zrušená nami",
+        "completed": "Dobehla do konca",
+        "unpaid": "Nezaplatené",
+        "other": "Iný"
+      },
+      "summary": {
+        "monthly": "Opakované mesačne",
+        "yearly": "Ročne",
+        "lost": "Stratené za posledných 30 dní",
+        "endedRecently_one": "{{count}} dohoda ukončená",
+        "endedRecently_other": "Ukončených dohôd: {{count}}",
+        "pastDue": "Po splatnosti",
+        "pastDueHint": "dohody s faktúrou po splatnosti",
+        "activeCount_one": "{{count}} aktívna dohoda",
+        "activeCount_other": "Aktívnych dohôd: {{count}}",
+        "none": "Zatiaľ nič opakované"
+      },
+      "column": {
+        "name": "Dohoda",
+        "cadence": "Interval",
+        "monthly": "Mesačne",
+        "next": "Ďalšia faktúra",
+        "invoices": "Faktúry",
+        "status": "Stav",
+        "period": "Obdobie"
+      },
+      "figure": {
+        "invoiced": "Fakturované",
+        "paid": "Prijaté",
+        "pastDue_one": "{{count}} faktúra po splatnosti",
+        "pastDue_other": "Faktúr po splatnosti: {{count}}"
+      },
+      "field": {
+        "name": "Názov",
+        "namePlaceholder": "Plán Pro, mesačný paušál, hosting",
+        "frequency": "Frekvencia",
+        "startDate": "Začína",
+        "startDateHint": "Skorší dátum než faktúra dáva priestor priradiť tie pred ňou.",
+        "paymentTerms": "Splatnosť (dni)",
+        "currency": "Mena",
+        "ends": "Končí",
+        "endDate": "Dátum ukončenia",
+        "endCount": "Počet faktúr",
+        "endReason": "Dôvod",
+        "endedAt": "Ukončená",
+        "invoice": "Faktúra",
+        "invoicePlaceholder": "Vyberte faktúru",
+        "period": "Obdobie",
+        "periodPlaceholder": "Vyberte obdobie"
+      },
+      "action": {
+        "changePrice": "Zmeniť cenu",
+        "generate": "Vystaviť ďalšiu teraz",
+        "pause": "Pozastaviť",
+        "resume": "Obnoviť",
+        "end": "Ukončiť dohodu",
+        "linkInvoice": "Priradiť faktúru",
+        "link": "Priradiť",
+        "makeRecurring": "Opakovať túto faktúru",
+        "unlink": "Odstrániť z dohody"
+      },
+      "terms": {
+        "title": "Cena",
+        "description": "Čo dohoda fakturuje za obdobie a odkedy. Zmena platí od prvého obdobia, ktoré začína v jej dátume alebo neskôr; nič sa neprepočítava pomerne.",
+        "from": "Od {{date}}",
+        "current": "Platná",
+        "upcoming": "Nadchádzajúca",
+        "perMonth": "{{amount}} mesačne",
+        "editTitle": "Upraviť zmenu ceny",
+        "changeDescription": "Zaznamenajte novú cenu od zvoleného dátumu. Už fakturované obdobia si zachovajú, čo im bolo účtované; zmena začne prvým obdobím v tomto dátume alebo neskôr, v plnej výške.",
+        "effectiveFrom": "Od",
+        "nextPeriodHint": "Ďalšie obdobie začína {{date}}.",
+        "discount": "Zľava",
+        "preview": "{{period}} za obdobie, približne {{monthly}} mesačne."
+      },
+      "invoices": {
+        "title": "Faktúry",
+        "description": "Jedna za obdobie, vystavená v daný deň. Ručne vystavenú faktúru možno tiež priradiť.",
+        "empty": "V tejto dohode zatiaľ nie je žiadna faktúra.",
+        "emptyNext": "Zatiaľ žiadna faktúra. Prvá sa vystaví {{date}}."
+      }
+    }
   },
   "collections": {
     "title": "Zbierky",
@@ -453,6 +646,7 @@
     "passkeySecondFactorPrompt": "Klikni na tlačidlo nižšie a postupuj podľa výzvy prehliadača pre bezpečnostný kľúč.",
     "passkeysTitle": "Passkey",
     "passkeysDescription": "Prihlasuj sa bezpečnostnými kľúčmi alebo passkey zariadenia bez zadávania hesla. Zaregistrované passkey chránia aj prihlásenie heslom ako druhý faktor; prihlásenie len cez passkey preskočí krok s kódom z overovacej aplikácie, pretože kľúč už overuje vlastníctvo.",
+    "passkeysCleanupDescription": "Lokálne prihlásenie je vypnuté. Uložené prístupové kľúče môžete odstrániť, ale nemôžete pridávať nové.",
     "passkeyLoadError": "Passkey sa nepodarilo načítať",
     "passkeyUnsupported": "Tento prehliadač nepodporuje passkey.",
     "passkeyInsecureContext": "Passkey vyžadujú zabezpečené pripojenie. Otvor Securo cez HTTPS alebo na http://localhost.",
@@ -577,8 +771,6 @@
     "addToExistingRuleTitle": "Pridať transakciu do pravidla",
     "addToExistingRuleDescription": "Vyber aktívne pravidlo kategórie a pridaj popis tejto transakcie ako ďalšiu budúcu zhodu.",
     "existingRule": "Existujúce pravidlo",
-    "matchOperator": "Typ zhody",
-    "matchText": "Zhoda popisu",
     "assignRule": "Pridať do pravidla",
     "noExistingRules": "Nie sú dostupné žiadne aktívne pravidlá kategórií",
     "addedToExistingRule": "Pravidlo aktualizované. Budúce zhody dostanú túto kategóriu.",
@@ -817,7 +1009,9 @@
         "thisMonth": "Tento mesiac",
         "last90": "Posledných 90 dní",
         "thisYear": "Tento rok"
-      }
+      },
+      "futureDateError": "Dátum konca nemôže byť neskôr ako dnes",
+      "rangeTooWideError": "Rozsah je príliš široký (max. {{years}} rokov)"
     },
     "listView": "Zoznam",
     "calendarView": "Kalendár",
@@ -851,7 +1045,10 @@
     "calendarTransfersExcluded": "Prevody sa nepočítajú ako príjem ani výdavok",
     "invoiceBadge": "Faktúra {{number}}",
     "invoiceBadgeNoNumber": "Faktúra",
-    "invoiceBadgeTooltip": "Táto transakcia vyrovnáva faktúru. Otvorte ju."
+    "invoiceBadgeTooltip": "Táto transakcia vyrovnáva faktúru. Otvorte ju.",
+    "suggestionBadge": "Otázka",
+    "suggestionBadgeTooltip": "Platba môže uhradiť túto faktúru. Otvorte front a odpovedzte.",
+    "clearGroupFilter": "Zrušiť filter skupiny"
   },
   "accounts": {
     "title": "Účty",
@@ -937,6 +1134,7 @@
     "expenses": "Výdavky",
     "projectedBalance": "Predpokladaný zostatok",
     "notSettled": "Nezaúčtované",
+    "sharedCreditBalance": "Zdieľaný úverový rámec",
     "projectedIncome": "Predpokladané príjmy",
     "projectedExpenses": "Predpokladané výdavky",
     "thisMonth": "Tento mesiac",
@@ -1012,7 +1210,12 @@
         "description": "Americké a medzinárodné banky cez SimpleFIN Bridge"
       }
     },
-    "reconnected": "Banka úspešne znovu prepojená"
+    "reconnected": "Banka úspešne znovu prepojená",
+    "connectionStatus": {
+      "active": "Aktívne",
+      "error": "Chyba",
+      "expired": "Vypršané"
+    }
   },
   "connections": {
     "settings": "Nastavenia prepojenia",
@@ -1216,6 +1419,7 @@
     "createMissingCategories": "Vytvoriť aj predvolené kategórie, ktoré balík potrebuje",
     "duplicateName": "Pravidlo s týmto názvom už existuje",
     "sectionTitle": "Pravidlá kategorizácie",
+    "sectionHint": "Ako kategorizovať transakcie.",
     "resetAndReapplyAll": "Resetovať a znovu aplikovať",
     "confirmResetAndReapplyAll": "Resetovať kategórie, poznámky a popisy spravované pravidlami pri zodpovedajúcich transakciách a potom znovu aplikovať všetky aktívne pravidlá?",
     "add": "Pridať",
@@ -1262,7 +1466,10 @@
     "ignoreActionHint": "(nevyžaduje hodnotu)",
     "selectCategory": "Vybrať kategóriu...",
     "selectAccount": "Vybrať účet...",
-    "ruleActive": "Aktívne pravidlo",
+    "turnOn": "Zapnúť",
+    "turnOff": "Vypnúť",
+    "turnedOn": "Pravidlo zapnuté",
+    "turnedOff": "Pravidlo vypnuté",
     "noConditions": "(žiadne podmienky)",
     "noActions": "(žiadne akcie)",
     "fieldDescription": "Popis",
@@ -1273,6 +1480,7 @@
     "fieldAccount": "Účet",
     "fieldPayee": "Príjemca",
     "fieldDate": "Dátum",
+    "fieldStatus": "Stav",
     "opContains": "obsahuje",
     "opNotContains": "neobsahuje",
     "opEquals": "rovná sa",
@@ -1284,20 +1492,27 @@
     "opIsNot": "nie je",
     "typeExpense": "Výdavok (debet)",
     "typeIncome": "Príjem (kredit)",
+    "statusPending": "Čakajúca",
+    "statusPosted": "Zaúčtovaná",
     "valuePlaceholder": "Hodnota...",
     "sortLabel": "Zoradiť podľa",
     "sortBy_priority": "Priorita",
     "sortBy_name": "Názov",
     "sortBy_category": "Kategória",
-    "export": "Export",
-    "import": "Import",
+    "export": "Exportovať",
+    "import": "Importovať",
     "exported": "Export pravidiel stiahnutý",
     "imported": "Importovaných pravidiel: {{imported}} (preskočených: {{skipped}})",
     "invalidImportFile": "Neplatný súbor importu pravidiel",
     "importConfirmTitle": "Importovať pravidlá kategorizácie?",
     "importConfirmDescription": "Počet pravidiel v súbore {{file}}: {{count}}.",
     "importOverwriteWarning": "Import prepíše tvoje aktuálne pravidlá kategorizácie. Túto akciu nie je možné vrátiť späť.",
-    "confirmOverwriteImport": "Prepísať a importovať"
+    "confirmOverwriteImport": "Prepísať a importovať",
+    "tab": {
+      "rules": "Pravidlá",
+      "queue": "Čaká na vás",
+      "history": "História"
+    }
   },
   "categories": {
     "title": "Kategórie",
@@ -1726,7 +1941,10 @@
     "amount": "Suma",
     "investments": "Investície",
     "moneyMap": "Mapa peňazí",
-    "range30d": "30D"
+    "range30d": "30D",
+    "customRange": "Vlastný rozsah",
+    "pickCustomRange": "Vyberte dátum začiatku a konca",
+    "loadError": "Nepodarilo sa načítať prehľad"
   },
   "payees": {
     "addFavorite": "Pridať do obľúbených",
@@ -1754,6 +1972,7 @@
     "edit": "Upraviť príjemcu",
     "created": "Príjemca vytvorený",
     "updated": "Príjemca aktualizovaný",
+    "favoriteError": "Obľúbenú položku sa nepodarilo aktualizovať",
     "deleted": "Príjemca vymazaný",
     "empty": "Zatiaľ žiadni príjemcovia",
     "searchPlaceholder": "Hľadať príjemcov...",
@@ -1871,7 +2090,11 @@
     "previous": "Predchádzajúca",
     "next": "Ďalej",
     "rowsPerPage": "Riadkov na stranu",
-    "noResults": "Žiadne výsledky"
+    "noResults": "Žiadne výsledky",
+    "preview": "Náhľad",
+    "download": "Stiahnuť",
+    "closePreview": "Zavrieť náhľad",
+    "remove": "Odstrániť"
   },
   "splitGroups": {
     "title": "Skupiny",
@@ -2179,7 +2402,8 @@
       "openSettings": "Nastavenia agenta",
       "empty": "Vyber si agenta a začni konverzáciu so svojimi finančnými dátami.",
       "openAgents": "Prejsť na agentov",
-      "noConversations": "Zatiaľ žiadne konverzácie."
+      "noConversations": "Zatiaľ žiadne konverzácie.",
+      "backToChat": "Späť na chat"
     },
     "form": {
       "createTitle": "Nový agent",
@@ -2373,6 +2597,236 @@
         "title": "Zatiaľ žiadne pripojenia",
         "subtitle": "Pridaj pripojenie a nasmeruj Securo na lokálnu Ollamu, OpenAI, Anthropic alebo ľubovoľný OpenAI-compatible endpoint."
       }
+    }
+  },
+  "reconciliation": {
+    "node": {
+      "invoices": "Faktúry",
+      "invoicesHint": "voči tomu, čo máte dostať a čo zaplatiť",
+      "recurring": "Opakované",
+      "recurringHint": "voči tomu, čo ste už čakali",
+      "inactive": "Tu sa nepoužíva",
+      "transfers": "Prevody",
+      "transfersHint": "medzi vlastnými účtami"
+    },
+    "rule": {
+      "sameClientExact": "Známa osoba, presná suma",
+      "netOfWithholding": "Známa osoba, zaplatené so zrážkou",
+      "exactAmountAnyClient": "Presná suma, ktokoľvek",
+      "similarDescription": "Blízka suma a podobný popis",
+      "sameAccountExact": "Rovnaký účet, presná suma",
+      "unknown": "Pravidlo",
+      "partPayment": "Známa osoba, časť sumy",
+      "severalInvoices": "Známa osoba, viac faktúr naraz",
+      "destinationNamed": "Popis uvádza druhý účet",
+      "exactAmountNearby": "Presná suma, blízky dátum",
+      "closeAmountWiderWindow": "Podobná suma, širšie okno"
+    },
+    "outcome": {
+      "link": "Spáruje samo",
+      "suggest": "Navrhuje"
+    },
+    "cond": {
+      "samePayee": "osoba je tá z faktúry",
+      "sameAccount": "rovnaký účet",
+      "amountExact": "suma sedí presne",
+      "amountTolerance": "suma je v rozmedzí {{percent}}%",
+      "amountRatio": "suma sedí po zrážke dane",
+      "window": "až {{before}} dní skôr, {{after}} dní neskôr",
+      "similarity": "popis je podobný aspoň na {{min}}",
+      "none": "žiadne podmienky",
+      "accounts": "na {{names}}",
+      "payees": "pre {{names}}",
+      "moneyIn": "prichádzajúce peniaze",
+      "moneyOut": "odchádzajúce peniaze",
+      "foreign": "v cudzej mene",
+      "currencyIn": "v {{codes}}",
+      "atLeast": "od {{value}}",
+      "atMost": "do {{value}}",
+      "textContains": "výpis hovorí „{{text}}“",
+      "textExcludes": "výpis nehovorí „{{text}}“",
+      "onArrival": "keď peniaze prídu alebo odídu",
+      "onIssue": "keď sa vystaví faktúra",
+      "amountPartial": "suma pokrýva časť dlžnej sumy",
+      "amountSet": "až {{count}} faktúr dá túto sumu",
+      "differentAccount": "dva rôzne účty",
+      "accountTypes": "jedna strana je účet typu {{kinds}}",
+      "accountNamed": "jeden z popisov uvádza druhý účet",
+      "closestDate": "vyhráva najbližší dátum",
+      "uniqueCandidate": "vyhovuje len jeden kandidát"
+    },
+    "newRule": "Nové pravidlo párovania",
+    "saved": "Pravidlo uložené",
+    "reset": "Pravidlo obnovené",
+    "restore": "Vrátiť na predvolené",
+    "changed": "Zmenené",
+    "yours": "Vaše",
+    "field": {
+      "name": "Názov",
+      "namePlaceholder": "napr.: Známa osoba, blízka suma",
+      "outcome": "Čo urobí, keď sadne",
+      "outcomeHint": "Spárovať vyrovná samo. Navrhnúť pošle položku do zoznamu nižšie na vaše potvrdenie.",
+      "counterparty": "Kto zaplatil alebo dostal",
+      "amount": "Suma",
+      "window": "Povolený rozdiel medzi dátumami",
+      "windowHint": "Omeškanie sa počíta od splatnosti, predčasná platba odo dňa vystavenia faktúry, takže zaplatiť deň po vystavení nie sú týždne vopred.",
+      "beforeDays": "Dní skôr",
+      "afterDays": "Dní neskôr",
+      "similarity": "Podobnosť popisu",
+      "similarityHint": "Od 0 do 1. Nechajte prázdne, ak sa popis nemá brať do úvahy.",
+      "similarityOff": "vypnuté",
+      "scope": "Kedy toto pravidlo platí",
+      "scopeHint": "Nechajte prázdne, aby platilo pre všetko",
+      "accounts": "Bankové účty",
+      "anyAccount": "Ktorýkoľvek účet",
+      "payees": "Osoby",
+      "anyPayee": "Ktokoľvek",
+      "direction": "Príjem alebo výdaj",
+      "currencyScope": "Len v týchto menách",
+      "currencyPlaceholder": "napr. USD, EUR",
+      "foreignOnly": "Len meny iné než mena tohto priestoru",
+      "amountBand": "Len sumy v tomto rozsahu",
+      "noMinimum": "bez minima",
+      "noMaximum": "bez maxima",
+      "text": "Text výpisu",
+      "textContains": "musí obsahovať…",
+      "textExcludes": "nesmie obsahovať…",
+      "textHint": "Viac slov oddelených čiarkami znamená ktorékoľvek z nich.",
+      "trigger": "Kedy hľadáme",
+      "triggerHint": "Párovanie prebieha v dvoch momentoch a dôkazy nie sú rovnaké.",
+      "amountMatch": "Ako presne musí sedieť suma",
+      "amountMatchHint": "Porovnáva sa s tým, čo ešte dlhujete, nie s pôvodným súčtom.",
+      "amountBandHint": "O samotnej platbe: veľkosť, ktorú má toto pravidlo riešiť alebo nie.",
+      "transferSignals": "Čo z toho robí prevod",
+      "transferSignalsHint": "Obe strany sú vždy na rôznych účtoch. Tu určíte, čo ešte musí platiť, kým páru dôverujeme.",
+      "accountTypes": "Len keď je jedna strana jednou z týchto",
+      "amountMatchHintTransfer": "Porovnáva sa s druhou stranou, v tej istej mene. Rôzne meny sa nikdy nespárujú samy; obe strany stále môžete prepojiť ručne.",
+      "windowHintTransfer": "Peniaze málokedy dorazia v deň, keď odišli. Obe strany sa počítajú od druhého záznamu, takže dva dni na každú stranu pokryjú víkend."
+    },
+    "counterparty": {
+      "any": "Ktokoľvek",
+      "samePayee": "Osoba z faktúry"
+    },
+    "amount": {
+      "exact": "Presne dlžná suma",
+      "tolerance": "V rámci tolerancie",
+      "ratio": "Po zrážkovej dani",
+      "ratioHint": "Používa sadzby zrážkovej dane vašej krajiny. Kým nie sú, pravidlo nespáruje nič.",
+      "partial": "Časť dlžnej sumy",
+      "partialHint": "Pre tých, čo platia po častiach. Zvyšok zostáva otvorený a ďalšia platba sadne presne.",
+      "set": "Viac faktúr spolu",
+      "setHint": "Pre platbu, ktorá pokrýva viac než jednu faktúru. Ak sedí viac kombinácií, radšej sa spýtame, než by sme vyberali.",
+      "setMax": "Najviac toľko faktúr",
+      "setFee": "Povoliť poplatok",
+      "setFeeHint": "Podiel z hodnoty faktúr, pre platbu, ktorá prechádza po odpočítaní poplatku. Nula znamená, že súčet musí sedieť presne."
+    },
+    "queue": {
+      "title": "Čaká na vás",
+      "hint": "Párovania, ktoré čakajú na vaše potvrdenie.",
+      "empty": "Nič na kontrolu. Všetko sa spárovalo samo.",
+      "aPayment": "Platba",
+      "maySettle": "môže uhrádzať {{name}}",
+      "mayBe": "môže byť {{name}}",
+      "accept": "Spárovať",
+      "declineHint": "Toto to nie je. Tento pár už nebudeme navrhovať.",
+      "linked": "Spárované",
+      "declined": "Zamietnuté. Už sa nespýtame",
+      "covers": "pokrýva",
+      "mayPairWith": "môže byť druhou polovicou {{name}}",
+      "kind": {
+        "transaction": "Prevod",
+        "invoice": "Faktúra",
+        "recurring": "Opakované"
+      }
+    },
+    "evidence": {
+      "amountExact": "suma sedí presne",
+      "amountOff": "očakávané {{expected}}, pohnuté {{moved}}",
+      "knownPayer": "známa osoba",
+      "unknownPayer": "osoba neurčená",
+      "sameDay": "rovnaký deň",
+      "daysApart_one": "rozdiel {{count}} deň",
+      "daysApart_few": "rozdiel {{count}} dni",
+      "daysApart_many": "rozdiel {{count}} dňa",
+      "daysApart_other": "rozdiel {{count}} dní"
+    },
+    "direction": {
+      "any": "Je to jedno",
+      "in": "Prichádzajúce peniaze",
+      "out": "Odchádzajúce peniaze"
+    },
+    "step": {
+      "what": "Čo je toto pravidlo",
+      "which": "Na aké peniaze sa pozerá",
+      "whichHint": "Nechajte všetko prázdne a pozerá sa na všetky",
+      "match": "Kedy sa to počíta ako zhoda",
+      "matchHint": "Ako presne si musia platba a záväzok sadnúť",
+      "matchHintTransfer": "Ako blízko musia byť oba záznamy"
+    },
+    "trigger": {
+      "money_arrives": "Keď peniaze prídu alebo odídu",
+      "money_arrivesHint": "Platba sa objaví vo výpise a my hľadáme faktúru, ktorú vyrovnáva.",
+      "invoice_issued": "Keď sa vystaví faktúra",
+      "invoice_issuedHint": "Platba prišla skôr a faktúra neskôr, preto sa pozeráme späť, na peniaze, ktoré tam už boli.",
+      "both": "V oboch momentoch",
+      "bothHint": "Pravidlo platí na obe strany."
+    },
+    "history": {
+      "title": "Čo párovanie urobilo",
+      "hint": "Od najnovších.",
+      "byPerson": "vami",
+      "byRules": "pravidlami",
+      "more": "Zobraziť ďalších {{count}}",
+      "less": "Zobraziť menej",
+      "action": {
+        "linked": "Prepojené s {{name}}",
+        "accepted": "Návrh pre {{name}} prijatý",
+        "suggested": "Navrhnuté pre {{name}}",
+        "declined": "Návrh pre {{name}} zamietnutý",
+        "expired": "Návrh vypršal: {{name}}",
+        "unlinked": "Odpojené od {{name}}"
+      },
+      "empty": "Zatiaľ nič. Naplní sa, ako párovanie spája, pýta sa a dostáva odpoveď."
+    },
+    "moveUp": "Skúšať túto skôr",
+    "moveDown": "Skúšať túto neskôr",
+    "pair": {
+      "owed": "Čo sa dlhuje",
+      "arrived": "Čo sa pohlo",
+      "draftInvoice": "Faktúra v návrhu",
+      "recurringBill": "Opakovaná platba",
+      "noMoney": "Bez transakcie.",
+      "stillOpen": "stále otvorené",
+      "thisPayment": "táto platba",
+      "wasApplied": "započítané",
+      "wouldRemain": "zostane",
+      "wouldClose": "uhrádza ju",
+      "thePayment": "platba",
+      "acrossInvoices": "na {{count}} faktúr",
+      "dueOn": "splatnosť {{date}}",
+      "totalOf": "spolu {{amount}}",
+      "otherLeg": "Druhá strana",
+      "thisLeg": "Táto strana",
+      "otherLegAmount": "na druhej strane",
+      "thisLegAmount": "na tejto strane"
+    },
+    "discarded": "Odstránené z tohto priestoru:",
+    "noneLeft": "V tejto skupine už nie sú žiadne pravidlá párovania. Nič sa tu nepáruje automaticky.",
+    "confirmDeleteTitle": "Odstrániť toto pravidlo?",
+    "confirmDeleteDescription": "„{{name}}“ prestáva o čomkoľvek rozhodovať. Ak je to jedno z našich, môžete ho neskôr vrátiť.",
+    "exported": "Pravidlá párovania stiahnuté",
+    "imported": "Importovaných {{imported}} pravidiel ({{skipped}} preskočených)",
+    "invalidImportFile": "Toto nie je súbor s pravidlami párovania",
+    "importConfirmTitle": "Importovať pravidlá párovania?",
+    "importConfirmDescription": "Súbor {{file}} obsahuje {{count}} pravidiel.",
+    "importOverwriteWarning": "Import nahradí pravidlá párovania tohto priestoru vrátane ich poradia. Nedá sa to vrátiť.",
+    "card": {
+      "transfers": "Pravidlá prevodov",
+      "transfersHint": "Ako určujeme, že dva záznamy sú ten istý prevod medzi vašimi účtami.",
+      "invoices": "Pravidlá faktúr",
+      "invoicesHint": "Ako určujeme, ktorá platba vyrovnáva ktorú faktúru.",
+      "recurring": "Pravidlá opakovaných",
+      "recurringHint": "Ako určujeme, že odpis je účet, ktorý ste už očakávali."
     }
   }
 }
