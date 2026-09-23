@@ -493,7 +493,7 @@
     "greetingEvening": "शुभ संध्या",
     "availableBalance": "उपलब्ध राशि",
     "netWorth": "कुल संपत्ति",
-    "netWorthTooltip": "खाते + निवेश, घटा बकाया क्रेडिट कार्ड बिल।",
+    "netWorthTooltip": "नकद + निवेश खाते + निवेशित संपत्तियाँ, घटा बकाया क्रेडिट कार्ड बिल। निवेश को उपलब्ध नकद नहीं माना जाता।",
     "creditCardBalance": "बकाया क्रेडिट कार्ड बिल",
     "pendingSharesOwe": "समूह क़र्ज़ों के बाद निवल {{net}} ({{owed}} लंबित)",
     "pendingSharesOwed": "आपको मिलने वाले {{owed}} सहित निवल {{net}}",
@@ -552,7 +552,9 @@
     "fxRateUsed": "FX दर: {{rate}}",
     "refreshRates": "FX दरें रीफ़्रेश करें",
     "ratesRefreshed": "FX दरें अपडेट हुईं",
-    "ratesError": "FX दरें अपडेट करने में विफल"
+    "ratesError": "FX दरें अपडेट करने में विफल",
+    "cashBalance": "नकद",
+    "investmentAccounts": "निवेश खाते"
   },
   "transactions": {
     "title": "लेन-देन",

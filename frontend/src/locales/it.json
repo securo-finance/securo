@@ -493,7 +493,7 @@
     "greetingEvening": "Buonasera",
     "availableBalance": "Saldo disponibile in conto",
     "netWorth": "Patrimonio netto",
-    "netWorthTooltip": "Conti + investimenti, meno le fatture della carta di credito aperte.",
+    "netWorthTooltip": "Contanti + conti di investimento + beni investiti, meno le fatture della carta di credito aperte. Gli investimenti non contano come denaro disponibile.",
     "creditCardBalance": "Fatture della carta aperte",
     "pendingSharesOwe": "Netto {{net}} dopo i debiti di gruppo ({{owed}} in sospeso)",
     "pendingSharesOwed": "Netto {{net}} incluso {{owed}} che ti è dovuto",
@@ -552,7 +552,9 @@
     "fxRateUsed": "Tasso di cambio: {{rate}}",
     "refreshRates": "Aggiorna i tassi di cambio",
     "ratesRefreshed": "Tassi di cambio aggiornati",
-    "ratesError": "Impossibile aggiornare i tassi di cambio"
+    "ratesError": "Impossibile aggiornare i tassi di cambio",
+    "cashBalance": "Contanti",
+    "investmentAccounts": "Conti di investimento"
   },
   "transactions": {
     "title": "Transazioni",

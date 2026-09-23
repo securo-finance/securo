@@ -497,7 +497,7 @@
     "greetingEvening": "Dobry wieczór",
     "availableBalance": "Dostępne saldo na kontach",
     "netWorth": "Majątek netto",
-    "netWorthTooltip": "Konta + inwestycje, pomniejszone o otwarte rachunki karty kredytowej.",
+    "netWorthTooltip": "Gotówka + konta inwestycyjne + zainwestowane aktywa, pomniejszone o otwarte rachunki karty kredytowej. Inwestycje nie liczą się jako dostępna gotówka.",
     "creditCardBalance": "Otwarte rachunki karty kredytowej",
     "pendingSharesOwe": "Netto {{net}} po długach grupowych ({{owed}} oczekuje)",
     "pendingSharesOwed": "Netto {{net}}, w tym {{owed}} należne Tobie",
@@ -562,7 +562,9 @@
     "fxRateUsed": "Kurs FX: {{rate}}",
     "refreshRates": "Odśwież kursy FX",
     "ratesRefreshed": "Zaktualizowano kursy FX",
-    "ratesError": "Nie udało się zaktualizować kursów FX"
+    "ratesError": "Nie udało się zaktualizować kursów FX",
+    "cashBalance": "Gotówka",
+    "investmentAccounts": "Konta inwestycyjne"
   },
   "transactions": {
     "title": "Transakcje",

@@ -460,21 +460,35 @@ async def get_summary(
         group_ids=(asset_group_ids or []) if filtered else None,
     )
 
+    # Cash vs investment *accounts* (issue #959). Same cutoff / account filter
+    # as total_balance, but typed so the UI never labels brokerage cash as
+    # "available". Net worth (total_balance) still includes both + assets.
+    cash_balance = await _total_balance_by_currency(
+        session, workspace_id, cutoff, account_ids, account_types=_CASH_ACCOUNT_TYPES,
+    )
+    investment_accounts = await _total_balance_by_currency(
+        session, workspace_id, cutoff, account_ids, account_types=_INVESTMENT_ACCOUNT_TYPES,
+    )
+
     # Add asset values to total balance
     for currency, amount in assets_value.items():
         total_balance[currency] = total_balance.get(currency, 0.0) + amount
         projected_balance[currency] = projected_balance.get(currency, 0.0) + amount
 
-    # Convert totals to primary currency
-    total_balance_primary = 0.0
-    for currency, amount in total_balance.items():
-        converted, _ = await convert(session, Decimal(str(amount)), currency, primary_currency, cutoff)
-        total_balance_primary += float(converted)
+    async def _to_primary(amounts: dict[str, float]) -> float:
+        primary = 0.0
+        for currency, amount in amounts.items():
+            converted, _ = await convert(
+                session, Decimal(str(amount)), currency, primary_currency, cutoff,
+            )
+            primary += float(converted)
+        return primary
 
-    projected_balance_primary = 0.0
-    for currency, amount in projected_balance.items():
-        converted, _ = await convert(session, Decimal(str(amount)), currency, primary_currency, cutoff)
-        projected_balance_primary += float(converted)
+    # Convert totals to primary currency
+    total_balance_primary = await _to_primary(total_balance)
+    projected_balance_primary = await _to_primary(projected_balance)
+    cash_balance_primary = await _to_primary(cash_balance)
+    investment_accounts_primary = await _to_primary(investment_accounts)
 
     # Convert income/expenses to primary currency using amount_primary when available
     # Use real-only totals (without projections) to avoid double-counting;
@@ -638,6 +652,10 @@ async def get_summary(
         pending_categorization_amount=pending_categorization_amount,
         assets_value=assets_value,
         assets_value_primary=round(assets_value_primary, 2),
+        cash_balance=cash_balance,
+        cash_balance_primary=round(cash_balance_primary, 2),
+        investment_accounts=investment_accounts,
+        investment_accounts_primary=round(investment_accounts_primary, 2),
         primary_currency=primary_currency,
         pending_shares_net=round(pending_shares_net, 2),
     )
@@ -1339,14 +1357,27 @@ async def _account_balance_at(
         return float(result or 0)
 
 
+# Account types treated as spendable / near-liquid cash on the dashboard.
+# Investment brokerage accounts and credit cards are excluded on purpose.
+_CASH_ACCOUNT_TYPES = frozenset({"checking", "savings", "wallet"})
+_INVESTMENT_ACCOUNT_TYPES = frozenset({"investment"})
+
+
 async def _total_balance_by_currency(
     session: AsyncSession, workspace_id: uuid.UUID, cutoff: date,
     account_ids: Optional[list[uuid.UUID]] = None,
     *,
     include_pending: bool = False,
+    account_types: Optional[frozenset[str]] = None,
 ) -> dict[str, float]:
-    """Get total balance across all open accounts at a date, grouped by currency."""
+    """Get total balance across open accounts at a date, grouped by currency.
+
+    When ``account_types`` is set, only accounts whose ``type`` is in that set
+    are included (used to split cash vs investment without changing net worth).
+    """
     accounts = await _get_open_accounts(session, workspace_id, account_ids)
+    if account_types is not None:
+        accounts = [a for a in accounts if a.type in account_types]
     if not accounts:
         return {}
 

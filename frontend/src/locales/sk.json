@@ -497,7 +497,7 @@
     "greetingEvening": "Dobrý večer",
     "availableBalance": "Dostupný zostatok na účtoch",
     "netWorth": "Čisté imanie",
-    "netWorthTooltip": "Účty + investície, po odpočítaní otvorených faktúr kreditnej karty.",
+    "netWorthTooltip": "Hotovosť + investičné účty + investované aktíva, po odpočítaní otvorených faktúr kreditnej karty. Investície sa nepovažujú za dostupné peniaze.",
     "creditCardBalance": "Otvorené faktúry kreditnej karty",
     "pendingSharesOwe": "Netto {{net}} po skupinových dlhoch ({{owed}} čaká na vyrovnanie)",
     "pendingSharesOwed": "Netto {{net}} vrátane {{owed}}, ktoré ti dlhujú",
@@ -564,7 +564,9 @@
     "fxRateUsed": "Kurz: {{rate}}",
     "refreshRates": "Obnoviť kurzy",
     "ratesRefreshed": "Kurzy aktualizované",
-    "ratesError": "Kurzy sa nepodarilo aktualizovať"
+    "ratesError": "Kurzy sa nepodarilo aktualizovať",
+    "cashBalance": "Hotovosť",
+    "investmentAccounts": "Investičné účty"
   },
   "transactions": {
     "title": "Transakcie",
