@@ -373,6 +373,21 @@ def validate_ru_inn(value: str) -> str | None:
         return None
     return "length"
 
+def validate_kz_biniin(value:str) -> str | None:
+    """Kazakhstan BIN/IIN: twelve digits, mod-11 check digit."""
+    if not value.isdigit():
+        return "invalid"
+    if len(value) != 12:
+        return "length"
+    weights = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    check = _weighted_sum(value[:11], weights) % 11
+    if check == 10:
+        weights2 = [3, 4, 5, 6, 7, 8, 9, 10, 11, 1, 2]
+        check = _weighted_sum(value[:11], weights2) % 11
+        if check == 10:
+            return "check_digit"
+    return None if value[11] == str(check) else "check_digit"
+
 
 def validate_ua_edrpou(value: str) -> str | None:
     """Eight digits. The check rule differs by registration range, so size
@@ -533,6 +548,7 @@ VALIDATORS: dict[str, Callable[[str], str | None]] = {
     "ro_cui": validate_ro_cui,
     "ch_uid": validate_ch_uid,
     "ru_inn": validate_ru_inn,
+    "kz_biniin": validate_kz_biniin,
     "ua_edrpou": validate_ua_edrpou,
     "ca_bn": validate_ca_bn,
     "au_abn": validate_au_abn,
