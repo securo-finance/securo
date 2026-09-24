@@ -1347,6 +1347,20 @@ async def _find_existing_connected_account(
             candidate for candidate in candidates
             if candidate.institution_id == institution.id
         ]
+        if not matched_institution and candidates:
+            # Re-linking a bank in SimpleFIN Bridge can send it under a new
+            # conn_id, so _resolve_institution just minted a fresh row while
+            # the account still points at the old, same-named one.
+            same_name_ids = set((await session.execute(
+                select(Institution.id).where(
+                    Institution.connection_id == connection.id,
+                    Institution.name == institution.name,
+                )
+            )).scalars().all())
+            matched_institution = [
+                candidate for candidate in candidates
+                if candidate.institution_id in same_name_ids
+            ]
         if matched_institution:
             candidates = matched_institution
         else:
