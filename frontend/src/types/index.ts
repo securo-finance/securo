@@ -750,11 +750,11 @@ export interface BudgetVsActual {
   category_color: string
   group_id: string | null
   group_name: string | null
-  budget_amount: number | null
-  actual_amount: number
-  projected_amount: number
-  prev_month_amount: number
-  projected_prev_month_amount: number
+  budget_amount: number | string | null
+  actual_amount: number | string
+  projected_amount: number | string
+  prev_month_amount: number | string
+  projected_prev_month_amount: number | string
   percentage_used: number | null
   is_recurring: boolean
 }
