@@ -11,7 +11,7 @@ split between *settled* and *received*: a deduction moves the balance
 and the state, never `amount_paid` or "received this month".
 """
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -223,7 +223,12 @@ class TestDeductions:
         paid; what arrived is 2,850; the accountant can see the 150."""
         inv = await an_invoice(session, ws_id, test_user.id)
         tx = await credit(session, ws_id, test_user.id, account, "2850.00")
-        await svc.allocate(session, inv, tx.id)
+        allocated = await svc.allocate(session, inv, tx.id)
+        # `allocated_at` defaults to the wall clock while the summary below
+        # asks about TODAY. Left to the clock, the row falls outside the
+        # window the moment the real date passes TODAY, and the test starts
+        # failing on a day that has nothing to do with deductions.
+        allocated.allocated_at = datetime(2026, 9, 24, 12, tzinfo=timezone.utc)
         assert svc.derive_state(inv, TODAY) == "partial"
         await svc.deduct(session, inv, "withholding_tax", Decimal("150"), tax_kind=" IRRF ", note="1.5%", transaction_id=tx.id)
         await session.commit()
