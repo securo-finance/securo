@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     # Set explicitly only when the URL registered in the provider dashboard
     # differs from where the app is served.
     pluggy_oauth_redirect_uri: str = ""
+    # Gates the BrasilAPI outbound lookup in _lookup_bank_info (pluggy.py).
+    # Off by default: no third-party call happens until a deploy opts in.
+    brasilapi_institution_lookup_enabled: bool = False
 
     # Enable Banking (European PSD2 banks)
     enable_banking_app_id: str = ""
