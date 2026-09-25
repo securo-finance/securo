@@ -1578,7 +1578,7 @@ async def _find_synced_duplicate(
 async def _cleanup_phantom_duplicates(
     session: AsyncSession,
     connection_id: uuid.UUID,
-) -> int:
+) -> set[uuid.UUID]:
     """Delete synced transactions that are phantom duplicates.
 
     Some providers (or sandbox data) report the same payment twice with
@@ -1591,13 +1591,16 @@ async def _cleanup_phantom_duplicates(
     within ±1 day. The pairing of the sibling is the safety signal that lets
     us distinguish the duplicate from a legitimate same-day repeat (e.g. two
     real Uber rides for the same fare).
+
+    Returns the ids of the accounts that lost a row, so the caller can
+    reconcile their opening balances against what is left.
     """
     accounts_result = await session.execute(
         select(Account.id).where(Account.connection_id == connection_id)
     )
     account_ids = [row[0] for row in accounts_result.all()]
     if not account_ids:
-        return 0
+        return set()
 
     unmatched_result = await session.execute(
         select(Transaction).where(
@@ -1608,7 +1611,7 @@ async def _cleanup_phantom_duplicates(
     )
     unmatched = list(unmatched_result.scalars().all())
 
-    deleted = 0
+    touched: set[uuid.UUID] = set()
     for tx in unmatched:
         date_lo = tx.date - timedelta(days=1)
         date_hi = tx.date + timedelta(days=1)
@@ -1630,10 +1633,10 @@ async def _cleanup_phantom_duplicates(
                 tx.original_description or tx.description,
             ) >= 0.9:
                 await session.delete(tx)
-                deleted += 1
+                touched.add(tx.account_id)
                 break
 
-    return deleted
+    return touched
 
 
 # Finance-charge `additionalInfo` strings that Pluggy emits but which would
@@ -2373,7 +2376,22 @@ async def sync_connection(
         # Clean up phantom duplicates: providers occasionally double-report the
         # same payment with different ids. Once transfer detection has paired
         # the real one, the orphan twin gets removed here.
-        await _cleanup_phantom_duplicates(session, connection.id)
+        touched_account_ids = await _cleanup_phantom_duplicates(session, connection.id)
+
+        # The opening balances above were reconciled with the phantoms still
+        # counted. Reconcile the open accounts that lost one again, so the
+        # removed amount does not stay behind in their synthetic opening
+        # transaction. Closed accounts stay out, as in the account loop.
+        if touched_account_ids:
+            await session.flush()
+            touched_accounts = await session.execute(
+                select(Account).where(
+                    Account.id.in_(touched_account_ids),
+                    Account.is_closed == False,
+                )
+            )
+            for touched_account in touched_accounts.scalars():
+                await sync_opening_balance_for_connected_account(session, touched_account)
 
         # Refresh investment holdings (brokerage, fixed income, funds,
         # etc.) when enabled for this connection. Errors here are logged but
