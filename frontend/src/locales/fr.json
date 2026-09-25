@@ -1290,6 +1290,9 @@
       },
       "simplefin": {
         "description": "Banques américaines et internationales via SimpleFIN Bridge"
+      },
+      "truelayer": {
+        "description": "Banques britanniques et européennes via l'open banking TrueLayer"
       }
     },
     "reconnected": "Banque reconnectée avec succès",

@@ -41,6 +41,14 @@ KNOWN_PROVIDERS = [
         "requires_institution_select": False,
         "supports_asset_sync": True,
     },
+    {
+        "name": "truelayer",
+        "display_name": "TrueLayer",
+        "description": "UK and European banks via TrueLayer open banking",
+        "flow_type": "oauth",
+        "requires_institution_select": True,
+        "supports_asset_sync": False,
+    },
 ]
 
 
@@ -93,6 +101,13 @@ def _auto_register_providers() -> None:
     if settings.simplefin_enabled:
         from app.providers.simplefin import SimpleFinProvider
         register_provider("simplefin", SimpleFinProvider)
+
+    if (
+        settings.truelayer_client_id
+        and settings.truelayer_client_secret.get_secret_value()
+    ):
+        from app.providers.truelayer import TrueLayerProvider
+        register_provider("truelayer", TrueLayerProvider)
 
 
 _auto_register_providers()

@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     simplefin_enabled: bool = False
     simplefin_api_url: str = "https://beta-bridge.simplefin.org"
 
+    # TrueLayer (UK/EU open banking)
+    truelayer_client_id: str = ""
+    truelayer_client_secret: SecretStr = SecretStr("")
+    truelayer_auth_url: str = "https://auth.truelayer.com"
+    truelayer_api_url: str = "https://api.truelayer.com/data/v1"
+    truelayer_redirect_uri: str = ""  # empty derives from FRONTEND_URL
+
     # Frontend
     frontend_url: str = "http://localhost:5173"
 
