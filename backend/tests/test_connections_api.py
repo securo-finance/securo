@@ -29,6 +29,11 @@ async def test_list_providers(client: AsyncClient, auth_headers):
     # opt-out is hidden for it; connectors that import holdings advertise it.
     assert by_name["enable_banking"]["supports_asset_sync"] is False
     assert by_name["simplefin"]["supports_asset_sync"] is True
+    assert "wealthreader" in by_name
+    assert by_name["wealthreader"]["flow_type"] == "oauth"
+    assert by_name["wealthreader"]["requires_institution_select"] is True
+    assert by_name["wealthreader"]["supports_asset_sync"] is False
+    assert by_name["wealthreader"]["configured"] is False
 
 
 @pytest.mark.asyncio
