@@ -2062,6 +2062,7 @@
       "ro_cui": "CUI",
       "ch_uid": "UID",
       "inn": "herberg",
+      "kz_biniin": "BIN/IIN",
       "edrpou": "EDRPOU",
       "cuit": "CUIT",
       "rfc": "RFC",
