@@ -9,36 +9,16 @@ from app.models.category import Category
 from app.models.category_group import CategoryGroup
 from app.models.rule import Rule
 from app.schemas.category import CategoryCreate, CategoryUpdate
-from app.services.category_group_service import CATEGORY_TO_GROUP, create_default_groups
+from app.services.category_defaults import (
+    CATEGORY_TO_GROUP,
+    DEFAULT_CATEGORIES,
+    localized_name,
+)
+from app.services.category_group_service import create_default_groups
 
 
 class CategoryVisibilityError(ValueError):
     """Raised when visibility is changed for a user-created category."""
-
-
-# Language-keyed translations for default categories
-# Keys are internal identifiers used to map to groups and rules.
-# `treat_as_transfer` marks categories whose transactions are flows, not
-# income/expense — they're excluded from report aggregations like paired
-# transfers are.
-DEFAULT_CATEGORIES_I18N = {
-    "housing":       {"en": "Housing",         "pt-BR": "Moradia",           "pt-PT": "Habitação",             "de": "Wohnen",             "fr": "Logement",                   "nl": "Wonen",                   "sk": "Bývanie", "icon": "house",            "color": "#8B5CF6"},
-    "food":          {"en": "Food & Dining",   "pt-BR": "Alimentação",       "pt-PT": "Alimentação",           "de": "Essen & Trinken",    "fr": "Alimentation & Restaurants", "nl": "Eten & Drinken",          "sk": "Jedlo a reštaurácie", "icon": "utensils-crossed", "color": "#F59E0B"},
-    "transport":     {"en": "Transport",       "pt-BR": "Transporte",        "pt-PT": "Transportes",           "de": "Transport",          "fr": "Transport",                  "nl": "Transport",               "sk": "Doprava", "icon": "car",              "color": "#3B82F6"},
-    "groceries":     {"en": "Groceries",       "pt-BR": "Mercado",           "pt-PT": "Supermercado",          "de": "Lebensmittel",       "fr": "Courses",                    "nl": "Boodschappen",            "sk": "Potraviny", "icon": "shopping-cart",    "color": "#10B981"},
-    "health":        {"en": "Health",          "pt-BR": "Saúde",             "pt-PT": "Saúde",                 "de": "Gesundheit",         "fr": "Santé",                      "nl": "Gezondheid",              "sk": "Zdravie", "icon": "pill",             "color": "#EF4444"},
-    "leisure":       {"en": "Leisure",         "pt-BR": "Lazer",             "pt-PT": "Lazer",                 "de": "Freizeit",           "fr": "Loisirs",                    "nl": "Vrije tijd",              "sk": "Voľný čas", "icon": "gamepad-2",        "color": "#EC4899"},
-    "subscriptions": {"en": "Subscriptions",   "pt-BR": "Assinaturas",       "pt-PT": "Subscrições",           "de": "Abonnements",        "fr": "Abonnements",                "nl": "Abonnementen",            "sk": "Predplatné", "icon": "smartphone",       "color": "#6366F1"},
-    "education":     {"en": "Education",       "pt-BR": "Educação",          "pt-PT": "Educação",              "de": "Bildung",            "fr": "Éducation",                  "nl": "Educatie",                "sk": "Vzdelávanie", "icon": "book-open",        "color": "#22C55E"},
-    "transfers":     {"en": "Transfers",       "pt-BR": "Transferências",    "pt-PT": "Transferências",        "de": "Umbuchungen",        "fr": "Virements",                  "nl": "Overboekingen",           "sk": "Prevody", "icon": "arrow-left-right", "color": "#64748B", "treat_as_transfer": True},
-    "investments":   {"en": "Investments",     "pt-BR": "Investimentos",     "pt-PT": "Investimentos",         "de": "Investitionen",      "fr": "Investissements",            "nl": "Investeringen",           "sk": "Investície", "icon": "trending-up",      "color": "#0EA5E9", "treat_as_transfer": True},
-    "salary":        {"en": "Salary & Income", "pt-BR": "Salário & Renda",   "pt-PT": "Salário & Rendimentos", "de": "Gehalt & Einnahmen", "fr": "Salaire & Revenus",          "nl": "Salaris & Inkomen",       "sk": "Mzda a príjmy", "icon": "banknote",         "color": "#16A34A"},
-    "shopping":      {"en": "Shopping",        "pt-BR": "Compras",           "pt-PT": "Compras",               "de": "Shopping",           "fr": "Achats",                     "nl": "Winkelen",                "sk": "Nákupy", "icon": "shopping-bag",     "color": "#F97316"},
-    "donations":     {"en": "Donations",       "pt-BR": "Doações",           "pt-PT": "Donativos",             "de": "Spenden",            "fr": "Dons",                       "nl": "Donaties",                "sk": "Dary", "icon": "heart-handshake",  "color": "#D946EF"},
-    "personal_care": {"en": "Personal Care",   "pt-BR": "Cuidados Pessoais", "pt-PT": "Cuidados Pessoais",     "de": "Körperpflege",       "fr": "Soins personnels",           "nl": "Persoonlijke verzorging", "sk": "Osobná starostlivosť", "icon": "scissors",         "color": "#F472B6"},
-    "taxes":         {"en": "Taxes & Fees",    "pt-BR": "Impostos & Taxas",  "pt-PT": "Impostos & Taxas",      "de": "Steuern & Gebühren", "fr": "Impôts & Taxes",             "nl": "Belastingen & Heffingen", "sk": "Dane a poplatky", "icon": "landmark",         "color": "#78716C"},
-    "other":         {"en": "Other",           "pt-BR": "Outros",            "pt-PT": "Outros",                "de": "Sonstiges",          "fr": "Autres",                     "nl": "Overig",                  "sk": "Ostatné", "icon": "circle-help",      "color": "#6B7280"},
-}
 
 
 async def create_default_categories(
@@ -78,8 +58,8 @@ async def create_default_categories(
     groups = await create_default_groups(session, user_id, lang, workspace_id=workspace_id)
 
     categories = []
-    for key, data in DEFAULT_CATEGORIES_I18N.items():
-        name = data.get(lang, data.get("en", key))
+    for key, data in DEFAULT_CATEGORIES.items():
+        name = localized_name(data, lang)
         group_key = CATEGORY_TO_GROUP.get(key)
         group = groups.get(group_key) if group_key else None
         category = Category(
