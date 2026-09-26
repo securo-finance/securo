@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     simplefin_enabled: bool = False
     simplefin_api_url: str = "https://beta-bridge.simplefin.org"
 
+    # Akahu (New Zealand banks, paste-a-token flow). Off by default. Users
+    # create a free Personal App at https://my.akahu.nz/developers and paste
+    # its App ID Token + User Token into the connect dialog.
+    akahu_enabled: bool = False
+    akahu_api_url: str = "https://api.akahu.io/v1"
+
     # Frontend
     frontend_url: str = "http://localhost:5173"
 
