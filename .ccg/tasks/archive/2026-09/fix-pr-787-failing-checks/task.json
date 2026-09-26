@@ -1,0 +1,12 @@
+{
+  "id": "fix-pr-787-failing-checks",
+  "title": "Fix PR #787 failing backend checks and resolve quick blockers",
+  "status": "completed",
+  "complexity": "M",
+  "risk": "medium",
+  "domain": "backend",
+  "currentPhase": "completed",
+  "nextAction": "Archive task record",
+  "createdAt": "2026-09-01T00:00:00Z",
+  "branch": "feat/recurring-subscription-detection-and-cashflow-forecast"
+}
