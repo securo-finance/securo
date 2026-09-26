@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, lazy, Suspense } from 'react'
-import { getAccountName, sumAccountBalances } from '@/lib/account-utils'
+import { getAccountName, sortAccountsByAbsoluteBalance, sumAccountBalances } from '@/lib/account-utils'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
@@ -523,8 +523,9 @@ export function AppLayout() {
               </button>
               {accountsExpanded && (
                 <div className="mt-1 space-y-0.5">
-                  {[...visibleAccounts].sort((a, b) => Math.abs(Number(b.current_balance)) - Math.abs(Number(a.current_balance))).slice(0, accountsShowAll ? visibleAccounts.length : 3).map((acc) => {
-                    const balance = Number(acc.current_balance) || 0
+                  {sortAccountsByAbsoluteBalance(visibleAccounts, (a) => a.balance_primary ?? a.current_balance).slice(0, accountsShowAll ? visibleAccounts.length : 3).map((acc) => {
+                    const balance = Number(acc.balance_primary ?? acc.current_balance) || 0
+                    const balanceCurrency = acc.balance_primary != null ? userCurrency : acc.currency
                     const typeKey = acc.type.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()).replace(/^./, c => c.toUpperCase())
 
                     return (
@@ -543,7 +544,7 @@ export function AppLayout() {
                         </div>
                         <div className="text-right shrink-0 ml-2">
                           <span className={`block tabular-nums font-medium text-xs ${balance < 0 ? 'text-rose-400' : 'text-sidebar-foreground'}`}>
-                            {mask(formatCurrency(balance, acc.currency, locale))}
+                            {mask(formatCurrency(balance, balanceCurrency, locale))}
                           </span>
                         </div>
                       </Link>
