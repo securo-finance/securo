@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRegisterPageChatContext } from '@/lib/page-chat-context'
-import { assets, assetGroups, currencies as currenciesApi } from '@/lib/api'
+import { assets, assetGroups, currencies as currenciesApi, fxRates } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -40,6 +40,7 @@ import {
   Bitcoin,
   PieChart,
   AlertTriangle,
+  Info,
   Upload,
 } from 'lucide-react'
 import {
@@ -51,7 +52,7 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from 'recharts'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/page-header'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
@@ -269,6 +270,17 @@ export default function AssetsPage() {
     const allowed = new Set(activeWalletIds)
     return (rawAssetsList ?? []).filter((a) => a.group_id && allowed.has(a.group_id))
   }, [rawAssetsList, activeWalletIds])
+
+  const hasForeignCurrencyAssets = assetsList?.some(
+    (asset) => asset.current_value != null && asset.current_value !== 0 && asset.currency !== userCurrency,
+  ) ?? false
+  const { data: exchangeRateStatus } = useQuery({
+    queryKey: ['fx-rates', 'status'],
+    queryFn: fxRates.status,
+    enabled: hasForeignCurrencyAssets,
+    staleTime: 0,
+  })
+  const exchangeRatesNeedSetup = hasForeignCurrencyAssets && exchangeRateStatus?.configured === false
 
   const { data: rawPortfolioData } = useQuery({
     queryKey: ['portfolio-trend'],
@@ -739,6 +751,7 @@ export default function AssetsPage() {
     const profit = getAssetProfit(asset)
     const pctOfPortfolio = asset.sell_date ? null : getPortfolioShare(asset, portfolioTotalPrimary)
     const needsBuys = isMarketPriced && !hasCost && !asset.sell_date
+    const needsExchangeRate = exchangeRatesNeedSetup && asset.current_value != null && asset.current_value !== 0 && asset.currency !== userCurrency
 
     return (
       <div key={asset.id} className="border-b border-border last:border-b-0">
@@ -813,7 +826,25 @@ export default function AssetsPage() {
           <div className="text-right tabular-nums">
             {asset.current_value != null ? (
               <>
-                <span className="font-semibold text-foreground">{mask(formatCurrency(asset.current_value, asset.currency, locale))}</span>
+                <span className="inline-flex items-center justify-end gap-1">
+                  <span className="font-semibold text-foreground">{mask(formatCurrency(asset.current_value, asset.currency, locale))}</span>
+                  {needsExchangeRate && (user?.is_superuser ? (
+                      <button
+                        type="button"
+                        className="inline-flex size-5 items-center justify-center rounded text-amber-700 hover:text-amber-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-amber-400 dark:hover:text-amber-300"
+                        aria-label={t('assets.exchangeRateSetupAction', { from: asset.currency, to: userCurrency })}
+                        title={t('assets.exchangeRateSetupAction', { from: asset.currency, to: userCurrency })}
+                        onClick={(event) => { event.stopPropagation(); navigate('/admin#provider-exchangeRates') }}
+                      >
+                        <Info size={13} aria-hidden="true" />
+                      </button>
+                    ) : (
+                      <span className="inline-flex size-5 items-center justify-center text-amber-700 dark:text-amber-400" title={t('assets.exchangeRateSetupAskAdmin', { from: asset.currency, to: userCurrency })}>
+                        <Info size={13} aria-hidden="true" />
+                        <span className="sr-only">{t('assets.exchangeRateSetupAskAdmin', { from: asset.currency, to: userCurrency })}</span>
+                      </span>
+                    ))}
+                </span>
                 {asset.current_value_primary != null && asset.currency !== userCurrency && (
                   <span className="block text-[10px] text-muted-foreground">{mask(formatCurrency(asset.current_value_primary, userCurrency, locale))}</span>
                 )}
@@ -1088,6 +1119,19 @@ export default function AssetsPage() {
         />
       ) : (
       <>
+      {exchangeRatesNeedSetup && (
+        <div role="status" className="flex flex-wrap items-start gap-2.5 rounded-lg border border-amber-300/70 bg-amber-50/70 px-3 py-2.5 text-sm text-amber-950 dark:border-amber-700/60 dark:bg-amber-950/30 dark:text-amber-100">
+          <Info size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <p className="min-w-0 flex-1">{t('assets.exchangeRateSetupWarning')}</p>
+          {user?.is_superuser ? (
+            <Link to="/admin#provider-exchangeRates" className="shrink-0 font-medium underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              {t('assets.exchangeRateSetupLink')}
+            </Link>
+          ) : (
+            <span className="text-amber-800 dark:text-amber-200">{t('assets.exchangeRateSetupContactAdmin')}</span>
+          )}
+        </div>
+      )}
       {/* Portfolio Chart */}
       {portfolioData && portfolioData.trend.length > 0 && (
         <PortfolioChart

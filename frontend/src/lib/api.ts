@@ -1534,7 +1534,7 @@ export const fxRates = {
     const { data } = await api.post('/fx-rates/refresh')
     return data
   },
-  status: async (): Promise<{ last_sync_date: string | null; total_rates: number }> => {
+  status: async (): Promise<{ last_sync_date: string | null; total_rates: number; fx_sync_mode: string; configured: boolean }> => {
     const { data } = await api.get('/fx-rates/status')
     return data
   },
@@ -1585,6 +1585,18 @@ export const backup = {
 }
 
 // Admin
+export interface ProviderSettingStatus {
+  name: string
+  configured: boolean
+  can_store_secrets: boolean
+  fields: Record<string, {
+    configured: boolean
+    source: 'app' | 'environment' | 'none'
+    invalid: boolean
+    environment_configured: boolean
+  }>
+}
+
 export interface TimezoneSetting {
   /** The timezone in use, after fallbacks. */
   timezone: string
@@ -1621,6 +1633,17 @@ export const admin = {
   },
   deleteUser: async (id: string): Promise<void> => {
     await api.delete(`/admin/users/${id}`)
+  },
+  providerSettings: async (): Promise<ProviderSettingStatus[]> => {
+    const { data } = await api.get('/admin/provider-settings')
+    return data
+  },
+  updateProviderSettings: async (
+    provider: string,
+    values: Record<string, string | boolean | null>,
+  ): Promise<ProviderSettingStatus> => {
+    const { data } = await api.patch(`/admin/provider-settings/${encodeURIComponent(provider)}`, { values })
+    return data
   },
   getSetting: async (key: string): Promise<AppSetting> => {
     const { data } = await api.get(`/admin/settings/${key}`)

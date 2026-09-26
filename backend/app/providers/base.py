@@ -4,6 +4,8 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal, Optional
 
+from app.core.config import Settings
+
 
 # Outcome of asking a provider to pull fresh data from the underlying institution
 # before we read accounts/transactions.
@@ -260,6 +262,15 @@ class BankProvider(ABC):
     Implement this for each provider (Pluggy, Belvo, etc.)
     to enable bank account syncing via OAuth or widget flow.
     """
+
+    def __init__(self, settings: Settings | None = None):
+        self._configured_settings = settings
+
+    @property
+    def settings(self) -> Settings:
+        from app.core.config import get_settings
+
+        return self._configured_settings or get_settings()
 
     @property
     @abstractmethod

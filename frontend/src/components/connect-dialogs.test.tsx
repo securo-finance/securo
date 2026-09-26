@@ -6,11 +6,36 @@ import { OAuthConnectDialog } from './oauth-connect-dialog'
 import { BankConnectDialog } from './bank-connect-dialog'
 
 const api = vi.hoisted(() => ({ getProviders: vi.fn(), listInstitutions: vi.fn(), getReconnectToken: vi.fn(), getConnectToken: vi.fn(), toastError: vi.fn() }))
+const authState = vi.hoisted(() => ({ isAdmin: true }))
 vi.mock('@/lib/api', () => ({ connections: api, auth: api }))
+vi.mock('@/contexts/auth-context', () => ({ useAuth: () => ({ user: { is_superuser: authState.isAdmin } }) }))
 vi.mock('sonner', () => ({ toast: { error: api.toastError } }))
 vi.mock('react-pluggy-connect', () => ({ PluggyConnect: ({ connectToken }: { connectToken: string }) => <div>{connectToken}</div> }))
 
-beforeEach(() => { vi.resetAllMocks() })
+beforeEach(() => { vi.resetAllMocks(); authState.isAdmin = true })
+
+it('links each unconfigured connector to admin setup without selecting it', async () => {
+  api.getProviders.mockResolvedValue([
+    { name: 'pluggy', display_name: 'Pluggy', description: 'Bank connection', configured: false },
+    { name: 'simplefin', display_name: 'SimpleFIN', description: 'Bank connection', configured: false },
+  ])
+  const onSelect = vi.fn()
+  renderWithProviders(<ConnectorSelectDialog open onClose={vi.fn()} onSelect={onSelect} />)
+
+  const links = await screen.findAllByRole('link', { name: /set up (Pluggy|SimpleFIN)/i })
+  expect(links).toHaveLength(2)
+  for (const link of links) expect(link).toHaveAttribute('href', '/admin#provider-connections')
+  expect(onSelect).not.toHaveBeenCalled()
+})
+
+it('asks non-admin users to contact an administrator for unconfigured connectors', async () => {
+  authState.isAdmin = false
+  api.getProviders.mockResolvedValue([{ name: 'pluggy', display_name: 'Pluggy', description: 'Bank connection', configured: false }])
+  renderWithProviders(<ConnectorSelectDialog open onClose={vi.fn()} onSelect={vi.fn()} />)
+
+  expect(await screen.findByText(/Ask an administrator to configure it/)).toBeVisible()
+  expect(screen.queryByRole('link', { name: /Set up Pluggy/ })).not.toBeInTheDocument()
+})
 
 it('ignores provider responses from a closed session when reopened', async () => {
   let finish!: (data: unknown) => void

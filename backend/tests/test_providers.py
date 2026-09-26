@@ -86,6 +86,17 @@ def test_all_known_providers():
         assert "configured" in p
 
 
+def test_simplefin_constructs_with_runtime_settings():
+    from app.providers.simplefin import SimpleFinProvider
+
+    settings = Settings(simplefin_enabled=True)
+    provider = get_provider("simplefin", settings=settings)
+
+    assert isinstance(provider, SimpleFinProvider)
+    assert provider.settings is settings
+    assert provider.action_required_warnings == []
+
+
 def test_get_storage_provider_local():
     import app.providers as providers_mod
     original = providers_mod._storage_provider

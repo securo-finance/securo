@@ -666,13 +666,13 @@ async def test_delete_connection_keeps_payees_with_external_mappings(session: As
 
 
 @pytest.mark.asyncio
-async def test_create_connect_token_success(test_user):
+async def test_create_connect_token_success(session, test_user):
     mock_provider = AsyncMock()
     mock_provider.create_connect_token = AsyncMock(
         return_value=ConnectTokenData(access_token="tok-123")
     )
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        result = await create_connect_token("pluggy", test_user.id)
+        result = await create_connect_token("pluggy", test_user.id, session=session)
     assert result == {"access_token": "tok-123"}
 
 

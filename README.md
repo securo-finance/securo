@@ -60,7 +60,9 @@ Open [http://localhost:3000](http://localhost:3000) and create an account. That'
 
 ## Bank Sync (Optional)
 
-Add credentials for any of the supported providers to `.env`, then restart with `docker compose up`. Configure one or both — each provider auto-registers when its credentials are present.
+Administrators can configure Pluggy, Enable Banking, and SimpleFIN under **Admin Settings → Providers**. Saved settings take effect for new connections and sync operations without restarting the API or worker. To save credentials in the app, set a unique `SECRET_KEY` of at least 32 characters first. [Provider settings](docs/provider-settings.md) explains replacement, reset, and encryption.
+
+You can also configure providers through `.env` as described below. Saved app values take priority field by field; removing one restores its environment value.
 
 ### Pluggy — Brazilian banks
 
@@ -172,7 +174,7 @@ To pin passkeys to one domain, set `WEBAUTHN_RP_ID` (use the parent domain if yo
 
 ## Exchange Rates (Optional)
 
-For automatic currency conversion, add a free [Open Exchange Rates](https://openexchangerates.org/) key to `.env`:
+For automatic currency conversion, configure a free [Open Exchange Rates](https://openexchangerates.org/) key under **Admin Settings → Providers**, or add it to `.env`:
 
 ```
 OPENEXCHANGERATES_APP_ID=your-app-id
