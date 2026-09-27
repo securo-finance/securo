@@ -10,6 +10,9 @@
     "kindBusiness": "ビジネス",
     "kindHint": "このワークスペースで管理する内容を選択します。後から変更できません。",
     "defaultCurrency": "既定の通貨",
+    "quickCurrencies": "クイック切替の通貨",
+    "quickCurrenciesActive": "これは現在の表示通貨です。",
+    "quickCurrenciesHint": "ダッシュボードに切替スイッチとして表示されます。2つ以上、最大6つまで選択してください。金額は表記が変わるだけでなく換算されます。",
     "locale": "言語",
     "taxJurisdiction": "税務管轄",
     "taxJurisdictionHint": "このワークスペースで提供される会計書類を決定します。UIの言語とは別の設定です。",
@@ -2852,5 +2855,9 @@
       "recurring": "定期のルール",
       "recurringHint": "ある引き落としが予定していた支払いだと判断する方法。"
     }
+  },
+  "currencySwitch": {
+    "label": "表示通貨",
+    "error": "通貨を切り替えられませんでした"
   }
 }

@@ -10,6 +10,9 @@
     "kindBusiness": "Attività",
     "kindHint": "Scegli cosa traccia quest'area di lavoro. Non è modificabile in seguito.",
     "defaultCurrency": "Valuta predefinita",
+    "quickCurrencies": "Valute a cambio rapido",
+    "quickCurrenciesActive": "Questa è la valuta di visualizzazione attiva.",
+    "quickCurrenciesHint": "Mostrata come selettore nella dashboard. Scegline almeno due, fino a sei. Gli importi vengono convertiti, non solo rietichettati.",
     "locale": "Lingua",
     "taxJurisdiction": "Giurisdizione fiscale",
     "taxJurisdictionHint": "Determina quali documenti fiscali offre quest'area di lavoro. Indipendente dalla lingua dell'interfaccia.",
@@ -2853,5 +2856,9 @@
       "recurring": "Regole Ricorrenti",
       "recurringHint": "Come decidiamo che un addebito è la bolletta che stavi già aspettando."
     }
+  },
+  "currencySwitch": {
+    "label": "Valuta di visualizzazione",
+    "error": "Impossibile cambiare valuta"
   }
 }
