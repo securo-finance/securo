@@ -1552,9 +1552,31 @@ export const importLogs = {
 }
 
 // Settings
+export interface CurrencyPreferences {
+  currency_display: string
+  quick_currencies: string[]
+}
+
 export const settings = {
   attachments: async (): Promise<{ allowed_extensions: string[]; max_file_size_mb: number; max_attachments_per_transaction: number }> => {
     const { data } = await api.get('/settings/attachments')
+    return data
+  },
+  currencyPreferences: async (): Promise<CurrencyPreferences> => {
+    const { data } = await api.get('/settings/currency-preferences')
+    return data
+  },
+  /**
+   * Switch the display currency. Every cached amount was converted in the
+   * previous currency, so callers must invalidate them on success.
+   */
+  setDisplayCurrency: async (currency: string): Promise<CurrencyPreferences> => {
+    const { data } = await api.put('/settings/currency-preferences/display', { currency })
+    return data
+  },
+  /** Replace the quick-switch shortlist. Does not affect converted amounts. */
+  setQuickCurrencies: async (currencies: string[]): Promise<CurrencyPreferences> => {
+    const { data } = await api.put('/settings/currency-preferences/quick-list', { currencies })
     return data
   },
 }
