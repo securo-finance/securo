@@ -91,6 +91,10 @@ ALLOWLIST: dict[tuple[str, str], str] = {
     ("PATCH", "/api/agents/connections/{conn_id}"): "the requester's own LLM credentials",
     ("DELETE", "/api/agents/connections/{conn_id}"): "the requester's own LLM credentials",
     ("POST", "/api/agents/connections/{conn_id}/test"): "probes the requester's own credential",
+    # Per-user display preference in `user.preferences`, not workspace data. A
+    # write gate would stop a viewer choosing what their own dashboard renders in.
+    ("PUT", "/api/settings/currency-preferences/display"): "the requester's own display preference",
+    ("PUT", "/api/settings/currency-preferences/quick-list"): "the requester's own display preference",
     # Global, not workspace data: FX rates are shared by the whole instance.
     # Any authenticated user may refresh them, and nothing per-workspace is
     # touched. Flagged here so a future rate limit or admin floor is a
