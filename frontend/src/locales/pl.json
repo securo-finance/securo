@@ -1107,7 +1107,7 @@
     "bankDate": "Data bankowa",
     "reportingDate": "Data raportowania",
     "reportingDateHint": "Zmienia okresy raportowania w całej aplikacji; data bankowa pozostaje bez zmian.",
-    "reportingDatePlaceholder": "Wybierz datę raportowania (opcjonalnie)",
+    "reportingDatePlaceholder": "Wybierz datę (opcjonalnie)",
     "clearReportingDate": "Zresetuj datę raportowania",
     "linkAsTransfer": "Powiąż jako transfer",
     "linkTransferTitle": "Powiąż jako transfer",

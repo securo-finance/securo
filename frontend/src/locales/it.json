@@ -1071,7 +1071,7 @@
     "bankDate": "Data bancaria",
     "reportingDate": "Data di rendicontazione",
     "reportingDateHint": "Modifica i periodi di rendicontazione in tutta l'app; la data bancaria resta invariata.",
-    "reportingDatePlaceholder": "Scegli la data di rendicontazione (facoltativo)",
+    "reportingDatePlaceholder": "Scegli data (facoltativa)",
     "clearReportingDate": "Reimposta la data di rendicontazione",
     "linkAsTransfer": "Collega come trasferimento",
     "linkTransferTitle": "Collega come trasferimento",

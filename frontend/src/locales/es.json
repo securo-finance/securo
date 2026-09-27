@@ -1071,7 +1071,7 @@
     "bankDate": "Fecha bancaria",
     "reportingDate": "Fecha del informe",
     "reportingDateHint": "Cambia los períodos de informe en toda la aplicación; la fecha bancaria no cambia.",
-    "reportingDatePlaceholder": "Elegir fecha del informe (opcional)",
+    "reportingDatePlaceholder": "Elegir fecha (opcional)",
     "clearReportingDate": "Restablecer fecha del informe",
     "linkAsTransfer": "Marcar como transferencia",
     "linkTransferTitle": "Marcar como transferencia",

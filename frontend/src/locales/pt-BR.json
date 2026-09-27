@@ -1071,7 +1071,7 @@
     "bankDate": "Data do banco",
     "reportingDate": "Data de competência",
     "reportingDateHint": "Altera os períodos de competência em todo o aplicativo; a data do banco permanece inalterada.",
-    "reportingDatePlaceholder": "Escolher data de competência (opcional)",
+    "reportingDatePlaceholder": "Escolher data (opcional)",
     "clearReportingDate": "Redefinir data de competência",
     "linkAsTransfer": "Vincular como transferência",
     "linkTransferTitle": "Vincular como transferência",

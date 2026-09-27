@@ -1071,7 +1071,7 @@
     "bankDate": "Data bancária",
     "reportingDate": "Data de reporte",
     "reportingDateHint": "Altera os períodos de reporte em toda a aplicação; a data bancária permanece inalterada.",
-    "reportingDatePlaceholder": "Escolher data de reporte (opcional)",
+    "reportingDatePlaceholder": "Escolher data (opcional)",
     "clearReportingDate": "Repor data de reporte",
     "linkAsTransfer": "Vincular como transferência",
     "linkTransferTitle": "Vincular como transferência",

@@ -1072,7 +1072,7 @@
     "bankDate": "Bankdatum",
     "reportingDate": "Rapportagedatum",
     "reportingDateHint": "Wijzigt rapportageperioden in de hele app; de bankdatum blijft ongewijzigd.",
-    "reportingDatePlaceholder": "Kies rapportagedatum (optioneel)",
+    "reportingDatePlaceholder": "Datum kiezen (optioneel)",
     "clearReportingDate": "Rapportagedatum herstellen",
     "clearOverride": "Overschrijving wissen",
     "linkAsTransfer": "Link als overdracht",

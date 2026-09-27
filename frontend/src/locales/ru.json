@@ -1086,7 +1086,7 @@
     "bankDate": "Банковская дата",
     "reportingDate": "Дата отчётности",
     "reportingDateHint": "Изменяет отчётные периоды во всём приложении; банковская дата остаётся прежней.",
-    "reportingDatePlaceholder": "Выберите дату отчётности (необязательно)",
+    "reportingDatePlaceholder": "Выберите дату (необязательно)",
     "clearReportingDate": "Сбросить дату отчётности",
     "clearOverride": "Сбросить ручную дату",
     "linkAsTransfer": "Связать как перевод",

@@ -1120,7 +1120,7 @@
     "bankDate": "Bankový dátum",
     "reportingDate": "Dátum vykazovania",
     "reportingDateHint": "Mení obdobia vykazovania v celej aplikácii; bankový dátum zostáva nezmenený.",
-    "reportingDatePlaceholder": "Vybrať dátum vykazovania (voliteľné)",
+    "reportingDatePlaceholder": "Vybrať dátum (voliteľné)",
     "clearReportingDate": "Obnoviť dátum vykazovania",
     "clearOverride": "Zrušiť prepísanie",
     "linkAsTransfer": "Prepojiť ako prevod",

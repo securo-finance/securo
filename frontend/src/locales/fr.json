@@ -1074,7 +1074,7 @@
     "bankDate": "Date bancaire",
     "reportingDate": "Date de déclaration",
     "reportingDateHint": "Modifie les périodes de déclaration dans toute l’application ; la date bancaire reste inchangée.",
-    "reportingDatePlaceholder": "Choisir une date de déclaration (facultatif)",
+    "reportingDatePlaceholder": "Date (facultative)",
     "clearReportingDate": "Réinitialiser la date de déclaration",
     "clearOverride": "Effacer le remplacement",
     "linkAsTransfer": "Lier comme virement",

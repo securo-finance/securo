@@ -1072,7 +1072,7 @@
     "bankDate": "銀行日付",
     "reportingDate": "レポート日付",
     "reportingDateHint": "アプリ全体のレポート期間を変更します。銀行日付は変更されません。",
-    "reportingDatePlaceholder": "レポート日付を選択（任意）",
+    "reportingDatePlaceholder": "日付を選択（任意）",
     "clearReportingDate": "レポート日付をリセット",
     "clearOverride": "上書きをクリア",
     "linkAsTransfer": "振替として紐付け",
