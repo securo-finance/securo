@@ -347,6 +347,8 @@ async def test_member_linked_from_another_workspace_can_split(session: AsyncSess
         session, group.id, owner_ws.id,
         GroupMemberCreate(name="Friend", email=f"friend-{suffix}@example.com"),
     )
+    assert owner_member is not None
+    assert friend_member is not None
     assert friend_member.linked_user_id == friend.id
 
     tx = await _make_workspace_tx(session, friend, friend_ws)
