@@ -20,6 +20,18 @@ def test_date_matches_cadence():
     assert _date_matches_cadence(date(2026, 2, 2), anchor, CadenceEnum.MONTHLY) is False
 
 
+def test_date_matches_calendar_cadence_at_month_end():
+    assert _date_matches_cadence(
+        date(2026, 4, 30), date(2026, 1, 31), CadenceEnum.QUARTERLY
+    )
+    assert _date_matches_cadence(
+        date(2027, 2, 28), date(2024, 2, 29), CadenceEnum.ANNUAL
+    )
+    assert not _date_matches_cadence(
+        date(2026, 4, 29), date(2026, 1, 31), CadenceEnum.QUARTERLY
+    )
+
+
 @pytest.mark.asyncio
 async def test_cashflow_forecast_simulation(session):
     user_id = uuid.uuid4()

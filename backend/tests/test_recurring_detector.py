@@ -54,6 +54,17 @@ def test_compute_next_occurrence():
     assert compute_next_occurrence(base, CadenceEnum.ANNUAL, 365.0) == date(2027, 1, 15)
 
 
+def test_compute_next_occurrence_preserves_month_end_anchor():
+    february = compute_next_occurrence(
+        date(2026, 1, 31), CadenceEnum.MONTHLY, 30.0, anchor_day=31
+    )
+    march = compute_next_occurrence(
+        february, CadenceEnum.MONTHLY, 30.0, anchor_day=31
+    )
+    assert february == date(2026, 2, 28)
+    assert march == date(2026, 3, 31)
+
+
 @pytest.mark.asyncio
 async def test_detect_recurring_patterns_empty(session):
     ws_id = uuid.uuid4()
@@ -61,6 +72,49 @@ async def test_detect_recurring_patterns_empty(session):
     assert res.total_detected == 0
     assert res.active_subscriptions_count == 0
     assert res.items == []
+
+
+@pytest.mark.asyncio
+async def test_detect_recurring_patterns_skips_transactions_without_merchant_identity(session):
+    user_id = uuid.uuid4()
+    ws = Workspace(id=uuid.uuid4(), name="No Merchant Workspace", default_currency="USD")
+    account = Account(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        workspace_id=ws.id,
+        name="Checking",
+        type="checking",
+        balance=Decimal("100.00"),
+        currency="USD",
+    )
+    session.add_all([ws, account])
+    await session.flush()
+
+    for tx_date in (date(2026, 5, 1), date(2026, 6, 1), date(2026, 7, 1)):
+        session.add(
+            Transaction(
+                id=uuid.uuid4(),
+                user_id=user_id,
+                workspace_id=ws.id,
+                account_id=account.id,
+                description="",
+                payee=None,
+                amount=Decimal("10.00"),
+                amount_primary=Decimal("10.00"),
+                currency="USD",
+                date=tx_date,
+                effective_date=tx_date,
+                type="debit",
+                source="manual",
+                status="posted",
+            )
+        )
+    await session.commit()
+
+    result = await detect_recurring_patterns(
+        session, ws.id, min_occurrences=2, reference_date=date(2026, 8, 1)
+    )
+    assert result.items == []
 
 
 @pytest.mark.asyncio

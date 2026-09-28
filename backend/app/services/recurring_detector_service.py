@@ -1,3 +1,4 @@
+import calendar
 import math
 import re
 import uuid
@@ -81,36 +82,40 @@ def is_likely_subscription(merchant_name: str, direction: FlowDirectionEnum) -> 
     return any(keyword in lower_name for keyword in SUBSCRIPTION_KEYWORDS)
 
 
-def compute_next_occurrence(last_date: date, cadence: CadenceEnum, avg_interval: float) -> date:
-    """Predict the next expected billing date given historical cadence."""
+def _add_calendar_months(value: date, months: int, anchor_day: int) -> date:
+    month_index = value.year * 12 + value.month - 1 + months
+    year, zero_based_month = divmod(month_index, 12)
+    month = zero_based_month + 1
+    day = min(anchor_day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def compute_next_occurrence(
+    last_date: date,
+    cadence: CadenceEnum,
+    avg_interval: float,
+    anchor_day: Optional[int] = None,
+) -> date:
+    """Predict the next expected billing date while preserving its calendar-day anchor."""
     if cadence == CadenceEnum.WEEKLY:
         return last_date + timedelta(days=7)
     elif cadence == CadenceEnum.BI_WEEKLY:
         return last_date + timedelta(days=14)
-    elif cadence == CadenceEnum.MONTHLY:
-        # Approximate monthly calendar jump
-        month = last_date.month + 1
-        year = last_date.year
-        if month > 12:
-            month = 1
-            year += 1
-        # Handle end of month boundary
-        day = min(last_date.day, 28)
-        try:
-            return date(year, month, last_date.day)
-        except ValueError:
-            return date(year, month, day)
-    elif cadence == CadenceEnum.QUARTERLY:
-        return last_date + timedelta(days=91)
-    elif cadence == CadenceEnum.SEMI_ANNUAL:
-        return last_date + timedelta(days=182)
-    elif cadence == CadenceEnum.ANNUAL:
-        try:
-            return date(last_date.year + 1, last_date.month, last_date.day)
-        except ValueError:
-            return date(last_date.year + 1, last_date.month, 28)
-    else:
-        return last_date + timedelta(days=max(1, int(round(avg_interval))))
+
+    calendar_months = {
+        CadenceEnum.MONTHLY: 1,
+        CadenceEnum.QUARTERLY: 3,
+        CadenceEnum.SEMI_ANNUAL: 6,
+        CadenceEnum.ANNUAL: 12,
+    }
+    if cadence in calendar_months:
+        return _add_calendar_months(
+            last_date,
+            calendar_months[cadence],
+            anchor_day or last_date.day,
+        )
+
+    return last_date + timedelta(days=max(1, int(round(avg_interval))))
 
 
 async def detect_recurring_patterns(
@@ -142,7 +147,10 @@ async def detect_recurring_patterns(
     # Cluster transactions by (normalized_name, direction)
     clusters: dict[tuple[str, FlowDirectionEnum], list[Transaction]] = {}
     for tx in transactions:
-        norm_name = normalize_merchant_name(tx.payee or tx.description)
+        raw_name = tx.payee or tx.description
+        if not raw_name:
+            continue
+        norm_name = normalize_merchant_name(raw_name)
         direction = FlowDirectionEnum.INFLOW if tx.type == "credit" else FlowDirectionEnum.OUTFLOW
         key = (norm_name.lower(), direction)
         clusters.setdefault(key, []).append(tx)
@@ -198,11 +206,12 @@ async def detect_recurring_patterns(
 
         first_date = dates[0]
         last_date = dates[-1]
-        next_date = compute_next_occurrence(last_date, cadence, avg_interval)
+        anchor_day = first_date.day
+        next_date = compute_next_occurrence(last_date, cadence, avg_interval, anchor_day)
 
         # Advance next_date if it has already passed
         while next_date < today:
-            next_date = compute_next_occurrence(next_date, cadence, avg_interval)
+            next_date = compute_next_occurrence(next_date, cadence, avg_interval, anchor_day)
 
         # Status evaluation
         days_since_last = (today - last_date).days

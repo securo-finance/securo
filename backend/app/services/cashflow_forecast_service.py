@@ -1,3 +1,4 @@
+import calendar
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
@@ -31,21 +32,27 @@ def _date_matches_cadence(target_date: date, anchor_date: date, cadence: Cadence
         return days_diff % 7 == 0
     elif cadence == CadenceEnum.BI_WEEKLY:
         return days_diff % 14 == 0
-    elif cadence == CadenceEnum.MONTHLY:
-        # Match day-of-month (handling shorter months)
-        if target_date.day == anchor_date.day:
-            return True
-        # If anchor is 29, 30, 31 and month ends on 28/30
-        next_day = target_date + timedelta(days=1)
-        if next_day.day == 1 and anchor_date.day > target_date.day:
-            return True
-        return False
-    elif cadence == CadenceEnum.QUARTERLY:
-        return (target_date.month - anchor_date.month) % 3 == 0 and target_date.day == anchor_date.day
-    elif cadence == CadenceEnum.SEMI_ANNUAL:
-        return (target_date.month - anchor_date.month) % 6 == 0 and target_date.day == anchor_date.day
-    elif cadence == CadenceEnum.ANNUAL:
-        return target_date.month == anchor_date.month and target_date.day == anchor_date.day
+
+    month_difference = (
+        (target_date.year - anchor_date.year) * 12
+        + target_date.month
+        - anchor_date.month
+    )
+    cadence_months = {
+        CadenceEnum.MONTHLY: 1,
+        CadenceEnum.QUARTERLY: 3,
+        CadenceEnum.SEMI_ANNUAL: 6,
+        CadenceEnum.ANNUAL: 12,
+    }
+    if cadence in cadence_months:
+        expected_day = min(
+            anchor_date.day,
+            calendar.monthrange(target_date.year, target_date.month)[1],
+        )
+        return (
+            month_difference % cadence_months[cadence] == 0
+            and target_date.day == expected_day
+        )
     return False
 
 
@@ -104,7 +111,9 @@ async def generate_cashflow_forecast(
 
     # Deduplicate: if an auto-detected item shares payee with manual recurring, prefer manual
     manual_payee_set = {
-        (r.description or "").lower().strip() for r in manual_recurrings if r.description
+        recurring_detector_service.normalize_merchant_name(r.description).lower()
+        for r in manual_recurrings
+        if r.description
     }
 
     # Combined scheduled items list: [(name, direction, amount, next_date, cadence)]
@@ -133,7 +142,7 @@ async def generate_cashflow_forecast(
     for item in detected_res.items:
         if item.status != SubscriptionStatusEnum.ACTIVE:
             continue
-        if item.merchant_name.lower().strip() in manual_payee_set:
+        if item.normalized_key.lower() in manual_payee_set:
             continue
         schedule_items.append(
             (
@@ -170,7 +179,7 @@ async def generate_cashflow_forecast(
         discretionary_txs = [
             t for t in hist_txs
             if recurring_detector_service.normalize_merchant_name(t.payee or t.description).lower() not in detected_names_lower
-            and (t.payee or t.description or "").lower().strip() not in manual_payee_set
+            and recurring_detector_service.normalize_merchant_name(t.payee or t.description).lower() not in manual_payee_set
         ]
 
         if discretionary_txs:
