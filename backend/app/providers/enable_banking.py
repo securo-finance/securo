@@ -118,12 +118,12 @@ def _balance_currency(balance: Optional[dict], fallback: str) -> str:
     return amount.get("currency") or fallback
 
 
-def _parse_iso_date(value: Optional[str]) -> Optional[date]:
-    if not value:
+def _parse_iso_date(value: Any) -> Optional[date]:
+    if not isinstance(value, str):
         return None
     try:
         return date.fromisoformat(value[:10])
-    except ValueError:
+    except (ValueError, TypeError):
         return None
 
 
@@ -152,6 +152,18 @@ def _txn_fingerprint(account_uid: str, raw: dict) -> str:
     amount = raw.get("transaction_amount") or {}
     creditor_acc = raw.get("creditor_account")
     debtor_acc = raw.get("debtor_account")
+    creditor_iban = (
+        creditor_acc.get("iban")
+        if isinstance(creditor_acc, dict) and isinstance(creditor_acc.get("iban"), str)
+        else ""
+    )
+    debtor_iban = (
+        debtor_acc.get("iban")
+        if isinstance(debtor_acc, dict) and isinstance(debtor_acc.get("iban"), str)
+        else ""
+    )
+    creditor_identity = creditor_iban.strip() or _counterparty_name(raw, "creditor")
+    debtor_identity = debtor_iban.strip() or _counterparty_name(raw, "debtor")
     parts = [
         str(account_uid),
         str(raw.get("booking_date") or ""),
@@ -161,8 +173,8 @@ def _txn_fingerprint(account_uid: str, raw: dict) -> str:
         str(amount.get("currency") or "") if isinstance(amount, dict) else "",
         str(raw.get("credit_debit_indicator") or ""),
         _join_remittance(raw.get("remittance_information"))[:80],
-        (creditor_acc.get("iban") or "") if isinstance(creditor_acc, dict) else "",
-        (debtor_acc.get("iban") or "") if isinstance(debtor_acc, dict) else "",
+        creditor_identity,
+        debtor_identity,
     ]
     digest = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
     return digest[:32]

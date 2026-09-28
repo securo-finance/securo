@@ -130,6 +130,19 @@ def test_txn_fingerprint_differs_on_amount_change():
     assert _txn_fingerprint("acc", base) != _txn_fingerprint("acc", other)
 
 
+def test_txn_fingerprint_uses_counterparty_name_when_iban_is_missing():
+    base = {
+        "entry_reference": "0",
+        "transaction_amount": {"amount": "12.34", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-05-20",
+        "remittance_information": [],
+        "creditor": {"name": "Coffee Shop"},
+    }
+    other = {**base, "creditor": {"name": "Bakery"}}
+    assert _txn_fingerprint("acc", base) != _txn_fingerprint("acc", other)
+
+
 # ----- HTTP-driven parsing via httpx.MockTransport -----
 
 
@@ -588,6 +601,17 @@ def test_build_transaction_falls_back_to_transaction_date():
     assert tx is not None
     assert tx.date == date(2026, 8, 29)
     assert tx.description == "Coffee Shop"
+
+
+def test_build_transaction_ignores_non_string_transaction_date():
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "20.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": 20260829,
+        "creditor": {"name": "Coffee Shop"},
+    }
+    assert provider._build_transaction("acc-1", raw, "pending", "auto") is None
 
 
 def test_build_transaction_treats_entry_reference_zero_as_missing():
