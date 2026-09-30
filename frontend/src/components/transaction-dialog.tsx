@@ -521,8 +521,8 @@ function TransactionForm({
   const formRef = useRef<HTMLFormElement>(null)
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
 
-  // Bank-synced descriptions are read-only and can be long; auto-grow the
-  // textarea so the full text is always visible (issue #256).
+  // Bank-synced descriptions can be long; auto-grow the textarea so the full
+  // text is always visible (issue #256).
   useEffect(() => {
     const el = descriptionRef.current
     if (!el) return
@@ -804,6 +804,7 @@ function TransactionForm({
           : {}
         const txData = isSynced
           ? {
+              ...(description !== transaction?.description ? { description } : {}),
               category_id: categoryId || null,
               payee_id: payeeId || null,
               notes: notes.trim() || null,
@@ -959,9 +960,17 @@ function TransactionForm({
         {isSynced ? (
           <textarea
             ref={descriptionRef}
-            className="w-full border border-input rounded-md px-3 py-2 text-sm bg-muted/40 text-muted-foreground resize-none overflow-hidden cursor-default outline-none focus:outline-none focus-visible:outline-none"
+            className="w-full border border-input rounded-md px-3 py-2 text-sm bg-card dark:bg-input/30 shadow-xs resize-none overflow-hidden outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-ring/30 focus-visible:ring-[2px]"
             value={description}
-            readOnly
+            onChange={(e) => setDescription(e.target.value)}
+            // Descriptions are single-line; Enter saves like the Input does.
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                formRef.current?.requestSubmit()
+              }
+            }}
+            required
             rows={1}
           />
         ) : (
@@ -973,10 +982,19 @@ function TransactionForm({
           />
         )}
         {transaction?.original_description &&
-          transaction.original_description !== transaction.description && (
-            <p className="text-xs text-muted-foreground">
-              {t('transactions.originalDescription')}: {transaction.original_description}
-            </p>
+          transaction.original_description !== description && (
+            <div className="flex items-start justify-between gap-3 text-xs text-muted-foreground">
+              <p>
+                {t('transactions.originalDescription')}: {transaction.original_description}
+              </p>
+              <button
+                type="button"
+                onClick={() => setDescription(transaction.original_description ?? '')}
+                className="shrink-0 underline underline-offset-2 hover:text-foreground transition-colors cursor-pointer"
+              >
+                {t('transactions.restoreOriginalDescription')}
+              </button>
+            </div>
           )}
         {/* Rows that pre-date the original_description column have no
             provenance to show, so the raw payee stays the only hint at what
