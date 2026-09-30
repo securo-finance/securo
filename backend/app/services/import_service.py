@@ -22,7 +22,7 @@ from app.models.transaction import Transaction
 from app.schemas.transaction import TransactionImport, FailedRow
 from app.services import reconciliation_service, recurring_match_service
 from app.services.credit_card_service import apply_effective_date
-from app.services.category_service import get_hidden_category_ids
+from app.services.category_service import get_assignable_category_ids
 from app.services.rule_engine import apply_rule_actions, evaluate_conditions, merge_notes
 from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
 from app.services.fx_rate_service import stamp_primary_amount
@@ -746,12 +746,12 @@ async def enrich_with_category_suggestions(
         select(Category).where(Category.workspace_id == workspace_id)
     )
     categories = category_result.scalars().all()
-    hidden_categories = await get_hidden_category_ids(session, workspace_id)
+    assignable_categories = await get_assignable_category_ids(session, workspace_id)
     category_name_map = {str(c.id): c.name for c in categories}
     category_name_to_id = {
         c.name.strip().lower(): c.id
         for c in categories
-        if c.id not in hidden_categories
+        if c.id in assignable_categories
     }
 
     if not rules and not category_name_to_id:
@@ -778,7 +778,7 @@ async def enrich_with_category_suggestions(
                     actions,
                     proxy,
                     category_set,
-                    hidden_category_ids=hidden_categories,
+                    assignable_category_ids=assignable_categories,
                 )
 
         # If rules did not set a category, apply the CSV category if found
@@ -857,11 +857,11 @@ async def import_transactions(
     category_result = await session.execute(
         select(Category).where(Category.workspace_id == workspace_id)
     )
-    hidden_categories = await get_hidden_category_ids(session, workspace_id)
+    assignable_categories = await get_assignable_category_ids(session, workspace_id)
     category_map = {
         c.name.strip().lower(): c.id
         for c in category_result.scalars()
-        if c.id not in hidden_categories
+        if c.id in assignable_categories
     }
 
     imported = 0

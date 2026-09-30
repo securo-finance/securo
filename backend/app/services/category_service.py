@@ -1,19 +1,31 @@
 import uuid
+from dataclasses import dataclass, field
 from typing import Optional
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select, update as sa_update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.budget import Budget
 from app.models.category import Category
 from app.models.category_group import CategoryGroup
+from app.models.recurring_transaction import RecurringTransaction
 from app.models.rule import Rule
+from app.models.transaction import Transaction
 from app.schemas.category import CategoryCreate, CategoryUpdate
 from app.services.category_group_service import CATEGORY_TO_GROUP, create_default_groups
 
 
 class CategoryVisibilityError(ValueError):
     """Raised when visibility is changed for a user-created category."""
+
+
+class CategoryInUseError(ValueError):
+    """Raised when a category with references is deleted without a destination."""
+
+
+class CategoryTransferError(ValueError):
+    """Raised when the destination given for a deletion cannot take the references."""
 
 
 # Language-keyed translations for default categories
@@ -98,20 +110,24 @@ async def create_default_categories(
     return categories
 
 
-async def get_hidden_category_ids(
+async def get_assignable_category_ids(
     session: AsyncSession, workspace_id: uuid.UUID
 ) -> set[uuid.UUID]:
-    """Ids of categories the workspace hides, directly or through their group.
+    """Ids the rule engine may file a transaction under.
 
-    The rule engine needs these so it never files a transaction under a
-    category the user has taken out of circulation.
+    Categories the workspace hides, directly or through their group, are left
+    out: hiding one is how a user takes it out of circulation. Asking which ids
+    are usable rather than which are hidden also covers the id of a category
+    that no longer exists, which a rule can still name because it keeps that id
+    inside a JSON action with no foreign key behind it.
     """
     result = await session.execute(
         select(Category.id)
         .outerjoin(CategoryGroup, Category.group_id == CategoryGroup.id)
         .where(
             Category.workspace_id == workspace_id,
-            or_(Category.is_hidden.is_(True), CategoryGroup.is_hidden.is_(True)),
+            Category.is_hidden.is_(False),
+            or_(Category.group_id.is_(None), CategoryGroup.is_hidden.is_(False)),
         )
     )
     return set(result.scalars().all())
@@ -162,18 +178,27 @@ async def create_category(
 
 
 async def get_rules_assigning_category(
-    session: AsyncSession, workspace_id: uuid.UUID, category_id: uuid.UUID
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    category_id: uuid.UUID,
+    *,
+    include_inactive: bool = False,
 ) -> list[Rule]:
-    """Active rules whose `set_category` action targets this category.
+    """Rules whose `set_category` action targets this category.
 
     Hiding a category is how a user retires it, but a rule that assigns it
     keeps categorizing new transactions into it. The UI lists these so the
     user can retire the rules in the same step.
+
+    `include_inactive` is for deletion rather than hiding: a rule that is off
+    today still has to be repointed, otherwise turning it back on later fails
+    on a category that no longer exists.
     """
+    filters = [Rule.workspace_id == workspace_id]
+    if not include_inactive:
+        filters.append(Rule.is_active.is_(True))
     result = await session.execute(
-        select(Rule)
-        .where(Rule.workspace_id == workspace_id, Rule.is_active.is_(True))
-        .order_by(Rule.priority, Rule.id)
+        select(Rule).where(*filters).order_by(Rule.priority, Rule.id)
     )
     target = str(category_id)
     return [
@@ -229,19 +254,207 @@ async def update_category(
     return category
 
 
+@dataclass
+class CategoryUsage:
+    """Everything that still points at a category.
+
+    Deleting one used to be a yes/no question. Now that a default category can
+    go away too, the user has to be told what exactly is attached to it before
+    choosing where it all moves.
+    """
+
+    transactions: int = 0
+    budgets: int = 0
+    recurring_transactions: int = 0
+    rules: list[Rule] = field(default_factory=list)
+
+    @property
+    def is_empty(self) -> bool:
+        return not (
+            self.transactions
+            or self.budgets
+            or self.recurring_transactions
+            or self.rules
+        )
+
+
+async def get_category_usage(
+    session: AsyncSession, workspace_id: uuid.UUID, category_id: uuid.UUID
+) -> CategoryUsage:
+    """Count what references a category, so the delete dialog can name it."""
+    counts: dict[str, int] = {}
+    for key, model in (
+        ("transactions", Transaction),
+        ("budgets", Budget),
+        ("recurring_transactions", RecurringTransaction),
+    ):
+        result = await session.execute(
+            select(func.count())
+            .select_from(model)
+            .where(
+                model.workspace_id == workspace_id,
+                model.category_id == category_id,
+            )
+        )
+        counts[key] = int(result.scalar_one())
+
+    rules = await get_rules_assigning_category(
+        session, workspace_id, category_id, include_inactive=True
+    )
+    return CategoryUsage(**counts, rules=rules)
+
+
+async def _merge_budgets(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    category_id: uuid.UUID,
+    destination_id: uuid.UUID,
+) -> None:
+    """Move the budgets over, adding up the ones that would land on each other.
+
+    A budget is unique per user, category, month and kind, so moving one onto a
+    month the destination already budgets would break that constraint. The two
+    limits are added instead: they are the same person's ceiling for the same
+    month, and dropping either would quietly lower it.
+    """
+    moving = (
+        (
+            await session.execute(
+                select(Budget).where(
+                    Budget.workspace_id == workspace_id,
+                    Budget.category_id == category_id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not moving:
+        return
+
+    existing = (
+        (
+            await session.execute(
+                select(Budget).where(
+                    Budget.workspace_id == workspace_id,
+                    Budget.category_id == destination_id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    by_slot = {(b.user_id, b.month, b.is_recurring): b for b in existing}
+
+    for budget in moving:
+        slot = (budget.user_id, budget.month, budget.is_recurring)
+        target = by_slot.get(slot)
+        if target is None:
+            budget.category_id = destination_id
+            by_slot[slot] = budget
+            continue
+
+        target.amount += budget.amount
+        # The converted amount is only a sum when both sides carry one.
+        if target.amount_primary is not None and budget.amount_primary is not None:
+            target.amount_primary += budget.amount_primary
+        else:
+            target.amount_primary = None
+        await session.delete(budget)
+
+
+async def _repoint_rules(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    category_id: uuid.UUID,
+    destination_id: uuid.UUID,
+) -> None:
+    """Rewrite the `set_category` actions that name the category being deleted.
+
+    A rule keeps the category id inside a JSON action with no foreign key
+    behind it, so nothing at the database level notices it going stale. A rule
+    left pointing at a deleted id fails the next time it files a transaction,
+    and it takes the whole import or sync batch down with it.
+    """
+    rules = await get_rules_assigning_category(
+        session, workspace_id, category_id, include_inactive=True
+    )
+    target = str(category_id)
+    replacement = str(destination_id)
+    for rule in rules:
+        # Reassigned rather than edited in place: SQLAlchemy only notices a
+        # JSON column changing when the attribute itself is set.
+        rule.actions = [
+            {**action, "value": replacement}
+            if action.get("op") == "set_category" and str(action.get("value")) == target
+            else action
+            for action in (rule.actions or [])
+        ]
+
+
+async def _transfer_category_references(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    category_id: uuid.UUID,
+    destination_id: uuid.UUID,
+) -> None:
+    """Point everything that used one category at another, without committing."""
+    for model in (Transaction, RecurringTransaction):
+        await session.execute(
+            sa_update(model)
+            .where(
+                model.workspace_id == workspace_id,
+                model.category_id == category_id,
+            )
+            .values(category_id=destination_id)
+        )
+    await _merge_budgets(session, workspace_id, category_id, destination_id)
+    await _repoint_rules(session, workspace_id, category_id, destination_id)
+
+
 async def delete_category(
-    session: AsyncSession, category_id: uuid.UUID, workspace_id: uuid.UUID
+    session: AsyncSession,
+    category_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    *,
+    transfer_to_id: Optional[uuid.UUID] = None,
 ) -> bool:
+    """Delete a category, optionally moving what it holds to another one.
+
+    Without a destination the deletion only goes through when nothing points at
+    the category. With one, the transactions, budgets, recurring entries and
+    rules are moved first, in the same transaction as the deletion, so the
+    history survives and nothing is left pointing at an id that is gone.
+    """
     category = await get_category(session, category_id, workspace_id)
     if not category:
         return False
+
+    if transfer_to_id is not None:
+        if transfer_to_id == category_id:
+            raise CategoryTransferError("A category cannot be transferred into itself.")
+        destination = await get_category(session, transfer_to_id, workspace_id)
+        if not destination:
+            raise CategoryTransferError("Destination category not found.")
+        await _transfer_category_references(
+            session, workspace_id, category_id, transfer_to_id
+        )
+    else:
+        usage = await get_category_usage(session, workspace_id, category_id)
+        if not usage.is_empty:
+            raise CategoryInUseError(
+                "Category is still in use and cannot be deleted. "
+                "Choose another category to move its entries to."
+            )
 
     try:
         await session.delete(category)
         await session.commit()
     except IntegrityError as exc:
+        # Reached when something started using the category between the check
+        # above and the delete.
         await session.rollback()
-        raise ValueError(
+        raise CategoryInUseError(
             "Category is still in use and cannot be deleted. Remove its references first."
         ) from exc
     return True

@@ -9,6 +9,7 @@ import type {
   AppSetting,
   Category,
   CategoryRuleUsage,
+  CategoryUsage,
   CategoryGroup,
   BankConnection,
   ConnectionSettings,
@@ -334,8 +335,14 @@ export const categories = {
     const { data } = await api.get(`/categories/${id}/rule-usage`)
     return data
   },
-  delete: async (id: string): Promise<void> => {
-    await api.delete(`/categories/${id}`)
+  usage: async (id: string): Promise<CategoryUsage> => {
+    const { data } = await api.get(`/categories/${id}/usage`)
+    return data
+  },
+  delete: async (id: string, transferToId?: string): Promise<void> => {
+    await api.delete(`/categories/${id}`, {
+      params: transferToId ? { transfer_to_category_id: transferToId } : undefined,
+    })
   },
 }
 
