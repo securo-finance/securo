@@ -13,11 +13,9 @@ from app.core.config import get_settings
 from app.models.fx_rate import FxRate
 from app.models.user import User
 from app.providers.openexchangerates import OpenExchangeRatesProvider
+from app.services.provider_settings import resolve_settings
 
 logger = logging.getLogger(__name__)
-
-_provider = OpenExchangeRatesProvider()
-
 
 async def sync_rates(
     session: AsyncSession, target_date: Optional[date] = None
@@ -28,6 +26,7 @@ async def sync_rates(
     Idempotent — existing rates for the same date are updated.
     Returns the number of rates synced.
     """
+    provider = OpenExchangeRatesProvider(await resolve_settings(session))
     requested_target = target_date or app_today()
     # Providers cannot return a historical rate for a date that has not
     # happened yet. Treat a future request as a request for today's latest
@@ -36,9 +35,9 @@ async def sync_rates(
     supported = set(get_settings().supported_currencies.split(","))
 
     if target == app_today():
-        rates = await _provider.fetch_latest()
+        rates = await provider.fetch_latest()
     else:
-        rates = await _provider.fetch_historical(target)
+        rates = await provider.fetch_historical(target)
 
     count = 0
     for currency_code, rate in rates.items():
@@ -49,11 +48,11 @@ async def sync_rates(
             quote_currency=currency_code,
             date=target,
             rate=rate,
-            source=_provider.name,
+            source=provider.name,
         )
         stmt = stmt.on_conflict_do_update(
             constraint="uq_fx_rate_base_quote_date",
-            set_={"rate": rate, "source": _provider.name},
+            set_={"rate": rate, "source": provider.name},
         )
         await session.execute(stmt)
         count += 1
