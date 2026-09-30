@@ -45,6 +45,9 @@ setattr(_pgv, "Vector", _VectorJSON)
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
+from sqlalchemy import text  # noqa: E402
+from sqlalchemy.dialects.postgresql import UUID  # noqa: E402
+from sqlalchemy.ext.compiler import compiles  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker  # noqa: E402
 
 from app.core.database import Base, get_async_session  # noqa: E402
@@ -78,12 +81,9 @@ from app.agents.models import (  # noqa: E402,F401
     LlmUsage,
 )
 
-# Use SQLite for tests — fast, no external dependency.
-# Keep the DB file off the bind-mounted project dir (macOS bind mounts
-# have known SQLite locking/journal quirks under aiosqlite) — /tmp is a
-# tmpfs inside the container. StaticPool + a single shared connection
-# is required so async fixtures and tests running on the shared
-# session-scoped event loop see the same in-memory schema state.
+# In-memory SQLite keeps tests independent of external databases and other
+# workers. StaticPool shares the connection across fixtures and tests on the
+# session-scoped event loop so they see the same schema state.
 from sqlalchemy.pool import StaticPool  # noqa: E402
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -97,22 +97,11 @@ engine = create_async_engine(
 TestSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
-# The models declare ids with the PostgreSQL UUID type, and on SQLite the
-# DDL comes out as a literal `UUID`. SQLite does not know that type, so the
-# column gets NUMERIC affinity, and any stored text that parses as a number
-# is silently converted to one. A uuid4 hex made only of digits, or of digits
-# with a single "e" ("6778776194704156e000000000000016" is valid scientific
-# notation), comes back as a float and uuid.UUID() raises. With tens of
-# thousands of ids per run that hit roughly one run in ten, on whatever test
-# happened to draw the number. Declaring the column as CHAR(32) gives it TEXT
-# affinity, which is what the hex string needs. Test-only: Postgres keeps its
-# native type.
-from sqlalchemy.dialects.postgresql import UUID as _PgUUID  # noqa: E402
-from sqlalchemy.ext.compiler import compiles  # noqa: E402
-
-
-@compiles(_PgUUID, "sqlite")
-def _pg_uuid_as_text_on_sqlite(type_, compiler, **kw):
+# SQLite gives the PostgreSQL UUID type numeric affinity, corrupting UUID hex
+# that looks like a number. Keep its normal bind/result handling but store text;
+# the dialect-specific hook leaves PostgreSQL's native UUID DDL unchanged.
+@compiles(UUID, "sqlite")
+def _compile_sqlite_uuid(type_, compiler, **kw):
     return "CHAR(32)"
 
 
@@ -124,12 +113,6 @@ async def setup_database():
     yield
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
-    # Clean up test db file
-    import os
-    try:
-        os.remove("/tmp/securo_test.db")
-    except FileNotFoundError:
-        pass
 
 
 @pytest_asyncio.fixture
@@ -142,16 +125,86 @@ async def session() -> AsyncGenerator[AsyncSession, None]:
 
 
 @pytest_asyncio.fixture
+async def postgres_sessions():
+    """Give each PostgreSQL test its own schema, including under xdist."""
+    url = os.environ.get("POSTGRES_TEST_URL")
+    if not url:
+        if os.environ.get("CI"):
+            pytest.fail("CI must supply POSTGRES_TEST_URL for PostgreSQL tests")
+        pytest.skip("isolated PostgreSQL not configured")
+    schema = f"postgres_test_{uuid.uuid4().hex}"
+    pg_engine = create_async_engine(url)
+    scoped = pg_engine.execution_options(schema_translate_map={None: schema})
+    try:
+        async with pg_engine.begin() as conn:
+            await conn.execute(text(f'CREATE SCHEMA "{schema}"'))
+        async with scoped.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        yield async_sessionmaker(scoped, expire_on_commit=False)
+    finally:
+        try:
+            async with pg_engine.begin() as conn:
+                await conn.execute(text(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'))
+        finally:
+            await pg_engine.dispose()
+
+
+@pytest_asyncio.fixture
 async def clean_db(session: AsyncSession):
     """Clean all data between tests."""
-    for table in reversed(Base.metadata.sorted_tables):
-        await session.execute(table.delete())
+    import aiosqlite
+
+    assert not (session.new or session.dirty or session.deleted), (
+        "clean_db requires a fresh session without pending ORM changes"
+    )
+    # Batch the same deletes into one driver round trip. An explicit BEGIN keeps
+    # cleanup atomic: executescript otherwise runs each delete in autocommit.
+    statements = ";\n".join(
+        str(table.delete().compile(dialect=engine.dialect))
+        for table in reversed(Base.metadata.sorted_tables)
+    )
+    connection = await session.connection()
+    raw = await connection.get_raw_connection()
+    driver = raw.driver_connection
+    assert isinstance(driver, aiosqlite.Connection)
+    # executescript implicitly commits an existing SQLite transaction. Fail
+    # before touching data if a caller violates this fixture's fresh-session contract.
+    assert not driver.in_transaction, "clean_db requires a fresh session without a transaction"
+    async with driver.executescript("BEGIN;\n" + statements):
+        pass
     await session.commit()
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _fast_password_hashes():
+    """Exercise real password hashing, verification and upgrades at test-only costs."""
+    import bcrypt
+    from pwdlib.hashers.argon2 import Argon2Hasher
+
+    gensalt = bcrypt.gensalt
+
+    def _test_gensalt(*args, **kwargs):
+        if args or kwargs:
+            return gensalt(*args, **kwargs)
+        return gensalt(rounds=4)
+
+    def _test_argon2_hasher(*args, **kwargs):
+        # Explicit constructor calls retain all production parameter defaults.
+        if args or kwargs:
+            return Argon2Hasher(*args, **kwargs)
+        return Argon2Hasher(time_cost=1, memory_cost=8, parallelism=1)
+
+    with patch("bcrypt.gensalt", _test_gensalt), \
+         patch("fastapi_users.password.Argon2Hasher", _test_argon2_hasher):
+        yield
+
+
 async def override_get_async_session() -> AsyncGenerator[AsyncSession, None]:
+    from app.core.app_clock import use_timezone
+
     async with TestSessionLocal() as session:
-        yield session
+        async with use_timezone(session):
+            yield session
 
 
 # Override the dependency
@@ -570,6 +623,16 @@ async def test_user_with_2fa(session: AsyncSession, clean_db) -> User:
     await session.commit()
     await session.refresh(user)
     return user
+
+
+@pytest.fixture(autouse=True)
+def _fresh_timezone_cache():
+    """One test's saved timezone must never leak into the next through the cache."""
+    from app.core.app_clock import invalidate_timezone_cache
+
+    invalidate_timezone_cache()
+    yield
+    invalidate_timezone_cache()
 
 
 @pytest.fixture(autouse=True)

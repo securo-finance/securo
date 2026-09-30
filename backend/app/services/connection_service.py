@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.app_clock import app_today
 from app.core.config import get_settings
 from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
@@ -280,7 +281,7 @@ async def _sync_holdings(
         return
 
     source = connection.provider
-    today = date.today()
+    today = app_today()
 
     # Find-or-create the wallet(s) that own this connection's holdings. A
     # holding carrying its owning account (SimpleFIN — issue #345) gets one
@@ -2108,7 +2109,7 @@ async def sync_connection(
             if not import_pending:
                 transactions_data = [t for t in transactions_data if t.status != "pending"]
 
-            incoming_external_ids = {txn.external_id for txn in transactions_data}
+            incoming_txn_external_ids = {txn.external_id for txn in transactions_data}
             for txn_data in transactions_data:
                 existing = await session.execute(
                     select(Transaction)
@@ -2172,7 +2173,7 @@ async def sync_connection(
                 # status, fingerprint match collapses it instead of letting
                 # both rows land.
                 synced_dup = await _find_synced_duplicate(
-                    session, account.id, txn_data, incoming_external_ids
+                    session, account.id, txn_data, incoming_txn_external_ids
                 )
                 if synced_dup:
                     if synced_dup.original_description is None:

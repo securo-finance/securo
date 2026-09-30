@@ -30,6 +30,7 @@ from app.services._query_filters import (
     counts_as_pnl,
     counts_as_user_pnl,
     is_not_ignored,
+    is_transfer,
     reporting_date_col,
 )
 from app.services.recurring_transaction_service import _advance_date
@@ -269,7 +270,11 @@ async def get_transactions(
         # filtered set, so the totals a hidden list shows stay the totals of
         # what it is showing.
         base_query = base_query.where(is_not_ignored())
-    if txn_type:
+    if txn_type == "transfer":
+        # Not a value of the `type` column: a transfer is still stored as a
+        # credit or a debit, so this narrows to the transfer family instead.
+        base_query = base_query.where(is_transfer())
+    elif txn_type:
         base_query = base_query.where(Transaction.type == txn_type)
     if status:
         base_query = base_query.where(Transaction.status == status)
@@ -715,6 +720,7 @@ async def create_transaction(
         account_id=data.account_id,
         category_id=data.category_id,  # use provided category if given
         payee_id=data.payee_id,
+        external_id=data.external_id,
         description=data.description,
         amount=data.amount,
         currency=currency,

@@ -22,6 +22,8 @@ from app.providers.base import (
     mask_last4,
 )
 from app.providers.enable_banking import (
+    DEFAULT_HISTORY_DAYS,
+    FALLBACK_HISTORY_DAYS,
     EnableBankingProvider,
     _account_identifier,
     _map_cash_account_type,
@@ -127,6 +129,19 @@ def test_txn_fingerprint_differs_on_amount_change():
     }
     other = dict(base)
     other["transaction_amount"] = {"amount": "12.35", "currency": "EUR"}
+    assert _txn_fingerprint("acc", base) != _txn_fingerprint("acc", other)
+
+
+def test_txn_fingerprint_uses_counterparty_name_when_iban_is_missing():
+    base = {
+        "entry_reference": "0",
+        "transaction_amount": {"amount": "12.34", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-05-20",
+        "remittance_information": [],
+        "creditor": {"name": "Coffee Shop"},
+    }
+    other = {**base, "creditor": {"name": "Bakery"}}
     assert _txn_fingerprint("acc", base) != _txn_fingerprint("acc", other)
 
 
@@ -418,6 +433,106 @@ async def test_get_transactions_stops_on_repeated_continuation_key(eb_keys, capl
     assert "pagination loop detected" in caplog.text
 
 
+_WRONG_PERIOD_BODY = {
+    "code": 422,
+    "message": "Wrong transactions period requested",
+    "detail": {"message": "Requested time period out of bound."},
+    "error": "WRONG_TRANSACTIONS_PERIOD",
+}
+_CREDENTIALS = {"session_id": "sess-x", "valid_until": "2099-01-01T00:00:00Z"}
+
+
+def _span_days(request: httpx.Request) -> int:
+    """Inclusive number of days covered by a transactions request."""
+    start = date.fromisoformat(request.url.params["date_from"])
+    end = date.fromisoformat(request.url.params["date_to"])
+    return (end - start).days + 1
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_default_window_is_90_days_inclusive(eb_keys):
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"transactions": []})
+
+    with _patch_client(provider, handler):
+        await provider.get_transactions(_CREDENTIALS, "acc-1")
+
+    assert len(requests) == 1
+    assert requests[0].url.params["date_to"] == date.today().isoformat()
+    assert _span_days(requests[0]) == DEFAULT_HISTORY_DAYS == 90
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_retries_shorter_window_on_wrong_period(eb_keys):
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if _span_days(request) > FALLBACK_HISTORY_DAYS:
+            return httpx.Response(422, json=_WRONG_PERIOD_BODY)
+        return httpx.Response(
+            200,
+            json={
+                "transactions": [
+                    {
+                        "entry_reference": "tx-1",
+                        "status": "BOOK",
+                        "transaction_amount": {"amount": "5.00", "currency": "EUR"},
+                        "credit_debit_indicator": "DBIT",
+                        "booking_date": date.today().isoformat(),
+                    }
+                ]
+            },
+        )
+
+    with _patch_client(provider, handler):
+        transactions = await provider.get_transactions(_CREDENTIALS, "acc-1")
+
+    assert [_span_days(r) for r in requests] == [
+        DEFAULT_HISTORY_DAYS,
+        FALLBACK_HISTORY_DAYS,
+    ]
+    assert [t.external_id for t in transactions] == ["tx-1"]
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_wrong_period_with_explicit_since_raises(eb_keys):
+    """An explicit ``since`` is the caller's choice; never silently shorten it."""
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(422, json=_WRONG_PERIOD_BODY)
+
+    with _patch_client(provider, handler), pytest.raises(httpx.HTTPStatusError):
+        await provider.get_transactions(
+            _CREDENTIALS, "acc-1", date.today() - timedelta(days=200)
+        )
+
+    assert len(requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_get_transactions_other_422_is_not_retried(eb_keys):
+    provider = EnableBankingProvider()
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(422, json={"code": 422, "error": "SOMETHING_ELSE"})
+
+    with _patch_client(provider, handler), pytest.raises(httpx.HTTPStatusError):
+        await provider.get_transactions(_CREDENTIALS, "acc-1")
+
+    assert len(requests) == 1
+
+
 @pytest.mark.asyncio
 async def test_refresh_credentials_expired_raises(eb_keys):
     provider = EnableBankingProvider()
@@ -487,3 +602,157 @@ def test_mask_last4_returns_none_when_unusable():
 
 def test_mask_last4_handles_exactly_four():
     assert mask_last4("1234") == "1234"
+
+
+# ----- counterparty fallback / transaction_date (issue #734, #753) -----
+
+
+def test_build_transaction_description_falls_back_to_creditor_for_debit():
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "12.34", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-20",
+        "remittance_information": [],
+        "creditor": {"name": "Example Merchant"},
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.description == "Example Merchant"
+
+
+def test_build_transaction_description_falls_back_to_debtor_for_credit():
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "100.00", "currency": "EUR"},
+        "credit_debit_indicator": "CRDT",
+        "booking_date": "2026-08-20",
+        "remittance_information": [],
+        "debtor": {"name": "Employer Inc"},
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.description == "Employer Inc"
+
+
+def test_build_transaction_description_prefers_remittance_over_counterparty():
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "15.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-20",
+        "remittance_information": ["Order #12345"],
+        "creditor": {"name": "Example Merchant"},
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.description == "Order #12345"
+
+
+def test_build_transaction_description_prefers_additional_information_over_counterparty():
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "15.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-20",
+        "remittance_information": [],
+        "additional_information": "Invoice 987",
+        "creditor": {"name": "Example Merchant"},
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.description == "Invoice 987"
+
+
+def test_build_transaction_description_whitespace_additional_information_falls_back():
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "15.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-20",
+        "remittance_information": [],
+        "additional_information": "   ",
+        "creditor": {"name": "Example Merchant"},
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.description == "Example Merchant"
+
+
+def test_build_transaction_description_falls_back_to_generic_transaction():
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "15.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-20",
+    }
+    tx = provider._build_transaction("acc-1", raw, "posted", "auto")
+    assert tx is not None
+    assert tx.description == "Transaction"
+
+
+def test_build_transaction_falls_back_to_transaction_date():
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "20.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": "2026-08-29",
+        "creditor": {"name": "Coffee Shop"},
+    }
+    tx = provider._build_transaction("acc-1", raw, "pending", "auto")
+    assert tx is not None
+    assert tx.date == date(2026, 8, 29)
+    assert tx.description == "Coffee Shop"
+
+
+def test_build_transaction_ignores_non_string_transaction_date():
+    provider = EnableBankingProvider()
+    raw = {
+        "transaction_amount": {"amount": "20.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": 20260829,
+        "creditor": {"name": "Coffee Shop"},
+    }
+    assert provider._build_transaction("acc-1", raw, "pending", "auto") is None
+
+
+def test_build_transaction_treats_entry_reference_zero_as_missing():
+    provider = EnableBankingProvider()
+    raw1 = {
+        "entry_reference": "0",
+        "transaction_amount": {"amount": "20.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": "2026-08-29",
+        "creditor": {"name": "Coffee Shop"},
+    }
+    raw2 = {
+        "entry_reference": "0",
+        "transaction_amount": {"amount": "40.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": "2026-08-29",
+        "creditor": {"name": "Bakery"},
+    }
+    tx1 = provider._build_transaction("acc-1", raw1, "pending", "auto")
+    tx2 = provider._build_transaction("acc-1", raw2, "pending", "auto")
+    assert tx1 is not None and tx2 is not None
+    assert tx1.external_id != "0"
+    assert tx2.external_id != "0"
+    assert tx1.external_id != tx2.external_id
+
+
+def test_txn_fingerprint_includes_transaction_date():
+    raw1 = {
+        "transaction_amount": {"amount": "20.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": "2026-08-29",
+    }
+    raw2 = {
+        "transaction_amount": {"amount": "20.00", "currency": "EUR"},
+        "credit_debit_indicator": "DBIT",
+        "transaction_date": "2026-08-30",
+    }
+    fp1 = _txn_fingerprint("acc-1", raw1)
+    fp2 = _txn_fingerprint("acc-1", raw2)
+    assert fp1 != fp2
+
+

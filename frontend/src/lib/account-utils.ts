@@ -1,5 +1,25 @@
+import type { Account } from '@/types'
+
 export function getAccountName(account: { name: string; display_name?: string | null }): string {
   return account.display_name ?? account.name
+}
+
+/**
+ * Total of the accounts' primary-currency balances. Cards on one shared credit
+ * line each report the whole line's balance, so each `shared_balance_group`
+ * counts once, the same way the backend totals it.
+ */
+export function sumAccountBalances(
+  accounts: readonly Pick<Account, 'balance_primary' | 'current_balance' | 'shared_balance_group'>[],
+): number {
+  const seenGroups = new Set<string>()
+  return accounts.reduce((sum, a) => {
+    if (a.shared_balance_group) {
+      if (seenGroups.has(a.shared_balance_group)) return sum
+      seenGroups.add(a.shared_balance_group)
+    }
+    return sum + Number(a.balance_primary ?? a.current_balance)
+  }, 0)
 }
 
 /**

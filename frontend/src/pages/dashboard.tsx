@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { getAccountLabel, getAccountName } from '@/lib/account-utils'
+import { getAccountLabel, getAccountName, sumAccountBalances } from '@/lib/account-utils'
 import { currentMonth, shiftMonth, monthLastDay, monthLabel, monthRange } from '@/lib/month-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
@@ -408,9 +408,8 @@ export default function DashboardPage() {
   // While accounts are loading or failed to load, treat their balance
   // components as unavailable rather than silently rendering zero.
   const accountsUnavailable = accountsLoading || accountsError
-  const creditCardBalance = (accountsList ?? [])
-    .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type === 'credit_card')
-    .reduce((sum, a) => sum + Number(a.balance_primary ?? a.current_balance), 0)
+  const creditCardBalance = sumAccountBalances((accountsList ?? [])
+    .filter((a) => (activeAccountIds ? activeAccountIds.includes(a.id) : true) && a.type === 'credit_card'))
   // Net worth's "Available balance" breakdown row: every non-card account
   // (unlike the headline `availableBalance`, which is checking/savings only),
   // so it reconciles with `totalBalance` — which sums all account types.
@@ -900,7 +899,7 @@ export default function DashboardPage() {
         )
       )}
 
-      {/* Charts: Category Spending Bars + Balance Flow */}
+      {/* Charts: Category Spending Bars + Balance Evolution */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5" style={{ gridAutoRows: 'minmax(380px, auto)' }}>
         {/* Category Spending Bars */}
         <div className="bg-card rounded-xl border border-border shadow-sm flex flex-col max-h-[420px]">

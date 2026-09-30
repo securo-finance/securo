@@ -1363,3 +1363,44 @@ async def test_preview_rule_reports_no_change_when_the_draft_would_not_be_applie
     assert applied["will_apply"] is True
     assert applied["will_change"] == 1
     assert applied["sample"][0]["new_category_name"] == target.name
+
+
+@pytest.mark.asyncio
+async def test_preview_rule_filters_by_status(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_categories, test_transactions
+):
+    """A status condition previews only the transactions in that status."""
+    netflix = next(t for t in test_transactions if t.description == "NETFLIX")
+    netflix.status = "pending"
+    await session.commit()
+
+    response = await client.post(
+        "/api/rules/preview",
+        json={
+            "conditions_op": "and",
+            "conditions": [{"field": "status", "op": "equals", "value": "pending"}],
+            "actions": [{"op": "set_category", "value": str(test_categories[0].id)}],
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["matched"] == 1
+    assert data["sample"][0]["description"] == "NETFLIX"
+
+
+@pytest.mark.asyncio
+async def test_create_rule_rejects_unknown_status_value(
+    client: AsyncClient, auth_headers, test_categories
+):
+    response = await client.post(
+        "/api/rules",
+        json={
+            "name": "Bad status",
+            "conditions_op": "and",
+            "conditions": [{"field": "status", "op": "equals", "value": "reserved"}],
+            "actions": [{"op": "set_category", "value": str(test_categories[0].id)}],
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code in (400, 422)

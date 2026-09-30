@@ -1090,6 +1090,100 @@ async def test_simplefin_rekey_reserves_ids_from_later_accounts(
 
 
 @pytest.mark.asyncio
+async def test_sync_connection_simplefin_keeps_account_ids_reserved_across_accounts(
+    session: AsyncSession, test_user, test_workspace,
+):
+    conn = await _make_connection(session, test_user.id, "SimpleFIN")
+    conn.provider = "simplefin"
+    savings = Account(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        connection_id=conn.id,
+        external_id="sav",
+        name="Savings",
+        type="savings",
+        balance=Decimal("100"),
+        currency="USD",
+    )
+    later_checking = Account(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        connection_id=conn.id,
+        external_id="later",
+        name="Checking",
+        type="checking",
+        balance=Decimal("50"),
+        currency="USD",
+    )
+    session.add_all([savings, later_checking])
+    await session.commit()
+
+    def _account(external_id: str, name: str, type_: str) -> AccountData:
+        return AccountData(
+            external_id=external_id, name=name, type=type_,
+            balance=Decimal("10"), currency="USD",
+        )
+
+    txns_by_account = {
+        "sav": [TransactionData(
+            external_id="sav-tx", description="INTEREST",
+            amount=Decimal("1"), date=date(2026, 6, 1), type="credit",
+            currency="USD",
+        )],
+        "new-b": [TransactionData(
+            external_id="b-tx", description="BAKERY",
+            amount=Decimal("7"), date=date(2026, 6, 2), type="debit",
+            currency="USD",
+        )],
+        "later": [TransactionData(
+            external_id="later-tx", description="BOOKSHOP",
+            amount=Decimal("12"), date=date(2026, 6, 3), type="debit",
+            currency="USD",
+        )],
+    }
+
+    async def _get_transactions(_credentials, account_external_id, *_args, **_kwargs):
+        return txns_by_account[account_external_id]
+
+    mock_provider = AsyncMock()
+    mock_provider.refresh_credentials = AsyncMock(return_value={"token": "refreshed"})
+    mock_provider.get_accounts = AsyncMock(return_value=[
+        _account("sav", "Savings", "savings"),
+        _account("new-b", "Checking", "checking"),
+        _account("later", "Checking", "checking"),
+    ])
+    mock_provider.get_transactions = AsyncMock(side_effect=_get_transactions)
+
+    with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(session, conn.id, test_workspace.id, test_user.id)
+
+    accounts = (await session.execute(
+        select(Account).where(Account.connection_id == conn.id)
+    )).scalars().all()
+    assert len(accounts) == 3
+    assert {account.external_id for account in accounts} == {"sav", "new-b", "later"}
+    new_b = next(account for account in accounts if account.external_id == "new-b")
+    assert new_b.id not in {savings.id, later_checking.id}
+
+    await session.refresh(later_checking)
+    assert later_checking.external_id == "later"
+    later_txs = (await session.execute(
+        select(Transaction.external_id).where(
+            Transaction.account_id == later_checking.id,
+            Transaction.source == "sync",
+        )
+    )).scalars().all()
+    assert later_txs == ["later-tx"]
+    b_tx_account_id = (await session.execute(
+        select(Transaction.account_id).where(Transaction.external_id == "b-tx")
+    )).scalar_one()
+    assert b_tx_account_id == new_b.id
+
+
+@pytest.mark.asyncio
 async def test_simplefin_rekey_refuses_same_institution_ambiguity(
     session: AsyncSession, test_user, test_workspace,
 ):

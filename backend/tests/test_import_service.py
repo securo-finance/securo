@@ -1141,6 +1141,151 @@ class TestParseOfx:
         assert _preprocess_ofx(sgml).count(b"OFXHEADER:") == 1
         assert parse_ofx(sgml)[0].description == "Grocery Store"
 
+    def test_parse_ofx_sgml_header_iso_8859_1_encoding(self):
+        """OFX 1.x files with ENCODING:ISO-8859-1 in the SGML header should
+        parse without UnboundLocalError (ofxparse only handles USASCII,
+        UNICODE and UTF-8)."""
+        sgml = (
+            b"OFXHEADER:100\r\nDATA:OFXSGML\r\nVERSION:102\r\nSECURITY:NONE\r\n"
+            b"ENCODING:ISO-8859-1\r\nCHARSET:8859-1\r\nCOMPRESSION:NONE\r\n"
+            b"OLDFILEUID:NONE\r\nNEWFILEUID:NONE\r\n\r\n"
+            b"<OFX>\r\n"
+            b"<SIGNONMSGSRSV1>\r\n<SONRS><STATUS><CODE>0<SEVERITY>INFO</STATUS>"
+            b"<DTSERVER>20260115<LANGUAGE>POR</SONRS></SIGNONMSGSRSV1>\r\n"
+            b"<BANKMSGSRSV1>\r\n"
+            b"<STMTTRNRS><STMTRS><CURDEF>BRL>\r\n"
+            b"<BANKTRANLIST>\r\n"
+            b"<STMTTRN><TRNTYPE>POS<DTPOSTED>20260115<TRNAMT>-25.50<FITID>TX001"
+            b"<NAME>Caf\xe9 Express</NAME></STMTTRN>\r\n"
+            b"</BANKTRANLIST>\r\n"
+            b"<LEDGERBAL><BALAMT>1000.00<DTASOF>20260115</LEDGERBAL>\r\n"
+            b"</STMTRS></STMTTRNRS>\r\n"
+            b"</BANKMSGSRSV1>\r\n"
+            b"</OFX>"
+        )
+        transactions = parse_ofx(sgml)
+        assert len(transactions) == 1
+        assert transactions[0].description == "Caf\xe9 Express"
+
+    def test_parse_ofx_sgml_header_windows_1252_encoding(self):
+        """OFX 1.x files with ENCODING:WINDOWS-1252 should parse correctly."""
+        sgml = (
+            b"OFXHEADER:100\r\nDATA:OFXSGML\r\nVERSION:102\r\nSECURITY:NONE\r\n"
+            b"ENCODING:WINDOWS-1252\r\nCHARSET:1252\r\nCOMPRESSION:NONE\r\n"
+            b"OLDFILEUID:NONE\r\nNEWFILEUID:NONE\r\n\r\n"
+            b"<OFX>\r\n"
+            b"<SIGNONMSGSRSV1>\r\n<SONRS><STATUS><CODE>0<SEVERITY>INFO</STATUS>"
+            b"<DTSERVER>20260115<LANGUAGE>POR</SONRS></SIGNONMSGSRSV1>\r\n"
+            b"<BANKMSGSRSV1>\r\n"
+            b"<STMTTRNRS><STMTRS><CURDEF>BRL>\r\n"
+            b"<BANKTRANLIST>\r\n"
+            b"<STMTTRN><TRNTYPE>POS<DTPOSTED>20260115<TRNAMT>-50.00<FITID>TX002"
+            b"<NAME>Loj\xe3 Center</NAME></STMTTRN>\r\n"
+            b"</BANKTRANLIST>\r\n"
+            b"<LEDGERBAL><BALAMT>1000.00<DTASOF>20260115</LEDGERBAL>\r\n"
+            b"</STMTRS></STMTTRNRS>\r\n"
+            b"</BANKMSGSRSV1>\r\n"
+            b"</OFX>"
+        )
+        transactions = parse_ofx(sgml)
+        assert len(transactions) == 1
+        assert transactions[0].description == "Loj\xe3 Center"
+
+    def test_parse_ofx_windows_1252_charset_decodes_typographic_characters(self):
+        """WINDOWS-1252/CP1252 must normalise to CHARSET:1252, not 8859-1.
+
+        Byte 0x96 is an en dash (U+2013) in Windows-1252 but an undefined
+        C1 control code in ISO-8859-1 — declaring the wrong CHARSET would
+        have ofxparse decode this byte as the control code instead of the
+        dash the source bank actually meant.
+        """
+        sgml = (
+            b"OFXHEADER:100\r\nDATA:OFXSGML\r\nVERSION:102\r\nSECURITY:NONE\r\n"
+            b"ENCODING:WINDOWS-1252\r\nCHARSET:1252\r\nCOMPRESSION:NONE\r\n"
+            b"OLDFILEUID:NONE\r\nNEWFILEUID:NONE\r\n\r\n"
+            b"<OFX>\r\n"
+            b"<SIGNONMSGSRSV1>\r\n<SONRS><STATUS><CODE>0<SEVERITY>INFO</STATUS>"
+            b"<DTSERVER>20260115<LANGUAGE>POR</SONRS></SIGNONMSGSRSV1>\r\n"
+            b"<BANKMSGSRSV1>\r\n"
+            b"<STMTTRNRS><STMTRS><CURDEF>BRL>\r\n"
+            b"<BANKTRANLIST>\r\n"
+            b"<STMTTRN><TRNTYPE>POS<DTPOSTED>20260115<TRNAMT>-15.00<FITID>TX005"
+            b"<NAME>Loja A \x96 Filial B</NAME></STMTTRN>\r\n"
+            b"</BANKTRANLIST>\r\n"
+            b"<LEDGERBAL><BALAMT>1000.00<DTASOF>20260115</LEDGERBAL>\r\n"
+            b"</STMTRS></STMTTRNRS>\r\n"
+            b"</BANKMSGSRSV1>\r\n"
+            b"</OFX>"
+        )
+        transactions = parse_ofx(sgml)
+        assert len(transactions) == 1
+        assert transactions[0].description == "Loja A – Filial B"
+
+    def test_parse_ofx_sgml_header_unknown_encoding_fallback(self):
+        """An OFX file with a completely unknown ENCODING value should fall
+        back to UTF-8 without crashing."""
+        sgml = (
+            b"OFXHEADER:100\r\nDATA:OFXSGML\r\nVERSION:102\r\nSECURITY:NONE\r\n"
+            b"ENCODING:UNKNOWN-CODEC\r\nCHARSET:8859-1\r\nCOMPRESSION:NONE\r\n"
+            b"OLDFILEUID:NONE\r\nNEWFILEUID:NONE\r\n\r\n"
+            b"<OFX>\r\n"
+            b"<SIGNONMSGSRSV1>\r\n<SONRS><STATUS><CODE>0<SEVERITY>INFO</STATUS>"
+            b"<DTSERVER>20260115<LANGUAGE>POR</SONRS></SIGNONMSGSRSV1>\r\n"
+            b"<BANKMSGSRSV1>\r\n"
+            b"<STMTTRNRS><STMTRS><CURDEF>BRL>\r\n"
+            b"<BANKTRANLIST>\r\n"
+            b"<STMTTRN><TRNTYPE>POS<DTPOSTED>20260115<TRNAMT>-10.00<FITID>TX003"
+            b"<NAME>Simple Transaction</NAME></STMTTRN>\r\n"
+            b"</BANKTRANLIST>\r\n"
+            b"<LEDGERBAL><BALAMT>1000.00<DTASOF>20260115</LEDGERBAL>\r\n"
+            b"</STMTRS></STMTTRNRS>\r\n"
+            b"</BANKMSGSRSV1>\r\n"
+            b"</OFX>"
+        )
+        transactions = parse_ofx(sgml)
+        assert len(transactions) == 1
+        assert transactions[0].description == "Simple Transaction"
+
+    def test_parse_ofx_body_encoding_line_not_corrupted(self):
+        """Transaction memo content that happens to contain 'ENCODING:' on a
+        new line must not be rewritten by the header normalisation."""
+        sgml = (
+            b"OFXHEADER:100\r\nDATA:OFXSGML\r\nVERSION:102\r\nSECURITY:NONE\r\n"
+            b"ENCODING:ISO-8859-1\r\nCHARSET:8859-1\r\nCOMPRESSION:NONE\r\n"
+            b"OLDFILEUID:NONE\r\nNEWFILEUID:NONE\r\n\r\n"
+            b"<OFX>\r\n"
+            b"<SIGNONMSGSRSV1>\r\n<SONRS><STATUS><CODE>0<SEVERITY>INFO</STATUS>"
+            b"<DTSERVER>20260115<LANGUAGE>POR</SONRS></SIGNONMSGSRSV1>\r\n"
+            b"<BANKMSGSRSV1>\r\n"
+            b"<STMTTRNRS><STMTRS><CURDEF>BRL>\r\n"
+            b"<BANKTRANLIST>\r\n"
+            b"<STMTTRN><TRNTYPE>POS<DTPOSTED>20260115<TRNAMT>-30.00<FITID>TX004"
+            b"<NAME>Rate: ENCODING:WINDOWS-1252 promo</NAME></STMTTRN>\r\n"
+            b"</BANKTRANLIST>\r\n"
+            b"<LEDGERBAL><BALAMT>1000.00<DTASOF>20260115</LEDGERBAL>\r\n"
+            b"</STMTRS></STMTTRNRS>\r\n"
+            b"</BANKMSGSRSV1>\r\n"
+            b"</OFX>"
+        )
+        transactions = parse_ofx(sgml)
+        assert len(transactions) == 1
+        assert "ENCODING:WINDOWS-1252" in transactions[0].description
+
+    def test_normalize_ofx_encoding_only_affects_preamble(self):
+        """_normalize_ofx_encoding must only touch the preamble before the
+        first '<', never the body."""
+        from app.services.import_service import _normalize_ofx_encoding
+
+        text = (
+            "ENCODING:ISO-8859-1\r\nCHARSET:8859-1\r\n\r\n"
+            "<OFX><MEMO>\r\nENCODING:WINDOWS-1252 line</MEMO>"
+        )
+        result = _normalize_ofx_encoding(text, "latin-1")
+        # Preamble should be normalised
+        assert "ENCODING:USASCII" in result.split("<")[0]
+        # Body should be untouched
+        assert "ENCODING:WINDOWS-1252" in result.split("<", 1)[1]
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # MULTI-CURRENCY PARSING TESTS
@@ -2058,6 +2203,47 @@ class TestOfxInstallmentDedup:
         assert skipped == 2
 
 
+    @pytest.mark.asyncio
+    async def test_same_external_id_same_date_different_amounts_all_imported(
+        self, session: AsyncSession, test_user: User, test_workspace, test_account: Account,
+    ):
+        """Some banks reuse one FITID for several entries on the same day
+        (issue #911). Each distinct amount must be imported, and re-importing
+        the same file must still skip all of them."""
+        from app.schemas.transaction import TransactionImport
+
+        rows = [
+            TransactionImport(
+                description=memo,
+                amount=Decimal(amount),
+                date=date(2026, 7, 1),
+                type="credit",
+                external_id="101.820.900.050.894",
+            )
+            for memo, amount in [
+                ("Rende Facil 1", "1.72"),
+                ("Rende Facil 2", "3.04"),
+                ("Rende Facil 3", "2.85"),
+            ]
+        ]
+        imported, skipped, _, _ = await import_transactions(
+            session, test_workspace.id, test_user.id, test_account.id, rows, "ofx",
+        )
+        assert imported == 3
+        assert skipped == 0
+
+        imported2, skipped2, _, _ = await import_transactions(
+            session,
+            test_workspace.id,
+            test_user.id,
+            test_account.id,
+            [r.model_copy() for r in rows],
+            "ofx",
+        )
+        assert imported2 == 0
+        assert skipped2 == 3
+
+
 class TestCsvDuplicateDetectionToggle:
     @pytest.mark.asyncio
     async def test_csv_identical_new_rows_remain_distinct(
@@ -2728,3 +2914,127 @@ def test_parse_csv_reports_short_rows_instead_of_raising():
     assert failed_rows[2].line_number == 5
     assert failed_rows[2].error_reason == "invalid_date"
     assert failed_rows[2].raw_value == "invalid_date"
+
+
+def test_parse_csv_comma_thousands_inferred_per_column():
+    from app.services.import_service import parse_csv
+    csv_content = (
+        "Date,Transaction Type,Amount,Description\n"
+        '2026-08-01,Credit,"375,000.00",SALARY\n'
+        '2026-08-02,Debit,"25,000",TRANSFER\n'
+        '2026-08-03,DEBIT,"1,500.50",AIRTIME\n'
+        '2026-08-05,debit,"3,000",POS\n'
+    )
+    transactions, failed_rows = parse_csv(csv_content.encode("utf-8"))
+
+    assert failed_rows == []
+    assert [t.amount for t in transactions] == [
+        Decimal("375000.00"), Decimal("25000"), Decimal("1500.50"), Decimal("3000"),
+    ]
+    assert [t.type for t in transactions] == ["credit", "debit", "debit", "debit"]
+
+
+def test_parse_csv_comma_thousands_only_column():
+    from app.services.import_service import parse_csv
+    csv_content = (
+        "date,description,amount\n"
+        '2026-08-02,Transfer,"-25,000"\n'
+        '2026-08-03,Salary,"1,234,567"\n'
+    )
+    transactions, _ = parse_csv(csv_content.encode("utf-8"))
+    assert [t.amount for t in transactions] == [Decimal("25000"), Decimal("1234567")]
+    assert [t.type for t in transactions] == ["debit", "credit"]
+
+
+def test_parse_csv_brazilian_column_still_parses():
+    from app.services.import_service import parse_csv
+    csv_content = (
+        "data;descricao;valor\n"
+        "01/08/2026;Mercado;-1.234,56\n"
+        "02/08/2026;Padaria;-12,50\n"
+        "03/08/2026;Aluguel;-2.000\n"
+    )
+    transactions, _ = parse_csv(csv_content.encode("utf-8"))
+    assert [t.amount for t in transactions] == [
+        Decimal("1234.56"), Decimal("12.50"), Decimal("2000"),
+    ]
+    assert all(t.type == "debit" for t in transactions)
+
+
+def test_parse_csv_zero_comma_is_decimal():
+    from app.services.import_service import parse_csv
+    csv_content = 'date,description,amount\n2026-08-01,Fee,"0,125"\n'
+    transactions, _ = parse_csv(csv_content.encode("utf-8"))
+    assert transactions[0].amount == Decimal("0.125")
+
+
+def test_parse_csv_strips_currency_symbols_and_codes():
+    from app.services.import_service import parse_csv
+    csv_content = (
+        "date,description,amount\n"
+        "2026-08-01,A,$40.00\n"
+        "2026-08-02,B,NGN 2300.50\n"
+        "2026-08-03,C,USD 10\n"
+        "2026-08-04,D,-₦1500.00\n"
+    )
+    transactions, failed_rows = parse_csv(csv_content.encode("utf-8"))
+    assert failed_rows == []
+    assert [t.amount for t in transactions] == [
+        Decimal("40.00"), Decimal("2300.50"), Decimal("10"), Decimal("1500.00"),
+    ]
+    assert transactions[3].type == "debit"
+
+
+def test_normalize_amount_currency_and_separators():
+    from app.services.import_service import normalize_amount
+    assert normalize_amount("$40.00") == "40.00"
+    assert normalize_amount("€12,50") == "12.50"
+    assert normalize_amount("NGN 2,300.50") == "2300.50"
+    assert normalize_amount("₦1,500.00") == "1500.00"
+    assert normalize_amount("USD 10") == "10"
+    assert normalize_amount("12,50 EUR") == "12.50"
+    assert normalize_amount("R$ 1.234,56") == "1234.56"
+    assert normalize_amount("-$40.00") == "-40.00"
+    assert normalize_amount("(12.50)") == "-12.50"
+    assert normalize_amount("25,000", ".") == "25000"
+    assert normalize_amount("0,125", ".") == "0.125"
+    assert normalize_amount("1.234", ",") == "1234"
+    # Without a column hint the per-cell behaviour is unchanged.
+    assert normalize_amount("0,125") == "0.125"
+    assert normalize_amount("12,50") == "12.50"
+
+
+def test_infer_decimal_separator():
+    from app.services.import_service import infer_decimal_separator
+    assert infer_decimal_separator(["25,000", "1,500.50"]) == "."
+    assert infer_decimal_separator(["1.234,56", "12,50"]) == ","
+    assert infer_decimal_separator(["25,000", "3,000"]) == "."
+    assert infer_decimal_separator(["0,125"]) is None
+    assert infer_decimal_separator(["10", ""]) is None
+
+
+def test_parse_csv_dr_cr_and_unicode_minus_keep_the_sign():
+    from app.services.import_service import parse_csv
+    csv_content = (
+        "date,description,amount\n"
+        "2026-08-01,Card,100.00 DR\n"
+        "2026-08-02,Refund,50.00 CR\n"
+        "2026-08-03,Fee,\u221240.00\n"
+        "2026-08-04,Costa Rica,CRC 10.00\n"
+    )
+    transactions, failed_rows = parse_csv(csv_content.encode("utf-8"))
+    assert failed_rows == []
+    assert [(t.type, t.amount) for t in transactions] == [
+        ("debit", Decimal("100.00")),
+        ("credit", Decimal("50.00")),
+        ("debit", Decimal("40.00")),
+        ("credit", Decimal("10.00")),
+    ]
+
+
+def test_normalize_amount_dr_cr_markers():
+    from app.services.import_service import normalize_amount
+    assert normalize_amount("1,234.56DR") == "-1234.56"
+    assert normalize_amount("-10.00 CR") == "10.00"
+    assert normalize_amount("10.00 XDR") == "10.00"
+    assert normalize_amount("\u20131.50") == "-1.50"

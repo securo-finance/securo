@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.core.database import get_async_session
 from app.core.workspace_context import (
     WorkspaceContext,
@@ -250,7 +251,7 @@ async def export_transactions(
         ])
 
     output.seek(0)
-    today = date.today().isoformat()
+    today = app_today().isoformat()
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv",
