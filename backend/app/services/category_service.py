@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.budget import Budget
 from app.models.category import Category
 from app.models.category_group import CategoryGroup
+from app.models.goal import GoalAllocation
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.rule import Rule
 from app.models.transaction import Transaction
@@ -243,6 +244,37 @@ async def update_category(
     if changes.get("is_hidden") is True and not category.is_system:
         raise CategoryVisibilityError("Only system categories can be hidden")
 
+    if changes.get("is_ignored") is True:
+        await session.execute(
+            select(Transaction.id)
+            .where(
+                Transaction.workspace_id == workspace_id,
+                Transaction.category_id == category_id,
+                Transaction.id.in_(select(GoalAllocation.transaction_id)),
+            )
+            .order_by(Transaction.id)
+            .with_for_update(of=Transaction)
+        )
+        category = await session.scalar(
+            select(Category)
+            .where(Category.id == category_id, Category.workspace_id == workspace_id)
+            .with_for_update(key_share=True)
+            .execution_options(populate_existing=True)
+        )
+        if not category:
+            return None
+        allocated = await session.scalar(
+            select(GoalAllocation.id)
+            .join(Transaction, Transaction.id == GoalAllocation.transaction_id)
+            .where(
+                Transaction.workspace_id == workspace_id,
+                Transaction.category_id == category_id,
+            )
+            .limit(1)
+        )
+        if allocated:
+            raise ValueError("Remove pocket assignments before ignoring this category")
+
     for key, value in changes.items():
         setattr(category, key, value)
 
@@ -399,15 +431,25 @@ async def _transfer_category_references(
     destination_id: uuid.UUID,
 ) -> None:
     """Point everything that used one category at another, without committing."""
-    for model in (Transaction, RecurringTransaction):
-        await session.execute(
-            sa_update(model)
-            .where(
-                model.workspace_id == workspace_id,
-                model.category_id == category_id,
-            )
-            .values(category_id=destination_id)
+    from app.services.transaction_service import bulk_update_category
+
+    transaction_ids = list((await session.scalars(
+        select(Transaction.id).where(
+            Transaction.workspace_id == workspace_id,
+            Transaction.category_id == category_id,
         )
+    )).all())
+    await bulk_update_category(
+        session, workspace_id, transaction_ids, destination_id, commit=False
+    )
+    await session.execute(
+        sa_update(RecurringTransaction)
+        .where(
+            RecurringTransaction.workspace_id == workspace_id,
+            RecurringTransaction.category_id == category_id,
+        )
+        .values(category_id=destination_id)
+    )
     await _merge_budgets(session, workspace_id, category_id, destination_id)
     await _repoint_rules(session, workspace_id, category_id, destination_id)
 
@@ -458,4 +500,3 @@ async def delete_category(
             "Category is still in use and cannot be deleted. Remove its references first."
         ) from exc
     return True
-

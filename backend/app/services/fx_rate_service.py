@@ -20,13 +20,14 @@ _provider = OpenExchangeRatesProvider()
 
 
 async def sync_rates(
-    session: AsyncSession, target_date: Optional[date] = None
+    session: AsyncSession, target_date: Optional[date] = None, *, commit: bool = True
 ) -> int:
     """Fetch rates from the provider for the given date and upsert into fx_rates.
 
     Only saves rates for currencies in `supported_currencies`.
     Idempotent — existing rates for the same date are updated.
     Returns the number of rates synced.
+    Pass ``commit=False`` when fetching rates inside a caller-owned transaction.
     """
     requested_target = target_date or app_today()
     # Providers cannot return a historical rate for a date that has not
@@ -58,7 +59,10 @@ async def sync_rates(
         await session.execute(stmt)
         count += 1
 
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
     logger.info("Synced %d FX rates for %s", count, target)
     return count
 
@@ -96,7 +100,7 @@ async def _resolve_rate(
     # Step 2: If missing, fetch from provider for exact date
     if allow_fetch and (usd_to_source is None or usd_to_target is None):
         try:
-            synced = await sync_rates(session, target)
+            synced = await sync_rates(session, target, commit=False)
             if synced > 0:
                 logger.info("On-demand sync fetched %d rates for %s", synced, target)
                 if usd_to_source is None:

@@ -35,7 +35,7 @@ from app.providers.base import (
     ProviderUserActionRequired,
     SessionExpiredError,
 )
-from app.services import oauth_state
+from app.services import goal_allocation_service, oauth_state
 from app.services import admin_service
 from app.services import reconciliation_service, recurring_match_service
 from app.services.text_similarity import token_overlap
@@ -1635,6 +1635,10 @@ async def _cleanup_phantom_duplicates(
                 sibling.original_description or sibling.description,
                 tx.original_description or tx.description,
             ) >= 0.9:
+                if not await goal_allocation_service.release_for_background_delete(
+                    session, tx.workspace_id, tx
+                ):
+                    break
                 await session.delete(tx)
                 touched.add(tx.account_id)
                 break

@@ -843,8 +843,12 @@ async def import_transactions(
             .with_for_update()
         )
     if account:
+        # ImportLog's FK holds KEY SHARE; avoid two imports upgrading it to FOR UPDATE.
         account_result = await session.execute(
-            select(Account).where(Account.id == account_id).with_for_update()
+            select(Account)
+            .where(Account.id == account_id)
+            .with_for_update(key_share=True)
+            .execution_options(populate_existing=True)
         )
         account = account_result.scalar_one()
     account_currency = account.currency if account else get_settings().default_currency
@@ -990,6 +994,11 @@ async def import_transactions(
             preview.description,
         )
         if placeholder and not placeholder.is_ignored:
+            from app.services import goal_allocation_service
+
+            await goal_allocation_service.validate_transaction_allocations(
+                session, workspace_id, placeholder
+            )
             placeholder.source = source
             placeholder.external_id = txn_data.external_id
             placeholder.import_id = import_log.id
@@ -1011,6 +1020,14 @@ async def import_transactions(
             placeholder.notes = merge_notes(placeholder.notes, preview.notes)
             if preview.is_ignored:
                 placeholder.is_ignored = True
+            try:
+                await goal_allocation_service.validate_transaction_allocations(
+                    session, workspace_id, placeholder
+                )
+            except ValueError:
+                await goal_allocation_service.clear_transaction_allocations(
+                    session, workspace_id, placeholder
+                )
             imported += 1
             continue
 

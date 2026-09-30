@@ -1,7 +1,9 @@
 import { createElement, useState } from 'react'
+import { differenceInCalendarDays, parseISO } from 'date-fns'
 import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
-import { useDisplayLocale } from '@/hooks/use-display-locale'
+import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
+import { useEffectiveTimezone } from '@/hooks/use-timezone'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { goals as goalsApi, accounts as accountsApi, assets as assetsApi, assetGroups as assetGroupsApi, currencies as currenciesApi } from '@/lib/api'
 import { toast } from 'sonner'
@@ -12,6 +14,7 @@ import { Label } from '@/components/ui/label'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -24,7 +27,7 @@ import {
 import type { Account, Asset, AssetGroup, Goal } from '@/types'
 import {
   Pencil, Trash2, Plus, Pause, Play, CheckCircle2, Archive, ArchiveRestore, Target,
-  ChevronDown,
+  ChevronDown, WalletCards, AlertTriangle,
 } from 'lucide-react'
 import { ICON_MAP } from '@/lib/category-icons'
 import { IconPicker } from '@/components/icon-picker'
@@ -33,6 +36,8 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { formatCurrency } from '@/lib/format'
+import { extractApiError } from '@/lib/api-errors'
+import { todayInTimezone } from '@/lib/date-utils'
 
 function getGoalIcon(iconKey: string | null) {
   return (iconKey && ICON_MAP[iconKey]) || Target
@@ -127,13 +132,6 @@ function StatusBadge({ status, t }: { status: string; t: (key: string) => string
   )
 }
 
-function daysUntil(dateStr: string): number {
-  const target = new Date(dateStr + 'T00:00:00')
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
-}
-
 export default function GoalsPage() {
   const { t } = useTranslation()
   const { mask } = usePrivacyMode()
@@ -141,6 +139,9 @@ export default function GoalsPage() {
   const { canWrite } = useWorkspace()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
+  const dateLocale = useDateLocale()
+  const timeZone = useEffectiveTimezone()
+  const today = todayInTimezone(timeZone)
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Goal | null>(null)
@@ -150,10 +151,20 @@ export default function GoalsPage() {
   const [selectedIcon, setSelectedIcon] = useState('target')
   const [selectedColor, setSelectedColor] = useState('#3B82F6')
   const [targetDate, setTargetDate] = useState('')
+  const [pocketAccountId, setPocketAccountId] = useState('')
+  const [initialMode, setInitialMode] = useState<'zero' | 'custom' | 'available'>('zero')
+  const [initialAmount, setInitialAmount] = useState('')
+  const [managingPocket, setManagingPocket] = useState<Goal | null>(null)
+  const [adjustmentMode, setAdjustmentMode] = useState<'reserve' | 'release'>('reserve')
+  const [adjustmentAmount, setAdjustmentAmount] = useState('')
 
   const { data: goalsList } = useQuery({
     queryKey: ['goals', statusFilter],
     queryFn: () => goalsApi.list(statusFilter || undefined),
+  })
+  const { data: allGoals } = useQuery({
+    queryKey: ['goals', 'pocket-availability'],
+    queryFn: () => goalsApi.list(),
   })
 
   const { data: accountsList } = useQuery({
@@ -184,7 +195,7 @@ export default function GoalsPage() {
       setDialogOpen(false)
       toast.success(t('goals.created'))
     },
-    onError: () => toast.error(t('common.error')),
+    onError: (error) => toast.error(extractApiError(error)),
   })
 
   const updateMutation = useMutation({
@@ -195,7 +206,7 @@ export default function GoalsPage() {
       setEditing(null)
       toast.success(t('goals.updated'))
     },
-    onError: () => toast.error(t('common.error')),
+    onError: (error) => toast.error(extractApiError(error)),
   })
 
   const deleteMutation = useMutation({
@@ -205,7 +216,7 @@ export default function GoalsPage() {
       setDeletingGoal(null)
       toast.success(t('goals.deleted'))
     },
-    onError: () => toast.error(t('common.error')),
+    onError: (error) => toast.error(extractApiError(error)),
   })
 
   const statusMutation = useMutation({
@@ -216,12 +227,48 @@ export default function GoalsPage() {
     },
   })
 
+  const adjustmentMutation = useMutation({
+    mutationFn: ({ id, amount }: { id: string; amount: number }) => goalsApi.adjust(id, amount),
+    onSuccess: (goal) => {
+      queryClient.invalidateQueries({ queryKey: ['goals'] })
+      queryClient.invalidateQueries({ queryKey: ['accounts'] })
+      setManagingPocket(goal)
+      setAdjustmentAmount('')
+      toast.success(t('goals.adjusted'))
+    },
+    onError: (error) => toast.error(extractApiError(error)),
+  })
+
+  const { data: pocketActivity } = useQuery({
+    queryKey: ['goals', managingPocket?.id, 'activity'],
+    queryFn: () => goalsApi.activity(managingPocket!.id),
+    enabled: !!managingPocket,
+  })
+
+  const reservedForAccount = (accountId: string) => {
+    const snapshot = (allGoals ?? []).find(
+      goal => goal.tracking_type === 'pocket' && goal.account_id === accountId,
+    )
+    if (snapshot?.account_reserved_total != null) return snapshot.account_reserved_total
+    return (allGoals ?? [])
+      .filter(goal => goal.tracking_type === 'pocket' && goal.account_id === accountId)
+      .reduce((sum, goal) => sum + goal.current_amount, 0)
+  }
+
+  const selectedPocketAccount = (accountsList ?? []).find(account => account.id === pocketAccountId)
+  const selectedAccountAvailable = selectedPocketAccount
+    ? selectedPocketAccount.current_balance - reservedForAccount(selectedPocketAccount.id)
+    : 0
+
   const openCreateDialog = () => {
     setEditing(null)
     setTrackingType('manual')
     setSelectedIcon('target')
     setSelectedColor('#3B82F6')
     setTargetDate('')
+    setPocketAccountId('')
+    setInitialMode('zero')
+    setInitialAmount('')
     setDialogOpen(true)
   }
 
@@ -231,6 +278,9 @@ export default function GoalsPage() {
     setSelectedIcon(goal.icon ?? 'target')
     setSelectedColor(goal.color ?? '#3B82F6')
     setTargetDate(goal.target_date ?? '')
+    setPocketAccountId(goal.account_id ?? '')
+    setInitialMode('zero')
+    setInitialAmount('')
     setDialogOpen(true)
   }
 
@@ -272,7 +322,9 @@ export default function GoalsPage() {
         {goalsList && goalsList.length > 0 ? (
           <div className="divide-y divide-border">
             {goalsList.map((goal) => {
-              const days = goal.target_date ? daysUntil(goal.target_date) : null
+              const days = goal.target_date
+                ? differenceInCalendarDays(parseISO(goal.target_date), parseISO(today))
+                : null
               const progressColor = goal.percentage >= 100
                 ? 'bg-emerald-500'
                 : goal.percentage >= 60
@@ -339,6 +391,16 @@ export default function GoalsPage() {
                         {goal.account_name && (
                           <span>{goal.account_name}</span>
                         )}
+                        {goal.tracking_type === 'pocket' && goal.account_available != null && (
+                          <span>
+                            {t('goals.accountAvailable')}: {mask(formatCurrency(goal.account_available, goal.currency, locale))}
+                          </span>
+                        )}
+                        {goal.tracking_type === 'pocket' && goal.is_underfunded && (
+                          <span className="inline-flex items-center gap-1 text-rose-600 dark:text-rose-400">
+                            <AlertTriangle size={12} /> {t('goals.underfunded')}
+                          </span>
+                        )}
                         {goal.asset_name && (
                           <span>{goal.asset_name}</span>
                         )}
@@ -351,6 +413,20 @@ export default function GoalsPage() {
                     {/* Actions */}
                     {canWrite && (
                       <div className="flex items-center gap-1 shrink-0">
+                        {goal.tracking_type === 'pocket' && (
+                          <button
+                            className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
+                            onClick={() => {
+                              setManagingPocket(goal)
+                              setAdjustmentMode(goal.status === 'active' ? 'reserve' : 'release')
+                              setAdjustmentAmount('')
+                            }}
+                            title={t('goals.managePocket')}
+                            aria-label={`${t('goals.managePocket')}: ${goal.name}`}
+                          >
+                            <WalletCards size={13} />
+                          </button>
+                        )}
                         {goal.status === 'active' && (
                           <button
                             className="p-1.5 rounded-md text-muted-foreground hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-colors"
@@ -424,31 +500,47 @@ export default function GoalsPage() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={() => { setDialogOpen(false); setEditing(null) }}>
-        <DialogContent>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editing ? t('goals.edit') : t('goals.add')}</DialogTitle>
+            <DialogDescription className="sr-only">
+              {trackingType === 'pocket' ? t('goals.pocketHint') : t('goals.title')}
+            </DialogDescription>
           </DialogHeader>
           <form
             key={editing?.id ?? 'new'}
             onSubmit={(e) => {
               e.preventDefault()
               const formData = new FormData(e.currentTarget)
+              const tt = trackingType
+              const pocketAccount = (accountsList ?? []).find(account => account.id === pocketAccountId)
               const payload: Record<string, unknown> = {
                 name: formData.get('name') as string,
                 target_amount: parseFloat(formData.get('target_amount') as string),
-                currency: (formData.get('currency') as string) || userCurrency,
-                tracking_type: formData.get('tracking_type') as string,
+                currency: tt === 'pocket'
+                  ? (pocketAccount?.currency ?? editing?.currency)
+                  : (formData.get('currency') as string) || userCurrency,
+                tracking_type: tt,
                 target_date: targetDate || null,
                 icon: selectedIcon || null,
                 color: selectedColor || null,
               }
 
-              const tt = formData.get('tracking_type') as string
               if (tt === 'manual') {
                 payload.current_amount = parseFloat((formData.get('current_amount') as string) || '0')
               }
               if (tt === 'account') {
                 payload.account_id = (formData.get('account_id') as string) || null
+              }
+              if (tt === 'pocket') {
+                payload.account_id = pocketAccountId
+                if (!editing) {
+                  payload.initial_allocation = initialMode === 'available'
+                    ? Math.max(0, selectedAccountAvailable)
+                    : initialMode === 'custom'
+                      ? parseFloat(initialAmount || '0')
+                      : 0
+                }
               }
               if (tt === 'asset') {
                 payload.asset_id = (formData.get('asset_id') as string) || null
@@ -483,17 +575,25 @@ export default function GoalsPage() {
               </div>
               <div className="space-y-2">
                 <Label>{t('goals.currency')}</Label>
-                <select
-                  name="currency"
-                  defaultValue={editing?.currency ?? userCurrency}
-                  className={SELECT_CLASS}
-                >
-                  {supportedCurrencies?.map((c: { code: string; name: string; flag: string }) => (
-                    <option key={c.code} value={c.code}>
-                      {c.flag} {c.name} ({c.code})
-                    </option>
-                  ))}
-                </select>
+                {trackingType === 'pocket' ? (
+                  <Input
+                    value={selectedPocketAccount?.currency ?? editing?.currency ?? ''}
+                    readOnly
+                    aria-label={t('goals.currency')}
+                  />
+                ) : (
+                  <select
+                    name="currency"
+                    defaultValue={editing?.currency ?? userCurrency}
+                    className={SELECT_CLASS}
+                  >
+                    {supportedCurrencies?.map((c: { code: string; name: string; flag: string }) => (
+                      <option key={c.code} value={c.code}>
+                        {c.flag} {c.name} ({c.code})
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
             </div>
 
@@ -513,12 +613,19 @@ export default function GoalsPage() {
                 value={trackingType}
                 onChange={(e) => setTrackingType(e.target.value)}
                 className={SELECT_CLASS}
+                disabled={editing?.tracking_type === 'pocket'}
               >
                 <option value="manual">{t('goals.trackingManual')}</option>
                 <option value="account">{t('goals.trackingAccount')}</option>
                 <option value="asset">{t('goals.trackingAsset')}</option>
                 <option value="asset_group">{t('goals.trackingWallet')}</option>
                 <option value="net_worth">{t('goals.trackingNetWorth')}</option>
+                <option
+                  value="pocket"
+                  disabled={!!editing && editing.tracking_type !== 'pocket'}
+                >
+                  {t('goals.trackingPocket')}
+                </option>
               </select>
             </div>
 
@@ -543,6 +650,67 @@ export default function GoalsPage() {
                 items={sortAccountsByDisplayName(accountsList ?? [])}
                 renderOption={(acc) => `${getAccountName(acc)} (${acc.currency})`}
               />
+            )}
+
+            {trackingType === 'pocket' && (
+              <div className="space-y-3 rounded-lg border border-border p-3">
+                <div className="space-y-2">
+                  <Label>{t('goals.account')}</Label>
+                  <select
+                    value={pocketAccountId}
+                    onChange={(event) => {
+                      setPocketAccountId(event.target.value)
+                      setInitialAmount('')
+                    }}
+                    className={SELECT_CLASS}
+                    required
+                    disabled={!!editing}
+                  >
+                    <option value="">{t('goals.selectAccount')}</option>
+                    {sortAccountsByDisplayName((accountsList ?? []).filter(account => account.type !== 'credit_card')).map(account => (
+                      <option key={account.id} value={account.id}>
+                        {getAccountName(account)} ({account.currency})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {selectedPocketAccount && (
+                  <div className="grid grid-cols-1 gap-2 text-xs text-muted-foreground sm:grid-cols-2 sm:gap-3">
+                    <span>{t('goals.accountBalance')}: {formatCurrency(selectedPocketAccount.current_balance, selectedPocketAccount.currency, locale)}</span>
+                    <span>{t('goals.accountAvailable')}: {formatCurrency(selectedAccountAvailable, selectedPocketAccount.currency, locale)}</span>
+                  </div>
+                )}
+                {!editing && (
+                  <div className="space-y-2">
+                    <Label>{t('goals.startingAllocation')}</Label>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      {(['zero', 'custom', 'available'] as const).map(mode => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setInitialMode(mode)}
+                          aria-pressed={initialMode === mode}
+                          className={`rounded-md border px-2 py-2 text-xs font-medium ${initialMode === mode ? 'border-primary bg-primary/5 text-primary' : 'border-border text-muted-foreground'}`}
+                        >
+                          {t(`goals.starting${mode.charAt(0).toUpperCase() + mode.slice(1)}`)}
+                        </button>
+                      ))}
+                    </div>
+                    {initialMode === 'custom' && (
+                      <Input
+                        type="number"
+                        min="0"
+                        max={Math.max(0, selectedAccountAvailable)}
+                        step="0.01"
+                        value={initialAmount}
+                        onChange={event => setInitialAmount(event.target.value)}
+                        required
+                      />
+                    )}
+                    <p className="text-xs text-muted-foreground">{t('goals.pocketHint')}</p>
+                  </div>
+                )}
+              </div>
             )}
 
             {trackingType === 'asset' && (
@@ -628,6 +796,101 @@ export default function GoalsPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={!!managingPocket} onOpenChange={() => setManagingPocket(null)}>
+        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{t('goals.managePocket')}: {managingPocket?.name}</DialogTitle>
+            <DialogDescription className="sr-only">{t('goals.pocketHint')}</DialogDescription>
+          </DialogHeader>
+          {managingPocket && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-3 rounded-lg border border-border bg-muted/25 p-3 text-sm sm:grid-cols-3">
+                <div>
+                  <div className="text-xs text-muted-foreground">{t('goals.reserved')}</div>
+                  <div className="font-semibold tabular-nums">{mask(formatCurrency(managingPocket.current_amount, managingPocket.currency, locale))}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">{t('goals.accountBalance')}</div>
+                  <div className="font-semibold tabular-nums">{mask(formatCurrency(managingPocket.account_balance ?? 0, managingPocket.currency, locale))}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">{t('goals.accountAvailable')}</div>
+                  <div className="font-semibold tabular-nums">{mask(formatCurrency(managingPocket.account_available ?? 0, managingPocket.currency, locale))}</div>
+                </div>
+              </div>
+
+              {managingPocket.is_underfunded && (
+                <div className="flex items-start gap-2 rounded-md bg-rose-50 p-3 text-sm text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
+                  <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                  {t('goals.underfundedHint')}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    variant={adjustmentMode === 'reserve' ? 'default' : 'outline'}
+                    disabled={managingPocket.status !== 'active'}
+                    onClick={() => { setAdjustmentMode('reserve'); setAdjustmentAmount('') }}
+                  >
+                    {t('goals.reserve')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={adjustmentMode === 'release' ? 'default' : 'outline'}
+                    onClick={() => { setAdjustmentMode('release'); setAdjustmentAmount('') }}
+                  >
+                    {t('goals.release')}
+                  </Button>
+                </div>
+                <Input
+                  type="number"
+                  min="0.01"
+                  max={adjustmentMode === 'reserve'
+                    ? Math.max(0, managingPocket.account_available ?? 0)
+                    : managingPocket.current_amount}
+                  step="0.01"
+                  value={adjustmentAmount}
+                  onChange={event => setAdjustmentAmount(event.target.value)}
+                  placeholder={t('goals.adjustmentAmount')}
+                />
+                <Button
+                  type="button"
+                  className="w-full"
+                  disabled={adjustmentMutation.isPending || !adjustmentAmount || Number(adjustmentAmount) <= 0}
+                  onClick={() => adjustmentMutation.mutate({
+                    id: managingPocket.id,
+                    amount: (adjustmentMode === 'release' ? -1 : 1) * Number(adjustmentAmount),
+                  })}
+                >
+                  {adjustmentMutation.isPending ? t('common.loading') : t('common.save')}
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                <Label>{t('goals.activity')}</Label>
+                <div className="max-h-48 divide-y divide-border overflow-y-auto rounded-md border border-border">
+                  {pocketActivity && pocketActivity.length > 0 ? pocketActivity.map(entry => (
+                    <div key={entry.id} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                      <div>
+                        <div className="font-medium">{t(`goals.activity${entry.source.charAt(0).toUpperCase() + entry.source.slice(1)}`)}</div>
+                        <div className="text-xs text-muted-foreground">{new Date(entry.created_at).toLocaleDateString(dateLocale, { timeZone })}</div>
+                      </div>
+                      <div className={`font-semibold tabular-nums ${entry.amount < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                        {entry.amount > 0 ? '+' : ''}{mask(formatCurrency(entry.amount, managingPocket.currency, locale))}
+                      </div>
+                    </div>
+                  )) : (
+                    <div className="px-3 py-6 text-center text-sm text-muted-foreground">{t('goals.noActivity')}</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Confirm delete dialog */}
       <Dialog open={!!deletingGoal} onOpenChange={() => setDeletingGoal(null)}>
         <DialogContent>
@@ -635,7 +898,12 @@ export default function GoalsPage() {
             <DialogTitle>{t('goals.confirmDeleteTitle')}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            {t('goals.confirmDeleteDesc', { name: deletingGoal?.name })}
+            {t(
+              deletingGoal?.tracking_type === 'pocket'
+                ? 'goals.confirmDeletePocketDesc'
+                : 'goals.confirmDeleteDesc',
+              { name: deletingGoal?.name },
+            )}
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeletingGoal(null)}>

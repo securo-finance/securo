@@ -209,8 +209,9 @@ class TestResolveRate:
     ):
         from app.services.fx_rate_service import _resolve_rate
 
-        async def sync_latest(db: AsyncSession, target: date) -> int:
+        async def sync_latest(db: AsyncSession, target: date, *, commit: bool) -> int:
             assert target == date.today()
+            assert commit is False
             await _insert_rate(db, "BRL", Decimal("5.2500000000"), target)
             return 1
 
@@ -681,6 +682,22 @@ class TestOpenExchangeRatesProvider:
 
 class TestSyncRates:
     """Tests for fx_rate_service.sync_rates() with mocked provider."""
+
+    @pytest.mark.asyncio
+    async def test_on_demand_sync_preserves_the_callers_transaction(self):
+        from app.services.fx_rate_service import sync_rates
+
+        mock_provider = MagicMock()
+        mock_provider.name = "test_provider"
+        mock_provider.fetch_latest = AsyncMock(return_value={"BRL": Decimal("5.0")})
+        mock_session = AsyncMock()
+
+        with patch("app.services.fx_rate_service._provider", mock_provider):
+            assert await sync_rates(mock_session, date.today(), commit=False) == 1
+
+        mock_session.execute.assert_awaited_once()
+        mock_session.flush.assert_awaited_once()
+        mock_session.commit.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_sync_rates_calls_provider_latest(self):

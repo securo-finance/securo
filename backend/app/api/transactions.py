@@ -160,7 +160,15 @@ async def list_transactions(
         include_summary=True,
     )
     primary_currency = ctx.user.primary_currency
-    items = [_tag_fx_fallback(TransactionRead.model_validate(tx, from_attributes=True), primary_currency) for tx in transactions]
+    items = []
+    for transaction in transactions:
+        item = TransactionRead.model_validate(transaction, from_attributes=True)
+        if item.is_shared:
+            # A linked group member may see their projected share of another
+            # user's transaction, but the owner's personal Pocket names and
+            # reservation amounts remain private to the source workspace.
+            item.goal_allocations = []
+        items.append(_tag_fx_fallback(item, primary_currency))
     await _attach_invoice_links(session, ctx, items)
     summary_out = (
         TransactionsSummary(**summary, currency=primary_currency)
@@ -519,9 +527,12 @@ async def toggle_ignore_transaction(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    transaction = await transaction_service.toggle_ignore_transaction(
-        session, transaction_id, ctx.workspace.id
-    )
+    try:
+        transaction = await transaction_service.toggle_ignore_transaction(
+            session, transaction_id, ctx.workspace.id
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     if not transaction:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
     primary_currency = ctx.user.primary_currency
@@ -553,9 +564,12 @@ async def delete_transaction(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    deleted = await transaction_service.delete_transaction(
-        session, transaction_id, ctx.workspace.id, apply_to
-    )
+    try:
+        deleted = await transaction_service.delete_transaction(
+            session, transaction_id, ctx.workspace.id, apply_to
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
 
@@ -566,7 +580,10 @@ async def bulk_delete_transactions(
     ctx: WorkspaceContext = Depends(current_writable_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    deleted_count = await transaction_service.bulk_delete_transactions(
-        session, ctx.workspace.id, data.transaction_ids
-    )
+    try:
+        deleted_count = await transaction_service.bulk_delete_transactions(
+            session, ctx.workspace.id, data.transaction_ids
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return {"deleted": deleted_count}
