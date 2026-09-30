@@ -10,6 +10,9 @@
     "kindBusiness": "Negócios",
     "kindHint": "Escolhe o que este espaço de trabalho vai acompanhar. Isto não pode ser alterado depois.",
     "defaultCurrency": "Moeda predefinida",
+    "quickCurrencies": "Moedas de troca rápida",
+    "quickCurrenciesActive": "Esta é a moeda de apresentação ativa.",
+    "quickCurrenciesHint": "Apresentado como um seletor no painel. Escolha pelo menos duas, até seis. Os valores são convertidos, não apenas reetiquetados.",
     "locale": "Idioma",
     "taxJurisdiction": "Jurisdição fiscal",
     "taxJurisdictionHint": "Define quais documentos fiscais este espaço de trabalho oferece. Independente do idioma da interface.",
@@ -2853,5 +2856,9 @@
       "recurring": "Regras de Recorrentes",
       "recurringHint": "Como decidimos que uma cobrança é a conta que já esperava."
     }
+  },
+  "currencySwitch": {
+    "label": "Moeda de apresentação",
+    "error": "Não foi possível mudar a moeda"
   }
 }

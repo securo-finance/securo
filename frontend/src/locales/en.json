@@ -10,6 +10,9 @@
     "kindBusiness": "Business",
     "kindHint": "Pick what this workspace tracks. This can't be changed later.",
     "defaultCurrency": "Default currency",
+    "quickCurrencies": "Quick-switch currencies",
+    "quickCurrenciesActive": "This is the active display currency.",
+    "quickCurrenciesHint": "Shown as a switcher on the dashboard. Pick at least two, up to six. Amounts are converted, not just relabelled.",
     "locale": "Language",
     "taxJurisdiction": "Tax jurisdiction",
     "taxJurisdictionHint": "Decides which fiscal documents this workspace is offered. Separate from the interface language.",
@@ -2852,5 +2855,9 @@
       "recurring": "Recurring rules",
       "recurringHint": "How we decide that a charge is the bill you were already expecting."
     }
+  },
+  "currencySwitch": {
+    "label": "Display currency",
+    "error": "Could not switch currency"
   }
 }

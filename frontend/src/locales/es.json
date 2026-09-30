@@ -10,6 +10,9 @@
     "kindBusiness": "Negocios",
     "kindHint": "Elige qué registra este espacio de trabajo. Esto no se puede cambiar después.",
     "defaultCurrency": "Moneda por defecto",
+    "quickCurrencies": "Monedas de cambio rápido",
+    "quickCurrenciesActive": "Esta es la moneda de visualización activa.",
+    "quickCurrenciesHint": "Se muestra como un selector en el inicio. Elige al menos dos, hasta seis. Los importes se convierten, no solo se reetiquetan.",
     "locale": "Idioma",
     "taxJurisdiction": "Jurisdicción fiscal",
     "taxJurisdictionHint": "Determina qué documentos fiscales ofrece este espacio de trabajo. Independiente del idioma de la interfaz.",
@@ -2853,5 +2856,9 @@
       "recurring": "Reglas de Recurrentes",
       "recurringHint": "Cómo decidimos que un cargo es la cuenta que ya esperabas."
     }
+  },
+  "currencySwitch": {
+    "label": "Moneda de visualización",
+    "error": "No se pudo cambiar la moneda"
   }
 }
