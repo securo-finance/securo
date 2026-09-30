@@ -9,6 +9,7 @@ from sqlalchemy import select, func, desc
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.asset import Asset
 from app.models.asset_transaction import AssetTransaction
 from app.models.asset_value import AssetValue
@@ -79,7 +80,7 @@ def _generate_growth_values(
     When growth_start_date is set, growth iteration begins from that date — not
     from base_date — so the asset accrues no growth for the gap between
     purchase and the configured growth start."""
-    today = date.today()
+    today = app_today()
     if growth_start_date and today < growth_start_date:
         return []
 
@@ -528,7 +529,7 @@ async def create_asset(
                 asset_id=asset.id,
                 amount=initial_amount,
                 price=Decimal(str(quote.price)),
-                date=date.today(),
+                date=app_today(),
                 source="sync",
             )
         )
@@ -539,13 +540,13 @@ async def create_asset(
         value = AssetValue(
             asset_id=asset.id,
             amount=data.current_value,
-            date=date.today(),
+            date=app_today(),
             source="manual",
         )
         session.add(value)
     elif data.valuation_method == "growth_rule" and data.purchase_price is not None:
         # Seed the initial value from purchase price
-        base_date = data.purchase_date or data.growth_start_date or date.today()
+        base_date = data.purchase_date or data.growth_start_date or app_today()
         seed = AssetValue(
             asset_id=asset.id,
             amount=data.purchase_price,
@@ -592,7 +593,7 @@ async def create_asset(
                 quantity=Decimal(str(data.units)),
                 price=buy_price,
                 fee=Decimal("0"),
-                date=data.purchase_date or date.today(),
+                date=data.purchase_date or app_today(),
                 source="manual",
             )
         )
@@ -619,6 +620,17 @@ async def create_asset(
     return _asset_to_read(asset, latest, count, tx_count or 0)
 
 
+# Fields a ledger-backed holding derives from its transactions (see
+# asset_transaction_service.recompute_and_cache); an asset update ignores them.
+_LEDGER_DERIVED_FIELDS = (
+    "units",
+    "purchase_price",
+    "purchase_date",
+    "sell_date",
+    "sell_price",
+)
+
+
 async def update_asset(
     session: AsyncSession,
     asset_id: uuid.UUID,
@@ -638,6 +650,19 @@ async def update_asset(
     update_data = data.model_dump(exclude_unset=True)
     # Prevent changing valuation_method on existing assets
     update_data.pop("valuation_method", None)
+
+    tx_count = await session.scalar(
+        select(func.count()).select_from(AssetTransaction).where(AssetTransaction.asset_id == asset.id)
+    ) or 0
+    # Ledger-backed holdings derive their position (units, cost basis, buy and
+    # sell dates) from the transactions ledger. Editing the holding itself
+    # (e.g. renaming it) must never overwrite those cached values, or the cost
+    # basis is lost and the holding looks like it has no buys (issue #965).
+    is_ledger = asset.average_price is not None or tx_count > 0
+    if is_ledger:
+        for key in _LEDGER_DERIVED_FIELDS:
+            update_data.pop(key, None)
+
     for key, value in update_data.items():
         setattr(asset, key, value)
 
@@ -657,7 +682,7 @@ async def update_asset(
         )
         # Regenerate from purchase_price
         if asset.purchase_price and asset.growth_type and asset.growth_rate and asset.growth_frequency:
-            base_date = asset.purchase_date or asset.growth_start_date or date.today()
+            base_date = asset.purchase_date or asset.growth_start_date or app_today()
             backfill = _generate_growth_values(
                 asset_id=asset.id,
                 base_amount=float(asset.purchase_price),
@@ -699,7 +724,7 @@ async def update_asset(
     await session.refresh(asset)
     latest = await _get_latest_value(session, asset.id)
     count = await _get_value_count(session, asset.id)
-    return _asset_to_read(asset, latest, count)
+    return _asset_to_read(asset, latest, count, tx_count)
 
 
 async def delete_asset(
@@ -1031,7 +1056,7 @@ async def _apply_price_to_asset(
     if not asset.units or asset.units <= 0:
         return
 
-    today = value_date or date.today()
+    today = value_date or app_today()
     new_amount = new_price * Decimal(str(asset.units))
     existing = await session.execute(
         select(AssetValue)

@@ -2,3 +2,12 @@
 # intra-EU VAT id, the Steuernummer is the domestic one.
 code = "DE"
 kinds = ["vat", "steuernummer"]
+
+# Goods crossing a border carry a Harmonized System code; a barcode is
+# what most catalogs already have.
+[[product_fields]]
+key = "hs_code"
+kinds = ["product"]
+[[product_fields]]
+key = "gtin"
+kinds = ["product"]

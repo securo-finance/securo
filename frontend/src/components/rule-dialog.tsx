@@ -40,6 +40,7 @@ const CONDITION_FIELDS = [
   { value: 'account_id', label: 'rules.fieldAccount' },
   { value: 'payee_id', label: 'rules.fieldPayee' },
   { value: 'date', label: 'rules.fieldDate' },
+  { value: 'status', label: 'rules.fieldStatus' },
 ] as const
 
 const STRING_OPS = [
@@ -63,7 +64,7 @@ const NUMERIC_OPS = [
 function getOpsForField(field: string) {
   if (field === 'amount' || field === 'date') return NUMERIC_OPS
   if (field === 'type') return [{ value: 'equals', label: 'rules.opIs' }]
-  if (field === 'payee_id' || field === 'account_id') return [
+  if (field === 'payee_id' || field === 'account_id' || field === 'status') return [
     { value: 'equals', label: 'rules.opIs' },
     { value: 'not_equals', label: 'rules.opIsNot' },
   ]
@@ -71,7 +72,9 @@ function getOpsForField(field: string) {
 }
 
 function defaultValueForField(field: string) {
-  return field === 'type' ? 'debit' : ''
+  if (field === 'type') return 'debit'
+  if (field === 'status') return 'pending'
+  return ''
 }
 
 function newCondition(): RuleCondition {
@@ -155,6 +158,15 @@ function ConditionRow({
         >
           <option value="debit">{t('rules.typeExpense')}</option>
           <option value="credit">{t('rules.typeIncome')}</option>
+        </select>
+      ) : condition.field === 'status' ? (
+        <select
+          className={`${SELECT_CLASS} col-span-2 w-full min-w-0 sm:w-0 sm:flex-1`}
+          value={String(condition.value)}
+          onChange={(e) => onChange('value', e.target.value)}
+        >
+          <option value="pending">{t('rules.statusPending')}</option>
+          <option value="posted">{t('rules.statusPosted')}</option>
         </select>
       ) : condition.field === 'account_id' ? (
         <select
@@ -695,6 +707,7 @@ export function RuleDialog({
                               (category) => category.id === action.value
                             )}
                             placeholder={t('rules.selectCategory')}
+                            creatable
                             className={`${SELECT_CLASS} w-full`}
                           />
                         </div>

@@ -35,6 +35,7 @@ plus one entry in KIND_SPECS, and a named validator if its format is
 checkable. Both are pull requests, which is the point: a document that no
 code understands is a document no export can use.
 """
+import re
 import tomllib
 from dataclasses import dataclass
 from enum import Enum
@@ -222,15 +223,37 @@ def spec_for(kind: TaxIdKind) -> KindSpec:
 
 
 @dataclass(frozen=True)
+class ProductFieldSpec:
+    """A fiscal reference a jurisdiction asks for on a catalog item.
+
+    What the fiscal document will need per line and the invoice cannot
+    invent: a goods classification (NCM in Brazil, an HS code in the EU),
+    a service code, a barcode. Suggested by the pack, stored as free
+    text on the product, copied onto the line when the product fills
+    it. Any key stays storable in any workspace, for the same reason as
+    tax ids: the pack suggests, it never restricts.
+    """
+
+    key: str
+    label_key: str
+    #: Which kinds of product it applies to. Empty means both.
+    kinds: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class JurisdictionPack:
     code: str
     #: Ordered. The first is what the UI defaults to; `other` is always last.
     kinds: tuple[TaxIdKind, ...]
+    product_fields: tuple[ProductFieldSpec, ...] = ()
 
 
 #: What a deployment with no jurisdiction set gets. Empty of opinions rather
 #: than quietly defaulting to somebody's country.
 FALLBACK = JurisdictionPack(code="", kinds=(TaxIdKind.OTHER,))
+
+_PRODUCT_KINDS = ("service", "product")
+_FIELD_KEY = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
 
 
 def _load_pack(path: Path) -> JurisdictionPack:
@@ -244,7 +267,18 @@ def _load_pack(path: Path) -> JurisdictionPack:
     # its pack never anticipated.
     if TaxIdKind.OTHER not in kinds:
         kinds.append(TaxIdKind.OTHER)
-    return JurisdictionPack(code=code, kinds=tuple(kinds))
+    fields = []
+    for raw_field in raw.get("product_fields", []):
+        key = str(raw_field["key"])
+        if not _FIELD_KEY.match(key):
+            raise ValueError(f"{path.name}: product field key {key!r} is not a valid key")
+        applies = tuple(str(k) for k in raw_field.get("kinds", ()))
+        if any(k not in _PRODUCT_KINDS for k in applies):
+            raise ValueError(f"{path.name}: product field {key} names an unknown product kind")
+        fields.append(
+            ProductFieldSpec(key=key, label_key=f"fiscal.productField.{key}", kinds=applies)
+        )
+    return JurisdictionPack(code=code, kinds=tuple(kinds), product_fields=tuple(fields))
 
 
 @lru_cache(maxsize=1)

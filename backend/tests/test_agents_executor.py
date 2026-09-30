@@ -28,6 +28,7 @@ from app.agents.providers.base import (
     Usage,
 )
 from app.agents.runtime.executor import AgentExecutor, ExecutorEvent
+from app.agents.services import conversation_service
 
 
 pytestmark = pytest.mark.asyncio
@@ -553,3 +554,51 @@ async def test_max_iterations_terminates_runaway_agent(session, test_user, test_
     done = next((e for e in events if e.type == "done"), None)
     assert err is not None and err.error_code == "max_iterations"
     assert done is not None and done.finish_reason == "max_iterations"
+
+
+async def test_history_window_never_opens_on_an_orphaned_tool_result(
+    session, test_user, test_agent, test_conversation,
+):
+    """A turn with parallel tool calls has an odd number of rows, so the
+    history window can start on a tool result whose assistant call was cut
+    off. Providers reject that, so the replay must start at a user message."""
+    test_agent.max_history_messages = 3  # window of 3 * 2 + 2 = 8 rows
+    await session.commit()
+
+    async def add(role, content="", **kw):
+        await conversation_service.append_message(
+            session, conversation_id=test_conversation.id, role=role, content=content, **kw,
+        )
+
+    await add("user", "q0")
+    await add("assistant", tool_calls=[
+        {"id": "c1", "name": "securo__list_accounts", "arguments": {}},
+        {"id": "c2", "name": "securo__list_budgets", "arguments": {}},
+    ])
+    await add("tool", "{}", tool_result={"tool_call_id": "c1"})
+    await add("tool", "{}", tool_result={"tool_call_id": "c2"})
+    await add("assistant", "a0")
+    for i in (1, 2):
+        await add("user", f"q{i}")
+        await add("assistant", f"a{i}")
+
+    provider = _ScriptedProvider([[
+        ChatChunk(type="text_delta", text="ok"),
+        ChatChunk(type="finish", finish_reason="stop"),
+    ]])
+    with _patch_provider(provider):
+        await _drain(
+            AgentExecutor(mcp=_FakeMCP(tools=[])),
+            session=session,
+            agent=test_agent,
+            user_id=test_user.id,
+            conversation_id=test_conversation.id,
+            user_message="new question",
+        )
+
+    replayed = [m for m in provider.requests[0] if m.role != "system"]
+    assert [(m.role, m.content) for m in replayed] == [
+        ("user", "q1"), ("assistant", "a1"),
+        ("user", "q2"), ("assistant", "a2"),
+        ("user", "new question"),
+    ]

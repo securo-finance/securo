@@ -13,6 +13,9 @@
     "locale": "Język",
     "taxJurisdiction": "Jurysdykcja podatkowa",
     "taxJurisdictionHint": "Decyduje, jakie dokumenty podatkowe oferuje ten obszar roboczy. Niezależnie od języka interfejsu.",
+    "timezone": "Strefa czasowa",
+    "timezoneDefault": "Domyślna aplikacji ({{zone}})",
+    "timezoneHint": "Kalendarz, w którym ten workspace prowadzi księgi. Salda, budżety i terminy zmieniają się tam o północy.",
     "members": "Członkowie",
     "addMember": "Dodaj członka",
     "addMemberTitle": "Dodaj członka",
@@ -65,7 +68,8 @@
     "versionAriaLabel": "Działa wersja {{version}}",
     "versionLabel": "Wersja {{version}}",
     "updateAvailable": "Dostępna aktualizacja",
-    "updateAvailableHint": "Na GitHubie dostępne jest nowsze wydanie ({{version}})"
+    "updateAvailableHint": "Na GitHubie dostępne jest nowsze wydanie ({{version}})",
+    "toggleMenu": "Przełącz menu"
   },
   "cmdk": {
     "title": "Paleta poleceń",
@@ -126,6 +130,8 @@
     "groupAgents": "AI",
     "agents": "Agenci",
     "aiAgents": "Agenci AI",
+    "collapseSidebar": "Zwiń pasek boczny",
+    "expandSidebar": "Rozwiń pasek boczny",
     "collections": "Kolekcje"
   },
   "invoices": {
@@ -230,7 +236,8 @@
       "downloadPdf": "Download PDF",
       "share": "Share link",
       "revokeLink": "Revoke link",
-      "saveDraft": "Zapisz szkic"
+      "saveDraft": "Zapisz szkic",
+      "downloadStatement": "Pobierz wyciąg"
     },
     "settings": {
       "title": "Invoice settings",
@@ -290,7 +297,58 @@
       "payable_not_shareable": "Otrzymanej faktury nie można udostępnić.",
       "discount_exceeds_total": "Rabat jest większy niż kwota do zapłaty.",
       "no_document_filed": "Ten dokument został wystawiony gdzie indziej. Dołącz otrzymany plik.",
-      "already_imported": "Ten dokument został już zaimportowany."
+      "already_imported": "Ten dokument został już zaimportowany.",
+      "term_lines_required": "Warunek wymaga co najmniej jednej pozycji.",
+      "term_empty": "Warunek musi coś rozliczać.",
+      "term_in_use": "Na podstawie tego warunku wystawiono już fakturę. Dodaj nowy warunek od późniejszej daty.",
+      "term_before_start": "Warunek nie może zaczynać się przed umową.",
+      "term_date_taken": "Inny warunek zaczyna się już w tym dniu.",
+      "last_term": "Umowa wymaga co najmniej jednego warunku.",
+      "term_not_found": "Nie znaleziono warunku.",
+      "schedule_ended": "Ta umowa została zakończona i nie można jej już zmieniać.",
+      "schedule_locked": "Częstotliwość, data rozpoczęcia i waluta są stałe, gdy w ramach tej umowy istnieje faktura.",
+      "schedule_has_invoices": "W ramach tej umowy wystawiono faktury. Zakończ ją zamiast usuwać.",
+      "schedule_not_active": "Tylko aktywna umowa wystawia faktury.",
+      "invalid_frequency": "Nieznana częstotliwość.",
+      "invalid_end_type": "Nieznany warunek zakończenia.",
+      "invalid_end_reason": "Nieznany powód zakończenia.",
+      "end_date_required": "Podaj, w którym dniu umowa się kończy.",
+      "end_count_required": "Podaj, po ilu fakturach umowa się kończy.",
+      "end_before_start": "Umowa nie może zakończyć się przed rozpoczęciem.",
+      "name_required": "Nadaj umowie nazwę.",
+      "not_issued": "Tylko wystawiona faktura może rozpocząć umowę.",
+      "already_linked": "Ta faktura należy już do umowy.",
+      "invoice_void": "Anulowana faktura nie może odpowiadać za okres.",
+      "payee_mismatch": "Faktura i umowa wskazują różnych klientów.",
+      "not_a_period": "Ta data nie jest początkiem okresu tej umowy.",
+      "beyond_end": "Ten okres przypada po zakończeniu umowy.",
+      "period_taken": "Inna faktura odpowiada już za ten okres.",
+      "start_after_invoice": "Umowa nie może zaczynać się po tej fakturze.",
+      "invoice_not_found": "Nie znaleziono faktury.",
+      "no_term": "Dla tego okresu nie obowiązuje żaden warunek.",
+      "no_author": "Ta umowa nie ma autora, w imieniu którego można wystawiać faktury.",
+      "negative_discount": "Rabat nie może być ujemny.",
+      "first_term": "Ceny obowiązującej od początku nie można przesunąć ani usunąć. Zmień ją lub dodaj nową cenę od późniejszej daty.",
+      "not_receivable": "Do umowy może należeć tylko faktura wystawiona przez Ciebie.",
+      "period_already_issued": "Ten okres został właśnie wystawiony. Odśwież, aby go zobaczyć.",
+      "product_not_found": "Nie znaleziono produktu.",
+      "price_not_found": "Nie znaleziono ceny w tym produkcie.",
+      "product_in_use": "Faktury wymieniają ten produkt. Zarchiwizuj go zamiast usuwać.",
+      "price_in_use": "Faktury zostały wystawione po tej cenie. Zarchiwizuj ją zamiast usuwać.",
+      "invalid_kind": "Nieznany rodzaj produktu.",
+      "invalid_billing": "Nieznany rodzaj rozliczenia.",
+      "interval_required": "Cena cykliczna wymaga częstotliwości.",
+      "currency_required": "Cena wymaga waluty.",
+      "unit_price_required": "Cena wymaga kwoty.",
+      "negative_price": "Cena nie może być ujemna.",
+      "invalid_fiscal_refs": "Odniesienia podatkowe muszą być krótkimi wartościami tekstowymi pod prostymi kluczami (litery, cyfry, podkreślenie).",
+      "price_key_taken": "Inna cena już używa tego klucza wyszukiwania lub zewnętrznego identyfikatora.",
+      "installments_mismatch": "Raty nie sumują się do kwoty faktury.",
+      "installments_too_few": "Harmonogram wymaga co najmniej dwóch rat.",
+      "installment_amount_not_positive": "Każda rata musi mieć kwotę.",
+      "installment_due_required": "Każda rata wymaga terminu płatności.",
+      "invalid_deduction_kind": "Nieznany rodzaj potrącenia.",
+      "deduction_not_found": "Nie znaleziono potrącenia."
     },
     "comingNext": "Wystawiaj faktury klientom i śledź, co zostało zapłacone, a co wciąż jest otwarte. To następna rzecz w budowie.",
     "document": {
@@ -383,6 +441,274 @@
       "alsoCovers_many": "i jeszcze {{count}} faktur",
       "alsoCovers_other": "obejmuje też {{count}} innych faktur",
       "wouldApply": "zastosowałaby {{amount}}"
+    },
+    "schedules": {
+      "title": "Cykliczne",
+      "new": "Nowa faktura cykliczna",
+      "newDescription": "Umowa z klientem na rozliczanie co okres. Faktury są wystawiane za Ciebie, w wyznaczonym dniu.",
+      "backToList": "Wróć do cyklicznych",
+      "empty": "Nie ma jeszcze faktur cyklicznych. Utwórz jedną albo otwórz fakturę i wybierz \"Powtarzaj tę fakturę\".",
+      "emptyFiltered": "Nic tu nie ma z tym statusem.",
+      "created": "Faktura cykliczna utworzona",
+      "saved": "Zmiany zapisane",
+      "deleted": "Faktura cykliczna usunięta",
+      "paused": "Wstrzymano. Nic nie zostanie rozliczone, dopóki jej nie wznowisz.",
+      "resumed": "Wznowiono od następnego okresu.",
+      "ended": "Umowa zakończona",
+      "generated_one": "Faktura wystawiona",
+      "generated_other": "Wystawiono faktur: {{count}}",
+      "termSaved": "Cena zapisana",
+      "termRemoved": "Zmiana ceny usunięta",
+      "linked": "Faktura powiązana z umową",
+      "unlinked": "Faktura odłączona od umowy",
+      "recurringInvoice": "Faktura cykliczna",
+      "monthlyPreview": "Około {{amount}} miesięcznie.",
+      "since": "od {{date}}",
+      "untilDate": "do {{date}}",
+      "untilCount_one": "{{count}} faktura łącznie",
+      "untilCount_other": "Łącznie faktur: {{count}}",
+      "endedOn": "zakończona {{date}} ({{reason}})",
+      "pausedByFailures": "Wstrzymano po powtarzających się błędach. Sprawdź warunki i wznów.",
+      "editTitle": "Edytuj fakturę cykliczną",
+      "editDescription": "Nazwa, klient, warunki i kiedy się kończy.",
+      "editLockedDescription": "W ramach tej umowy wystawiono już faktury, więc częstotliwość i data rozpoczęcia są stałe. Wszystko inne można zmienić.",
+      "endTitle": "Zakończyć tę umowę?",
+      "endDescription": "Nie będą wystawiane kolejne faktury. Te już wystawione zostają dokładnie takie, jakie są. Podaj powód: to jedyna rzecz, której faktury nie powiedzą Ci później.",
+      "linkTitle": "Powiąż istniejącą fakturę",
+      "linkDescription": "Faktura, którą wystawiono ręcznie za jeden z okresów tej umowy. Zachowuje swój numer, datę i płatności; dowiaduje się tylko, którego okresu dotyczy.",
+      "noCandidates": "Brak niepowiązanej faktury dla tego klienta w tej walucie.",
+      "makeRecurringDescription": "Ta faktura staje się jednym okresem nowej umowy, a kolejne są wystawiane za Ciebie. Jej data, {{date}}, jest pierwszym okresem, chyba że wskażesz, że umowa zaczęła się wcześniej.",
+      "filter": {
+        "all": "Wszystkie",
+        "active": "Aktywne",
+        "paused": "Wstrzymane",
+        "ended": "Zakończone"
+      },
+      "state": {
+        "active": "Aktywna",
+        "past_due": "Po terminie",
+        "paused": "Wstrzymana",
+        "paused_failures": "Wymaga uwagi",
+        "ended": "Zakończona"
+      },
+      "frequency": {
+        "weekly": "Co tydzień",
+        "biweekly": "Co 2 tygodnie",
+        "monthly": "Co miesiąc",
+        "quarterly": "Co kwartał",
+        "semiannual": "Co 6 miesięcy",
+        "yearly": "Co rok"
+      },
+      "endType": {
+        "never": "Nigdy",
+        "on_date": "W dniu",
+        "after_count": "Po określonej liczbie faktur"
+      },
+      "endReason": {
+        "canceled_by_client": "Anulowana przez klienta",
+        "canceled_by_us": "Anulowana przez nas",
+        "completed": "Dobiegła końca",
+        "unpaid": "Nieopłacona",
+        "other": "Inny"
+      },
+      "summary": {
+        "monthly": "Cykliczne miesięcznie",
+        "yearly": "Rocznie",
+        "lost": "Utracone w ostatnich 30 dniach",
+        "endedRecently_one": "{{count}} umowa zakończona",
+        "endedRecently_other": "Zakończonych umów: {{count}}",
+        "pastDue": "Po terminie",
+        "pastDueHint": "umowy z zaległą fakturą",
+        "activeCount_one": "{{count}} aktywna umowa",
+        "activeCount_other": "Aktywnych umów: {{count}}",
+        "none": "Nic cyklicznego jeszcze nie ma"
+      },
+      "column": {
+        "name": "Umowa",
+        "cadence": "Cykl",
+        "monthly": "Miesięcznie",
+        "next": "Następna faktura",
+        "invoices": "Faktury",
+        "status": "Status",
+        "period": "Okres"
+      },
+      "figure": {
+        "invoiced": "Zafakturowano",
+        "paid": "Otrzymano",
+        "pastDue_one": "{{count}} faktura po terminie",
+        "pastDue_other": "Faktur po terminie: {{count}}"
+      },
+      "field": {
+        "name": "Nazwa",
+        "namePlaceholder": "Plan Pro, miesięczny abonament, hosting",
+        "frequency": "Częstotliwość",
+        "startDate": "Zaczyna się",
+        "startDateHint": "Data wcześniejsza niż faktura zostawia miejsce na powiązanie tych sprzed niej.",
+        "paymentTerms": "Termin płatności (dni)",
+        "currency": "Waluta",
+        "ends": "Kończy się",
+        "endDate": "Data zakończenia",
+        "endCount": "Liczba faktur",
+        "endReason": "Powód",
+        "endedAt": "Zakończona",
+        "invoice": "Faktura",
+        "invoicePlaceholder": "Wybierz fakturę",
+        "period": "Okres",
+        "periodPlaceholder": "Wybierz okres"
+      },
+      "action": {
+        "changePrice": "Zmień cenę",
+        "generate": "Wystaw następną teraz",
+        "pause": "Wstrzymaj",
+        "resume": "Wznów",
+        "end": "Zakończ umowę",
+        "linkInvoice": "Powiąż fakturę",
+        "link": "Powiąż",
+        "makeRecurring": "Powtarzaj tę fakturę",
+        "unlink": "Usuń z umowy"
+      },
+      "terms": {
+        "title": "Cena",
+        "description": "Ile umowa rozlicza za okres i od kiedy. Zmiana obowiązuje od pierwszego okresu zaczynającego się w jej dniu lub później; nic nie jest liczone proporcjonalnie.",
+        "from": "Od {{date}}",
+        "current": "Obowiązująca",
+        "upcoming": "Nadchodząca",
+        "perMonth": "{{amount}} miesięcznie",
+        "editTitle": "Edytuj zmianę ceny",
+        "changeDescription": "Zapisz nową cenę od wybranej daty. Okresy już zafakturowane zachowują to, co im naliczono; zmiana zaczyna się od pierwszego okresu w tym dniu lub później, w całości.",
+        "effectiveFrom": "Od",
+        "nextPeriodHint": "Następny okres zaczyna się {{date}}.",
+        "discount": "Rabat",
+        "preview": "{{period}} za okres, około {{monthly}} miesięcznie."
+      },
+      "invoices": {
+        "title": "Faktury",
+        "description": "Jedna na okres, wystawiana w wyznaczonym dniu. Fakturę wystawioną ręcznie też można powiązać.",
+        "empty": "W tej umowie nie ma jeszcze faktury.",
+        "emptyNext": "Nie ma jeszcze faktury. Pierwsza zostanie wystawiona {{date}}."
+      }
+    },
+    "products": {
+      "title": "Produkty",
+      "new": "Nowy produkt",
+      "newDescription": "Coś, co sprzedajesz, z ceną dla każdej waluty. Wybranie go wypełnia pozycję faktury; pozycję można potem dowolnie zmienić.",
+      "editTitle": "Edytuj produkt",
+      "empty": "Nie ma jeszcze produktów. Dodaj to, co sprzedajesz, a każda pozycja faktury będzie o jedno kliknięcie.",
+      "emptyArchived": "Nic nie zarchiwizowano.",
+      "emptyPicker": "Nie ma jeszcze produktów. Dodaj je w sekcji Produkty.",
+      "noneFound": "Żaden produkt nie pasuje.",
+      "searchPlaceholder": "Szukaj produktów",
+      "pick": "Wybierz z katalogu",
+      "fromCatalog": "Z katalogu",
+      "noPrice": "Brak ceny",
+      "noPriceIn": "brak ceny w {{currency}}",
+      "perUnit": "za {{unit}}",
+      "created": "Produkt utworzony",
+      "saved": "Produkt zapisany",
+      "archived": "Produkt zarchiwizowany. Faktury, które go wymieniają, pozostają bez zmian.",
+      "restored": "Produkt przywrócony",
+      "deleted": "Produkt usunięty",
+      "filter": {
+        "active": "Aktywne",
+        "archived": "Zarchiwizowane"
+      },
+      "kind": {
+        "service": "Usługa",
+        "product": "Produkt"
+      },
+      "billing": {
+        "one_time": "Jednorazowo",
+        "every": "Co {{interval}}"
+      },
+      "per": {
+        "weekly": "tydzień",
+        "biweekly": "2 tygodnie",
+        "monthly": "miesiąc",
+        "quarterly": "kwartał",
+        "semiannual": "6 miesięcy",
+        "yearly": "rok"
+      },
+      "column": {
+        "name": "Nazwa",
+        "kind": "Rodzaj",
+        "prices": "Ceny",
+        "invoices": "Faktury"
+      },
+      "field": {
+        "name": "Nazwa",
+        "namePlaceholder": "Godzina konsultacji, Plan Pro, Projekt logo",
+        "kind": "Rodzaj",
+        "description": "Opis",
+        "prices": "Ceny",
+        "pricesHint": "Jedna na walutę. Cena cykliczna określa, jak często; to podpowiedź dla faktur cyklicznych, nic nie jest naliczane samo z siebie.",
+        "addPrice": "Dodaj cenę",
+        "noPrices": "Brak cen. Nazwa i tak wypełni pozycję; kwotę wpisuje się ręcznie.",
+        "nickname": "Etykieta (opcjonalnie)",
+        "fiscalRefs": "Odniesienia podatkowe",
+        "fiscalRefsHint": "Czego dokument podatkowy wymaga w każdej pozycji. Sugerowane przez Twoją jurysdykcję; dodaj dowolny inny potrzebny klucz.",
+        "customRefKey": "inny klucz (np. hs_code)",
+        "addRef": "Dodaj",
+        "fiscalRefsNone": "Brak sugestii dla tego rodzaju. Dodaj dowolny klucz, którego potrzebują Twoje dokumenty podatkowe."
+      },
+      "action": {
+        "archive": "Archiwizuj",
+        "restore": "Przywróć"
+      }
+    },
+    "installments": {
+      "title": "Podziel na raty",
+      "splitIn": "Podziel na",
+      "splitHint": "równych części, co miesiąc, od terminu płatności",
+      "add": "Dodaj ratę",
+      "label": "Etykieta",
+      "labelPlaceholder": "{{n}}/{{total}}",
+      "addsUp": "Suma: {{total}}.",
+      "mismatch": "Raty sumują się do {{scheduled}}, faktura do {{total}}.",
+      "schedule": "Harmonogram płatności",
+      "nextDue": "Najbliższy termin",
+      "dueDerived": "Ustalany przez ostatnią ratę.",
+      "count_one": "{{count}} rata",
+      "count_other": "Raty: {{count}}",
+      "state": {
+        "open": "Otwarta",
+        "partial": "Częściowa",
+        "paid": "Opłacona",
+        "overdue": "Przeterminowana",
+        "draft": "Szkic",
+        "void": "Anulowana",
+        "uncollectible": "Nieściągalna"
+      }
+    },
+    "deductions": {
+      "title": "Zarejestruj potrącenie",
+      "description": "Zamyka część należności bez wpływu pieniędzy: klient potrącił podatek, operator płatności zatrzymał prowizję, przewalutowanie wyszło niżej. Liczy się jako rozliczone, nigdy jako otrzymane.",
+      "action": "Zarejestruj potrącenie",
+      "recorded": "Potrącenie zarejestrowane",
+      "removed": "Potrącenie usunięte",
+      "amount": "Kwota",
+      "amountHint": "Do wysokości salda: {{balance}}.",
+      "kindLabel": "Powód",
+      "taxKind": "Jaki podatek (opcjonalnie)",
+      "taxKindPlaceholder": "PIT, VAT, podatek u źródła...",
+      "note": "Notatka (opcjonalnie)",
+      "settledWithout": "Rozliczone bez płatności",
+      "kind": {
+        "withholding_tax": "Podatek potrącony przez klienta",
+        "gateway_fee": "Prowizja zatrzymana przez operatora płatności",
+        "fx_difference": "Różnica kursowa",
+        "other": "Inne"
+      },
+      "differenceTitle": "Płatność jest niższa o {{difference}}",
+      "differenceHint": "Zarejestruj różnicę, aby zamknąć fakturę",
+      "differenceNone": "Nie rejestruj",
+      "figure": "Potrącono"
+    },
+    "statement": {
+      "asIssued": "Faktura w wystawionej postaci",
+      "asIssuedHint": "Dokument wysłany do klienta",
+      "hint": "Płatności i potrącenia od wystawienia oraz saldo",
+      "banner": "Ten PDF to faktura w wystawionej postaci. Od tego czasu otrzymano {{paid}} i potrącono {{deducted}}: wyciąg pokazuje każdą pozycję i saldo.",
+      "title": "Wyciąg z konta"
     }
   },
   "collections": {
@@ -464,6 +790,7 @@
     "passkeySecondFactorPrompt": "Kliknij przycisk poniżej i postępuj zgodnie z prośbą przeglądarki o klucz bezpieczeństwa.",
     "passkeysTitle": "Klucze dostępu",
     "passkeysDescription": "Używaj kluczy bezpieczeństwa lub kluczy dostępu urządzenia, aby logować się bez wpisywania hasła. Zarejestrowane klucze chronią też logowanie hasłem jako drugi składnik; logowanie samym kluczem pomija kod z aplikacji, bo klucz już potwierdza posiadanie.",
+    "passkeysCleanupDescription": "Logowanie lokalne jest wyłączone. Możesz usuwać zapisane klucze dostępu, ale nie możesz dodawać nowych.",
     "passkeyLoadError": "Nie udało się załadować kluczy dostępu",
     "passkeyUnsupported": "Ta przeglądarka nie obsługuje kluczy dostępu.",
     "passkeyInsecureContext": "Klucze dostępu wymagają bezpiecznego połączenia. Otwórz Securo przez HTTPS lub na http://localhost.",
@@ -514,7 +841,7 @@
     "spendingByCategory": "Wydatki wg kategorii",
     "monthlyTrend": "Trend miesięczny",
     "budgetVsActual": "Budżet a realizacja",
-    "balanceFlow": "Przepływ salda",
+    "balanceFlow": "Ewolucja salda",
     "balanceFlowVsPrev": "W {{month}} w dniu {{day}}: {{amount}} ({{delta}})",
     "balancePeriodVariation": "Zmiana w okresie",
     "balanceCurrentMonthLegend": "Bieżący miesiąc",
@@ -733,6 +1060,7 @@
     "transferNotes": "Notatki",
     "transferInfo": "To transfer — zmiany opisu, daty i notatek obejmą obie strony",
     "transferLinkedTo": "Powiązana z:",
+    "transferOpenAccount": "Otwórz konto {{account}}",
     "transferTooltip": "Transfery są wyłączone z sum w raportach i na pulpicie",
     "installmentTooltip_one": "Plan ratalny — {{count}} obciążenie na łączną kwotę {{total}}",
     "installmentTooltip_few": "Plan ratalny — {{count}} obciążenia na łączną kwotę {{total}}",
@@ -811,7 +1139,9 @@
         "thisMonth": "Bieżący miesiąc",
         "last90": "Ostatnie 90 dni",
         "thisYear": "Bieżący rok"
-      }
+      },
+      "futureDateError": "Data końcowa nie może przypadać po dzisiejszej dacie",
+      "rangeTooWideError": "Zakres jest zbyt szeroki (maks. {{years}} lat)"
     },
     "bulkAddTags": "Dodaj tagi",
     "bulkRemoveTags": "Usuń tagi",
@@ -851,7 +1181,8 @@
     "invoiceBadgeNoNumber": "Invoice",
     "invoiceBadgeTooltip": "Ta transakcja rozlicza fakturę. Otwórz ją.",
     "suggestionBadge": "Pytanie",
-    "suggestionBadgeTooltip": "Płatność może opłacić tę fakturę. Otwórz kolejkę, aby odpowiedzieć."
+    "suggestionBadgeTooltip": "Płatność może opłacić tę fakturę. Otwórz kolejkę, aby odpowiedzieć.",
+    "clearGroupFilter": "Wyczyść filtr grupy"
   },
   "accounts": {
     "title": "Konta",
@@ -934,6 +1265,7 @@
     "expenses": "Wydatki",
     "projectedBalance": "Saldo prognozowane",
     "notSettled": "Nierozliczone",
+    "sharedCreditBalance": "Wspólna linia kredytowa",
     "projectedIncome": "Prognozowane przychody",
     "projectedExpenses": "Prognozowane wydatki",
     "thisMonth": "Bieżący miesiąc",
@@ -1008,7 +1340,12 @@
         "description": "Banki w USA i międzynarodowe przez SimpleFIN Bridge"
       }
     },
-    "reconnected": "Bank połączony ponownie"
+    "reconnected": "Bank połączony ponownie",
+    "connectionStatus": {
+      "active": "Aktywne",
+      "error": "Błąd",
+      "expired": "Wygasłe"
+    }
   },
   "connections": {
     "settings": "Ustawienia połączenia",
@@ -1267,6 +1604,7 @@
     "fieldAccount": "Konto",
     "fieldPayee": "Odbiorca",
     "fieldDate": "Data",
+    "fieldStatus": "Status",
     "opContains": "zawiera",
     "opNotContains": "nie zawiera",
     "opEquals": "równa się",
@@ -1278,6 +1616,8 @@
     "opIsNot": "nie jest",
     "typeExpense": "Wydatek (obciążenie)",
     "typeIncome": "Przychód (uznanie)",
+    "statusPending": "Oczekująca",
+    "statusPosted": "Zaksięgowana",
     "valuePlaceholder": "Wartość...",
     "sortLabel": "Sortuj wg",
     "sortBy_priority": "Priorytet",
@@ -1719,9 +2059,13 @@
     "amount": "Kwota",
     "investments": "Inwestycje",
     "moneyMap": "Mapa Pieniędzy",
-    "range30d": "30D"
+    "range30d": "30D",
+    "customRange": "Zakres niestandardowy",
+    "pickCustomRange": "Wybierz datę początkową i końcową",
+    "loadError": "Nie udało się załadować raportu"
   },
   "payees": {
+    "noPayeeFound": "Nie znaleziono odbiorcy.",
     "addFavorite": "Dodaj do ulubionych",
     "removeFavorite": "Usuń z ulubionych",
     "favoriteError": "Nie udało się zaktualizować ulubionych",
@@ -1831,9 +2175,24 @@
       "uscc": "USCC"
     },
     "otherCountries": "Inne kraje",
-    "anyCountry": "Gdziekolwiek indziej"
+    "anyCountry": "Gdziekolwiek indziej",
+    "productField": {
+      "ncm": "NCM",
+      "cest": "CEST",
+      "gtin": "GTIN / kod kreskowy",
+      "service_code": "Kod usługi (LC 116)",
+      "nbs": "NBS",
+      "municipal_service_code": "Gminny kod usługi",
+      "hs_code": "Kod HS",
+      "sat_product_code": "Kod produktu/usługi SAT",
+      "sat_unit_code": "Kod jednostki SAT"
+    }
   },
   "common": {
+    "selectTimezone": "Wybierz strefę czasową",
+    "searchTimezone": "Szukaj strefy czasowej...",
+    "noTimezoneFound": "Nie znaleziono strefy czasowej.",
+    "createNamed": "Utwórz „{{name}}”",
     "view": "Zobacz",
     "add": "Dodaj",
     "save": "Zapisz",
@@ -1862,7 +2221,11 @@
     "previous": "Poprzedni",
     "next": "Następny",
     "rowsPerPage": "Wierszy na stronę",
-    "noResults": "Brak wyników"
+    "noResults": "Brak wyników",
+    "preview": "Podgląd",
+    "download": "Pobierz",
+    "closePreview": "Zamknij podgląd",
+    "remove": "Usuń"
   },
   "splitGroups": {
     "title": "Grupy",
@@ -2104,6 +2467,11 @@
       "dateFormatMdyDesc": "Najpierw miesiąc, np. 06/04/2026.",
       "dateFormatYmd": "Rok / Miesiąc / Dzień",
       "dateFormatYmdDesc": "Kolejność ISO, np. 2026-06-04.",
+      "timezoneTitle": "Data i godzina",
+      "timezone": "Strefa czasowa aplikacji",
+      "timezoneHelp": "Daty, transakcje cykliczne, zaplanowane zadania i kontekst AI korzystają z tej strefy czasowej. Zmiany dotyczą nowych żądań i zadań.",
+      "timezoneServerDefault": "Domyślna serwera ({{zone}})",
+      "timezoneSavedInvalid": "Zapisana wartość {{value}} nie jest strefą czasową znaną temu serwerowi. Do czasu zmiany używana jest {{zone}}.",
       "updated": "Zaktualizowano ustawienie"
     }
   },
@@ -2337,7 +2705,8 @@
       "openSettings": "Ustawienia agenta",
       "empty": "Wybierz agenta i rozpocznij rozmowę na podstawie swoich danych finansowych.",
       "openAgents": "Przejdź do Agentów",
-      "noConversations": "Brak rozmów."
+      "noConversations": "Brak rozmów.",
+      "backToChat": "Wróć do czatu"
     },
     "mcpExternal": {
       "title": "Zewnętrzny dostęp MCP",
@@ -2368,7 +2737,9 @@
       "invoicesHint": "wobec tego, co masz otrzymać i zapłacić",
       "recurring": "Cykliczne",
       "recurringHint": "wobec tego, czego już się spodziewałeś",
-      "inactive": "Tu nieużywane"
+      "inactive": "Tu nieużywane",
+      "transfers": "Przelewy",
+      "transfersHint": "między własnymi kontami"
     },
     "rule": {
       "sameClientExact": "Znana osoba, dokładna kwota",
@@ -2378,7 +2749,10 @@
       "sameAccountExact": "To samo konto, dokładna kwota",
       "unknown": "Reguła",
       "partPayment": "Znana osoba, część kwoty",
-      "severalInvoices": "Znana osoba, kilka faktur naraz"
+      "severalInvoices": "Znana osoba, kilka faktur naraz",
+      "destinationNamed": "Opis wskazuje drugie konto",
+      "exactAmountNearby": "Dokładna kwota, bliska data",
+      "closeAmountWiderWindow": "Zbliżona kwota, szersze okno"
     },
     "outcome": {
       "link": "Wiąże sama",
@@ -2406,7 +2780,12 @@
       "onArrival": "gdy pieniądze wpływają lub wypływają",
       "onIssue": "gdy wystawiana jest faktura",
       "amountPartial": "kwota pokrywa część należności",
-      "amountSet": "do {{count}} faktur daje tę sumę"
+      "amountSet": "do {{count}} faktur daje tę sumę",
+      "differentAccount": "dwa różne konta",
+      "accountTypes": "jedna ze stron to konto typu {{kinds}}",
+      "accountNamed": "jeden z opisów wskazuje drugie konto",
+      "closestDate": "wygrywa najbliższa data",
+      "uniqueCandidate": "pasuje tylko jeden kandydat"
     },
     "newRule": "Nowa reguła dopasowania",
     "saved": "Reguła zapisana",
@@ -2449,7 +2828,12 @@
       "triggerHint": "Dopasowanie dzieje się w dwóch momentach, a dowody nie są takie same.",
       "amountMatch": "Jak blisko musi być kwota",
       "amountMatchHint": "Porównywana z tym, co wciąż pozostaje do zapłaty, nie z pierwotną sumą.",
-      "amountBandHint": "O samej płatności: wielkość, którą ta reguła ma obsługiwać albo nie."
+      "amountBandHint": "O samej płatności: wielkość, którą ta reguła ma obsługiwać albo nie.",
+      "transferSignals": "Co czyni z tego przelew",
+      "transferSignalsHint": "Obie strony zawsze są na różnych kontach. Tutaj określasz, co jeszcze musi się zgadzać, zanim zaufamy tej parze.",
+      "accountTypes": "Tylko gdy jedna ze stron jest jedną z tych",
+      "amountMatchHintTransfer": "Porównywane z drugą stroną, w tej samej walucie. Różne waluty nigdy nie łączą się same; nadal możesz powiązać obie strony ręcznie.",
+      "windowHintTransfer": "Pieniądze rzadko docierają tego samego dnia, w którym wyszły. Obie strony liczą się od drugiego zapisu, więc dwa dni z każdej strony obejmują weekend."
     },
     "counterparty": {
       "any": "Ktokolwiek",
@@ -2479,7 +2863,13 @@
       "declineHint": "To nie to. Ta para nie będzie już proponowana.",
       "linked": "Powiązano",
       "declined": "Odrzucono. Nie zapytamy ponownie",
-      "covers": "pokrywa"
+      "covers": "pokrywa",
+      "mayPairWith": "może być drugą połową {{name}}",
+      "kind": {
+        "transaction": "Przelew",
+        "invoice": "Faktura",
+        "recurring": "Cykliczne"
+      }
     },
     "evidence": {
       "amountExact": "kwota zgadza się dokładnie",
@@ -2487,7 +2877,10 @@
       "knownPayer": "znana osoba",
       "unknownPayer": "osoba nierozpoznana",
       "sameDay": "ten sam dzień",
-      "daysApart": "różnica {{days}} dni"
+      "daysApart_one": "różnica {{count}} dnia",
+      "daysApart_few": "różnica {{count}} dni",
+      "daysApart_many": "różnica {{count}} dni",
+      "daysApart_other": "różnica {{count}} dni"
     },
     "direction": {
       "any": "Obojętnie",
@@ -2499,7 +2892,8 @@
       "which": "Na jakie pieniądze patrzy",
       "whichHint": "Zostaw wszystko puste, a patrzy na wszystkie",
       "match": "Kiedy liczy się jako dopasowanie",
-      "matchHint": "Jak blisko muszą być płatność i zobowiązanie"
+      "matchHint": "Jak blisko muszą być płatność i zobowiązanie",
+      "matchHintTransfer": "Jak blisko siebie muszą być oba zapisy"
     },
     "trigger": {
       "money_arrives": "Gdy pieniądze wpływają lub wypływają",
@@ -2528,8 +2922,6 @@
     },
     "moveUp": "Sprawdzaj tę wcześniej",
     "moveDown": "Sprawdzaj tę później",
-    "matchingTitle": "Reguły dopasowania",
-    "matchingHint": "Jak każda płatność wiąże się z tym, co rozlicza.",
     "pair": {
       "owed": "Co jest należne",
       "arrived": "Co się poruszyło",
@@ -2544,7 +2936,11 @@
       "thePayment": "płatność",
       "acrossInvoices": "na {{count}} faktur",
       "dueOn": "termin {{date}}",
-      "totalOf": "razem {{amount}}"
+      "totalOf": "razem {{amount}}",
+      "otherLeg": "Druga strona",
+      "thisLeg": "Ta strona",
+      "otherLegAmount": "po drugiej stronie",
+      "thisLegAmount": "po tej stronie"
     },
     "discarded": "Usunięte z tej przestrzeni:",
     "noneLeft": "W tym zestawie nie ma już reguł dopasowania. Nic nie jest tu dopasowywane automatycznie.",
@@ -2555,6 +2951,14 @@
     "invalidImportFile": "To nie jest plik z regułami dopasowania",
     "importConfirmTitle": "Zaimportować reguły dopasowania?",
     "importConfirmDescription": "Plik {{file}} zawiera {{count}} reguł.",
-    "importOverwriteWarning": "Import zastępuje reguły dopasowania tej przestrzeni wraz z ich kolejnością. Tego nie da się cofnąć."
+    "importOverwriteWarning": "Import zastępuje reguły dopasowania tej przestrzeni wraz z ich kolejnością. Tego nie da się cofnąć.",
+    "card": {
+      "transfers": "Reguły Przelewów",
+      "transfersHint": "Jak ustalamy, że dwa zapisy to ten sam przelew między twoimi kontami.",
+      "invoices": "Reguły Faktur",
+      "invoicesHint": "Jak ustalamy, która płatność rozlicza którą fakturę.",
+      "recurring": "Reguły Cyklicznych",
+      "recurringHint": "Jak ustalamy, że obciążenie to rachunek, którego już oczekiwałeś."
+    }
   }
 }

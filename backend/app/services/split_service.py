@@ -19,6 +19,7 @@ from app.models.transaction_split import TransactionSplit
 from app.schemas.transaction_split import (
     TransactionSplitsInput,
 )
+from app.services.group_service import _visible_predicate
 
 _CENT = Decimal("0.01")
 
@@ -96,7 +97,9 @@ async def _validate_members(
         .join(Group, GroupMember.group_id == Group.id)
         .where(
             GroupMember.id.in_(member_ids),
-            Group.workspace_id == workspace_id,
+            # Same rule the group read paths use: the group lives in this
+            # workspace, or the user is linked to it from another one.
+            _visible_predicate(workspace_id, user_id),
             or_(Group.user_id == user_id, Group.id.in_(linked_group_ids)),
         )
     )

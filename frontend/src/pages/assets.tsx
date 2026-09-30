@@ -58,6 +58,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { getAssetProfit } from '@/lib/asset-profit'
+import { getPortfolioShare, getPortfolioTotalPrimary } from '@/lib/asset-portfolio-share'
 import { formatCurrency } from '@/lib/format'
 
 // Renders a logo image when one is available, falling back to the asset's
@@ -305,12 +306,6 @@ export default function AssetsPage() {
     (acc: number, a: { current_value?: number | null }) => acc + Number(a.current_value || 0),
     0,
   )
-  // Portfolio total in the user's primary currency — denominator for the
-  // "% da carteira" column in the holdings table.
-  const portfolioTotalPrimary = (assetsList ?? []).reduce(
-    (acc, a) => acc + Number(a.current_value_primary ?? a.current_value ?? 0),
-    0,
-  )
   const byType: Record<string, number> = {}
   for (const a of (assetsList ?? []) as Array<{ type?: string; current_value?: number | null }>) {
     if (!a.type) continue
@@ -497,6 +492,9 @@ export default function AssetsPage() {
 
   const activeAssets = useMemo(() => assetsList?.filter(a => !a.sell_date && !a.is_archived) ?? [], [assetsList])
   const soldAssets = assetsList?.filter(a => a.sell_date) ?? []
+  // Denominator for the "% of portfolio" column: current holdings only, in the
+  // user's primary currency, so the active rows add up to 100%.
+  const portfolioTotalPrimary = getPortfolioTotalPrimary(activeAssets)
 
   // Debounced ticker search. Runs only when the market-price method is
   // selected and the query is non-trivial — keeps the autocomplete snappy
@@ -625,21 +623,41 @@ export default function AssetsPage() {
     setDialogOpen(true)
   }
 
+  // Holdings driven by the transactions ledger: quantity, buy date and cost
+  // basis come from the transactions, not from this form.
+  const editingIsLedgerBacked = !!editingAsset
+    && editingAsset.valuation_method === 'market_price'
+    && (editingAsset.average_price != null || (editingAsset.transaction_count ?? 0) > 0)
+
   function buildPayload() {
     const isMarket = formMethod === 'market_price'
+    const ledgerBacked = editingIsLedgerBacked
     const payload: Record<string, unknown> = {
       name: formName,
       type: formType,
       currency: formCurrency,
       group_id: formGroupId || null,
       valuation_method: formMethod,
-      purchase_date: formPurchaseDate || null,
-      // Tickers have no total purchase price — the cost basis is derived from
-      // the unit-price buy (and then the ledger). Only manual/growth assets
-      // carry a total purchase price.
-      purchase_price: isMarket ? null : (formPurchasePrice ? parseFloat(formPurchasePrice) : null),
-      sell_date: isMarket ? null : (formSellDate || null),
-      sell_price: isMarket ? null : (formSellPrice ? parseFloat(formSellPrice) : null),
+    }
+
+    // A ledger-backed holding derives its buy date, quantity and cost basis
+    // from its transactions, so an edit must not overwrite them.
+    if (!ledgerBacked) {
+      payload.purchase_date = formPurchaseDate || null
+    }
+
+    // Tickers have no total purchase price: the cost basis is derived from
+    // the unit-price buy (and then the ledger). Only manual/growth assets
+    // carry a total purchase price and sale info. On edit a ticker leaves
+    // these fields untouched instead of clearing them.
+    if (!isMarket) {
+      payload.purchase_price = formPurchasePrice ? parseFloat(formPurchasePrice) : null
+      payload.sell_date = formSellDate || null
+      payload.sell_price = formSellPrice ? parseFloat(formSellPrice) : null
+    } else if (!editingAsset) {
+      payload.purchase_price = null
+      payload.sell_date = null
+      payload.sell_price = null
     }
 
     if (formMethod === 'growth_rule') {
@@ -652,7 +670,9 @@ export default function AssetsPage() {
     if (isMarket) {
       payload.ticker = (selectedQuote?.symbol || formTickerQuery || '').toUpperCase()
       payload.ticker_exchange = selectedQuote?.exchange ?? null
-      payload.units = formUnits ? parseFloat(formUnits) : null
+      if (!ledgerBacked) {
+        payload.units = formUnits ? parseFloat(formUnits) : null
+      }
       // Opening buy price per unit (defaults to the live quote on the server
       // when omitted). Only meaningful on create.
       if (!editingAsset) {
@@ -717,10 +737,7 @@ export default function AssetsPage() {
     const isProviderOwned = isSynced && !isMarketPriced
     const hasCost = asset.average_price != null && asset.total_invested != null
     const profit = getAssetProfit(asset)
-    const pctOfPortfolio =
-      portfolioTotalPrimary > 0 && asset.current_value_primary != null
-        ? (asset.current_value_primary / portfolioTotalPrimary) * 100
-        : null
+    const pctOfPortfolio = asset.sell_date ? null : getPortfolioShare(asset, portfolioTotalPrimary)
     const needsBuys = isMarketPriced && !hasCost && !asset.sell_date
 
     return (
@@ -1359,7 +1376,7 @@ export default function AssetsPage() {
                 ) : (
                   <div className="space-y-2">
                     <Label>{t('assets.quantity')}</Label>
-                    <Input type="number" step="any" min="0" value={formUnits} onChange={e => setFormUnits(e.target.value)} placeholder="10" />
+                    <Input type="number" step="any" min="0" value={formUnits} onChange={e => setFormUnits(e.target.value)} placeholder="10" disabled={editingIsLedgerBacked} />
                   </div>
                 )}
 
@@ -1440,7 +1457,7 @@ export default function AssetsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>{t('assets.purchaseDate')}</Label>
-                <DatePickerInput value={formPurchaseDate} onChange={setFormPurchaseDate} />
+                <DatePickerInput value={formPurchaseDate} onChange={setFormPurchaseDate} disabled={editingIsLedgerBacked} />
               </div>
               {formMethod !== 'market_price' && (
                 <div className="space-y-2">

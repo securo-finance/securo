@@ -68,6 +68,14 @@ def test_headers_are_recognised_without_a_mapping():
     assert orders[0].fee == Decimal("1.20")
 
 
+def test_template_headers_are_auto_detected():
+    """The downloaded template uses ticker* markers; they must not break detection."""
+    content = b"ticker*,date*,quantity*,price*,fee,kind,currency,notes\nAAPL,2026-01-15,10,150.00,1.20,buy,USD,\n"
+    orders, errors, _ = asset_import_service.parse_orders_csv(content)
+    assert errors == []
+    assert orders[0].ticker == "AAPL"
+
+
 def test_portuguese_broker_headers_are_recognised():
     """A Brazilian export names its columns in Portuguese and prices with commas."""
     orders, errors, _ = asset_import_service.parse_orders_csv(_csv(

@@ -60,6 +60,9 @@ def _signal_scores(
     verdict.
     """
     expectation = settlement.expectation
+    # The part that was expected (the next installment) when there was
+    # one, so the queue does not call an exact installment "short".
+    expected = settlement.target if settlement.target is not None else expectation.amount
     return {
         "strategy": decision.strategy,
         # How many promises this one payment is being offered against, so
@@ -67,9 +70,9 @@ def _signal_scores(
         # that looks wrong on its own.
         "of_set": len(decision.settlements),
         "description": round(decision.score, 3),
-        "amount_expected": str(expectation.amount),
+        "amount_expected": str(expected),
         "amount_moved": str(abs(movement.amount)),
-        "amount_exact": settlement.amount == expectation.amount,
+        "amount_exact": settlement.amount == expected,
         "days_apart": (movement.when - expectation.when).days,
         "same_counterparty": bool(
             movement.payee_id and movement.payee_id == expectation.payee_id
@@ -329,6 +332,38 @@ async def mark_accepted(
     _resolve(suggestion, "accepted", user_id)
     await session.flush()
     return suggestion
+
+
+async def settled_by_hand(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    transaction_id: uuid.UUID,
+    expectation_id: uuid.UUID,
+    user_id: Optional[uuid.UUID],
+) -> int:
+    """A person linked this money to this promise themselves: the question
+    the queue was asking about the pair has been answered.
+
+    Left pending, the suggestion kept offering a link that already exists,
+    and taking it would only fail. Marked accepted rather than deleted,
+    because that is what happened: somebody agreed, by another door. The
+    link itself was already written to the history by the caller, so no
+    second event is recorded here.
+    """
+    result = await session.execute(
+        select(ReconciliationSuggestion).where(
+            ReconciliationSuggestion.workspace_id == workspace_id,
+            ReconciliationSuggestion.transaction_id == transaction_id,
+            ReconciliationSuggestion.expectation_id == expectation_id,
+            ReconciliationSuggestion.status == "pending",
+        )
+    )
+    rows = list(result.unique().scalars().all())
+    for suggestion in rows:
+        _resolve(suggestion, "accepted", user_id)
+    if rows:
+        await session.flush()
+    return len(rows)
 
 
 def _by_question(

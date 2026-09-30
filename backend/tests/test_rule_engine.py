@@ -678,3 +678,18 @@ def test_flat_conditions_still_evaluate_unchanged():
     ]
     assert evaluate_conditions("and", conditions, make_tx(description="UBER TRIP")) is True
     assert evaluate_conditions("or", conditions, make_tx(description="IFOOD")) is True
+
+
+# --- status condition ---
+
+
+def test_status_equals_pending_matches_only_pending():
+    conditions = [{"field": "status", "op": "equals", "value": "pending"}]
+    assert evaluate_conditions("and", conditions, make_tx(status="pending")) is True
+    assert evaluate_conditions("and", conditions, make_tx(status="posted")) is False
+
+
+def test_status_not_equals_posted_matches_pending():
+    conditions = [{"field": "status", "op": "not_equals", "value": "posted"}]
+    assert evaluate_conditions("and", conditions, make_tx(status="pending")) is True
+    assert evaluate_conditions("and", conditions, make_tx(status="posted")) is False

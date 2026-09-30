@@ -3,9 +3,10 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.budget import Budget
 from app.models.category import Category
 from app.models.category_group import CategoryGroup
@@ -229,7 +230,7 @@ async def get_budget_vs_actual(
     month: Optional[date] = None,
 ) -> list[BudgetVsActual]:
     if not month:
-        month = date.today().replace(day=1)
+        month = app_today().replace(day=1)
 
     month_start = month.replace(day=1)
     if month.month == 12:
@@ -265,19 +266,25 @@ async def get_budget_vs_actual(
     report_date = reporting_date_col(accounting_mode)
 
     # Get actual spending by category for this month (exclude transfer pairs)
+    # Net spending = Debits - Credits (refunds offset expenses)
     # Use amount_primary for multi-currency support
     spending_result = await session.execute(
         select(
             Transaction.category_id,
-            func.sum(_primary_amount_expr()),
+            func.sum(
+                case(
+                    (Transaction.type == "debit", _primary_amount_expr()),
+                    (Transaction.type == "credit", -_primary_amount_expr()),
+                    else_=0,
+                )
+            ),
         )
         .where(
             Transaction.workspace_id == workspace_id,
-            Transaction.type == "debit",
             report_date >= month_start,
             report_date < month_end,
             Transaction.category_id.isnot(None),
-            report_date <= date.today(),
+            report_date <= app_today(),
             Transaction.status == "posted",
             counts_as_user_pnl(),
         )
@@ -285,7 +292,9 @@ async def get_budget_vs_actual(
     )
     spending_map: dict[str, Decimal] = {}
     for row in spending_result.all():
-        spending_map[str(row[0])] = abs(row[1] or Decimal("0"))
+        net = row[1] or Decimal("0")
+        if net > 0:
+            spending_map[str(row[0])] = net
 
     # Subtract non-owner shares of own splits — only the user's share counts.
     own_offset = await owner_split_offset_by_category(
@@ -351,19 +360,25 @@ async def get_budget_vs_actual(
         projected_spending_map[cat_id] = projected_spending_map.get(cat_id, Decimal("0")) + converted
 
     # Get previous month spending by category (exclude transfer pairs)
+    # Net spending = Debits - Credits (refunds offset expenses)
     # Use amount_primary for multi-currency support
     prev_spending_result = await session.execute(
         select(
             Transaction.category_id,
-            func.sum(_primary_amount_expr()),
+            func.sum(
+                case(
+                    (Transaction.type == "debit", _primary_amount_expr()),
+                    (Transaction.type == "credit", -_primary_amount_expr()),
+                    else_=0,
+                )
+            ),
         )
         .where(
             Transaction.workspace_id == workspace_id,
-            Transaction.type == "debit",
             report_date >= prev_month_start,
             report_date < prev_month_end,
             Transaction.category_id.isnot(None),
-            report_date <= date.today(),
+            report_date <= app_today(),
             Transaction.status == "posted",
             counts_as_user_pnl(),
         )
@@ -371,7 +386,9 @@ async def get_budget_vs_actual(
     )
     prev_spending_map: dict[str, Decimal] = {}
     for row in prev_spending_result.all():
-        prev_spending_map[str(row[0])] = abs(row[1] or Decimal("0"))
+        net = row[1] or Decimal("0")
+        if net > 0:
+            prev_spending_map[str(row[0])] = net
 
     prev_own_offset = await owner_split_offset_by_category(
         session, user_id, prev_month_start, prev_month_end,

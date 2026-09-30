@@ -288,6 +288,103 @@ async def test_members_must_belong_to_owner(
         await split_service.replace_splits(session, tx, payload, other_user)
 
 
+async def _user_with_workspace(session: AsyncSession, email: str):
+    import bcrypt
+
+    from app.models.user import User
+    from app.services import workspace_service
+
+    user = User(
+        id=uuid.uuid4(),
+        email=email,
+        hashed_password=bcrypt.hashpw(b"pw", bcrypt.gensalt()).decode(),
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
+    )
+    session.add(user)
+    await session.flush()
+    workspace = await workspace_service.create_personal_workspace_for_user(
+        session, user, commit=True
+    )
+    return user, workspace
+
+
+async def _make_workspace_tx(session: AsyncSession, user, workspace) -> Transaction:
+    from datetime import date
+
+    account = Account(
+        id=uuid.uuid4(), user_id=user.id, workspace_id=workspace.id, name="Wallet",
+        type="checking", balance=Decimal("100.00"), currency="USD",
+    )
+    session.add(account)
+    await session.flush()
+    tx = Transaction(
+        id=uuid.uuid4(), user_id=user.id, workspace_id=workspace.id, account_id=account.id,
+        description="Dinner", amount=Decimal("40.00"), currency="USD", date=date.today(),
+        type="debit", source="manual",
+    )
+    session.add(tx)
+    await session.flush()
+    return tx
+
+
+@pytest.mark.asyncio
+async def test_member_linked_from_another_workspace_can_split(session: AsyncSession):
+    """Regression for #972: a member linked into a group from their own
+    workspace can save a split on it, as the group read paths allow."""
+    suffix = uuid.uuid4().hex[:8]
+    owner, owner_ws = await _user_with_workspace(session, f"owner-{suffix}@example.com")
+    friend, friend_ws = await _user_with_workspace(session, f"friend-{suffix}@example.com")
+
+    group = await group_service.create_group(
+        session, owner_ws.id, owner.id, GroupCreate(name="Trip")
+    )
+    owner_member = await group_service.create_member(
+        session, group.id, owner_ws.id, GroupMemberCreate(name="Owner")
+    )
+    friend_member = await group_service.create_member(
+        session, group.id, owner_ws.id,
+        GroupMemberCreate(name="Friend", email=f"friend-{suffix}@example.com"),
+    )
+    assert owner_member is not None
+    assert friend_member is not None
+    assert friend_member.linked_user_id == friend.id
+
+    tx = await _make_workspace_tx(session, friend, friend_ws)
+    payload = TransactionSplitsInput(
+        share_type="equal",
+        splits=[
+            TransactionSplitInput(group_member_id=owner_member.id),
+            TransactionSplitInput(group_member_id=friend_member.id),
+        ],
+    )
+    await split_service.replace_splits(session, tx, payload, friend.id)
+
+    splits = await _read_splits(session, tx.id)
+    assert {s.group_member_id for s in splits} == {owner_member.id, friend_member.id}
+
+
+@pytest.mark.asyncio
+async def test_unlinked_group_in_another_workspace_is_rejected(session: AsyncSession):
+    """The #375 hardening still holds: a group from another workspace the
+    user is not linked to cannot be referenced."""
+    suffix = uuid.uuid4().hex[:8]
+    owner, owner_ws = await _user_with_workspace(session, f"owner-{suffix}@example.com")
+    stranger, stranger_ws = await _user_with_workspace(
+        session, f"stranger-{suffix}@example.com"
+    )
+    _, members = await _make_group_with_members(session, owner.id, owner_ws.id, ["A"])
+
+    tx = await _make_workspace_tx(session, stranger, stranger_ws)
+    payload = TransactionSplitsInput(
+        share_type="equal",
+        splits=[TransactionSplitInput(group_member_id=members[0].id)],
+    )
+    with pytest.raises(ValueError, match="not found"):
+        await split_service.replace_splits(session, tx, payload, stranger.id)
+
+
 @pytest.mark.asyncio
 async def test_no_duplicate_member_per_transaction(
     session: AsyncSession, test_user, test_workspace

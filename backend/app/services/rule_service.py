@@ -38,7 +38,12 @@ class DuplicateRuleError(Exception):
 
 _ALLOWED_CONDITION_FIELDS = {
     "description", "payee", "notes", "amount", "type", "account_id", "payee_id", "date",
+    "status",
 }
+# Status is a closed set, so only equality makes sense and the value must be one
+# of the statuses a transaction can carry.
+_STATUS_CONDITION_OPS = {"equals", "not_equals"}
+_STATUS_CONDITION_VALUES = {"pending", "posted"}
 _ALLOWED_CONDITION_OPS = {
     "contains", "not_contains", "equals", "not_equals", "starts_with",
     "ends_with", "regex", "gt", "gte", "lt", "lte",
@@ -79,6 +84,12 @@ async def _validate_rule_definition(
         field = _rule_item_value(condition, "field")
         op = _rule_item_value(condition, "op")
         if field not in _ALLOWED_CONDITION_FIELDS or op not in _ALLOWED_CONDITION_OPS:
+            raise ValueError("Invalid rule condition")
+        if field == "status" and (
+            op not in _STATUS_CONDITION_OPS
+            or str(_rule_item_value(condition, "value") or "").strip().lower()
+            not in _STATUS_CONDITION_VALUES
+        ):
             raise ValueError("Invalid rule condition")
         if op == "regex":
             compile_rule_regex(str(_rule_item_value(condition, "value") or ""))

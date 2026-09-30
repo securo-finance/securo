@@ -69,13 +69,20 @@ async def delete_conversation(
 async def list_messages(
     session: AsyncSession, conversation_id: uuid.UUID, limit: int = 200
 ) -> list[Message]:
+    # Newest `limit` messages, returned in ascending ordinal order. Ordering
+    # ascending BEFORE applying the limit pinned the window to the start of
+    # the conversation: once a thread outgrew the executor's replay budget,
+    # the model never received the newest user turn and kept re-answering
+    # the last question inside the stale window.
     q = (
         select(Message)
         .where(Message.conversation_id == conversation_id)
-        .order_by(Message.ordinal.asc())
+        .order_by(Message.ordinal.desc())
         .limit(limit)
     )
-    return list((await session.execute(q)).scalars().all())
+    rows = list((await session.execute(q)).scalars().all())
+    rows.reverse()
+    return rows
 
 
 async def append_message(

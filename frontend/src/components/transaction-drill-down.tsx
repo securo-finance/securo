@@ -7,6 +7,7 @@ import { AlertTriangle, Clock, Info, Paperclip, X } from 'lucide-react'
 import { CategoryIcon } from '@/components/category-icon'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
 import { sumDrillDownTotals } from '@/lib/drill-down-totals'
+import { hasOpenDialog, isInsideOverlayLayer } from '@/lib/overlay-layers'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuth } from '@/contexts/auth-context'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
@@ -145,23 +146,27 @@ export function TransactionDrillDown({
     return items
   }, [data, projectedTxs, filter])
 
-  // Close on Escape
+  // Close on Escape, unless the key belongs to a dialog opened from the
+  // panel (Radix marks the Escape it handled as defaultPrevented).
   useEffect(() => {
     if (!filter) return
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key !== 'Escape' || e.defaultPrevented || hasOpenDialog()) return
+      onClose()
     }
     document.addEventListener('keydown', handleKey)
     return () => document.removeEventListener('keydown', handleKey)
   }, [filter, onClose])
 
-  // Close on click outside
+  // Close on click outside. The transaction dialog opened from a row, and its
+  // popovers and selects, are portaled to the body; clicks there keep the
+  // panel open so the next row can be edited once the dialog closes.
   useEffect(() => {
     if (!filter) return
     const handleClick = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        onClose()
-      }
+      if (!panelRef.current || panelRef.current.contains(e.target as Node)) return
+      if (isInsideOverlayLayer(e.target) || hasOpenDialog()) return
+      onClose()
     }
     // Delay to avoid closing immediately from the click that opened it
     const timer = setTimeout(() => {
