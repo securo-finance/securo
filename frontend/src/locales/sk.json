@@ -823,6 +823,7 @@
     "netWorth": "Čisté imanie",
     "netWorthTooltip": "Účty + investície, po odpočítaní otvorených faktúr kreditnej karty.",
     "creditCardBalance": "Otvorené faktúry kreditnej karty",
+    "loanBalance": "Loans and mortgages",
     "pendingSharesOwe": "Netto {{net}} po skupinových dlhoch ({{owed}} čaká na vyrovnanie)",
     "pendingSharesOwed": "Netto {{net}} vrátane {{owed}}, ktoré ti dlhujú",
     "pendingSharesTooltip": "Zohľadňuje, čo dlhuješ / čo ti dlhujú v tvojich skupinách, pred vyrovnaním.",
@@ -1232,6 +1233,10 @@
     "typeCreditCard": "Kreditná karta",
     "typeInvestment": "Investičný účet",
     "typeWallet": "Peňaženka",
+    "typeLoan": "Loan / Mortgage",
+    "securedProperty": "Linked property",
+    "noSecuredProperty": "No linked property",
+    "balanceLoan": "Outstanding debt",
     "creditLimit": "Kreditný limit",
     "statementCloseDay": "Deň uzávierky výpisu",
     "paymentDueDay": "Deň splatnosti",
@@ -2013,7 +2018,9 @@
     "total": "Spolu",
     "confirmRegenerateTitle": "Prepočítať hodnoty?",
     "confirmRegenerate": "Parametre rastu sa zmenili. Všetky automaticky vygenerované hodnoty sa vymažú a prepočítajú. Manuálne hodnoty zostanú zachované.",
-    "regenerate": "Prepočítať"
+    "regenerate": "Prepočítať",
+    "linkedLoans": "Linked loans",
+    "propertyEquity": "Value {{value}} · Debt {{debt}} · Equity {{equity}}"
   },
   "reports": {
     "section": "Analytika",

@@ -819,6 +819,7 @@
     "netWorth": "純資産",
     "netWorthTooltip": "口座+投資から、未払いのクレジットカード請求を差し引いた額。",
     "creditCardBalance": "未払いのクレジットカード請求",
+    "loanBalance": "Loans and mortgages",
     "pendingSharesOwe": "グループの貸し借りを反映した純額 {{net}}({{owed}}件未精算)",
     "pendingSharesOwed": "あなたへの未回収{{owed}}を含む純額 {{net}}",
     "pendingSharesTooltip": "精算前の、グループ間の貸し借りを反映しています。",
@@ -1180,6 +1181,10 @@
     "typeCreditCard": "クレジットカード",
     "typeInvestment": "投資",
     "typeWallet": "ウォレット",
+    "typeLoan": "Loan / Mortgage",
+    "securedProperty": "Linked property",
+    "noSecuredProperty": "No linked property",
+    "balanceLoan": "Outstanding debt",
     "creditLimit": "利用枠",
     "statementCloseDay": "締め日",
     "paymentDueDay": "支払日",
@@ -1901,7 +1906,9 @@
     "total": "合計",
     "confirmRegenerateTitle": "価値を再生成しますか?",
     "confirmRegenerate": "増加パラメータが変更されました。自動生成されたすべての価値が削除され再計算されます。手動入力の価値は保持されます。",
-    "regenerate": "再生成"
+    "regenerate": "再生成",
+    "linkedLoans": "Linked loans",
+    "propertyEquity": "Value {{value}} · Debt {{debt}} · Equity {{equity}}"
   },
   "reports": {
     "section": "分析",

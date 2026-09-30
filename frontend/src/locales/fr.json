@@ -819,6 +819,7 @@
     "netWorth": "Valeur nette",
     "netWorthTooltip": "Comptes + investissements, moins les factures de carte ouvertes.",
     "creditCardBalance": "Factures de carte ouvertes",
+    "loanBalance": "Loans and mortgages",
     "pendingSharesOwe": "Net {{net}} après dettes de groupe ({{owed}} en attente)",
     "pendingSharesOwed": "Net {{net}} incluant {{owed}} qui vous sont dus",
     "pendingSharesTooltip": "Reflète ce que vous devez / ce qu'on vous doit dans vos groupes, avant tout règlement.",
@@ -1181,6 +1182,10 @@
     "typeCreditCard": "Carte de crédit",
     "typeInvestment": "Investissement",
     "typeWallet": "Portefeuille",
+    "typeLoan": "Loan / Mortgage",
+    "securedProperty": "Linked property",
+    "noSecuredProperty": "No linked property",
+    "balanceLoan": "Outstanding debt",
     "creditLimit": "Limite de crédit",
     "statementCloseDay": "Jour de clôture du relevé",
     "paymentDueDay": "Jour d'échéance du paiement",
@@ -1902,7 +1907,9 @@
     "total": "Total",
     "confirmRegenerateTitle": "Régénérer les valeurs ?",
     "confirmRegenerate": "Les paramètres de croissance ont changé. Toutes les valeurs générées automatiquement seront supprimées et recalculées. Les valeurs manuelles seront conservées.",
-    "regenerate": "Régénérer"
+    "regenerate": "Régénérer",
+    "linkedLoans": "Linked loans",
+    "propertyEquity": "Value {{value}} · Debt {{debt}} · Equity {{equity}}"
   },
   "reports": {
     "section": "Analyses",

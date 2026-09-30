@@ -819,6 +819,7 @@
     "netWorth": "Nettovermogen",
     "netWorthTooltip": "Rekeningen + beleggingen, min openstaande creditcardafschriften.",
     "creditCardBalance": "Openstaande creditcardafschriften",
+    "loanBalance": "Leningen en hypotheken",
     "pendingSharesOwe": "Netto {{net}} na groepsschulden ({{owed}} in behandeling)",
     "pendingSharesOwed": "Netto {{net}} inclusief {{owed}} aan u verschuldigd",
     "pendingSharesTooltip": "Geeft weer wat u verschuldigd bent/is aan al uw groepen, vóór enige schikking.",
@@ -1181,6 +1182,10 @@
     "typeCreditCard": "Creditcard",
     "typeInvestment": "Investering",
     "typeWallet": "Portemonnee",
+    "typeLoan": "Lening / hypotheek",
+    "securedProperty": "Gekoppelde woning",
+    "noSecuredProperty": "Geen gekoppelde woning",
+    "balanceLoan": "Openstaande schuld",
     "creditLimit": "Kredietlimiet",
     "statementCloseDay": "Verklaring sluitingsdag",
     "paymentDueDay": "Betalingsdatum",
@@ -1903,7 +1908,9 @@
     "total": "Totaal",
     "confirmRegenerateTitle": "Waarden opnieuw genereren?",
     "confirmRegenerate": "Groeiparameters veranderd. Alle automatisch gegenereerde waarden worden verwijderd en opnieuw berekend. Handmatige waarden blijven behouden.",
-    "regenerate": "Regenereer"
+    "regenerate": "Regenereer",
+    "linkedLoans": "Gekoppelde leningen",
+    "propertyEquity": "Waarde {{value}} · Schuld {{debt}} · Eigen vermogen {{equity}}"
   },
   "reports": {
     "section": "Analyses",

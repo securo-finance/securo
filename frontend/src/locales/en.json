@@ -819,6 +819,7 @@
     "netWorth": "Net Worth",
     "netWorthTooltip": "Accounts + investments, minus open credit card bills.",
     "creditCardBalance": "Open credit card bills",
+    "loanBalance": "Loans and mortgages",
     "pendingSharesOwe": "Net {{net}} after group debts ({{owed}} pending)",
     "pendingSharesOwed": "Net {{net}} including {{owed}} owed to you",
     "pendingSharesTooltip": "Reflects what you owe / are owed across your groups, before any settlement.",
@@ -1180,6 +1181,10 @@
     "typeCreditCard": "Credit Card",
     "typeInvestment": "Investment",
     "typeWallet": "Wallet",
+    "typeLoan": "Loan / Mortgage",
+    "securedProperty": "Linked property",
+    "noSecuredProperty": "No linked property",
+    "balanceLoan": "Outstanding debt",
     "creditLimit": "Credit limit",
     "statementCloseDay": "Statement close day",
     "paymentDueDay": "Payment due day",
@@ -1901,7 +1906,9 @@
     "total": "Total",
     "confirmRegenerateTitle": "Regenerate values?",
     "confirmRegenerate": "Growth parameters changed. All automatically generated values will be deleted and recalculated. Manual values will be kept.",
-    "regenerate": "Regenerate"
+    "regenerate": "Regenerate",
+    "linkedLoans": "Linked loans",
+    "propertyEquity": "Value {{value}} · Debt {{debt}} · Equity {{equity}}"
   },
   "reports": {
     "section": "Analytics",

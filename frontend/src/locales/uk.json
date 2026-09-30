@@ -823,6 +823,7 @@
     "netWorth": "Власний капітал",
     "netWorthTooltip": "Рахунки + інвестиції, за вирахуванням відкритих рахунків за кредитною карткою.",
     "creditCardBalance": "Відкриті рахунки за кредитною карткою",
+    "loanBalance": "Loans and mortgages",
     "pendingSharesOwe": "Чистий {{net}} після групових боргів ({{owed}} очікує)",
     "pendingSharesOwed": "Чистий {{net}} включно з {{owed}} заборгованості вам",
     "pendingSharesTooltip": "Відображає, що ви винні / вам винні за вашими групами, до врегулювання.",
@@ -1193,6 +1194,10 @@
     "typeCreditCard": "Кредитна картка",
     "typeInvestment": "Інвестиційний",
     "typeWallet": "Гаманець",
+    "typeLoan": "Loan / Mortgage",
+    "securedProperty": "Linked property",
+    "noSecuredProperty": "No linked property",
+    "balanceLoan": "Outstanding debt",
     "creditLimit": "Кредитний ліміт",
     "statementCloseDay": "Дата закриття виписки",
     "paymentDueDay": "Дата платежу",
@@ -1914,7 +1919,9 @@
     "total": "Усього",
     "confirmRegenerateTitle": "Перегенерувати значення?",
     "confirmRegenerate": "Параметри зростання змінено. Усі автоматично згенеровані значення буде видалено та перераховано. Ручні значення збережуться.",
-    "regenerate": "Перегенерувати"
+    "regenerate": "Перегенерувати",
+    "linkedLoans": "Linked loans",
+    "propertyEquity": "Value {{value}} · Debt {{debt}} · Equity {{equity}}"
   },
   "reports": {
     "section": "Аналітика",

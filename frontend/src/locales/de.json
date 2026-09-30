@@ -819,6 +819,7 @@
     "netWorth": "Nettovermögen",
     "netWorthTooltip": "Konten + Investitionen, abzüglich offener Kreditkartenrechnungen.",
     "creditCardBalance": "Offene Kreditkartenrechnungen",
+    "loanBalance": "Loans and mortgages",
     "pendingSharesOwe": "Netto {{net}} nach Gruppenschulden ({{owed}} ausstehend)",
     "pendingSharesOwed": "Netto {{net}} einschließlich {{owed}}, die dir geschuldet werden",
     "pendingSharesTooltip": "Spiegelt wider, was du in deinen Gruppen schuldest / dir geschuldet wird, vor einer Abrechnung.",
@@ -1181,6 +1182,10 @@
     "typeCreditCard": "Kreditkarte",
     "typeInvestment": "Depot",
     "typeWallet": "Bargeld",
+    "typeLoan": "Loan / Mortgage",
+    "securedProperty": "Linked property",
+    "noSecuredProperty": "No linked property",
+    "balanceLoan": "Outstanding debt",
     "creditLimit": "Kreditlimit",
     "statementCloseDay": "Abrechnungsstichtag",
     "paymentDueDay": "Zahlungstermin",
@@ -1902,7 +1907,9 @@
     "total": "Gesamt",
     "confirmRegenerateTitle": "Werte neu generieren?",
     "confirmRegenerate": "Wachstumsparameter wurden geändert. Alle automatisch generierten Werte werden gelöscht und neu berechnet. Manuell eingegebene Werte bleiben erhalten.",
-    "regenerate": "Neu generieren"
+    "regenerate": "Neu generieren",
+    "linkedLoans": "Linked loans",
+    "propertyEquity": "Value {{value}} · Debt {{debt}} · Equity {{equity}}"
   },
   "reports": {
     "section": "Analysen",

@@ -162,6 +162,7 @@ export interface Account {
   institution_name: string | null
   institution_logo_url: string | null
   type: string
+  secured_asset_id?: string | null
   balance: number
   current_balance: number
   previous_balance: number | null

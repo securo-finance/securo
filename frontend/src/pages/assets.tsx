@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRegisterPageChatContext } from '@/lib/page-chat-context'
-import { assets, assetGroups, currencies as currenciesApi } from '@/lib/api'
+import { accounts as accountsApi, assets, assetGroups, currencies as currenciesApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -53,6 +53,7 @@ import {
 } from 'recharts'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/page-header'
+import { PropertyEquitySummary } from '@/components/property-equity-summary'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
@@ -273,6 +274,11 @@ export default function AssetsPage() {
   const { data: rawPortfolioData } = useQuery({
     queryKey: ['portfolio-trend'],
     queryFn: () => assets.portfolioTrend(),
+  })
+  // Loans secured against a property show up in that property's detail.
+  const { data: accountsList } = useQuery({
+    queryKey: ['accounts'],
+    queryFn: () => accountsApi.list(),
   })
   // Scope the portfolio chart + total to the active collection's wallets too.
   // Trend rows are keyed by asset id, so we keep only the in-collection asset
@@ -844,7 +850,17 @@ export default function AssetsPage() {
         </div>
 
         {isExpanded && (
-          isMarketPriced ? (
+          <>
+          {asset.type === 'real_estate' && (
+            <PropertyEquitySummary
+              asset={asset}
+              loans={accountsList ?? []}
+              currency={userCurrency}
+              locale={locale}
+              mask={mask}
+            />
+          )}
+          {isMarketPriced ? (
             <>
               {/* Value-evolution chart on top, then the buy/sell ledger. */}
               <AssetDetail assetId={asset.id} currency={asset.currency} locale={locale} dateLocale={dateLocale} purchasePrice={asset.purchase_price} purchaseDate={asset.purchase_date} valuationMethod={asset.valuation_method} canWrite={canWrite} chartOnly />
@@ -860,7 +876,8 @@ export default function AssetsPage() {
             </>
           ) : (
             <AssetDetail assetId={asset.id} currency={asset.currency} locale={locale} dateLocale={dateLocale} purchasePrice={asset.purchase_price} purchaseDate={asset.purchase_date} valuationMethod={asset.valuation_method} canWrite={canWrite} />
-          )
+          )}
+          </>
         )}
       </div>
     )
