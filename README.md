@@ -51,7 +51,7 @@ Open [http://localhost:3000](http://localhost:3000) and create an account. That'
 - Goals and savings targets with progress tracking
 - Asset management with valuation tracking and growth rules
 - Reports: Net Worth and Income vs Expenses with category sparklines
-- Bank sync via providers (Pluggy for Brazilian banks, Enable Banking for ~2500 European PSD2 banks, SimpleFIN for US and international banks, extensible)
+- Bank sync via providers (Pluggy for Brazilian banks, Enable Banking for ~2500 European PSD2 banks, SimpleFIN for US and international banks, TrueLayer for UK/EU banks, extensible)
 - Multi-currency support with automatic FX conversion
 - Multi-user support with admin panel and registration controls
 - Two-factor authentication (TOTP) with brute-force protection
@@ -95,6 +95,18 @@ SIMPLEFIN_API_URL=https://beta-bridge.simplefin.org   # sandbox; use bridge.simp
 ```
 
 Then in Securo: **Accounts → Connect Bank → SimpleFIN**, and paste the token. The [developer page](https://beta-bridge.simplefin.org/info/developers) gives out free demo tokens if you want to try it without a real bank.
+
+### TrueLayer — UK and European banks
+
+Create an app in the [TrueLayer Console](https://console.truelayer.com/), add your Securo OAuth callback URL as an allowed redirect URI, then add:
+
+```
+TRUELAYER_CLIENT_ID=your-client-id
+TRUELAYER_CLIENT_SECRET=your-client-secret
+TRUELAYER_REDIRECT_URI=https://your-host/oauth/callback
+```
+
+The redirect URI must match exactly what is registered in TrueLayer. If omitted, Securo derives it from `FRONTEND_URL` as `${FRONTEND_URL}/oauth/callback`.
 
 ## OIDC Login (Optional)
 
