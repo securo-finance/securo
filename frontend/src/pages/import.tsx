@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
+import { getAccountName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -379,7 +379,7 @@ function TransactionImportPanel() {
                 onChange={(e) => setSelectedAccount(e.target.value)}
               >
                 <option value="">{t('import.selectAccount')}</option>
-                {sortAccountsByDisplayName(accountsList ?? []).map((acc) => (
+                {(accountsList ?? []).map((acc) => (
                   <option key={acc.id} value={acc.id}>{getAccountName(acc)} ({t(TYPE_LABELS[acc.type] || acc.type)})</option>
                 ))}
               </select>

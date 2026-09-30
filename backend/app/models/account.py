@@ -27,6 +27,7 @@ class Account(Base):
     external_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     name: Mapped[str] = mapped_column(String(255))
     display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    order: Mapped[int] = mapped_column(default=0)
     # Last 4 chars of the bank's identifier (IBAN, account or card number), when
     # the provider exposes one. Provider-owned like `name`: refreshed on sync,
     # not user-editable. Never holds the full identifier.

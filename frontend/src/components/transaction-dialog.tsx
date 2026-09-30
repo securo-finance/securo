@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { getAccountLabel, getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
+import { getAccountLabel, getAccountName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { useDateLocale, useDisplayLocale } from '@/hooks/use-display-locale'
@@ -427,7 +427,6 @@ function TransactionForm({
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const dateLocale = useDateLocale()
   const displayLocale = useDisplayLocale()
-  const sortedAccounts = useMemo(() => sortAccountsByDisplayName(accounts), [accounts])
   const { data: supportedCurrencies } = useQuery({
     queryKey: ['currencies'],
     queryFn: currenciesApi.list,
@@ -457,7 +456,7 @@ function TransactionForm({
   )
   const [categoryId, setCategoryId] = useState(seed?.category_id ?? '')
   const [payeeId, setPayeeId] = useState(seed?.payee_id ?? '')
-  const [accountId, setAccountId] = useState(seed?.account_id ?? defaultAccountId ?? sortedAccounts[0]?.id ?? '')
+  const [accountId, setAccountId] = useState(seed?.account_id ?? defaultAccountId ?? accounts[0]?.id ?? '')
   const [notes, setNotes] = useState(seed?.notes ?? '')
   // Manual CC bucketing override (issue #92). Empty = auto. Visible only
   // when the selected account is a credit card.
@@ -1155,7 +1154,7 @@ function TransactionForm({
               onChange={(e) => setAccountId(e.target.value)}
               required
             >
-              {sortedAccounts.map((acc) => (
+              {accounts.map((acc) => (
                 <option key={acc.id} value={acc.id}>{getAccountLabel(acc)}</option>
               ))}
             </select>
@@ -1475,7 +1474,7 @@ function TransactionForm({
           categories={categories}
           categoryGroups={categoryGroups}
           currentCategories={displayCategories}
-          accounts={sortedAccounts}
+          accounts={accounts}
           payees={payeesList ?? []}
           onSave={(data) => updateRuleMutation.mutate(data)}
           loading={updateRuleMutation.isPending}

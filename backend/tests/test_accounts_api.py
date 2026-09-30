@@ -26,6 +26,77 @@ async def test_list_accounts_empty(client: AsyncClient, auth_headers):
 
 
 @pytest.mark.asyncio
+async def test_create_account_with_order(client: AsyncClient, auth_headers):
+    response = await client.post(
+        "/api/accounts", headers=auth_headers,
+        json={"name": "Zulu", "type": "checking", "order": 2},
+    )
+    assert response.status_code == 201
+    assert response.json()["order"] == 2
+
+
+@pytest.mark.asyncio
+async def test_update_connected_account_order(
+    client: AsyncClient, auth_headers, test_account: Account
+):
+    response = await client.patch(
+        f"/api/accounts/{test_account.id}", headers=auth_headers,
+        json={"order": 1},
+    )
+    assert response.status_code == 200
+    assert response.json()["order"] == 1
+
+
+@pytest.mark.asyncio
+async def test_list_accounts_sorts_by_order_then_name(
+    client: AsyncClient, auth_headers, test_account: Account
+):
+    # Default order remains zero; tied accounts sort by name.
+    assert test_account.order == 0
+
+    alpha = await client.post(
+        "/api/accounts", headers=auth_headers,
+        json={"name": "Alpha", "type": "checking", "order": 2},
+    )
+    zulu = await client.post(
+        "/api/accounts", headers=auth_headers,
+        json={"name": "Zulu", "type": "checking", "order": 2},
+    )
+    assert alpha.status_code == zulu.status_code == 201
+
+    response = await client.get("/api/accounts", headers=auth_headers)
+    assert response.status_code == 200
+    assert [(item["name"], item["order"]) for item in response.json()] == [
+        (test_account.name, 0), ("Alpha", 2), ("Zulu", 2),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_update_manual_account_changes_list_order(
+    client: AsyncClient, auth_headers, test_account: Account
+):
+    connected = await client.patch(
+        f"/api/accounts/{test_account.id}", headers=auth_headers,
+        json={"order": 1},
+    )
+    assert connected.status_code == 200
+    created = await client.post(
+        "/api/accounts", headers=auth_headers,
+        json={"name": "Zulu", "type": "checking", "order": 2},
+    )
+    assert created.status_code == 201
+    updated = await client.patch(
+        f"/api/accounts/{created.json()['id']}", headers=auth_headers,
+        json={"order": 0},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["order"] == 0
+    response = await client.get("/api/accounts", headers=auth_headers)
+    assert response.status_code == 200
+    assert [item["name"] for item in response.json()] == ["Zulu", test_account.name]
+
+
+@pytest.mark.asyncio
 async def test_get_account(
     client: AsyncClient, auth_headers, test_account: Account
 ):

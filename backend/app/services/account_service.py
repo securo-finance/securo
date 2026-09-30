@@ -127,7 +127,7 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
     )
     if not include_closed:
         query = query.where(Account.is_closed == False)
-    query = query.order_by(Account.name)
+    query = query.order_by(Account.order, Account.name)
     result = await session.execute(query)
     return [
             serialize_account(acc, current_balance, previous_balance, connection)
@@ -178,6 +178,7 @@ def serialize_account(
         "external_id": acc.external_id,
         "name": acc.name,
         "display_name": acc.display_name,
+        "order": acc.order,
         "masked_number": acc.masked_number,
         "type": acc.type,
         "balance": acc.balance,
@@ -265,6 +266,7 @@ async def create_account(
         user_id=user_id,
         workspace_id=workspace_id,
         name=data.name,
+        order=data.order,
         type=data.type,
         balance=data.balance,
         currency=data.currency,
@@ -326,6 +328,7 @@ async def update_account(
     if account.connection_id is not None:
         editable_fields = {
             "display_name",
+            "order",
             "type",
             "credit_limit",
             "statement_close_day",
@@ -339,7 +342,7 @@ async def update_account(
             raise ValueError("Cannot edit bank-connected accounts")
         old_type = account.type
         new_type = update_data.get("type", account.type)
-        cc_fields = editable_fields - {"display_name", "type"}
+        cc_fields = editable_fields - {"display_name", "type", "order"}
         cc_update = {k: v for k, v in update_data.items() if k in cc_fields}
         if cc_update and new_type != "credit_card":
             raise ValueError("Credit card fields can only be set on credit card accounts")

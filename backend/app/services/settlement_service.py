@@ -119,7 +119,7 @@ async def _pick_default_account_for_user(
     from app.models.workspace import WorkspaceMember
 
     # Resolve the workspaces the user can write to. Pick the first
-    # account that lives in any of them; ties broken by name.
+    # account that lives in any of them; ties in saved order broken by name.
     user_workspaces_subq = select(WorkspaceMember.workspace_id).where(
         WorkspaceMember.user_id == user_id
     )
@@ -130,7 +130,7 @@ async def _pick_default_account_for_user(
             Account.is_closed.is_(False),
             Account.type.in_(("checking", "savings")),
         )
-        .order_by(Account.name)
+        .order_by(Account.order, Account.name)
     )
     return result.scalars().first()
 

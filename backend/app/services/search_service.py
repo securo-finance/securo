@@ -148,7 +148,7 @@ async def search_all(
             Account.workspace_id == workspace_id,
             Account.name.ilike(pattern, escape="\\"),
         )
-        .order_by(Account.is_closed.asc(), Account.name.asc())
+        .order_by(Account.is_closed.asc(), Account.order, Account.name)
         .limit(per_type_limit)
     )
     for acc in acc_result.scalars().all():

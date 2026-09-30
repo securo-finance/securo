@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
-import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
+import { getAccountName } from '@/lib/account-utils'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -1071,7 +1071,7 @@ export default function GroupDetailPage() {
                         onChange={(e) => setSettleAccountId(e.target.value)}
                       >
                         <option value="">{t('splitGroups.selectAccount')}</option>
-                        {sortAccountsByDisplayName(accountsList ?? []).map((a) => (
+                        {(accountsList ?? []).map((a) => (
                           <option key={a.id} value={a.id}>
                             {getAccountName(a)}
                           </option>

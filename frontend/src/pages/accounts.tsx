@@ -165,7 +165,7 @@ export default function AccountsPage() {
   })
 
   const createMutation = useMutation({
-    mutationFn: (data: { name: string; type: string; balance?: number; currency?: string }) =>
+    mutationFn: (data: { name: string; type: string; balance?: number; currency?: string, order: number }) =>
       accounts.create(data),
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
@@ -646,7 +646,7 @@ export default function AccountsPage() {
           if (editingAccount) {
             updateMutation.mutate({ id: editingAccount.id, ...data })
           } else {
-            createMutation.mutate(data as { name: string; type: string; balance?: number; balance_date?: string; currency?: string })
+            createMutation.mutate(data as { name: string; type: string; balance?: number; balance_date?: string; currency?: string, order: number })
           }
         }}
         loading={createMutation.isPending || updateMutation.isPending}
@@ -668,6 +668,7 @@ function AccountDialog({
   onSave: (data: {
     name?: string
     display_name?: string | null
+    order?: number
     type?: string
     balance?: number
     balance_date?: string
@@ -690,6 +691,7 @@ function AccountDialog({
   const [displayName, setDisplayName] = useState(account?.display_name ?? '')
   const [type, setType] = useState(account?.type ?? 'checking')
   const [balance, setBalance] = useState(account?.balance?.toString() ?? '0')
+  const [order, setOrder] = useState(account?.order?.toString())
   const [currency, setCurrency] = useState(account?.currency ?? userCurrency)
   const [balanceDate, setBalanceDate] = useState(localDateString)
   const [creditLimit, setCreditLimit] = useState(account?.credit_limit?.toString() ?? '')
@@ -708,6 +710,7 @@ function AccountDialog({
     setCreditLimit(account?.credit_limit?.toString() ?? '')
     setStatementCloseDay(account?.statement_close_day?.toString() ?? '')
     setPaymentDueDay(account?.payment_due_day?.toString() ?? '')
+    setOrder(account?.order?.toString())
   }
 
   return (
@@ -732,6 +735,7 @@ function AccountDialog({
               ...(!isConnected && { name, balance: parseFloat(balance), balance_date: balanceDate, currency }),
               type,
               display_name: displayName.trim() || null,
+              order: +(order || '0'),
               ...(isCC && {
                 credit_limit: creditLimit !== '' ? parseFloat(creditLimit) : null,
                 statement_close_day: parseDay(statementCloseDay),
@@ -830,6 +834,16 @@ function AccountDialog({
               )}
             </>
           )}
+          <div className="space-y-2">
+            <Label>{t('accounts.order')}</Label>
+            <Input
+              type="number"
+              step="1"
+              min={0}
+              value={order}
+              onChange={(e) => setOrder(e.target.value)}
+            />
+          </div>
           {type === 'credit_card' && (
             <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
               <div className="space-y-2">

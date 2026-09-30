@@ -154,6 +154,7 @@ export interface Account {
   external_id: string | null
   name: string
   display_name: string | null
+  order: number
   // Last 4 chars of the bank's identifier for the account, when the provider
   // exposes one. Tells apart accounts a bank reports under an identical name.
   masked_number: string | null

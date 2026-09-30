@@ -454,6 +454,7 @@ export const accounts = {
   create: async (account: {
     name: string
     type: string
+    order?: number
     balance?: number
     balance_date?: string
     currency?: string

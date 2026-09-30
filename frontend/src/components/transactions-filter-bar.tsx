@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
+import { getAccountName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { startOfMonth, startOfYear, subDays } from 'date-fns'
@@ -146,7 +146,6 @@ export function TransactionsFilterBar({
   const [draftMaxAmount, setDraftMaxAmount] = useState<string>(filterMaxAmount)
   const [mobileFilterView, setMobileFilterView] = useState<MobileFilterView>('root')
   const searchRef = useRef<HTMLInputElement>(null)
-  const sortedAccounts = useMemo(() => sortAccountsByDisplayName(accounts), [accounts])
 
   // When a CheckRow is clicked inside a submenu, Radix tries to close the submenu
   // even if we preventDefault in onSelect. We intercept the close request so the
@@ -408,7 +407,7 @@ export function TransactionsFilterBar({
                 view={mobileFilterView}
                 setView={setMobileFilterView}
                 setMenuOpen={setMenuOpen}
-                accounts={sortedAccounts}
+                accounts={accounts}
                 categories={categories}
                 categoryGroups={categoryGroups}
                 payees={payees}
@@ -500,12 +499,12 @@ export function TransactionsFilterBar({
                           <div className="my-1 h-px bg-border/60" />
                         </>
                       )}
-                      {sortedAccounts.length === 0 ? (
+                      {accounts.length === 0 ? (
                         <div className="px-2 py-3 text-center text-[12px] text-muted-foreground">
                           {t('transactions.filtersBar.noOptions')}
                         </div>
                       ) : accountSelectionMode === 'single' ? (
-                        sortedAccounts.map((a) => {
+                        accounts.map((a) => {
                           const checked = filterAccountIds[0] === a.id
                           return (
                             <DropdownMenuItem
@@ -531,7 +530,7 @@ export function TransactionsFilterBar({
                           )
                         })
                       ) : (
-                        sortedAccounts.map((a) => (
+                        accounts.map((a) => (
                           <DropdownMenuCheckboxItem
                             key={a.id}
                             checked={filterAccountIds.includes(a.id)}

@@ -513,7 +513,7 @@ export function AppLayout() {
               </button>
               {accountsExpanded && (
                 <div className="mt-1 space-y-0.5">
-                  {[...visibleAccounts].sort((a, b) => Math.abs(Number(b.current_balance)) - Math.abs(Number(a.current_balance))).slice(0, accountsShowAll ? visibleAccounts.length : 3).map((acc) => {
+                  {[...visibleAccounts].sort((a, b) => a.order - b.order || Math.abs(Number(b.current_balance)) - Math.abs(Number(a.current_balance))).slice(0, accountsShowAll ? visibleAccounts.length : 3).map((acc) => {
                     const balance = Number(acc.current_balance) || 0
                     const typeKey = acc.type.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase()).replace(/^./, c => c.toUpperCase())
 
