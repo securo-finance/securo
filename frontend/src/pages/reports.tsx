@@ -18,7 +18,7 @@ import {
   ReferenceLine,
   ResponsiveContainer,
 } from 'recharts'
-import { AlertCircle, HelpCircle, X } from 'lucide-react'
+import { AlertCircle, AlertTriangle, CheckCircle2, HelpCircle, X } from 'lucide-react'
 import { reports } from '@/lib/api'
 import { extractApiError } from '@/lib/api-errors'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -300,6 +300,14 @@ export default function ReportsPage() {
       ...breakdowns,
     } as Record<string, string | number | null>
   })
+
+  // Cash-flow runway: the first projected day below zero and the lowest
+  // point of the horizon, both computed day by day on the backend.
+  const runwayDate = meta?.type === 'cash_flow' ? meta.runway_date ?? null : null
+  const lowestBalance = meta?.type === 'cash_flow' ? meta.lowest_balance ?? null : null
+  const lowestBalanceDate = meta?.type === 'cash_flow' ? meta.lowest_balance_date ?? null : null
+  const formatDay = (iso: string) =>
+    new Date(iso + 'T00:00:00').toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' })
 
   const allBreakdowns = summary?.breakdowns ?? []
   const breakdownData = allBreakdowns.filter((b) => b.value > 0)
@@ -722,6 +730,33 @@ export default function ReportsPage() {
             </div>
           )}
         </div>
+        {!isLoading && lowestBalance !== null && lowestBalanceDate && (
+          <div
+            data-testid="cash-flow-runway"
+            className={`flex items-start gap-2.5 px-5 py-3 border-t border-border text-sm ${
+              runwayDate ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'
+            }`}
+          >
+            {runwayDate ? (
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
+            )}
+            <div>
+              <p className="font-semibold">
+                {runwayDate
+                  ? t('reports.runwayNegativeOn', { date: formatDay(runwayDate) })
+                  : t('reports.runwayNeverNegative')}
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {t('reports.lowestBalanceOn', {
+                  amount: mask(formatCurrency(lowestBalance, userCurrency, locale)),
+                  date: formatDay(lowestBalanceDate),
+                })}
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Flow (Sankey) */}
@@ -881,6 +916,9 @@ export default function ReportsPage() {
                       strokeDasharray="4 4"
                       strokeOpacity={0.5}
                     />
+                    {lowestBalance !== null && lowestBalance < 0 && (
+                      <ReferenceLine y={0} stroke="#F43F5E" strokeOpacity={0.6} />
+                    )}
                     {forecastStart && (
                       <ReferenceLine
                         x={forecastStart}

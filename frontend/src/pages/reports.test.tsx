@@ -238,3 +238,54 @@ describe('Reports page — query failure', () => {
     expect(screen.getByRole('button', { name: t('reports.range6m') })).toHaveClass('bg-primary')
   })
 })
+
+describe('Reports page — cash-flow runway', () => {
+  async function openCashFlow(meta: Partial<ReportResponse['meta']>) {
+    const report = emptyReport('cash_flow')
+    api.reports.cashFlow.mockResolvedValue({ ...report, meta: { ...report.meta, ...meta } })
+    const { user } = renderWithProviders(<ReportsPage />)
+    await waitFor(() => expect(api.reports.netWorth).toHaveBeenCalled())
+    await user.click(screen.getByRole('button', { name: t('reports.cashFlow') }))
+    return screen.findByTestId('cash-flow-runway')
+  }
+
+  it('names the day the balance goes negative and its lowest point', async () => {
+    const callout = await openCashFlow({
+      runway_date: '2026-10-05',
+      lowest_balance: -500,
+      lowest_balance_date: '2026-10-05',
+    })
+
+    expect(callout).toHaveTextContent(t('reports.runwayNegativeOn', { date: 'Oct 5, 2026' }))
+    expect(callout).toHaveTextContent(
+      t('reports.lowestBalanceOn', { amount: '-$500.00', date: 'Oct 5, 2026' }),
+    )
+  })
+
+  it.each([
+    [400, '$400.00'],
+    [0, '$0.00'],
+  ])('reports a lowest balance of %d as never going below zero', async (lowest, amount) => {
+    const callout = await openCashFlow({
+      runway_date: null,
+      lowest_balance: lowest,
+      lowest_balance_date: '2026-12-01',
+    })
+
+    expect(callout).toHaveTextContent(t('reports.runwayNeverNegative'))
+    expect(callout).toHaveTextContent(
+      t('reports.lowestBalanceOn', { amount, date: 'Dec 1, 2026' }),
+    )
+  })
+
+  it('is not shown on the other tabs', async () => {
+    api.reports.netWorth.mockResolvedValue({
+      ...emptyReport('net_worth'),
+      meta: { ...emptyReport('net_worth').meta, lowest_balance: 1, lowest_balance_date: '2026-10-01' },
+    })
+    renderWithProviders(<ReportsPage />)
+    await screen.findAllByText('$1,000.00')
+
+    expect(screen.queryByTestId('cash-flow-runway')).not.toBeInTheDocument()
+  })
+})
