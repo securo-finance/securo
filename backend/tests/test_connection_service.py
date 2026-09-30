@@ -2962,6 +2962,7 @@ async def test_sync_does_not_overwrite_manual_effective_bill_date(
     )).scalar_one()
     bill_a_row_id = tx_row.bill_id  # link from sync
     tx_row.effective_bill_date = _date_(2026, 5, 5)
+    tx_row.reporting_date_override = _date_(2026, 2, 28)
     tx_row.bill_id = None  # user manually unlinked
     tx_row.effective_date = _date_(2026, 5, 5)
     await session.commit()
@@ -2975,6 +2976,7 @@ async def test_sync_does_not_overwrite_manual_effective_bill_date(
         select(Transaction).where(Transaction.external_id == "tx-overridden")
     )).scalar_one()
     assert tx_row.effective_bill_date == _date_(2026, 5, 5)
+    assert tx_row.reporting_date_override == _date_(2026, 2, 28)
     assert tx_row.bill_id is None  # not re-linked to A
     assert tx_row.effective_date == _date_(2026, 5, 5)
     assert bill_a_row_id is not None  # sanity: A had been linked initially
@@ -3200,6 +3202,12 @@ async def test_sync_upgrades_pending_to_posted_when_twin_arrives(
          patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
         await sync_connection(session, conn.id, test_workspace.id, test_user.id)
 
+    pending_row = (await session.execute(
+        select(Transaction).where(Transaction.external_id == "provider-pending")
+    )).scalar_one()
+    pending_row.reporting_date_override = date(2026, 3, 31)
+    await session.commit()
+
     # Second sync: posted twin arrives with a new id and identifier; the
     # pending row is also still in the feed (providers don't always drop the
     # scheduled row immediately).
@@ -3228,6 +3236,7 @@ async def test_sync_upgrades_pending_to_posted_when_twin_arrives(
     # so subsequent syncs match by id.
     assert rows[0].status == "posted"
     assert rows[0].external_id == "provider-posted"
+    assert rows[0].reporting_date_override == date(2026, 3, 31)
 
 
 @pytest.mark.asyncio
