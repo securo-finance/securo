@@ -1,0 +1,53 @@
+/**
+ * Currencies the product offers in its pickers.
+ *
+ * Shared across the setup and register flows, and kept out of the component
+ * module so that file exports components only (fast refresh, and the
+ * `only-export-components` lint).
+ */
+export const CURRENCIES = [
+  { code: 'USD', flag: '\u{1F1FA}\u{1F1F8}', symbol: '$' },
+  { code: 'EUR', flag: '\u{1F1EA}\u{1F1FA}', symbol: '€' },
+  { code: 'GBP', flag: '\u{1F1EC}\u{1F1E7}', symbol: '£' },
+  { code: 'AZN', flag: '\u{1F1E6}\u{1F1FF}', symbol: '₼' },
+  { code: 'BRL', flag: '\u{1F1E7}\u{1F1F7}', symbol: 'R$' },
+  { code: 'CAD', flag: '\u{1F1E8}\u{1F1E6}', symbol: 'C$' },
+  { code: 'AUD', flag: '\u{1F1E6}\u{1F1FA}', symbol: 'A$' },
+  { code: 'CHF', flag: '\u{1F1E8}\u{1F1ED}', symbol: 'Fr' },
+  { code: 'ARS', flag: '\u{1F1E6}\u{1F1F7}', symbol: '$' },
+  { code: 'JPY', flag: '\u{1F1EF}\u{1F1F5}', symbol: '¥' },
+  { code: 'MXN', flag: '\u{1F1F2}\u{1F1FD}', symbol: '$' },
+  { code: 'INR', flag: '\u{1F1EE}\u{1F1F3}', symbol: '₹' },
+  { code: 'SEK', flag: '\u{1F1F8}\u{1F1EA}', symbol: 'kr' },
+  { code: 'DKK', flag: '\u{1F1E9}\u{1F1F0}', symbol: 'kr' },
+  { code: 'NOK', flag: '\u{1F1F3}\u{1F1F4}', symbol: 'kr' },
+  { code: 'PLN', flag: '\u{1F1F5}\u{1F1F1}', symbol: 'zł' },
+  { code: 'CZK', flag: '\u{1F1E8}\u{1F1FF}', symbol: 'Kč' },
+  { code: 'HUF', flag: '\u{1F1ED}\u{1F1FA}', symbol: 'Ft' },
+  { code: 'RON', flag: '\u{1F1F7}\u{1F1F4}', symbol: 'lei' },
+  { code: 'CRC', flag: '\u{1F1E8}\u{1F1F7}', symbol: '₡' },
+  { code: 'IDR', flag: '\u{1F1EE}\u{1F1E9}', symbol: 'Rp' },
+  { code: 'COP', flag: '\u{1F1E8}\u{1F1F4}', symbol: '$' },
+  { code: 'CLP', flag: '\u{1F1E8}\u{1F1F1}', symbol: '$' },
+  { code: 'DOP', flag: '\u{1F1E9}\u{1F1F4}', symbol: 'RD$' },
+  { code: 'KZT', flag: '\u{1F1F0}\u{1F1FF}', symbol: '₸' },
+  { code: 'RUB', flag: '\u{1F1F7}\u{1F1FA}', symbol: '₽' },
+  { code: 'GTQ', flag: '\u{1F1EC}\u{1F1F9}', symbol: 'Q' },
+  { code: 'PHP', flag: '\u{1F1F5}\u{1F1ED}', symbol: '₱' },
+  { code: 'UAH', flag: '\u{1F1FA}\u{1F1E6}', symbol: '₴' },
+  { code: 'NZD', flag: '\u{1F1F3}\u{1F1FF}', symbol: 'NZ$' },
+  { code: 'VND', flag: '\u{1F1FB}\u{1F1F3}', symbol: '₫' },
+  { code: 'SGD', flag: '\u{1F1F8}\u{1F1EC}', symbol: 'S$' },
+  { code: 'TRY', flag: '\u{1F1F9}\u{1F1F7}', symbol: '₺' },
+  { code: 'PKR', flag: '\u{1F1F5}\u{1F1F0}', symbol: '₨' },
+  { code: 'MDL', flag: '\u{1F1F2}\u{1F1E9}', symbol: 'L' },
+  { code: 'AED', flag: '\u{1F1E6}\u{1F1EA}', symbol: 'د.إ' },
+  { code: 'THB', flag: '\u{1F1F9}\u{1F1ED}', symbol: '฿' },
+  { code: 'EGP', flag: '\u{1F1EA}\u{1F1EC}', symbol: 'E£' },
+  { code: 'MYR', flag: '\u{1F1F2}\u{1F1FE}', symbol: 'RM' },
+  { code: 'CNY', flag: '\u{1F1E8}\u{1F1F3}', symbol: '¥' },
+  { code: 'SAR', flag: '\u{1F1F8}\u{1F1E6}', symbol: 'ر.س' },
+  { code: 'QAR', flag: '\u{1F1F6}\u{1F1E6}', symbol: 'ر.ق' },
+  { code: 'JMD', flag: '\u{1F1EF}\u{1F1F2}', symbol: 'J$' },
+  { code: 'RSD', flag: '\u{1F1F7}\u{1F1F8}', symbol: 'RSD' },
+] as const

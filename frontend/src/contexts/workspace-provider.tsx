@@ -6,6 +6,31 @@ import type { ModuleId } from '@/lib/modules'
 import type { Workspace } from '@/types'
 import { WorkspaceContext } from '@/contexts/workspace-context'
 
+const NO_WORKSPACES: Workspace[] = []
+
+/**
+ * Fetch the workspaces the signed-in person can access and reconcile the
+ * stored selection against them.
+ *
+ * If the stored ID is stale (workspace archived, user removed, etc.) it falls
+ * back to the first accessible one. Kept out of the component so both the
+ * sign-in effect and the `refresh` callback share one implementation, and so
+ * neither has to set state synchronously.
+ */
+async function fetchWorkspaces(): Promise<{ list: Workspace[]; currentId: string | null }> {
+  const fetched = await workspacesApi.list()
+  const storedId = localStorage.getItem(WORKSPACE_STORAGE_KEY)
+  const found = fetched.find((w) => w.id === storedId)
+  if (found) return { list: fetched, currentId: found.id }
+  if (fetched.length > 0) {
+    const fallbackId = fetched[0].id
+    localStorage.setItem(WORKSPACE_STORAGE_KEY, fallbackId)
+    return { list: fetched, currentId: fallbackId }
+  }
+  localStorage.removeItem(WORKSPACE_STORAGE_KEY)
+  return { list: fetched, currentId: null }
+}
+
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const { user, token, isLoading: authLoading } = useAuth()
@@ -15,25 +40,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
 
   const loadWorkspaces = useCallback(async () => {
-    setIsLoading(true)
     try {
-      const fetched = await workspacesApi.list()
-      setList(fetched)
-      // Reconcile the stored selection against what's actually accessible.
-      // If the stored ID is stale (workspace archived, user removed, etc.)
-      // fall back to the first one.
-      const storedId = localStorage.getItem(WORKSPACE_STORAGE_KEY)
-      const found = fetched.find((w) => w.id === storedId)
-      if (found) {
-        setCurrentId(found.id)
-      } else if (fetched.length > 0) {
-        const fallbackId = fetched[0].id
-        localStorage.setItem(WORKSPACE_STORAGE_KEY, fallbackId)
-        setCurrentId(fallbackId)
-      } else {
-        localStorage.removeItem(WORKSPACE_STORAGE_KEY)
-        setCurrentId(null)
-      }
+      const next = await fetchWorkspaces()
+      setList(next.list)
+      setCurrentId(next.currentId)
     } catch {
       // 401s are handled by the global interceptor; other failures we
       // just surface as no-data — the user can retry from the UI.
@@ -43,20 +53,31 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const signedOut = !authLoading && (!user || !token)
+
   useEffect(() => {
     // Stay in the loading state until auth has settled. Reporting "done,
     // no workspaces" while the token is still being restored is a lie
     // that lasts one render — long enough for anything gated on
     // `hasModule` to decide the module is off and redirect away.
-    if (authLoading) return
-    if (!user || !token) {
-      setList([])
-      setCurrentId(null)
-      setIsLoading(false)
-      return
-    }
-    void loadWorkspaces()
-  }, [authLoading, user, token, loadWorkspaces])
+    if (authLoading || signedOut) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const next = await fetchWorkspaces()
+        if (cancelled) return
+        setList(next.list)
+        setCurrentId(next.currentId)
+      } catch {
+        // 401s are handled by the global interceptor; other failures we
+        // just surface as no-data — the user can retry from the UI.
+        if (!cancelled) setList([])
+      } finally {
+        if (!cancelled) setIsLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [authLoading, signedOut])
 
   const switchWorkspace = useCallback(
     async (id: string) => {
@@ -96,9 +117,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   return (
     <WorkspaceContext.Provider
       value={{
-        current,
-        workspaces: list,
-        isLoading,
+        current: signedOut ? null : current,
+        workspaces: signedOut ? NO_WORKSPACES : list,
+        isLoading: signedOut ? false : isLoading,
         switchWorkspace,
         refresh: loadWorkspaces,
         role,

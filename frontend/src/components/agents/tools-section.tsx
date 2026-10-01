@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -17,10 +17,12 @@ export function ToolsSection({ agentId }: { agentId: string }) {
     queryFn: () => agents.tools(agentId),
   })
 
-  const [draft, setDraft] = useState<AgentToolHandle[]>([])
-  useEffect(() => {
+  const [draft, setDraft] = useState<AgentToolHandle[]>(data?.tools ?? [])
+  const [seededTools, setSeededTools] = useState(data?.tools)
+  if (data?.tools !== seededTools) {
+    setSeededTools(data?.tools)
     setDraft(data?.tools ?? [])
-  }, [data?.tools])
+  }
 
   const save = useMutation({
     mutationFn: () => agents.setTools(agentId, draft.map((t) => ({ server: t.server, tool_name: t.name, enabled: t.enabled }))),

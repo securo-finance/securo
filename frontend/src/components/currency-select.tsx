@@ -6,6 +6,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
+<<<<<<< HEAD
 
 // Shared across the setup and register flows. A compact dropdown keeps these
 // forms short instead of rendering one button per currency in a tall grid.
@@ -62,6 +63,9 @@ export const CURRENCIES = [
   { code: 'ZAR', flag: '\u{1F1FF}\u{1F1E6}', symbol: 'R' },
   { code: 'GEL', flag: '\u{1F1EC}\u{1F1EA}', symbol: '₾' },
 ] as const
+=======
+import { CURRENCIES } from '@/lib/currencies'
+>>>>>>> cd4365d4 (fix(lint): resolve the React findings Oxlint reports)
 
 interface CurrencySelectProps {
   value: string
