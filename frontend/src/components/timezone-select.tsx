@@ -42,6 +42,7 @@ export function TimezoneSelect({
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const [openedAt, setOpenedAt] = useState<Date | null>(null)
 
   const groups = useMemo(() => {
     const byRegion = new Map<string, string[]>()
@@ -58,13 +59,13 @@ export function TimezoneSelect({
 
   // Offsets are computed once per open, not once per keystroke.
   const offsets = useMemo(() => {
-    if (!open) return new Map<string, string | null>()
-    const now = new Date()
-    return new Map(options.map((name) => [name, timezoneOffsetLabel(name, now)]))
-  }, [open, options])
+    if (!open || !openedAt) return new Map<string, string | null>()
+    return new Map(options.map((name) => [name, timezoneOffsetLabel(name, openedAt)]))
+  }, [open, openedAt, options])
 
   function handleOpenChange(next: boolean) {
     setOpen(next)
+    setOpenedAt(next ? new Date() : null)
     if (!next) setSearch('')
   }
 

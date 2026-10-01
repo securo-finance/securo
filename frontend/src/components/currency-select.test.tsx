@@ -2,7 +2,8 @@ import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 
-import { CURRENCIES, CurrencySelect } from '@/components/currency-select'
+import { CurrencySelect } from '@/components/currency-select'
+import { CURRENCIES } from '@/lib/currencies'
 import { renderWithProviders } from '@/test/utils'
 
 describe('CURRENCIES', () => {
