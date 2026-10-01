@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
+import { useToday } from '@/hooks/use-today'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRegisterPageChatContext } from '@/lib/page-chat-context'
 import { accounts as accountsApi, assets, assetGroups, currencies as currenciesApi } from '@/lib/api'
@@ -176,6 +177,8 @@ const GROWTH_FREQUENCIES = ['daily', 'weekly', 'monthly', 'yearly'] as const
 // Ativo · Quant. · Preço Médio · Preço Atual · Rentab. · Saldo · % · actions.
 const HOLDINGS_GRID = 'minmax(0,2.4fr) 0.7fr 1.1fr 1fr 0.9fr 1.3fr 0.6fr 4.5rem'
 
+const NO_TICKER_MATCHES: MarketSymbolMatch[] = []
+
 // Surface the backend's actual error message (FastAPI puts it in
 // response.data.detail) instead of a generic toast. Makes failures
 // diagnosable — e.g. the oversell guard message, or a "Not Found" when a
@@ -193,6 +196,7 @@ export default function AssetsPage() {
   const navigate = useNavigate()
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
+  const today = useToday()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
   const { canWrite } = useWorkspace()
@@ -473,8 +477,8 @@ export default function AssetsPage() {
     const startDate = formGrowthStartDate || formPurchaseDate
     if (!startDate) return null
 
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
+    const todayStart = new Date(today.getTime())
+    todayStart.setHours(0, 0, 0, 0)
     let current = baseAmount
     let d = new Date(startDate + 'T00:00:00')
 
@@ -489,7 +493,7 @@ export default function AssetsPage() {
       else if (formGrowthFrequency === 'monthly') next = new Date(d.getFullYear(), d.getMonth() + 1, Math.min(d.getDate(), 28))
       else if (formGrowthFrequency === 'yearly') next = new Date(d.getFullYear() + 1, d.getMonth(), d.getMonth() === 1 ? Math.min(d.getDate(), 28) : d.getDate())
       else break
-      if (next > today) break
+      if (next > todayStart) break
       if (formGrowthType === 'percentage') {
         current = current * (1 + rate / 100)
       } else {
@@ -499,7 +503,7 @@ export default function AssetsPage() {
       iterations++
     }
     return Math.round(current * 100) / 100
-  }, [formMethod, formPurchasePrice, formGrowthRate, formGrowthType, formGrowthFrequency, formGrowthStartDate, formPurchaseDate])
+  }, [formMethod, formPurchasePrice, formGrowthRate, formGrowthType, formGrowthFrequency, formGrowthStartDate, formPurchaseDate, today])
 
   const activeAssets = useMemo(() => assetsList?.filter(a => !a.sell_date && !a.is_archived) ?? [], [assetsList])
   const soldAssets = assetsList?.filter(a => a.sell_date) ?? []
@@ -530,12 +534,9 @@ export default function AssetsPage() {
     // Don't search if the field matches the already-selected quote — the
     // user just picked it and we'd spam the endpoint for no reason.
     if (selectedQuote && q === selectedQuote.symbol) return
-    if (q.length < 1) {
-      setTickerMatches([])
-      return
-    }
-    setTickerSearchLoading(true)
+    if (q.length < 1) return
     const handle = window.setTimeout(async () => {
+      setTickerSearchLoading(true)
       try {
         const results = await assets.marketSearch(q, 10)
         setTickerMatches(results)
@@ -547,6 +548,13 @@ export default function AssetsPage() {
     }, 300)
     return () => window.clearTimeout(handle)
   }, [formMethod, formTickerQuery, selectedQuote])
+
+  const tickerQuery = formTickerQuery.trim()
+  const tickerSearchActive =
+    formMethod === 'market_price' &&
+    tickerQuery.length >= 1 &&
+    !(selectedQuote && tickerQuery === selectedQuote.symbol)
+  const visibleTickerMatches = tickerSearchActive ? tickerMatches : NO_TICKER_MATCHES
 
   async function pickTickerMatch(match: MarketSymbolMatch) {
     setTickerMatches([])
@@ -1349,9 +1357,9 @@ export default function AssetsPage() {
                         }
                       }}
                     />
-                    {tickerMatches.length > 0 && !editingAsset && (
+                    {visibleTickerMatches.length > 0 && !editingAsset && (
                       <div className="absolute z-20 mt-1 w-full max-h-60 overflow-y-auto rounded-lg border border-border bg-popover shadow-lg">
-                        {tickerMatches.map(match => {
+                        {visibleTickerMatches.map(match => {
                           // Tesouro bonds carry an internal TD:* symbol — show
                           // the readable name instead of the hash for those.
                           const isBond = match.symbol.startsWith('TD:')

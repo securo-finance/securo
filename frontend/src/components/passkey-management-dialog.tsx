@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Fingerprint, Loader2, TriangleAlert, X } from 'lucide-react'
 import { auth } from '@/lib/api'
@@ -34,39 +35,46 @@ const FAILURE_KEYS: Record<PasskeyFailure, string> = {
   unknown: 'auth.passkeyRegisterError',
 }
 
+<<<<<<< HEAD
 export function PasskeyManagementDialog(props: PasskeyManagementDialogProps) {
   return props.open ? <PasskeyManagementSession {...props} /> : null
 }
 
 function PasskeyManagementSession({ open, onClose, localAuthEnabled = true }: PasskeyManagementDialogProps) {
+=======
+const NO_PASSKEYS: Passkey[] = []
+
+const PASSKEYS_QUERY_KEY = ['passkeys'] as const
+
+export function PasskeyManagementDialog({ open, onClose, localAuthEnabled = true }: PasskeyManagementDialogProps) {
+>>>>>>> cd4365d4 (fix(lint): resolve the React findings Oxlint reports)
   const { t } = useTranslation()
-  const [passkeys, setPasskeys] = useState<Passkey[]>([])
+  const queryClient = useQueryClient()
   const [name, setName] = useState('')
+<<<<<<< HEAD
   const [loading, setLoading] = useState(true)
+=======
+>>>>>>> cd4365d4 (fix(lint): resolve the React findings Oxlint reports)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
-  const [loadFailed, setLoadFailed] = useState(false)
   // The blocker only explains why registration is unavailable. With local auth
   // off there is no registration form to explain, so the warning would be noise
   // on top of the cleanup copy.
   const blocker = localAuthEnabled ? passkeyBlocker() : null
 
-  const loadPasskeys = useCallback(async () => {
-    setLoading(true)
-    setLoadFailed(false)
-    try {
-      setPasskeys(await auth.listPasskeys())
-    } catch {
-      setLoadFailed(true)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (open) void loadPasskeys()
-  }, [open, loadPasskeys])
+  const {
+    data: passkeys = NO_PASSKEYS,
+    isLoading: loading,
+    isError: loadFailed,
+    refetch: loadPasskeys,
+  } = useQuery({
+    queryKey: PASSKEYS_QUERY_KEY,
+    queryFn: auth.listPasskeys,
+    enabled: open,
+    staleTime: 0,
+    retry: false,
+  })
 
   const formatDate = (value: string | null) => {
     if (!value) return t('auth.passkeyNeverUsed')
@@ -88,7 +96,7 @@ function PasskeyManagementSession({ open, onClose, localAuthEnabled = true }: Pa
       const options = await auth.registerPasskeyOptions(passkeyName)
       const credential = await startPasskeyRegistration(options.options)
       const created = await auth.verifyPasskeyRegistration(options.challenge_id, passkeyName, credential)
-      setPasskeys((current) => [...current, created])
+      queryClient.setQueryData<Passkey[]>(PASSKEYS_QUERY_KEY, (current) => [...(current ?? []), created])
       setName('')
       toast.success(t('auth.passkeyAdded'))
     } catch (err) {
@@ -102,7 +110,7 @@ function PasskeyManagementSession({ open, onClose, localAuthEnabled = true }: Pa
     setDeletingId(passkey.id)
     try {
       await auth.deletePasskey(passkey.id)
-      setPasskeys((current) => current.filter((item) => item.id !== passkey.id))
+      queryClient.setQueryData<Passkey[]>(PASSKEYS_QUERY_KEY, (current) => (current ?? []).filter((item) => item.id !== passkey.id))
       setConfirmDeleteId(null)
       toast.success(t('auth.passkeyDeleted'))
     } catch {

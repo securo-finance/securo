@@ -46,8 +46,9 @@ function MonthPicker({
   minDate,
   maxDate,
 }: MonthPickerProps) {
-  const initialYear = selectedMonth?.getFullYear() ?? new Date().getFullYear()
-  const [menuYear, setMenuYear] = React.useState<number>(initialYear)
+  const [menuYear, setMenuYear] = React.useState<number>(
+    () => selectedMonth?.getFullYear() ?? new Date().getFullYear(),
+  )
 
   const selectedYear = selectedMonth?.getFullYear()
   const selectedMonthIdx = selectedMonth?.getMonth()

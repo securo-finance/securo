@@ -83,10 +83,14 @@ export function TransactionSplitsSection({
   const [newGroupCurrency, setNewGroupCurrency] = useState(currency)
   const [newGroupNotes, setNewGroupNotes] = useState('')
 
-  // Sync newGroupCurrency default value if currency prop changes.
-  useEffect(() => {
+  // Reset the default-currency field whenever the parent's currency changes.
+  // Adjusted during render (tracking the last currency we synced from)
+  // instead of from an effect.
+  const [syncedCurrency, setSyncedCurrency] = useState(currency)
+  if (syncedCurrency !== currency) {
+    setSyncedCurrency(currency)
     setNewGroupCurrency(currency)
-  }, [currency])
+  }
 
   const createGroupMutation = useMutation({
     mutationFn: (payload: GroupCreatePayload) => groupsApi.create(payload),
@@ -139,13 +143,12 @@ export function TransactionSplitsSection({
     })
   }
 
-  // Reset creation state if splits are disabled
-  useEffect(() => {
-    if (!enabled) {
-      setIsCreatingGroup(false)
-      setIsAddingMember(false)
-    }
-  }, [enabled])
+  // Reset creation state if splits are disabled. Adjusted during render
+  // rather than from an effect.
+  if (!enabled && (isCreatingGroup || isAddingMember)) {
+    setIsCreatingGroup(false)
+    setIsAddingMember(false)
+  }
 
   const { data: groups } = useQuery({
     queryKey: ['groups'],
@@ -237,8 +240,7 @@ export function TransactionSplitsSection({
       return { group_member_id: r.member_id }
     })
     onChange({ share_type: shareType, splits })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, shareType, rows])
+  }, [enabled, shareType, rows, onChange])
 
   // Validation summary
   const total = useMemo(() => {
