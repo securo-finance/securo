@@ -1,4 +1,4 @@
-import axios from 'axios'
+import axios, { isCancel } from 'axios'
 import type { NumberFormat, DateFormat } from '@/lib/format'
 import type {
   User,
@@ -80,6 +80,7 @@ import type {
   MonthlyTrend,
   BalanceHistory,
   PaginatedTransactions,
+  TransactionsListAllResult,
   ReportResponse,
   Group,
   GroupKind,
@@ -100,7 +101,9 @@ import type {
   ReconciliationHistoryEvent,
 } from '@/types'
 
-const api = axios.create({
+// Exported so tests can drive the real request path (list/pagination) with a
+// fixture adapter instead of mocking the endpoints away from under it.
+export const api = axios.create({
   baseURL: '/api',
 })
 
@@ -501,39 +504,129 @@ export const accounts = {
 }
 
 // Transactions
+export type TransactionListParams = {
+  account_id?: string
+  account_ids?: string[]
+  category_id?: string
+  category_ids?: string[]
+  payee_id?: string
+  uncategorized?: boolean
+  type?: string
+  status?: string
+  from?: string
+  to?: string
+  bill_id?: string
+  group_id?: string
+  unbilled_only?: boolean
+  q?: string
+  page?: number
+  limit?: number
+  include_opening_balance?: boolean
+  exclude_transfers?: boolean
+  user_pnl_only?: boolean
+  exclude_ignored?: boolean
+  tags?: string[]
+  min_amount?: number
+  max_amount?: number
+  sort_by?: string
+  sort_dir?: 'asc' | 'desc'
+}
+
+/** Page size used when walking a result set to its end (see `listAll`). */
+const LIST_ALL_PAGE_SIZE = 500
+/** Hard ceiling on rows a single `listAll` walk will pull, so a runaway
+ *  filter (e.g. "everything, ever" on a huge workspace) cannot pin the tab.
+ *  40 pages × 500 rows. */
+const LIST_ALL_MAX_ROWS = 20000
+
 export const transactions = {
-  list: async (params?: {
-    account_id?: string
-    account_ids?: string[]
-    category_id?: string
-    category_ids?: string[]
-    payee_id?: string
-    uncategorized?: boolean
-    type?: string
-    status?: string
-    from?: string
-    to?: string
-    bill_id?: string
-    group_id?: string
-    unbilled_only?: boolean
-    q?: string
-    page?: number
-    limit?: number
-    include_opening_balance?: boolean
-    exclude_transfers?: boolean
-    user_pnl_only?: boolean
-    exclude_ignored?: boolean
-    tags?: string[]
-    min_amount?: number
-    max_amount?: number
-    sort_by?: string
-    sort_dir?: 'asc' | 'desc'
-  }): Promise<PaginatedTransactions> => {
+  list: async (params?: TransactionListParams, signal?: AbortSignal): Promise<PaginatedTransactions> => {
     const { data } = await api.get('/transactions', {
       params,
       paramsSerializer: { indexes: null },
+      signal,
     })
     return data
+  },
+
+  /**
+   * Every row the filter matches — pages through until the result set ends.
+   *
+   * `list` returns one page (default 50), and the account page used to ask
+   * for exactly one big page of 500: on an account with thousands of rows the
+   * oldest ones silently fell off the list, the running-balance walk, and the
+   * balance chart, which then drew a flat line over the truncated window's
+   * opening balance instead of the real history. Anything that renders a whole
+   * range (chart, running balance, full statement list) must use this.
+   *
+   * The walk is capped at `LIST_ALL_MAX_ROWS` so one runaway filter cannot
+   * pin the tab. Hitting the cap is NOT a complete answer, so the result
+   * carries `truncated: true` and the UI says so: without it the caller would
+   * render a silently incomplete chart and balance walk as though it were the
+   * whole range.
+   *
+   * `signal` aborts the walk mid-flight. TanStack Query v5 passes one and
+   * fires it when the query's key changes (a new date range) or the observer
+   * unmounts; without honouring it every abandoned range kept paging in the
+   * background — up to 40 requests' worth per superseded range.
+   *
+   * `page`/`limit` are owned here; callers pass only their filters.
+   */
+  listAll: async (
+    params?: Omit<TransactionListParams, 'page' | 'limit'>,
+    signal?: AbortSignal,
+  ): Promise<TransactionsListAllResult> => {
+    const items: Transaction[] = []
+    let total = 0
+    let response: PaginatedTransactions | null = null
+    let hitCeiling = false
+
+    for (let page = 1; ; page++) {
+      // Axios rejects a request whose signal is already aborted (and aborts
+      // the in-flight one), so the check is belt-and-braces: it stops the
+      // walk before a pointless request, the axios rejection stops the
+      // in-flight one.
+      if (signal?.aborted) break
+      let res: PaginatedTransactions
+      try {
+        res = await transactions.list({ ...params, page, limit: LIST_ALL_PAGE_SIZE }, signal)
+      } catch (error) {
+        // A cancelled walk has no answer to give. Swallow axios's
+        // `CanceledError` so a superseded range cannot surface as a failed
+        // query; anything else (a real HTTP error) still propagates.
+        if (signal?.aborted || isCancel(error)) break
+        throw error
+      }
+      response = res
+      const rows = res.items ?? []
+      total = res.total ?? rows.length
+      items.push(...rows)
+      // A short page is the definitive end. A full page is not: `total` can
+      // disagree with what the offsets deliver (rows written mid-walk), so we
+      // stop on the page shape and dedupe below instead of trusting the count.
+      if (rows.length < LIST_ALL_PAGE_SIZE) break
+      if (items.length >= LIST_ALL_MAX_ROWS) {
+        hitCeiling = true
+        break
+      }
+    }
+
+    // Offset pagination repeats a row when something is inserted between two
+    // page requests; the same id twice would double-count in the balance walk.
+    const seen = new Set<string>()
+    const deduped = items.filter((tx) => {
+      if (seen.has(tx.id)) return false
+      seen.add(tx.id)
+      return true
+    })
+
+    // Truncated means: the ceiling was reached AND the server said there was
+    // more to come AND fewer rows came back than it counted. A result set that
+    // exactly fills the ceiling, or one that ends on a short page inside it, is
+    // the whole answer and must not be labelled as clipped.
+    const truncated = hitCeiling && total > deduped.length
+
+    return { ...(response as PaginatedTransactions), items: deduped, total, truncated }
   },
   calendar: async (params?: {
     month?: string

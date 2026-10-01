@@ -31,7 +31,16 @@ const api = vi.hoisted(() => ({
 
 vi.mock('@/lib/api', () => ({
   accounts: api.accounts,
-  transactions: api.transactions,
+  transactions: {
+    ...api.transactions,
+    // The page asks for every row in the window (api.transactions.listAll);
+    // here a single page is always the whole answer, because the fixture
+    // returns an empty page and the walk stops. The signal argument is part of
+    // the real signature — the page passes TanStack Query's, and the mocked
+    // walk must not pretend it never received one.
+    listAll: (params: Record<string, unknown>, signal?: AbortSignal) =>
+      api.transactions.list({ ...params, page: 1, limit: 500 }, signal),
+  },
   dashboard: api.dashboard,
   categories: api.categories,
   categoryGroups: api.categoryGroups,

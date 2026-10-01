@@ -1226,6 +1226,7 @@
     "backToAccounts": "口座一覧に戻る",
     "runningBalance": "残高",
     "noTransactions": "この口座の取引はありません",
+    "rangeTruncated": "この期間の {{total}} 件のうち最新の {{shown}} 件を表示しています。残りは期間を短くして確認してください。",
     "syncFailed": "同期に失敗しました",
     "reconnect": "再接続",
     "connectionError": "接続エラー — 再接続で解決します",

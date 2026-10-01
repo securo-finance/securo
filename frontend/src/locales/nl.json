@@ -1227,6 +1227,7 @@
     "backToAccounts": "Terug naar rekeningen",
     "runningBalance": "Balans",
     "noTransactions": "Geen transacties voor dit account",
+    "rangeTruncated": "Toont de {{shown}} nieuwste van {{total}} transacties in deze periode. Verkort de periode om de rest te zien.",
     "syncFailed": "Synchronisatie mislukt",
     "reconnect": "Maak opnieuw verbinding",
     "connectionError": "Verbindingsfout: maak opnieuw verbinding om het probleem op te lossen",
