@@ -28,6 +28,7 @@ from app.services import (
 TODAY = date.today()
 INVOICE_NODE = reconciliation_policy.MATCH_INVOICE["node"]
 RECURRING_NODE = reconciliation_policy.MATCH_RECURRING["node"]
+TRANSFER_NODE = reconciliation_policy.MATCH_TRANSFER["node"]
 
 
 @pytest_asyncio.fixture
@@ -157,7 +158,8 @@ async def test_the_shipped_rules_are_visible_without_anyone_creating_them(
     assert resp.status_code == 200, resp.text
     nodes = resp.json()
 
-    assert {n["node"] for n in nodes} == {INVOICE_NODE, RECURRING_NODE}
+    # Transfer pairing belongs to no module, so it is in every listing.
+    assert {n["node"] for n in nodes} == {TRANSFER_NODE, INVOICE_NODE, RECURRING_NODE}
     exact = find(nodes, INVOICE_NODE, "same_client_exact")
     assert exact["enabled"] is True
     assert exact["outcome"] == "link"
@@ -180,7 +182,7 @@ async def test_a_personal_workspace_gets_its_own_set_and_not_the_other(
 
     listing = await client.get("/api/reconciliation/rules", headers=personal)
     assert listing.status_code == 200, listing.text
-    assert {n["node"] for n in listing.json()} == {RECURRING_NODE}
+    assert {n["node"] for n in listing.json()} == {TRANSFER_NODE, RECURRING_NODE}
 
     resp = await client.patch(
         f"/api/reconciliation/rules/{RECURRING_NODE}/same_account_exact",
@@ -239,7 +241,7 @@ async def test_a_file_carrying_a_set_this_workspace_lacks_is_skipped(
     listing = (
         await client.get("/api/reconciliation/rules", headers=personal)
     ).json()
-    assert {n["node"] for n in listing} == {RECURRING_NODE}
+    assert {n["node"] for n in listing} == {TRANSFER_NODE, RECURRING_NODE}
 
 
 @pytest.mark.asyncio

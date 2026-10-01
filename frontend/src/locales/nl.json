@@ -13,6 +13,9 @@
     "locale": "Taal",
     "taxJurisdiction": "Belastingjurisdictie",
     "taxJurisdictionHint": "Bepaalt welke fiscale documenten deze workspace wordt aangeboden. Los van de interfacetaal.",
+    "timezone": "Tijdzone",
+    "timezoneDefault": "Standaard van de applicatie ({{zone}})",
+    "timezoneHint": "De kalender waarin deze workspace zijn boeken bijhoudt. Saldi, budgetten en vervaldata wisselen daar om middernacht.",
     "members": "Leden",
     "addMember": "Lid toevoegen",
     "addMemberTitle": "Lid toevoegen",
@@ -65,7 +68,8 @@
     "versionAriaLabel": "Lopende versie {{version}}",
     "versionLabel": "Versie {{version}}",
     "updateAvailable": "Update beschikbaar",
-    "updateAvailableHint": "Een nieuwere release ({{version}}) is beschikbaar op GitHub"
+    "updateAvailableHint": "Een nieuwere release ({{version}}) is beschikbaar op GitHub",
+    "toggleMenu": "Menu in-/uitklappen"
   },
   "cmdk": {
     "title": "Commandopalet",
@@ -126,7 +130,9 @@
     "groupAdmin": "Administratie",
     "groupAgents": "AI",
     "agents": "Agents",
-    "aiAgents": "AI-agents"
+    "aiAgents": "AI-agents",
+    "collapseSidebar": "Zijbalk inklappen",
+    "expandSidebar": "Zijbalk uitklappen"
   },
   "invoices": {
     "title": "Invoices",
@@ -230,7 +236,8 @@
       "downloadPdf": "Download PDF",
       "share": "Share link",
       "revokeLink": "Revoke link",
-      "saveDraft": "Opslaan als concept"
+      "saveDraft": "Opslaan als concept",
+      "downloadStatement": "Rekeningoverzicht downloaden"
     },
     "settings": {
       "title": "Invoice settings",
@@ -290,7 +297,58 @@
       "payable_not_shareable": "Een ontvangen factuur kan niet worden gedeeld.",
       "discount_exceeds_total": "De korting is groter dan het gefactureerde bedrag.",
       "no_document_filed": "Dit document is elders uitgegeven. Voeg het ontvangen bestand toe.",
-      "already_imported": "Dit document is al geïmporteerd."
+      "already_imported": "Dit document is al geïmporteerd.",
+      "term_lines_required": "Een voorwaarde heeft minstens één regel nodig.",
+      "term_empty": "Een voorwaarde moet iets factureren.",
+      "term_in_use": "Er is al een factuur uitgegeven onder deze voorwaarde. Voeg een nieuwe voorwaarde toe vanaf een latere datum.",
+      "term_before_start": "Een voorwaarde kan niet beginnen vóór de afspraak.",
+      "term_date_taken": "Een andere voorwaarde begint al op die datum.",
+      "last_term": "Een afspraak heeft minstens één voorwaarde nodig.",
+      "term_not_found": "Voorwaarde niet gevonden.",
+      "schedule_ended": "Deze afspraak is beëindigd en kan niet meer veranderen.",
+      "schedule_locked": "De frequentie, startdatum en valuta liggen vast zodra er een factuur onder deze afspraak bestaat.",
+      "schedule_has_invoices": "Er zijn facturen uitgegeven onder deze afspraak. Beëindig hem in plaats van hem te verwijderen.",
+      "schedule_not_active": "Alleen een actieve afspraak geeft facturen uit.",
+      "invalid_frequency": "Onbekende frequentie.",
+      "invalid_end_type": "Onbekende eindvoorwaarde.",
+      "invalid_end_reason": "Onbekende eindreden.",
+      "end_date_required": "Geef aan op welke datum de afspraak eindigt.",
+      "end_count_required": "Geef aan na hoeveel facturen de afspraak eindigt.",
+      "end_before_start": "De afspraak kan niet eindigen voordat hij begint.",
+      "name_required": "Geef de afspraak een naam.",
+      "not_issued": "Alleen een uitgegeven factuur kan een afspraak starten.",
+      "already_linked": "Deze factuur hoort al bij een afspraak.",
+      "invoice_void": "Een geannuleerde factuur kan geen periode dekken.",
+      "payee_mismatch": "De factuur en de afspraak noemen verschillende klanten.",
+      "not_a_period": "Die datum is niet het begin van een periode van deze afspraak.",
+      "beyond_end": "Die periode ligt na het einde van de afspraak.",
+      "period_taken": "Een andere factuur dekt die periode al.",
+      "start_after_invoice": "De afspraak kan niet beginnen na deze factuur.",
+      "invoice_not_found": "Factuur niet gevonden.",
+      "no_term": "Er geldt geen voorwaarde voor deze periode.",
+      "no_author": "Deze afspraak heeft geen auteur om facturen namens uit te geven.",
+      "negative_discount": "Een korting kan niet negatief zijn.",
+      "first_term": "De prijs die vanaf het begin geldt, kan niet worden verplaatst of verwijderd. Wijzig hem, of voeg een nieuwe prijs toe vanaf een latere datum.",
+      "not_receivable": "Alleen een factuur die u hebt uitgegeven kan bij een afspraak horen.",
+      "period_already_issued": "Deze periode is zojuist uitgegeven. Vernieuw om hem te zien.",
+      "product_not_found": "Product niet gevonden.",
+      "price_not_found": "Prijs niet gevonden bij dit product.",
+      "product_in_use": "Er zijn facturen die dit product noemen. Archiveer het in plaats van het te verwijderen.",
+      "price_in_use": "Er zijn facturen gemaakt met deze prijs. Archiveer hem in plaats van hem te verwijderen.",
+      "invalid_kind": "Onbekend productsoort.",
+      "invalid_billing": "Onbekend factureringstype.",
+      "interval_required": "Een terugkerende prijs heeft een frequentie nodig.",
+      "currency_required": "Een prijs heeft een valuta nodig.",
+      "unit_price_required": "Een prijs heeft een bedrag nodig.",
+      "negative_price": "Een prijs kan niet negatief zijn.",
+      "invalid_fiscal_refs": "Fiscale referenties moeten korte tekstwaarden zijn onder eenvoudige sleutels (letters, cijfers, underscore).",
+      "price_key_taken": "Een andere prijs gebruikt deze zoeksleutel of externe id al.",
+      "installments_mismatch": "De termijnen tellen niet op tot het factuurtotaal.",
+      "installments_too_few": "Een schema heeft minstens twee termijnen nodig.",
+      "installment_amount_not_positive": "Elke termijn moet een bedrag hebben.",
+      "installment_due_required": "Elke termijn heeft een vervaldatum nodig.",
+      "invalid_deduction_kind": "Onbekende soort aftrek.",
+      "deduction_not_found": "Aftrek niet gevonden."
     },
     "comingNext": "Factureer uw klanten en houd bij wat er is betaald en wat er nog open staat. Dit is het volgende dat gebouwd wordt.",
     "document": {
@@ -379,6 +437,274 @@
       "wouldApply": "zou {{amount}} toepassen",
       "alsoCovers_one": "dekt ook {{count}} andere factuur",
       "alsoCovers_other": "dekt ook {{count}} andere facturen"
+    },
+    "schedules": {
+      "title": "Terugkerend",
+      "new": "Nieuwe terugkerende factuur",
+      "newDescription": "Een afspraak met een klant om elke periode te factureren. De facturen worden op de dag zelf voor je opgesteld.",
+      "backToList": "Terug naar terugkerend",
+      "empty": "Nog geen terugkerende facturen. Maak er een aan, of open een factuur en kies \"Deze factuur herhalen\".",
+      "emptyFiltered": "Niets hier met deze status.",
+      "created": "Terugkerende factuur aangemaakt",
+      "saved": "Wijzigingen opgeslagen",
+      "deleted": "Terugkerende factuur verwijderd",
+      "paused": "Gepauzeerd. Er wordt niets gefactureerd tot je hem hervat.",
+      "resumed": "Hervat vanaf de volgende periode.",
+      "ended": "Afspraak beëindigd",
+      "generated_one": "Factuur uitgegeven",
+      "generated_other": "{{count}} facturen uitgegeven",
+      "termSaved": "Prijs opgeslagen",
+      "termRemoved": "Prijswijziging verwijderd",
+      "linked": "Factuur gekoppeld aan de afspraak",
+      "unlinked": "Factuur ontkoppeld van de afspraak",
+      "recurringInvoice": "Terugkerende factuur",
+      "monthlyPreview": "Ongeveer {{amount}} per maand.",
+      "since": "sinds {{date}}",
+      "untilDate": "tot {{date}}",
+      "untilCount_one": "{{count}} factuur in totaal",
+      "untilCount_other": "{{count}} facturen in totaal",
+      "endedOn": "beëindigd op {{date}} ({{reason}})",
+      "pausedByFailures": "Gepauzeerd na herhaalde fouten. Controleer de voorwaarden en hervat.",
+      "editTitle": "Terugkerende factuur bewerken",
+      "editDescription": "De naam, de klant, de voorwaarden en wanneer hij eindigt.",
+      "editLockedDescription": "Er zijn al facturen uitgegeven onder deze afspraak, dus de frequentie en de startdatum liggen vast. Al het andere kan veranderen.",
+      "endTitle": "Deze afspraak beëindigen?",
+      "endDescription": "Er worden geen facturen meer uitgegeven. De al uitgegeven facturen blijven precies zoals ze zijn. Geef de reden op: dat is het enige wat de facturen je later niet kunnen vertellen.",
+      "linkTitle": "Bestaande factuur koppelen",
+      "linkDescription": "Een factuur die je met de hand hebt opgesteld voor een van de periodes van deze afspraak. Hij houdt zijn nummer, datum en betalingen; hij leert alleen bij welke periode hij hoort.",
+      "noCandidates": "Geen ongekoppelde factuur voor deze klant in deze valuta.",
+      "makeRecurringDescription": "Deze factuur wordt één periode van een nieuwe afspraak, en de volgende worden voor je opgesteld. Zijn eigen datum, {{date}}, is de eerste periode, tenzij je aangeeft dat de afspraak eerder is begonnen.",
+      "filter": {
+        "all": "Alle",
+        "active": "Actief",
+        "paused": "Gepauzeerd",
+        "ended": "Beëindigd"
+      },
+      "state": {
+        "active": "Actief",
+        "past_due": "Achterstallig",
+        "paused": "Gepauzeerd",
+        "paused_failures": "Aandacht nodig",
+        "ended": "Beëindigd"
+      },
+      "frequency": {
+        "weekly": "Wekelijks",
+        "biweekly": "Elke 2 weken",
+        "monthly": "Maandelijks",
+        "quarterly": "Per kwartaal",
+        "semiannual": "Elke 6 maanden",
+        "yearly": "Jaarlijks"
+      },
+      "endType": {
+        "never": "Nooit",
+        "on_date": "Op een datum",
+        "after_count": "Na een aantal facturen"
+      },
+      "endReason": {
+        "canceled_by_client": "Opgezegd door de klant",
+        "canceled_by_us": "Opgezegd door ons",
+        "completed": "Afgerond",
+        "unpaid": "Onbetaald",
+        "other": "Anders"
+      },
+      "summary": {
+        "monthly": "Maandelijks terugkerend",
+        "yearly": "Per jaar",
+        "lost": "Verloren in de laatste 30 dagen",
+        "endedRecently_one": "{{count}} afspraak beëindigd",
+        "endedRecently_other": "{{count}} afspraken beëindigd",
+        "pastDue": "Achterstallig",
+        "pastDueHint": "afspraken met een te late factuur",
+        "activeCount_one": "{{count}} actieve afspraak",
+        "activeCount_other": "{{count}} actieve afspraken",
+        "none": "Nog niets terugkerends"
+      },
+      "column": {
+        "name": "Afspraak",
+        "cadence": "Ritme",
+        "monthly": "Per maand",
+        "next": "Volgende factuur",
+        "invoices": "Facturen",
+        "status": "Status",
+        "period": "Periode"
+      },
+      "figure": {
+        "invoiced": "Gefactureerd",
+        "paid": "Ontvangen",
+        "pastDue_one": "{{count}} factuur achterstallig",
+        "pastDue_other": "{{count}} facturen achterstallig"
+      },
+      "field": {
+        "name": "Naam",
+        "namePlaceholder": "Pro-abonnement, maandelijkse retainer, hosting",
+        "frequency": "Frequentie",
+        "startDate": "Begint op",
+        "startDateHint": "Een datum vóór de factuur maakt ruimte om de eerdere te koppelen.",
+        "paymentTerms": "Betaaltermijn (dagen)",
+        "currency": "Valuta",
+        "ends": "Eindigt",
+        "endDate": "Einddatum",
+        "endCount": "Aantal facturen",
+        "endReason": "Reden",
+        "endedAt": "Beëindigd op",
+        "invoice": "Factuur",
+        "invoicePlaceholder": "Kies een factuur",
+        "period": "Periode",
+        "periodPlaceholder": "Kies een periode"
+      },
+      "action": {
+        "changePrice": "Prijs wijzigen",
+        "generate": "Volgende nu uitgeven",
+        "pause": "Pauzeren",
+        "resume": "Hervatten",
+        "end": "Afspraak beëindigen",
+        "linkInvoice": "Factuur koppelen",
+        "link": "Koppelen",
+        "makeRecurring": "Deze factuur herhalen",
+        "unlink": "Uit de afspraak verwijderen"
+      },
+      "terms": {
+        "title": "Prijs",
+        "description": "Wat de afspraak per periode factureert, en vanaf wanneer. Een wijziging geldt vanaf de eerste periode die op of na de datum begint; er wordt niets naar rato berekend.",
+        "from": "Vanaf {{date}}",
+        "current": "Huidig",
+        "upcoming": "Aankomend",
+        "perMonth": "{{amount}} per maand",
+        "editTitle": "Prijswijziging bewerken",
+        "changeDescription": "Leg een nieuwe prijs vast vanaf een datum. Al gefactureerde periodes houden wat ze gefactureerd kregen; de wijziging begint met de eerste periode op of na de datum, volledig.",
+        "effectiveFrom": "Vanaf",
+        "nextPeriodHint": "De volgende periode begint op {{date}}.",
+        "discount": "Korting",
+        "preview": "{{period}} per periode, ongeveer {{monthly}} per maand."
+      },
+      "invoices": {
+        "title": "Facturen",
+        "description": "Eén per periode, op de dag zelf opgesteld. Een met de hand opgestelde factuur kan ook worden gekoppeld.",
+        "empty": "Nog geen factuur onder deze afspraak.",
+        "emptyNext": "Nog geen factuur. De eerste wordt opgesteld op {{date}}."
+      }
+    },
+    "products": {
+      "title": "Producten",
+      "new": "Nieuw product",
+      "newDescription": "Iets wat je verkoopt, met een prijs per valuta. Kies je het, dan vult het een factuurregel in; de regel blijft daarna van jou om aan te passen.",
+      "editTitle": "Product bewerken",
+      "empty": "Nog geen producten. Voeg toe wat je verkoopt, en elke factuurregel is één klik verwijderd.",
+      "emptyArchived": "Niets gearchiveerd.",
+      "emptyPicker": "Nog geen producten. Voeg ze toe onder Producten.",
+      "noneFound": "Geen product komt overeen.",
+      "searchPlaceholder": "Producten zoeken",
+      "pick": "Kies uit de catalogus",
+      "fromCatalog": "Uit de catalogus",
+      "noPrice": "Geen prijs",
+      "noPriceIn": "geen prijs in {{currency}}",
+      "perUnit": "per {{unit}}",
+      "created": "Product aangemaakt",
+      "saved": "Product opgeslagen",
+      "archived": "Product gearchiveerd. Facturen die het noemen blijven ongewijzigd.",
+      "restored": "Product hersteld",
+      "deleted": "Product verwijderd",
+      "filter": {
+        "active": "Actief",
+        "archived": "Gearchiveerd"
+      },
+      "kind": {
+        "service": "Dienst",
+        "product": "Product"
+      },
+      "billing": {
+        "one_time": "Eenmalig",
+        "every": "Elke {{interval}}"
+      },
+      "per": {
+        "weekly": "week",
+        "biweekly": "2 weken",
+        "monthly": "maand",
+        "quarterly": "kwartaal",
+        "semiannual": "6 maanden",
+        "yearly": "jaar"
+      },
+      "column": {
+        "name": "Naam",
+        "kind": "Soort",
+        "prices": "Prijzen",
+        "invoices": "Facturen"
+      },
+      "field": {
+        "name": "Naam",
+        "namePlaceholder": "Adviesuur, Pro-abonnement, Logo-ontwerp",
+        "kind": "Soort",
+        "description": "Omschrijving",
+        "prices": "Prijzen",
+        "pricesHint": "Eén per valuta. Een terugkerende prijs geeft aan hoe vaak; het is een hint voor terugkerende facturen, er wordt uit zichzelf niets in rekening gebracht.",
+        "addPrice": "Prijs toevoegen",
+        "noPrices": "Geen prijzen. De naam vult de regel toch in; het bedrag typ je zelf.",
+        "nickname": "Label (optioneel)",
+        "fiscalRefs": "Fiscale referenties",
+        "fiscalRefsHint": "Wat een fiscaal document per regel nodig heeft. Voorgesteld op basis van uw jurisdictie; voeg elke andere sleutel toe die u nodig heeft.",
+        "customRefKey": "andere sleutel (bijv. hs_code)",
+        "addRef": "Toevoegen",
+        "fiscalRefsNone": "Niets voorgesteld voor dit type hier. Voeg elke sleutel toe die uw fiscale documenten nodig hebben."
+      },
+      "action": {
+        "archive": "Archiveren",
+        "restore": "Herstellen"
+      }
+    },
+    "installments": {
+      "title": "In termijnen splitsen",
+      "splitIn": "Splitsen in",
+      "splitHint": "gelijke delen, een maand uit elkaar, vanaf de vervaldatum",
+      "add": "Termijn toevoegen",
+      "label": "Label",
+      "labelPlaceholder": "{{n}}/{{total}}",
+      "addsUp": "Telt op tot {{total}}.",
+      "mismatch": "De termijnen tellen op tot {{scheduled}}, de factuur tot {{total}}.",
+      "schedule": "Betalingsschema",
+      "nextDue": "Volgende vervaldatum",
+      "dueDerived": "Bepaald door de laatste termijn.",
+      "count_one": "{{count}} termijn",
+      "count_other": "{{count}} termijnen",
+      "state": {
+        "open": "Open",
+        "partial": "Gedeeltelijk",
+        "paid": "Betaald",
+        "overdue": "Verlopen",
+        "draft": "Concept",
+        "void": "Geannuleerd",
+        "uncollectible": "Oninbaar"
+      }
+    },
+    "deductions": {
+      "title": "Aftrek vastleggen",
+      "description": "Sluit een deel van het verschuldigde bedrag af zonder dat er geld binnenkomt: de klant heeft belasting ingehouden, de betaalprovider heeft zijn kosten ingehouden, de valutaomrekening viel lager uit. Het telt als vereffend, nooit als ontvangen.",
+      "action": "Aftrek vastleggen",
+      "recorded": "Aftrek vastgelegd",
+      "removed": "Aftrek verwijderd",
+      "amount": "Bedrag",
+      "amountHint": "Tot het saldo: {{balance}}.",
+      "kindLabel": "Reden",
+      "taxKind": "Welke belasting (optioneel)",
+      "taxKindPlaceholder": "Loonheffing, btw...",
+      "note": "Notitie (optioneel)",
+      "settledWithout": "Vereffend zonder betaling",
+      "kind": {
+        "withholding_tax": "Belasting ingehouden door de klant",
+        "gateway_fee": "Kosten ingehouden door de betaalprovider",
+        "fx_difference": "Valutaomrekeningsverschil",
+        "other": "Overig"
+      },
+      "differenceTitle": "De betaling is {{difference}} te laag",
+      "differenceHint": "Leg het verschil vast zodat de factuur wordt afgesloten",
+      "differenceNone": "Niet vastleggen",
+      "figure": "Ingehouden"
+    },
+    "statement": {
+      "asIssued": "Factuur zoals uitgegeven",
+      "asIssuedHint": "Het document dat naar de klant is gestuurd",
+      "hint": "Betalingen en inhoudingen sinds uitgifte, en het saldo",
+      "banner": "Deze PDF is de factuur zoals uitgegeven. Sindsdien is {{paid}} ontvangen en {{deducted}} ingehouden: het rekeningoverzicht toont elke post en het saldo.",
+      "title": "Rekeningoverzicht"
     }
   },
   "collections": {
@@ -458,6 +784,7 @@
     "passkeySecondFactorPrompt": "Klik op de onderstaande knop en volg de prompt van de beveiligingssleutel van uw browser.",
     "passkeysTitle": "Passkeys",
     "passkeysDescription": "Gebruik beveiligingssleutels of passkeys van uw apparaat om in te loggen zonder uw wachtwoord in te voeren. Geregistreerde passkeys beschermen ook het inloggen met een wachtwoord als tweede factor; bij inloggen met alleen een passkey wordt de stap met de authenticatiecode overgeslagen, omdat de sleutel het bezit al verifieert.",
+    "passkeysCleanupDescription": "Lokaal aanmelden is uitgeschakeld. U kunt opgeslagen passkeys verwijderen, maar geen nieuwe toevoegen.",
     "passkeyLoadError": "Kan de passkeys niet laden",
     "passkeyUnsupported": "Deze browser ondersteunt geen passkeys.",
     "passkeyInsecureContext": "Passkeys hebben een beveiligde verbinding nodig. Open Securo via HTTPS of op http://localhost.",
@@ -576,8 +903,6 @@
     "addToExistingRuleTitle": "Voeg transactie toe aan regel",
     "addToExistingRuleDescription": "Kies een actieve categorieregel en voeg deze transactiebeschrijving toe als een nieuwe toekomstige match.",
     "existingRule": "Bestaande regel",
-    "matchOperator": "Overeenkomsttype",
-    "matchText": "Beschrijving komt overeen",
     "assignRule": "Toevoegen aan regel",
     "noExistingRules": "Geen actieve categorieregels beschikbaar",
     "addedToExistingRule": "Regel bijgewerkt. Toekomstige wedstrijden zullen deze categorie gebruiken.",
@@ -707,6 +1032,7 @@
     "transferNotes": "Opmerkingen",
     "transferInfo": "Dit is een overdracht. Wijzigingen in de beschrijving, datum en opmerkingen zijn van toepassing op beide partijen",
     "transferLinkedTo": "Gekoppeld aan:",
+    "transferOpenAccount": "Rekening {{account}} openen",
     "transferTooltip": "Overboekingen zijn uitgesloten van de rapport- en dashboardtotalen",
     "installmentTooltip": "Afbetalingsplan — {{count}} brengt in totaal {{total}} in rekening",
     "billOverrideTooltip": "Verplaatst naar de rekening met verschuldigde waarde {{date}}",
@@ -780,7 +1106,9 @@
         "thisMonth": "Deze maand",
         "last90": "Laatste 90 dagen",
         "thisYear": "Dit jaar"
-      }
+      },
+      "futureDateError": "Einddatum mag niet na vandaag liggen",
+      "rangeTooWideError": "Bereik is te breed (max. {{years}} jaar)"
     },
     "listView": "Lijst",
     "calendarView": "Kalender",
@@ -816,7 +1144,8 @@
     "invoiceBadgeNoNumber": "Invoice",
     "invoiceBadgeTooltip": "Deze transactie rekent een factuur af. Openen.",
     "suggestionBadge": "Vraag",
-    "suggestionBadgeTooltip": "Een betaling kan deze factuur voldoen. Open de wachtrij om te antwoorden."
+    "suggestionBadgeTooltip": "Een betaling kan deze factuur voldoen. Open de wachtrij om te antwoorden.",
+    "clearGroupFilter": "Groepsfilter wissen"
   },
   "accounts": {
     "title": "Rekeningen",
@@ -891,6 +1220,7 @@
     "expenses": "Kosten",
     "projectedBalance": "Geprojecteerd saldo",
     "notSettled": "Niet geregeld",
+    "sharedCreditBalance": "Gedeelde kredietlijn",
     "projectedIncome": "Geprojecteerd inkomen",
     "projectedExpenses": "Geprojecteerde uitgaven",
     "thisMonth": "Deze maand",
@@ -963,7 +1293,12 @@
       }
     },
     "reconnected": "Bank heeft opnieuw verbinding gemaakt",
-    "multiInstitutionLink": "{{provider}} · {{count}} institutions"
+    "multiInstitutionLink": "{{provider}} · {{count}} institutions",
+    "connectionStatus": {
+      "active": "Actief",
+      "error": "Fout",
+      "expired": "Verlopen"
+    }
   },
   "connections": {
     "settings": "Verbindingsinstellingen",
@@ -1202,6 +1537,7 @@
     "fieldAccount": "Rekening",
     "fieldPayee": "Begunstigde",
     "fieldDate": "Datum",
+    "fieldStatus": "Status",
     "opContains": "bevat",
     "opNotContains": "bevat niet",
     "opEquals": "gelijk aan",
@@ -1213,6 +1549,8 @@
     "opIsNot": "niet",
     "typeExpense": "Kosten (debet)",
     "typeIncome": "Inkomen (krediet)",
+    "statusPending": "In behandeling",
+    "statusPosted": "Geplaatst",
     "valuePlaceholder": "Waarde...",
     "sortLabel": "Sorteer op",
     "sortBy_priority": "Prioriteit",
@@ -1255,8 +1593,12 @@
     "ignoreTransferDesc": "Genegeerde transacties worden niet weergegeven in inkomsten- of uitgavenrapporten.",
     "ignoreTransferBadge": "Negeer",
     "confirmDeleteTitle": "Categorie verwijderen?",
-    "confirmDeleteDescription": "De categorie \"{{name}}\" wordt permanent verwijderd. De categorie kan niet worden verwijderd zolang transacties of andere records ernaar verwijzen; verwijder die verwijzingen eerst. Deze actie kan niet ongedaan worden gemaakt.",
-    "deleteInUse": "Deze categorie is nog in gebruik. Verwijder eerst de records die ernaar verwijzen.",
+    "confirmDeleteDescription": "De categorie \"{{name}}\" wordt permanent verwijderd. Deze actie kan niet ongedaan worden gemaakt.",
+    "deleteInUse": "Deze categorie is nog in gebruik. Kies een andere categorie om de items naartoe te verplaatsen.",
+    "deleteInUseTitle": "{{name}} verwijderen?",
+    "deleteInUseDescription": "Deze categorie is nog in gebruik. Kies een andere die alles overneemt: er gaat niets verloren, het verhuist alleen.",
+    "deleteTransferLabel": "Alles verplaatsen naar",
+    "deleteAndTransfer": "Verwijderen en verplaatsen",
     "hiddenBadge": "Verborgen",
     "hiddenScopeDescription": "Verborgen standaardcategorieën worden uit de categoriekiezers gehaald en worden niet meer door regels toegewezen. Bestaande transacties, budgetten, dashboards en rapporten blijven ze gebruiken.",
     "hideAndTurnOffRules": "Verbergen en de regels uitschakelen",
@@ -1638,9 +1980,13 @@
     "amount": "Bedrag",
     "investments": "Investeringen",
     "moneyMap": "Geld kaart",
-    "range30d": "30D"
+    "range30d": "30D",
+    "customRange": "Aangepast bereik",
+    "pickCustomRange": "Kies een start- en einddatum",
+    "loadError": "Rapport laden mislukt"
   },
   "payees": {
+    "noPayeeFound": "Geen begunstigde gevonden.",
     "addFavorite": "Toevoegen aan favorieten",
     "removeFavorite": "Verwijderen uit favorieten",
     "favoriteError": "Kan favoriet niet bijwerken",
@@ -1744,9 +2090,24 @@
       "uscc": "USCC"
     },
     "otherCountries": "Andere landen",
-    "anyCountry": "Ergens anders"
+    "anyCountry": "Ergens anders",
+    "productField": {
+      "ncm": "NCM",
+      "cest": "CEST",
+      "gtin": "GTIN / barcode",
+      "service_code": "Dienstcode (LC 116)",
+      "nbs": "NBS",
+      "municipal_service_code": "Gemeentelijke dienstcode",
+      "hs_code": "HS-code",
+      "sat_product_code": "SAT product-/dienstcode",
+      "sat_unit_code": "SAT eenheidscode"
+    }
   },
   "common": {
+    "selectTimezone": "Tijdzone kiezen",
+    "searchTimezone": "Tijdzone zoeken...",
+    "noTimezoneFound": "Geen tijdzone gevonden.",
+    "createNamed": "\"{{name}}\" aanmaken",
     "view": "Bekijk",
     "add": "Toevoegen",
     "save": "Opslaan",
@@ -1772,7 +2133,11 @@
     "previous": "Vorige",
     "next": "Volgende",
     "rowsPerPage": "Rijen per pagina",
-    "noResults": "Geen resultaten"
+    "noResults": "Geen resultaten",
+    "preview": "Voorbeeld",
+    "download": "Downloaden",
+    "closePreview": "Voorbeeld sluiten",
+    "remove": "Verwijderen"
   },
   "splitGroups": {
     "title": "Groepen",
@@ -2008,6 +2373,11 @@
       "dateFormatMdyDesc": "Maand eerst, b.v. 06/04/2026.",
       "dateFormatYmd": "Jaar / Maand / Dag",
       "dateFormatYmdDesc": "ISO-volgorde, b.v. 04-06-2026.",
+      "timezoneTitle": "Datum en tijd",
+      "timezone": "Tijdzone van de applicatie",
+      "timezoneHelp": "Datums, terugkerende transacties, geplande taken en de AI-context gebruiken deze tijdzone. Wijzigingen gelden voor nieuwe verzoeken en taken.",
+      "timezoneServerDefault": "Serverstandaard ({{zone}})",
+      "timezoneSavedInvalid": "De opgeslagen waarde {{value}} is geen tijdzone die deze server kent. {{zone}} wordt gebruikt totdat dit wordt gewijzigd.",
       "updated": "Instelling bijgewerkt"
     }
   },
@@ -2072,7 +2442,8 @@
       "openSettings": "Agent-instellingen",
       "empty": "Kies een makelaar en ga een gesprek aan met uw financiële gegevens.",
       "openAgents": "Ga naar Agents",
-      "noConversations": "Nog geen gesprekken."
+      "noConversations": "Nog geen gesprekken.",
+      "backToChat": "Terug naar chat"
     },
     "form": {
       "createTitle": "Nieuwe agent",
@@ -2266,7 +2637,9 @@
       "invoicesHint": "tegenover wat je moet ontvangen en betalen",
       "recurring": "Terugkerend",
       "recurringHint": "tegenover wat je al verwachtte",
-      "inactive": "Hier niet in gebruik"
+      "inactive": "Hier niet in gebruik",
+      "transfers": "Overboekingen",
+      "transfersHint": "tussen je eigen rekeningen"
     },
     "rule": {
       "sameClientExact": "Bekende persoon, exact bedrag",
@@ -2276,7 +2649,10 @@
       "sameAccountExact": "Zelfde rekening, exact bedrag",
       "unknown": "Regel",
       "partPayment": "Bekende persoon, deel van het bedrag",
-      "severalInvoices": "Bekende persoon, meerdere facturen tegelijk"
+      "severalInvoices": "Bekende persoon, meerdere facturen tegelijk",
+      "destinationNamed": "De omschrijving noemt de andere rekening",
+      "exactAmountNearby": "Exact bedrag, datum dichtbij",
+      "closeAmountWiderWindow": "Bedrag in de buurt, ruimer venster"
     },
     "outcome": {
       "link": "Koppelt zelf",
@@ -2304,7 +2680,12 @@
       "onArrival": "wanneer geld binnenkomt of weggaat",
       "onIssue": "wanneer een factuur wordt opgesteld",
       "amountPartial": "het bedrag dekt een deel van wat openstaat",
-      "amountSet": "tot {{count}} facturen tellen op tot dat bedrag"
+      "amountSet": "tot {{count}} facturen tellen op tot dat bedrag",
+      "differentAccount": "twee verschillende rekeningen",
+      "accountTypes": "een kant is een rekening van het type {{kinds}}",
+      "accountNamed": "een van de omschrijvingen noemt de andere rekening",
+      "closestDate": "de dichtstbijzijnde datum wint",
+      "uniqueCandidate": "slechts één kandidaat past"
     },
     "newRule": "Nieuwe afletterregel",
     "saved": "Regel opgeslagen",
@@ -2347,7 +2728,12 @@
       "triggerHint": "Afletteren gebeurt op twee momenten, en het bewijs is niet hetzelfde.",
       "amountMatch": "Hoe nauw het bedrag moet kloppen",
       "amountMatchHint": "Vergeleken met wat nog openstaat, niet met het oorspronkelijke totaal.",
-      "amountBandHint": "Over de betaling zelf: een omvang die je deze regel wel of niet wilt laten behandelen."
+      "amountBandHint": "Over de betaling zelf: een omvang die je deze regel wel of niet wilt laten behandelen.",
+      "transferSignals": "Wat het een overboeking maakt",
+      "transferSignalsHint": "De twee kanten staan altijd op verschillende rekeningen. Hier geef je aan wat er verder waar moet zijn voordat het paar wordt vertrouwd.",
+      "accountTypes": "Alleen als een kant een van deze is",
+      "amountMatchHintTransfer": "Vergeleken met de andere kant, in dezelfde valuta. Verschillende valuta koppelen nooit vanzelf; je kunt de twee kanten nog steeds handmatig verbinden.",
+      "windowHintTransfer": "Geld komt zelden aan op de dag dat het vertrok. Beide kanten tellen vanaf de andere regel, dus twee dagen per kant dekt een weekend."
     },
     "counterparty": {
       "any": "Iedereen",
@@ -2377,7 +2763,13 @@
       "declineHint": "Dit is het niet. Dit paar wordt niet opnieuw voorgesteld.",
       "linked": "Gekoppeld",
       "declined": "Afgewezen. We vragen het niet nog eens",
-      "covers": "dekt"
+      "covers": "dekt",
+      "mayPairWith": "kan de andere helft van {{name}} zijn",
+      "kind": {
+        "transaction": "Overboeking",
+        "invoice": "Factuur",
+        "recurring": "Terugkerend"
+      }
     },
     "evidence": {
       "amountExact": "bedrag klopt precies",
@@ -2385,7 +2777,8 @@
       "knownPayer": "bekende persoon",
       "unknownPayer": "persoon niet herkend",
       "sameDay": "zelfde dag",
-      "daysApart": "{{days}} dagen verschil"
+      "daysApart_one": "{{count}} dag verschil",
+      "daysApart_other": "{{count}} dagen verschil"
     },
     "direction": {
       "any": "Maakt niet uit",
@@ -2397,7 +2790,8 @@
       "which": "Naar welk geld hij kijkt",
       "whichHint": "Laat alles leeg en hij kijkt naar al het geld",
       "match": "Wanneer het als match telt",
-      "matchHint": "Hoe nauw de betaling en de belofte moeten passen"
+      "matchHint": "Hoe nauw de betaling en de belofte moeten passen",
+      "matchHintTransfer": "Hoe dicht de twee regels bij elkaar moeten liggen"
     },
     "trigger": {
       "money_arrives": "Wanneer geld binnenkomt of weggaat",
@@ -2426,8 +2820,6 @@
     },
     "moveUp": "Deze eerder proberen",
     "moveDown": "Deze later proberen",
-    "matchingTitle": "Afletterregels",
-    "matchingHint": "Hoe elke betaling wordt gekoppeld aan wat ze afrekent.",
     "pair": {
       "owed": "Wat openstaat",
       "arrived": "Wat er bewoog",
@@ -2442,7 +2834,11 @@
       "thePayment": "de betaling",
       "acrossInvoices": "over {{count}} facturen",
       "dueOn": "vervalt {{date}}",
-      "totalOf": "totaal {{amount}}"
+      "totalOf": "totaal {{amount}}",
+      "otherLeg": "De andere kant",
+      "thisLeg": "Deze kant",
+      "otherLegAmount": "aan de andere kant",
+      "thisLegAmount": "aan deze kant"
     },
     "discarded": "Verwijderd uit deze werkruimte:",
     "noneLeft": "Geen koppelregels meer in deze set. Hier wordt niets automatisch gekoppeld.",
@@ -2453,6 +2849,14 @@
     "invalidImportFile": "Dit is geen bestand met koppelregels",
     "importConfirmTitle": "Koppelregels importeren?",
     "importConfirmDescription": "Bestand {{file}} bevat {{count}} regels.",
-    "importOverwriteWarning": "Importeren vervangt de koppelregels van deze werkruimte, inclusief hun volgorde. Dit kan niet ongedaan worden gemaakt."
+    "importOverwriteWarning": "Importeren vervangt de koppelregels van deze werkruimte, inclusief hun volgorde. Dit kan niet ongedaan worden gemaakt.",
+    "card": {
+      "transfers": "Overboekingsregels",
+      "transfersHint": "Hoe we bepalen dat twee regels één overboeking tussen je eigen rekeningen zijn.",
+      "invoices": "Factuurregels",
+      "invoicesHint": "Hoe we bepalen welke betaling welke factuur voldoet.",
+      "recurring": "Regels voor Terugkerend",
+      "recurringHint": "Hoe we bepalen dat een afschrijving de rekening is die je al verwachtte."
+    }
   }
 }

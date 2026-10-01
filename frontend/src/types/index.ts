@@ -56,6 +56,9 @@ export interface Workspace {
   is_archived: boolean
   default_currency: string
   locale: string | null
+  /** The calendar this workspace keeps its books in, or null to follow the
+   *  application timezone. */
+  timezone: string | null
   /** Where the workspace files. Selects the fiscal document pack; never the
    *  interface language. */
   tax_jurisdiction: string | null
@@ -81,7 +84,6 @@ export interface WorkspaceMember {
 export interface UserPreferences {
   language?: string
   date_format?: string
-  timezone?: string
   currency_display?: string
   display_name?: string
   onboarding_completed?: boolean
@@ -102,6 +104,14 @@ export interface Category {
 
 /** Active rules that assign a category, used when retiring one. */
 export interface CategoryRuleUsage {
+  rules: { id: string; name: string }[]
+}
+
+/** Everything that still points at a category, used when deleting one. */
+export interface CategoryUsage {
+  transactions: number
+  budgets: number
+  recurring_transactions: number
   rules: { id: string; name: string }[]
 }
 
@@ -174,6 +184,7 @@ export interface Account {
   minimum_payment: number | null
   card_brand: string | null
   card_level: string | null
+  shared_balance_group: string | null
   is_closed: boolean
   closed_at: string | null
 }
@@ -548,6 +559,8 @@ export interface ImportLog {
   /** Null for an order import, which lands on holdings rather than an account. */
   account_id: string | null
   account_name: string | null
+  /** Currency of the totals; null when the import has no account. */
+  account_currency: string | null
   entity: 'transactions' | 'asset_orders'
   filename: string
   format: string
@@ -1061,6 +1074,11 @@ export type InvoiceState =
 
 export interface InvoiceLine {
   id: string
+  /** Where the line came from, when it came from the catalog. The
+   *  values below are still the line's own copy. */
+  product_id: string | null
+  price_id: string | null
+  fiscal_refs: Record<string, string> | null
   description: string
   quantity: string
   unit: string | null
@@ -1078,6 +1096,98 @@ export interface InvoiceLineInput {
   unit?: string | null
   unit_price: string
   tax_rate?: string | null
+  /** Set when the line was filled from a product. Kept when the person
+   *  then edits the values: it is still that product, at their price. */
+  product_id?: string | null
+  price_id?: string | null
+  /** Fiscal references for the line. Filled from the product by the
+   *  server when omitted. */
+  fiscal_refs?: Record<string, string> | null
+}
+
+// ---------------------------------------------------------------------------
+// Catalog
+// ---------------------------------------------------------------------------
+
+export type ProductKind = 'service' | 'product'
+export type PriceBilling = 'one_time' | 'recurring'
+
+export interface ProductPrice {
+  id: string
+  product_id: string
+  currency: string
+  unit_price: string
+  tax_rate: string | null
+  billing: PriceBilling
+  interval: InvoiceScheduleFrequency | null
+  nickname: string | null
+  /** A name of the workspace's own choosing, unique among its prices. */
+  lookup_key: string | null
+  active: boolean
+  external_source: string | null
+  external_id: string | null
+  created_at: string
+}
+
+/** A fiscal reference the workspace's jurisdiction suggests on a product. */
+export interface ProductFieldSpec {
+  key: string
+  label_key: string
+  /** Which product kinds it applies to; empty means both. */
+  kinds: ProductKind[]
+}
+
+export interface Product {
+  id: string
+  name: string
+  description: string | null
+  kind: ProductKind
+  unit: string | null
+  active: boolean
+  origin: string
+  external_source: string | null
+  external_id: string | null
+  custom_fields: Record<string, string> | null
+  /** Fiscal references keyed as the jurisdiction suggests (`ncm`,
+   *  `service_code`, `hs_code`...); any key is accepted. */
+  fiscal_refs: Record<string, string> | null
+  prices: ProductPrice[]
+  created_at: string
+  /** Derived by the server: how many invoices name this product. */
+  invoice_count: number
+}
+
+export interface InstallmentInput {
+  due_date: string
+  amount: string
+  label?: string | null
+}
+
+export type InstallmentState = 'open' | 'partial' | 'paid' | 'overdue' | 'draft' | 'void' | 'uncollectible'
+
+export interface InvoiceInstallment {
+  id: string
+  position: number
+  label: string | null
+  due_date: string
+  amount: string
+  /** Derived: how much of it the settled money covers, first-to-last. */
+  settled: string
+  state: InstallmentState
+}
+
+export type DeductionKind = 'withholding_tax' | 'gateway_fee' | 'fx_difference' | 'other'
+
+/** Debt closed without money: tax withheld, a fee kept. Counts towards
+ *  settled, never towards received. */
+export interface InvoiceDeduction {
+  id: string
+  kind: DeductionKind
+  tax_kind: string | null
+  amount: string
+  note: string | null
+  transaction_id: string | null
+  deducted_at: string
 }
 
 export interface InvoiceAllocation {
@@ -1149,8 +1259,12 @@ export interface Invoice {
   tax_total: string
   total: string
   amount_paid: string
+  /** Settled without cash. Not part of `amount_paid`. */
+  amount_deducted: string
   balance: string
   days_overdue: number
+  /** The next date money is late after; null once nothing is owed. */
+  next_due_date: string | null
   notes: string | null
   internal_notes: string | null
   custom_fields: Record<string, string> | null
@@ -1166,9 +1280,113 @@ export interface Invoice {
   /** Present once a shareable link exists. Null until someone asks for
    *  one, and null again once revoked. */
   share_token: string | null
+  /** Which agreement and period this invoice answers for, when it was
+   *  born from or linked to one. Provenance only: nothing about the
+   *  money reads these. */
+  schedule_id: string | null
+  schedule: { id: string; name: string; frequency: InvoiceScheduleFrequency; status: InvoiceScheduleStatus } | null
+  sequence: number | null
+  period_start: string | null
+  period_end: string | null
   lines: InvoiceLine[]
   allocations: InvoiceAllocation[]
+  installments: InvoiceInstallment[]
+  deductions: InvoiceDeduction[]
   created_at: string
+}
+
+// ---------------------------------------------------------------------------
+// Recurring invoices
+// ---------------------------------------------------------------------------
+
+/** Decisions a person took about an agreement. `past_due` is not one of
+ *  them: it is derived from the agreement's invoices. */
+export type InvoiceScheduleStatus = 'active' | 'paused' | 'ended'
+export type InvoiceScheduleFrequency =
+  | 'weekly'
+  | 'biweekly'
+  | 'monthly'
+  | 'quarterly'
+  | 'semiannual'
+  | 'yearly'
+export type InvoiceScheduleEndType = 'never' | 'on_date' | 'after_count'
+export type InvoiceScheduleEndReason =
+  | 'canceled_by_client'
+  | 'canceled_by_us'
+  | 'completed'
+  | 'unpaid'
+  | 'other'
+
+/** What the agreement says from a date on. One row per price change. */
+export interface InvoiceScheduleTerm {
+  id: string
+  effective_from: string
+  lines: InvoiceLineInput[]
+  discount: string
+  subtotal: string
+  tax_total: string
+  total: string
+  created_at: string
+}
+
+export interface InvoiceSchedule {
+  id: string
+  name: string
+  payee_id: string | null
+  payee: { id: string; name: string } | null
+  origin: string
+  external_source: string | null
+  external_id: string | null
+  status: InvoiceScheduleStatus
+  pause_reason: 'manual' | 'failures' | null
+  ended_at: string | null
+  end_reason: InvoiceScheduleEndReason | null
+  frequency: InvoiceScheduleFrequency
+  start_date: string
+  end_type: InvoiceScheduleEndType
+  end_date: string | null
+  end_count: number | null
+  payment_terms_days: number | null
+  currency: string
+  notes: string | null
+  custom_fields: Record<string, string> | null
+  next_sequence: number
+  last_generated_at: string | null
+  consecutive_failures: number
+  terms: InvoiceScheduleTerm[]
+  created_at: string
+  /** Derived by the server on every read; never stored. */
+  current_term: InvoiceScheduleTerm | null
+  next_term: InvoiceScheduleTerm | null
+  monthly_amount: string
+  next_period_start: string | null
+  invoice_count: number
+  amount_invoiced: string
+  amount_paid: string
+  past_due_count: number
+}
+
+export interface InvoiceScheduleCurrencySummary {
+  currency: string
+  monthly_recurring: string
+  active_count: number
+  ended_recently_count: number
+  monthly_lost: string
+  past_due_count: number
+}
+
+export interface InvoiceScheduleSummary {
+  active_count: number
+  paused_count: number
+  ended_count: number
+  by_currency: InvoiceScheduleCurrencySummary[]
+}
+
+export interface InvoiceSchedulePeriod {
+  sequence: number
+  period_start: string
+  period_end: string
+  taken: boolean
 }
 
 export interface InvoiceAgingBuckets {
@@ -1258,6 +1476,8 @@ export interface InvoiceDocumentPayload {
   tax_total: string
   total: string
   amount_paid: string
+  /** Settled without money arriving: tax withheld, a fee kept. */
+  amount_deducted: string
   balance: string
   issuer: InvoiceDocumentParty
   client: InvoiceDocumentParty
@@ -1279,6 +1499,8 @@ export interface InvoiceDocumentPayload {
    *  that file is the document and the page below is only a summary of
    *  it — nothing here needs redrawing. */
   source_file: { id: string; filename: string; content_type: string } | null
+  /** The dates the money is expected on, when more than one. */
+  installments: { label: string | null; due_date: string; amount: string }[]
 }
 
 export interface IssuerTaxId {
@@ -1385,6 +1607,23 @@ export interface ReconciliationConditions {
     foreign?: boolean
   }
   same_account?: boolean
+  /** The defining condition of a transfer: the two legs are on different
+   *  accounts. The inverse of `same_account`, and its own key so a rule
+   *  reads as a list of things that must be true. */
+  different_account?: boolean
+  /** Only pairs where one of the two legs sits on an account of this
+   *  kind. Either leg is enough: a rule that exists to be careful about
+   *  credit cards has to fire whichever end the card is on. */
+  account_types?: ('checking' | 'savings' | 'credit_card' | 'investment' | 'wallet')[]
+  /** One side's statement text has to name the other side's account. The
+   *  signal that tells two same-day transfers of the same amount apart,
+   *  when one line reads "To FORTUNEO ACCOUNT" and the other does not. */
+  account_name_in_description?: boolean
+  /** How to separate candidates that all fit. `closest_date` takes the
+   *  nearest in time and only gives up when nothing separates them, which
+   *  is different from `unique_candidate` refusing whenever there is more
+   *  than one. */
+  tie_break?: 'closest_date'
   unique_candidate?: boolean
 }
 
@@ -1468,7 +1707,7 @@ export interface ReconciliationSuggestion {
   id: string
   node: string
   strategy_id: string
-  expectation_kind: 'invoice' | 'recurring'
+  expectation_kind: 'invoice' | 'recurring' | 'transaction'
   expectation_id: string
   expectation_label?: string | null
   amount: string
@@ -1488,7 +1727,7 @@ export interface ReconciliationSuggestion {
    *  case; several when one payment is offered against several invoices,
    *  which is answered whole or not at all. */
   covers: {
-    expectation_kind: 'invoice' | 'recurring'
+    expectation_kind: 'invoice' | 'recurring' | 'transaction'
     expectation_id: string
     label?: string | null
     amount: string
@@ -1500,6 +1739,10 @@ export interface ReconciliationSuggestion {
     currency?: string | null
     date: string
     type: string
+    /** Which account the money moved on. With transfers in the queue the
+     *  question is about accounts, so a row naming only the other side
+     *  leaves the reader to work out which of theirs this one is. */
+    account_id?: string | null
   } | null
 }
 
@@ -1513,7 +1756,7 @@ export interface ReconciliationHistoryEvent {
   id: string
   at: string
   action: 'linked' | 'suggested' | 'accepted' | 'declined' | 'expired' | 'unlinked'
-  expectation_kind: 'invoice' | 'recurring'
+  expectation_kind: 'invoice' | 'recurring' | 'transaction'
   expectation_id: string
   expectation_label?: string | null
   amount: string

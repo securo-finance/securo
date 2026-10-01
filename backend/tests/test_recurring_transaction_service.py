@@ -4,6 +4,7 @@ from decimal import Decimal
 
 import pytest
 import pytest_asyncio
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -162,6 +163,136 @@ async def test_update_recurring_transaction(
     assert updated is not None
     assert updated.description == "Updated"
     assert updated.amount == Decimal("150")
+    assert updated.next_occurrence == date(2025, 1, 1)
+
+
+async def _monthly_rule(
+    session, test_workspace, test_user, account,
+    start_date: date = date(2026, 1, 5), day_of_month: int | None = None,
+):
+    return await create_recurring_transaction(
+        session, test_workspace.id, test_user.id,
+        RecurringTransactionCreate(
+            description="Rule",
+            amount=Decimal("100"),
+            type="debit",
+            frequency="monthly",
+            start_date=start_date,
+            day_of_month=day_of_month,
+            account_id=account.id,
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_update_later_start_date_defers_next_occurrence(
+    session: AsyncSession, test_user, test_workspace, test_account_for_recurring
+):
+    rec = await _monthly_rule(
+        session, test_workspace, test_user, test_account_for_recurring,
+        start_date=date(2026, 8, 31), day_of_month=31,
+    )
+    rec.next_occurrence = date(2026, 9, 30)
+    await session.commit()
+
+    updated = await update_recurring_transaction(
+        session, rec.id, test_workspace.id,
+        RecurringTransactionUpdate(start_date=date(2026, 10, 22), day_of_month=22),
+    )
+
+    assert updated is not None
+    assert updated.next_occurrence == date(2026, 10, 22)
+
+
+@pytest.mark.asyncio
+async def test_update_day_of_month_keeps_pointer_ahead_of_processed_periods(
+    session: AsyncSession, test_user, test_workspace, test_account_for_recurring
+):
+    # September's occurrence on the 5th was already generated.
+    rec = await _monthly_rule(
+        session, test_workspace, test_user, test_account_for_recurring, day_of_month=5,
+    )
+    rec.next_occurrence = date(2026, 10, 5)
+    await session.commit()
+
+    updated = await update_recurring_transaction(
+        session, rec.id, test_workspace.id, RecurringTransactionUpdate(day_of_month=25),
+    )
+
+    assert updated is not None
+    assert updated.next_occurrence == date(2026, 10, 25)
+
+
+@pytest.mark.asyncio
+async def test_update_frequency_realigns_next_occurrence(
+    session: AsyncSession, test_user, test_workspace, test_account_for_recurring
+):
+    rec = await _monthly_rule(
+        session, test_workspace, test_user, test_account_for_recurring,
+        start_date=date(2026, 1, 1),
+    )
+    rec.next_occurrence = date(2026, 3, 1)
+    await session.commit()
+
+    updated = await update_recurring_transaction(
+        session, rec.id, test_workspace.id, RecurringTransactionUpdate(frequency="weekly"),
+    )
+
+    assert updated is not None
+    assert updated.next_occurrence == date(2026, 3, 5)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["start_date", "frequency"])
+async def test_update_rejects_null_schedule_field(
+    session: AsyncSession, test_user, test_workspace, test_account_for_recurring, field
+):
+    rec = await _monthly_rule(session, test_workspace, test_user, test_account_for_recurring)
+
+    with pytest.raises(ValueError, match=f"{field} is required"):
+        await update_recurring_transaction(
+            session, rec.id, test_workspace.id, RecurringTransactionUpdate(**{field: None}),
+        )
+
+
+@pytest.mark.parametrize("day", [0, -1, 32])
+def test_schemas_reject_day_of_month_outside_calendar(day):
+    with pytest.raises(ValidationError):
+        RecurringTransactionUpdate(day_of_month=day)
+    with pytest.raises(ValidationError):
+        RecurringTransactionCreate(
+            description="Rule", amount=Decimal("1"), type="debit", frequency="monthly",
+            start_date=date(2026, 1, 1), account_id=uuid.uuid4(), day_of_month=day,
+        )
+
+
+def test_update_rejects_unsupported_frequency():
+    # An unknown cadence would reach _advance_date's monthly fallback and
+    # silently turn the rule monthly when the pointer is recomputed.
+    with pytest.raises(ValidationError):
+        RecurringTransactionUpdate(frequency="daily")  # ty: ignore[invalid-argument-type]
+
+
+@pytest.mark.asyncio
+async def test_update_resending_schedule_keeps_next_occurrence(
+    session: AsyncSession, test_user, test_workspace, test_account_for_recurring
+):
+    rec = await _monthly_rule(
+        session, test_workspace, test_user, test_account_for_recurring, day_of_month=5,
+    )
+    rec.next_occurrence = date(2026, 10, 5)
+    await session.commit()
+
+    updated = await update_recurring_transaction(
+        session, rec.id, test_workspace.id,
+        RecurringTransactionUpdate(
+            start_date=date(2026, 1, 5), day_of_month=5, frequency="monthly",
+            description="Renamed",
+        ),
+    )
+
+    assert updated is not None
+    assert updated.next_occurrence == date(2026, 10, 5)
 
 
 @pytest.mark.asyncio

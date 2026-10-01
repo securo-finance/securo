@@ -684,19 +684,6 @@ class TestBudgetVsActual:
 # ---------------------------------------------------------------------------
 
 
-class TestIncomeExpensesReport:
-    @pytest.mark.asyncio
-    async def test_monthly_report_follows_mode(
-        self, session, test_user, cc_account, test_categories
-    ):
-        # This path uses Postgres-specific `to_char`, which SQLite (the test DB)
-        # doesn't implement. Rather than duplicate the query, we skip here and
-        # rely on the fact that `get_income_expenses_report` uses the exact
-        # same `report_date` expression as the dashboard queries above — if
-        # those tests pass, this one is wired identically.
-        pytest.skip("get_income_expenses_report uses Postgres to_char — SQLite test DB doesn't support it")
-
-
 # ---------------------------------------------------------------------------
 # Invariant: account balance queries are NOT affected by mode.
 # ---------------------------------------------------------------------------

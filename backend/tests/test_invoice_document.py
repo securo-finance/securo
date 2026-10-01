@@ -307,7 +307,7 @@ class TestPdf:
             number="1", status="open", state="open", issue_date=TODAY, due_date=TODAY,
             currency="USD", subtotal=Decimal("0"), discount=Decimal("0"),
             tax_total=Decimal("0"), total=Decimal("10"), amount_paid=Decimal("0"),
-            balance=Decimal("10"), issuer=DocumentParty(name="A"),
+            amount_deducted=Decimal("0"), balance=Decimal("10"), issuer=DocumentParty(name="A"),
             client=DocumentParty(name="B"), lines=[], labels=dict(DEFAULT_LABELS),
             accent_color="#000000", logo_id=None, payment_details=None, notes=None,
             footer_note=None, custom_fields=[], has_line_items=False,
@@ -510,7 +510,13 @@ class TestIssuerProfile:
 # ---------------------------------------------------------------------------
 # Page structure — the band layout and its pagination
 # ---------------------------------------------------------------------------
-def _doc(n_lines: int, footer_note: str = "Alpha ME"):
+def _doc(
+    n_lines: int,
+    footer_note: str = "Alpha ME",
+    n_installments: int = 0,
+    paid: str = "0",
+    deducted: str = "0",
+):
     """A document with `n_lines` items, for exercising page breaks.
 
     Built field by field rather than from a dict: keyword-splatting a
@@ -518,7 +524,7 @@ def _doc(n_lines: int, footer_note: str = "Alpha ME"):
     one fixture the PDF tests all lean on.
     """
     from app.services.invoice_document import (
-        DEFAULT_LABELS, DocumentLine, DocumentParty, InvoiceDocument,
+        DEFAULT_LABELS, DocumentInstallment, DocumentLine, DocumentParty, InvoiceDocument,
     )
 
     return InvoiceDocument(
@@ -532,8 +538,9 @@ def _doc(n_lines: int, footer_note: str = "Alpha ME"):
         discount=Decimal("0"),
         tax_total=Decimal("0"),
         total=Decimal("1200"),
-        amount_paid=Decimal("0"),
-        balance=Decimal("1200"),
+        amount_paid=Decimal(paid),
+        amount_deducted=Decimal(deducted),
+        balance=Decimal("1200") - Decimal(paid) - Decimal(deducted),
         issuer=DocumentParty(name="Alpha ME", tax_ids=[]),
         client=DocumentParty(name="Beta LTDA", address=None, tax_ids=[]),
         lines=[
@@ -548,6 +555,10 @@ def _doc(n_lines: int, footer_note: str = "Alpha ME"):
         footer_note=footer_note,
         custom_fields=[],
         has_line_items=n_lines > 0,
+        installments=[
+            DocumentInstallment(f"Parcela {i + 1}", date(2026, 9, 20) + timedelta(days=30 * i), Decimal("10"))
+            for i in range(n_installments)
+        ],
     )
 
 
@@ -557,6 +568,40 @@ def _pages(document):
     import pypdf
 
     return pypdf.PdfReader(io.BytesIO(invoice_pdf.render_pdf(document))).pages
+
+
+def _lowest_text_y(page) -> float:
+    """Where the lowest piece of text on the page sits, in points from
+    the bottom edge. Text drawn below zero is in the file and on no
+    page anyone will ever see; pypdf's plain extraction still finds it,
+    which is why the page-break tests cannot rely on text alone."""
+    ys: list[float] = []
+
+    def visit(text, cm, tm, font_dict, font_size):
+        if text.strip():
+            ys.append(tm[4] * cm[1] + tm[5] * cm[3] + cm[5])
+
+    page.extract_text(visitor_text=visit)
+    return min(ys)
+
+
+def _text_y(page, needle: str) -> float:
+    """The lowest baseline of the text containing `needle` on the page."""
+    ys: list[float] = []
+
+    def visit(text, cm, tm, font_dict, font_size):
+        if needle in text:
+            ys.append(tm[4] * cm[1] + tm[5] * cm[3] + cm[5])
+
+    page.extract_text(visitor_text=visit)
+    assert ys, f"{needle!r} not on the page"
+    return min(ys)
+
+
+def _floor(document) -> float:
+    """Where the body must stop: the footer band plus its breathing room."""
+    footer, closing = invoice_pdf._footer_flowables(document)
+    return invoice_pdf.MARGIN + invoice_pdf._footer_height(footer, closing) + invoice_pdf.FOOTER_GAP
 
 
 class TestPageStructure:
@@ -597,6 +642,78 @@ class TestPageStructure:
         texts = [p.extract_text() for p in _pages(_doc(45))]
         assert "Item 45" in texts[-1]
         assert "1,200.00" in texts[-1]
+
+    def test_a_deduction_is_on_the_page_so_the_totals_add_up(self):
+        """Total 1,200, paid 1,000, balance 155: without its own row the
+        45 the client withheld is nowhere, and the page does not add up."""
+        text = _pages(_doc(3, paid="1000", deducted="45"))[0].extract_text()
+        assert "Deductions" in text and "BRL 45.00" in text
+        assert "BRL 1,000.00" in text and "BRL 155.00" in text
+
+    def test_settled_by_deduction_alone_still_shows_the_balance(self):
+        text = _pages(_doc(3, deducted="200"))[0].extract_text()
+        assert "Deductions" in text and "BRL 200.00" in text
+        assert "Paid" not in text
+        assert "BRL 1,000.00" in text
+
+    def test_an_untouched_invoice_shows_neither(self):
+        text = _pages(_doc(3))[0].extract_text()
+        assert "Deductions" not in text and "Balance due" not in text
+
+    def test_a_short_schedule_shares_page_one(self):
+        pages = _pages(_doc(3, n_installments=3))
+        assert len(pages) == 1
+        assert "Parcela 3" in pages[0].extract_text()
+
+    def test_a_long_schedule_paginates_and_loses_no_installment(self):
+        """The schedule used to be drawn as part of the header, with no
+        page break: enough installments and the rows ran under the footer
+        and off the page, taking the line items with them."""
+        n = 80
+        pages = _pages(_doc(3, n_installments=n))
+        assert len(pages) > 1
+        text = "\n".join(p.extract_text() for p in pages)
+        for i in range(n):
+            assert f"Parcela {i + 1}" in text, f"installment {i + 1} vanished"
+        assert "Item 3" in text
+        assert "1,200.00" in pages[-1].extract_text()
+        for page in pages:
+            assert "FAT-7" in page.extract_text()
+            assert _lowest_text_y(page) > 0, "text drawn below the bottom edge"
+
+    def test_the_schedule_amount_header_sits_over_its_amounts(self):
+        """Both AMOUNT headers are right-aligned like the figures under
+        them. The schedule's used to start at its column's left edge,
+        a quarter of the page away from the numbers it named."""
+        page = _pages(_doc(3, n_installments=2))[0]
+        xs: list[float] = []
+
+        def visit(text, cm, tm, font_dict, font_size):
+            if text.strip() == "AMOUNT":
+                xs.append(tm[4] * cm[0] + tm[5] * cm[2] + cm[4])
+
+        page.extract_text(visitor_text=visit)
+        assert len(xs) == 2
+        assert min(xs) > invoice_pdf.PAGE_WIDTH * 0.8
+
+    @pytest.mark.parametrize("n_lines", [39, 40, 61, 62])
+    def test_totals_never_sink_into_the_footer(self, n_lines):
+        """Counts found by sweeping: the last chunk of the lines fit the
+        page on its own but not together with the totals, and the
+        renderer drew it anyway and put the totals over the footer."""
+        document = _doc(n_lines)
+        pages = _pages(document)
+        last = pages[-1]
+        assert f"Item {n_lines}" in last.extract_text()
+        assert _text_y(last, "1,200.00") >= _floor(document)
+
+    @pytest.mark.parametrize("n_installments", [25, 57, 59])
+    def test_a_schedule_with_no_lines_leaves_room_for_the_totals(self, n_installments):
+        document = _doc(0, n_installments=n_installments)
+        pages = _pages(document)
+        assert _text_y(pages[-1], "1,200.00") >= _floor(document)
+        for page in pages:
+            assert _lowest_text_y(page) > 0
 
     def test_page_numbers_appear_only_when_there_is_more_than_one(self):
         """"1 / 1" on a single-page invoice is noise that makes the

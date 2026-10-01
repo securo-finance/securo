@@ -38,7 +38,7 @@ of their own, and this module simply runs what comes back.
 from __future__ import annotations
 
 import uuid
-from datetime import date, timedelta
+from datetime import timedelta
 from decimal import Decimal
 from typing import Optional
 
@@ -46,6 +46,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.app_clock import app_today
 from app.models.invoice import Invoice, InvoiceAllocation
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
@@ -84,15 +85,25 @@ def _as_expectation(invoice: Invoice) -> Expectation:
     The amount is the **balance**, never the total: an invoice half paid
     expects the other half, and a market that pays by Pix pays in parts.
     """
+    # In installments, what is expected next is the next one, not the
+    # whole balance: the date it is due, and the amounts at which one,
+    # two or all of the remaining ones close.
+    remaining = invoice_service.open_installments(invoice)
+    stops: list[Decimal] = []
+    running = Decimal("0")
+    for _, remainder in remaining:
+        running += remainder
+        stops.append(running)
     return Expectation(
         kind="invoice",
         id=invoice.id,
         amount=invoice_service.balance(invoice),
+        stops=tuple(stops),
         currency=invoice.currency,
         # A receivable is settled by money coming in, a payable by money
         # going out. The engine refuses a candidate facing the wrong way.
         direction="credit" if invoice.direction == "receivable" else "debit",
-        when=invoice.due_date,
+        when=remaining[0][0] if remaining else invoice.due_date,
         # Both dates: late is measured from the due date, early from the
         # day the document was written.
         issued=invoice.issue_date,
@@ -174,7 +185,7 @@ async def _open_invoices(
             selectinload(Invoice.payee),
         )
     )
-    today = date.today()
+    today = app_today()
     return [
         invoice
         for invoice in result.unique().scalars().all()
@@ -450,7 +461,7 @@ async def match_for_invoice(
         session, invoice.workspace_id, NODE
     )
     wanted = set(policy.get("scope", {}).get("candidate_states", []))
-    if invoice_service.derive_state(invoice, date.today()) not in wanted:
+    if invoice_service.derive_state(invoice, app_today()) not in wanted:
         return None
 
     policy["strategies"] = [
@@ -461,7 +472,11 @@ async def match_for_invoice(
     if not policy["strategies"]:
         return None
 
-    window_start = invoice.due_date - timedelta(days=LOOKBACK_DAYS)
+    # From the first date money is owed, not the invoice's due date: in
+    # installments that is the last one, and the upfront payment made the
+    # day the document was written would sit months before the window.
+    anchor = invoice_service.first_unpaid_due(invoice) or invoice.due_date
+    window_start = min(anchor, invoice.issue_date) - timedelta(days=LOOKBACK_DAYS)
     wanted_direction = "credit" if invoice.direction == "receivable" else "debit"
 
     # Not narrowed by payee any more. The old query could afford it

@@ -23,11 +23,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.app_clock import app_timezone, app_today
 from app.fiscal.registry import TaxIdKind, normalise_and_validate
 from app.models.invoice import (
+    DEDUCTION_KINDS,
     MANUAL_METHOD,
     Invoice,
     InvoiceAllocation,
+    InvoiceDeduction,
+    InvoiceInstallment,
     InvoiceLine,
     InvoiceSettings,
 )
@@ -204,11 +208,88 @@ async def set_issuer_tax_ids(
 # Derived state — the whole point
 # ---------------------------------------------------------------------------
 def allocated_total(invoice: Invoice) -> Decimal:
+    """Money that arrived. Cash, and only cash."""
     return sum((a.amount for a in invoice.allocations), ZERO)
 
 
+def deducted_total(invoice: Invoice) -> Decimal:
+    """Debt closed without cash: tax withheld, fees kept."""
+    return sum((d.amount for d in invoice.deductions), ZERO)
+
+
+def settled_total(invoice: Invoice) -> Decimal:
+    return allocated_total(invoice) + deducted_total(invoice)
+
+
 def balance(invoice: Invoice) -> Decimal:
-    return (invoice.total or ZERO) - allocated_total(invoice)
+    return (invoice.total or ZERO) - settled_total(invoice)
+
+
+def first_unpaid_due(invoice: Invoice) -> Optional[_date]:
+    """The date the next money is late after.
+
+    Without installments it is the invoice's own due date. With them,
+    settled money is read first-to-last against the schedule, and the
+    first installment the running total does not cover is the one that
+    can be late. None once nothing is owed.
+    """
+    if not invoice.installments:
+        return invoice.due_date if balance(invoice) > ZERO else None
+    covered = settled_total(invoice)
+    running = ZERO
+    for installment in invoice.installments:
+        running += installment.amount
+        if running > covered:
+            return installment.due_date
+    return None
+
+
+def open_installments(invoice: Invoice) -> list[tuple[_date, Decimal]]:
+    """What is still owed on each installment not yet covered, first to
+    last, as (due date, remainder). The remainders add up to the balance.
+    Empty for an invoice without a schedule, or once it is settled."""
+    covered = settled_total(invoice)
+    out: list[tuple[_date, Decimal]] = []
+    for installment in invoice.installments:
+        share = min(installment.amount, max(covered, ZERO))
+        covered -= share
+        if share < installment.amount:
+            out.append((installment.due_date, installment.amount - share))
+    return out
+
+
+def installment_states(
+    invoice: Invoice, today: Optional[_date] = None
+) -> list[dict[str, Any]]:
+    """Each installment with how much of it is settled and what it reads as."""
+    reference = today or app_today()
+    covered = settled_total(invoice)
+    out: list[dict[str, Any]] = []
+    for installment in invoice.installments:
+        share = min(installment.amount, max(covered, ZERO))
+        covered -= share
+        if share >= installment.amount:
+            state = "paid"
+        elif invoice.status in ("void", "uncollectible", "draft"):
+            state = invoice.status
+        elif installment.due_date < reference:
+            state = "overdue"
+        elif share > ZERO:
+            state = "partial"
+        else:
+            state = "open"
+        out.append(
+            {
+                "id": installment.id,
+                "position": installment.position,
+                "label": installment.label,
+                "due_date": installment.due_date,
+                "amount": installment.amount,
+                "settled": share,
+                "state": state,
+            }
+        )
+    return out
 
 
 #: What a reader sees: the three terminal decisions, plus the four facts
@@ -242,17 +323,19 @@ def derive_state(invoice: Invoice, today: Optional[_date] = None) -> DerivedStat
     if remaining <= ZERO:
         return "paid"
 
-    reference = today or datetime.now(timezone.utc).date()
-    if invoice.due_date and invoice.due_date < reference:
+    reference = today or app_today()
+    due = first_unpaid_due(invoice)
+    if due and due < reference:
         return "overdue"
-    return "partial" if allocated_total(invoice) > ZERO else "open"
+    return "partial" if settled_total(invoice) > ZERO else "open"
 
 
 def days_overdue(invoice: Invoice, today: Optional[_date] = None) -> int:
-    reference = today or datetime.now(timezone.utc).date()
+    reference = today or app_today()
     if derive_state(invoice, reference) != "overdue":
         return 0
-    return (reference - invoice.due_date).days
+    due = first_unpaid_due(invoice) or invoice.due_date
+    return (reference - due).days
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +404,7 @@ async def list_invoices(
     year: Optional[int] = None,
     direction: str = DEFAULT_DIRECTION,
     payee_id: Optional[uuid.UUID] = None,
+    schedule_id: Optional[uuid.UUID] = None,
     q: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
@@ -342,6 +426,8 @@ async def list_invoices(
     query = _apply_year(query, year)
     if payee_id:
         query = query.where(Invoice.payee_id == payee_id)
+    if schedule_id:
+        query = query.where(Invoice.schedule_id == schedule_id)
     if q:
         pattern = f"%{q.lower()}%"
         query = query.where(func.lower(Invoice.notes).like(pattern))
@@ -438,7 +524,7 @@ async def aging_summary(
     is not money anybody owes. Voided and uncollectible invoices are
     excluded for the same reason, one decision later.
     """
-    reference = today or datetime.now(timezone.utc).date()
+    reference = today or app_today()
     result = await session.execute(
         _base_query(direction).where(
             Invoice.workspace_id == workspace_id,
@@ -481,9 +567,13 @@ async def aging_summary(
     # which is why both are stored.
     month_start = reference.replace(day=1)
     received_this_month = ZERO
+    reporting_timezone = app_timezone()
     for invoice in invoices:
         for allocation in invoice.allocations:
-            allocated_on = allocation.allocated_at.date()
+            allocated_at = allocation.allocated_at
+            if allocated_at.tzinfo is None:
+                allocated_at = allocated_at.replace(tzinfo=timezone.utc)
+            allocated_on = allocated_at.astimezone(reporting_timezone).date()
             if month_start <= allocated_on <= reference:
                 received_this_month += allocation.amount
 
@@ -566,7 +656,77 @@ def _build_line(invoice: Invoice, line: dict[str, Any], position: int) -> Invoic
         tax_rate=Decimal(str(line["tax_rate"])) if line.get("tax_rate") is not None else None,
         total=_line_total(quantity, unit_price),
         position=position,
+        # Provenance, checked by `product_service.resolve_lines` before
+        # this is called. Null on a line typed by hand.
+        product_id=line.get("product_id"),
+        price_id=line.get("price_id"),
+        fiscal_refs=line.get("fiscal_refs") or None,
     )
+
+
+async def _resolved_lines(
+    session: AsyncSession, workspace_id: uuid.UUID, lines: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Lines with their catalog ids checked against this workspace.
+
+    Imported lazily: the catalog reads this module's error type, and a
+    top-level import each way would be a cycle.
+    """
+    from app.services import product_service
+
+    return await product_service.resolve_lines(session, workspace_id, lines)
+
+
+async def _set_installments(
+    session: AsyncSession, invoice: Invoice, rows: Optional[list[dict[str, Any]]]
+) -> None:
+    """Replace the schedule. Amounts must add up to the total, to the
+    cent, and the invoice's own due date becomes the last one so every
+    sort and filter on `due_date` keeps meaning "when is the last of it
+    owed". An empty list clears the schedule and leaves `due_date` as
+    the caller set it."""
+    # The old rows go first, and are flushed first: the new ones reuse
+    # their positions, and one flush with both would trip the unique
+    # (invoice, position) on the insert that runs before the delete.
+    for existing in list(invoice.installments):
+        await session.delete(existing)
+    invoice.installments = []
+    await session.flush()
+    if not rows:
+        return
+    if len(rows) < 2:
+        raise InvoiceError("installments_too_few", "A schedule needs at least two installments")
+    cleaned: list[tuple[_date, Decimal, Optional[str]]] = []
+    for row in rows:
+        amount = Decimal(str(row.get("amount", 0))).quantize(Decimal("0.01"))
+        if amount <= ZERO:
+            raise InvoiceError("installment_amount_not_positive", "Every installment must be worth something")
+        due = row.get("due_date")
+        if due is None:
+            raise InvoiceError("installment_due_required", "Every installment needs a due date")
+        if due < invoice.issue_date:
+            raise InvoiceError("due_before_issue", "Due date cannot precede the issue date")
+        label = (row.get("label") or "").strip() or None
+        cleaned.append((due, amount, label))
+    total = sum((amount for _, amount, _ in cleaned), ZERO)
+    if total != (invoice.total or ZERO).quantize(Decimal("0.01")):
+        raise InvoiceError(
+            "installments_mismatch",
+            f"The installments add up to {total}, the invoice to {invoice.total}",
+        )
+    cleaned.sort(key=lambda row: row[0])
+    for position, (due, amount, label) in enumerate(cleaned):
+        invoice.installments.append(
+            InvoiceInstallment(
+                invoice_id=invoice.id,
+                workspace_id=invoice.workspace_id,
+                position=position,
+                label=label,
+                due_date=due,
+                amount=amount,
+            )
+        )
+    invoice.due_date = cleaned[-1][0]
 
 
 async def create_invoice(
@@ -578,7 +738,7 @@ async def create_invoice(
     settings = await get_settings(session, workspace_id)
     await _assert_payee(session, data.get("payee_id"), workspace_id)
 
-    lines_data = data.pop("lines", None) or []
+    lines_data = await _resolved_lines(session, workspace_id, data.pop("lines", None) or [])
     if settings.document_required and not lines_data:
         raise InvoiceError(
             "lines_required", "This workspace requires invoices to carry line items"
@@ -595,7 +755,7 @@ async def create_invoice(
             "An imported document must say where it came from",
         )
 
-    issue_date = data.get("issue_date") or datetime.now(timezone.utc).date()
+    issue_date = data.get("issue_date") or app_today()
     due_date = data.get("due_date")
     if due_date is None:
         due_date = issue_date + timedelta(days=settings.default_payment_terms_days)
@@ -652,8 +812,11 @@ async def create_invoice(
     for position, line in enumerate(lines_data):
         session.add(_build_line(invoice, line, position))
     await session.flush()
-    await session.refresh(invoice, ["lines", "allocations", "payee"])
+    await session.refresh(invoice, ["lines", "allocations", "deductions", "installments", "payee"])
     _recompute_totals(invoice)
+    # After the totals, because the schedule has to add up to them.
+    if data.get("installments"):
+        await _set_installments(session, invoice, data["installments"])
 
     # `open` on creation is the tracking preset's whole point: the money
     # is already owed, and making the user press "issue" on a note to
@@ -702,6 +865,7 @@ async def update_invoice(session: AsyncSession, invoice: Invoice, data: dict[str
                 setattr(invoice, field, data[field])
 
         if lines_data is not None:
+            lines_data = await _resolved_lines(session, invoice.workspace_id, lines_data)
             for line in list(invoice.lines):
                 await session.delete(line)
             await session.flush()
@@ -714,9 +878,23 @@ async def update_invoice(session: AsyncSession, invoice: Invoice, data: dict[str
 
         if invoice.due_date < invoice.issue_date:
             raise InvoiceError("due_before_issue", "Due date cannot precede the issue date")
+
+        # A schedule follows the total. Sent along, it replaces the old
+        # one; left out while the total moved, the old one no longer adds
+        # up and the caller has to say what the new split is.
+        if "installments" in data:
+            await _set_installments(session, invoice, data["installments"])
+        elif invoice.installments:
+            scheduled = sum((i.amount for i in invoice.installments), ZERO)
+            if scheduled != (invoice.total or ZERO).quantize(Decimal("0.01")):
+                raise InvoiceError(
+                    "installments_mismatch",
+                    "The total changed; send the installments again so they add up to it",
+                )
+            invoice.due_date = invoice.installments[-1].due_date
     else:
         rejected = {k for k in data if k in _DRAFT_ONLY_FIELDS and data[k] is not None}
-        if rejected or data.get("lines") is not None:
+        if rejected or data.get("lines") is not None or data.get("installments") is not None:
             raise InvoiceError(
                 "issued_invoice_immutable",
                 "An issued invoice's financial fields cannot change — void it and issue a new one",
@@ -854,7 +1032,7 @@ async def void_invoice(session: AsyncSession, invoice: Invoice) -> Invoice:
         raise InvoiceError("draft_not_voidable", "Delete the draft instead of voiding it")
     if invoice.status == "void":
         return invoice
-    if invoice.allocations:
+    if invoice.allocations or invoice.deductions:
         raise InvoiceError(
             "void_with_allocations", "Unlink the payments before voiding this invoice"
         )
@@ -924,6 +1102,9 @@ async def allocate(
     """
     if invoice.status != "open":
         raise InvoiceError("not_open", "Only an open invoice can be settled")
+    # The balance reads both collections, and an instance that was just
+    # written may not have loaded them yet.
+    await session.refresh(invoice, ["allocations", "deductions"])
 
     result = await session.execute(
         select(Transaction).where(
@@ -976,8 +1157,66 @@ async def allocate(
         raise InvoiceError(
             "already_allocated", "This transaction is already linked to this invoice"
         )
-    await session.refresh(invoice, ["allocations"])
+    await session.refresh(invoice, ["allocations", "deductions"])
     return allocation
+
+
+async def deduct(
+    session: AsyncSession,
+    invoice: Invoice,
+    kind: str,
+    amount: Decimal,
+    *,
+    tax_kind: Optional[str] = None,
+    note: Optional[str] = None,
+    transaction_id: Optional[uuid.UUID] = None,
+) -> InvoiceDeduction:
+    """Close part of the debt without money: the client withheld tax,
+    the gateway kept its fee. Same guards as a payment, one difference:
+    `amount_paid` never moves."""
+    if invoice.status != "open":
+        raise InvoiceError("not_open", "Only an open invoice can be settled")
+    if kind not in DEDUCTION_KINDS:
+        raise InvoiceError("invalid_deduction_kind", "Unknown deduction kind")
+    await session.refresh(invoice, ["allocations", "deductions"])
+    available = balance(invoice)
+    if available <= ZERO:
+        raise InvoiceError("already_settled", "This invoice is already fully settled")
+    proposed = Decimal(str(amount)).quantize(Decimal("0.01"))
+    if proposed <= ZERO:
+        raise InvoiceError("amount_not_positive", "Deduction amount must be positive")
+    if proposed > available:
+        raise InvoiceError("over_allocation", f"Only {available} remains on this invoice")
+    if transaction_id is not None:
+        owned = await session.execute(
+            select(Transaction.id).where(
+                Transaction.id == transaction_id, Transaction.workspace_id == invoice.workspace_id
+            )
+        )
+        if owned.scalar_one_or_none() is None:
+            raise InvoiceError("transaction_not_found", "Transaction not found in this workspace", 404)
+    deduction = InvoiceDeduction(
+        invoice_id=invoice.id,
+        workspace_id=invoice.workspace_id,
+        kind=kind,
+        tax_kind=((tax_kind or "").strip().lower() or None),
+        amount=proposed,
+        note=((note or "").strip() or None),
+        transaction_id=transaction_id,
+    )
+    session.add(deduction)
+    await session.flush()
+    await session.refresh(invoice, ["deductions"])
+    return deduction
+
+
+async def undeduct(session: AsyncSession, invoice: Invoice, deduction_id: uuid.UUID) -> None:
+    deduction = next((d for d in invoice.deductions if d.id == deduction_id), None)
+    if deduction is None:
+        raise InvoiceError("deduction_not_found", "Deduction not found", 404)
+    await session.delete(deduction)
+    await session.flush()
+    await session.refresh(invoice, ["deductions"])
 
 
 async def unallocate(session: AsyncSession, invoice: Invoice, allocation_id: uuid.UUID) -> None:
@@ -992,7 +1231,7 @@ async def unallocate(session: AsyncSession, invoice: Invoice, allocation_id: uui
         raise InvoiceError("allocation_not_found", "Allocation not found", 404)
     await session.delete(allocation)
     await session.flush()
-    await session.refresh(invoice, ["allocations"])
+    await session.refresh(invoice, ["allocations", "deductions"])
 
 
 # ---------------------------------------------------------------------------

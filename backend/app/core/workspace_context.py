@@ -11,12 +11,14 @@ viewer/editor/owner restrictions; routes that just read use any
 membership.
 """
 import uuid
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Optional
 
 from fastapi import Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import use_resolved_timezone, workspace_timezone
 from app.core.auth import current_active_user
 from app.core.database import get_async_session
 from app.models.user import User
@@ -70,8 +72,24 @@ async def current_workspace(
     x_workspace_id: Optional[str] = Header(default=None, alias="X-Workspace-Id"),
     user: User = Depends(current_active_user),
     session: AsyncSession = Depends(get_async_session),
+) -> AsyncIterator[WorkspaceContext]:
+    """Dependency: resolve and validate the current workspace + membership.
+
+    The rest of the request then runs on the workspace's calendar: a
+    workspace with a timezone of its own keeps its books there, any other
+    follows the application timezone the session already captured.
+    """
+    ctx = await resolve_workspace(x_workspace_id, user, session)
+    with use_resolved_timezone(workspace_timezone(ctx.workspace.timezone)):
+        yield ctx
+
+
+async def resolve_workspace(
+    x_workspace_id: Optional[str],
+    user: User,
+    session: AsyncSession,
 ) -> WorkspaceContext:
-    """Dependency: resolve and validate the current workspace + membership."""
+    """Resolve the workspace a request addresses, without side effects."""
     if x_workspace_id:
         try:
             ws_uuid = uuid.UUID(x_workspace_id)

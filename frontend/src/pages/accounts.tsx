@@ -270,6 +270,7 @@ export default function AccountsPage() {
                           <p className="text-xs text-muted-foreground">
                             {t(cfg.label)}
                             {accountMask && <> · <span className="tabular-nums">{accountMask}</span></>}
+                            {acc.shared_balance_group && <> · <span>{t('accounts.sharedCreditBalance')}</span></>}
                             {dueText && <> · <span className={dueClass}>{dueText}</span></>}
                           </p>
                         </div>
@@ -336,7 +337,7 @@ export default function AccountsPage() {
                                   : 'text-[10px] px-1.5 py-0 h-4 border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
                               }
                             >
-                              {conn.status}
+                              {t(`accounts.connectionStatus.${conn.status}`, conn.status)}
                             </Badge>
                           </div>
                           {conn.last_sync_at && (
@@ -417,6 +418,7 @@ export default function AccountsPage() {
                                   <p className="text-xs text-muted-foreground">
                                     {t(cfg.label)}
                                     {accountMask && <> · <span className="tabular-nums">{accountMask}</span></>}
+                                    {acc.shared_balance_group && <> · <span>{t('accounts.sharedCreditBalance')}</span></>}
                                     {dueText && <> · <span className={dueClass}>{dueText}</span></>}
                                   </p>
                                 </div>

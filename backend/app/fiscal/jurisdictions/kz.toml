@@ -1,0 +1,6 @@
+# Kazakhstan BIN (legal entities) and IIN (individuals) share both the 
+# length and the check algorithm, so one validator serves both. The two-pass 
+# weights are the published KZ scheme; a 10 from either pass means the 
+# number was never issued.
+code = "KZ"
+kinds = ['kz_biniin']

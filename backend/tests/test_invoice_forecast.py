@@ -23,6 +23,14 @@ TODAY = date.today()
 SOON = TODAY + timedelta(days=10)
 FAR = TODAY + timedelta(days=400)
 
+# The month these tests ask the summary for. The projection starts the day
+# after today and stops at the end of the month asked for, so on the last
+# day of the month that window is empty and nothing the test invoices can
+# land in it. Reading next month instead keeps the window open on every
+# date, which is what these assertions are actually about.
+_TOMORROW = TODAY + timedelta(days=1)
+PROJECTION_MONTH = _TOMORROW.replace(day=1).isoformat()
+
 
 @pytest_asyncio.fixture
 async def business_ws(client: AsyncClient, auth_headers) -> dict:
@@ -283,14 +291,14 @@ async def test_the_projected_balance_carries_what_is_owed(
     """Reaching the endpoint, not just the service. The claim was that
     nothing in invoicing reaches the projected balance; this is the line
     that stops being true."""
-    month = TODAY.replace(day=1).isoformat()
+    month = PROJECTION_MONTH
     before = await client.get(
         f"/api/dashboard/summary?month={month}", headers=biz_headers
     )
     assert before.status_code == 200, before.text
     base = before.json()["projected_balance"]
 
-    await an_invoice(client, biz_headers, due_date=str(TODAY + timedelta(days=1)))
+    await an_invoice(client, biz_headers, due_date=str(_TOMORROW))
 
     after = await client.get(
         f"/api/dashboard/summary?month={month}", headers=biz_headers
@@ -357,11 +365,11 @@ async def test_a_filter_that_matches_no_account_does_not_carry_claims(
     the workspace back into a total whose transactions had all been
     filtered away: a projected balance built from money the filter had
     just excluded."""
-    month = TODAY.replace(day=1).isoformat()
+    month = PROJECTION_MONTH
     wallets_only = f"?month={month}&asset_group_ids={uuid.uuid4()}"
 
     before = (await client.get(f"/api/dashboard/summary{wallets_only}", headers=biz_headers)).json()
-    await an_invoice(client, biz_headers, due_date=str(TODAY + timedelta(days=1)))
+    await an_invoice(client, biz_headers, due_date=str(_TOMORROW))
     after = (await client.get(f"/api/dashboard/summary{wallets_only}", headers=biz_headers)).json()
 
     assert after["projected_balance"] == before["projected_balance"]

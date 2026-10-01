@@ -113,6 +113,11 @@ class SuggestionTransactionRead(BaseModel):
     currency: Optional[str] = None
     date: date
     type: str
+    #: Which account the money moved on. The queue asks whether two
+    #: records are the same money, and with transfers in it that question
+    #: is about accounts: a row naming only the other side leaves the
+    #: reader to work out which of theirs this one is.
+    account_id: Optional[uuid.UUID] = None
 
 
 class SuggestionCovers(BaseModel):

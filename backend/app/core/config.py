@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     # Set explicitly only when the URL registered in the provider dashboard
     # differs from where the app is served.
     pluggy_oauth_redirect_uri: str = ""
+    # Gates the BrasilAPI outbound lookup in _lookup_bank_info (pluggy.py).
+    # Off by default: no third-party call happens until a deploy opts in.
+    brasilapi_institution_lookup_enabled: bool = False
 
     # Enable Banking (European PSD2 banks)
     enable_banking_app_id: str = ""
@@ -66,7 +69,7 @@ class Settings(BaseSettings):
 
     # FX Rates
     openexchangerates_app_id: str = ""
-    supported_currencies: str = "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,CLP,DOP,RUB,GTQ,PHP,UAH,NZD,VND,SGD,AZN,TRY,PKR"  # comma-separated list
+    supported_currencies: str = "USD,EUR,GBP,BRL,CAD,AUD,CHF,ARS,JPY,MXN,INR,SEK,DKK,NOK,PLN,CZK,HUF,RON,CRC,IDR,COP,CLP,DOP,KZT,RUB,GTQ,PHP,UAH,NZD,VND,SGD,AZN,TRY,PKR,MDL,AED,THB,EGP,MYR,CNY,SAR,QAR,JMD,RSD"  # comma-separated list
     fx_sync_mode: str = "on_demand"  # "on_demand" or "scheduled"
 
     # Storage

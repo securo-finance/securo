@@ -21,7 +21,11 @@ vi.mock('@/contexts/auth-context', () => ({ useAuth: () => authContext }))
 
 const api = vi.hoisted(() => ({
   setup: { status: vi.fn() },
-  auth: { oidcConfig: vi.fn() },
+  auth: {
+    oidcConfig: vi.fn(),
+    passkeyAuthenticationOptions: vi.fn(),
+    verifyPasskeyAuthentication: vi.fn(),
+  },
   admin: { registrationStatus: vi.fn(), defaultColors: vi.fn() },
 }))
 vi.mock('@/lib/api', () => ({
@@ -30,11 +34,14 @@ vi.mock('@/lib/api', () => ({
   admin: api.admin,
 }))
 
-vi.mock('@/lib/webauthn', () => ({
-  isPasskeySupported: () => false,
-  passkeyFailure: () => 'unknown',
+const webauthn = vi.hoisted(() => ({
+  isPasskeySupported: vi.fn(),
+  isConditionalPasskeySupported: vi.fn(),
+  passkeyFailure: vi.fn(),
   startPasskeyAuthentication: vi.fn(),
+  startConditionalPasskeyAuthentication: vi.fn(),
 }))
+vi.mock('@/lib/webauthn', () => webauthn)
 
 vi.mock('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'dark' }) }))
 
@@ -56,6 +63,9 @@ beforeEach(() => {
   })
   api.admin.registrationStatus.mockResolvedValue({ enabled: true })
   api.admin.defaultColors.mockResolvedValue({ light: null, dark: null })
+  webauthn.isPasskeySupported.mockReturnValue(false)
+  webauthn.isConditionalPasskeySupported.mockResolvedValue(false)
+  webauthn.passkeyFailure.mockReturnValue('unknown')
 })
 
 async function renderLogin() {
@@ -187,6 +197,36 @@ describe('LoginPage', () => {
     expect(
       await screen.findByRole('link', { name: t('auth.register') }),
     ).toBeInTheDocument()
+  })
+
+  it('does not spend the challenge when the conditional ceremony is aborted', async () => {
+    // The challenge is one-shot on the server (Redis `getdel`). Verifying one
+    // the user walked away from burns it, and the next attempt gets nothing.
+    webauthn.isPasskeySupported.mockReturnValue(true)
+    webauthn.isConditionalPasskeySupported.mockResolvedValue(true)
+    api.auth.passkeyAuthenticationOptions.mockResolvedValue({
+      options: {},
+      challenge_id: 'challenge-1',
+    })
+    let handBackCredential: (credential: unknown) => void = () => {}
+    webauthn.startConditionalPasskeyAuthentication.mockReturnValue(
+      new Promise((resolve) => {
+        handBackCredential = resolve
+      }),
+    )
+
+    const { unmount } = renderWithProviders(<LoginPage />, { route: '/login' })
+    await waitFor(() =>
+      expect(webauthn.startConditionalPasskeyAuthentication).toHaveBeenCalled(),
+    )
+
+    // Leaving the page aborts the ceremony, but the pending browser promise
+    // can still settle afterwards.
+    unmount()
+    handBackCredential({ id: 'credential' })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(api.auth.verifyPasskeyAuthentication).not.toHaveBeenCalled()
   })
 
   it('survives the optional config calls failing', async () => {

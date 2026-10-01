@@ -53,10 +53,10 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.invoice import Invoice, InvoiceAllocation
+from app.models.invoice import Invoice, InvoiceAllocation, InvoiceDeduction, InvoiceInstallment
 
 ZERO = Decimal("0")
 
@@ -100,21 +100,45 @@ async def claims_in_range(
         .group_by(InvoiceAllocation.invoice_id)
         .subquery()
     )
+    deducted = (
+        select(
+            InvoiceDeduction.invoice_id.label("invoice_id"),
+            func.coalesce(func.sum(InvoiceDeduction.amount), 0).label("total"),
+        )
+        .group_by(InvoiceDeduction.invoice_id)
+        .subquery()
+    )
+    settled = func.coalesce(allocated.c.total, 0) + func.coalesce(deducted.c.total, 0)
+    # An invoice whose money is expected in several dates enters the
+    # window through any of them; the walk below decides which part.
+    has_installment_in_range = (
+        select(InvoiceInstallment.id)
+        .where(
+            InvoiceInstallment.invoice_id == Invoice.id,
+            InvoiceInstallment.due_date >= range_start,
+            InvoiceInstallment.due_date < range_end,
+        )
+        .exists()
+    )
 
     query = (
         select(
+            Invoice.id,
             Invoice.due_date,
             Invoice.currency,
             Invoice.direction,
-            (Invoice.total - func.coalesce(allocated.c.total, 0)).label("outstanding"),
+            (Invoice.total - settled).label("outstanding"),
         )
         .outerjoin(allocated, allocated.c.invoice_id == Invoice.id)
+        .outerjoin(deducted, deducted.c.invoice_id == Invoice.id)
         .where(
             Invoice.workspace_id == workspace_id,
             Invoice.status == "open",
-            Invoice.due_date >= range_start,
-            Invoice.due_date < range_end,
-            (Invoice.total - func.coalesce(allocated.c.total, 0)) > 0,
+            or_(
+                and_(Invoice.due_date >= range_start, Invoice.due_date < range_end),
+                has_installment_in_range,
+            ),
+            (Invoice.total - settled) > 0,
         )
     )
 
@@ -122,12 +146,56 @@ async def claims_in_range(
         query = query.where(Invoice.direction.in_(directions))
 
     rows = (await session.execute(query)).all()
-    return [
-        Claim(
-            due_date=row.due_date,
-            currency=row.currency or "USD",
-            amount=Decimal(str(row.outstanding)),
-            direction=row.direction,
-        )
-        for row in rows
-    ]
+    ids = [row.id for row in rows]
+    schedules: dict[uuid.UUID, list[InvoiceInstallment]] = {}
+    if ids:
+        for installment in (
+            await session.execute(
+                select(InvoiceInstallment)
+                .where(InvoiceInstallment.invoice_id.in_(ids))
+                .order_by(InvoiceInstallment.position)
+            )
+        ).scalars():
+            schedules.setdefault(installment.invoice_id, []).append(installment)
+
+    claims: list[Claim] = []
+    for row in rows:
+        currency = row.currency or "USD"
+        outstanding = Decimal(str(row.outstanding))
+        installments = schedules.get(row.id)
+        if not installments:
+            claims.append(Claim(row.due_date, currency, outstanding, row.direction))
+            continue
+        # Settled money covers the schedule first-to-last; what is left
+        # of each installment is promised for that installment's date.
+        covered = sum((i.amount for i in installments), Decimal("0")) - outstanding
+        for installment in installments:
+            share = min(installment.amount, max(covered, ZERO))
+            covered -= share
+            left = installment.amount - share
+            if left > ZERO and range_start <= installment.due_date < range_end:
+                claims.append(Claim(installment.due_date, currency, left, row.direction))
+
+    # Periods of a recurring agreement that no invoice answers for yet.
+    # Same money as the invoice the job will emit for them, and the two
+    # never coexist: a period is projected only from the cursor on, and
+    # the cursor moves the moment the invoice exists. Receivable only,
+    # because that is the only side an agreement emits today.
+    if directions is None or "receivable" in directions:
+        # Imported lazily: the schedule service reads invoices and the
+        # ledger, and this module is read by the dashboard and reports.
+        # A top-level import would tie the two directions into a cycle.
+        from app.services import invoice_schedule_service
+
+        for period in await invoice_schedule_service.projected_periods(
+            session, workspace_id, range_start, range_end
+        ):
+            claims.append(
+                Claim(
+                    due_date=period.due_date,
+                    currency=period.currency,
+                    amount=period.amount,
+                    direction="receivable",
+                )
+            )
+    return claims

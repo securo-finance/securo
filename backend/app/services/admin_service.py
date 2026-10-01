@@ -224,6 +224,16 @@ async def get_app_setting(session: AsyncSession, key: str) -> Optional[AppSettin
     return result.scalar_one_or_none()
 
 
+async def delete_app_setting(session: AsyncSession, key: str) -> bool:
+    """Remove a saved setting. Returns False when nothing was saved."""
+    setting = await get_app_setting(session, key)
+    if setting is None:
+        return False
+    await session.delete(setting)
+    await session.commit()
+    return True
+
+
 async def set_app_setting(session: AsyncSession, key: str, value: str) -> AppSetting:
     setting = await get_app_setting(session, key)
     if setting:
