@@ -364,6 +364,8 @@ async def test_rejects_non_object_response(payload):
 @pytest.mark.parametrize(
     "payload",
     [
+        {"success": True},
+        {"success": True, "items": None},
         {"items": {}},
         {"items": "invalid"},
         {"items": [None]},
@@ -386,6 +388,8 @@ async def test_rejects_malformed_account_records(payload):
 @pytest.mark.parametrize(
     "payload",
     [
+        {"success": True},
+        {"success": True, "items": None},
         {"items": {}},
         {"items": [None]},
         {"items": [_txn_item(merchant="invalid")]},
@@ -409,3 +413,21 @@ async def test_rejects_malformed_identity():
 
     with _patched_client(handler), pytest.raises(RuntimeError, match="Akahu"):
         await AkahuProvider().handle_oauth_callback(f"{APP_TOKEN} {USER_TOKEN}")
+
+
+@pytest.mark.asyncio
+async def test_empty_account_collection_is_valid():
+    def handler(request):
+        return httpx.Response(200, json={"success": True, "items": []})
+
+    with _patched_client(handler):
+        assert await AkahuProvider().get_accounts(CREDS) == []
+
+
+@pytest.mark.asyncio
+async def test_empty_transaction_collection_is_valid():
+    def handler(request):
+        return httpx.Response(200, json={"success": True, "items": []})
+
+    with _patched_client(handler):
+        assert await AkahuProvider().get_transactions(CREDS, "acc_123") == []

@@ -75,8 +75,6 @@ def _optional_object(value: Any, context: str) -> dict:
 
 def _items(payload: dict) -> list[dict]:
     items = payload.get("items")
-    if items is None:
-        return []
     if not isinstance(items, list):
         raise RuntimeError("Akahu items: expected a list")
     return [_require_object(item, "item") for item in items]
