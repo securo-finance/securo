@@ -63,7 +63,7 @@ class _MockProvider(BankProvider):
     ) -> str:  # pragma: no cover
         return "http://mock"
 
-    async def handle_oauth_callback(self, code: str) -> ConnectionData:  # pragma: no cover
+    async def handle_oauth_callback(self, code: str, state=None) -> ConnectionData:  # pragma: no cover
         raise NotImplementedError
 
     async def get_accounts(self, credentials: dict) -> list[AccountData]:  # pragma: no cover
