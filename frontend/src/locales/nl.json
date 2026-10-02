@@ -1279,7 +1279,14 @@
       },
       "reconnectTitle": "Maak opnieuw verbinding met een nieuw token",
       "reconnectDescription": "Plak een nieuw installatietoken om deze verbinding te vernieuwen. Bestaande rekeningen, transacties, categorieën en regels blijven behouden.",
-      "reconnect": "Maak opnieuw verbinding"
+      "reconnect": "Maak opnieuw verbinding",
+      "akahu": {
+        "title": "Verbinden via Akahu",
+        "description": "Akahu verbindt Nieuw-Zeelandse banken. Maak een gratis persoonlijke app op my.akahu.nz, koppel je bank en plak hieronder de App ID Token (app_token_…) en User Token (user_token_…), in willekeurige volgorde.",
+        "reconnectTitle": "Opnieuw verbinden via Akahu",
+        "reconnectDescription": "Plak beide tokens van je Akahu-ontwikkelaarspagina om deze verbinding bij te werken. Bestaande rekeningen, transacties, categorieën en regels blijven behouden.",
+        "openBridge": "Tokens ophalen bij Akahu"
+      }
     },
     "providers": {
       "pluggy": {
@@ -1290,6 +1297,9 @@
       },
       "simplefin": {
         "description": "Amerikaanse en internationale banken via SimpleFIN Bridge"
+      },
+      "akahu": {
+        "description": "Nieuw-Zeelandse banken via Akahu"
       }
     },
     "reconnected": "Bank heeft opnieuw verbinding gemaakt",

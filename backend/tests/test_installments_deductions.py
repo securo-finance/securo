@@ -322,7 +322,16 @@ async def viewer_headers(session: AsyncSession, client: AsyncClient, business_ws
 
 
 @pytest.mark.asyncio
-async def test_installments_and_deductions_over_http(client: AsyncClient, biz_headers, session, ws_id, test_user, account):
+async def test_installments_and_deductions_over_http(
+    client: AsyncClient,
+    biz_headers,
+    session,
+    ws_id,
+    test_user,
+    account,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(svc, "app_today", lambda: TODAY)
     resp = await client.post(
         "/api/invoices", headers=biz_headers,
         json={"total": "3000.00", "issue_date": str(ISSUE), "currency": "USD",
