@@ -7,7 +7,8 @@ required and asserts the parse / dispatch behavior we care about.
 
 from __future__ import annotations
 
-from datetime import date
+import json
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -223,7 +224,9 @@ async def test_get_transactions_paginates_and_maps():
 
     assert len(calls) == 2
     assert "cursor" not in calls[0] and calls[1]["cursor"] == "page2"
-    assert calls[0]["start"].startswith("2025-08-21")
+    assert calls[0]["start"] == "2025-08-20T11:59:59.999000+00:00"
+    assert calls[0]["start"] == calls[1]["start"]
+    assert calls[0]["end"] == calls[1]["end"]
 
     debit, credit = txns
     assert debit.external_id == "trans_1"
@@ -298,3 +301,111 @@ async def test_trigger_refresh_rate_limit_is_transient_failure():
 
     with _patched_client(handler):
         assert await AkahuProvider().trigger_refresh(CREDS) == "failed"
+
+
+@pytest.mark.asyncio
+async def test_initial_import_includes_all_accessible_history_on_every_page():
+    calls = []
+    old_date = date.today() - timedelta(days=730)
+
+    def handler(request):
+        params = dict(request.url.params)
+        calls.append(params)
+        if "start" in params:
+            return httpx.Response(200, json={"items": []})
+        if "cursor" not in params:
+            return httpx.Response(
+                200,
+                json={
+                    "items": [_txn_item(date=old_date.isoformat())],
+                    "cursor": {"next": "page2"},
+                },
+            )
+        return httpx.Response(200, json={"items": [_txn_item(_id="trans_2")]})
+
+    with _patched_client(handler):
+        txns = await AkahuProvider().get_transactions(CREDS, "acc_123")
+
+    assert [t.external_id for t in txns] == ["trans_1", "trans_2"]
+    assert txns[0].date == old_date
+    assert len(calls) == 2
+    assert all("start" not in params for params in calls)
+    assert calls[0]["end"] == calls[1]["end"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("since,offset", [(date(2026, 8, 20), 12), (date(2026, 1, 20), 13)])
+async def test_incremental_import_includes_auckland_midnight(since, offset):
+    midnight = datetime(
+        since.year, since.month, since.day, tzinfo=timezone(timedelta(hours=offset))
+    )
+
+    def handler(request):
+        start = datetime.fromisoformat(request.url.params["start"])
+        assert start == midnight.astimezone(timezone.utc) - timedelta(milliseconds=1)
+        return httpx.Response(200, json={"items": [_txn_item(date=midnight.isoformat())]})
+
+    with _patched_client(handler):
+        txns = await AkahuProvider().get_transactions(CREDS, "acc_123", since=since)
+    assert txns[0].date == since
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("payload", [None, [], [1], "invalid", 1, True])
+async def test_rejects_non_object_response(payload):
+    def handler(request):
+        return httpx.Response(200, content=json.dumps(payload))
+
+    with _patched_client(handler), pytest.raises(RuntimeError, match="Akahu.*object"):
+        await AkahuProvider().get_accounts(CREDS)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"items": {}},
+        {"items": "invalid"},
+        {"items": [None]},
+        {"items": [1]},
+        {"items": [_account_item(balance="invalid")]},
+        {"items": [_account_item(balance=[])]},
+        {"items": [_account_item(connection="invalid")]},
+        {"items": [_account_item(connection=[])]},
+    ],
+)
+async def test_rejects_malformed_account_records(payload):
+    def handler(request):
+        return httpx.Response(200, json=payload)
+
+    with _patched_client(handler), pytest.raises(RuntimeError, match="Akahu"):
+        await AkahuProvider().get_accounts(CREDS)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"items": {}},
+        {"items": [None]},
+        {"items": [_txn_item(merchant="invalid")]},
+        {"items": [_txn_item(merchant=[])]},
+        {"items": [], "cursor": "invalid"},
+        {"items": [], "cursor": []},
+    ],
+)
+async def test_rejects_malformed_transaction_records(payload):
+    def handler(request):
+        return httpx.Response(200, json=payload)
+
+    with _patched_client(handler), pytest.raises(RuntimeError, match="Akahu"):
+        await AkahuProvider().get_transactions(CREDS, "acc_123")
+
+
+@pytest.mark.asyncio
+async def test_rejects_malformed_identity():
+    def handler(request):
+        return httpx.Response(200, json={"item": "invalid"})
+
+    with _patched_client(handler), pytest.raises(RuntimeError, match="Akahu"):
+        await AkahuProvider().handle_oauth_callback(f"{APP_TOKEN} {USER_TOKEN}")

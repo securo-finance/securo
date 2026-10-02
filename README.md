@@ -79,7 +79,7 @@ Enable the provider:
 AKAHU_ENABLED=true
 ```
 
-In Securo, go to **Accounts → Connect Bank → Akahu** and paste both tokens in either order. Personal apps provide 365 days of transaction history, and retain history from the app's creation date.
+In Securo, go to **Accounts → Connect Bank → Akahu** and paste both tokens in either order. Securo imports all transaction history accessible to your Personal App. Akahu determines the available range from the app's consent date and the bank's history limits.
 
 
 ## AI-Assisted Development

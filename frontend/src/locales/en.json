@@ -1342,9 +1342,10 @@
       },
       "akahu": {
         "title": "Connect via Akahu",
-        "description": "Akahu is New Zealand's open finance platform. Create a free Personal App at my.akahu.nz, link your bank, then paste BOTH tokens below — the App ID Token (app_token_…) and the User Token (user_token_…), in any order.",
+        "description": "Akahu connects New Zealand banks. Create a free Personal App at my.akahu.nz, link your bank, then paste both the App ID Token (app_token_…) and User Token (user_token_…) below, in either order.",
         "reconnectTitle": "Reconnect via Akahu",
-        "reconnectDescription": "Paste both tokens (App ID Token and User Token) from your Akahu developer page to refresh this connection in place. Existing accounts, transactions, categories, and rules are preserved."
+        "reconnectDescription": "Paste both tokens from your Akahu developer page to refresh this connection. Existing accounts, transactions, categories, and rules are preserved.",
+        "openBridge": "Get tokens from Akahu"
       },
       "reconnectTitle": "Reconnect with a fresh token",
       "reconnectDescription": "Paste a new setup token to refresh this connection in place. Existing accounts, transactions, categories, and rules are preserved.",
