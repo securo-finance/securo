@@ -846,6 +846,7 @@
     "noData": "Geen gegevens beschikbaar",
     "noTransactions": "Geen transacties in deze periode",
     "ofBudget": "van {{budget}}",
+    "overBudget": "{{amount}} boven budget",
     "previous": "Vorige",
     "next": "Volgende",
     "balanceAsOf": "vanaf {{date}}",

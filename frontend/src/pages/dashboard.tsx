@@ -477,6 +477,10 @@ export default function DashboardPage() {
           actual,
           budget_amount: budget ? Number(budget.budget_amount) : null,
           percentage_used: budget?.percentage_used ?? null,
+          // Measured on the same net amount as percentage_used, not on `actual`.
+          over_budget: budget?.budget_amount
+            ? Math.max(Number(budget.projected_amount) - Number(budget.budget_amount), 0)
+            : 0,
           momPct,
         }
       })
@@ -972,7 +976,9 @@ export default function DashboardPage() {
                               <span className={`text-[11px] tabular-nums font-medium shrink-0 ${
                                 pct! > 100 ? 'text-rose-500' : pct! >= 80 ? 'text-amber-500' : 'text-muted-foreground'
                               }`}>
-                                {mask(t('dashboard.ofBudget', { budget: formatCurrency(item.budget_amount!, userCurrency, locale) }))}
+                                {mask(item.over_budget > 0
+                                  ? t('dashboard.overBudget', { amount: formatCurrency(item.over_budget, userCurrency, locale) })
+                                  : t('dashboard.ofBudget', { budget: formatCurrency(item.budget_amount!, userCurrency, locale) }))}
                               </span>
                             </div>
                           )}
