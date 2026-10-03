@@ -846,6 +846,7 @@
     "noData": "कोई डेटा उपलब्ध नहीं",
     "noTransactions": "इस अवधि में कोई लेन-देन नहीं",
     "ofBudget": "{{budget}} में से",
+    "overBudget": "बजट से {{amount}} अधिक",
     "previous": "पिछला",
     "next": "अगला",
     "balanceAsOf": "{{date}} तक",

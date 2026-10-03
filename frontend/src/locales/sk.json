@@ -850,6 +850,7 @@
     "noData": "Žiadne údaje",
     "noTransactions": "V tomto období nie sú žiadne transakcie",
     "ofBudget": "z {{budget}}",
+    "overBudget": "{{amount}} nad rozpočet",
     "previous": "Predchádzajúce",
     "next": "Ďalšie",
     "balanceAsOf": "k {{date}}",

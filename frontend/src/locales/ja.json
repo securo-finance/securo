@@ -846,6 +846,7 @@
     "noData": "データがありません",
     "noTransactions": "この期間の取引はありません",
     "ofBudget": "予算{{budget}}のうち",
+    "overBudget": "予算を{{amount}}超過",
     "previous": "前へ",
     "next": "次へ",
     "balanceAsOf": "{{date}}時点",

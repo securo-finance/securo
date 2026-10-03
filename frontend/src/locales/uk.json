@@ -850,6 +850,7 @@
     "noData": "Немає даних",
     "noTransactions": "Немає транзакцій за цей період",
     "ofBudget": "із {{budget}}",
+    "overBudget": "{{amount}} понад бюджет",
     "previous": "Попередній",
     "next": "Наступний",
     "balanceAsOf": "на {{date}}",

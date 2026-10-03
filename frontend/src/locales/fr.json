@@ -846,6 +846,7 @@
     "noData": "Aucune donnée disponible",
     "noTransactions": "Aucune transaction sur cette période",
     "ofBudget": "sur {{budget}}",
+    "overBudget": "{{amount}} de dépassement",
     "previous": "Précédent",
     "next": "Suivant",
     "balanceAsOf": "au {{date}}",
