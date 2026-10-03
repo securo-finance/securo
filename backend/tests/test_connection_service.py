@@ -1053,6 +1053,49 @@ async def test_simplefin_rekey_respects_institution_and_closed_account(
 
 
 @pytest.mark.asyncio
+async def test_find_existing_connected_account_refuses_ambiguous_masked_number(
+    session: AsyncSession, test_user, test_workspace,
+):
+    """A shared last-4 must never merge two different accounts.
+
+    Four digits collide (two accounts at one bank can both end 5531). When more
+    than one legacy row matches we refuse to guess: a duplicate is recoverable,
+    but transactions attached to the wrong account are not.
+    """
+    conn = await _make_connection(session, test_user.id, "AmbiguousBank")
+    for suffix in ("a", "b"):
+        session.add(Account(
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            connection_id=conn.id,
+            external_id=f"old-{suffix}",
+            masked_number="5531",
+            name=f"Cuenta {suffix}",
+            type="checking",
+            balance=Decimal("0"),
+            currency="EUR",
+        ))
+    await session.flush()
+
+    matched = await _find_existing_connected_account(
+        session,
+        conn,
+        AccountData(
+            external_id="new-uid",
+            name="Cuenta a",
+            type="checking",
+            balance=Decimal("0"),
+            currency="EUR",
+            masked_number="5531",
+        ),
+        None,
+        {"new-uid"},
+    )
+
+    assert matched is None
+
+
+@pytest.mark.asyncio
 async def test_simplefin_rekey_reserves_ids_from_later_accounts(
     session: AsyncSession, test_user, test_workspace,
 ):

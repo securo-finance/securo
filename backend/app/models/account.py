@@ -31,6 +31,11 @@ class Account(Base):
     # the provider exposes one. Provider-owned like `name`: refreshed on sync,
     # not user-editable. Never holds the full identifier.
     masked_number: Mapped[Optional[str]] = mapped_column(String(4), nullable=True)
+    # Provider-owned, stable across reauthorisations (Enable Banking's
+    # identification_hash). It survives the session-scoped `external_id` being
+    # re-keyed, so the sync matches on it to avoid duplicating the account after
+    # a reconnect. Refreshed alongside `name`, never blanked by a missing value.
+    stable_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     type: Mapped[str] = mapped_column(String(50))  # checking, savings, credit_card
     balance: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2), default=Decimal("0.00"))
     currency: Mapped[str] = mapped_column(String(3), default="USD")
