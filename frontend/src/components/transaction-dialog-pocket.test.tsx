@@ -93,3 +93,34 @@ it('clears saved pocket assignments when the status change is kept', async () =>
 
   expect(onSave.mock.calls[0][0]).toEqual(expect.objectContaining({ status: 'pending', goal_allocations: [] }))
 })
+
+it('keeps edited pocket assignments when a status change is reverted', async () => {
+  const saved = {
+    ...draft, id: 'tx', goal_allocations: [{ id: 'allocation', goal_id: 'monitor', goal_name: 'Monitor', amount: 50 }],
+  } as unknown as Transaction
+  const { user, onSave } = renderDraft(saved)
+  await user.click(screen.getByRole('button', { name: 'Edit pockets' }))
+  fireEvent.change(screen.getByLabelText('Allocation for Monitor'), { target: { value: '30' } })
+  await user.click(screen.getByRole('button', { name: 'Apply' }))
+  const statusSelect = screen.getByDisplayValue(t('transactions.statusPosted'))
+  await user.selectOptions(statusSelect, 'pending')
+  await user.selectOptions(statusSelect, 'posted')
+  await user.click(screen.getByRole('button', { name: 'Save' }))
+
+  expect(onSave.mock.calls[0][0]).toEqual(expect.objectContaining({
+    goal_allocations: [{ goal_id: 'monitor', amount: 30 }],
+  }))
+})
+
+it('restores the pocket assignments of a draft when installments are switched off again', async () => {
+  const { user, onSave } = renderDraft()
+  const installments = screen.getByRole('checkbox', { name: t('transactions.makeInstallment') })
+  await user.click(installments)
+  await user.click(installments)
+  await user.click(screen.getByRole('button', { name: 'Save' }))
+
+  expect(onSave).toHaveBeenCalledWith(
+    expect.objectContaining({ goal_allocations: draft.goal_allocations }),
+    undefined, undefined, undefined, 'save',
+  )
+})

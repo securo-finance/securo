@@ -470,25 +470,6 @@ function TransactionForm({
   const [goalAllocationsDirty, setGoalAllocationsDirty] = useState(
     !transaction && !!duplicateDraft?.goal_allocations?.length,
   )
-  // The Pocket-relevant fields as the dialog opened, so a change that is
-  // reverted restores the saved assignments instead of saving them wiped.
-  const [seededPocketState] = useState(() => ({
-    status, type, accountId, currency, allocations: goalAllocations, dirty: goalAllocationsDirty,
-  }))
-  const resetGoalAllocations = (changed: Partial<Pick<typeof seededPocketState, 'status' | 'type' | 'accountId' | 'currency'>>) => {
-    const next = { status, type, accountId, currency, ...changed }
-    const seeded = seededPocketState
-    if (
-      next.status === seeded.status && next.type === seeded.type
-      && next.accountId === seeded.accountId && next.currency === seeded.currency
-    ) {
-      setGoalAllocations(seeded.allocations)
-      setGoalAllocationsDirty(seeded.dirty)
-    } else {
-      setGoalAllocations([])
-      setGoalAllocationsDirty(true)
-    }
-  }
   const [notes, setNotes] = useState(seed?.notes ?? '')
   // Manual CC bucketing override (issue #92). Empty = auto. Visible only
   // when the selected account is a credit card.
@@ -755,6 +736,27 @@ function TransactionForm({
     } else if (!val) {
       setConvertedAmount('')
     }
+  }
+
+  // Pocket assignments only fit the status, type, account, currency and
+  // installment mode they were made for, so changing one clears them. The
+  // draft is set aside per combination: returning to one restores exactly
+  // what it held, unsaved edits included, instead of saving a wipe.
+  const pocketDraftsRef = useRef(new Map<string, { allocations: GoalAllocationInput[]; dirty: boolean }>())
+  const resetGoalAllocations = (changed: Partial<{
+    status: typeof status
+    type: typeof type
+    accountId: string
+    currency: string
+    isInstallment: boolean
+  }>) => {
+    const current = { status, type, accountId, currency, isInstallment }
+    const key = (fields: typeof current) =>
+      JSON.stringify([fields.status, fields.type, fields.accountId, fields.currency, fields.isInstallment])
+    pocketDraftsRef.current.set(key(current), { allocations: goalAllocations, dirty: goalAllocationsDirty })
+    const draft = pocketDraftsRef.current.get(key({ ...current, ...changed }))
+    setGoalAllocations(draft?.allocations ?? [])
+    setGoalAllocationsDirty(draft?.dirty ?? true)
   }
 
   const handleAmountChange = (val: string) => {
@@ -1370,7 +1372,10 @@ function TransactionForm({
                 checked={isRecurring}
                 onChange={(e) => {
                   setIsRecurring(e.target.checked)
-                  if (e.target.checked) setIsInstallment(false)
+                  if (e.target.checked && isInstallment) {
+                    setIsInstallment(false)
+                    resetGoalAllocations({ isInstallment: false })
+                  }
                 }}
                 className="rounded border-gray-300"
               />
@@ -1382,11 +1387,8 @@ function TransactionForm({
                 checked={isInstallment}
                 onChange={(e) => {
                   setIsInstallment(e.target.checked)
-                  if (e.target.checked) {
-                    setIsRecurring(false)
-                    setGoalAllocations([])
-                    setGoalAllocationsDirty(true)
-                  }
+                  resetGoalAllocations({ isInstallment: e.target.checked })
+                  if (e.target.checked) setIsRecurring(false)
                 }}
                 className="rounded border-gray-300"
               />
