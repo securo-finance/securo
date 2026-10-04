@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.invoice import Invoice
+from app.models.invoice_schedule import InvoiceScheduleTerm
 from app.models.product import Product
 from app.models.workspace import WorkspaceMember
 from app.services import invoice_schedule_service as schedules
@@ -723,7 +724,7 @@ async def test_schedule_fiscal_ref_inheritance_survives_term_writes_over_http(
     for term in terms:
         assert "fiscal_refs" not in term["lines"][0]
         assert [row["fiscal_refs"] for row in term["lines"][1:]] == [
-            None, None, {"service_code": "line-code"},
+            {}, {}, {"service_code": "line-code"},
         ]
     response = await client.patch(
         f"/api/invoice-schedules/{schedule_id}/terms/{terms[-1]['id']}", headers=biz_headers,
@@ -743,3 +744,102 @@ async def test_schedule_fiscal_ref_inheritance_survives_term_writes_over_http(
         assert [row["fiscal_refs"] for row in invoice["lines"]] == [
             catalog_refs, None, None, {"service_code": "line-code"},
         ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("edit", [None, "read_resave", "discount", "effective_from"])
+async def test_legacy_schedule_fiscal_refs_survive_emission_and_edits(
+    client: AsyncClient, biz_headers, session, monkeypatch, edit,
+):
+    monkeypatch.setattr(schedules, "_today", lambda: TODAY)
+    refs = {"service_code": "catalog-code"}
+    response = await client.post(
+        "/api/products", headers=biz_headers,
+        json={"name": "Design", "fiscal_refs": refs},
+    )
+    assert response.status_code == 201, response.text
+    line = {"description": "Design", "unit_price": "100", "product_id": response.json()["id"]}
+    response = await client.post(
+        "/api/invoice-schedules", headers=biz_headers,
+        json={"name": "Legacy agreement", "frequency": "monthly", "currency": "USD", "lines": [line]},
+    )
+    assert response.status_code == 201, response.text
+    schedule_id = response.json()["id"]
+    response = await client.post(
+        f"/api/invoice-schedules/{schedule_id}/terms", headers=biz_headers,
+        json={"effective_from": TODAY.replace(month=10).isoformat(), "lines": [line]},
+    )
+    assert response.status_code == 201, response.text
+    terms = (await session.scalars(
+        select(InvoiceScheduleTerm)
+        .where(InvoiceScheduleTerm.schedule_id == uuid.UUID(schedule_id))
+        .order_by(InvoiceScheduleTerm.effective_from)
+    )).all()
+    # Before this fix, omitted references were persisted as null and inherited
+    # from the catalog. Keep that exact stored shape across the upgrade.
+    for term in terms:
+        term.lines = [{**row, "fiscal_refs": None} for row in term.lines]
+    await session.commit()
+
+    response = await client.get(f"/api/invoice-schedules/{schedule_id}", headers=biz_headers)
+    assert response.status_code == 200, response.text
+    if edit is not None:
+        changes = {
+            "read_resave": {"lines": response.json()["terms"][-1]["lines"]},
+            "discount": {"discount": "1"},
+            "effective_from": {"effective_from": TODAY.replace(month=11).isoformat()},
+        }[edit]
+        response = await client.patch(
+            f"/api/invoice-schedules/{schedule_id}/terms/{terms[-1].id}",
+            headers=biz_headers, json=changes,
+        )
+        assert response.status_code == 200, response.text
+
+    for _ in range(3 if edit == "effective_from" else 2):
+        response = await client.post(
+            f"/api/invoice-schedules/{schedule_id}/generate", headers=biz_headers,
+        )
+        assert response.status_code == 201, response.text
+        [invoice] = response.json()
+        assert invoice["lines"][0]["fiscal_refs"] == refs
+    await session.refresh(terms[0])
+    assert terms[0].lines[0]["fiscal_refs"] is None
+
+
+@pytest.mark.asyncio
+async def test_legacy_schedule_reads_preserve_inheritance_without_mutating_terms(
+    client: AsyncClient, biz_headers, session, monkeypatch,
+):
+    monkeypatch.setattr(schedules, "_today", lambda: TODAY)
+    response = await client.post(
+        "/api/invoice-schedules", headers=biz_headers,
+        json={
+            "name": "Legacy agreement", "frequency": "monthly", "currency": "USD",
+            "lines": [{"description": "Design", "unit_price": "100"}],
+        },
+    )
+    assert response.status_code == 201, response.text
+    schedule_id = response.json()["id"]
+    term = await session.scalar(select(InvoiceScheduleTerm).where(
+        InvoiceScheduleTerm.schedule_id == uuid.UUID(schedule_id),
+    ))
+    line = term.lines[0]
+    term.lines = [
+        {**line, "fiscal_refs": None},
+        {**line, "fiscal_refs": {}},
+        {**line, "fiscal_refs": {"service_code": "fixed-code"}},
+    ]
+    await session.commit()
+    response = await client.get(f"/api/invoice-schedules/{schedule_id}", headers=biz_headers)
+    assert response.status_code == 200, response.text
+    agreement = response.json()
+    for read in [*agreement["terms"], agreement["current_term"], agreement["next_term"]]:
+        assert "fiscal_refs" not in read["lines"][0]
+        assert read["lines"][1]["fiscal_refs"] == {}
+        assert read["lines"][2]["fiscal_refs"] == {"service_code": "fixed-code"}
+    # Serialization is a read: neither the identity-map object nor its stored
+    # JSON should be changed as a side effect of building the response.
+    assert term.lines[0]["fiscal_refs"] is None
+    assert term not in session.dirty
+    await session.refresh(term)
+    assert term.lines[0]["fiscal_refs"] is None
