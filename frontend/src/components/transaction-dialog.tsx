@@ -470,6 +470,25 @@ function TransactionForm({
   const [goalAllocationsDirty, setGoalAllocationsDirty] = useState(
     !transaction && !!duplicateDraft?.goal_allocations?.length,
   )
+  // The Pocket-relevant fields as the dialog opened, so a change that is
+  // reverted restores the saved assignments instead of saving them wiped.
+  const [seededPocketState] = useState(() => ({
+    status, type, accountId, currency, allocations: goalAllocations, dirty: goalAllocationsDirty,
+  }))
+  const resetGoalAllocations = (changed: Partial<Pick<typeof seededPocketState, 'status' | 'type' | 'accountId' | 'currency'>>) => {
+    const next = { status, type, accountId, currency, ...changed }
+    const seeded = seededPocketState
+    if (
+      next.status === seeded.status && next.type === seeded.type
+      && next.accountId === seeded.accountId && next.currency === seeded.currency
+    ) {
+      setGoalAllocations(seeded.allocations)
+      setGoalAllocationsDirty(seeded.dirty)
+    } else {
+      setGoalAllocations([])
+      setGoalAllocationsDirty(true)
+    }
+  }
   const [notes, setNotes] = useState(seed?.notes ?? '')
   // Manual CC bucketing override (issue #92). Empty = auto. Visible only
   // when the selected account is a credit card.
@@ -749,8 +768,7 @@ function TransactionForm({
 
   const handleCurrencyChange = (val: string) => {
     setCurrency(val)
-    setGoalAllocations([])
-    setGoalAllocationsDirty(true)
+    resetGoalAllocations({ currency: val })
     if (val === userCurrency) {
       setConvertedAmount('')
       setFxRate('')
@@ -1100,9 +1118,9 @@ function TransactionForm({
             className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card h-9 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
             value={status}
             onChange={(e) => {
-              setStatus(e.target.value as 'posted' | 'pending')
-              setGoalAllocations([])
-              setGoalAllocationsDirty(true)
+              const next = e.target.value as 'posted' | 'pending'
+              setStatus(next)
+              resetGoalAllocations({ status: next })
             }}
             disabled={isSynced}
           >
@@ -1166,9 +1184,9 @@ function TransactionForm({
             className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
             value={type}
             onChange={(e) => {
-              setType(e.target.value as 'debit' | 'credit')
-              setGoalAllocations([])
-              setGoalAllocationsDirty(true)
+              const next = e.target.value as 'debit' | 'credit'
+              setType(next)
+              resetGoalAllocations({ type: next })
             }}
             disabled={isSynced}
           >
@@ -1211,8 +1229,7 @@ function TransactionForm({
               value={accountId}
               onChange={(e) => {
                 setAccountId(e.target.value)
-                setGoalAllocations([])
-                setGoalAllocationsDirty(true)
+                resetGoalAllocations({ accountId: e.target.value })
               }}
               required
             >

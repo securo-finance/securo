@@ -2,7 +2,7 @@ import { fireEvent, screen } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
 import { TransactionDialog } from './transaction-dialog'
 import { createTestQueryClient, renderWithProviders, t } from '@/test/utils'
-import type { Category, TransactionEditPayload } from '@/types'
+import type { Category, Transaction, TransactionEditPayload } from '@/types'
 
 vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: { preferences: { language: 'en', currency_display: 'EUR' } } }),
@@ -14,7 +14,7 @@ const draft = {
   goal_allocations: [{ goal_id: 'monitor', amount: 50 }],
 } satisfies TransactionEditPayload
 
-function renderDraft() {
+function renderDraft(transaction: Transaction | null = null) {
   const queryClient = createTestQueryClient()
   queryClient.setDefaultOptions({ queries: { enabled: false, retry: false, staleTime: Infinity } })
   queryClient.setQueryData(['settings', 'attachments'], { max_size_mb: 10 })
@@ -26,7 +26,7 @@ function renderDraft() {
   const onSave = vi.fn()
   const result = renderWithProviders(
     <TransactionDialog
-      open onClose={vi.fn()} transaction={null} duplicateDraft={draft}
+      open onClose={vi.fn()} transaction={transaction} duplicateDraft={transaction ? undefined : draft}
       categories={[{
         id: 'ignored', name: 'Ignored category', user_id: 'user', group_id: null,
         icon: 'circle-help', color: '#000000', is_system: false, is_hidden: false,
@@ -67,4 +67,29 @@ it('retains allocations after selecting an ignored category and lets the user ex
     expect.objectContaining({ category_id: 'ignored', goal_allocations: [] }),
     undefined, undefined, undefined, 'save',
   )
+})
+
+it('keeps saved pocket assignments when a status change is reverted', async () => {
+  const saved = {
+    ...draft, id: 'tx', goal_allocations: [{ id: 'allocation', goal_id: 'monitor', goal_name: 'Monitor', amount: 50 }],
+  } as unknown as Transaction
+  const { user, onSave } = renderDraft(saved)
+  const statusSelect = screen.getByDisplayValue(t('transactions.statusPosted'))
+  await user.selectOptions(statusSelect, 'pending')
+  await user.selectOptions(statusSelect, 'posted')
+  await user.click(screen.getByRole('button', { name: 'Save' }))
+
+  expect(onSave).toHaveBeenCalledTimes(1)
+  expect(onSave.mock.calls[0][0]).not.toHaveProperty('goal_allocations')
+})
+
+it('clears saved pocket assignments when the status change is kept', async () => {
+  const saved = {
+    ...draft, id: 'tx', goal_allocations: [{ id: 'allocation', goal_id: 'monitor', goal_name: 'Monitor', amount: 50 }],
+  } as unknown as Transaction
+  const { user, onSave } = renderDraft(saved)
+  await user.selectOptions(screen.getByDisplayValue(t('transactions.statusPosted')), 'pending')
+  await user.click(screen.getByRole('button', { name: 'Save' }))
+
+  expect(onSave.mock.calls[0][0]).toEqual(expect.objectContaining({ status: 'pending', goal_allocations: [] }))
 })
