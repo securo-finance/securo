@@ -238,7 +238,10 @@ def _normalise_lines(lines: Any) -> list[dict[str, Any]]:
                 # deleted later must not stop the agreement from billing.
                 "product_id": str(line["product_id"]) if line.get("product_id") else None,
                 "price_id": str(line["price_id"]) if line.get("price_id") else None,
-                "fiscal_refs": clean_fiscal_refs(line.get("fiscal_refs")),
+                **(
+                    {"fiscal_refs": clean_fiscal_refs(line["fiscal_refs"])}
+                    if "fiscal_refs" in line else {}
+                ),
             }
         )
     return out
