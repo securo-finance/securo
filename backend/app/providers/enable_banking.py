@@ -160,7 +160,7 @@ def _counterparty_identity(raw: dict, party: str) -> str:
     return iban.strip() or _counterparty_name(raw, party)
 
 
-def _txn_fingerprint(account_uid: str, raw: dict) -> str:
+def _txn_fingerprint(account_uid: str, raw: dict, *, legacy: bool = False) -> str:
     """Stable id for a booked transaction.
 
     EB's `entry_reference` is unreliable across providers, so we hash the
@@ -169,20 +169,35 @@ def _txn_fingerprint(account_uid: str, raw: dict) -> str:
     sync layer's pending↔posted twin matcher handles that.
     """
     amount = raw.get("transaction_amount") or {}
-    creditor_identity = _counterparty_identity(raw, "creditor")
-    debtor_identity = _counterparty_identity(raw, "debtor")
+    creditor_acc = raw.get("creditor_account")
+    debtor_acc = raw.get("debtor_account")
+    creditor_iban = (
+        creditor_acc.get("iban")
+        if isinstance(creditor_acc, dict) and isinstance(creditor_acc.get("iban"), str)
+        else ""
+    )
+    debtor_iban = (
+        debtor_acc.get("iban")
+        if isinstance(debtor_acc, dict) and isinstance(debtor_acc.get("iban"), str)
+        else ""
+    )
     parts = [
         str(account_uid),
         str(raw.get("booking_date") or ""),
         str(raw.get("value_date") or ""),
-        str(raw.get("transaction_date") or ""),
         str(amount.get("amount") or "") if isinstance(amount, dict) else "",
         str(amount.get("currency") or "") if isinstance(amount, dict) else "",
         str(raw.get("credit_debit_indicator") or ""),
         _join_remittance(raw.get("remittance_information"))[:80],
-        creditor_identity,
-        debtor_identity,
+        creditor_iban,
+        debtor_iban,
     ]
+    if not legacy:
+        parts.insert(3, str(raw.get("transaction_date") or ""))
+        parts[-2] = _counterparty_identity(raw, "creditor")
+        parts[-1] = _counterparty_identity(raw, "debtor")
+    # The previous recipe is only used to find pre-upgrade rows. New rows
+    # retain the more specific date/counterparty identity.
     digest = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
     return digest[:32]
 
