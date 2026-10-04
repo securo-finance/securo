@@ -185,7 +185,7 @@ async def list_group_transactions(
     )
     if txs is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
-    return txs
+    return [TransactionRead.for_viewer(tx, ctx.workspace.id) for tx in txs]
 
 
 @router.get("/{group_id}/balances", response_model=GroupBalances)

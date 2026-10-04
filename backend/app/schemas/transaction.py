@@ -213,6 +213,19 @@ class TransactionRead(TransactionBase):
             self.is_ignored = True
         return self
 
+    @classmethod
+    def for_viewer(cls, transaction, workspace_id: uuid.UUID) -> "TransactionRead":
+        """Serialize a row for the viewing workspace.
+
+        A linked group member may see another user's transaction, but the
+        owner's personal Pocket names and reservation amounts remain private
+        to the source workspace.
+        """
+        item = cls.model_validate(transaction, from_attributes=True)
+        if item.is_shared or transaction.workspace_id != workspace_id:
+            item.goal_allocations = []
+        return item
+
     model_config = ConfigDict(from_attributes=True)
 
 

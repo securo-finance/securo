@@ -1733,7 +1733,7 @@ async def bulk_update_category(
             Transaction.id.in_(transaction_ids), Transaction.workspace_id == workspace_id
         )
     )).all())
-    await _lock_mutated_transactions(session, workspace_id, transactions)
+    locked = await _lock_mutated_transactions(session, workspace_id, transactions)
     result = await session.execute(
         update(Transaction)
         .where(
@@ -1742,8 +1742,14 @@ async def bulk_update_category(
         )
         .values(category_id=category_id)
     )
-    for transaction in transactions:
-        await goal_allocation_service.validate_transaction_allocations(session, workspace_id, transaction)
+    # Allocation writes take the same row lock first, so the collections
+    # reloaded under it are current; rows without a Pocket need no check.
+    requested = {transaction.id for transaction in transactions}
+    for transaction in locked:
+        if transaction.id in requested and transaction.goal_allocations:
+            await goal_allocation_service.validate_transaction_allocations(
+                session, workspace_id, transaction
+            )
     if commit:
         await session.commit()
     else:

@@ -137,6 +137,22 @@ async def test_linked_member_sees_shared_transaction_in_their_list(
     assert shared[0]["group_id"] == group["id"]
     assert shared[0]["goal_allocations"] == []
 
+    # The group's own transaction list must redact the owner's Pocket too,
+    # while the owner still sees their allocation there.
+    friend_group = await client.get(
+        f"/api/groups/{group['id']}/transactions", headers=friend_headers
+    )
+    assert friend_group.status_code == 200, friend_group.text
+    [friend_row] = friend_group.json()
+    assert friend_row["is_shared"] is True
+    assert friend_row["goal_allocations"] == []
+    owner_group = await client.get(
+        f"/api/groups/{group['id']}/transactions", headers=auth_headers
+    )
+    [owner_row] = owner_group.json()
+    assert owner_row["is_shared"] is False
+    assert len(owner_row["goal_allocations"]) == 1
+
 
 @pytest.mark.asyncio
 async def test_owner_does_not_see_shared_duplicate(client, auth_headers, test_user):

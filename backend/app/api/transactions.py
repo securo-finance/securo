@@ -162,12 +162,7 @@ async def list_transactions(
     primary_currency = ctx.user.primary_currency
     items = []
     for transaction in transactions:
-        item = TransactionRead.model_validate(transaction, from_attributes=True)
-        if item.is_shared:
-            # A linked group member may see their projected share of another
-            # user's transaction, but the owner's personal Pocket names and
-            # reservation amounts remain private to the source workspace.
-            item.goal_allocations = []
+        item = TransactionRead.for_viewer(transaction, ctx.workspace.id)
         items.append(_tag_fx_fallback(item, primary_currency))
     await _attach_invoice_links(session, ctx, items)
     summary_out = (

@@ -155,5 +155,30 @@ describe('GoalsPage pockets', () => {
       account_id: account.id,
       initial_allocation: 125,
     })))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it('keeps a dismissed Pocket dialog closed when a late adjustment succeeds', async () => {
+    let resolveAdjust!: (goal: Goal) => void
+    api.goals.list.mockResolvedValue([pocket])
+    api.goals.activity.mockResolvedValue([])
+    api.goals.adjust.mockReturnValue(new Promise<Goal>(resolve => { resolveAdjust = resolve }))
+    const { user } = renderWithProviders(<GoalsPage />, { route: '/goals' })
+
+    await user.click(await screen.findByRole('button', { name: `${t('goals.managePocket')}: Monitor` }))
+    const dialog = await screen.findByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: t('goals.release') }))
+    await user.type(within(dialog).getByPlaceholderText(t('goals.adjustmentAmount')), '50')
+    await user.click(within(dialog).getByRole('button', { name: t('common.save') }))
+    await waitFor(() => expect(api.goals.adjust).toHaveBeenCalledWith(pocket.id, -50))
+
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    const listCalls = api.goals.list.mock.calls.length
+    resolveAdjust({ ...pocket, current_amount: 550 })
+
+    // The success handler has run once it invalidates the goal lists.
+    await waitFor(() => expect(api.goals.list.mock.calls.length).toBeGreaterThan(listCalls))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 })

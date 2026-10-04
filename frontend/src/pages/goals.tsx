@@ -1,4 +1,4 @@
-import { createElement, useState } from 'react'
+import { createElement, useRef, useState } from 'react'
 import { differenceInCalendarDays, parseISO } from 'date-fns'
 import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
@@ -155,6 +155,9 @@ export default function GoalsPage() {
   const [initialMode, setInitialMode] = useState<'zero' | 'custom' | 'available'>('zero')
   const [initialAmount, setInitialAmount] = useState('')
   const [managingPocket, setManagingPocket] = useState<Goal | null>(null)
+  // Bumped whenever the Pocket dialog opens or closes, so a late adjustment
+  // response cannot reopen a dismissed dialog or replace another Pocket.
+  const pocketDialogRef = useRef(0)
   const [adjustmentMode, setAdjustmentMode] = useState<'reserve' | 'release'>('reserve')
   const [adjustmentAmount, setAdjustmentAmount] = useState('')
 
@@ -228,12 +231,14 @@ export default function GoalsPage() {
   })
 
   const adjustmentMutation = useMutation({
-    mutationFn: ({ id, amount }: { id: string; amount: number }) => goalsApi.adjust(id, amount),
-    onSuccess: (goal) => {
+    mutationFn: ({ id, amount }: { id: string; amount: number; dialog: number }) => goalsApi.adjust(id, amount),
+    onSuccess: (goal, { dialog }) => {
       queryClient.invalidateQueries({ queryKey: ['goals'] })
       queryClient.invalidateQueries({ queryKey: ['accounts'] })
-      setManagingPocket(goal)
-      setAdjustmentAmount('')
+      if (dialog === pocketDialogRef.current) {
+        setManagingPocket(goal)
+        setAdjustmentAmount('')
+      }
       toast.success(t('goals.adjusted'))
     },
     onError: (error) => toast.error(extractApiError(error)),
@@ -417,6 +422,7 @@ export default function GoalsPage() {
                           <button
                             className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
                             onClick={() => {
+                              pocketDialogRef.current += 1
                               setManagingPocket(goal)
                               setAdjustmentMode(goal.status === 'active' ? 'reserve' : 'release')
                               setAdjustmentAmount('')
@@ -676,8 +682,8 @@ export default function GoalsPage() {
                 </div>
                 {selectedPocketAccount && (
                   <div className="grid grid-cols-1 gap-2 text-xs text-muted-foreground sm:grid-cols-2 sm:gap-3">
-                    <span>{t('goals.accountBalance')}: {formatCurrency(selectedPocketAccount.current_balance, selectedPocketAccount.currency, locale)}</span>
-                    <span>{t('goals.accountAvailable')}: {formatCurrency(selectedAccountAvailable, selectedPocketAccount.currency, locale)}</span>
+                    <span>{t('goals.accountBalance')}: {mask(formatCurrency(selectedPocketAccount.current_balance, selectedPocketAccount.currency, locale))}</span>
+                    <span>{t('goals.accountAvailable')}: {mask(formatCurrency(selectedAccountAvailable, selectedPocketAccount.currency, locale))}</span>
                   </div>
                 )}
                 {!editing && (
@@ -796,7 +802,7 @@ export default function GoalsPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!managingPocket} onOpenChange={() => setManagingPocket(null)}>
+      <Dialog open={!!managingPocket} onOpenChange={() => { pocketDialogRef.current += 1; setManagingPocket(null) }}>
         <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{t('goals.managePocket')}: {managingPocket?.name}</DialogTitle>
@@ -862,6 +868,7 @@ export default function GoalsPage() {
                   onClick={() => adjustmentMutation.mutate({
                     id: managingPocket.id,
                     amount: (adjustmentMode === 'release' ? -1 : 1) * Number(adjustmentAmount),
+                    dialog: pocketDialogRef.current,
                   })}
                 >
                   {adjustmentMutation.isPending ? t('common.loading') : t('common.save')}
