@@ -145,7 +145,7 @@ def _counterparty_name(raw: dict, party: str) -> str:
     return name.strip() if isinstance(name, str) else ""
 
 
-def _txn_fingerprint(account_uid: str, raw: dict) -> str:
+def _txn_fingerprint(account_uid: str, raw: dict, *, legacy: bool = False) -> str:
     """Stable id for a booked transaction.
 
     EB's `entry_reference` is unreliable across providers, so we hash the
@@ -166,20 +166,23 @@ def _txn_fingerprint(account_uid: str, raw: dict) -> str:
         if isinstance(debtor_acc, dict) and isinstance(debtor_acc.get("iban"), str)
         else ""
     )
-    creditor_identity = creditor_iban.strip() or _counterparty_name(raw, "creditor")
-    debtor_identity = debtor_iban.strip() or _counterparty_name(raw, "debtor")
     parts = [
         str(account_uid),
         str(raw.get("booking_date") or ""),
         str(raw.get("value_date") or ""),
-        str(raw.get("transaction_date") or ""),
         str(amount.get("amount") or "") if isinstance(amount, dict) else "",
         str(amount.get("currency") or "") if isinstance(amount, dict) else "",
         str(raw.get("credit_debit_indicator") or ""),
         _join_remittance(raw.get("remittance_information"))[:80],
-        creditor_identity,
-        debtor_identity,
+        creditor_iban,
+        debtor_iban,
     ]
+    if not legacy:
+        parts.insert(3, str(raw.get("transaction_date") or ""))
+        parts[-2] = creditor_iban.strip() or _counterparty_name(raw, "creditor")
+        parts[-1] = debtor_iban.strip() or _counterparty_name(raw, "debtor")
+    # The previous recipe is only used to find pre-upgrade rows. New rows
+    # retain the more specific date/counterparty identity.
     digest = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
     return digest[:32]
 

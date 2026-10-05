@@ -1,4 +1,5 @@
 import uuid
+from copy import deepcopy
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -5477,3 +5478,93 @@ async def test_ensure_group_relocates_wallet_when_connection_moves_workspaces(
     assert group.connection_id == conn.id
     assert group.workspace_id == test_workspace.id
     assert group.name == "Moved Wallet"
+
+
+@pytest.mark.parametrize("entry_reference", [None, "0"])
+@pytest.mark.parametrize("reverse_order", [False, True])
+@pytest.mark.parametrize("legacy_pending", [False, True])
+async def test_enable_banking_rekeys_legacy_fingerprint_without_merging_counterparties(
+    session, test_user, test_workspace, test_categories, entry_reference, reverse_order,
+    legacy_pending,
+):
+    from app.providers.enable_banking import EnableBankingProvider
+
+    raw = {
+        "transaction_amount": {"amount": "12.34", "currency": "BRL"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-20",
+        "value_date": "2026-08-20",
+        "remittance_information": [],
+        "creditor": {"name": "Coffee Shop"},
+    }
+    if entry_reference is not None:
+        raw["entry_reference"] = entry_reference
+    distinct_raw = deepcopy(raw)
+    distinct_raw["creditor"] = {"name": "Bakery"}
+    provider_parser = EnableBankingProvider()
+    incoming = provider_parser._build_transaction("acc-uid-1", raw, "posted", "auto")
+    distinct = provider_parser._build_transaction("acc-uid-1", distinct_raw, "posted", "auto")
+    assert incoming is not None and distinct is not None
+    assert incoming.external_id != distinct.external_id
+
+    connection = await _make_connection(
+        session, test_user.id, "Synthetic Enable Banking", settings={"sync_assets": False},
+    )
+    connection.provider = "enable_banking"
+    account = Account(
+        user_id=test_user.id, workspace_id=test_workspace.id, connection_id=connection.id,
+        external_id="acc-uid-1", name="Checking", type="checking",
+        balance=Decimal("1000"), currency="BRL",
+    )
+    session.add(account)
+    await session.flush()
+    # Fingerprint emitted by v0.16.1 for this payload. Without an IBAN the
+    # old algorithm gave both counterparties this same identifier.
+    stored_raw = deepcopy(raw)
+    if legacy_pending:
+        stored_raw.pop("booking_date")
+    legacy_id = entry_reference or (
+        "8884d2776e1305036056d5f6bcd20ec4" if legacy_pending
+        else "92da8ed1d8d86daf9bf06b802eda90f7"
+    )
+    existing = Transaction(
+        user_id=test_user.id, workspace_id=test_workspace.id, account_id=account.id,
+        external_id=legacy_id, description="My coffee label", original_description="Transaction",
+        amount=incoming.amount, date=incoming.date, type="debit", currency="BRL",
+        status="pending" if legacy_pending else "posted", source="sync", raw_data=stored_raw,
+        category_id=test_categories[0].id,
+        notes="Keep my note",
+    )
+    session.add(existing)
+    await session.commit()
+    existing_id, account_id = existing.id, account.id
+
+    provider = AsyncMock()
+    provider.refresh_credentials.return_value = {"token": "synthetic"}
+    provider.get_institution_logo.return_value = None
+    provider.get_accounts.return_value = [AccountData(
+        external_id="acc-uid-1", name="Checking", type="checking",
+        balance=Decimal("1000"), currency="BRL",
+    )]
+    provider.get_transactions.return_value = (
+        [distinct, incoming] if reverse_order else [incoming, distinct]
+    )
+    with patch("app.services.connection_service.get_provider", return_value=provider), \
+         patch("app.services.connection_service.detect_transfer_pairs", new_callable=AsyncMock), \
+         patch("app.services.connection_service.stamp_primary_amount", new_callable=AsyncMock), \
+         patch("app.services.connection_service.apply_rules_to_transaction", new_callable=AsyncMock):
+        await sync_connection(session, connection.id, test_workspace.id, test_user.id)
+        # A repeated fetch must remain idempotent after re-keying.
+        await sync_connection(session, connection.id, test_workspace.id, test_user.id)
+
+    rows = (await session.scalars(select(Transaction).where(
+        Transaction.account_id == account_id, Transaction.source == "sync",
+    ))).all()
+    assert len(rows) == 2
+    preserved = next(row for row in rows if row.id == existing_id)
+    assert preserved.external_id == incoming.external_id
+    assert preserved.status == "posted"
+    assert preserved.description == "My coffee label"
+    assert preserved.category_id == test_categories[0].id
+    assert preserved.notes == "Keep my note"
+    assert {row.external_id for row in rows} == {incoming.external_id, distinct.external_id}
