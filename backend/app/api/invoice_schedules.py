@@ -312,7 +312,7 @@ async def add_term(
             session,
             schedule,
             effective_from=payload.effective_from,
-            lines=[dict(line) for line in payload.lines],
+            lines=[line.model_dump(exclude_unset=True) for line in payload.lines],
             discount=payload.discount,
         )
     except InvoiceError as exc:

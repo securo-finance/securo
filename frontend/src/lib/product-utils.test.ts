@@ -70,6 +70,7 @@ describe('lineFromProduct', () => {
       tax_rate: '10',
       product_id: 'prod',
       price_id: 'usd',
+      fiscal_refs: null,
     })
   })
 
@@ -80,8 +81,26 @@ describe('lineFromProduct', () => {
       description: 'Consulting hour',
       product_id: 'prod',
       price_id: null,
+      fiscal_refs: null,
     })
   })
+
+  it.each([{ service_code: 'new-code' }, null])(
+    'replaces the previous product fiscal references with %j',
+    (fiscal_refs) => {
+      const previous = {
+        ...current,
+        product_id: 'old-product',
+        fiscal_refs: { service_code: 'old-code' },
+      }
+      const next = product([], { fiscal_refs })
+
+      expect(lineFromProduct(previous, next, null)).toMatchObject({
+        product_id: next.id,
+        fiscal_refs,
+      })
+    },
+  )
 })
 
 describe('productActions', () => {
