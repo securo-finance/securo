@@ -2259,6 +2259,91 @@ async def test_cash_flow_paycheck_timing_dip(
 
 
 @pytest.mark.asyncio
+async def test_cash_flow_runway_is_first_negative_day_even_when_aggregated(
+    session: AsyncSession, test_user, test_workspace: User
+):
+    """Rent on day 5 overdraws the account until salary lands on day 15.
+    The runway is the rent day and the lowest point is its balance, also on
+    a monthly chart where the month-end balance is positive again."""
+    account = await _make_manual_account(session, test_user.id, "CF Runway Dip")
+    await _add_txn(
+        session, test_user.id, account.id, 1000, "credit",
+        date.today(), source="opening_balance",
+    )
+    next_month_first = _next_first_of_month(date.today())
+    rent_day = next_month_first.replace(day=5)
+    await _make_recurring(
+        session, test_user.id, account.id,
+        amount=1500, txn_type="debit", frequency="monthly",
+        day_of_month=5, next_occurrence=rent_day, description="Rent",
+    )
+    await _make_recurring(
+        session, test_user.id, account.id,
+        amount=3000, txn_type="credit", frequency="monthly",
+        day_of_month=15, next_occurrence=next_month_first.replace(day=15),
+        description="Salary",
+    )
+
+    report = await get_cash_flow_report(
+        session, test_workspace.id, test_user.id, months=2, interval="monthly",
+    )
+
+    assert all(p.value >= 0 for p in report.trend)
+    assert report.meta.runway_date == rent_day.isoformat()
+    assert report.meta.lowest_balance == -500.0
+    assert report.meta.lowest_balance_date == rent_day.isoformat()
+
+
+@pytest.mark.asyncio
+async def test_cash_flow_runway_absent_when_balance_stays_positive(
+    session: AsyncSession, test_user, test_workspace: User
+):
+    """A $200 monthly bill against $1000 never overdraws in 3 months: no
+    runway date, and the lowest point is after the third bill."""
+    account = await _make_manual_account(session, test_user.id, "CF Runway Safe")
+    await _add_txn(
+        session, test_user.id, account.id, 1000, "credit",
+        date.today(), source="opening_balance",
+    )
+    nxt = _next_first_of_month(date.today())
+    await _make_recurring(
+        session, test_user.id, account.id,
+        amount=200, txn_type="debit", frequency="monthly",
+        day_of_month=1, next_occurrence=nxt,
+    )
+
+    report = await get_cash_flow_report(
+        session, test_workspace.id, test_user.id, months=3, interval="daily",
+    )
+
+    assert report.meta.runway_date is None
+    assert report.meta.lowest_balance == 400.0
+    third_bill = _next_first_of_month(_next_first_of_month(nxt))
+    assert report.meta.lowest_balance_date == third_bill.isoformat()
+
+
+@pytest.mark.asyncio
+async def test_cash_flow_runway_is_today_when_already_negative(
+    session: AsyncSession, test_user, test_workspace: User
+):
+    """An account that is overdrawn today has already run out: the runway
+    is today, and with no flows the lowest point is today's balance."""
+    account = await _make_manual_account(session, test_user.id, "CF Runway Overdrawn")
+    await _add_txn(
+        session, test_user.id, account.id, 250, "debit",
+        date.today(), source="opening_balance",
+    )
+
+    report = await get_cash_flow_report(
+        session, test_workspace.id, test_user.id, months=1, interval="daily",
+    )
+
+    assert report.meta.runway_date == date.today().isoformat()
+    assert report.meta.lowest_balance == -250.0
+    assert report.meta.lowest_balance_date == date.today().isoformat()
+
+
+@pytest.mark.asyncio
 async def test_cash_flow_large_one_off_purchase(
     session: AsyncSession, test_user, test_workspace: User
 ):
