@@ -11,6 +11,7 @@ import { toast } from 'sonner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { ProjectedTransactionBadge } from '@/components/projected-transaction-badge'
+import { CurrencyQuickSwitch } from '@/components/currency-quick-switch'
 import {
   Select,
   SelectContent,
@@ -661,7 +662,10 @@ export default function DashboardPage() {
       <div className="bg-card rounded-xl border border-border shadow-sm mb-5 px-5 pt-5 pb-4">
         {/* Available balance in checking/savings accounts */}
         <div className="pb-4 mb-4 border-b border-border">
-          <p className="text-xs font-semibold text-muted-foreground mb-1">{t('dashboard.availableBalance')}</p>
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <p className="text-xs font-semibold text-muted-foreground">{t('dashboard.availableBalance')}</p>
+            <CurrencyQuickSwitch />
+          </div>
           {summaryLoading || accountsUnavailable ? (
             <Skeleton className="h-9 w-40" />
           ) : (

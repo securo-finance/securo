@@ -10,6 +10,9 @@
     "kindBusiness": "Firmowy",
     "kindHint": "Wybierz, co śledzi ten obszar roboczy. Tego nie można później zmienić.",
     "defaultCurrency": "Waluta domyślna",
+    "quickCurrencies": "Waluty szybkiego przełączania",
+    "quickCurrenciesActive": "To jest aktywna waluta wyświetlania.",
+    "quickCurrenciesHint": "Wyświetlane jako przełącznik na pulpicie. Wybierz co najmniej dwie, maksymalnie sześć. Kwoty są przeliczane, a nie tylko inaczej opisywane.",
     "locale": "Język",
     "taxJurisdiction": "Jurysdykcja podatkowa",
     "taxJurisdictionHint": "Decyduje, jakie dokumenty podatkowe oferuje ten obszar roboczy. Niezależnie od języka interfejsu.",
@@ -2972,5 +2975,9 @@
       "recurring": "Reguły Cyklicznych",
       "recurringHint": "Jak ustalamy, że obciążenie to rachunek, którego już oczekiwałeś."
     }
+  },
+  "currencySwitch": {
+    "label": "Waluta wyświetlania",
+    "error": "Nie udało się zmienić waluty"
   }
 }

@@ -10,6 +10,9 @@
     "kindBusiness": "Geschäftlich",
     "kindHint": "Wähle, was dieser Workspace erfasst. Das lässt sich später nicht ändern.",
     "defaultCurrency": "Standardwährung",
+    "quickCurrencies": "Währungen für den Schnellwechsel",
+    "quickCurrenciesActive": "Dies ist die aktive Anzeigewährung.",
+    "quickCurrenciesHint": "Wird als Umschalter im Dashboard angezeigt. Wähle mindestens zwei, maximal sechs. Beträge werden umgerechnet, nicht nur neu beschriftet.",
     "locale": "Sprache",
     "taxJurisdiction": "Steuerjurisdiktion",
     "taxJurisdictionHint": "Bestimmt, welche steuerlichen Dokumente dieser Workspace anbietet. Unabhängig von der Sprache der Oberfläche.",
@@ -2861,5 +2864,9 @@
       "recurring": "Regeln für Wiederkehrendes",
       "recurringHint": "Wie wir entscheiden, dass eine Buchung die erwartete Rechnung ist."
     }
+  },
+  "currencySwitch": {
+    "label": "Anzeigewährung",
+    "error": "Währung konnte nicht gewechselt werden"
   }
 }

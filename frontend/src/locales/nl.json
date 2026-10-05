@@ -10,6 +10,9 @@
     "kindBusiness": "Zakelijk",
     "kindHint": "Kies wat deze workspace bijhoudt. Dit kan later niet meer worden gewijzigd.",
     "defaultCurrency": "Standaardvaluta",
+    "quickCurrencies": "Valuta's voor snel wisselen",
+    "quickCurrenciesActive": "Dit is de actieve weergavevaluta.",
+    "quickCurrenciesHint": "Wordt als schakelaar op het dashboard weergegeven. Kies er minstens twee, maximaal zes. Bedragen worden omgerekend, niet alleen anders gelabeld.",
     "locale": "Taal",
     "taxJurisdiction": "Belastingjurisdictie",
     "taxJurisdictionHint": "Bepaalt welke fiscale documenten deze workspace wordt aangeboden. Los van de interfacetaal.",
@@ -2862,5 +2865,9 @@
       "recurring": "Regels voor Terugkerend",
       "recurringHint": "Hoe we bepalen dat een afschrijving de rekening is die je al verwachtte."
     }
+  },
+  "currencySwitch": {
+    "label": "Weergavevaluta",
+    "error": "Kan de valuta niet wijzigen"
   }
 }

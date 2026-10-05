@@ -10,6 +10,9 @@
     "kindBusiness": "Professionnel",
     "kindHint": "Choisissez ce que suit cet espace de travail. Ce choix est définitif.",
     "defaultCurrency": "Devise par défaut",
+    "quickCurrencies": "Devises à basculement rapide",
+    "quickCurrenciesActive": "C'est la devise d'affichage active.",
+    "quickCurrenciesHint": "Affiché comme sélecteur sur le tableau de bord. Choisissez-en au moins deux, jusqu'à six. Les montants sont convertis, pas seulement réétiquetés.",
     "locale": "Langue",
     "taxJurisdiction": "Juridiction fiscale",
     "taxJurisdictionHint": "Détermine les documents fiscaux proposés dans cet espace de travail. Indépendant de la langue de l'interface.",
@@ -2864,5 +2867,9 @@
       "recurring": "Règles Récurrentes",
       "recurringHint": "Comment nous décidons qu’un prélèvement est la facture que vous attendiez."
     }
+  },
+  "currencySwitch": {
+    "label": "Devise d'affichage",
+    "error": "Impossible de changer de devise"
   }
 }

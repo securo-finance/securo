@@ -10,6 +10,9 @@
     "kindBusiness": "Firemný",
     "kindHint": "Vyber, čo tento pracovný priestor sleduje. Neskôr sa to nedá zmeniť.",
     "defaultCurrency": "Predvolená mena",
+    "quickCurrencies": "Meny na rýchle prepnutie",
+    "quickCurrenciesActive": "Toto je aktívna mena zobrazenia.",
+    "quickCurrenciesHint": "Zobrazuje sa ako prepínač v prehľade. Vyberte aspoň dve, najviac šesť. Sumy sa prepočítavajú, nielen inak označujú.",
     "locale": "Jazyk",
     "taxJurisdiction": "Daňová jurisdikcia",
     "taxJurisdictionHint": "Určuje, ktoré fiškálne dokumenty sa tomuto pracovnému priestoru ponúkajú. Nesúvisí s jazykom rozhrania.",
@@ -3006,5 +3009,9 @@
       "recurring": "Pravidlá opakovaných",
       "recurringHint": "Ako určujeme, že odpis je účet, ktorý ste už očakávali."
     }
+  },
+  "currencySwitch": {
+    "label": "Mena zobrazenia",
+    "error": "Nepodarilo sa prepnúť menu zobrazenia"
   }
 }
