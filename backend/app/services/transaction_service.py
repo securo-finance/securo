@@ -1377,6 +1377,17 @@ async def _resync_installment_series_total(
         row.installment_total_amount = total
 
 
+def _preserve_original_description(tx: Transaction) -> None:
+    """Keep the bank text before a user rename overwrites it.
+
+    Rows that pre-date the original_description column have nothing stored,
+    so without this a hand edit is indistinguishable from the provider's text
+    and rename rules would clobber it. Manual rows have no bank text to keep.
+    """
+    if tx.original_description is None and tx.source != "manual":
+        tx.original_description = tx.description
+
+
 async def _apply_update_to_row(
     session: AsyncSession,
     user_id: uuid.UUID,
@@ -1409,6 +1420,7 @@ async def _apply_update_to_row(
         and update_data["description"] != tx.description
     )
     if description_changed:
+        _preserve_original_description(tx)
         tx.description_is_rule_managed = False
 
     fx_keys = {"amount_primary", "fx_rate_used"}
@@ -1479,6 +1491,7 @@ async def _apply_update_to_row(
                         key == "description"
                         and update_data[key] != paired_tx.description
                     ):
+                        _preserve_original_description(paired_tx)
                         paired_tx.description_is_rule_managed = False
                     setattr(paired_tx, key, update_data[key])
                 else:
