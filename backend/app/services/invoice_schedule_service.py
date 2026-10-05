@@ -1061,11 +1061,8 @@ async def _emit(
     lines = await product_service.resolve_lines(
         session, schedule.workspace_id, [dict(line) for line in term.lines], strict=False
     )
-    if schedule.user_id is None:
-        # The ledger stamps who created each invoice. An agreement whose
-        # author left the workspace keeps emitting, and the invoice is
-        # then authored by nobody in particular rather than not at all.
-        raise InvoiceError("no_author", "This agreement has no author to issue invoices as")
+    # The agreement belongs to the workspace. If its author was deleted,
+    # its invoices keep billing with the same nullable attribution.
     invoice = await invoice_service.create_invoice(
         session,
         schedule.workspace_id,

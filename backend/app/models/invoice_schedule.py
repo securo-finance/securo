@@ -180,7 +180,7 @@ class InvoiceSchedule(Base):
     # Who created it. Not an owner: the agreement belongs to the
     # workspace and outlives any member.
     user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     # RESTRICT for the same reason as on invoices: deleting a client must
     # never silently delete the record of what they agreed to pay.
