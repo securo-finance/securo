@@ -3,6 +3,25 @@ const PROVIDER_LABELS: Record<string, string> = {
   simplefin: 'SimpleFIN',
   pluggy: 'Pluggy',
   enable_banking: 'Enable Banking',
+  wealthreader: 'Wealth Reader',
+}
+
+const OAUTH_STATE_KEY = 'securo:oauthState'
+
+/** Persist Securo's OAuth state before the browser leaves for the bank. */
+export function rememberOAuthStateFromUrl(url: string): void {
+  try {
+    const parsed = new URL(url)
+    const state = parsed.searchParams.get('state')
+    if (state) sessionStorage.setItem(OAUTH_STATE_KEY, state)
+  } catch {
+    // Provider URLs that are not absolute are still assigned as-is.
+  }
+}
+
+/** Wealth Reader may echo only nonce; other providers echo state. */
+export function resolveOAuthCallbackState(params: URLSearchParams): string | null {
+  return params.get('state') || sessionStorage.getItem(OAUTH_STATE_KEY) || params.get('nonce')
 }
 
 export function getConnectionName(

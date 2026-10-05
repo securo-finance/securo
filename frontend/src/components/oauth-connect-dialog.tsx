@@ -10,6 +10,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Building2, ChevronLeft, Globe } from 'lucide-react'
 import { toast } from 'sonner'
+import { rememberOAuthStateFromUrl } from '@/lib/connection-utils'
 
 type Institution = {
   name: string
@@ -120,6 +121,7 @@ function OAuthConnectSession({ open, onClose, provider, supportsAssetSync = fals
         valid_until_days: institution.max_consent_days,
         ...(supportsAssetSync ? { sync_assets: syncAssets } : {}),
       })
+      rememberOAuthStateFromUrl(url)
       window.location.assign(url)
     } catch (e) {
       setRedirecting(false)
