@@ -634,6 +634,54 @@ async def test_update_transaction(session: AsyncSession, test_user, test_workspa
 
 
 @pytest.mark.asyncio
+async def test_update_transaction_backfills_original_description_on_legacy_rows(
+    session: AsyncSession, test_user, test_workspace, txn_account
+):
+    synced = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=txn_account.id,
+        description="PAG*LOJA 123",
+        original_description=None,
+        amount=Decimal("10"),
+        date=date(2025, 3, 1),
+        type="debit",
+        source="sync",
+        created_at=datetime.now(timezone.utc),
+    )
+    manual = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=txn_account.id,
+        description="Lunch",
+        original_description=None,
+        amount=Decimal("10"),
+        date=date(2025, 3, 1),
+        type="debit",
+        source="manual",
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add_all([synced, manual])
+    await session.commit()
+
+    updated = await update_transaction(
+        session, synced.id, test_workspace.id, test_user.id,
+        TransactionUpdate(description="Birthday gift"),
+    )
+    assert updated is not None
+    assert updated.description == "Birthday gift"
+    assert updated.original_description == "PAG*LOJA 123"
+
+    updated = await update_transaction(
+        session, manual.id, test_workspace.id, test_user.id,
+        TransactionUpdate(description="Team lunch"),
+    )
+    assert updated is not None
+    assert updated.description == "Team lunch"
+    assert updated.original_description is None
+
+
+@pytest.mark.asyncio
 async def test_update_transaction_not_found(session: AsyncSession, test_user, test_workspace):
     result = await update_transaction(
         session,
