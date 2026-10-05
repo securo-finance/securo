@@ -84,6 +84,8 @@ function parseHashtags(notes: string | null): string[] {
 
 const HIDE_IGNORED_STORAGE_KEY = 'securo.transactions.hideIgnored'
 
+const EMPTY_ROWS: Transaction[] = []
+
 export default function TransactionsPage() {
   const { t, i18n } = useTranslation()
   const { collapsed: sidebarCollapsed } = useSidebarState()
@@ -221,18 +223,18 @@ export default function TransactionsPage() {
   // Last URL query we synced from, to tell a genuine navigation apart from the
   // initial mount (and from StrictMode's double-invoke, which repeats the same
   // value). Starts null so the first run is recognized as the initial mount.
-  const prevSearchRef = useRef<string | null>(null)
+  const [syncedSearch, setSyncedSearch] = useState<string | null>(null)
 
   // Sync state from URL when navigating (e.g. from the command palette) while
   // the page is already mounted. Typing in the search box does not touch the
-  // URL, so this effect only fires on genuine navigation events.
-  useEffect(() => {
-    const search = searchParams.toString()
+  // URL, so this only reacts to genuine navigation events. Adjusted during
+  // render so the new params are never painted a frame late.
+  const search = searchParams.toString()
+  if (syncedSearch !== search) {
     // Skip re-runs with an unchanged query (e.g. StrictMode's second mount),
     // so they can't override the initial current-month default.
-    if (prevSearchRef.current === search) return
-    const isInitial = prevSearchRef.current === null
-    prevSearchRef.current = search
+    const isInitial = syncedSearch === null
+    setSyncedSearch(search)
 
     const nextQ = searchParams.get('q') ?? ''
     setViewMode(searchParams.get('view') === 'calendar' ? 'calendar' : 'list')
@@ -267,7 +269,7 @@ export default function TransactionsPage() {
     setFilterMinAmount(searchParams.get('min_amount') ?? '');
     setFilterMaxAmount(searchParams.get('max_amount') ?? '');
     setPage(1)
-  }, [searchParams])
+  }
 
   // Keep the URL in sync with the current filters, so that the current page can be
   // refreshed, bookmarked or shared.
@@ -326,26 +328,48 @@ export default function TransactionsPage() {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [searchInput])
 
-  // Clear selection on page/filter change
-  useEffect(() => {
+  // Clear selection on page/filter change. Tracked as a key and adjusted during
+  // render so the old selection is never rendered against the new result set.
+  const selectionResetKey = [
+    page,
+    filterAccountIds.join(','),
+    filterCategoryIds.join(','),
+    filterUncategorized,
+    filterPayee,
+    filterType,
+    filterStatus,
+    filterFrom,
+    filterTo,
+    filterMinAmount,
+    filterMaxAmount,
+    searchQuery,
+  ].join('|')
+  const [selectionKey, setSelectionKey] = useState(selectionResetKey)
+  if (selectionKey !== selectionResetKey) {
+    setSelectionKey(selectionResetKey)
     setSelectedIds(new Set())
     setLastSelectedId(null)
     setBulkCategory('')
-  }, [page, filterAccountIds, filterCategoryIds, filterUncategorized, filterPayee, filterType, filterStatus, filterFrom, filterTo, filterMinAmount, filterMaxAmount, searchQuery])
+  }
 
-  useEffect(() => {
+  const calendarModeKey = `${viewMode}:${filterAccountIds.length}`
+  const [prevCalendarModeKey, setPrevCalendarModeKey] = useState(calendarModeKey)
+  if (prevCalendarModeKey !== calendarModeKey) {
+    setPrevCalendarModeKey(calendarModeKey)
     if (viewMode === 'calendar') {
       setFilterAccountIds((prev) => prev.length > 1 ? [] : prev)
       setSelectedIds(new Set())
       setLastSelectedId(null)
       setBulkCategory('')
     }
-  }, [viewMode, filterAccountIds.length])
+  }
 
   // Reset bulk category when selection changes so the same category can be re-applied
-  useEffect(() => {
+  const [bulkCategorySelection, setBulkCategorySelection] = useState(selectedIds)
+  if (bulkCategorySelection !== selectedIds) {
+    setBulkCategorySelection(selectedIds)
     setBulkCategory('')
-  }, [selectedIds])
+  }
 
   // Scroll to and flash a highlighted row after navigation (e.g. opened via
   // the command palette). Re-runs whenever highlightId or the current data
@@ -752,14 +776,14 @@ export default function TransactionsPage() {
 
   // Tag filtering is now applied server-side, so the visible list and the
   // page count both reflect the same filtered total — issue #88.
-  const filteredItems = useMemo(() => data?.items ?? [], [data?.items])
+  const filteredItems = data?.items ?? EMPTY_ROWS
   const selectableItems = filteredItems.filter(tx => !tx.is_shared)
 
   // Group transactions by date for the mobile card view
   const groupedByDate = useMemo(() => {
     const groups: { date: string; label: string; items: Transaction[] }[] = []
     let current: { date: string; label: string; items: Transaction[] } | null = null
-    for (const tx of filteredItems) {
+    for (const tx of data?.items ?? []) {
       if (!current || current.date !== tx.date) {
         current = {
           date: tx.date,
@@ -776,7 +800,7 @@ export default function TransactionsPage() {
       current.items.push(tx)
     }
     return groups
-  }, [filteredItems, dateLocale])
+  }, [data?.items, dateLocale])
 
   // Pre-resolve accounts into a Map for O(1) lookup in the mobile card view
   const accountById = useMemo(() => {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
@@ -49,7 +49,9 @@ export function AgentFormDialog({ open, onOpenChange, agent }: Props) {
     enabled: open,
   })
 
-  useEffect(() => {
+  const [syncedForm, setSyncedForm] = useState<{ agent: Agent | null | undefined; open: boolean } | null>(null)
+  if (!syncedForm || syncedForm.agent !== agent || syncedForm.open !== open) {
+    setSyncedForm({ agent, open })
     if (agent) {
       setName(agent.name)
       setDescription(agent.description ?? '')
@@ -63,28 +65,21 @@ export function AgentFormDialog({ open, onOpenChange, agent }: Props) {
       setName('')
       setDescription('')
       setSystemPrompt('')
-      // Pre-select the user's default connection (or the only one,
-      // if there's just one) so the form is one click closer to done.
       setConnectionId('')
       setModel('')
       setTemperature('0.4')
       setAutoContext(true)
       setIsDefault(false)
     }
-  }, [agent, open])
+  }
 
-  // When connections load (or the dialog opens), pre-select the most
-  // sensible default: the user-flagged default connection, or the only
-  // one if there's a single connection.
-  useEffect(() => {
-    if (!open || isEdit || connectionId) return
-    if (!connections || connections.length === 0) return
-    const def = connections.find((c) => c.is_default)
-    setConnectionId(def?.id ?? connections[0].id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, connections])
+  // When creating, fall back to the most sensible connection as soon as the
+  // list loads: the user-flagged default, or the only one if there's a single
+  // connection. Derived during render rather than pushed into state.
+  const defaultConnectionId = connections?.find((c) => c.is_default)?.id ?? connections?.[0]?.id ?? ''
+  const effectiveConnectionId = connectionId || (isEdit ? '' : defaultConnectionId)
 
-  const selectedConnection = connections?.find((c) => c.id === connectionId)
+  const selectedConnection = connections?.find((c) => c.id === effectiveConnectionId)
 
   const saveMut = useMutation({
     mutationFn: (payload: Partial<Agent> & { name: string }) =>
@@ -105,7 +100,7 @@ export function AgentFormDialog({ open, onOpenChange, agent }: Props) {
       toast.error(t('agents.form.nameRequired'))
       return
     }
-    if (!connectionId) {
+    if (!effectiveConnectionId) {
       toast.error(t('agents.form.connectionRequired', 'Pick a connection — agents need one to talk to an LLM.'))
       return
     }
@@ -113,7 +108,7 @@ export function AgentFormDialog({ open, onOpenChange, agent }: Props) {
       name: name.trim(),
       description: description.trim() || null,
       system_prompt: systemPrompt,
-      connection_id: connectionId,
+      connection_id: effectiveConnectionId,
       model: model.trim() || null,
       temperature: Number(temperature) || 0.4,
       auto_context: autoContext,
@@ -194,7 +189,7 @@ export function AgentFormDialog({ open, onOpenChange, agent }: Props) {
                     {t('agents.form.manageConnections')}
                   </Link>
                 </div>
-                <Select value={connectionId} onValueChange={setConnectionId}>
+                <Select value={effectiveConnectionId} onValueChange={setConnectionId}>
                   <SelectTrigger>
                     <SelectValue placeholder={t('agents.form.connectionPlaceholder', 'Pick a connection')} />
                   </SelectTrigger>
@@ -261,7 +256,7 @@ export function AgentFormDialog({ open, onOpenChange, agent }: Props) {
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t('agents.form.cancel')}
           </Button>
-          <Button onClick={submit} disabled={saveMut.isPending || noConnections || !connectionId}>
+          <Button onClick={submit} disabled={saveMut.isPending || noConnections || !effectiveConnectionId}>
             {saveMut.isPending ? t('agents.form.saving') : isEdit ? t('agents.form.save') : t('agents.form.create')}
           </Button>
         </DialogFooter>

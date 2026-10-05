@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { getAccountLabel, getAccountName, sortAccountsByAbsoluteBalance, sumAccountBalances } from '@/lib/account-utils'
 import { currentMonth, shiftMonth, monthLastDay, monthLabel, monthRange } from '@/lib/month-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
+import { useToday } from '@/hooks/use-today'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { dashboard, transactions, budgets, categories as categoriesApi, categoryGroups as categoryGroupsApi, accounts as accountsApi, goals as goalsApi, groups as groupsApi, payees as payeesApi, rules as rulesApi } from '@/lib/api'
@@ -100,9 +101,10 @@ export default function DashboardPage() {
   const displayName = user?.preferences?.display_name || ''
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
+  const today = useToday()
 
   const greeting = (() => {
-    const hour = new Date().getHours()
+    const hour = today.getHours()
     const key = hour < 12 ? 'greetingMorning' : hour < 18 ? 'greetingAfternoon' : 'greetingEvening'
     const base = t(`dashboard.${key}`)
     return displayName ? `${base}, ${displayName}` : base
@@ -119,14 +121,14 @@ export default function DashboardPage() {
   ))
   const [calendarSelectedDate, setCalendarSelectedDate] = useState<string>(() => searchParams.get('day') ?? '')
 
-  const prevSearchRef = useRef<string | null>(null)
-
-  // Sync state from URL when navigating (e.g. back/forward button)
-  useEffect(() => {
-    const search = searchParams.toString()
-    if (prevSearchRef.current === search) return
-    const isInitial = prevSearchRef.current === null
-    prevSearchRef.current = search
+  // Sync state from URL when navigating (e.g. back/forward button). Adjusting
+  // state during render rather than from an effect means the params are applied
+  // before the stale ones are ever painted.
+  const [syncedSearch, setSyncedSearch] = useState<string | null>(null)
+  const search = searchParams.toString()
+  if (syncedSearch !== search) {
+    const isInitial = syncedSearch === null
+    setSyncedSearch(search)
 
     const parsedMonth = parseMonthFromParams(searchParams)
     if (parsedMonth) {
@@ -136,7 +138,7 @@ export default function DashboardPage() {
     }
     setTxViewMode(searchParams.get('view') === 'calendar' ? 'calendar' : 'list')
     setCalendarSelectedDate(searchParams.get('day') ?? '')
-  }, [searchParams])
+  }
 
   // Sync selectedMonth and the transactions view back to URL
   useEffect(() => {
@@ -431,7 +433,7 @@ export default function DashboardPage() {
   const projectedExpenses = Number(summary?.projected_expenses_primary ?? summary?.projected_expenses ?? expenses)
   const savingsRate = income > 0 ? ((income - expenses) / income) * 100 : 0
   const isCurrentMonth = selectedMonth === currentMonth()
-  const daysElapsed = isCurrentMonth ? new Date().getDate() : monthLastDay(selectedMonth)
+  const daysElapsed = isCurrentMonth ? today.getDate() : monthLastDay(selectedMonth)
   const daysInMonth = monthLastDay(selectedMonth)
   const projectedSpend = expenses > 0 && isCurrentMonth && daysElapsed > 0
     ? (expenses / daysElapsed) * daysInMonth
@@ -485,7 +487,11 @@ export default function DashboardPage() {
 
   const [txPage, setTxPage] = useState(1)
   const [txSortDesc, setTxSortDesc] = useState(true)
-  useEffect(() => setTxPage(1), [selectedMonth])
+  const [txPageMonth, setTxPageMonth] = useState(selectedMonth)
+  if (txPageMonth !== selectedMonth) {
+    setTxPageMonth(selectedMonth)
+    setTxPage(1)
+  }
 
   type DisplayRow = {
     key: string

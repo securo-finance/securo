@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import { getAccountName, sortAccountsByDisplayName } from '@/lib/account-utils'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
+import { useToday } from '@/hooks/use-today'
 import { startOfMonth, startOfYear, subDays } from 'date-fns'
 import {
   ArrowUpDown,
@@ -132,6 +133,7 @@ export function TransactionsFilterBar({
   const { t, i18n } = useTranslation()
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
+  const today = useToday()
   const dateFnsLocale = resolveDateFnsLocale(i18n.resolvedLanguage ?? i18n.language)
   const [menuOpen, setMenuOpen] = useState(false)
   const [accountSubOpen, setAccountSubOpen] = useState(false)
@@ -281,7 +283,6 @@ export function TransactionsFilterBar({
   }
 
   const datePresets = useMemo(() => {
-    const today = new Date()
     return [
       {
         key: 'today',
@@ -320,7 +321,7 @@ export function TransactionsFilterBar({
         to: localDateString(today),
       },
     ]
-  }, [t])
+  }, [t, today])
 
   const openCustomRange = () => {
     setDraftFrom(filterFrom)
@@ -1139,7 +1140,7 @@ export function TransactionsFilterBar({
               <Calendar
                 selected={draftFrom ? new Date(draftFrom + 'T00:00:00') : undefined}
                 defaultMonth={
-                  draftFrom ? new Date(draftFrom + 'T00:00:00') : new Date()
+                  draftFrom ? new Date(draftFrom + 'T00:00:00') : today
                 }
                 locale={dateFnsLocale}
                 onSelect={(d) => setDraftFrom(d ? localDateString(d) : '')}
@@ -1156,7 +1157,7 @@ export function TransactionsFilterBar({
                     ? new Date(draftTo + 'T00:00:00')
                     : draftFrom
                       ? new Date(draftFrom + 'T00:00:00')
-                      : new Date()
+                      : today
                 }
                 locale={dateFnsLocale}
                 onSelect={(d) => setDraftTo(d ? localDateString(d) : '')}

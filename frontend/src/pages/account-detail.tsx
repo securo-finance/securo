@@ -3,6 +3,7 @@ import { getAccountName } from '@/lib/account-utils'
 import { useParams, Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
+import { useToday } from '@/hooks/use-today'
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, addDays, addMonths, parseISO } from 'date-fns'
 import { accounts, dashboard, transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
@@ -270,6 +271,7 @@ export default function AccountDetailPage() {
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const locale = useDisplayLocale()
   const dateLocale = useDateLocale()
+  const now = useToday()
   const isMobile = useIsMobile()
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -356,14 +358,14 @@ export default function AccountDetailPage() {
   if (!cycleSource || cycleSource.account !== account || cycleSource.bills !== bills) {
     setCycleSource({ account, bills })
     if (account?.type === 'credit_card' && !filterTouched) {
-      const today = format(new Date(), 'yyyy-MM-dd')
+      const today = format(now, 'yyyy-MM-dd')
       const upcomingIndex = billsAsc.findIndex(b => b.due_date >= today)
       const upcoming = billsAsc[upcomingIndex]
       const range = upcoming
         ? rangeForBill(upcoming, upcomingIndex > 0 ? billsAsc[upcomingIndex - 1] : null)
         : billsAsc.length > 0 && account.statement_close_day
-          ? creditCardCycleBoundaries(account.statement_close_day, new Date())
-          : defaultCycleForCreditCard(account.statement_close_day, account.payment_due_day, new Date())
+          ? creditCardCycleBoundaries(account.statement_close_day, now)
+          : defaultCycleForCreditCard(account.statement_close_day, account.payment_due_day, now)
       setFilterFrom(range.start)
       setFilterTo(range.end)
     }
@@ -475,21 +477,21 @@ export default function AccountDetailPage() {
       // Brazilian convention) shows up. The backend's `bill_id IS NULL`
       // filter prevents already-billed txs from leaking in.
       if (account.statement_close_day) {
-        cycles.push(creditCardCycleBoundaries(account.statement_close_day, new Date()))
+        cycles.push(creditCardCycleBoundaries(account.statement_close_day, now))
       }
       return cycles.slice(isMobile ? -4 : -6)
     }
 
     if (!account.statement_close_day) return []
     const cycles: { start: string; end: string }[] = []
-    let ref = new Date()
+    let ref = new Date(now.getTime())
     for (let i = 0; i < (isMobile ? 4 : 6); i++) {
       const c = creditCardCycleBoundaries(account.statement_close_day, ref)
       cycles.unshift(c)
       ref = new Date(parseISO(c.start + 'T00:00:00').getTime() - 86400000)
     }
     return cycles
-  }, [account, billsAsc, isMobile])
+  }, [account, billsAsc, isMobile, now])
 
   const timelineQueries = useQueries({
     queries: timelineCycles.map(c => ({
@@ -825,7 +827,7 @@ export default function AccountDetailPage() {
   const hasProjectedExpenses = Math.abs(projectedExpenses - actualExpenses) > 0.005
 
   const resolvedDefaultRange = account?.type === 'credit_card'
-    ? defaultCycleForCreditCard(account.statement_close_day, account.payment_due_day, new Date())
+    ? defaultCycleForCreditCard(account.statement_close_day, account.payment_due_day, now)
     : { start: defaultFrom(), end: defaultTo() }
   const hasFilters = filterFrom !== resolvedDefaultRange.start || filterTo !== resolvedDefaultRange.end
 
@@ -1189,7 +1191,7 @@ export default function AccountDetailPage() {
           prevLabelBill = idx > 0 ? billsAsc[idx - 1] : null
         } else if (billsAsc.length > 0) {
           const newest = billsAsc[billsAsc.length - 1]
-          const today = format(new Date(), 'yyyy-MM-dd')
+          const today = format(now, 'yyyy-MM-dd')
           if (newest.due_date < today) {
             prevLabelBill = newest
           }

@@ -39,7 +39,7 @@ function Calendar({
   onSelect,
   className,
 }: CalendarProps) {
-  const [viewMonth, setViewMonth] = useState(defaultMonth ?? selected ?? new Date())
+  const [viewMonth, setViewMonth] = useState(() => defaultMonth ?? selected ?? new Date())
   const [view, setView] = useState<View>('days')
 
   const currentYear = viewMonth.getFullYear()
