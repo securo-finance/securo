@@ -8,8 +8,13 @@ from app.models.category import Category
 from app.models.category_group import CategoryGroup
 from app.schemas.category import CategoryCreate, CategoryUpdate
 from app.services.category_group_service import get_groups
+from app.services.category_defaults import (
+    DEFAULT_CATEGORIES,
+    DEFAULT_GROUPS,
+    localized_name,
+    name_variants,
+)
 from app.services.category_service import (
-    DEFAULT_CATEGORIES_I18N,
     create_category,
     create_default_categories,
     delete_category,
@@ -17,6 +22,7 @@ from app.services.category_service import (
     get_category,
     update_category,
 )
+from app.services.rule_service import _ensure_categories_for_keys
 
 
 # ---------------------------------------------------------------------------
@@ -28,7 +34,7 @@ from app.services.category_service import (
 async def test_create_default_categories(session: AsyncSession, test_user, test_workspace):
     categories = await create_default_categories(session, test_user.id, lang="pt-BR")
 
-    assert len(categories) == len(DEFAULT_CATEGORIES_I18N)
+    assert len(categories) == len(DEFAULT_CATEGORIES)
 
     names = {c.name for c in categories}
     assert "Moradia" in names
@@ -44,7 +50,7 @@ async def test_create_default_categories(session: AsyncSession, test_user, test_
 async def test_create_default_categories_german(session: AsyncSession, test_user, test_workspace):
     categories = await create_default_categories(session, test_user.id, lang="de")
 
-    assert len(categories) == len(DEFAULT_CATEGORIES_I18N)
+    assert len(categories) == len(DEFAULT_CATEGORIES)
 
     names = {c.name for c in categories}
     assert "Wohnen" in names
@@ -60,7 +66,7 @@ async def test_create_default_categories_german(session: AsyncSession, test_user
 async def test_create_default_categories_french(session: AsyncSession, test_user, test_workspace):
     categories = await create_default_categories(session, test_user.id, lang="fr")
 
-    assert len(categories) == len(DEFAULT_CATEGORIES_I18N)
+    assert len(categories) == len(DEFAULT_CATEGORIES)
 
     names = {c.name for c in categories}
     assert "Logement" in names
@@ -76,7 +82,7 @@ async def test_create_default_categories_french(session: AsyncSession, test_user
 async def test_create_default_categories_european_portuguese(session: AsyncSession, test_user, test_workspace):
     categories = await create_default_categories(session, test_user.id, lang="pt-PT")
 
-    assert len(categories) == len(DEFAULT_CATEGORIES_I18N)
+    assert len(categories) == len(DEFAULT_CATEGORIES)
 
     names = {c.name for c in categories}
     assert "Habitação" in names
@@ -104,7 +110,7 @@ async def test_create_default_categories_links_to_groups(session: AsyncSession, 
     categories = await create_default_categories(session, test_user.id, lang="pt-BR")
 
     with_group = [c for c in categories if c.group_id is not None]
-    assert len(with_group) == len(DEFAULT_CATEGORIES_I18N)
+    assert len(with_group) == len(DEFAULT_CATEGORIES)
 
 
 @pytest.mark.asyncio
@@ -115,6 +121,84 @@ async def test_create_default_categories_english(session: AsyncSession, test_use
     assert "Housing" in names
     assert "Food & Dining" in names
     assert "Transport" in names
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("lang", ["es", "it", "pl", "ru", "uk", "nl", "sk", "el", "hi", "ja"])
+async def test_create_default_categories_localized(session: AsyncSession, test_user, test_workspace, lang):
+    categories = await create_default_categories(session, test_user.id, lang=lang)
+
+    assert len(categories) == len(DEFAULT_CATEGORIES)
+
+    names = {c.name for c in categories}
+    assert names == {data["names"][lang] for data in DEFAULT_CATEGORIES.values()}
+
+    for cat in categories:
+        assert cat.is_system is True
+
+    groups = await get_groups(session, test_workspace.id, include_hidden=True)
+    group_names = {g.name for g in groups}
+    assert group_names == {data["names"][lang] for data in DEFAULT_GROUPS.values()}
+
+
+def test_default_taxonomy_covers_all_supported_languages():
+    langs = ["en", "pt-BR", "pt-PT", "de", "fr", "es", "it", "pl", "ru", "uk", "nl", "sk", "el", "hi", "ja"]
+    entries = {f"category '{k}'": d for k, d in DEFAULT_CATEGORIES.items()} | {
+        f"group '{k}'": d for k, d in DEFAULT_GROUPS.items()
+    }
+    for label, data in entries.items():
+        for lang in langs:
+            assert lang in data["names"], f"{label} is missing a '{lang}' translation"
+
+
+def test_localized_name_falls_back_safely():
+    entry = {"names": {"en": "Housing", "es": "Vivienda"}}
+    assert localized_name(entry, "es") == "Vivienda"
+    assert localized_name(entry, "xx") == "Housing"
+    # No English either: any available translation beats an exception.
+    assert localized_name({"names": {"de": "Wohnen"}}, "xx") == "Wohnen"
+
+
+def test_aliases_are_matched_but_never_seeded():
+    housing = DEFAULT_GROUPS["housing"]
+    assert "Alojamiento" in name_variants(housing)
+    assert localized_name(housing, "es") == "Vivienda"
+
+
+@pytest.mark.asyncio
+async def test_ensure_categories_reuses_group_under_former_spanish_name(
+    session: AsyncSession, test_user, test_workspace
+):
+    """A Spanish workspace seeded before the rename still has "Alojamiento";
+    importing a housing rule must file into it, not add a "Vivienda" twin."""
+    legacy = CategoryGroup(
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Alojamiento",
+        icon="house",
+        color="#8B5CF6",
+        position=0,
+        is_system=True,
+    )
+    session.add(legacy)
+    await session.flush()
+
+    created = await _ensure_categories_for_keys(
+        session, test_workspace.id, test_user.id, {"housing"}, "es"
+    )
+
+    assert created == 1
+    groups = await get_groups(session, test_workspace.id, include_hidden=True)
+    assert [g.name for g in groups] == ["Alojamiento"]
+    housing = (
+        await session.execute(
+            select(Category).where(
+                Category.workspace_id == test_workspace.id,
+                Category.name == "Vivienda",
+            )
+        )
+    ).scalar_one()
+    assert housing.group_id == legacy.id
 
 
 @pytest.mark.asyncio

@@ -72,6 +72,11 @@ dev = [
 [tool.setuptools.packages.find]
 include = ["app*"]
 
+[tool.setuptools.package-data]
+# Ship the category taxonomy in wheels/non-editable installs; without this it
+# only exists in editable (-e) installs and the backend crashes at import.
+app = ["data/*.json"]
+
 [tool.pytest.ini_options]
 # Fail on configuration/marker typos, duplicate parameter IDs and unexpected
 # xfail passes instead of silently weakening the suite.
