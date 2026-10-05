@@ -5,14 +5,14 @@ import { useTranslation } from 'react-i18next'
 import { useDisplayLocale, useDateLocale } from '@/hooks/use-display-locale'
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import { format, addDays, addMonths, parseISO } from 'date-fns'
-import { accounts, dashboard, transactions, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
+import { accounts, dashboard, transactions, goals as goalsApi, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
 import { applyTransactionToBalance, excludeMaterializedProjections, transactionAmountForBalance } from '@/lib/account-detail-utils'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
 import { closeDateForBill, isOpenCycleWindow } from '@/lib/credit-card-cycle'
 import { toast } from 'sonner'
-import type { CreditCardBill, ProjectedTransaction, Transaction } from '@/types'
+import type { CreditCardBill, ProjectedTransaction, Transaction, GoalAllocationInput } from '@/types'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, ArrowLeftRight, CalendarClock, ChevronLeft, ChevronRight, Clock, EyeClosed, HelpCircle, Paperclip, Pencil, Plus, X } from 'lucide-react'
@@ -415,6 +415,11 @@ export default function AccountDetailPage() {
     queryKey: ['accounts'],
     queryFn: () => accounts.list(),
   })
+  const { data: pocketGoals } = useQuery({
+    queryKey: ['goals', 'account-detail', id],
+    queryFn: () => goalsApi.list(),
+    enabled: !!id,
+  })
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
     // When a real bill anchors the active cycle, send bill_id AND the cycle
@@ -619,6 +624,8 @@ export default function AccountDetailPage() {
       description: string
       notes?: string
       destination_amount?: number
+      from_goal_allocations?: GoalAllocationInput[]
+      to_goal_allocations?: GoalAllocationInput[]
     }) => transactions.createTransfer(data),
     onSuccess: () => {
       invalidateFinancialQueries(queryClient)
@@ -815,6 +822,11 @@ export default function AccountDetailPage() {
   }, [txData, projectedRows, isCreditCard, summary, usePrimary, displayCurrency, openingBalance, ccRunningTotal])
 
   const totalBalance = (usePrimary ? summary?.current_balance_primary : undefined) ?? summary?.current_balance ?? 0
+  const accountPocketGoals = (pocketGoals ?? []).filter(
+    goal => goal.tracking_type === 'pocket' && goal.account_id === id,
+  )
+  const pocketReserved = accountPocketGoals.reduce((sum, goal) => sum + goal.current_amount, 0)
+  const pocketFree = (summary?.current_balance ?? 0) - pocketReserved
   const projectedBalance = displayRows.length > 0 ? displayRows[0].runningBalance : openingBalance
 
   const actualIncome = (usePrimary ? summary?.monthly_income_primary : undefined) ?? summary?.monthly_income ?? 0
@@ -1258,6 +1270,12 @@ export default function AccountDetailPage() {
             <p className={`text-[length:clamp(0.7rem,3.5vw,1.25rem)] sm:text-2xl font-bold tabular-nums ${(summary?.current_balance ?? 0) < 0 ? 'text-rose-500' : 'text-emerald-600'}`}>
               {mask(formatCurrency(totalBalance, displayCurrency, locale))}
             </p>
+            {accountPocketGoals.length > 0 && account && (
+              <div className="mt-1 space-y-0.5 text-[10px] sm:text-xs text-muted-foreground">
+                <p className="truncate">{t('goals.reserved')}: {mask(formatCurrency(pocketReserved, account.currency, locale))}</p>
+                <p className={`truncate ${pocketFree < 0 ? 'text-rose-500' : ''}`}>{t('goals.accountAvailable')}: {mask(formatCurrency(pocketFree, account.currency, locale))}</p>
+              </div>
+            )}
           </div>
           <div className="bg-card rounded-xl border border-border shadow-sm p-3 sm:p-4 overflow-hidden">
             <p className="text-[10px] sm:text-xs font-medium text-muted-foreground mb-1 truncate">

@@ -8,6 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/auth-context'
 import { currencies as currenciesApi, transactions as transactionsApi, settings as settingsApi, payees as payeesApi, rules as rulesApi, categories as categoriesApi, categoryGroups as categoryGroupsApi } from '@/lib/api'
 import { localDateString } from '@/lib/date-utils'
+import { extractApiError } from '@/lib/api-errors'
 import { invalidateFinancialQueries } from '@/lib/invalidate-queries'
 import { normalizeRuleMatchValue } from '@/lib/rule-match-utils'
 import { findCategoryReference, getRuleCategoryId } from '@/lib/category-reference-utils'
@@ -40,9 +41,11 @@ import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog
 import { TransactionAttachments } from '@/components/transaction-attachments'
 import type { AttachmentPreview } from '@/components/transaction-attachments'
 import { TransactionSplitsSection } from '@/components/transaction-splits-section'
+import { PocketAllocator } from '@/components/pocket-allocator'
+import { pocketAllocationsAreValid } from '@/lib/pocket-allocation-utils'
 import { buildInstallmentSeriesInput, hasNonStatusChange, isManualInstallmentSeriesRow } from '@/lib/installment-series'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
-import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, Rule, RuleCondition, RuleConditionNode } from '@/types'
+import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, Rule, RuleCondition, RuleConditionNode, GoalAllocationInput } from '@/types'
 import { toast } from 'sonner'
 
 export type SaveAction = 'save' | 'saveAndNew' | 'saveAndDuplicate'
@@ -458,6 +461,15 @@ function TransactionForm({
   const [categoryId, setCategoryId] = useState(seed?.category_id ?? '')
   const [payeeId, setPayeeId] = useState(seed?.payee_id ?? '')
   const [accountId, setAccountId] = useState(seed?.account_id ?? defaultAccountId ?? sortedAccounts[0]?.id ?? '')
+  const [goalAllocations, setGoalAllocations] = useState<GoalAllocationInput[]>(() =>
+    (seed as Transaction | null | undefined)?.goal_allocations?.map(item => ({
+      goal_id: item.goal_id,
+      amount: Math.abs(Number(item.amount)),
+    })) ?? [],
+  )
+  const [goalAllocationsDirty, setGoalAllocationsDirty] = useState(
+    !transaction && !!duplicateDraft?.goal_allocations?.length,
+  )
   const [notes, setNotes] = useState(seed?.notes ?? '')
   // Manual CC bucketing override (issue #92). Empty = auto. Visible only
   // when the selected account is a credit card.
@@ -560,6 +572,8 @@ function TransactionForm({
   })
   const displayCategories = allCategoriesList ?? categories
   const displayCategoryGroups = allCategoryGroupsList ?? categoryGroups
+  const selectedCategory = findCategoryReference(displayCategories, categoryId)
+    ?? (seed?.category?.id === categoryId ? seed.category : undefined)
 
   // Counterpart leg of a transfer. Fetched lazily so only transfer dialogs
   // pay for it — the list response carries just the shared pair id.
@@ -633,8 +647,8 @@ function TransactionForm({
         ? t('transactions.ignoreSuccess')
         : t('transactions.unignoreSuccess'))
       onIgnoreChanged?.()
-    } catch {
-      toast.error(t('common.error'))
+    } catch (error) {
+      toast.error(extractApiError(error, t('common.error')))
     } finally {
       setTogglingIgnore(false)
     }
@@ -724,6 +738,27 @@ function TransactionForm({
     }
   }
 
+  // Pocket assignments only fit the status, type, account, currency and
+  // installment mode they were made for, so changing one clears them. The
+  // draft is set aside per combination: returning to one restores exactly
+  // what it held, unsaved edits included, instead of saving a wipe.
+  const pocketDraftsRef = useRef(new Map<string, { allocations: GoalAllocationInput[]; dirty: boolean }>())
+  const resetGoalAllocations = (changed: Partial<{
+    status: typeof status
+    type: typeof type
+    accountId: string
+    currency: string
+    isInstallment: boolean
+  }>) => {
+    const current = { status, type, accountId, currency, isInstallment }
+    const key = (fields: typeof current) =>
+      JSON.stringify([fields.status, fields.type, fields.accountId, fields.currency, fields.isInstallment])
+    pocketDraftsRef.current.set(key(current), { allocations: goalAllocations, dirty: goalAllocationsDirty })
+    const draft = pocketDraftsRef.current.get(key({ ...current, ...changed }))
+    setGoalAllocations(draft?.allocations ?? [])
+    setGoalAllocationsDirty(draft?.dirty ?? true)
+  }
+
   const handleAmountChange = (val: string) => {
     setAmount(val)
     const numAmount = parseAmountInput(val, displayLocale)
@@ -735,6 +770,7 @@ function TransactionForm({
 
   const handleCurrencyChange = (val: string) => {
     setCurrency(val)
+    resetGoalAllocations({ currency: val })
     if (val === userCurrency) {
       setConvertedAmount('')
       setFxRate('')
@@ -755,6 +791,16 @@ function TransactionForm({
         const parsedAmount = parseAmountInput(amount, displayLocale)
         if (!isSynced && parsedAmount == null) {
           toast.error(t('common.error'))
+          return
+        }
+        const allocationAmountChanged = !!transaction?.goal_allocations?.length
+          && parsedAmount != null
+          && parsedAmount !== Number(transaction.amount)
+        if (
+          (goalAllocationsDirty || allocationAmountChanged)
+          && !pocketAllocationsAreValid(goalAllocations, parsedAmount ?? Number(seed?.amount ?? 0))
+        ) {
+          toast.error(t('goals.allocationExceedsTransaction'))
           return
         }
         const fxFields: Partial<Transaction> = {}
@@ -802,6 +848,9 @@ function TransactionForm({
         const pnlExclusionPayload = transaction
           ? { exclude_from_pnl: excludeFromReports }
           : {}
+        const goalAllocationsPayload = goalAllocationsDirty || allocationAmountChanged
+          ? { goal_allocations: goalAllocations }
+          : {}
         const txData = isSynced
           ? {
               ...(description !== transaction?.description ? { description } : {}),
@@ -812,6 +861,7 @@ function TransactionForm({
               ...pnlExclusionPayload,
               ...overridePayload,
               ...splitsPayload,
+              ...goalAllocationsPayload,
             } as TransactionEditPayload
           : {
               description,
@@ -831,6 +881,7 @@ function TransactionForm({
               ...fxFields,
               ...overridePayload,
               ...splitsPayload,
+              ...goalAllocationsPayload,
             } as TransactionEditPayload
         const recurringData = isCreating && isRecurring
           ? { frequency, end_date: endDate || undefined }
@@ -1068,7 +1119,11 @@ function TransactionForm({
           <select
             className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card h-9 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
             value={status}
-            onChange={(e) => setStatus(e.target.value as 'posted' | 'pending')}
+            onChange={(e) => {
+              const next = e.target.value as 'posted' | 'pending'
+              setStatus(next)
+              resetGoalAllocations({ status: next })
+            }}
             disabled={isSynced}
           >
             <option value="posted">{t('transactions.statusPosted')}</option>
@@ -1130,7 +1185,11 @@ function TransactionForm({
           <select
             className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
             value={type}
-            onChange={(e) => setType(e.target.value as 'debit' | 'credit')}
+            onChange={(e) => {
+              const next = e.target.value as 'debit' | 'credit'
+              setType(next)
+              resetGoalAllocations({ type: next })
+            }}
             disabled={isSynced}
           >
             <option value="debit">{t('transactions.expense')}</option>
@@ -1170,7 +1229,10 @@ function TransactionForm({
             <select
               className="w-full border border-border rounded-md px-3 py-2 text-sm bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
               value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
+              onChange={(e) => {
+                setAccountId(e.target.value)
+                resetGoalAllocations({ accountId: e.target.value })
+              }}
               required
             >
               {sortedAccounts.map((acc) => (
@@ -1180,6 +1242,22 @@ function TransactionForm({
           </div>
         )}
       </div>
+
+      {!isInstallment && (
+        <PocketAllocator
+          accountId={accountId}
+          transactionType={type}
+          transactionAmount={parseAmountInput(amount, displayLocale) ?? 0}
+          transactionStatus={status}
+          isIgnored={isIgnored || selectedCategory?.is_ignored}
+          value={goalAllocations}
+          originalAllocations={transaction?.goal_allocations}
+          onChange={(next) => {
+            setGoalAllocations(next)
+            setGoalAllocationsDirty(true)
+          }}
+        />
+      )}
 
       <div className="space-y-2">
         <Label>{t('transactions.notes')} <span className="text-muted-foreground font-normal text-xs">({t('transactions.notesHint')})</span></Label>
@@ -1294,7 +1372,10 @@ function TransactionForm({
                 checked={isRecurring}
                 onChange={(e) => {
                   setIsRecurring(e.target.checked)
-                  if (e.target.checked) setIsInstallment(false)
+                  if (e.target.checked && isInstallment) {
+                    setIsInstallment(false)
+                    resetGoalAllocations({ isInstallment: false })
+                  }
                 }}
                 className="rounded border-gray-300"
               />
@@ -1306,6 +1387,7 @@ function TransactionForm({
                 checked={isInstallment}
                 onChange={(e) => {
                   setIsInstallment(e.target.checked)
+                  resetGoalAllocations({ isInstallment: e.target.checked })
                   if (e.target.checked) setIsRecurring(false)
                 }}
                 className="rounded border-gray-300"

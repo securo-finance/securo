@@ -2,7 +2,7 @@ import { getAccountName } from '@/lib/account-utils'
 import { AccountIcon } from '@/components/account-icon'
 import { CategoryIcon } from '@/components/category-icon'
 import type { Transaction, Account } from '@/types'
-import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, Clock, EyeClosed, Paperclip } from 'lucide-react'
+import { AlertTriangle, ArrowLeftRight, CalendarClock, ChartNoAxesColumn, Clock, EyeClosed, Paperclip, WalletCards } from 'lucide-react'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useTranslation } from 'react-i18next'
 import { formatCurrency } from '@/lib/format'
@@ -112,6 +112,15 @@ export function MobileTransactionRow({
           )}
           {!!tx.transfer_pair_id && (
             <ArrowLeftRight className="h-3 w-3 text-blue-600 shrink-0" />
+          )}
+          {(tx.goal_allocations?.length ?? 0) > 0 && (
+            <span
+              className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-violet-700 dark:text-violet-300 shrink-0"
+              title={tx.goal_allocations?.map(item => item.goal_name).join(', ')}
+            >
+              <WalletCards className="h-3 w-3" />
+              {tx.goal_allocations?.length}
+            </span>
           )}
           {virtual && (
             <CalendarClock className="h-3 w-3 text-primary shrink-0" />

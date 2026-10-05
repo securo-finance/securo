@@ -35,8 +35,8 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Clock, HelpCircle, Info, Paperclip, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, SlidersHorizontal, Receipt } from 'lucide-react'
-import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload, ReconciliationSuggestion } from '@/types'
+import { AlertTriangle, ArrowLeftRight, ArrowUp, ArrowDown, Check, Clock, HelpCircle, Info, Paperclip, Trash2, Users, X, EyeClosed, ChartNoAxesColumn, SlidersHorizontal, Receipt, WalletCards } from 'lucide-react'
+import type { Transaction, Rule, InstallmentSeriesInput, TransactionApplyScope, TransactionEditPayload, ReconciliationSuggestion, GoalAllocationInput } from '@/types'
 import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog'
 import { PageHeader } from '@/components/page-header'
 import { calculateRangeSelection } from '@/lib/selection-utils'
@@ -689,6 +689,8 @@ export default function TransactionsPage() {
       description: string
       notes?: string
       destination_amount?: number
+      from_goal_allocations?: GoalAllocationInput[]
+      to_goal_allocations?: GoalAllocationInput[]
     }) => transactions.createTransfer(data),
     onSuccess: () => {
       invalidateAfterTxMutation()
@@ -1130,6 +1132,18 @@ export default function TransactionsPage() {
                   : link.number != null
                     ? t('transactions.invoiceBadge', { number: link.number })
                     : t('transactions.invoiceBadgeNoNumber')}
+              </Link>
+            ))}
+            {(tx.goal_allocations ?? []).map((allocation) => (
+              <Link
+                key={allocation.id}
+                to="/goals"
+                onClick={(event) => event.stopPropagation()}
+                title={t('goals.transactionAllocation')}
+                className="inline-flex items-center gap-1 text-[10px] font-semibold text-violet-700 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-900 px-1.5 py-0.5 rounded-full hover:bg-violet-100 transition-colors"
+              >
+                <WalletCards className="h-3 w-3" />
+                {allocation.goal_name}
               </Link>
             ))}
             {!!tx.transfer_pair_id && (

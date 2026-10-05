@@ -30,11 +30,16 @@ async def _login(client: AsyncClient, email: str, password: str) -> dict:
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
 
-async def _create_account(client, headers, name="Wallet"):
+async def _create_account(client, headers, name="Wallet", balance=0):
     resp = await client.post(
         "/api/accounts",
         headers=headers,
-        json={"name": name, "type": "checking", "balance": 0, "currency": "USD"},
+        json={
+            "name": name,
+            "type": "checking",
+            "balance": balance,
+            "currency": "USD",
+        },
     )
     assert resp.status_code in (200, 201), resp.text
     return resp.json()
@@ -77,10 +82,22 @@ async def test_linked_member_sees_shared_transaction_in_their_list(
     await _register(client, friend_email, "friendpassword12")
     friend_headers = await _login(client, friend_email, "friendpassword12")
 
-    account = await _create_account(client, auth_headers)
+    account = await _create_account(client, auth_headers, balance=100)
     group, me_member, friend_member = await _create_group_with_self_and_friend(
         client, auth_headers, friend_email
     )
+    pocket = await client.post(
+        "/api/goals",
+        headers=auth_headers,
+        json={
+            "name": "Concert fund",
+            "target_amount": 100,
+            "tracking_type": "pocket",
+            "account_id": account["id"],
+            "initial_allocation": 50,
+        },
+    )
+    assert pocket.status_code == 201, pocket.text
 
     # Owner creates a $90 expense split equally with the friend.
     resp = await client.post(
@@ -93,6 +110,9 @@ async def test_linked_member_sees_shared_transaction_in_their_list(
             "date": "2026-04-28",
             "type": "debit",
             "currency": "USD",
+            "goal_allocations": [
+                {"goal_id": pocket.json()["id"], "amount": 25}
+            ],
             "splits": {
                 "share_type": "equal",
                 "splits": [
@@ -103,6 +123,7 @@ async def test_linked_member_sees_shared_transaction_in_their_list(
         },
     )
     assert resp.status_code == 201
+    assert len(resp.json()["goal_allocations"]) == 1
 
     # Friend's list should now include the shared transaction with
     # viewer_share = 45 and is_shared = True.
@@ -114,6 +135,23 @@ async def test_linked_member_sees_shared_transaction_in_their_list(
     assert shared[0]["description"] == "Concert Tickets"
     assert float(shared[0]["viewer_share"]) == 45.0
     assert shared[0]["group_id"] == group["id"]
+    assert shared[0]["goal_allocations"] == []
+
+    # The group's own transaction list must redact the owner's Pocket too,
+    # while the owner still sees their allocation there.
+    friend_group = await client.get(
+        f"/api/groups/{group['id']}/transactions", headers=friend_headers
+    )
+    assert friend_group.status_code == 200, friend_group.text
+    [friend_row] = friend_group.json()
+    assert friend_row["is_shared"] is True
+    assert friend_row["goal_allocations"] == []
+    owner_group = await client.get(
+        f"/api/groups/{group['id']}/transactions", headers=auth_headers
+    )
+    [owner_row] = owner_group.json()
+    assert owner_row["is_shared"] is False
+    assert len(owner_row["goal_allocations"]) == 1
 
 
 @pytest.mark.asyncio

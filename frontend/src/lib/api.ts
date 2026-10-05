@@ -1,5 +1,13 @@
 import axios from 'axios'
 import type { NumberFormat, DateFormat } from '@/lib/format'
+import {
+  normalizeGoal,
+  normalizeGoalAllocation,
+  normalizeGoalSummary,
+  type ApiGoal,
+  type ApiGoalAllocation,
+  type ApiGoalSummary,
+} from '@/lib/goal-api-normalization'
 import type {
   User,
   AdminUser,
@@ -75,6 +83,8 @@ import type {
   Attachment,
   Goal,
   GoalSummary,
+  GoalAllocation,
+  GoalAllocationInput,
   DashboardSummary,
   SpendingByCategory,
   MonthlyTrend,
@@ -587,6 +597,8 @@ export const transactions = {
     description: string
     notes?: string
     destination_amount?: number
+    from_goal_allocations?: GoalAllocationInput[]
+    to_goal_allocations?: GoalAllocationInput[]
   }): Promise<{ debit: Transaction; credit: Transaction; transfer_pair_id: string }> => {
     const { data } = await api.post('/transactions/transfer', transfer)
     return data
@@ -1247,27 +1259,35 @@ export const budgets = {
 // Goals
 export const goals = {
   list: async (status?: string): Promise<Goal[]> => {
-    const { data } = await api.get('/goals', { params: { status } })
-    return data
+    const { data } = await api.get<ApiGoal[]>('/goals', { params: { status } })
+    return data.map(normalizeGoal)
   },
   get: async (id: string): Promise<Goal> => {
-    const { data } = await api.get(`/goals/${id}`)
-    return data
+    const { data } = await api.get<ApiGoal>(`/goals/${id}`)
+    return normalizeGoal(data)
   },
   create: async (goal: Partial<Goal>): Promise<Goal> => {
-    const { data } = await api.post('/goals', goal)
-    return data
+    const { data } = await api.post<ApiGoal>('/goals', goal)
+    return normalizeGoal(data)
   },
   update: async (id: string, goal: Partial<Goal>): Promise<Goal> => {
-    const { data } = await api.patch(`/goals/${id}`, goal)
-    return data
+    const { data } = await api.patch<ApiGoal>(`/goals/${id}`, goal)
+    return normalizeGoal(data)
   },
   delete: async (id: string): Promise<void> => {
     await api.delete(`/goals/${id}`)
   },
   summary: async (limit = 3): Promise<GoalSummary[]> => {
-    const { data } = await api.get('/goals/summary', { params: { limit } })
-    return data
+    const { data } = await api.get<ApiGoalSummary[]>('/goals/summary', { params: { limit } })
+    return data.map(normalizeGoalSummary)
+  },
+  adjust: async (id: string, amount: number): Promise<Goal> => {
+    const { data } = await api.post<ApiGoal>(`/goals/${id}/adjustments`, { amount })
+    return normalizeGoal(data)
+  },
+  activity: async (id: string): Promise<GoalAllocation[]> => {
+    const { data } = await api.get<ApiGoalAllocation[]>(`/goals/${id}/activity`)
+    return data.map(normalizeGoalAllocation)
   },
 }
 

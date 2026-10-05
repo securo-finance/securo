@@ -4,8 +4,9 @@ from typing import Any, Optional, cast
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import load_only
+from sqlalchemy.orm import load_only, selectinload
 
+from app.models.account import Account
 from app.models.rule import Rule
 from app.models.category import Category
 from app.models.payee import Payee
@@ -1039,6 +1040,8 @@ async def create_rule(
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
     data: RuleCreate,
+    *,
+    commit: bool = True,
 ) -> Rule:
     existing_names = await _get_existing_rule_names_for_workspace(session, workspace_id)
     if data.name in existing_names:
@@ -1057,13 +1060,21 @@ async def create_rule(
         is_active=data.is_active,
     )
     session.add(rule)
-    await session.commit()
-    await session.refresh(rule)
+    if commit:
+        await session.commit()
+        await session.refresh(rule)
+    else:
+        await session.flush()
     return rule
 
 
 async def update_rule(
-    session: AsyncSession, rule_id: uuid.UUID, workspace_id: uuid.UUID, data: RuleUpdate
+    session: AsyncSession,
+    rule_id: uuid.UUID,
+    workspace_id: uuid.UUID,
+    data: RuleUpdate,
+    *,
+    commit: bool = True,
 ) -> Optional[Rule]:
     rule = await get_rule(session, rule_id, workspace_id)
     if not rule:
@@ -1094,8 +1105,11 @@ async def update_rule(
     for key, value in update_data.items():
         setattr(rule, key, value)
 
-    await session.commit()
-    await session.refresh(rule)
+    if commit:
+        await session.commit()
+        await session.refresh(rule)
+    else:
+        await session.flush()
     return rule
 
 
@@ -1379,11 +1393,50 @@ async def preview_rule(
     )
 
 
+async def _transactions_for_rule_update(
+    session: AsyncSession, workspace_id: uuid.UUID
+) -> list[Transaction]:
+    # Use the same account-before-transaction order as Pocket writes and sync.
+    await session.execute(
+        select(Account.id)
+        .where(Account.workspace_id == workspace_id)
+        .order_by(Account.id)
+        .with_for_update(key_share=True)
+    )
+    return list((await session.scalars(
+        select(Transaction)
+        .where(Transaction.workspace_id == workspace_id, Transaction.source != "opening_balance")
+        .options(selectinload(Transaction.goal_allocations))
+        .order_by(Transaction.id)
+        .with_for_update(of=Transaction)
+        .execution_options(populate_existing=True)
+    )).all())
+
+
+async def _clear_invalid_pocket_assignments(
+    session: AsyncSession, workspace_id: uuid.UUID, transaction: Transaction
+) -> None:
+    if not transaction.goal_allocations:
+        return
+    from app.services import goal_allocation_service
+
+    try:
+        await goal_allocation_service.validate_transaction_allocations(
+            session, workspace_id, transaction
+        )
+    except ValueError:
+        await goal_allocation_service.clear_transaction_allocations(
+            session, workspace_id, transaction
+        )
+
+
 async def apply_single_rule(
     session: AsyncSession,
     workspace_id: uuid.UUID,
     rule: Rule,
     overwrite_existing_categories: bool = False,
+    *,
+    commit: bool = True,
 ) -> int:
     """Apply one rule to existing workspace transactions and count modifications.
 
@@ -1399,13 +1452,7 @@ async def apply_single_rule(
     if not rule.is_active:
         return 0
 
-    result = await session.execute(
-        select(Transaction).where(
-            Transaction.workspace_id == workspace_id,
-            Transaction.source != "opening_balance",
-        )
-    )
-    transactions = result.scalars().all()
+    transactions = await _transactions_for_rule_update(session, workspace_id)
     conditions = rule.conditions or []
     actions = rule.actions or []
 
@@ -1439,6 +1486,7 @@ async def apply_single_rule(
             skip_description=_has_manual_description(tx),
             assignable_category_ids=assignable_categories,
         )
+        await _clear_invalid_pocket_assignments(session, workspace_id, tx)
         after = (
             tx.category_id,
             tx.payee_id,
@@ -1451,19 +1499,16 @@ async def apply_single_rule(
         if before != after:
             count += 1
 
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
     return count
 
 
 async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int:
     """Reset rule-managed fields and reapply active rules in priority order."""
-    result = await session.execute(
-        select(Transaction).where(
-            Transaction.workspace_id == workspace_id,
-            Transaction.source != "opening_balance",
-        )
-    )
-    transactions = result.scalars().all()
+    transactions = await _transactions_for_rule_update(session, workspace_id)
 
     rules_result = await session.execute(
         select(Rule)
@@ -1507,6 +1552,7 @@ async def apply_all_rules(session: AsyncSession, workspace_id: uuid.UUID) -> int
                     assignable_category_ids=assignable_categories,
                 )
 
+        await _clear_invalid_pocket_assignments(session, workspace_id, tx)
         after = (
             tx.category_id,
             tx.payee_id,

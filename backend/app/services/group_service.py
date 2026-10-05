@@ -384,6 +384,7 @@ async def list_transactions(
 
     from app.models.transaction import Transaction
     from app.models.transaction_split import TransactionSplit
+    from app.services.transaction_service import _tag_shared_view
 
     if not await get_group_visible(session, group_id, workspace_id, user_id):
         return None
@@ -411,6 +412,7 @@ async def list_transactions(
     for tx in txs:
         tx.attachment_count = 0
         tx.payee_name = tx.payee_entity.name if tx.payee_entity else None
+    await _tag_shared_view(session, txs, user_id)
     return txs
 
 
