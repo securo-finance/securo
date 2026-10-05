@@ -118,6 +118,12 @@ services:
 
   backend:
     <<: *backend-base
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
+      interval: 5s
+      timeout: 6s
+      start_period: 30s
+      retries: 12
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     ports:
       - "${BACKEND_PORT:-8000}:8000"
@@ -130,16 +136,20 @@ services:
       BACKEND_URL: http://backend:8000
       FRONTEND_URL: http://localhost:3000
     depends_on:
-      - backend
+      backend: { condition: service_healthy }
     restart: unless-stopped
 
   celery-worker:
     <<: *backend-base
+    depends_on:
+      backend: { condition: service_healthy }
     # Limit to 2 workers to save RAM (default = number of CPUs).
     command: celery -A app.worker worker --loglevel=info --concurrency=2
 
   celery-beat:
     <<: *backend-base
+    depends_on:
+      backend: { condition: service_healthy }
     command: celery -A app.worker beat --loglevel=info
 
   # Optional: Securo built-in MCP server. Only starts under the `agents`
@@ -153,6 +163,8 @@ services:
   # AGENTS_MCP_EXTERNAL_HOST_PORT to e.g. "0.0.0.0:8765" to expose to LAN.
   mcp-server:
     <<: *backend-base
+    depends_on:
+      backend: { condition: service_healthy }
     profiles: [agents]
     command: uvicorn mcp_server.main:app --host 0.0.0.0 --port 8765
     ports:
