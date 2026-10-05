@@ -112,10 +112,14 @@ def get_storage_provider():
             from app.providers.local_storage import LocalStorageProvider
 
             _storage_provider = LocalStorageProvider()
+        elif settings.storage_provider == "s3":
+            from app.providers.s3_storage import S3StorageProvider
+
+            _storage_provider = S3StorageProvider()
         else:
             raise NotImplementedError(
                 f"Storage provider '{settings.storage_provider}' is not yet implemented. "
-                "Supported: 'local'"
+                "Supported: 'local', 's3'"
             )
     return _storage_provider
 
