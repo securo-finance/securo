@@ -23,9 +23,11 @@ from app.schemas.admin import (
     AdminUserUpdate,
     AppSettingRead,
     AppSettingUpdate,
+    ProviderSettingRead,
     TimezoneSettingRead,
 )
 from app.services import admin_service
+from app.services import provider_settings
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -125,10 +127,37 @@ async def get_setting(
     session: AsyncSession = Depends(get_async_session),
     _user: User = Depends(current_superuser),
 ):
+    if key in provider_settings.SETTING_FIELDS:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Setting not found")
     setting = await admin_service.get_app_setting(session, key)
     if not setting:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Setting not found")
     return AppSettingRead.model_validate(setting)
+
+
+@router.get("/provider-settings", response_model=list[ProviderSettingRead])
+async def get_provider_settings(
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    return await provider_settings.provider_status(session)
+
+
+@router.patch("/provider-settings/{provider}", response_model=ProviderSettingRead)
+async def update_provider_settings(
+    provider: str,
+    request: Request,
+    session: AsyncSession = Depends(get_async_session),
+    _user: User = Depends(current_superuser),
+):
+    # Parse explicitly so schema validation errors cannot echo submitted secrets.
+    try:
+        body = await request.json()
+        if not isinstance(body, dict) or set(body) != {"values"} or not isinstance(body["values"], dict):
+            raise ValueError("Invalid provider settings")
+        return await provider_settings.update_provider(session, provider, body["values"])
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid provider settings") from None
 
 
 @router.patch("/settings/{key}", response_model=AppSettingRead)

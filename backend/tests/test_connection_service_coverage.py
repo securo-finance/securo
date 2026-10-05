@@ -178,14 +178,16 @@ async def test_shared_workspace_sync_imports_as_connection_owner(
 
 
 @pytest.mark.asyncio
-async def test_get_oauth_url(test_user, test_workspace):
+async def test_get_oauth_url(session, test_user, test_workspace):
     mock_provider = AsyncMock()
     mock_provider.redirect_uri = "https://app/redirect"
     mock_provider.get_oauth_url = AsyncMock(return_value="https://bank/authorize?state=xyz")
     with patch("app.services.connection_service.get_provider", return_value=mock_provider), \
          patch("app.services.connection_service.oauth_state.store_state",
                new_callable=AsyncMock, return_value="state-token"):
-        url = await get_oauth_url("pluggy", test_user.id, test_workspace.id, {"country": "BR"})
+        url = await get_oauth_url(
+            "pluggy", test_user.id, test_workspace.id, {"country": "BR"}, session=session
+        )
     assert url == "https://bank/authorize?state=xyz"
     mock_provider.get_oauth_url.assert_awaited_once()
 
@@ -215,7 +217,7 @@ async def test_get_reauth_url_not_found(session: AsyncSession, test_user, test_w
 
 
 @pytest.mark.asyncio
-async def test_list_provider_institutions():
+async def test_list_provider_institutions(session):
     mock_provider = AsyncMock()
     mock_provider.list_institutions = AsyncMock(return_value=InstitutionListData(
         countries=["DE", "FR"],
@@ -228,7 +230,7 @@ async def test_list_provider_institutions():
         ],
     ))
     with patch("app.services.connection_service.get_provider", return_value=mock_provider):
-        result = await list_provider_institutions("enable_banking", "DE")
+        result = await list_provider_institutions("enable_banking", "DE", session=session)
     assert result["countries"] == ["DE", "FR"]
     assert len(result["institutions"]) == 1
     inst = result["institutions"][0]

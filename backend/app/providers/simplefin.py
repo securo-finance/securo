@@ -30,6 +30,7 @@ from urllib.parse import unquote, urlsplit, urlunsplit
 import httpx
 
 from app.agents.services.crypto import decrypt, encrypt
+from app.core.config import Settings
 from app.providers.favicon import favicon_url_for
 from app.providers.base import (
     AccountData,
@@ -186,7 +187,8 @@ def _surface_errors(
 class SimpleFinProvider(BankProvider):
     """SimpleFIN Bridge connector."""
 
-    def __init__(self) -> None:
+    def __init__(self, settings: Settings | None = None) -> None:
+        super().__init__(settings)
         self.action_required_warnings: list[dict] = []
 
     @property

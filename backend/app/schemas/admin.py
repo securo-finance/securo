@@ -1,5 +1,5 @@
 import uuid
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -44,6 +44,22 @@ class AppSettingRead(BaseModel):
 
 class AppSettingUpdate(BaseModel):
     value: str
+
+
+class ProviderFieldStatus(BaseModel):
+    configured: bool
+    source: Literal["app", "environment", "none"]
+    invalid: bool
+    environment_configured: bool
+
+
+class ProviderSettingRead(BaseModel):
+    """Credential values and ciphertext are intentionally excluded."""
+
+    name: str
+    configured: bool
+    can_store_secrets: bool
+    fields: dict[str, ProviderFieldStatus]
 
 
 class TimezoneSettingRead(BaseModel):
