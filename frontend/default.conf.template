@@ -17,7 +17,17 @@ server {
         resolver ${NGINX_RESOLVER} valid=5s;
         set $upstream ${BACKEND_URL};
         proxy_pass $upstream;
-        proxy_set_header Host $host;
+
+        # Templated host header to support legacy deploys ($host) and PaaS dynamic overrides
+        proxy_set_header Host ${PROXY_HOST};
+        
+        # Resolves SSL/SNI handshake failures in cloud environments
+        proxy_ssl_server_name on;
+        proxy_ssl_verify on;
+        proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+        proxy_ssl_name $proxy_host;
+
+        # Forwards real client IPs without interfering with Host routing        
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
