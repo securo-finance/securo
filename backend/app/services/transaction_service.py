@@ -481,7 +481,7 @@ async def get_transactions(
         # would otherwise float old purchases to the top because their
         # bill due date is in the future.
         "transaction_date": Transaction.date,
-        "amount": Transaction.amount,
+        "amount": func.coalesce(Transaction.amount_primary, Transaction.amount),
         "description": Transaction.description,
         "payee": Payee.name,
         "category": Category.name,
