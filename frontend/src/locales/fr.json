@@ -1286,7 +1286,14 @@
       },
       "reconnectTitle": "Reconnexion avec un nouveau jeton",
       "reconnectDescription": "Collez un nouveau jeton de configuration pour actualiser cette connexion sur place. Les comptes, transactions, catégories et règles existants sont conservés.",
-      "reconnect": "Reconnecter"
+      "reconnect": "Reconnecter",
+      "akahu": {
+        "title": "Connexion via Akahu",
+        "description": "Akahu connecte les banques néo-zélandaises. Créez une application personnelle gratuite sur my.akahu.nz, associez votre banque, puis collez ci-dessous le App ID Token (app_token_…) et le User Token (user_token_…), dans n'importe quel ordre.",
+        "reconnectTitle": "Reconnexion via Akahu",
+        "reconnectDescription": "Collez les deux jetons de votre page développeur Akahu pour actualiser cette connexion. Les comptes, transactions, catégories et règles existants sont conservés.",
+        "openBridge": "Obtenir les jetons sur Akahu"
+      }
     },
     "providers": {
       "pluggy": {
@@ -1297,6 +1304,9 @@
       },
       "simplefin": {
         "description": "Banques américaines et internationales via SimpleFIN Bridge"
+      },
+      "akahu": {
+        "description": "Banques néo-zélandaises via Akahu"
       }
     },
     "reconnected": "Banque reconnectée avec succès",

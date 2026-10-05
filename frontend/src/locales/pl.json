@@ -1335,7 +1335,14 @@
       },
       "reconnectTitle": "Połącz ponownie za pomocą nowego tokenu",
       "reconnectDescription": "Wklej nowy token konfiguracji, aby odświeżyć to połączenie bez jego usuwania. Istniejące konta, transakcje, kategorie i reguły zostaną zachowane.",
-      "reconnect": "Połącz ponownie"
+      "reconnect": "Połącz ponownie",
+      "akahu": {
+        "title": "Połącz przez Akahu",
+        "description": "Akahu łączy banki nowozelandzkie. Utwórz bezpłatną aplikację osobistą na my.akahu.nz, połącz bank i wklej poniżej App ID Token (app_token_…) oraz User Token (user_token_…), w dowolnej kolejności.",
+        "reconnectTitle": "Połącz ponownie przez Akahu",
+        "reconnectDescription": "Wklej oba tokeny ze strony deweloperskiej Akahu, aby odświeżyć to połączenie. Istniejące konta, transakcje, kategorie i reguły zostaną zachowane.",
+        "openBridge": "Pobierz tokeny w Akahu"
+      }
     },
     "providers": {
       "pluggy": {
@@ -1346,6 +1353,9 @@
       },
       "simplefin": {
         "description": "Banki w USA i międzynarodowe przez SimpleFIN Bridge"
+      },
+      "akahu": {
+        "description": "Banki nowozelandzkie przez Akahu"
       }
     },
     "reconnected": "Bank połączony ponownie",
