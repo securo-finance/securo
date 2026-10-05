@@ -1985,7 +1985,21 @@
     "range30d": "30D",
     "customRange": "Custom range",
     "pickCustomRange": "Pick a start and end date",
-    "loadError": "Failed to load report"
+    "loadError": "Failed to load report",
+    "statement": "Statement",
+    "statementIncomeTotal": "Total income",
+    "statementExpenseTotal": "Total expenses",
+    "statementSettings": "Report options",
+    "statementSortBy": "Sort by",
+    "statementSortDefault": "Default",
+    "statementSortAsc": "Value (smallest first)",
+    "statementSortDesc": "Value (largest first)",
+    "statementColumns": "Number of columns",
+    "statementShowChange": "Show percentage change",
+    "statementViewTransactions": "View transactions",
+    "statementUncategorizedIncome": "Uncategorized income",
+    "statementUncategorizedExpense": "Uncategorized expenses",
+    "statementToggleGroup": "Show categories in {{name}}"
   },
   "payees": {
     "noPayeeFound": "No payee found.",

@@ -2101,7 +2101,21 @@
     "range30d": "30D",
     "customRange": "Vlastný rozsah",
     "pickCustomRange": "Vyberte dátum začiatku a konca",
-    "loadError": "Nepodarilo sa načítať prehľad"
+    "loadError": "Nepodarilo sa načítať prehľad",
+    "statement": "Výkaz",
+    "statementIncomeTotal": "Príjmy spolu",
+    "statementExpenseTotal": "Výdavky spolu",
+    "statementSettings": "Možnosti prehľadu",
+    "statementSortBy": "Zoradiť podľa",
+    "statementSortDefault": "Predvolené",
+    "statementSortAsc": "Suma (od najmenšej)",
+    "statementSortDesc": "Suma (od najväčšej)",
+    "statementColumns": "Počet stĺpcov",
+    "statementShowChange": "Zobraziť percentuálnu zmenu",
+    "statementViewTransactions": "Zobraziť transakcie",
+    "statementUncategorizedIncome": "Príjmy bez kategórie",
+    "statementUncategorizedExpense": "Výdavky bez kategórie",
+    "statementToggleGroup": "Zobraziť kategórie v {{name}}"
   },
   "payees": {
     "noPayeeFound": "Príjemca sa nenašiel.",

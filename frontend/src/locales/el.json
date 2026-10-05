@@ -2041,7 +2041,21 @@
     "range30d": "30Η",
     "customRange": "Προσαρμοσμένο εύρος",
     "pickCustomRange": "Επιλέξτε ημερομηνία έναρξης και λήξης",
-    "loadError": "Αποτυχία φόρτωσης αναφοράς"
+    "loadError": "Αποτυχία φόρτωσης αναφοράς",
+    "statement": "Κατάσταση",
+    "statementIncomeTotal": "Συνολικά έσοδα",
+    "statementExpenseTotal": "Συνολικά έξοδα",
+    "statementSettings": "Επιλογές αναφοράς",
+    "statementSortBy": "Ταξινόμηση κατά",
+    "statementSortDefault": "Προεπιλογή",
+    "statementSortAsc": "Ποσό (μικρότερο πρώτα)",
+    "statementSortDesc": "Ποσό (μεγαλύτερο πρώτα)",
+    "statementColumns": "Αριθμός στηλών",
+    "statementShowChange": "Εμφάνιση ποσοστιαίας μεταβολής",
+    "statementViewTransactions": "Προβολή συναλλαγών",
+    "statementUncategorizedIncome": "Έσοδα χωρίς κατηγορία",
+    "statementUncategorizedExpense": "Έξοδα χωρίς κατηγορία",
+    "statementToggleGroup": "Εμφάνιση κατηγοριών του {{name}}"
   },
   "fiscal": {
     "kind": {

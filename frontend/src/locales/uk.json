@@ -2002,7 +2002,21 @@
     "range30d": "30Д",
     "customRange": "Довільний діапазон",
     "pickCustomRange": "Виберіть дату початку та кінця",
-    "loadError": "Не вдалося завантажити звіт"
+    "loadError": "Не вдалося завантажити звіт",
+    "statement": "Звіт за категоріями",
+    "statementIncomeTotal": "Усього доходів",
+    "statementExpenseTotal": "Усього витрат",
+    "statementSettings": "Параметри звіту",
+    "statementSortBy": "Сортувати за",
+    "statementSortDefault": "За замовчуванням",
+    "statementSortAsc": "Сума (за зростанням)",
+    "statementSortDesc": "Сума (за спаданням)",
+    "statementColumns": "Кількість стовпців",
+    "statementShowChange": "Показувати зміну у відсотках",
+    "statementViewTransactions": "Переглянути транзакції",
+    "statementUncategorizedIncome": "Доходи без категорії",
+    "statementUncategorizedExpense": "Витрати без категорії",
+    "statementToggleGroup": "Показати категорії групи {{name}}"
   },
   "payees": {
     "noPayeeFound": "Отримувача не знайдено.",

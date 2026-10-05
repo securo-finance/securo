@@ -56,3 +56,36 @@ class ReportResponse(BaseModel):
     meta: ReportMeta
     composition: list[ReportCompositionItem] = []
     category_trend: list[CategoryTrendItem] = []
+
+
+class CategoryStatementRow(BaseModel):
+    """One line of the income & expense statement.
+
+    ``values`` are signed net amounts in the primary currency (credits
+    positive, debits negative), aligned with ``CategoryStatementResponse.months``.
+    """
+
+    key: str
+    kind: str  # "group" | "category" | "uncategorized"
+    label: str | None
+    icon: str | None = None
+    color: str | None = None
+    category_ids: list[str] = []
+    # Set on the uncategorized rows only: they are split by transaction type,
+    # so a drill-down has to filter by it to match the row.
+    txn_type: str | None = None
+    values: list[float]
+    children: list["CategoryStatementRow"] = []
+
+
+class CategoryStatementSection(BaseModel):
+    totals: list[float]
+    rows: list[CategoryStatementRow]
+
+
+class CategoryStatementResponse(BaseModel):
+    currency: str
+    # "YYYY-MM", newest first: the selected month, then the ones before it.
+    months: list[str]
+    income: CategoryStatementSection
+    expenses: CategoryStatementSection

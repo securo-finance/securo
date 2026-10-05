@@ -17,6 +17,8 @@ import { formatCurrency } from '@/lib/format'
 export type DrillDownFilter = {
   title: string
   category_id?: string
+  // Any of several categories (e.g. every category of a group).
+  category_ids?: string[]
   uncategorized?: boolean
   account_id?: string
   // Scope to a set of accounts (e.g. the active collection's accounts).
@@ -24,6 +26,11 @@ export type DrillDownFilter = {
   type?: 'credit' | 'debit'
   from?: string
   to?: string
+  // Leave out the recurring projections, for views that only count what
+  // already happened.
+  realizedOnly?: boolean
+  // Total the panel as credits minus debits, for rows that show a net amount.
+  netTotal?: boolean
 }
 
 type DisplayItem = {
@@ -65,6 +72,7 @@ export function TransactionDrillDown({
     queryFn: () =>
       transactionsApi.list({
         category_id: filter?.category_id,
+        category_ids: filter?.category_ids,
         uncategorized: filter?.uncategorized,
         account_id: filter?.account_id,
         account_ids: filter?.account_ids,
@@ -83,7 +91,7 @@ export function TransactionDrillDown({
   const { data: projectedTxs } = useQuery({
     queryKey: ['dashboard', 'projected-transactions', monthParam],
     queryFn: () => dashboard.projectedTransactions({ month: monthParam }),
-    enabled: !!filter && !!monthParam,
+    enabled: !!filter && !!monthParam && !filter.realizedOnly,
   })
 
   const { data: accountingModeData } = useQuery({
@@ -116,10 +124,12 @@ export function TransactionDrillDown({
       })
     }
 
-    for (const pt of projectedTxs ?? []) {
+    // A disabled query can still hand back what the dashboard cached.
+    for (const pt of filter?.realizedOnly ? [] : projectedTxs ?? []) {
       // Filter projected txs by drill-down criteria
       if (filter?.type && pt.type !== filter.type) continue
       if (filter?.category_id && String(pt.category_id) !== filter.category_id) continue
+      if (filter?.category_ids && !filter.category_ids.includes(String(pt.category_id))) continue
       if (filter?.uncategorized && pt.category_id != null) continue
       if (filter?.from && pt.date < filter.from) continue
       if (filter?.to && pt.date > filter.to) continue
@@ -182,8 +192,9 @@ export function TransactionDrillDown({
   // amount_primary; if it's missing we can't convert, so skip the row
   // instead of adding a raw foreign amount as if it were primary. This
   // matches how get_summary computes monthly_*_primary on the backend.
-  const { absTotal, postedTotal, pendingTotal, projectedTotal } =
+  const { absTotal, netTotal, postedTotal, pendingTotal, projectedTotal } =
     sumDrillDownTotals(displayItems, userCurrency)
+  const shownTotal = filter?.netTotal ? netTotal : absTotal
 
   // Break the total down whenever some of it is money that has not settled,
   // whether it is pending or still only projected. Gating on pending alone
@@ -329,7 +340,7 @@ export function TransactionDrillDown({
                 )}
                 <div className="flex items-center justify-between gap-4 border-t border-border pt-2 mt-2">
                   <span className="text-xs font-medium text-muted-foreground">{t('dashboard.drillDownShownTotal')}</span>
-                  <span className="text-sm font-bold tabular-nums text-foreground">{mask(formatCurrency(absTotal, userCurrency, locale))}</span>
+                  <span className="text-sm font-bold tabular-nums text-foreground">{mask(formatCurrency(shownTotal, userCurrency, locale))}</span>
                 </div>
               </div>
             ) : (
@@ -337,11 +348,11 @@ export function TransactionDrillDown({
                 <span className="text-xs text-muted-foreground">
                   {t('dashboard.drillDownTotal', {
                     count: displayItems.length,
-                    total: mask(formatCurrency(absTotal, userCurrency, locale)),
+                    total: mask(formatCurrency(shownTotal, userCurrency, locale)),
                   })}
                 </span>
                 <span className="text-sm font-bold tabular-nums text-foreground">
-                  {mask(formatCurrency(absTotal, userCurrency, locale))}
+                  {mask(formatCurrency(shownTotal, userCurrency, locale))}
                 </span>
               </div>
             )}

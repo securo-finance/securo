@@ -1989,7 +1989,21 @@
     "range30d": "30D",
     "customRange": "Período personalizado",
     "pickCustomRange": "Escolha uma data inicial e final",
-    "loadError": "Falha ao carregar o relatório"
+    "loadError": "Falha ao carregar o relatório",
+    "statement": "Demonstrativo",
+    "statementIncomeTotal": "Receita total",
+    "statementExpenseTotal": "Despesa total",
+    "statementSettings": "Opções do relatório",
+    "statementSortBy": "Ordenar por",
+    "statementSortDefault": "Predefinido",
+    "statementSortAsc": "Valor (menor primeiro)",
+    "statementSortDesc": "Valor (maior primeiro)",
+    "statementColumns": "Número de colunas",
+    "statementShowChange": "Mostrar diferença percentual",
+    "statementViewTransactions": "Ver transações",
+    "statementUncategorizedIncome": "Receita sem categoria",
+    "statementUncategorizedExpense": "Despesa sem categoria",
+    "statementToggleGroup": "Mostrar categorias de {{name}}"
   },
   "payees": {
     "noPayeeFound": "Nenhuma entidade encontrada.",

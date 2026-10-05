@@ -1989,7 +1989,21 @@
     "range30d": "30D",
     "customRange": "Intervallo personalizzato",
     "pickCustomRange": "Scegli una data di inizio e fine",
-    "loadError": "Impossibile caricare il report"
+    "loadError": "Impossibile caricare il report",
+    "statement": "Rendiconto",
+    "statementIncomeTotal": "Entrate totali",
+    "statementExpenseTotal": "Uscite totali",
+    "statementSettings": "Opzioni del report",
+    "statementSortBy": "Ordina per",
+    "statementSortDefault": "Predefinito",
+    "statementSortAsc": "Importo (dal più basso)",
+    "statementSortDesc": "Importo (dal più alto)",
+    "statementColumns": "Numero di colonne",
+    "statementShowChange": "Mostra variazione percentuale",
+    "statementViewTransactions": "Visualizza transazioni",
+    "statementUncategorizedIncome": "Entrate senza categoria",
+    "statementUncategorizedExpense": "Uscite senza categoria",
+    "statementToggleGroup": "Mostra le categorie di {{name}}"
   },
   "payees": {
     "noPayeeFound": "Nessun beneficiario trovato.",

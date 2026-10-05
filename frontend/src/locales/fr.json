@@ -1989,7 +1989,21 @@
     "range30d": "30J",
     "customRange": "Plage personnalisée",
     "pickCustomRange": "Choisir une date de début et de fin",
-    "loadError": "Échec du chargement du rapport"
+    "loadError": "Échec du chargement du rapport",
+    "statement": "Relevé",
+    "statementIncomeTotal": "Revenus totaux",
+    "statementExpenseTotal": "Dépenses totales",
+    "statementSettings": "Options du rapport",
+    "statementSortBy": "Trier par",
+    "statementSortDefault": "Par défaut",
+    "statementSortAsc": "Montant (croissant)",
+    "statementSortDesc": "Montant (décroissant)",
+    "statementColumns": "Nombre de colonnes",
+    "statementShowChange": "Afficher la variation en pourcentage",
+    "statementViewTransactions": "Voir les transactions",
+    "statementUncategorizedIncome": "Revenus non catégorisés",
+    "statementUncategorizedExpense": "Dépenses non catégorisées",
+    "statementToggleGroup": "Afficher les catégories de {{name}}"
   },
   "payees": {
     "noPayeeFound": "Aucun bénéficiaire trouvé.",

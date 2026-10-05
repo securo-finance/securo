@@ -1985,7 +1985,21 @@
     "range30d": "30D",
     "customRange": "कस्टम सीमा",
     "pickCustomRange": "प्रारंभ और समाप्ति तिथि चुनें",
-    "loadError": "रिपोर्ट लोड करने में विफल"
+    "loadError": "रिपोर्ट लोड करने में विफल",
+    "statement": "विवरण",
+    "statementIncomeTotal": "कुल आय",
+    "statementExpenseTotal": "कुल खर्च",
+    "statementSettings": "रिपोर्ट विकल्प",
+    "statementSortBy": "इसके अनुसार क्रमबद्ध करें",
+    "statementSortDefault": "डिफ़ॉल्ट",
+    "statementSortAsc": "राशि (सबसे कम पहले)",
+    "statementSortDesc": "राशि (सबसे अधिक पहले)",
+    "statementColumns": "कॉलम की संख्या",
+    "statementShowChange": "प्रतिशत परिवर्तन दिखाएँ",
+    "statementViewTransactions": "लेन-देन देखें",
+    "statementUncategorizedIncome": "बिना श्रेणी की आय",
+    "statementUncategorizedExpense": "बिना श्रेणी के खर्च",
+    "statementToggleGroup": "{{name}} की श्रेणियाँ दिखाएँ"
   },
   "payees": {
     "noPayeeFound": "कोई प्राप्तकर्ता नहीं मिला।",

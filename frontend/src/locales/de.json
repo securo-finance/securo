@@ -1986,7 +1986,21 @@
     "range30d": "30T",
     "customRange": "Benutzerdefinierter Zeitraum",
     "pickCustomRange": "Start- und Enddatum wählen",
-    "loadError": "Bericht konnte nicht geladen werden"
+    "loadError": "Bericht konnte nicht geladen werden",
+    "statement": "Aufstellung",
+    "statementIncomeTotal": "Gesamteinnahmen",
+    "statementExpenseTotal": "Gesamtausgaben",
+    "statementSettings": "Berichtsoptionen",
+    "statementSortBy": "Sortieren nach",
+    "statementSortDefault": "Standard",
+    "statementSortAsc": "Betrag (kleinster zuerst)",
+    "statementSortDesc": "Betrag (größter zuerst)",
+    "statementColumns": "Anzahl der Spalten",
+    "statementShowChange": "Prozentuale Veränderung anzeigen",
+    "statementViewTransactions": "Transaktionen anzeigen",
+    "statementUncategorizedIncome": "Nicht kategorisierte Einnahmen",
+    "statementUncategorizedExpense": "Nicht kategorisierte Ausgaben",
+    "statementToggleGroup": "Kategorien von {{name}} anzeigen"
   },
   "payees": {
     "noPayeeFound": "Kein Zahlungsempfänger gefunden.",

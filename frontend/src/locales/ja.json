@@ -1985,7 +1985,21 @@
     "range30d": "30日",
     "customRange": "期間を指定",
     "pickCustomRange": "開始日と終了日を選択",
-    "loadError": "レポートの読み込みに失敗しました"
+    "loadError": "レポートの読み込みに失敗しました",
+    "statement": "収支明細",
+    "statementIncomeTotal": "収入合計",
+    "statementExpenseTotal": "支出合計",
+    "statementSettings": "レポートのオプション",
+    "statementSortBy": "並べ替え",
+    "statementSortDefault": "デフォルト",
+    "statementSortAsc": "金額（小さい順）",
+    "statementSortDesc": "金額（大きい順）",
+    "statementColumns": "列数",
+    "statementShowChange": "変化率を表示",
+    "statementViewTransactions": "取引を表示",
+    "statementUncategorizedIncome": "未分類の収入",
+    "statementUncategorizedExpense": "未分類の支出",
+    "statementToggleGroup": "{{name}} のカテゴリを表示"
   },
   "payees": {
     "noPayeeFound": "取引相手が見つかりません。",

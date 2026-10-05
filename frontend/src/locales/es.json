@@ -1989,7 +1989,21 @@
     "range30d": "30D",
     "customRange": "Rango personalizado",
     "pickCustomRange": "Elige una fecha de inicio y fin",
-    "loadError": "No se pudo cargar el informe"
+    "loadError": "No se pudo cargar el informe",
+    "statement": "Estado de cuentas",
+    "statementIncomeTotal": "Ingresos totales",
+    "statementExpenseTotal": "Gastos totales",
+    "statementSettings": "Opciones del informe",
+    "statementSortBy": "Ordenar por",
+    "statementSortDefault": "Predeterminado",
+    "statementSortAsc": "Importe (menor primero)",
+    "statementSortDesc": "Importe (mayor primero)",
+    "statementColumns": "Número de columnas",
+    "statementShowChange": "Mostrar diferencia porcentual",
+    "statementViewTransactions": "Ver transacciones",
+    "statementUncategorizedIncome": "Ingresos sin categoría",
+    "statementUncategorizedExpense": "Gastos sin categoría",
+    "statementToggleGroup": "Mostrar categorías de {{name}}"
   },
   "payees": {
     "noPayeeFound": "No se encontró ningún beneficiario.",
