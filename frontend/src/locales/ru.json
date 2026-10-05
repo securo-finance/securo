@@ -856,6 +856,7 @@
     "noData": "Нет данных",
     "noTransactions": "Нет транзакций за этот период",
     "ofBudget": "из {{budget}}",
+    "overBudget": "{{amount}} сверх бюджета",
     "previous": "Предыдущий",
     "next": "Следующий",
     "balanceAsOf": "на {{date}}",

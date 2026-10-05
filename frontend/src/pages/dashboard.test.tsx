@@ -136,3 +136,42 @@ describe('Dashboard net worth breakdown', () => {
     expect(cardRow).toHaveTextContent(formatCurrency(-500, 'USD', 'en-US'))
   })
 })
+
+describe('Dashboard budget bar', () => {
+  const spending = (projected_total: number) => [{
+    category_id: 'holiday', category_name: 'Holiday', category_icon: 'plane', category_color: '#000000',
+    total: projected_total, projected_total, percentage: 100,
+  }]
+  const comparison = (projected_amount: number) => [{
+    category_id: 'holiday', category_name: 'Holiday', category_icon: 'plane', category_color: '#000000',
+    group_id: null, group_name: null, budget_amount: 150, actual_amount: projected_amount, projected_amount,
+    prev_month_amount: 0, projected_prev_month_amount: 0,
+    percentage_used: Math.round((projected_amount / 150) * 1000) / 10, is_recurring: true,
+  }]
+  const renderRow = async () => {
+    renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+    )
+    return (await screen.findByText('Holiday')).closest('.rounded-lg')!
+  }
+
+  it('shows how much the budget was overrun, measured on the net amount', async () => {
+    // 290 debits, 125.55 refunded: the bar measures 164.45 against 150.
+    api.dashboard.spendingByCategory.mockResolvedValue(spending(290))
+    api.budgets.comparison.mockResolvedValue(comparison(164.45))
+
+    const row = await renderRow()
+    expect(row).toHaveTextContent(t('dashboard.overBudget', { amount: formatCurrency(14.45, 'USD', 'en-US') }))
+    expect(row).not.toHaveTextContent(t('dashboard.ofBudget', { budget: formatCurrency(150, 'USD', 'en-US') }))
+  })
+
+  it('keeps showing the limit while under budget', async () => {
+    api.dashboard.spendingByCategory.mockResolvedValue(spending(100))
+    api.budgets.comparison.mockResolvedValue(comparison(100))
+
+    const row = await renderRow()
+    expect(row).toHaveTextContent(t('dashboard.ofBudget', { budget: formatCurrency(150, 'USD', 'en-US') }))
+  })
+})
