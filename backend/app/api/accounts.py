@@ -136,10 +136,10 @@ async def get_account(
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
-    account = await account_service.get_account(session, account_id, ctx.workspace.id)
+    account = await account_service.get_account_with_balances(session, account_id, ctx.workspace.id)
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
-    return account_service.serialize_account(account, None, None, account.connection)
+    return account
 
 
 @router.post("", response_model=AccountRead, status_code=status.HTTP_201_CREATED)
@@ -167,10 +167,10 @@ async def update_account(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
     # Re-read post-commit so the response resolves the institution/display
     # name pair exactly like GET (update_account leaves the row expired).
-    account = await account_service.get_account(session, account_id, ctx.workspace.id)
+    account = await account_service.get_account_with_balances(session, account_id, ctx.workspace.id)
     if not account:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Account not found")
-    return account_service.serialize_account(account, None, None, account.connection)
+    return account
 
 
 @router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
