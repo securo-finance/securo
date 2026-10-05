@@ -1,5 +1,7 @@
 import uuid
 from dataclasses import dataclass, field
+from decimal import Decimal
+from itertools import groupby
 from typing import Optional
 
 from sqlalchemy import func, or_, select, update as sa_update
@@ -310,12 +312,11 @@ async def _merge_budgets(
     category_id: uuid.UUID,
     destination_id: uuid.UUID,
 ) -> None:
-    """Move the budgets over, adding up the ones that would land on each other.
+    """Combine the workspace's effective monthly limits without losing either side.
 
-    A budget is unique per user, category, month and kind, so moving one onto a
-    month the destination already budgets would break that constraint. The two
-    limits are added instead: they are the same person's ceiling for the same
-    month, and dropping either would quietly lower it.
+    Recurring rows change a limit from their month onward; a one-off row only
+    overrides its own category for that month. Merge those schedules before
+    moving the rows, or a later recurring row would hide the earlier limit.
     """
     moving = (
         (
@@ -344,23 +345,28 @@ async def _merge_budgets(
         .scalars()
         .all()
     )
-    by_slot = {(b.user_id, b.month, b.is_recurring): b for b in existing}
-
-    for budget in moving:
-        slot = (budget.user_id, budget.month, budget.is_recurring)
-        target = by_slot.get(slot)
-        if target is None:
-            budget.category_id = destination_id
-            by_slot[slot] = budget
-            continue
-
-        target.amount += budget.amount
-        # The converted amount is only a sum when both sides carry one.
-        if target.amount_primary is not None and budget.amount_primary is not None:
-            target.amount_primary += budget.amount_primary
-        else:
-            target.amount_primary = None
-        await session.delete(budget)
+    # Readers resolve budgets by workspace/category, regardless of who wrote
+    # each row. Keep the surviving row's attribution without splitting its limit.
+    ordered = sorted([*moving, *existing], key=lambda b: (b.month, not b.is_recurring))
+    recurring: dict[uuid.UUID, tuple[Decimal, Decimal | None]] = {}
+    for (_, is_recurring), slot in groupby(ordered, key=lambda b: (b.month, b.is_recurring)):
+        rows = list(slot)
+        amounts = {b.category_id: (b.amount, b.amount_primary) for b in rows}
+        if is_recurring:
+            # Store immutable amounts before changing any ORM row. An
+            # override below must still see each original category's limit.
+            recurring.update(amounts)
+        effective = recurring if is_recurring else recurring | amounts
+        target = next((b for b in rows if b.category_id == destination_id), rows[0])
+        target.category_id = destination_id
+        target.amount = sum((amount for amount, _ in effective.values()), Decimal("0"))
+        primary = [value for _, value in effective.values() if value is not None]
+        target.amount_primary = (
+            sum(primary, Decimal("0")) if len(primary) == len(effective) else None
+        )
+        for budget in rows:
+            if budget is not target:
+                await session.delete(budget)
 
 
 async def _repoint_rules(
