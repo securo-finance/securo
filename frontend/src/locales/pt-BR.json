@@ -823,6 +823,7 @@
     "netWorth": "Patrimônio líquido",
     "netWorthTooltip": "Contas + investimentos, descontando faturas de cartão em aberto.",
     "creditCardBalance": "Faturas de cartão em aberto",
+    "loanBalance": "Empréstimos e hipotecas",
     "pendingSharesOwe": "Líquido {{net}} após dívidas de grupo ({{owed}} pendente)",
     "pendingSharesOwed": "Líquido {{net}} incluindo {{owed}} a receber",
     "pendingSharesTooltip": "Reflete o que você deve ou vai receber em grupos, antes de qualquer acerto.",
@@ -1188,6 +1189,10 @@
     "typeCreditCard": "Cartão de Crédito",
     "typeInvestment": "Investimento",
     "typeWallet": "Carteira",
+    "typeLoan": "Empréstimo / hipoteca",
+    "securedProperty": "Imóvel vinculado",
+    "noSecuredProperty": "Nenhum imóvel vinculado",
+    "balanceLoan": "Dívida em aberto",
     "creditLimit": "Limite do cartão",
     "statementCloseDay": "Dia de fechamento",
     "paymentDueDay": "Dia de vencimento",
@@ -1913,7 +1918,9 @@
     "total": "Total",
     "confirmRegenerateTitle": "Regenerar valores?",
     "confirmRegenerate": "Os parâmetros de crescimento foram alterados. Todos os valores gerados automaticamente serão excluídos e recalculados. Valores manuais serão mantidos.",
-    "regenerate": "Regenerar"
+    "regenerate": "Regenerar",
+    "linkedLoans": "Empréstimos vinculados",
+    "propertyEquity": "Valor {{value}} · Dívida {{debt}} · Patrimônio {{equity}}"
   },
   "reports": {
     "section": "Análises",

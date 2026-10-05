@@ -829,6 +829,7 @@
     "netWorth": "Собственный капитал",
     "netWorthTooltip": "Счета + инвестиции, за вычетом открытых счетов по кредитной карте.",
     "creditCardBalance": "Открытые счета по кредитной карте",
+    "loanBalance": "Loans and mortgages",
     "pendingSharesOwe": "Чистый {{net}} после групповых долгов ({{owed}} ожидает)",
     "pendingSharesOwed": "Чистый {{net}} включая {{owed}} задолженность вам",
     "pendingSharesTooltip": "Отражает, что вы должны / вам должны по вашим группам, до урегулирования.",
@@ -1201,6 +1202,10 @@
     "typeCreditCard": "Кредитная карта",
     "typeInvestment": "Инвестиционный",
     "typeWallet": "Кошелёк",
+    "typeLoan": "Loan / Mortgage",
+    "securedProperty": "Linked property",
+    "noSecuredProperty": "No linked property",
+    "balanceLoan": "Outstanding debt",
     "creditLimit": "Кредитный лимит",
     "statementCloseDay": "Дата закрытия выписки",
     "paymentDueDay": "Дата платежа",
@@ -1926,7 +1931,9 @@
     "total": "Итого",
     "confirmRegenerateTitle": "Перегенерировать значения?",
     "confirmRegenerate": "Параметры роста изменены. Все автоматически сгенерированные значения будут удалены и пересчитаны. Ручные значения сохранятся.",
-    "regenerate": "Перегенерировать"
+    "regenerate": "Перегенерировать",
+    "linkedLoans": "Linked loans",
+    "propertyEquity": "Value {{value}} · Debt {{debt}} · Equity {{equity}}"
   },
   "reports": {
     "section": "Аналитика",

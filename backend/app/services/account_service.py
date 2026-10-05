@@ -9,6 +9,7 @@ from sqlalchemy.orm import contains_eager
 
 from app.core.app_clock import app_today
 from app.models.account import Account
+from app.models.asset import Asset
 from app.models.bank_connection import BankConnection
 from app.models.credit_card_bill import CreditCardBill
 from app.models.transaction import Transaction
@@ -46,7 +47,8 @@ def _simplefin_to_internal_balance(provider: str, account_type: str, balance: De
 
 def _opening_balance_values(account_type: str, balance: Decimal) -> tuple[Decimal, str]:
     amount = abs(balance)
-    is_credit = (balance > 0) == (account_type != "credit_card")
+    # A loan is entered as the amount owed, like a card, and is debt in the ledger.
+    is_credit = (balance > 0) == (account_type not in {"credit_card", "loan"})
     return amount, "credit" if is_credit else "debit"
 
 
@@ -180,6 +182,7 @@ def serialize_account(
         "display_name": acc.display_name,
         "masked_number": acc.masked_number,
         "type": acc.type,
+        "secured_asset_id": acc.secured_asset_id,
         "balance": acc.balance,
         "currency": acc.currency,
         "current_balance": resolved_balance,
@@ -260,6 +263,7 @@ async def create_account(
     user_id: uuid.UUID,
     data: AccountCreate,
 ) -> Account:
+    await _validate_secured_asset(session, workspace_id, data.type, data.secured_asset_id)
     is_cc = data.type == "credit_card"
     account = Account(
         user_id=user_id,
@@ -268,6 +272,7 @@ async def create_account(
         type=data.type,
         balance=data.balance,
         currency=data.currency,
+        secured_asset_id=data.secured_asset_id,
         credit_limit=data.credit_limit if is_cc else None,
         statement_close_day=data.statement_close_day if is_cc else None,
         payment_due_day=data.payment_due_day if is_cc else None,
@@ -308,6 +313,19 @@ async def update_account(
 
     update_data = data.model_dump(exclude_unset=True)
     balance_date = update_data.pop("balance_date", None)
+    new_type = update_data.get("type", account.type)
+    if account.connection_id is not None and new_type == "loan":
+        raise ValueError("Bank-connected accounts cannot be loans yet")
+    # The property link is dropped when the account stops being a loan, so only
+    # a link sent with this edit is checked.
+    await _validate_secured_asset(
+        session,
+        workspace_id,
+        new_type,
+        update_data.get(
+            "secured_asset_id", account.secured_asset_id if new_type == "loan" else None
+        ),
+    )
 
     # Track whether we need to recompute effective_date for all transactions.
     # Changes to the CC cycle days shift which bill each historical purchase
@@ -386,6 +404,8 @@ async def update_account(
         account.minimum_payment = None
         account.card_brand = None
         account.card_level = None
+    if account.type != "loan":
+        account.secured_asset_id = None
 
     # When balance changes, sync the opening_balance transaction
     if "balance" in update_data:
@@ -440,6 +460,23 @@ async def update_account(
     await session.commit()
     await session.refresh(account)
     return account
+
+
+async def _validate_secured_asset(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    account_type: str,
+    asset_id: Optional[uuid.UUID],
+) -> None:
+    if asset_id is None:
+        return
+    if account_type != "loan":
+        raise ValueError("Only loan accounts can be linked to a property")
+    asset = await session.scalar(
+        select(Asset).where(Asset.id == asset_id, Asset.workspace_id == workspace_id)
+    )
+    if asset is None or asset.type != "real_estate":
+        raise ValueError("Linked property must be real estate in the same workspace")
 
 
 async def _recompute_effective_dates(session: AsyncSession, account: Account) -> None:

@@ -11,6 +11,8 @@ class AccountBase(BaseModel):
     type: str
     balance: Decimal
     currency: str = "USD"
+    # Loan accounts only: the real-estate asset the loan is secured against.
+    secured_asset_id: Optional[uuid.UUID] = None
 
 
 class AccountCreate(BaseModel):
@@ -19,6 +21,7 @@ class AccountCreate(BaseModel):
     balance: Decimal = Decimal("0.00")
     balance_date: Optional[date] = None
     currency: str = "USD"
+    secured_asset_id: Optional[uuid.UUID] = None
     credit_limit: Optional[Decimal] = None
     statement_close_day: Optional[int] = None
     payment_due_day: Optional[int] = None
@@ -31,6 +34,7 @@ class AccountUpdate(BaseModel):
     name: Optional[str] = None
     display_name: Optional[str] = None
     type: Optional[str] = None
+    secured_asset_id: Optional[uuid.UUID] = None
     balance: Optional[Decimal] = None
     balance_date: Optional[date] = None
     credit_limit: Optional[Decimal] = None

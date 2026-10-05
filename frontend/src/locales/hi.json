@@ -821,6 +821,7 @@
     "netWorth": "कुल संपत्ति",
     "netWorthTooltip": "खाते + निवेश, घटा बकाया क्रेडिट कार्ड बिल।",
     "creditCardBalance": "बकाया क्रेडिट कार्ड बिल",
+    "loanBalance": "Loans and mortgages",
     "pendingSharesOwe": "समूह क़र्ज़ों के बाद निवल {{net}} ({{owed}} लंबित)",
     "pendingSharesOwed": "आपको मिलने वाले {{owed}} सहित निवल {{net}}",
     "pendingSharesTooltip": "किसी भी निपटान से पहले, आपके समूहों में आप पर क्या बकाया है / आपको क्या मिलना है, यह दर्शाता है।",
@@ -1184,6 +1185,10 @@
     "typeCreditCard": "क्रेडिट कार्ड",
     "typeInvestment": "निवेश",
     "typeWallet": "वॉलेट",
+    "typeLoan": "Loan / Mortgage",
+    "securedProperty": "Linked property",
+    "noSecuredProperty": "No linked property",
+    "balanceLoan": "Outstanding debt",
     "creditLimit": "क्रेडिट सीमा",
     "statementCloseDay": "स्टेटमेंट बंद होने का दिन",
     "paymentDueDay": "भुगतान देय दिन",
@@ -1909,7 +1914,9 @@
     "total": "कुल",
     "confirmRegenerateTitle": "मूल्य दोबारा बनाएँ?",
     "confirmRegenerate": "वृद्धि पैरामीटर बदले। अपने आप बने सभी मूल्य हटा दिए जाएँगे और दोबारा गणना किए जाएँगे। मैन्युअल मूल्य रखे जाएँगे।",
-    "regenerate": "दोबारा बनाएँ"
+    "regenerate": "दोबारा बनाएँ",
+    "linkedLoans": "Linked loans",
+    "propertyEquity": "Value {{value}} · Debt {{debt}} · Equity {{equity}}"
   },
   "reports": {
     "section": "एनालिटिक्स",
