@@ -401,6 +401,33 @@ async def test_get_transactions_sorting(session, test_user, test_workspace, acct
     assert len(td) == 3
 
 
+async def test_get_transactions_pages_rows_sharing_created_at_in_a_stable_order(
+    session, test_user, test_workspace, acct
+):
+    # A bank sync inserts its batch in one database transaction, so the rows
+    # share date and created_at. Paging through them must return each row
+    # exactly once, in the same order on every request.
+    created_at = datetime(2025, 3, 1, 12, tzinfo=timezone.utc)
+    ids = sorted(uuid.uuid4() for _ in range(7))
+    for txn_id in ids:
+        await _mk_txn(session, test_user, acct, id=txn_id, created_at=created_at)
+
+    async def paged_ids(**sort):
+        paged = []
+        for page in range(1, 5):
+            rows, total, _ = await get_transactions(
+                session, test_workspace.id, test_user.id, account_id=acct.id,
+                page=page, limit=2, **sort,
+            )
+            assert total == 7
+            paged.extend(t.id for t in rows)
+        return paged
+
+    # Default order, and an explicit sort whose column ties on every row too.
+    assert await paged_ids() == sorted(ids, reverse=True)
+    assert await paged_ids(sort_by="amount") == sorted(ids, reverse=True)
+
+
 # ---------------------------------------------------------------------------
 # Group-scope visibility (lines 110-112, 146-155)
 # ---------------------------------------------------------------------------
