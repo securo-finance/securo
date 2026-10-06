@@ -287,6 +287,85 @@ async def test_parser_missing_purchase_date_only():
 
 
 # ---------------------------------------------------------------------------
+# Future installments reported at the purchase date (Mercado Pago)
+# ---------------------------------------------------------------------------
+
+
+def _installment(number: int, total: int, txn_date: str, purchase_date: str) -> dict:
+    return {
+        "id": f"tx-{number}",
+        "description": "MERCADOLIVRE*MERCADOLIVRE",
+        "amount": -56.99,
+        "date": txn_date,
+        "type": "DEBIT",
+        "status": "PENDING",
+        "creditCardMetadata": {
+            "installmentNumber": number,
+            "totalInstallments": total,
+            "purchaseDate": purchase_date,
+        },
+    }
+
+
+async def test_future_installment_at_purchase_date_moves_to_its_month():
+    """Installment 5 of a 6 June purchase belongs in October, not June."""
+    result = await _fetch([
+        _installment(5, 10, "2026-06-06T13:26:40.000Z", "2026-06-06T13:26:40.000Z"),
+    ])
+    assert result[0].date == date(2026, 10, 6)
+    assert result[0].installment_purchase_date == date(2026, 6, 6)
+
+
+async def test_future_installment_crosses_into_the_next_year():
+    result = await _fetch([
+        _installment(18, 18, "2025-11-01T14:49:23.000Z", "2025-11-01T14:49:23.000Z"),
+    ])
+    assert result[0].date == date(2027, 4, 1)
+
+
+async def test_future_installment_day_is_clamped_to_a_shorter_month():
+    result = await _fetch([
+        _installment(2, 3, "2026-01-31", "2026-01-31"),
+    ])
+    assert result[0].date == date(2026, 2, 28)
+
+
+async def test_first_installment_keeps_the_purchase_date():
+    result = await _fetch([
+        _installment(1, 10, "2026-06-06T13:26:40.000Z", "2026-06-06T13:26:40.000Z"),
+    ])
+    assert result[0].date == date(2026, 6, 6)
+
+
+async def test_installment_the_connector_already_dated_is_kept():
+    """A date of the connector's own is left alone, even when it is not
+    exactly the purchase day N-1 months on."""
+    result = await _fetch([
+        _installment(2, 10, "2026-07-12T03:00:00.000Z", "2026-06-06T13:26:40.000Z"),
+    ])
+    assert result[0].date == date(2026, 7, 12)
+
+
+async def test_scheduled_installment_on_its_purchase_day_is_kept():
+    """Nubank sometimes reports a scheduled installment with a purchaseDate on
+    the installment's own day. Same day, different timestamp: it is already
+    in its month, and moving it would push it N-1 months too far."""
+    result = await _fetch([
+        _installment(3, 5, "2026-11-10T03:00:00.000Z", "2026-11-10T00:00:00.001Z"),
+    ])
+    assert result[0].date == date(2026, 11, 10)
+
+
+async def test_posted_installment_at_its_purchase_date_is_kept():
+    """Itaú sends billed installments with a purchaseDate equal to their own
+    charge date. A posted row is the bank's record of when it was charged."""
+    installment = _installment(8, 12, "2026-07-09T03:00:00.000Z", "2026-07-09T03:00:00.000Z")
+    installment["status"] = "POSTED"
+    result = await _fetch([installment])
+    assert result[0].date == date(2026, 7, 9)
+
+
+# ---------------------------------------------------------------------------
 # v2 cursor pagination (GET /v2/transactions)
 # ---------------------------------------------------------------------------
 
