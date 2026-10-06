@@ -26,6 +26,7 @@ from app.providers.enable_banking import (
     FALLBACK_HISTORY_DAYS,
     EnableBankingProvider,
     _account_identifier,
+    _entry_reference_external_id,
     _map_cash_account_type,
     _txn_fingerprint,
 )
@@ -360,7 +361,11 @@ async def test_get_transactions_parses_nested_and_flat_shapes(eb_keys):
     debit = next(t for t in nested if t.type == "debit")
     assert debit.amount == Decimal("10.00")
     assert debit.status == "posted"
-    assert debit.external_id == "ref-1"
+    assert debit.external_id == _entry_reference_external_id(
+        "ref-1",
+        {"amount": "10.00", "currency": "EUR"},
+        {"booking_date": "2026-05-10"},
+    )
     credit = next(t for t in nested if t.type == "credit")
     assert credit.status == "pending"
 
@@ -429,7 +434,12 @@ async def test_get_transactions_stops_on_repeated_continuation_key(eb_keys, capl
     assert len(requests) == 2
     assert requests[0].url.params.get("continuation_key") is None
     assert requests[1].url.params["continuation_key"] == "cursor-a"
-    assert [transaction.external_id for transaction in transactions] == ["looped-tx-1"]
+    expected_id = _entry_reference_external_id(
+        "looped-tx-1",
+        {"amount": "10.00", "currency": "EUR"},
+        {"booking_date": "2026-05-10"},
+    )
+    assert [transaction.external_id for transaction in transactions] == [expected_id]
     assert "pagination loop detected" in caplog.text
 
 
@@ -497,7 +507,12 @@ async def test_get_transactions_retries_shorter_window_on_wrong_period(eb_keys):
         DEFAULT_HISTORY_DAYS,
         FALLBACK_HISTORY_DAYS,
     ]
-    assert [t.external_id for t in transactions] == ["tx-1"]
+    expected_id = _entry_reference_external_id(
+        "tx-1",
+        {"amount": "5.00", "currency": "EUR"},
+        {"booking_date": date.today().isoformat()},
+    )
+    assert [t.external_id for t in transactions] == [expected_id]
 
 
 @pytest.mark.asyncio
@@ -738,6 +753,92 @@ def test_build_transaction_treats_entry_reference_zero_as_missing():
     assert tx1.external_id != "0"
     assert tx2.external_id != "0"
     assert tx1.external_id != tx2.external_id
+
+
+def test_build_transaction_disambiguates_shared_batch_entry_reference():
+    """#753 follow-up: a shared settlement/batch reference must not collide.
+
+    Reported cases:
+    An Austrian bank reuses the same entry_reference for a fee
+    line and its related main charge. Both have valid booking/value dates (so
+    the #756 transaction_date fallback doesn't kick in) — only the amount
+    differs, and that alone must be enough to keep both external_ids apart.
+
+    Wise reuses the card-authorization id as entry_reference for every
+    follow-on charge against the same authorization. Two distinct charges
+    sharing that id must still get distinct external_ids.
+    """
+    provider = EnableBankingProvider()
+    fee = {
+        "entry_reference": "ref-1",
+        "transaction_amount": {"currency": "EUR", "amount": "0.55"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-31",
+        "value_date": "2026-08-31",
+        "remittance_information": ["E-COMM 1006,45 AT K3 26.08. 12:53"],
+    }
+    main_charge = {
+        "entry_reference": "ref-1",
+        "transaction_amount": {"currency": "EUR", "amount": "1006.45"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-31",
+        "value_date": "2026-08-29",
+        "remittance_information": ["E-COMM 1006,45 AT K3 26.08. 12:53"],
+    }
+    tx_fee = provider._build_transaction("acc-1", fee, "posted", "auto")
+    tx_main = provider._build_transaction("acc-1", main_charge, "posted", "auto")
+    assert tx_fee is not None and tx_main is not None
+    assert tx_fee.external_id != tx_main.external_id
+    assert tx_fee.amount == Decimal("0.55")
+    assert tx_main.amount == Decimal("1006.45")
+
+def test_build_transaction_entry_reference_external_id_stable_across_refetch():
+    """A genuine re-fetch of the same booked transaction (identical payload)
+    must still resolve to the same external_id, or every sync would
+    re-insert it as new."""
+    provider = EnableBankingProvider()
+    raw = {
+        "entry_reference": "ref-stable-1",
+        "transaction_amount": {"currency": "EUR", "amount": "12.00"},
+        "credit_debit_indicator": "DBIT",
+        "booking_date": "2026-08-31",
+        "value_date": "2026-08-31",
+    }
+    tx1 = provider._build_transaction("acc-1", raw, "posted", "auto")
+    tx2 = provider._build_transaction("acc-1", dict(raw), "posted", "auto")
+    assert tx1 is not None and tx2 is not None
+    assert tx1.external_id == tx2.external_id
+
+
+def test_entry_reference_external_id_differs_on_amount_or_date():
+    base_amount = {"amount": "10.00", "currency": "EUR"}
+    base_raw = {"booking_date": "2026-08-31", "value_date": "2026-08-31"}
+    baseline = _entry_reference_external_id("ref-x", base_amount, base_raw)
+
+    other_amount = _entry_reference_external_id(
+        "ref-x", {"amount": "10.01", "currency": "EUR"}, base_raw
+    )
+    other_date = _entry_reference_external_id(
+        "ref-x", base_amount, {"booking_date": "2026-09-01", "value_date": "2026-08-31"}
+    )
+    assert baseline != other_amount
+    assert baseline != other_date
+
+
+def test_entry_reference_external_id_stable_across_equivalent_amount_spellings():
+    """"12.00" and "12.0" are the same Decimal amount.
+    If we get 12.00 or 12.0 or 12 we need to calculate the same external id"""
+    base_raw = {"booking_date": "2026-08-31", "value_date": "2026-08-31"}
+    a = _entry_reference_external_id(
+        "ref-x", {"amount": "12.00", "currency": "EUR"}, base_raw
+    )
+    b = _entry_reference_external_id(
+        "ref-x", {"amount": "12.0", "currency": "EUR"}, base_raw
+    )
+    c = _entry_reference_external_id(
+        "ref-x", {"amount": "12", "currency": "EUR"}, base_raw
+    )
+    assert a == b == c
 
 
 def test_txn_fingerprint_includes_transaction_date():
