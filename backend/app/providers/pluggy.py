@@ -1,4 +1,5 @@
 import asyncio
+import calendar
 import hashlib
 import json
 import logging
@@ -65,6 +66,14 @@ def _compe_from_transfer_number(transfer_number) -> Optional[str]:
         return None
     code = transfer_number.split("/", 1)[0].strip()
     return code.zfill(3) if code.isdigit() else None
+
+
+def _add_months(d: date, months: int) -> date:
+    """Advance a date by N months, clamping the day to the target month's length."""
+    month_index = d.month - 1 + months
+    year = d.year + month_index // 12
+    month = month_index % 12 + 1
+    return date(year, month, min(d.day, calendar.monthrange(year, month)[1]))
 
 
 # Public, community-maintained mirror of the Bacen (Central Bank) COMPE
@@ -620,6 +629,24 @@ class PluggyProvider(BankProvider):
                             inst_purchase_date = date.fromisoformat(str(inst_purchase_date_raw)[:10])
                         except ValueError:
                             inst_purchase_date = None
+                    # Mercado Pago reports every installment not billed yet
+                    # with the purchase timestamp as its date, so a 10x
+                    # purchase lands whole in the month it was made. The
+                    # tell is `date` being an exact copy of `purchaseDate`,
+                    # time included: connectors that schedule installments
+                    # (Nubank) send a date of their own, even on the same
+                    # day. Such a row moves to the purchase day N-1 months
+                    # on, where Nubank puts the same installment. Posted rows
+                    # are never moved: Itaú sends billed installments with a
+                    # purchaseDate equal to their own charge date.
+                    if (
+                        status == "pending"
+                        and isinstance(inst_number, int)
+                        and inst_number > 1
+                        and inst_purchase_date is not None
+                        and txn.get("date") == inst_purchase_date_raw
+                    ):
+                        txn_date = _add_months(inst_purchase_date, inst_number - 1)
                     inst_total_amount_dec = (
                         Decimal(str(abs(inst_total_amount)))
                         if inst_total_amount is not None
