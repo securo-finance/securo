@@ -58,7 +58,7 @@ async def list_recurring_transactions(
 @tool(
     name="list_assets",
     description=(
-        "List the user's investments / assets (stocks, crypto, CDBs, real "
+        "List the user's investments / assets (stocks, crypto, bonds, real "
         "estate, etc.) with current value and grouping. Use for 'what "
         "investments do I have?' or 'show my portfolio'."
     ),

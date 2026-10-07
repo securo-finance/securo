@@ -2539,6 +2539,10 @@
     "finish": "Začať"
   },
   "agents": {
+    "toolDebug": {
+      "arguments": "Argumenty",
+      "result": "Výsledok"
+    },
     "title": "Agenti",
     "subtitle": "Vytváraj konverzačných asistentov nad svojimi dátami v Securo. Každý agent môže mať vlastnú znalostnú bázu, nástroje a poskytovateľa.",
     "newAgent": "Nový agent",

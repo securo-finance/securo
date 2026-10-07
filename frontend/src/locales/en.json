@@ -2403,6 +2403,10 @@
     "finish": "Get Started"
   },
   "agents": {
+    "toolDebug": {
+      "arguments": "Arguments",
+      "result": "Result"
+    },
     "title": "Agents",
     "subtitle": "Build conversational assistants on top of your Securo data. Each agent can have its own knowledge base, tools, and provider.",
     "newAgent": "New agent",

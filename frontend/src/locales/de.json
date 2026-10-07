@@ -2404,6 +2404,10 @@
     "finish": "Loslegen"
   },
   "agents": {
+    "toolDebug": {
+      "arguments": "Argumente",
+      "result": "Ergebnis"
+    },
     "title": "Agenten",
     "subtitle": "Erstelle Konversationsassistenten basierend auf deinen Securo-Daten. Jeder Agent kann seine eigene Wissensdatenbank, Werkzeuge und Anbieter haben.",
     "newAgent": "Neuer Agent",

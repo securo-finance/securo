@@ -2407,6 +2407,10 @@
     "finish": "Inizia"
   },
   "agents": {
+    "toolDebug": {
+      "arguments": "Argomenti",
+      "result": "Risultato"
+    },
     "title": "Agenti",
     "subtitle": "Crea assistenti conversazionali basati sui tuoi dati Securo. Ogni agente può avere la propria knowledge base, i propri strumenti e il proprio provider.",
     "newAgent": "Nuovo agente",

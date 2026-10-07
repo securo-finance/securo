@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight, Loader2, Wrench } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -16,6 +17,7 @@ interface Props {
  * "show your work" affordance anything-llm uses for agent skills.
  */
 export function ToolDebugChip({ name, args, result, pending, defaultOpen = false }: Props) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(defaultOpen)
   const status = pending ? 'pending' : result?.ok === false ? 'error' : result ? 'ok' : 'pending'
   const summary = result?.text || (result?.data && typeof result.data === 'object'
@@ -54,8 +56,8 @@ export function ToolDebugChip({ name, args, result, pending, defaultOpen = false
       </button>
       {open && (
         <div className="border-t px-2.5 py-2 space-y-2">
-          <Block label="Arguments" payload={args ?? {}} />
-          {result && <Block label="Result" payload={result.data} fallback={result.text} />}
+          <Block label={t('agents.toolDebug.arguments')} payload={args ?? {}} />
+          {result && <Block label={t('agents.toolDebug.result')} payload={result.data} fallback={result.text} />}
         </div>
       )}
     </div>

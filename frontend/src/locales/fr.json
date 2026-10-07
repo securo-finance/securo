@@ -2407,6 +2407,10 @@
     "finish": "Commencer"
   },
   "agents": {
+    "toolDebug": {
+      "arguments": "Arguments",
+      "result": "Résultat"
+    },
     "title": "Agents",
     "subtitle": "Créez des assistants conversationnels par-dessus vos données Securo. Chaque agent peut avoir sa propre base de connaissances, ses outils et son fournisseur.",
     "newAgent": "Nouvel agent",

@@ -2507,6 +2507,10 @@
     "finish": "Zaczynamy"
   },
   "agents": {
+    "toolDebug": {
+      "arguments": "Argumenty",
+      "result": "Wynik"
+    },
     "title": "Agenci",
     "subtitle": "Twórz konwersacyjnych asystentów na bazie swoich danych w Securo. Każdy agent może mieć własną bazę wiedzy, narzędzia i dostawcę.",
     "newAgent": "Nowy agent",

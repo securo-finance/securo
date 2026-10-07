@@ -41,6 +41,21 @@ def _user_label(user: User) -> str:
     return email or "the user"
 
 
+_LANGUAGE_NAMES = {
+    "de": "German", "el": "Greek", "en": "English", "es": "Spanish", "fr": "French",
+    "hi": "Hindi", "it": "Italian", "ja": "Japanese", "nl": "Dutch", "pl": "Polish",
+    "pt": "Portuguese", "pt-BR": "Brazilian Portuguese", "pt-PT": "European Portuguese",
+    "ru": "Russian", "sk": "Slovak", "uk": "Ukrainian",
+}
+
+
+def _language_label(code: str) -> str:
+    """'pt-BR' -> 'Brazilian Portuguese (pt-BR)'. Models follow a language
+    *name* far more reliably than a bare locale code."""
+    name = _LANGUAGE_NAMES.get(code) or _LANGUAGE_NAMES.get(code.split("-")[0].lower())
+    return f"{name} ({code})" if name else code
+
+
 async def build_context_primer(
     session: AsyncSession,
     user: User,
@@ -65,7 +80,7 @@ async def build_context_primer(
     lines.append("The user you are helping (Securo, a personal finance app):")
     lines.append(f"- Identity: {_user_label(user)}")
     lines.append(f"- Primary currency: {primary_currency}")
-    lines.append(f"- Preferred language: {language}")
+    lines.append(f"- Preferred language: {_language_label(language)} — reply in this language")
     lines.append(f"- Timezone: {timezone_label}")
     lines.append(f"- Today is {today} ({timezone_label})")
     lines.append("")

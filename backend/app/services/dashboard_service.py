@@ -764,7 +764,7 @@ async def get_spending_by_category(
     for row in result.all():
         cat_id = str(row[0]) if row[0] else None
         spending_map[cat_id] = {
-            "name": row[1] or "Sem categoria",
+            "name": row[1] or "Uncategorized",
             "icon": row[2] or "circle-help",
             "color": row[3] or "#6B7280",
             "total": abs(float(row[4] or 0)),
@@ -820,7 +820,7 @@ async def get_spending_by_category(
             else:
                 meta = cat_meta_cache.get(
                     cat_id,
-                    {"name": "Sem categoria", "icon": "circle-help", "color": "#6B7280"},
+                    {"name": "Uncategorized", "icon": "circle-help", "color": "#6B7280"},
                 )
                 spending_map[cat_id] = {
                     "name": meta["name"],
@@ -850,7 +850,7 @@ async def get_spending_by_category(
             if cat_row:
                 cat_cache[cat_id] = {"name": cat_row[0], "icon": cat_row[1], "color": cat_row[2]}
             else:
-                cat_cache[cat_id] = {"name": "Sem categoria", "icon": "circle-help", "color": "#6B7280"}
+                cat_cache[cat_id] = {"name": "Uncategorized", "icon": "circle-help", "color": "#6B7280"}
 
         # Convert projection amount to primary currency
         proj_amount, _ = await convert(
@@ -861,7 +861,7 @@ async def get_spending_by_category(
         if cat_id in spending_map:
             spending_map[cat_id]["projected"] += proj_amount_float
         else:
-            info = cat_cache.get(cat_id, {"name": "Sem categoria", "icon": "circle-help", "color": "#6B7280"})
+            info = cat_cache.get(cat_id, {"name": "Uncategorized", "icon": "circle-help", "color": "#6B7280"})
             spending_map[cat_id] = {
                 "name": info["name"],
                 "icon": info["icon"],
@@ -885,7 +885,7 @@ async def get_spending_by_category(
         cat_id = str(tx.category_id) if tx.category_id else None
         if cat_id and cat_id not in cat_cache:
             cat_cache[cat_id] = {
-                "name": category.name if category else "Sem categoria",
+                "name": category.name if category else "Uncategorized",
                 "icon": category.icon if category else "circle-help",
                 "color": category.color if category else "#6B7280",
             }
@@ -904,7 +904,7 @@ async def get_spending_by_category(
         else:
             info = cat_cache.get(
                 cat_id,
-                {"name": "Sem categoria", "icon": "circle-help", "color": "#6B7280"},
+                {"name": "Uncategorized", "icon": "circle-help", "color": "#6B7280"},
             )
             spending_map[cat_id] = {**info, "total": 0.0, "projected": projected_amount}
 

@@ -2407,6 +2407,10 @@
     "finish": "Começar"
   },
   "agents": {
+    "toolDebug": {
+      "arguments": "Argumentos",
+      "result": "Resultado"
+    },
     "title": "Agentes",
     "subtitle": "Constrói assistentes conversacionais sobre os teus dados do Securo. Cada agente pode ter a sua própria base de conhecimento, ferramentas e fornecedor.",
     "newAgent": "Novo agente",

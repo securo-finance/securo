@@ -528,7 +528,7 @@ async def test_spending_by_category_basic(session: AsyncSession, test_user, test
 
 @pytest.mark.asyncio
 async def test_spending_by_category_uncategorized(session: AsyncSession, test_user, test_workspace):
-    """Uncategorized transactions show as 'Sem categoria'."""
+    """Uncategorized transactions show under a language-neutral label."""
     account = await _make_account(session, test_user.id, "Uncat Spend")
     today = date.today()
 
@@ -537,7 +537,7 @@ async def test_spending_by_category_uncategorized(session: AsyncSession, test_us
     spending = await get_spending_by_category(session, test_workspace.id, test_user.id)
     uncat = next((s for s in spending if s.category_id is None), None)
     assert uncat is not None
-    assert uncat.category_name == "Sem categoria"
+    assert uncat.category_name == "Uncategorized"
 
 
 @pytest.mark.asyncio

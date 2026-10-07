@@ -2405,6 +2405,10 @@
     "finish": "Aan de slag"
   },
   "agents": {
+    "toolDebug": {
+      "arguments": "Argumenten",
+      "result": "Resultaat"
+    },
     "title": "Agents",
     "subtitle": "Bouw gespreksassistenten bovenop uw Securo-gegevens. Elke agent kan zijn eigen kennisbank, tools en provider hebben.",
     "newAgent": "Nieuwe agent",

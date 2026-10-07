@@ -131,9 +131,9 @@ _RUNTIME_GUARDRAIL = (
     "2. Don't silently substitute entities the user named. If the user "
     "asks for a category/account/payee/group 'X' and the lookup returns "
     "no match, you MUST stop and tell the user before doing anything else. "
-    "Never quietly pick a similar-looking one (e.g. user said 'Coleguinhas', "
-    "only 'Amigos' exists → STOP, ask, do not build a proposal against "
-    "'Amigos'). For categories specifically: if the user-named category "
+    "Never quietly pick a similar-looking one (e.g. user said 'Housemates', "
+    "only 'Roommates' exists → STOP, ask, do not build a proposal against "
+    "'Roommates'). For categories specifically: if the user-named category "
     "doesn't exist, prefer leaving `category_id` null in the transaction "
     "proposal and mention it in your reply — don't chain a "
     "propose_create_category step unless the user explicitly asked to "
@@ -142,10 +142,11 @@ _RUNTIME_GUARDRAIL = (
     "3. The auto-context primer (when present) is orientation only — never "
     "quote balances or counts from it; query the tools for live numbers.\n"
     "\n"
-    "4. When responding in Portuguese (or any non-English language), keep "
-    "your phrasing language-consistent — don't mix English snippets like "
-    "'I prepared a proposal' into a Portuguese reply. Use 'Preparei uma "
-    "proposta…' / 'Aqui está uma prévia…'.\n"
+    "4. Reply in the user's preferred language, which the conversation "
+    "context states explicitly (fall back to the language the user writes "
+    "in). Keep the whole reply in that one language — never mix in "
+    "snippets from another language, including fixed phrases like "
+    "'I prepared a proposal'; translate them.\n"
     "\n"
     "5. Charts: when a visualization would clearly help (trends over "
     "time, category breakdowns, comparisons), render one inline by "
@@ -156,7 +157,7 @@ _RUNTIME_GUARDRAIL = (
     "{\n"
     '  "type": "line",            // line | bar | area | pie\n'
     '  "title": "Income vs expenses (last 6 months)",\n'
-    '  "currency": "BRL",         // optional, formats Y axis as money\n'
+    '  "currency": "USD",         // optional, formats Y axis as money\n'
     '  "data": [\n'
     '    {"x": "Jan", "income": 3200, "expense": 2100},\n'
     '    {"x": "Feb", "income": 3400, "expense": 2300}\n'
@@ -186,15 +187,15 @@ _RUNTIME_GUARDRAIL = (
     "definitions, jargon, or any domain-specific knowledge.\n"
     "\n"
     "   - You MUST call `search_knowledge_base` before any answer that "
-    "claims something is or isn't in the documents. Phrases like 'não "
-    "encontrei nos documentos', 'I didn't find this in the docs', or 'isso "
-    "não consta' are forbidden unless you actually called the tool first "
+    "claims something is or isn't in the documents. Phrases like 'I "
+    "didn't find this in the documents' or 'the documents don't cover "
+    "this' (in any language) are forbidden unless you actually called the tool first "
     "and got no relevant result. Pre-judging without searching is a bug, "
     "even if you think the question is out of scope.\n"
     "   - Use the user's own wording as the query (translate if needed). "
     "Try a second query with related terms if the first returns nothing.\n"
     "   - If the KB returns relevant chunks, answer from them and cite the "
-    "doc title or filename inline (e.g. 'segundo o briefing X…').\n"
+    "doc title or filename inline (e.g. 'according to the X briefing…').\n"
     "   - If the KB returns nothing relevant (no items, or only low-score "
     "chunks unrelated to the question), DO NOT invent an answer and DO NOT "
     "fall back to general world knowledge as if it were authoritative. "
@@ -228,7 +229,7 @@ def _format_page_context(page_context: Optional[dict[str, Any]]) -> Optional[str
     label = page_context.get("label") or path
     lines = ["## Current page context",
              "The user is sending this message from the page below — when they refer "
-             "to 'this', 'these', 'aqui', etc., it most likely refers to what's on "
+             "to 'this', 'these', 'here', etc., it most likely refers to what's on "
              "this page right now."]
     if label or path:
         lines.append(f"- **Page:** {label or '?'}{f' ({path})' if (path and label != path) else ''}")
@@ -286,7 +287,9 @@ def _build_agent_identity_primer(agent: Agent) -> str:
         lines.append(f"\nYour stated role / specialty: {description}")
     lines.append(
         "\nGround rules:\n"
-        "- Answer in the user's language (Portuguese, English, Spanish, etc.).\n"
+        "- Reply in the user's preferred language (stated in the conversation "
+        "context; otherwise the language they write in), and keep the whole "
+        "reply in that one language.\n"
         "- You have tools that read the user's data and `propose_*` tools "
         "that draft changes for the user to approve — those never apply "
         "by themselves.\n"
