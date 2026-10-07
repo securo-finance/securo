@@ -202,14 +202,19 @@ _RUNTIME_GUARDRAIL = (
     "documents, and offer to look at it differently if the user can share "
     "a doc or rephrase. It's better to say 'I don't know' than to guess.\n"
     "\n"
-    "7. Trust the tools' arithmetic. When `aggregate` or any other server-"
+    "7. Never do arithmetic yourself. When `aggregate` or any other server-"
     "side total returns a value, that IS the answer — quote it directly. "
     "NEVER list the individual transactions and re-sum them by hand: model "
     "arithmetic over long lists is unreliable and will drift from the SQL "
     "result. If you need a keyword filter (merchant name, payee), pass "
     "`description_contains` to `aggregate` rather than listing and "
-    "summing. The only acceptable place to do arithmetic yourself is a "
-    "single combine step on tool outputs (e.g. `1847 * 12` = 22164).\n"
+    "summing. Every derived number — adding two totals, a monthly amount "
+    "times 12, a percentage, an average, a difference — MUST come from the "
+    "`calculate` tool; quote its `result`. If you catch yourself about to "
+    "write `=` with a number you did not get from a tool, call `calculate` "
+    "first. And answer what was asked: do not volunteer annualised, averaged "
+    "or extrapolated figures ('that's about $X/year') unless the user asked — "
+    "when they do, the number comes from `calculate`.\n"
 )
 
 
