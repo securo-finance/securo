@@ -2462,6 +2462,8 @@
       "model": "Modell",
       "modelPlaceholder": "llama3.1:8b, gpt-4o-mini, ...",
       "temperature": "Temperatur",
+      "historyWindow": "Verlaufsfenster",
+      "historyWindowHint": "Frühere Nachrichten dieser Unterhaltung, die dem Modell bei jedem Zug erneut übergeben werden. Niedriger ist schneller und günstiger, höher erinnert sich an mehr.",
       "cancel": "Abbrechen",
       "save": "Speichern",
       "create": "Erstellen",

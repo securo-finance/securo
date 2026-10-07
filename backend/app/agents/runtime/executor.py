@@ -346,12 +346,11 @@ class AgentExecutor:
         #      6. Conversation history
         #      7. The new user message (appended in step 4 below)
         history = await conversation_service.list_messages(session, conversation_id, limit=agent.max_history_messages * 2 + 2)
-        # The window can open mid-turn: a turn with parallel tool calls has an
-        # odd number of rows, so the cut can land on a tool result whose
-        # assistant call fell outside it. Providers reject an orphaned tool
-        # result, so replay from the first user message in the window.
-        while history and history[0].role != "user":
-            history.pop(0)
+        history_messages = _replay_history(
+            history,
+            token_budget=self.settings.history_token_budget,
+            compact_chars=self.settings.history_tool_result_chars,
+        )
         messages: list[ChatMessage] = []
         # Runtime guardrail goes FIRST and applies to every conversation,
         # regardless of agent settings or per-agent system prompt. Locks
@@ -389,25 +388,7 @@ class AgentExecutor:
         page_primer = _format_page_context(page_context)
         if page_primer:
             messages.append(ChatMessage(role="system", content=page_primer))
-        for m in history:
-            tcs = []
-            for raw in (m.tool_calls or []):
-                tcs.append(ToolCall(
-                    id=raw.get("id"), name=raw.get("name"), arguments=raw.get("arguments") or {},
-                    thought_signature=raw.get("thought_signature"),
-                ))
-            tool_call_id = (m.tool_result or {}).get("tool_call_id") if m.role == "tool" else None
-            content = m.content
-            if m.role == "tool":
-                # Encode tool result as content for the LLM.
-                tr = m.tool_result or {}
-                content = tr.get("text") or _safe_json(tr.get("data"))
-            messages.append(ChatMessage(
-                role=cast(Role, m.role),
-                content=content,
-                tool_calls=tcs,
-                tool_call_id=tool_call_id,
-            ))
+        messages.extend(history_messages)
 
         # 3. Discover tools from MCP and filter by per-agent whitelist.
         try:
@@ -441,8 +422,8 @@ class AgentExecutor:
             return
 
         # 4. Tool-calling loop. Cap iterations to prevent runaway agents.
-        MAX_ITERS = 6
-        for iteration in range(MAX_ITERS):
+        max_iters = max(1, int(self.settings.max_tool_iterations))
+        for iteration in range(max_iters):
             text_buf: list[str] = []
             open_calls: dict[str, dict] = {}
             finish_reason = "stop"
@@ -589,10 +570,13 @@ class AgentExecutor:
         # assistant bubble, and persist it so the conversation has a
         # readable transcript. The friendliest message reuses any text we
         # accumulated mid-loop if there is some.
+        # Kept in English on purpose: the model is not involved at this point,
+        # and the UI has no locale for a backend-authored sentence. It is
+        # short, and the error event below carries the machine-readable code.
         fallback = (
-            "Não consegui completar essa consulta — pedi muitas ferramentas em sequência "
-            "e o limite foi atingido. Reformule a pergunta de forma mais específica e eu tento "
-            "de novo (por exemplo, restrinja a um período ou a uma categoria)."
+            "I couldn't finish this request — it needed more tool calls than the "
+            "per-message limit allows. Ask again with a narrower scope (for example, "
+            "one month, one account, or one category at a time) and I'll pick up where I left off."
         )
         yield ExecutorEvent(type="text_delta", text=fallback)
         await conversation_service.append_message(
@@ -600,6 +584,64 @@ class AgentExecutor:
         )
         yield ExecutorEvent(type="error", error_code="max_iterations", error_message="Agent reached its tool-call limit.")
         yield ExecutorEvent(type="done", finish_reason="max_iterations")
+
+
+def _replay_history(history: list, *, token_budget: int, compact_chars: int) -> list[ChatMessage]:
+    """Turn stored rows into the ChatMessages replayed to the model, within a budget.
+
+    Two things wreck long conversations on token-tight (local) models:
+    dozens of full JSON tool payloads replayed verbatim, and a history that
+    grows until the newest user message is buried. So, newest-first:
+
+      1. Tool results from turns *before* the newest completed turn are
+         compacted to ``compact_chars`` with an explicit marker — the model
+         can see data was trimmed and call the tool again. The newest turn
+         is always replayed in full (follow-ups like "and the third one?"
+         need it).
+      2. Rows are kept until ``token_budget`` (≈ 4 chars/token) is spent;
+         older rows are dropped.
+      3. The window always opens on a user message: a turn with parallel
+         tool calls has an odd number of rows, so a cut can land on a tool
+         result whose assistant call fell outside it, and providers reject
+         an orphaned tool result.
+    """
+    rows = list(history)
+    newest_turn_start = 0
+    for i in range(len(rows) - 1, -1, -1):
+        if rows[i].role == "user":
+            newest_turn_start = i
+            break
+
+    built: list[ChatMessage] = []
+    spent = 0
+    for i in range(len(rows) - 1, -1, -1):
+        m = rows[i]
+        tcs = [
+            ToolCall(
+                id=raw.get("id"), name=raw.get("name"), arguments=raw.get("arguments") or {},
+                thought_signature=raw.get("thought_signature"),
+            )
+            for raw in (m.tool_calls or [])
+        ]
+        tool_call_id = (m.tool_result or {}).get("tool_call_id") if m.role == "tool" else None
+        content = m.content
+        if m.role == "tool":
+            tr = m.tool_result or {}
+            content = tr.get("text") or _safe_json(tr.get("data"))
+            if compact_chars > 0 and i < newest_turn_start and content and len(content) > compact_chars:
+                content = (
+                    content[:compact_chars]
+                    + f" …[older tool result compacted to {compact_chars} chars; call the tool again if you need the full data]"
+                )
+        cost = (len(content or "") + sum(len(_safe_json(tc.arguments)) for tc in tcs)) // 4 + 8
+        if built and spent + cost > token_budget:
+            break
+        spent += cost
+        built.append(ChatMessage(role=cast(Role, m.role), content=content, tool_calls=tcs, tool_call_id=tool_call_id))
+    built.reverse()
+    while built and built[0].role != "user":
+        built.pop(0)
+    return built
 
 
 async def _process_chunk(chunk: ChatChunk, text_buf: list[str], open_calls: dict[str, dict]) -> AsyncIterator[ExecutorEvent]:

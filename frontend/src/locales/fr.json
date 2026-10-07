@@ -2465,6 +2465,8 @@
       "model": "Modèle",
       "modelPlaceholder": "llama3.1:8b, gpt-4o-mini, ...",
       "temperature": "Température",
+      "historyWindow": "Fenêtre d'historique",
+      "historyWindowHint": "Messages précédents de cette conversation renvoyés au modèle à chaque tour. Moins, c'est plus rapide et moins cher ; plus, c'est plus de mémoire.",
       "cancel": "Annuler",
       "save": "Enregistrer",
       "create": "Créer",

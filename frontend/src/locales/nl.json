@@ -2463,6 +2463,8 @@
       "model": "Model",
       "modelPlaceholder": "lama3.1:8b, gpt-4o-mini, ...",
       "temperature": "Temperatuur",
+      "historyWindow": "Geschiedenisvenster",
+      "historyWindowHint": "Eerdere berichten uit dit gesprek die elke beurt opnieuw aan het model worden gegeven. Lager is sneller en goedkoper; hoger onthoudt meer.",
       "cancel": "Annuleer",
       "save": "Opslaan",
       "create": "Creëer",

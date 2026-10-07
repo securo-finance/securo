@@ -2597,6 +2597,8 @@
       "model": "Model",
       "modelPlaceholder": "llama3.1:8b, gpt-4o-mini, ...",
       "temperature": "Teplota",
+      "historyWindow": "Okno histórie",
+      "historyWindowHint": "Predchádzajúce správy z tejto konverzácie, ktoré sa modelu posielajú pri každom ťahu. Menej je rýchlejšie a lacnejšie; viac si pamätá viac.",
       "cancel": "Zrušiť",
       "save": "Uložiť",
       "create": "Vytvoriť",

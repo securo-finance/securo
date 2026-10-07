@@ -2449,6 +2449,8 @@
       "model": "Modello",
       "modelPlaceholder": "llama3.1:8b, gpt-4o-mini, ...",
       "temperature": "Temperatura",
+      "historyWindow": "Finestra cronologia",
+      "historyWindowHint": "Messaggi precedenti di questa conversazione reinviati al modello a ogni turno. Meno è più veloce ed economico; di più ricorda di più.",
       "cancel": "Annulla",
       "save": "Salva",
       "create": "Crea",

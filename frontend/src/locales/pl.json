@@ -2549,6 +2549,8 @@
       "model": "Model",
       "modelPlaceholder": "llama3.1:8b, gpt-4o-mini, ...",
       "temperature": "Temperatura",
+      "historyWindow": "Okno historii",
+      "historyWindowHint": "Wcześniejsze wiadomości z tej rozmowy przekazywane modelowi w każdej turze. Mniej – szybciej i taniej; więcej – lepsza pamięć.",
       "cancel": "Anuluj",
       "save": "Zapisz",
       "create": "Utwórz",

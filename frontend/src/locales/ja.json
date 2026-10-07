@@ -2461,6 +2461,8 @@
       "model": "モデル",
       "modelPlaceholder": "llama3.1:8b, gpt-4o-mini, ...",
       "temperature": "温度",
+      "historyWindow": "履歴ウィンドウ",
+      "historyWindowHint": "毎ターン、モデルに再送されるこの会話の過去メッセージ数。少ないほど高速で安価、多いほど多くを記憶します。",
       "cancel": "キャンセル",
       "save": "保存",
       "create": "作成",

@@ -40,6 +40,7 @@ export function AgentFormDialog({ open, onOpenChange, agent }: Props) {
   const [connectionId, setConnectionId] = useState<string>('')
   const [model, setModel] = useState('')
   const [temperature, setTemperature] = useState('0.4')
+  const [historyWindow, setHistoryWindow] = useState('20')
   const [autoContext, setAutoContext] = useState(true)
   const [isDefault, setIsDefault] = useState(false)
 
@@ -57,6 +58,7 @@ export function AgentFormDialog({ open, onOpenChange, agent }: Props) {
       setConnectionId(agent.connection_id ?? '')
       setModel(agent.model ?? '')
       setTemperature(String(agent.temperature ?? 0.4))
+      setHistoryWindow(String(agent.max_history_messages ?? 20))
       setAutoContext(agent.auto_context ?? true)
       setIsDefault(agent.is_default ?? false)
     } else {
@@ -68,6 +70,7 @@ export function AgentFormDialog({ open, onOpenChange, agent }: Props) {
       setConnectionId('')
       setModel('')
       setTemperature('0.4')
+      setHistoryWindow('20')
       setAutoContext(true)
       setIsDefault(false)
     }
@@ -116,6 +119,7 @@ export function AgentFormDialog({ open, onOpenChange, agent }: Props) {
       connection_id: connectionId,
       model: model.trim() || null,
       temperature: Number(temperature) || 0.4,
+      max_history_messages: Math.min(200, Math.max(1, Math.round(Number(historyWindow)) || 20)),
       auto_context: autoContext,
       is_default: isDefault,
     })
@@ -232,6 +236,19 @@ export function AgentFormDialog({ open, onOpenChange, agent }: Props) {
               value={temperature}
               onChange={(e) => setTemperature(e.target.value)}
             />
+          </div>
+          <div className="grid gap-2 max-w-[220px]">
+            <Label htmlFor="agent-history">{t('agents.form.historyWindow')}</Label>
+            <Input
+              id="agent-history"
+              type="number"
+              step="1"
+              min="1"
+              max="200"
+              value={historyWindow}
+              onChange={(e) => setHistoryWindow(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">{t('agents.form.historyWindowHint')}</p>
           </div>
           <div className="rounded-md border p-3 flex items-start gap-3">
             <Switch checked={autoContext} onCheckedChange={(v) => setAutoContext(!!v)} />

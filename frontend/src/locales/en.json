@@ -2461,6 +2461,8 @@
       "model": "Model",
       "modelPlaceholder": "llama3.1:8b, gpt-4o-mini, ...",
       "temperature": "Temperature",
+      "historyWindow": "History window",
+      "historyWindowHint": "Past messages from this conversation replayed to the model each turn. Lower is faster and cheaper; higher remembers more.",
       "cancel": "Cancel",
       "save": "Save",
       "create": "Create",

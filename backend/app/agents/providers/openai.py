@@ -7,6 +7,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from app.agents.config import get_agent_settings
+
 from app.agents.providers.base import (
     ChatChunk,
     ChatMessage,
@@ -135,7 +137,7 @@ class OpenAIProvider(LLMProvider):
             payload["max_tokens"] = max_tokens
 
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(get_agent_settings().provider_timeout_seconds, connect=10.0)) as client:
                 async with client.stream("POST", url, json=payload, headers=self._headers()) as resp:
                     if resp.status_code >= 400:
                         body = (await resp.aread()).decode("utf-8", errors="replace")
