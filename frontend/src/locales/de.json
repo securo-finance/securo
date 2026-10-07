@@ -2525,7 +2525,20 @@
       "loading": "Werkzeuge werden geladen…"
     },
     "chat": {
-      "placeholder": "Schreibe mit {{name}}..."
+      "placeholder": "Schreibe mit {{name}}...",
+      "stop": "Stopp",
+      "send": "Senden",
+      "retry": "Erneut versuchen",
+      "elapsed": "{{seconds}}s",
+      "errors": {
+        "auth": "Die LLM-Verbindung hat die Zugangsdaten abgelehnt. Prüfe den API-Schlüssel unter Agenten → Verbindungen.",
+        "rate_limit": "Der LLM-Anbieter drosselt gerade Anfragen. Warte kurz und versuche es erneut.",
+        "unavailable": "Der LLM-Anbieter war nicht erreichbar.",
+        "max_iterations": "Der Agent hat sein Limit an Tool-Aufrufen erreicht, bevor er fertig war. Stelle eine engere Frage.",
+        "empty_response": "Der LLM-Endpunkt hat nichts zurückgegeben. Prüfe Basis-URL und Modellname der Verbindung.",
+        "config": "Für diesen Agenten ist kein Modell konfiguriert. Wähle in seinen Einstellungen eine Verbindung.",
+        "generic": "Beim Antworten ist etwas schiefgelaufen."
+      }
     },
     "chart": {
       "noData": "Keine Daten für das Diagramm"

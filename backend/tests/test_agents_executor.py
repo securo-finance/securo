@@ -602,3 +602,35 @@ async def test_history_window_never_opens_on_an_orphaned_tool_result(
         ("user", "q2"), ("assistant", "a2"),
         ("user", "new question"),
     ]
+
+
+async def test_cancelled_stream_persists_the_partial_answer(session, test_user, test_agent, test_conversation):
+    """Stop in the UI closes the SSE response, which cancels the generator
+    mid-stream. The text the model had produced must survive as the
+    assistant turn rather than vanish."""
+    import asyncio
+
+    class _Cancelling(_ScriptedProvider):
+        async def chat_stream(self, messages, *, model, tools=None, temperature=0.4, max_tokens=None):
+            yield ChatChunk(type="text_delta", text="Your top category was ")
+            raise asyncio.CancelledError()
+
+    provider = _Cancelling([])
+    executor = AgentExecutor(mcp=_FakeMCP(tools=[]))
+    with _patch_provider(provider), pytest.raises(asyncio.CancelledError):
+        await _drain(
+            executor,
+            session=session,
+            agent=test_agent,
+            user_id=test_user.id,
+            conversation_id=test_conversation.id,
+            user_message="what was my top category?",
+        )
+
+    rows = (await session.execute(
+        select(Message).where(Message.conversation_id == test_conversation.id).order_by(Message.ordinal)
+    )).scalars().all()
+    assert [(m.role, m.content) for m in rows] == [
+        ("user", "what was my top category?"),
+        ("assistant", "Your top category was"),
+    ]

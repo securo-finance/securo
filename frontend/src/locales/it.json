@@ -2512,7 +2512,20 @@
       "loading": "Caricamento strumenti…"
     },
     "chat": {
-      "placeholder": "Parla con {{name}}..."
+      "placeholder": "Parla con {{name}}...",
+      "stop": "Ferma",
+      "send": "Invia",
+      "retry": "Riprova",
+      "elapsed": "{{seconds}}s",
+      "errors": {
+        "auth": "La connessione LLM ha rifiutato le credenziali. Controlla la chiave API in Agenti → Connessioni.",
+        "rate_limit": "Il provider LLM sta limitando le richieste in questo momento. Attendi un attimo e riprova.",
+        "unavailable": "Impossibile raggiungere il provider LLM.",
+        "max_iterations": "L'agente ha raggiunto il limite di chiamate agli strumenti prima di finire. Fai una domanda più circoscritta.",
+        "empty_response": "L'endpoint LLM non ha restituito nulla. Controlla URL base e nome del modello della connessione.",
+        "config": "Questo agente non ha un modello configurato. Scegli una connessione nelle sue impostazioni.",
+        "generic": "Qualcosa è andato storto durante la risposta."
+      }
     },
     "chart": {
       "noData": "Nessun dato da rappresentare"

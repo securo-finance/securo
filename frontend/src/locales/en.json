@@ -2524,7 +2524,20 @@
       "loading": "Loading tools…"
     },
     "chat": {
-      "placeholder": "Talk to {{name}}..."
+      "placeholder": "Talk to {{name}}...",
+      "stop": "Stop",
+      "send": "Send",
+      "retry": "Retry",
+      "elapsed": "{{seconds}}s",
+      "errors": {
+        "auth": "The LLM connection rejected its credentials. Check the API key under Agents → Connections.",
+        "rate_limit": "The LLM provider is rate-limiting right now. Wait a moment and retry.",
+        "unavailable": "The LLM provider could not be reached.",
+        "max_iterations": "The agent hit its tool-call limit before finishing. Ask a narrower question.",
+        "empty_response": "The LLM endpoint returned nothing. Check the connection's base URL and model name.",
+        "config": "This agent has no model configured. Pick a connection in its settings.",
+        "generic": "Something went wrong while answering."
+      }
     },
     "chart": {
       "noData": "No data to chart"

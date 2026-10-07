@@ -2528,7 +2528,20 @@
       "loading": "Chargement des outils…"
     },
     "chat": {
-      "placeholder": "Discuter avec {{name}}..."
+      "placeholder": "Discuter avec {{name}}...",
+      "stop": "Arrêter",
+      "send": "Envoyer",
+      "retry": "Réessayer",
+      "elapsed": "{{seconds}}s",
+      "errors": {
+        "auth": "La connexion LLM a refusé les identifiants. Vérifiez la clé API dans Agents → Connexions.",
+        "rate_limit": "Le fournisseur LLM limite les requêtes pour le moment. Patientez un instant et réessayez.",
+        "unavailable": "Le fournisseur LLM est injoignable.",
+        "max_iterations": "L'agent a atteint sa limite d'appels d'outils avant de terminer. Posez une question plus ciblée.",
+        "empty_response": "Le point de terminaison LLM n'a rien renvoyé. Vérifiez l'URL de base et le nom du modèle de la connexion.",
+        "config": "Cet agent n'a pas de modèle configuré. Choisissez une connexion dans ses paramètres.",
+        "generic": "Une erreur est survenue pendant la réponse."
+      }
     },
     "chart": {
       "noData": "Aucune donnée à représenter"

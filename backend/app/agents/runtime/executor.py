@@ -16,6 +16,7 @@ Flow:
 """
 from __future__ import annotations
 
+import anyio
 import asyncio
 import logging
 import os
@@ -463,6 +464,23 @@ class AgentExecutor:
                     elif chunk.type == "usage" and chunk.usage:
                         usage_input = chunk.usage.input_tokens
                         usage_output = chunk.usage.output_tokens
+            except asyncio.CancelledError:
+                # The client went away (Stop button, closed tab). Keep what
+                # the model had already said so the transcript shows the
+                # partial answer instead of a user message with no reply,
+                # then let the cancellation propagate. The write has to be
+                # shielded: under the server's cancel scope every await in
+                # this handler would be cancelled again before it completes.
+                partial = "".join(text_buf).strip()
+                if partial:
+                    with anyio.CancelScope(shield=True):
+                        try:
+                            await conversation_service.append_message(
+                                session, conversation_id=conversation_id, role="assistant", content=partial,
+                            )
+                        except Exception:  # noqa: BLE001
+                            logger.exception("failed to persist partial answer after cancel")
+                raise
             except LLMError as exc:
                 # Log the full chain — the user-facing string is short by
                 # design, but we want the traceback (and any wrapped

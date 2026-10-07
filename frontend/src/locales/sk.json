@@ -2664,7 +2664,20 @@
       "loading": "Načítavajú sa nástroje…"
     },
     "chat": {
-      "placeholder": "Napíš agentovi {{name}}..."
+      "placeholder": "Napíš agentovi {{name}}...",
+      "stop": "Zastaviť",
+      "send": "Odoslať",
+      "retry": "Skúsiť znova",
+      "elapsed": "{{seconds}}s",
+      "errors": {
+        "auth": "LLM pripojenie odmietlo prihlasovacie údaje. Skontrolujte API kľúč v Agenti → Pripojenia.",
+        "rate_limit": "Poskytovateľ LLM práve obmedzuje požiadavky. Chvíľu počkajte a skúste znova.",
+        "unavailable": "Poskytovateľ LLM nebol dostupný.",
+        "max_iterations": "Agent dosiahol limit volaní nástrojov skôr, než skončil. Položte užšiu otázku.",
+        "empty_response": "LLM endpoint nič nevrátil. Skontrolujte základnú URL a názov modelu pripojenia.",
+        "config": "Tento agent nemá nastavený model. Vyberte pripojenie v jeho nastaveniach.",
+        "generic": "Pri odpovedaní sa niečo pokazilo."
+      }
     },
     "chart": {
       "noData": "Žiadne dáta na graf"

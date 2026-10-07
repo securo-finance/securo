@@ -2615,7 +2615,20 @@
       "loading": "Wczytywanie narzędzi…"
     },
     "chat": {
-      "placeholder": "Napisz do {{name}}..."
+      "placeholder": "Napisz do {{name}}...",
+      "stop": "Zatrzymaj",
+      "send": "Wyślij",
+      "retry": "Ponów",
+      "elapsed": "{{seconds}}s",
+      "errors": {
+        "auth": "Połączenie LLM odrzuciło dane uwierzytelniające. Sprawdź klucz API w Agenci → Połączenia.",
+        "rate_limit": "Dostawca LLM ogranicza teraz liczbę żądań. Odczekaj chwilę i spróbuj ponownie.",
+        "unavailable": "Nie udało się połączyć z dostawcą LLM.",
+        "max_iterations": "Agent osiągnął limit wywołań narzędzi przed zakończeniem. Zadaj węższe pytanie.",
+        "empty_response": "Punkt końcowy LLM nic nie zwrócił. Sprawdź bazowy URL i nazwę modelu w połączeniu.",
+        "config": "Ten agent nie ma skonfigurowanego modelu. Wybierz połączenie w jego ustawieniach.",
+        "generic": "Coś poszło nie tak podczas odpowiadania."
+      }
     },
     "chart": {
       "noData": "Brak danych do wykresu"

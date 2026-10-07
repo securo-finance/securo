@@ -2512,7 +2512,20 @@
       "loading": "Cargando herramientas…"
     },
     "chat": {
-      "placeholder": "Habla con {{name}}..."
+      "placeholder": "Habla con {{name}}...",
+      "stop": "Detener",
+      "send": "Enviar",
+      "retry": "Reintentar",
+      "elapsed": "{{seconds}}s",
+      "errors": {
+        "auth": "La conexión LLM rechazó las credenciales. Revisa la clave API en Agentes → Conexiones.",
+        "rate_limit": "El proveedor LLM está limitando solicitudes ahora mismo. Espera un momento y reintenta.",
+        "unavailable": "No se pudo contactar con el proveedor LLM.",
+        "max_iterations": "El agente alcanzó su límite de llamadas a herramientas antes de terminar. Haz una pregunta más acotada.",
+        "empty_response": "El endpoint LLM no devolvió nada. Revisa la URL base y el nombre del modelo de la conexión.",
+        "config": "Este agente no tiene modelo configurado. Elige una conexión en su configuración.",
+        "generic": "Algo salió mal al responder."
+      }
     },
     "chart": {
       "noData": "No hay datos para graficar"

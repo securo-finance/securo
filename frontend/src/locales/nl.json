@@ -2526,7 +2526,20 @@
       "loading": "Gereedschappen laden…"
     },
     "chat": {
-      "placeholder": "Praat met {{name}}..."
+      "placeholder": "Praat met {{name}}...",
+      "stop": "Stoppen",
+      "send": "Verzenden",
+      "retry": "Opnieuw",
+      "elapsed": "{{seconds}}s",
+      "errors": {
+        "auth": "De LLM-verbinding weigerde de inloggegevens. Controleer de API-sleutel onder Agents → Verbindingen.",
+        "rate_limit": "De LLM-provider beperkt op dit moment verzoeken. Wacht even en probeer opnieuw.",
+        "unavailable": "De LLM-provider was niet bereikbaar.",
+        "max_iterations": "De agent bereikte zijn limiet aan tool-aanroepen voordat hij klaar was. Stel een smallere vraag.",
+        "empty_response": "Het LLM-eindpunt gaf niets terug. Controleer de basis-URL en modelnaam van de verbinding.",
+        "config": "Deze agent heeft geen model ingesteld. Kies een verbinding in de instellingen.",
+        "generic": "Er ging iets mis bij het beantwoorden."
+      }
     },
     "chart": {
       "noData": "Geen gegevens om in kaart te brengen"
