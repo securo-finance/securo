@@ -53,6 +53,7 @@ from mcp_server.tools._helpers import (
     parse_date,
     parse_uuid,
     parse_uuid_list,
+    resolve_categories,
     resolve_workspace_id,
 )
 
@@ -108,9 +109,10 @@ def _can_apply(ctx: CallContext, apply: bool) -> bool:
                 "minItems": 1,
             },
             "category_id": {"type": "string", "format": "uuid"},
+            "category_name": {"type": "string", "description": "Alternative to category_id: the category's name (case-insensitive). Unknown names return did_you_mean suggestions."},
             "apply": _APPLY_FIELD,
         },
-        "required": ["transaction_ids", "category_id"],
+        "required": ["transaction_ids"],
         "additionalProperties": False,
     },
     is_proposal=True,
@@ -121,18 +123,25 @@ async def propose_categorize(
     session: AsyncSession,
     ctx: CallContext,
     transaction_ids: list[str],
-    category_id: str,
+    category_id: str | None = None,
+    category_name: str | None = None,
     apply: bool = False,
 ) -> dict[str, Any]:
     ws_id = await resolve_workspace_id(session, ctx)
-    cat_id = parse_uuid(category_id)
+    if not category_id and not category_name:
+        return {"error": "pass category_id or category_name", "hint": "Call list_categories to see the ids and names."}
+    cat_ids, cat_error = await resolve_categories(
+        session, ws_id, ids=[category_id] if category_id else None, names=[category_name] if category_name else None
+    )
+    if cat_error:
+        return cat_error
     cat = (
         await session.execute(
-            select(Category).where(Category.id == cat_id, Category.workspace_id == ws_id)
+            select(Category).where(Category.id == cat_ids[0], Category.workspace_id == ws_id)
         )
     ).scalar_one_or_none()
     if cat is None:
-        return {"error": "category not found"}
+        return {"error": "category not found", "hint": "Call list_categories to see the ids and names."}
 
     tx_ids = parse_uuid_list(transaction_ids) or []
     txs = (
@@ -659,7 +668,14 @@ async def propose_create_recurring_transaction(
     apply: bool = False,
 ) -> dict[str, Any]:
     if frequency in ("monthly", "quarterly", "semiannual") and not day_of_month:
-        return {"error": "day_of_month is required for monthly, quarterly, or semiannual frequency"}
+        derived_from = parse_date(start_date) if start_date else None
+        if derived_from is not None:
+            day_of_month = derived_from.day  # 'Netflix on the 10th starting 2026-03-10'
+        else:
+            return {
+                "error": "day_of_month is required for monthly, quarterly, or semiannual frequency",
+                "hint": "Pass day_of_month (1-31), or a start_date and the day will be taken from it.",
+            }
     ws_id = await resolve_workspace_id(session, ctx)
     acc = (
         await session.execute(

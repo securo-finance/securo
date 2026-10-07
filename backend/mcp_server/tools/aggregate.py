@@ -9,7 +9,7 @@ from app.models.transaction import Transaction
 from app.models.category import Category
 from mcp_server.auth import CallContext
 from mcp_server.registry import tool
-from mcp_server.tools._helpers import num, parse_date, parse_uuid_list, resolve_workspace_id
+from mcp_server.tools._helpers import resolve_categories, num, parse_date, parse_uuid_list, resolve_workspace_id
 
 
 @tool(
@@ -20,7 +20,14 @@ from mcp_server.tools._helpers import num, parse_date, parse_uuid_list, resolve_
         "Returns a list of {bucket, value, count} rows. Amounts use the "
         "user's primary currency when available, falling back to native. "
         "By default counts only POSTED transactions (already settled) — "
-        "set status='all' or 'pending' to include scheduled/recurring rows."
+        "set status='all' or 'pending' to include scheduled/recurring rows. "
+        "Because of that default (and exclude_transfers=True) a monthly total "
+        "here can be lower than the Dashboard's income/expense figures, which "
+        "also count pending rows — for 'how much did I spend this month?' "
+        "prefer get_dashboard_snapshot and use aggregate for breakdowns. "
+        "To filter by category, pass category_ids or category_names; "
+        "description_contains searches transaction text, not category names. "
+        "Quote `grand_total` for the overall figure; `items` are the per-bucket rows."
     ),
     parameters={
         "type": "object",
@@ -31,6 +38,8 @@ from mcp_server.tools._helpers import num, parse_date, parse_uuid_list, resolve_
             "to_date": {"type": "string", "format": "date"},
             "account_ids": {"type": "array", "items": {"type": "string", "format": "uuid"}},
             "category_ids": {"type": "array", "items": {"type": "string", "format": "uuid"}},
+            "category_names": {"type": "array", "items": {"type": "string"}, "description": "Category names (case-insensitive) when you don't have ids yet. Unknown names return did_you_mean suggestions instead of silently matching nothing."},
+            "uncategorized": {"type": "boolean", "default": False, "description": "Only transactions without a category (e.g. 'how much is still uncategorized?')."},
             "payee_id": {"type": "string", "format": "uuid", "description": "Restrict to a single payee — useful for 'how much did I spend at X?'"},
             "currency": {"type": "string", "description": "Restrict to one native currency (BRL, USD, EUR, ...)"},
             "tx_type": {"type": "string", "enum": ["expense", "income"], "description": "Filter to expenses or income only"},
@@ -53,6 +62,8 @@ async def aggregate(
     to_date: str | None = None,
     account_ids: list[str] | None = None,
     category_ids: list[str] | None = None,
+    category_names: list[str] | None = None,
+    uncategorized: bool = False,
     payee_id: str | None = None,
     currency: str | None = None,
     tx_type: str | None = None,
@@ -96,6 +107,10 @@ async def aggregate(
     q = (
         select(bucket_id.label("bucket"), value_expr.label("value"), func.count(Transaction.id).label("count"))
         .where(Transaction.workspace_id == ws_id)
+        # Opening-balance rows are bookkeeping, not money the user moved;
+        # they are also uncategorized, so "how much is uncategorized?"
+        # summed an account's entire starting balance into the answer.
+        .where(Transaction.source != "opening_balance")
     )
 
     fd = parse_date(from_date)
@@ -108,9 +123,13 @@ async def aggregate(
     accs = parse_uuid_list(account_ids)
     if accs:
         q = q.where(Transaction.account_id.in_(accs))
-    cats = parse_uuid_list(category_ids)
+    cats, cat_error = await resolve_categories(session, ws_id, ids=category_ids, names=category_names)
+    if cat_error:
+        return cat_error
     if cats:
         q = q.where(Transaction.category_id.in_(cats))
+    if uncategorized:
+        q = q.where(Transaction.category_id.is_(None))
     if payee_id:
         # parse_uuid_list returns a list — single payee_id wrapped works too.
         pids = parse_uuid_list([payee_id])
@@ -156,11 +175,28 @@ async def aggregate(
         }
         for r in rows
     ]
-    return {
+    out: dict[str, Any] = {
         "metric": metric,
         "group_by": group_by,
         "from_date": fd.isoformat() if fd else None,
         "to_date": td.isoformat() if td else None,
         "items": items,
         "total": len(items),
+        # Across every bucket, so the model never has to add buckets by
+        # hand (it reliably reports one bucket as the whole when a search
+        # splits across two payees). For avg this is the overall count only.
+        "grand_count": sum(int(i.get("count") or 0) for i in items),
     }
+    if metric in ("sum", "count"):
+        out["grand_total"] = round(sum(float(i.get("value") or 0) for i in items), 2)
+    if not items and description_contains and not cats:
+        # The classic miss: the model typed a category name into the text
+        # filter. Say so, with the id, so the retry is a one-liner.
+        named, _ = await resolve_categories(session, ws_id, names=[description_contains])
+        if named:
+            out["hint"] = (
+                f"No transaction text contains {description_contains!r}, but a category with "
+                f"that name exists (id {named[0]}). Pass category_ids=[that id] or "
+                "category_names=[the name] to total by category."
+            )
+    return out

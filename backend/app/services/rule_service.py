@@ -44,6 +44,16 @@ _ALLOWED_CONDITION_FIELDS = {
 # of the statuses a transaction can carry.
 _STATUS_CONDITION_OPS = {"equals", "not_equals"}
 _STATUS_CONDITION_VALUES = {"pending", "posted"}
+def condition_vocabulary() -> dict[str, list[str]]:
+    """What a rule condition may contain — for error messages and tool schemas."""
+    return {
+        "fields": sorted(_ALLOWED_CONDITION_FIELDS),
+        "ops": sorted(_ALLOWED_CONDITION_OPS),
+        "status_ops": sorted(_STATUS_CONDITION_OPS),
+        "status_values": sorted(_STATUS_CONDITION_VALUES),
+    }
+
+
 _ALLOWED_CONDITION_OPS = {
     "contains", "not_contains", "equals", "not_equals", "starts_with",
     "ends_with", "regex", "gt", "gte", "lt", "lte",
