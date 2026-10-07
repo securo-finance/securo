@@ -1230,6 +1230,7 @@
     "backToAccounts": "Back to accounts",
     "runningBalance": "Balance",
     "noTransactions": "No transactions for this account",
+    "rangeTruncated": "Showing the {{shown}} newest of {{total}} transactions in this range. Narrow the period to see the rest.",
     "syncFailed": "Sync failed",
     "reconnect": "Reconnect",
     "connectionError": "Connection error — reconnect to fix",

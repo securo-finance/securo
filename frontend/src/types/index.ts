@@ -979,6 +979,15 @@ export interface PaginatedTransactions extends PaginatedResponse<Transaction> {
   summary?: TransactionsSummary
 }
 
+/** What `api.transactions.listAll` returns: a full page walk, plus whether
+ *  the walk actually reached the end of the result set. `truncated` is true
+ *  only when the row ceiling cut the walk short with rows still owing, so a
+ *  caller can tell "this is everything" from "this is as much as we fetch"
+ *  instead of rendering a clipped range as the whole one. */
+export interface TransactionsListAllResult extends PaginatedTransactions {
+  truncated: boolean
+}
+
 // Reports (universal schema for all report types)
 export interface ReportBreakdown {
   key: string

@@ -1231,6 +1231,7 @@
     "backToAccounts": "Zurück zu den Konten",
     "runningBalance": "Saldo",
     "noTransactions": "Keine Transaktionen für dieses Konto",
+    "rangeTruncated": "Zeigt die {{shown}} neuesten von {{total}} Transaktionen in diesem Zeitraum. Verkürze den Zeitraum, um den Rest zu sehen.",
     "syncFailed": "Synchronisierung fehlgeschlagen",
     "reconnect": "Erneut verbinden",
     "connectionError": "Verbindungsfehler — Erneut verbinden, um das Problem zu beheben",

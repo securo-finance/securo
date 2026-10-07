@@ -1294,6 +1294,7 @@
     "backToAccounts": "Späť na účty",
     "runningBalance": "Zostatok",
     "noTransactions": "Tento účet nemá žiadne transakcie",
+    "rangeTruncated": "Zobrazuje sa {{shown}} najnovších z {{total}} transakcií v tomto období. Skráťte obdobie, aby ste videli zvyšok.",
     "syncFailed": "Synchronizácia zlyhala",
     "reconnect": "Znovu prepojiť",
     "connectionError": "Chyba prepojenia — oprav ju opätovným prepojením",
