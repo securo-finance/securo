@@ -1058,3 +1058,37 @@ async def test_propose_create_payee_rule_external_apply_writes(
     )).scalar_one()
     assert any(c.get("value") == "UBER" for c in row.conditions)
     assert any(a.get("value") == str(cat.id) for a in row.actions)
+
+
+def test_report_payloads_are_slimmed_for_the_model():
+    """Per-point breakdowns/composition are chart data; a month of daily
+    points at full fidelity was ~28k tokens for a one-number question."""
+    from mcp_server.tools.reports import _MAX_TREND_POINTS, _slim_report
+
+    point = lambda i: {  # noqa: E731
+        "date": f"2026-01-{i % 28 + 1:02d}", "value": i, "change": 1,
+        "breakdowns": {"accounts": i}, "composition": [{"key": "a", "value": i}] * 5,
+    }
+    rep = {"summary": {"primary_value": 1}, "meta": {}, "composition": [1], "trend": [point(i) for i in range(200)]}
+    out = _slim_report(rep)
+    assert out["summary"] == rep["summary"] and out["composition"] == [1]
+    assert len(out["trend"]) == _MAX_TREND_POINTS
+    assert out["trend"][0]["date"] == rep["trend"][0]["date"] and out["trend"][-1]["value"] == 199
+    assert "composition" not in out["trend"][0] and "breakdowns" not in out["trend"][0]
+    assert out["trend"][-1]["breakdowns"] == {"accounts": 199}
+    assert "omitted" in out["trend_note"]
+    small = _slim_report({"trend": [point(0), point(1)]})
+    assert len(small["trend"]) == 2 and "trend_note" not in small
+
+
+def test_serialize_report_slims_pydantic_reports_too():
+    from pydantic import BaseModel
+
+    from mcp_server.tools.reports import _serialize_report
+
+    class Rep(BaseModel):
+        summary: dict
+        trend: list[dict]
+
+    out = _serialize_report(Rep(summary={"x": 1}, trend=[{"date": "d", "value": 1, "composition": [1, 2]}]))
+    assert out["trend"] == [{"date": "d", "value": 1}]
