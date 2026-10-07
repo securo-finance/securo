@@ -2127,11 +2127,15 @@ async def sync_connection(
                 credentials, acc_data.external_id, since, payee_source=payee_source
             )
 
+            # Every id the provider returned, pending ones included, so the
+            # phantom cleanup still sees a pending row the filter below skips.
+            live_txn_external_ids[account.id] = {
+                txn.external_id for txn in transactions_data
+            }
             if not import_pending:
                 transactions_data = [t for t in transactions_data if t.status != "pending"]
 
             incoming_txn_external_ids = {txn.external_id for txn in transactions_data}
-            live_txn_external_ids[account.id] = incoming_txn_external_ids
             for txn_data in transactions_data:
                 existing = await session.execute(
                     select(Transaction)
