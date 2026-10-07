@@ -602,3 +602,39 @@ async def test_history_window_never_opens_on_an_orphaned_tool_result(
         ("user", "q2"), ("assistant", "a2"),
         ("user", "new question"),
     ]
+
+
+async def test_disabled_tool_is_refused_at_call_time(session, test_user, test_agent, test_conversation):
+    """The allowlist must hold even when the model calls a tool it was not
+    offered — otherwise the per-agent toggles are cosmetic."""
+    from app.agents.services import agent_service
+
+    tools = [
+        ToolHandle(server="securo", name="list_accounts", description="", parameters={"type": "object"}),
+        ToolHandle(server="securo", name="propose_create_transaction", description="", parameters={"type": "object"}),
+    ]
+    fake_mcp = _FakeMCP(tools=tools)
+    await agent_service.replace_tool_enablement(
+        session, test_agent.id,
+        [("securo", "list_accounts", True), ("securo", "propose_create_transaction", False)],
+    )
+    provider = _ScriptedProvider([
+        [
+            ChatChunk(type="tool_call_start", tool_call_id="t1", tool_name="securo__propose_create_transaction"),
+            ChatChunk(type="tool_call_args_delta", tool_call_id="t1", args_delta="{}"),
+            ChatChunk(type="tool_call_end", tool_call_id="t1"),
+            ChatChunk(type="finish", finish_reason="tool_calls"),
+        ],
+        [ChatChunk(type="text_delta", text="ok"), ChatChunk(type="finish", finish_reason="stop")],
+    ])
+    executor = AgentExecutor(mcp=fake_mcp)
+    with _patch_provider(provider):
+        events = await _drain(
+            executor, session=session, agent=test_agent, user_id=test_user.id,
+            conversation_id=test_conversation.id, user_message="add a transaction",
+        )
+
+    assert fake_mcp.calls == []  # never reached the MCP server
+    result = next(e for e in events if e.type == "tool_result")
+    assert result.tool_result["ok"] is False
+    assert "not enabled" in (result.tool_result["text"] or "")

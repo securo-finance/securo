@@ -552,7 +552,10 @@ class AgentExecutor:
                 yield ev
 
             results = await asyncio.gather(*[
-                _safe_call_tool(self.mcp, c, user_id=user_id, workspace_id=workspace_id, conversation_id=conversation_id, agent_id=agent.id)
+                _safe_call_tool(
+                    self.mcp, c, user_id=user_id, workspace_id=workspace_id, conversation_id=conversation_id,
+                    agent_id=agent.id, allowed=allowed,
+                )
                 for c in assembled_calls
             ])
             for c, res in zip(assembled_calls, results):
@@ -619,6 +622,22 @@ async def _process_chunk(chunk: ChatChunk, text_buf: list[str], open_calls: dict
         open_calls[chunk.tool_call_id]["thought_signature"] = chunk.thought_signature
 
 
+def _is_allowed(wire_name: str, allowed: Optional[set[tuple[str, str]]]) -> bool:
+    """Apply the per-agent allowlist to a call, not just to the advertised list.
+
+    ``allowed`` holds (server, tool) pairs; None means no restriction. The
+    model may emit the namespaced name (``securo__list_accounts``) or, as
+    some providers do, the bare one (``list_accounts``) — accept either
+    form as long as the tool itself is enabled.
+    """
+    if allowed is None:
+        return True
+    if "__" in wire_name:
+        server, name = wire_name.split("__", 1)
+        return (server, name) in allowed
+    return any(name == wire_name for _, name in allowed)
+
+
 async def _safe_call_tool(
     mcp: MCPRegistry,
     call: ToolCall,
@@ -627,8 +646,20 @@ async def _safe_call_tool(
     workspace_id: Optional[uuid.UUID] = None,
     conversation_id: uuid.UUID,
     agent_id: Optional[uuid.UUID] = None,
+    allowed: Optional[set[tuple[str, str]]] = None,
 ) -> dict[str, Any]:
     started = time.time()
+    if not _is_allowed(call.name, allowed):
+        # The tool list sent to the model was already filtered; a call for
+        # something outside it means the model named a tool from memory or
+        # from injected text. The toggle in the UI has to be a real boundary.
+        logger.warning("tool call %s refused: not enabled for this agent", call.name)
+        return {
+            "ok": False,
+            "data": None,
+            "text": f"Tool error: {call.name} is not enabled for this agent",
+            "elapsed_ms": int((time.time() - started) * 1000),
+        }
     try:
         return await mcp.call(
             wire_name=call.name,
@@ -651,7 +682,9 @@ def _summarize_result(res: dict[str, Any]) -> dict[str, Any]:
     """
     data = res.get("data")
     short = ""
-    if isinstance(data, dict):
+    if not res.get("ok", False) and data is None and res.get("text"):
+        short = str(res["text"])  # refusals / transport errors carry only text
+    elif isinstance(data, dict):
         if isinstance(data.get("items"), list):
             total = data.get("total")
             n = total if isinstance(total, int) else len(data["items"])
