@@ -32,6 +32,7 @@ import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import type { ReportResponse, CategoryTrendItem } from '@/types'
 import { formatCurrency } from '@/lib/format'
 import { localDateString } from '@/lib/date-utils'
+import { getNetWorthDomain, shouldFillNetWorthArea } from '@/lib/net-worth-chart-utils'
 
 // A small qualitative palette of well-separated hues for the composition
 // detail ring. Capped to a handful of slices, distinct colours make each
@@ -300,6 +301,11 @@ export default function ReportsPage() {
       ...breakdowns,
     } as Record<string, string | number | null>
   })
+  const netWorthDomain = getNetWorthDomain(
+    chartData
+      .map((point) => point.value)
+      .filter((value): value is number => typeof value === 'number'),
+  )
 
   const allBreakdowns = summary?.breakdowns ?? []
   const breakdownData = allBreakdowns.filter((b) => b.value > 0)
@@ -985,6 +991,7 @@ export default function ReportsPage() {
                   interval="preserveStartEnd"
                 />
                 <YAxis
+                  domain={netWorthDomain}
                   tickFormatter={(v) => {
                     if (privacyMode) return ''
                     if (v === 0) return '0'
@@ -1026,7 +1033,7 @@ export default function ReportsPage() {
                   dataKey="value"
                   stroke="#6366F1"
                   strokeWidth={2.5}
-                  fill="url(#netWorthGrad)"
+                  fill={shouldFillNetWorthArea(netWorthDomain) ? 'url(#netWorthGrad)' : 'none'}
                   dot={false}
                   activeDot={{ r: 4, fill: '#6366F1' }}
                 />
