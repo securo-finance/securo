@@ -41,6 +41,7 @@ import {
   PieChart,
   AlertTriangle,
   Upload,
+  Activity,
 } from 'lucide-react'
 import {
   AreaChart,
@@ -53,6 +54,7 @@ import {
 } from 'recharts'
 import { useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/page-header'
+import { PortfolioPerformance } from '@/components/portfolio-performance'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
@@ -185,6 +187,22 @@ function assetErrorMessage(e: unknown, fallback: string): string {
   return resp?.status ? `${fallback} (${resp.status})` : fallback
 }
 
+type AssetsTab = 'holdings' | 'transactions' | 'performance'
+const ASSETS_TABS: AssetsTab[] = ['holdings', 'transactions', 'performance']
+const ASSETS_TAB_STORAGE_KEY = 'securo.assetsTab'
+
+function readInitialAssetsTab(): AssetsTab {
+  const fromUrl = new URLSearchParams(window.location.search).get('tab')
+  if (ASSETS_TABS.includes(fromUrl as AssetsTab)) return fromUrl as AssetsTab
+  try {
+    const stored = localStorage.getItem(ASSETS_TAB_STORAGE_KEY)
+    if (ASSETS_TABS.includes(stored as AssetsTab)) return stored as AssetsTab
+  } catch {
+    // Storage unavailable: fall back to holdings.
+  }
+  return 'holdings'
+}
+
 export default function AssetsPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -192,7 +210,7 @@ export default function AssetsPage() {
   const dateLocale = useDateLocale()
   const { mask } = usePrivacyMode()
   const { user } = useAuth()
-  const { canWrite } = useWorkspace()
+  const { canWrite, current: currentWorkspace } = useWorkspace()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
   const queryClient = useQueryClient()
 
@@ -202,7 +220,16 @@ export default function AssetsPage() {
     staleTime: Infinity,
   })
 
-  const [activeTab, setActiveTab] = useState<'holdings' | 'transactions'>('holdings')
+  // Reopen on the tab used last; `?tab=performance` links straight to one.
+  const [activeTab, setActiveTabState] = useState<AssetsTab>(readInitialAssetsTab)
+  const setActiveTab = (tab: AssetsTab) => {
+    setActiveTabState(tab)
+    try {
+      localStorage.setItem(ASSETS_TAB_STORAGE_KEY, tab)
+    } catch {
+      // Storage unavailable: the tab just isn't remembered.
+    }
+  }
   // Holding id for the lightweight "add transaction to this holding" dialog,
   // opened from the holdings table ("+ add buys") and the inline ledger.
   const [addTxAssetId, setAddTxAssetId] = useState<string | null>(null)
@@ -337,6 +364,7 @@ export default function AssetsPage() {
     queryClient.refetchQueries({ queryKey: ['assets'] })
     queryClient.refetchQueries({ queryKey: ['portfolio-trend'] })
     queryClient.refetchQueries({ queryKey: ['dashboard'] })
+    queryClient.invalidateQueries({ queryKey: ['asset-performance'] })
   }
 
   const createMutation = useMutation({
@@ -437,6 +465,7 @@ export default function AssetsPage() {
       // Deleting a wallet un-groups its assets (backend sets group_id=null).
       queryClient.refetchQueries({ queryKey: ['asset-groups'] })
       queryClient.refetchQueries({ queryKey: ['assets'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-performance'] })
       setDeletingWalletId(null)
       toast.success(t('assets.walletDeleted'))
     },
@@ -449,6 +478,7 @@ export default function AssetsPage() {
     onSuccess: () => {
       queryClient.refetchQueries({ queryKey: ['assets'] })
       queryClient.refetchQueries({ queryKey: ['asset-groups'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-performance'] })
       setMovingAsset(null)
       toast.success(t('assets.moved'))
     },
@@ -1061,18 +1091,28 @@ export default function AssetsPage() {
       />
 
       {/* Holdings (consolidated by ticker) vs. the buy/sell ledger (#235) */}
-      <div className="inline-flex items-center rounded-lg border border-border p-0.5 bg-muted/40">
+      <div className="inline-flex max-w-full flex-wrap items-center gap-1 rounded-lg border border-border p-0.5 bg-muted/40">
         <button
           onClick={() => setActiveTab('holdings')}
+          aria-pressed={activeTab === 'holdings'}
           className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'holdings' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
         >
           {t('assets.tabHoldings')}
         </button>
         <button
           onClick={() => setActiveTab('transactions')}
+          aria-pressed={activeTab === 'transactions'}
           className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeTab === 'transactions' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
         >
           {t('assets.tabTransactions')}
+        </button>
+        <button
+          onClick={() => setActiveTab('performance')}
+          aria-pressed={activeTab === 'performance'}
+          className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors inline-flex items-center gap-1.5 ${activeTab === 'performance' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+        >
+          <Activity size={14} />
+          {t('assets.tabPerformance')}
         </button>
       </div>
 
@@ -1085,6 +1125,17 @@ export default function AssetsPage() {
           mask={mask}
           canWrite={canWrite}
           onChanged={refetchAssetViews}
+        />
+      ) : activeTab === 'performance' && currentWorkspace ? (
+        <PortfolioPerformance
+          key={currentWorkspace.id}
+          workspaceId={currentWorkspace.id}
+          assetGroupIds={activeWalletIds}
+          holdings={activeAssets}
+          wallets={sortedWallets}
+          locale={locale}
+          dateLocale={dateLocale}
+          mask={mask}
         />
       ) : (
       <>
@@ -2072,6 +2123,7 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
       queryClient.refetchQueries({ queryKey: ['asset-trend', assetId] })
       queryClient.refetchQueries({ queryKey: ['portfolio-trend'] })
       queryClient.refetchQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-performance'] })
       setValueAmount('')
       toast.success(t('assets.valueAdded'))
     },
@@ -2086,6 +2138,7 @@ function AssetDetail({ assetId, currency, locale: loc, dateLocale: dateLoc, purc
       queryClient.refetchQueries({ queryKey: ['asset-trend', assetId] })
       queryClient.refetchQueries({ queryKey: ['portfolio-trend'] })
       queryClient.refetchQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['asset-performance'] })
       toast.success(t('assets.valueDeleted'))
     },
     onError: (e) => toast.error(assetErrorMessage(e, t('common.error'))),

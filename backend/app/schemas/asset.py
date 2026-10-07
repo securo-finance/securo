@@ -1,9 +1,9 @@
 import uuid
 from datetime import date as _date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class AssetCreate(BaseModel):
@@ -190,6 +190,49 @@ class MarketSymbolMatch(BaseModel):
     name: Optional[str] = None
     exchange: Optional[str] = None
     quote_type: Optional[str] = None
+
+
+class BenchmarkMatch(BaseModel):
+    """A searchable comparison index exposed by a benchmark provider."""
+
+    symbol: str
+    name: str
+    exchange: Optional[str] = None
+    provider: str
+
+
+BenchmarkSourceError = Literal["unavailable", "rate_limited", "no_data"]
+
+
+class BenchmarkPerformanceRead(BaseModel):
+    """Final metrics for one of the requested comparison indices."""
+
+    key: str
+    symbol: str
+    provider: str
+    benchmark_return: Optional[float] = None
+    excess_return: Optional[float] = None
+    source_error: Optional[BenchmarkSourceError] = None
+
+
+class PortfolioPerformancePoint(BaseModel):
+    date: _date
+    portfolio: float
+    benchmark: float
+    benchmarks: dict[str, float] = Field(default_factory=dict)
+
+
+class PortfolioPerformanceRead(BaseModel):
+    benchmark_symbol: Optional[str] = None
+    benchmark_provider: Optional[str] = None
+    period: str
+    start_date: _date
+    end_date: _date
+    portfolio_return: Optional[float] = None
+    benchmark_return: Optional[float] = None
+    excess_return: Optional[float] = None
+    benchmarks: list[BenchmarkPerformanceRead] = Field(default_factory=list)
+    points: list[PortfolioPerformancePoint] = Field(default_factory=list)
 
 
 class AssetValueCreate(BaseModel):

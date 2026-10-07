@@ -5,7 +5,7 @@ import logging
 import time
 from datetime import date
 from decimal import Decimal, InvalidOperation
-from typing import Optional
+from typing import Literal, Optional
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -18,6 +18,7 @@ from app.providers.base import (
     ConnectionData,
     ConnectTokenData,
     HoldingData,
+    HoldingTradeData,
     RefreshOutcome,
     TransactionData,
     mask_last4,
@@ -294,6 +295,7 @@ def _build_holding_data(inv: dict) -> HoldingData:
         name=inv.get("name") or "Investment",
         currency=inv.get("currencyCode") or "BRL",
         current_value=current_value,
+        gross_value=_decimal_or_none(inv.get("amount")),
         quantity=_decimal_or_none(inv.get("quantity")),
         unit_price=_decimal_or_none(inv.get("value")),
         purchase_price=_decimal_or_none(inv.get("amountOriginal")),
@@ -302,6 +304,59 @@ def _build_holding_data(inv: dict) -> HoldingData:
         maturity_date=_date_or_none(inv.get("dueDate")),
         is_withdrawn=pluggy_status == "TOTAL_WITHDRAWAL",
         metadata=metadata or None,
+    )
+
+
+# Execution costs in Pluggy's `expenses` breakdown. Income tax withheld on
+# a redemption is deliberately excluded: performance is measured on gross
+# (pre-tax) values, so the tax is not an investment loss.
+_TRADE_FEE_KEYS = (
+    "serviceTax",
+    "brokerageFee",
+    "tradingAssetsNoticeFee",
+    "maintenanceFee",
+    "settlementFee",
+    "clearingFee",
+    "stockExchangeFee",
+    "custodyFee",
+    "operatingFee",
+    "other",
+)
+
+
+_TRADE_KINDS: dict[str, Literal["buy", "sell"]] = {"BUY": "buy", "SELL": "sell"}
+
+
+def _build_trade_data(raw: dict) -> Optional[HoldingTradeData]:
+    """Map a Pluggy investment transaction to a trade, or None for rows
+    that do not change the position (interest, dividends, taxes) or lack
+    what a trade needs."""
+    trade_id = raw.get("id")
+    kind = _TRADE_KINDS.get(str(raw.get("type") or "").upper())
+    trade_date = _date_or_none(raw.get("tradeDate") or raw.get("date"))
+    quantity = _decimal_or_none(raw.get("quantity"))
+    amount = _decimal_or_none(raw.get("amount"))
+    if not trade_id or kind is None or trade_date is None or not quantity or quantity <= 0:
+        return None
+    price = _decimal_or_none(raw.get("value"))
+    if amount is not None and amount > 0:
+        # `amount` is the exact cash value of the trade; derive the unit
+        # price from it so quantity * price reproduces it.
+        price = amount / quantity
+    if price is None or price <= 0:
+        return None
+    expenses = raw.get("expenses") or {}
+    fee = sum(
+        (_decimal_or_none(expenses.get(key)) or Decimal("0") for key in _TRADE_FEE_KEYS),
+        Decimal("0"),
+    )
+    return HoldingTradeData(
+        external_id=str(trade_id),
+        kind=kind,
+        date=trade_date,
+        quantity=quantity,
+        price=price,
+        fee=fee,
     )
 
 
@@ -811,6 +866,56 @@ class PluggyProvider(BankProvider):
                 page += 1
 
         return holdings
+
+    async def get_holding_trades(
+        self, credentials: dict, holdings: list[HoldingData]
+    ) -> dict[str, list[HoldingTradeData]]:
+        """Fetch each holding's buys and sells from
+        /investments/{id}/transactions, which returns all the history Pluggy
+        has. A failed request is logged and only leaves that holding out."""
+        headers = await self._headers()
+        semaphore = asyncio.Semaphore(5)
+
+        async def fetch(client: httpx.AsyncClient, holding_id: str) -> list[HoldingTradeData]:
+            trades: list[HoldingTradeData] = []
+            page = 1
+            async with semaphore:
+                while True:
+                    resp = await client.get(
+                        f"{PLUGGY_API_BASE}/investments/{holding_id}/transactions",
+                        headers=headers,
+                        params={"pageSize": 500, "page": page},
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    results = data.get("results", [])
+                    for raw in results:
+                        trade = _build_trade_data(raw)
+                        if trade is not None:
+                            trades.append(trade)
+                    if page >= data.get("totalPages", 1) or not results:
+                        break
+                    page += 1
+            return trades
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            results = await asyncio.gather(
+                *(fetch(client, holding.external_id) for holding in holdings),
+                return_exceptions=True,
+            )
+        trades_by_holding: dict[str, list[HoldingTradeData]] = {}
+        for holding, result in zip(holdings, results, strict=True):
+            if isinstance(result, BaseException):
+                if not isinstance(result, Exception):
+                    raise result
+                logger.warning(
+                    "Failed to fetch trades for Pluggy investment %s: %s",
+                    holding.external_id,
+                    result,
+                )
+                continue
+            trades_by_holding[holding.external_id] = result
+        return trades_by_holding
 
     async def get_bills(self, credentials: dict, account_external_id: str) -> list[BillData]:
         """Fetch credit-card bills from Pluggy /bills.
