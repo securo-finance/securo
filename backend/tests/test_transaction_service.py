@@ -65,6 +65,7 @@ async def test_create_transaction_manual(
         type="debit",
         account_id=txn_account.id,
         category_id=test_categories[0].id,
+        external_id="client-tx-service-001",
     )
     txn = await create_transaction(session, test_workspace.id, test_user.id, data)
 
@@ -73,6 +74,7 @@ async def test_create_transaction_manual(
     assert txn.source == "manual"
     assert txn.status == "posted"
     assert txn.category_id == test_categories[0].id
+    assert txn.external_id == "client-tx-service-001"
 
 
 @pytest.mark.asyncio
@@ -629,6 +631,54 @@ async def test_update_transaction(session: AsyncSession, test_user, test_workspa
     assert updated.amount == Decimal("99")
     assert updated.original_description == "Bank Raw"
     assert updated.description_is_rule_managed is False
+
+
+@pytest.mark.asyncio
+async def test_update_transaction_backfills_original_description_on_legacy_rows(
+    session: AsyncSession, test_user, test_workspace, txn_account
+):
+    synced = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=txn_account.id,
+        description="PAG*LOJA 123",
+        original_description=None,
+        amount=Decimal("10"),
+        date=date(2025, 3, 1),
+        type="debit",
+        source="sync",
+        created_at=datetime.now(timezone.utc),
+    )
+    manual = Transaction(
+        id=uuid.uuid4(),
+        user_id=test_user.id,
+        account_id=txn_account.id,
+        description="Lunch",
+        original_description=None,
+        amount=Decimal("10"),
+        date=date(2025, 3, 1),
+        type="debit",
+        source="manual",
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add_all([synced, manual])
+    await session.commit()
+
+    updated = await update_transaction(
+        session, synced.id, test_workspace.id, test_user.id,
+        TransactionUpdate(description="Birthday gift"),
+    )
+    assert updated is not None
+    assert updated.description == "Birthday gift"
+    assert updated.original_description == "PAG*LOJA 123"
+
+    updated = await update_transaction(
+        session, manual.id, test_workspace.id, test_user.id,
+        TransactionUpdate(description="Team lunch"),
+    )
+    assert updated is not None
+    assert updated.description == "Team lunch"
+    assert updated.original_description is None
 
 
 @pytest.mark.asyncio

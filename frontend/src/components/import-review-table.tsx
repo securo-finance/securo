@@ -197,6 +197,7 @@ export function ImportReviewTable({
                       groups={groups}
                       placeholder={t('import.noCategory')}
                       allowNone
+                      creatable
                       className="w-full border border-border rounded-md px-2 py-1 text-xs bg-card focus:outline-none focus-visible:ring-ring/30 focus-visible:ring-[2px]"
                     />
                   </TableCell>

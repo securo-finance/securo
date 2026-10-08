@@ -32,6 +32,7 @@ describe('resolveDisplayLocale', () => {
     expect(resolveDisplayLocale('auto', 'EUR')).toBe('de-DE')
     expect(resolveDisplayLocale('auto', 'JPY')).toBe('ja-JP')
     expect(resolveDisplayLocale('auto', 'INR')).toBe('en-IN')
+    expect(resolveDisplayLocale('auto', 'RSD')).toBe('sr-RS')
   })
 
   it('treats a missing number format like auto', () => {

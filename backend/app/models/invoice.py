@@ -46,6 +46,7 @@ from app.core.database import Base
 
 if TYPE_CHECKING:
     from app.models.invoice_attachment import InvoiceAttachment
+    from app.models.invoice_schedule import InvoiceSchedule
     from app.models.payee import Payee
     from app.models.transaction import Transaction
 
@@ -85,7 +86,7 @@ INVOICE_DOCUMENT_TYPES = ("invoice", "credit_note")
 INVOICE_DIRECTIONS = ("receivable", "payable")
 
 #: Who authored the document. `imported` rows are reconstructed from an
-#: external system (Stripe, Asaas, a CSV): that system owns the document,
+#: external system (a payment gateway, a CSV): that system owns the document,
 #: and Securo owns the cash that settled it.
 INVOICE_ORIGINS = ("local", "imported")
 
@@ -117,7 +118,7 @@ class Invoice(Base):
             "workspace_id", "series", "number", name="uq_invoices_workspace_series_number"
         ),
         # An imported document is identified by its source's own id, so
-        # two syncs of the same Stripe invoice converge on one row.
+        # two syncs of the same gateway invoice converge on one row.
         UniqueConstraint(
             "workspace_id",
             "external_source",
@@ -159,6 +160,22 @@ class Invoice(Base):
             name="ck_invoices_number_matches_status",
         ),
         CheckConstraint("total >= 0", name="ck_invoices_total_non_negative"),
+        # One invoice per period of an agreement. This is what makes the
+        # generation job idempotent: a retry that tries to emit period 7
+        # again hits the index instead of creating a second invoice.
+        # Drafts and one-off invoices carry NULLs and are exempt.
+        UniqueConstraint("schedule_id", "sequence", name="uq_invoices_schedule_sequence"),
+        # An invoice either answers for a period of an agreement, saying
+        # which one and when, or it does not belong to any. Half-linked
+        # rows would be invoices that count towards a schedule without a
+        # period to be counted in.
+        CheckConstraint(
+            "(schedule_id IS NULL AND sequence IS NULL"
+            " AND period_start IS NULL AND period_end IS NULL)"
+            " OR (schedule_id IS NOT NULL AND sequence IS NOT NULL"
+            " AND period_start IS NOT NULL AND period_end IS NOT NULL)",
+            name="ck_invoices_schedule_fields",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -247,6 +264,25 @@ class Invoice(Base):
     # revoke one. Unique so the public lookup is a single indexed read.
     share_token: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, unique=True)
 
+    # Which agreement this invoice answers for, and which period of it.
+    # Provenance and grouping only: the invoice is an ordinary invoice
+    # in every other respect, and nothing in the arithmetic reads these.
+    # SET NULL because the invoice is money and outlives the agreement.
+    #
+    # `sequence` is 1-based and is the period's index from the
+    # schedule's anchor; `period_start` / `period_end` are the same fact
+    # as dates, inclusive on both ends, stored so a reader never has to
+    # walk the calendar to label a row "September 2026".
+    schedule_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("invoice_schedules.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    sequence: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    period_start: Mapped[Optional[_date]] = mapped_column(Date, nullable=True)
+    period_end: Mapped[Optional[_date]] = mapped_column(Date, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -282,6 +318,26 @@ class Invoice(Base):
         order_by="InvoiceAttachment.created_at",
         lazy="selectin",
     )
+    schedule: Mapped[Optional["InvoiceSchedule"]] = relationship(
+        back_populates="invoices", lazy="joined"
+    )
+    # When the money is expected in more than one date. Empty for the
+    # ordinary invoice, whose one `due_date` is the whole schedule.
+    installments: Mapped[list["InvoiceInstallment"]] = relationship(
+        back_populates="invoice",
+        cascade="all, delete-orphan",
+        order_by="InvoiceInstallment.position",
+        lazy="selectin",
+    )
+    # Debt settled without money arriving: tax the client withheld, a
+    # fee the gateway kept. Counts towards "settled", never towards
+    # "received".
+    deductions: Mapped[list["InvoiceDeduction"]] = relationship(
+        back_populates="invoice",
+        cascade="all, delete-orphan",
+        order_by="InvoiceDeduction.deducted_at",
+        lazy="selectin",
+    )
 
 
 class InvoiceLine(Base):
@@ -314,6 +370,20 @@ class InvoiceLine(Base):
     tax_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=7, scale=4), nullable=True)
     total: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2), default=Decimal("0"))
     position: Mapped[int] = mapped_column(Integer, default=0)
+    # Where the line came from, when it came from the catalog. Provenance
+    # only: the fields above are the line's own copy, and neither id
+    # takes part in the arithmetic. SET NULL because the line is part of
+    # a document and outlives the catalog entry.
+    product_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("products.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    price_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("product_prices.id", ondelete="SET NULL"), nullable=True
+    )
+    # The product's fiscal references as they stood when the line was
+    # written (NCM, service code, HS code...). The line's own copy, for
+    # the same reason as every other value on it.
+    fiscal_refs: Mapped[Optional[dict[str, str]]] = mapped_column(JSON, nullable=True)
 
     invoice: Mapped["Invoice"] = relationship(back_populates="lines")
 
@@ -372,6 +442,109 @@ class InvoiceAllocation(Base):
 
     invoice: Mapped["Invoice"] = relationship(back_populates="allocations", foreign_keys=[invoice_id])
     transaction: Mapped[Optional["Transaction"]] = relationship(lazy="joined")
+
+
+#: Why an invoice closed without the whole amount arriving.
+#:
+#:   withholding_tax: the client kept part of it for the tax office
+#:                     (IRRF, ISS, INSS in Brazil; IRPF in Spain; the
+#:                     `tax_kind` says which, in the jurisdiction's words)
+#:   gateway_fee:     the processor kept its cut before paying out
+#:   fx_difference:   paid in another currency and the conversion
+#:                     landed short (or long) of the face value
+#:   other:           with a note saying what
+#:
+#: A write-off (giving up on the money) is not here: that is the
+#: whole-invoice `uncollectible` decision, and the two never coexist.
+DEDUCTION_KINDS = ("withholding_tax", "gateway_fee", "fx_difference", "other")
+
+
+class InvoiceInstallment(Base):
+    """One of the dates an invoice's money is expected on.
+
+    "3x no boleto", "50% upfront, 50% on delivery": the schedule the
+    client agreed to, as rows. The amounts add up to the invoice total
+    (enforced when written), and the invoice's own `due_date` becomes
+    the last of them so every list and filter that sorts by it still
+    holds.
+
+    Nothing is allocated *to* an installment. Money settles the invoice,
+    and which installments that covers is read first-to-last from the
+    running total: the first unpaid installment is the one that can be
+    late. That keeps the N:N allocation table untouched and means a
+    client who pays two installments in one transfer needs no ceremony.
+    """
+
+    __tablename__ = "invoice_installments"
+    __table_args__ = (
+        Index("ix_invoice_installments_invoice", "invoice_id"),
+        UniqueConstraint("invoice_id", "position", name="uq_invoice_installments_position"),
+        CheckConstraint("amount > 0", name="ck_invoice_installments_amount_positive"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    invoice_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("invoices.id", ondelete="CASCADE")
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    # "Entrada", "2/3", "Na entrega": free text, optional.
+    label: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+    due_date: Mapped[_date] = mapped_column(Date)
+    amount: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    invoice: Mapped["Invoice"] = relationship(back_populates="installments")
+
+
+class InvoiceDeduction(Base):
+    """Debt settled without money arriving.
+
+    The R$ 150 an invoice stays short of forever because the client
+    withheld tax, or the gateway kept its fee. Recording it here closes
+    the invoice honestly: `balance` subtracts it, `amount_paid` does
+    not, so "received this month" stays the cash figure and the
+    accountant can still see what was withheld and why.
+    """
+
+    __tablename__ = "invoice_deductions"
+    __table_args__ = (
+        Index("ix_invoice_deductions_invoice", "invoice_id"),
+        CheckConstraint("amount > 0", name="ck_invoice_deductions_amount_positive"),
+        CheckConstraint(
+            "kind IN ('withholding_tax', 'gateway_fee', 'fx_difference', 'other')",
+            name="ck_invoice_deductions_kind",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    invoice_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("invoices.id", ondelete="CASCADE")
+    )
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(30))
+    # Which tax, in the jurisdiction's own vocabulary (`irrf`, `iss`,
+    # `irpf`...). Free text on purpose: a pack may suggest, the column
+    # never restricts.
+    tax_kind: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(precision=15, scale=2))
+    note: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    # The payment this was noticed on, when there was one: the transfer
+    # that came in net. Provenance only.
+    transaction_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True
+    )
+    deducted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    invoice: Mapped["Invoice"] = relationship(back_populates="deductions")
 
 
 class InvoiceSettings(Base):

@@ -72,13 +72,28 @@ EDITABLE_NODES_BY_MODULE: dict[str, ModuleId] = {
     reconciliation_policy.MATCH_RECURRING["node"]: ModuleId.RECURRING,
 }
 
+#: Sets every workspace has, because the matching they configure is not
+#: part of any module.
+#:
+#: Transfer pairing is the first of them, and the distinction it
+#: introduces is worth stating plainly: the nodes above exist *because* a
+#: module does, and a workspace without invoicing has no use for a rule
+#: about invoices. Pairing the two legs of a transfer is not like that.
+#: It has run on every sync for every workspace since long before there
+#: were modules, personal ones included, and it is the automation that
+#: touches the most people's data. Putting it behind the invoicing module
+#: would hide the rules for something the majority already has running.
+CORE_NODES: tuple[str, ...] = (reconciliation_policy.MATCH_TRANSFER["node"],)
+
 #: Every node a rule may be written against, in the order they are shown.
-EDITABLE_NODES = tuple(EDITABLE_NODES_BY_MODULE)
+#: Core first: it is the set that is there for everybody, and the page
+#: should not open on a section half its readers do not have.
+EDITABLE_NODES = CORE_NODES + tuple(EDITABLE_NODES_BY_MODULE)
 
 
 def nodes_for(enabled_modules: Collection[str]) -> tuple[str, ...]:
     """The sets this workspace may see, in shipped order."""
-    return tuple(
+    return CORE_NODES + tuple(
         node
         for node, module in EDITABLE_NODES_BY_MODULE.items()
         if module.value in enabled_modules
@@ -360,7 +375,20 @@ def validate_config(config: dict[str, Any], *, whole: bool) -> dict[str, Any]:
     if "text" in when:
         checked["text"] = _validate_text(when["text"])
 
-    for flag in ("same_account", "unique_candidate"):
+    if "account_types" in when:
+        checked["account_types"] = _validate_account_types(when["account_types"])
+
+    if "tie_break" in when:
+        if when["tie_break"] not in _TIE_BREAKS:
+            raise RuleError("bad_tie_break", "Unknown way to separate two candidates")
+        checked["tie_break"] = when["tie_break"]
+
+    for flag in (
+        "same_account",
+        "different_account",
+        "unique_candidate",
+        "account_name_in_description",
+    ):
         if flag in when:
             checked[flag] = bool(when[flag])
 
@@ -368,7 +396,53 @@ def validate_config(config: dict[str, Any], *, whole: bool) -> dict[str, Any]:
         raise RuleError("conditions_required", "A rule needs at least one condition")
 
     clean["when"] = checked
+    if whole:
+        # A rule of the workspace's own is complete here, so this is
+        # where it can be judged. A patch over one of ours cannot be:
+        # it may carry only `outcome`, and whether that is safe depends
+        # on conditions living in the shipped rule. `upsert_override`
+        # asks again once the two are merged.
+        assert_safe_to_link(clean)
     return clean
+
+
+#: Amount comparisons that accept money which is **not** the figure
+#: expected. `ratio` is deliberately absent: it matches a known fraction
+#: of a known invoice, and the fraction is the meaning rather than a
+#: margin of error.
+_APPROXIMATE_MATCHES = ("tolerance", "partial")
+
+
+def assert_safe_to_link(strategy: dict[str, Any]) -> None:
+    """Refuse a rule that would link on evidence it cannot be sure of.
+
+    The one guardrail in this file, and it is here because of what the
+    damage looks like rather than how likely it is. A rule that links on
+    an *approximate* amount, with nothing requiring the winner to be the
+    only candidate, quietly rewrites the books: both rows drop out of
+    income and expense, the totals move, and nothing anywhere says a
+    guess was made. Somebody finds it months later, if at all.
+
+    So the combination is refused, not the ingredients. Approximate and
+    linking is fine when the rule also insists there be exactly one
+    candidate, because then an ambiguous case becomes a question instead
+    of a coin toss. Approximate without that has to suggest.
+
+    Everything else stays permitted on purpose. This is a page for
+    people who want to change how their money is matched, and a
+    guardrail that second-guesses every choice is a page they stop
+    using.
+    """
+    if strategy.get("outcome") != "link":
+        return
+    when = strategy.get("when") or {}
+    match = (when.get("amount") or {}).get("match", "exact")
+    if match in _APPROXIMATE_MATCHES and not when.get("unique_candidate"):
+        raise RuleError(
+            "unsafe_link",
+            "A rule matching an approximate amount can only link when it "
+            "also requires a single candidate. Otherwise it has to suggest.",
+        )
 
 
 def _positive_number(value: Any, code: str, message: str) -> str:
@@ -515,6 +589,38 @@ def _validate_currency(rule: Any) -> dict[str, Any]:
     return checked
 
 
+#: How a rule may separate candidates that all fit. One entry, and the
+#: list exists so the second one has somewhere to go: the shape of the
+#: question ("what breaks the tie") outlives any particular answer.
+_TIE_BREAKS = ("closest_date",)
+
+#: The kinds of account a rule may name. Closed rather than free text:
+#: a typo in a condition is a rule that silently never fires, and the one
+#: place that is unforgivable is matching, where nobody is watching.
+_ACCOUNT_TYPES = ("checking", "savings", "credit_card", "investment", "wallet")
+
+
+def _validate_account_types(rule: Any) -> list[str]:
+    """Which kinds of account this rule is written for.
+
+    Order is not preserved from the input: it is a set of kinds, and two
+    rules naming the same kinds in a different order are the same rule.
+    """
+    if isinstance(rule, str):
+        rule = [rule]
+    if not isinstance(rule, list) or not rule:
+        raise RuleError(
+            "bad_account_types", "Choose at least one kind of account, or leave it out"
+        )
+    chosen = []
+    for item in rule:
+        if item not in _ACCOUNT_TYPES:
+            raise RuleError("bad_account_types", "That is not a kind of account")
+        if item not in chosen:
+            chosen.append(item)
+    return chosen
+
+
 def _validate_ids(rule: Any, code: str) -> list[str]:
     """A list of accounts or clients the rule is limited to.
 
@@ -641,6 +747,17 @@ async def upsert_override(
         s
         for s in reconciliation_policy.default_policy(node)["strategies"]
         if s["id"] == strategy_id
+    )
+    # What this rule will actually be once the patch is laid over what we
+    # ship. Judged here rather than on the patch alone, because a patch
+    # saying only `{"outcome": "link"}` is unreadable on its own: whether
+    # it is safe depends on conditions it does not carry.
+    assert_safe_to_link(
+        {
+            **shipped_strategy,
+            **merged,
+            "when": {**shipped_strategy.get("when", {}), **merged.get("when", {})},
+        }
     )
     pruned = _prune(merged, shipped_strategy)
 

@@ -35,6 +35,7 @@ async def list_import_logs(
             user_id=log.user_id,
             account_id=log.account_id,
             account_name=log.account.name if log.account else None,
+            account_currency=log.account.currency if log.account else None,
             entity=log.entity,
             filename=log.filename,
             format=log.format,

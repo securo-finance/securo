@@ -341,6 +341,18 @@ async def test_anthropic_includes_system_and_tools_in_payload():
     assert payload["tools"][0]["name"] == "t"
 
 
+@pytest.mark.asyncio
+async def test_anthropic_payload_omits_temperature():
+    sse = [f"data: {json.dumps({'type': 'message_delta', 'delta': {'stop_reason': 'end_turn'}, 'usage': {}})}"]
+    _FakeAsyncClient.queue_stream.append(_FakeStreamResponse(status_code=200, lines=sse))
+    provider = AnthropicProvider(api_key="sk-test")
+    msgs = [ChatMessage(role="user", content="hi")]
+    async for _ in provider.chat_stream(msgs, model="claude-x", temperature=0.2):
+        pass
+    _, payload = _FakeAsyncClient.posted[-1]
+    assert "temperature" not in payload
+
+
 # --------------------------------------------------------------------- Anthropic: HTTP errors → typed exceptions
 
 @pytest.mark.asyncio

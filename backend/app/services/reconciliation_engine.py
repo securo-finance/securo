@@ -46,7 +46,7 @@ from decimal import ROUND_DOWN, Decimal
 from enum import Enum
 from typing import Any, Literal, Optional
 
-from app.services.text_similarity import token_overlap
+from app.services.text_similarity import names_account, token_overlap
 
 #: What the decision came out of. Named rather than boolean so a node
 #: graph can wire each one somewhere different later.
@@ -54,7 +54,16 @@ Port = Literal["linked", "suggested", "unmatched"]
 
 #: Which kind of promise a candidate is. The engine treats them alike;
 #: the caller uses this to pick how to apply the decision.
-ExpectationKind = Literal["invoice", "recurring"]
+#:
+#: `transaction` is the odd one and worth naming: the other two are
+#: promises somebody wrote down, while this one is the other leg of a
+#: transfer, which is a promise only by implication. Money leaving one
+#: account **is** the expectation that the same money arrives in another,
+#: so the leg is carried here with its direction flipped: a debit of 100
+#: is an expectation of a credit of 100. That flip is what lets the
+#: direction check below go on meaning what it says instead of needing a
+#: mode for transfers.
+ExpectationKind = Literal["invoice", "recurring", "transaction"]
 
 #: **Which way round the match is being made.** Matching happens at two
 #: different moments and they are not the same question.
@@ -84,6 +93,23 @@ class Reason(str, Enum):
     DIRECTION = "direction_differs"
     CURRENCY = "currency_differs"
     COUNTERPARTY = "different_counterparty"
+    #: Both legs are on the same account, so nothing moved between
+    #: accounts. Its own reason rather than `COUNTERPARTY`, because a
+    #: person reading a transfer's trace is asking about accounts and
+    #: being told "different counterparty" would send them looking at
+    #: payees.
+    SAME_ACCOUNT = "same_account"
+    #: Neither side's text names the other side's account, and this rule
+    #: only trusts a pair that says where it is going.
+    ACCOUNT_NOT_NAMED = "neither_description_names_the_other_account"
+    #: The rule was written for legs on a particular kind of account (a
+    #: credit card, typically) and neither of these is one.
+    ACCOUNT_TYPE = "account_type_not_covered"
+    #: It fitted, and another candidate fitted the same way while sitting
+    #: closer in time. Not a failure of this pair so much as a statement
+    #: that a better one was available, and worth saying in those words:
+    #: *rejected* would send somebody looking for what was wrong with it.
+    FURTHER_IN_TIME = "another_candidate_is_closer_in_time"
     AMOUNT = "amount_outside_tolerance"
     DATE = "date_outside_window"
     DESCRIPTION = "description_too_different"
@@ -133,6 +159,14 @@ class Movement:
     counterparty: Optional[str] = None
     payee_id: Optional[uuid.UUID] = None
     account_id: Optional[uuid.UUID] = None
+    #: What the account is called, and what kind it is. Only transfer
+    #: matching reads them, and it needs both: the name because the one
+    #: signal that reliably tells two same-amount transfers apart is a
+    #: description naming where the money went, and the kind because a
+    #: leg on a credit card deserves a different answer from a leg
+    #: between two checking accounts.
+    account_name: Optional[str] = None
+    account_type: Optional[str] = None
     #: `sync`, `ofx`, `csv`, `manual`, `recurring`. A policy may ignore
     #: some: the receivable node ignores `recurring`, because a
     #: generated placeholder is a promise and not the money itself.
@@ -155,14 +189,35 @@ class Expectation:
     direction: str
     when: date
     description: Optional[str] = None
+    #: As printed by the bank, when this expectation is itself a
+    #: statement line. The identifying words land in whichever of the two
+    #: fields the bank felt like using, so a signal that read only
+    #: `description` would miss the half of them that use the other.
+    counterparty: Optional[str] = None
     payee_id: Optional[uuid.UUID] = None
     #: Set for a recurring bill, which is charged to a known account.
     #: Null for an invoice, where the money may land anywhere.
     account_id: Optional[uuid.UUID] = None
+    #: As on `Movement`, and read by the same rules. An invoice and a
+    #: recurring bill leave them null; the other leg of a transfer is an
+    #: account and fills both.
+    account_name: Optional[str] = None
+    account_type: Optional[str] = None
     #: When the promise came into existence, if that is a different day
     #: from when it comes due. An invoice has both and they are weeks
     #: apart; a recurring occurrence has one, and leaves this null.
     issued: Optional[date] = None
+    #: The amounts at which this promise closes a whole part, smallest
+    #: first, ending at `amount`. Set when the money was agreed in
+    #: installments: a client paying the next one, or the next two at
+    #: once, is paying exactly what was asked, and comparing that against
+    #: the whole balance would call every installment a mismatch. Empty
+    #: for a promise that is one amount on one date.
+    stops: tuple[Decimal, ...] = ()
+
+    def targets(self) -> tuple[Decimal, ...]:
+        """What a movement's amount is compared against, in order."""
+        return self.stops or (self.amount,)
 
 
 @dataclass(frozen=True)
@@ -179,6 +234,10 @@ class Settlement:
 
     expectation: Expectation
     amount: Decimal
+    #: The part of the promise the amount was measured against: the next
+    #: installment, say, rather than the whole balance. None when that is
+    #: the balance itself.
+    target: Optional[Decimal] = None
 
 
 @dataclass
@@ -706,7 +765,9 @@ def evaluate(
                 return decision
             continue
 
-        matched: list[tuple[Expectation, Optional[Decimal], Optional[str], float]] = []
+        matched: list[
+            tuple[Expectation, Optional[Decimal], Optional[str], float, Optional[Decimal]]
+        ] = []
 
         for candidate in candidates:
             note = Consideration(expectation_id=candidate.id, strategy=strategy["id"])
@@ -752,9 +813,72 @@ def evaluate(
                 trace.append(note)
                 continue
 
-            ok, difference, difference_kind = _amount_verdict(
-                movement.amount, candidate.amount, rule.get("amount", {}), ratios
-            )
+            # The inverse, and the defining condition of a transfer:
+            # money that left one account and arrived in another. Its own
+            # key rather than a value on `same_account`, so that a rule
+            # reads as a list of things that must be true and never as a
+            # flag whose meaning depends on how it is set.
+            if rule.get("different_account") and (
+                movement.account_id is None
+                or movement.account_id == candidate.account_id
+            ):
+                note.rejected_by = Reason.SAME_ACCOUNT
+                trace.append(note)
+                continue
+
+            wanted_types = _as_list(rule.get("account_types"))
+            if wanted_types and not (
+                movement.account_type in wanted_types
+                or candidate.account_type in wanted_types
+            ):
+                # Either leg is enough. A rule that exists to be careful
+                # about credit cards has to fire whichever end the card
+                # is on, and asking somebody to write the rule twice
+                # would be asking them to know which side we happen to
+                # examine first.
+                note.rejected_by = Reason.ACCOUNT_TYPE
+                trace.append(note)
+                continue
+
+            # How strongly the two texts point at each other. **Graded,
+            # not a yes or no**, and that is the whole of why the
+            # wrong-counterpart case comes out right.
+            #
+            # Two transfers leave one account on the same day and the
+            # incoming line reads `Transfer from BNP`. That names the
+            # source, so on its own it fits *both* debits equally and
+            # decides nothing. What separates them is that one of the
+            # two also reads `To FORTUNEO ACCOUNT`, so that pair names
+            # itself from both ends and the other only from one.
+            #
+            # A boolean would have called both a match and handed the
+            # choice back to the tie-break, which has nothing to go on
+            # when the dates are identical. Counting the directions puts
+            # the better pair in front, where `tie_break` can see it.
+            naming: Optional[float] = None
+            if rule.get("account_name_in_description"):
+                sides = (
+                    names_account(movement.description, candidate.account_name)
+                    or names_account(movement.counterparty, candidate.account_name),
+                    names_account(candidate.description, movement.account_name)
+                    or names_account(candidate.counterparty, movement.account_name),
+                )
+                if not any(sides):
+                    note.rejected_by = Reason.ACCOUNT_NOT_NAMED
+                    trace.append(note)
+                    continue
+                naming = sum(1 for side in sides if side) / 2.0
+
+            # Against each whole part in turn, next installment first,
+            # so the smallest honest reading wins: a payment of exactly
+            # one installment is that installment, not a part of the rest.
+            ok, difference, difference_kind, target = False, None, None, None
+            for target in candidate.targets():
+                ok, difference, difference_kind = _amount_verdict(
+                    movement.amount, target, rule.get("amount", {}), ratios
+                )
+                if ok:
+                    break
             if not ok:
                 note.rejected_by = Reason.AMOUNT
                 trace.append(note)
@@ -776,15 +900,63 @@ def evaluate(
                     note.score = score
                     trace.append(note)
                     continue
+            elif naming is not None:
+                # Only when nothing else grades the pair. A rule asking
+                # for both would be asking two questions of one number,
+                # and no rule does.
+                score = naming
 
             note.score = score
             trace.append(note)
-            matched.append((candidate, difference, difference_kind, score))
+            matched.append((candidate, difference, difference_kind, score, target))
 
         if not matched:
             continue
 
         outcome = strategy.get("outcome", "suggest")
+
+        if len(matched) > 1 and rule.get("tie_break") == "closest_date":
+            # **Two different meanings of "more than one candidate", and
+            # collapsing them loses a signal people rely on.**
+            #
+            # Transfers are where this shows. Money leaves an account
+            # today and two credits of the same value sit in the
+            # destination, one today and one two days out: the same-day
+            # one is the transfer and the other is somebody paying you
+            # back. Refusing both because there were two would throw away
+            # the very signal the old detector was built on, and it was
+            # right about it.
+            #
+            # What it was wrong about is the case where nothing separates
+            # them. Two debits leaving on the same day for different
+            # destinations are equidistant from the credit, and there the
+            # answer has to be a question.
+            #
+            # So this narrows to the candidates tied at the front, and
+            # whatever `unique_candidate` says next applies to those. A
+            # clear winner is one candidate and links; a genuine tie is
+            # still several and does not.
+            def _closeness(entry: tuple[Expectation, Any, Any, float, Any]):
+                return (-entry[3], abs((movement.when - entry[0].when).days))
+
+            ranked = sorted(matched, key=_closeness)
+            front = _closeness(ranked[0])
+            tied = [entry for entry in ranked if _closeness(entry) == front]
+            if len(tied) < len(matched):
+                beaten = {id(entry) for entry in matched} - {id(e) for e in tied}
+                for note in trace:
+                    if (
+                        note.strategy == strategy["id"]
+                        and note.rejected_by is None
+                        and any(
+                            entry[0].id == note.expectation_id
+                            for entry in matched
+                            if id(entry) in beaten
+                        )
+                    ):
+                        note.rejected_by = Reason.FURTHER_IN_TIME
+            matched = tied
+
         if len(matched) > 1:
             if rule.get("unique_candidate", False):
                 # Several answers to a question that admits one. Downgrade
@@ -796,14 +968,20 @@ def evaluate(
                         note.rejected_by = Reason.AMBIGUOUS
             matched.sort(key=lambda m: m[3], reverse=True)
 
-        winner, difference, difference_kind, score = matched[0]
+        winner, difference, difference_kind, score, target = matched[0]
         settled = min(abs(movement.amount), winner.amount)
         return Decision(
             port="linked" if outcome == "link" else "suggested",
             # Always a set, even when it holds one. A caller that has to
             # ask "is this the single kind or the several kind" before it
             # can write anything is a caller that will one day forget to.
-            settlements=[Settlement(expectation=winner, amount=settled)],
+            settlements=[
+                Settlement(
+                    expectation=winner,
+                    amount=settled,
+                    target=target if target != winner.amount else None,
+                )
+            ],
             expectation=winner,
             strategy=strategy["id"],
             amount=settled,

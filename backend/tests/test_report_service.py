@@ -23,6 +23,7 @@ from app.schemas.report import (
 )
 from app.services import report_service
 from app.api.reports import (
+    _add_years,
     _financial_year_start_month,
     _reject_unsupported_fiscal_year_report,
 )
@@ -389,6 +390,26 @@ async def test_net_worth_report_ytd_starts_at_current_year(
     assert all(point.date.startswith(str(date.today().year)) for point in report.trend)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("interval", ["daily", "weekly", "monthly", "yearly"])
+async def test_net_worth_report_custom_range_pins_window(
+    session: AsyncSession, test_user, test_workspace, interval
+):
+    """Explicit start_date/end_date override the preset window."""
+    start = date(2022, 3, 1)
+    end = date(2022, 6, 30)
+    report = await get_net_worth_report(
+        session, test_workspace.id, test_user.id,
+        months=6, interval=interval,
+        start_date=start, end_date=end,
+    )
+
+    expected = [_format_date_label(point, interval)
+                for point in _date_points(start, end, interval)]
+    assert [point.date for point in report.trend] == expected
+    assert report.trend[-1].date == _format_date_label(end, interval)
+
+
 # ---------------------------------------------------------------------------
 # API-level tests: /reports/net-worth
 # ---------------------------------------------------------------------------
@@ -466,79 +487,6 @@ async def test_net_worth_api_requires_auth(client):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-@pytest.mark.skip(reason="to_char() is PostgreSQL-specific; tests use SQLite")
-async def test_income_expenses_api_endpoint(client, auth_headers, test_transactions):
-    """GET /reports/income-expenses returns valid response."""
-    response = await client.get(
-        "/api/reports/income-expenses",
-        params={"months": 12, "interval": "monthly"},
-        headers=auth_headers,
-    )
-    assert response.status_code == 200
-    data = response.json()
-
-    assert data["meta"]["type"] == "income_expenses"
-    assert data["meta"]["series_keys"] == [
-        "income", "expenses", "projectedIncome", "projectedExpenses"
-    ]
-    assert "summary" in data
-    assert "trend" in data
-
-    # Summary should have income, expenses, netIncome breakdowns
-    breakdown_keys = [b["key"] for b in data["summary"]["breakdowns"]]
-    assert "income" in breakdown_keys
-    assert "expenses" in breakdown_keys
-    assert "netIncome" in breakdown_keys
-
-    # Verify math: net income = income - expenses
-    breakdowns = {b["key"]: b["value"] for b in data["summary"]["breakdowns"]}
-    assert abs(breakdowns["netIncome"] - (breakdowns["income"] - breakdowns["expenses"])) < 0.01
-
-    # Each trend point has income/expenses breakdowns
-    for dp in data["trend"]:
-        assert "income" in dp["breakdowns"]
-        assert "expenses" in dp["breakdowns"]
-        # value = net income = income - expenses
-        expected_net = dp["breakdowns"]["income"] - dp["breakdowns"]["expenses"]
-        assert abs(dp["value"] - expected_net) < 0.01
-
-
-@pytest.mark.asyncio
-@pytest.mark.skip(reason="to_char() is PostgreSQL-specific; tests use SQLite")
-async def test_income_expenses_excludes_opening_balance(client, auth_headers):
-    """Income expenses report excludes opening balance transactions."""
-    # Create account with opening balance
-    acc_resp = await client.post(
-        "/api/accounts",
-        json={"name": "IE Test", "type": "checking", "balance": 10000.00, "currency": "BRL"},
-        headers=auth_headers,
-    )
-    assert acc_resp.status_code == 201
-
-    response = await client.get(
-        "/api/reports/income-expenses",
-        params={"months": 1, "interval": "monthly"},
-        headers=auth_headers,
-    )
-    assert response.status_code == 200
-    data = response.json()
-
-    # Opening balance should NOT appear as income
-    breakdowns = {b["key"]: b["value"] for b in data["summary"]["breakdowns"]}
-    assert breakdowns["income"] == 0.0
-
-
-@pytest.mark.asyncio
-@pytest.mark.skip(reason="to_char() is PostgreSQL-specific; tests use SQLite")
-async def test_income_expenses_excludes_transfers(client, auth_headers):
-    """Income expenses report excludes transfer pair transactions."""
-    response = await client.get(
-        "/api/reports/income-expenses",
-        params={"months": 12, "interval": "monthly"},
-        headers=auth_headers,
-    )
-    assert response.status_code == 200
     # Just verify the endpoint works — transfer exclusion is enforced by the SQL filter
 
 
@@ -574,6 +522,7 @@ async def test_income_expenses_api_accepts_ytd_period(client, auth_headers, monk
     async def fake_report(
         session, workspace_id, user_id, months, interval, currency,
         account_ids=None, period=None, days=None, financial_year_start_month=1,
+        start_date=None, end_date=None,
     ):
         assert months == 12
         assert interval == "monthly"
@@ -616,6 +565,7 @@ async def test_income_expenses_api_forwards_days_window(client, auth_headers, mo
     async def fake_report(
         session, workspace_id, user_id, months, interval, currency,
         account_ids=None, period=None, days=None, financial_year_start_month=1,
+        start_date=None, end_date=None,
     ):
         seen["days"] = days
         return ReportResponse(
@@ -649,6 +599,60 @@ async def test_income_expenses_api_forwards_days_window(client, auth_headers, mo
     resp = await client.get(
         "/api/reports/income-expenses",
         params={"days": 0},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_income_expenses_api_forwards_custom_range(client, auth_headers, monkeypatch):
+    """start_date/end_date override presets and reach the service."""
+    seen: dict = {}
+
+    async def fake_report(
+        session, workspace_id, user_id, months, interval, currency,
+        account_ids=None, period=None, days=None, financial_year_start_month=1,
+        start_date=None, end_date=None,
+    ):
+        seen["start"] = start_date
+        seen["end"] = end_date
+        return ReportResponse(
+            summary=ReportSummary(primary_value=0, change_amount=0, change_percent=None, breakdowns=[]),
+            trend=[],
+            meta=ReportMeta(type="income_expenses", series_keys=[], currency=currency, interval=interval),
+            composition=[],
+            category_trend=[],
+        )
+
+    monkeypatch.setattr(report_service, "get_income_expenses_report", fake_report)
+
+    resp = await client.get(
+        "/api/reports/income-expenses",
+        params={"start_date": "2022-01-01", "end_date": "2022-06-30"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    assert seen["start"] == date(2022, 1, 1)
+    assert seen["end"] == date(2022, 6, 30)
+
+
+@pytest.mark.asyncio
+async def test_income_expenses_api_rejects_partial_custom_range(client, auth_headers):
+    """Both start_date and end_date must be provided together."""
+    resp = await client.get(
+        "/api/reports/income-expenses",
+        params={"start_date": "2022-01-01"},
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_income_expenses_api_rejects_reversed_custom_range(client, auth_headers):
+    """end_date must be on or after start_date."""
+    resp = await client.get(
+        "/api/reports/income-expenses",
+        params={"start_date": "2022-06-30", "end_date": "2022-01-01"},
         headers=auth_headers,
     )
     assert resp.status_code == 422
@@ -800,36 +804,6 @@ async def test_net_worth_report_has_empty_category_trend(session: AsyncSession, 
 # ---------------------------------------------------------------------------
 # API-level test: income-expenses includes category_trend
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-@pytest.mark.skip(reason="to_char() is PostgreSQL-specific; tests use SQLite")
-async def test_income_expenses_has_category_trend(client, auth_headers, test_transactions):
-    """GET /reports/income-expenses response includes category_trend array."""
-    response = await client.get(
-        "/api/reports/income-expenses",
-        params={"months": 12, "interval": "monthly"},
-        headers=auth_headers,
-    )
-    assert response.status_code == 200
-    data = response.json()
-
-    assert "category_trend" in data
-    assert isinstance(data["category_trend"], list)
-
-    # Each item should have the expected shape
-    for item in data["category_trend"]:
-        assert "key" in item
-        assert "label" in item
-        assert "color" in item
-        assert "total" in item
-        assert "group" in item
-        assert item["group"] in ("income", "expenses")
-        assert "series" in item
-        assert isinstance(item["series"], list)
-        for point in item["series"]:
-            assert "date" in point
-            assert "value" in point
 
 
 # ---------------------------------------------------------------------------
@@ -2666,3 +2640,99 @@ async def test_cash_flow_chart_includes_past_history(
     delta_days = (today - first_date).days
     # _PAST_HISTORY_MONTHS = 1 (28–31 days depending on month).
     assert 27 <= delta_days <= 32
+
+
+def test_add_years_clamps_leap_day():
+    """Feb 29 + N years clamps to Feb 28 when the target year isn't leap."""
+    assert _add_years(date(2016, 2, 29), 10) == date(2026, 2, 28)
+    # Target year is also a leap year, so Feb 29 survives untouched.
+    assert _add_years(date(2020, 2, 29), 4) == date(2024, 2, 29)
+    assert _add_years(date(2016, 9, 12), 10) == date(2026, 9, 12)
+
+
+@pytest.mark.parametrize('endpoint,service_name', [
+    ('net-worth', 'get_net_worth_report'),
+    ('income-expenses', 'get_income_expenses_report'),
+])
+@pytest.mark.parametrize('start_offset,end_offset,status', [
+    # FixedDate.today() is 2026-09-12; -3652 days is exactly 2016-09-12, the
+    # 10-calendar-year anniversary. One day further back crosses it, even
+    # though the day-count difference (3653 vs. 3652) understates the effect
+    # of the two leap days (2020, 2024) inside the window.
+    (-1, 1, 422), (0, 0, 200), (-3652, 0, 200), (-3653, 0, 422),
+    (None, 0, 422), (-1, None, 422), (0, -1, 422),
+])
+async def test_historical_api_custom_range_boundaries(
+    client, auth_headers, monkeypatch, endpoint, service_name,
+    start_offset, end_offset, status,
+):
+    from app.api import reports as reports_api
+
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 9, 12)
+
+    monkeypatch.setattr(reports_api, 'date', FixedDate)
+    report = ReportResponse(
+        summary=ReportSummary(primary_value=0, change_amount=0, change_percent=None,
+                              breakdowns=[]),
+        trend=[], meta=ReportMeta(type=endpoint, series_keys=[], currency='USD',
+                                 interval='monthly'),
+        composition=[], category_trend=[],
+    )
+    service = AsyncMock(return_value=report)
+    monkeypatch.setattr(report_service, service_name, service)
+    params = {}
+    for name, offset in [('start_date', start_offset), ('end_date', end_offset)]:
+        if offset is not None:
+            params[name] = (FixedDate.today() + timedelta(days=offset)).isoformat()
+    response = await client.get(f'/api/reports/{endpoint}', params=params, headers=auth_headers)
+    assert response.status_code == status, response.text
+    if status == 200:
+        service.assert_awaited_once()
+        assert service.call_args.kwargs['start_date'].isoformat() == params['start_date']
+        assert service.call_args.kwargs['end_date'].isoformat() == params['end_date']
+    else:
+        service.assert_not_awaited()
+        assert isinstance(response.json()['detail'], str)
+
+
+@pytest.mark.parametrize('endpoint,service_name', [
+    ('net-worth', 'get_net_worth_report'),
+    ('income-expenses', 'get_income_expenses_report'),
+])
+async def test_custom_dates_override_indian_yearly_ytd(
+    client, auth_headers, monkeypatch, endpoint, service_name,
+):
+    context = SimpleNamespace(
+        workspace=SimpleNamespace(id=uuid.uuid4(), tax_jurisdiction='IN'),
+        user_id=uuid.uuid4(), user=SimpleNamespace(primary_currency='INR'),
+    )
+
+    async def override_workspace():
+        return context
+
+    report = ReportResponse(
+        summary=ReportSummary(primary_value=0, change_amount=0, change_percent=None,
+                              breakdowns=[]),
+        trend=[], meta=ReportMeta(type=endpoint, series_keys=[], currency='INR',
+                                 interval='yearly'), composition=[], category_trend=[],
+    )
+    service = AsyncMock(return_value=report)
+    monkeypatch.setattr(report_service, service_name, service)
+    app.dependency_overrides[current_workspace] = override_workspace
+    try:
+        params = {'period': 'ytd', 'interval': 'yearly'}
+        rejected = await client.get(f'/api/reports/{endpoint}', params=params,
+                                    headers=auth_headers)
+        assert rejected.status_code == 422
+        service.assert_not_awaited()
+        params.update(start_date='2022-03-10', end_date='2022-06-15')
+        accepted = await client.get(f'/api/reports/{endpoint}', params=params,
+                                    headers=auth_headers)
+        assert accepted.status_code == 200, accepted.text
+        assert service.call_args.kwargs['period'] is None
+        assert service.call_args.kwargs['financial_year_start_month'] == 4
+    finally:
+        app.dependency_overrides.pop(current_workspace, None)

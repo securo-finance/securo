@@ -71,6 +71,7 @@ const CONDITION_FIELDS = [
   { value: 'account_id', label: 'rules.fieldAccount' },
   { value: 'payee_id', label: 'rules.fieldPayee' },
   { value: 'date', label: 'rules.fieldDate' },
+  { value: 'status', label: 'rules.fieldStatus' },
 ] as const
 
 const STRING_OPS = [
@@ -94,7 +95,7 @@ const NUMERIC_OPS = [
 function getOpsForField(field: string) {
   if (field === 'amount' || field === 'date') return NUMERIC_OPS
   if (field === 'type') return [{ value: 'equals', label: 'rules.opIs' }]
-  if (field === 'payee_id' || field === 'account_id') return [
+  if (field === 'payee_id' || field === 'account_id' || field === 'status') return [
     { value: 'equals', label: 'rules.opIs' },
     { value: 'not_equals', label: 'rules.opIsNot' },
   ]
@@ -114,6 +115,10 @@ function conditionSummary(conditions: RuleConditionNode[], conditionsOp: string,
     if (c.field === 'payee_id') {
       const p = payeesList.find(p => p.id === c.value)
       return p ? p.name : String(c.value)
+    }
+    if (c.field === 'status') {
+      if (c.value === 'pending') return t('rules.statusPending')
+      if (c.value === 'posted') return t('rules.statusPosted')
     }
     return String(c.value)
   }
@@ -160,7 +165,7 @@ const FILTER_CONTROL_CLASS = 'h-7 rounded-md border border-border bg-background 
 export default function RulesPage() {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
-  const { canWrite, hasModule } = useWorkspace()
+  const { canWrite } = useWorkspace()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [packsDialogOpen, setPacksDialogOpen] = useState(false)
   const [importDialogOpen, setImportDialogOpen] = useState(false)
@@ -407,12 +412,12 @@ export default function RulesPage() {
   // when there is something pending. History is *audit*, visited to find
   // out what happened. Burying work inside a configuration page meant only
   // people who came to configure something ever discovered they had any.
-  // Matching serves two sets that belong to different modules: invoices,
-  // and the bills you told us to expect. Either one is enough to have a
-  // queue and a history worth showing; without both, the routes behind
-  // them answer 404, so two permanently empty tabs would be furniture and
-  // asking for their contents would be asking for a 404 on every load.
-  const matching = hasModule('invoices') || hasModule('recurring')
+  // Matching used to serve only sets that belonged to a module, so a
+  // personal workspace had no rules here, no queue and no history, and
+  // the tabs were hidden rather than left empty. Transfer pairing
+  // changed that: it runs for everybody, it has always run, and it is
+  // now written down where its owner can read it. So there is no
+  // workspace without matching any more, and nothing left to hide.
 
   // Addressable, because the queue is now linked to from elsewhere: a
   // badge on a transaction row is a promise to land on the question, and
@@ -421,9 +426,7 @@ export default function RulesPage() {
   const requested = searchParams.get('tab')
   const asked =
     requested === 'queue' || requested === 'history' ? requested : 'rules'
-  // A link to a tab this workspace does not have lands on the one it
-  // does, rather than on a page rendering nothing.
-  const tab: 'rules' | 'queue' | 'history' = matching ? asked : 'rules'
+  const tab: 'rules' | 'queue' | 'history' = asked
   const setTab = (next: 'rules' | 'queue' | 'history') => {
     // `replace`, so the back button leaves the page rather than walking
     // back through tabs somebody clicked on the way.
@@ -435,7 +438,6 @@ export default function RulesPage() {
   const { data: pending } = useQuery({
     queryKey: ['reconciliation-suggestions'],
     queryFn: reconciliationApi.suggestions,
-    enabled: matching,
   })
 
   return (
@@ -449,7 +451,7 @@ export default function RulesPage() {
           testIdPrefix="automation-tab"
           options={[
             { value: 'rules', label: t('rules.tab.rules') },
-            ...(matching ? [{
+            {
               value: 'queue' as const,
               // The count is rendered here rather than through Segmented's
               // own `count`, which is a muted figure beside a filter: the
@@ -468,13 +470,13 @@ export default function RulesPage() {
                 </span>
               ),
             },
-            { value: 'history' as const, label: t('rules.tab.history') }] : []),
+            { value: 'history' as const, label: t('rules.tab.history') },
           ]}
         />
       </div>
 
-      {matching && tab === 'queue' && <ReconciliationQueue canWrite={canWrite} />}
-      {matching && tab === 'history' && <ReconciliationHistory />}
+      {tab === 'queue' && <ReconciliationQueue canWrite={canWrite} />}
+      {tab === 'history' && <ReconciliationHistory />}
 
       <div className={tab === 'rules' ? '' : 'hidden'}>
       <SectionCard>
@@ -695,11 +697,10 @@ export default function RulesPage() {
       {/* Matching rules below categorization rules, because they are the
           same promise made twice: the software decides things about your
           money, and you get to see the decision and disagree with it.
-          Not mounted at all without the module: rendering it and letting
-          it decide to show nothing still costs a request that comes back
-          404. */}
+          One card per set, and transfers leads, because that is the set
+          every workspace has whether or not it ever asked for one. */}
       <div className="mt-6 space-y-6">
-        {matching && <ReconciliationRules canWrite={canWrite} />}
+        <ReconciliationRules canWrite={canWrite} />
       </div>
       </div>
 

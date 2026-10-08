@@ -41,6 +41,7 @@ class Account(Base):
     minimum_payment: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
     card_brand: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     card_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    shared_balance_group: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     # The institution this account is actually at. One connection can span
     # several (SimpleFIN — issue #345); null falls back to the connection's
     # own institution_name/logo_url. Eager (selectin) because serialization

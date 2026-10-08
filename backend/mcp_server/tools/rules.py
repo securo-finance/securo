@@ -19,8 +19,9 @@ from mcp_server.tools.proposals import _APPLY_FIELD, _PROPOSAL_PREFACE, _can_app
 
 _RULE_CAPABILITIES = (
     " Conditions combine with AND/OR and filter description, payee, notes, "
-    "amount, type, account_id, payee_id, or date. Actions can set category, "
-    "payee, or description, append notes, or ignore the transaction."
+    "amount, type, account_id, payee_id, date, or status (pending/posted). "
+    "Actions can set category, payee, or description, append notes, or ignore "
+    "the transaction."
 )
 
 

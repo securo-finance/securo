@@ -781,3 +781,66 @@ async def test_cash_flow_accrual_mode_pending_cc(session, test_user, test_worksp
     )
     assert report.meta.type == "cash_flow"
     assert len(report.trend) > 0
+
+
+@pytest.mark.parametrize('interval', ['daily', 'monthly', 'yearly'])
+@pytest.mark.parametrize('end', [date(2022, 3, 20), date(2026, 9, 12)])
+async def test_custom_income_expenses_only_include_in_range_actuals(
+    session, test_user, test_workspace, monkeypatch, interval, end,
+):
+    from app.models.invoice import Invoice
+    from app.services import report_service
+
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 9, 12)
+
+    monkeypatch.setattr(report_service, 'date', FixedDate)
+    start = end.replace(day=10)
+    currency = test_user.primary_currency
+    account = await _make_account(session, test_user.id, 'Custom actuals', currency=currency)
+    category = await _make_category(session, test_user.id, 'Actual category')
+    for amount, kind, day, status in [
+        (100, 'credit', start, 'posted'),
+        (-30, 'debit', end, 'posted'),
+        (500, 'credit', start - timedelta(days=1), 'posted'),
+        (-700, 'debit', end + timedelta(days=1), 'posted'),
+        (900, 'credit', start, 'pending'),
+        (-800, 'debit', end, 'pending'),
+    ]:
+        await _add_txn(session, test_user.id, account.id, amount, kind, day,
+                       status=status, category_id=category.id, currency=currency)
+    recurring = await _make_recurring(
+        session, test_user.id, account.id, 600, 'credit',
+        next_occurrence=start, category_id=category.id, currency=currency,
+    )
+    recurring.start_date = start
+    session.add(Invoice(
+        workspace_id=test_workspace.id, user_id=test_user.id, status='open',
+        issue_date=start, due_date=start, currency=currency, total=Decimal('1100'),
+        direction='receivable', number=1, series='TEST',
+    ))
+    await session.commit()
+
+    report = await get_income_expenses_report(
+        session, test_workspace.id, test_user.id, interval=interval,
+        start_date=start, end_date=end,
+    )
+    totals = {item.key: item.value for item in report.summary.breakdowns}
+    assert totals['income'] == 100
+    assert totals['expenses'] == 30
+    assert totals['projectedIncome'] == totals['projectedExpenses'] == 0
+    assert report.summary.primary_value == 70
+    assert sum(point.breakdowns['income'] for point in report.trend) == 100
+    assert sum(point.breakdowns['expenses'] for point in report.trend) == 30
+    assert all(point.breakdowns['projectedIncome'] == 0 and
+               point.breakdowns['projectedExpenses'] == 0 for point in report.trend)
+    assert {item.group: item.value for item in report.composition} == {
+        'income': 100, 'expenses': 30,
+    }
+    assert {item.group: item.total for item in report.category_trend} == {
+        'income': 100, 'expenses': 30,
+    }
+    for item in report.category_trend:
+        assert sum(point.value for point in item.series) == item.total

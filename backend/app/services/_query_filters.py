@@ -11,6 +11,7 @@ from typing import Optional
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.account import Account
 from app.models.category import Category
 from app.models.transaction import Transaction
@@ -114,6 +115,22 @@ def is_not_ignored():
             Transaction.category_id.not_in(
                 select(Category.id).where(Category.is_ignored.is_(True))
             ),
+        ),
+    )
+
+
+def is_transfer():
+    """SQL filter: the row is a transfer rather than income or expense.
+
+    Either both legs were matched (`transfer_pair_id` set), or the row sits
+    in a category flagged `treat_as_transfer` (one-sided movements such as
+    an investment application). Same reading the transactions calendar uses
+    when it marks a day as having a transfer.
+    """
+    return or_(
+        Transaction.transfer_pair_id.is_not(None),
+        Transaction.category_id.in_(
+            select(Category.id).where(Category.treat_as_transfer.is_(True))
         ),
     )
 
@@ -296,7 +313,7 @@ async def owner_split_offset_pnl(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
-            date_col <= date.today(),
+            date_col <= app_today(),
             Transaction.status == "posted",
             counts_as_user_pnl(),
         )
@@ -376,7 +393,7 @@ async def owner_split_offset_by_category(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
-            date_col <= date.today(),
+            date_col <= app_today(),
             Transaction.status == "posted",
             counts_as_user_pnl(),
         )
@@ -460,7 +477,7 @@ async def viewer_shared_pnl(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
-            date_col <= date.today(),
+            date_col <= app_today(),
             Transaction.status == "posted",
             counts_as_pnl(),
         )
@@ -539,7 +556,7 @@ async def viewer_shared_spending_by_category(
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,
-            date_col <= date.today(),
+            date_col <= app_today(),
             Transaction.status == "posted",
             counts_as_pnl(),
         )

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import axios from 'axios'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -12,15 +12,17 @@ import { Label } from '@/components/ui/label'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import type { Category, CategoryGroup } from '@/types'
+import type { Category, CategoryGroup, CategoryUsage } from '@/types'
 import { Pencil, Trash2, Plus, ChevronDown, ChevronRight, ChevronsUpDown, Eye, EyeOff } from 'lucide-react'
 import { PageHeader } from '@/components/page-header'
 import { invalidateCategoryQueries } from '@/lib/invalidate-queries'
 import { CategoryIcon } from '@/components/category-icon'
+import { CategorySelect } from '@/components/category-select'
 import { IconPicker } from '@/components/icon-picker'
 import { useWorkspace } from '@/contexts/workspace-context'
 
@@ -63,6 +65,12 @@ export default function CategoriesPage() {
   const [hidingCategory, setHidingCategory] = useState<
     { category: Category; rules: { id: string; name: string }[] } | null
   >(null)
+  // Set when the category being deleted still holds something. The deletion
+  // then waits for a destination instead of going through.
+  const [transferringCategory, setTransferringCategory] = useState<
+    { category: Category; usage: CategoryUsage } | null
+  >(null)
+  const [transferTargetId, setTransferTargetId] = useState('')
 
   const { data: groups } = useQuery({
     queryKey: ['category-groups', 'management'],
@@ -124,8 +132,21 @@ export default function CategoriesPage() {
     }
   }
   const deleteCatMutation = useMutation({
-    mutationFn: (id: string) => categoriesApi.delete(id),
-    onSuccess: () => { invalidateAll(); setDeletingCategory(null); toast.success(t('categories.deleted')) },
+    mutationFn: ({ id, transferToId }: { id: string; transferToId?: string }) =>
+      categoriesApi.delete(id, transferToId),
+    onSuccess: (_data, variables) => {
+      invalidateAll()
+      setDeletingCategory(null)
+      setTransferringCategory(null)
+      // A transfer rewrites transactions, budgets, recurring entries and
+      // rules, so the screens built on them are all stale now.
+      if (variables.transferToId) {
+        for (const key of ['transactions', 'budgets', 'recurring-transactions', 'rules']) {
+          queryClient.invalidateQueries({ queryKey: [key] })
+        }
+      }
+      toast.success(t('categories.deleted'))
+    },
     onError: (err: unknown) => {
       // The API answers 409 with an English sentence; show the translated one instead.
       if (axios.isAxiosError(err) && err.response?.status === 409) {
@@ -135,6 +156,52 @@ export default function CategoriesPage() {
       toast.error(extractApiError(err, t('common.error')))
     },
   })
+
+  // Deleting used to be refused whenever anything pointed at the category.
+  // Now the references are counted first, and the user is only interrupted
+  // when there is something to decide.
+  async function handleDeleteCategory(cat: Category) {
+    try {
+      const usage = await queryClient.fetchQuery({
+        queryKey: ['category-usage', cat.id],
+        queryFn: () => categoriesApi.usage(cat.id),
+        staleTime: 0,
+      })
+      const isUsed =
+        usage.transactions > 0
+        || usage.budgets > 0
+        || usage.recurring_transactions > 0
+        || usage.rules.length > 0
+      if (!isUsed) {
+        setDeletingCategory(cat)
+        return
+      }
+      setTransferTargetId('')
+      setTransferringCategory({ category: cat, usage })
+    } catch (err) {
+      toast.error(extractApiError(err, t('common.error')))
+    }
+  }
+
+  // What the destination picker offers: every visible category except the one
+  // on its way out, kept in its groups so it reads like the pickers elsewhere.
+  const transferOptions = useMemo(() => {
+    const sourceId = transferringCategory?.category.id
+    const available = (categoriesList ?? []).filter(
+      (cat) => !cat.is_hidden && cat.id !== sourceId,
+    )
+    const availableIds = new Set(available.map((cat) => cat.id))
+    return {
+      categories: available,
+      groups: (groups ?? [])
+        .filter((group) => !group.is_hidden)
+        .map((group) => ({
+          ...group,
+          categories: (group.categories ?? []).filter((cat) => availableIds.has(cat.id)),
+        }))
+        .filter((group) => group.categories.length > 0),
+    }
+  }, [categoriesList, groups, transferringCategory])
 
   const createGroupMutation = useMutation({
     mutationFn: (g: Partial<CategoryGroup>) => groupsApi.create(g),
@@ -222,7 +289,7 @@ export default function CategoriesPage() {
           >
             <Pencil size={13} />
           </button>
-          {cat.is_system ? (
+          {cat.is_system && (
             <button
               className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
               onClick={() => handleToggleHidden(cat)}
@@ -231,16 +298,15 @@ export default function CategoriesPage() {
             >
               {cat.is_hidden ? <Eye size={13} /> : <EyeOff size={13} />}
             </button>
-          ) : (
-            <button
-              className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
-              onClick={() => setDeletingCategory(cat)}
-              disabled={deleteCatMutation.isPending}
-              title={t('common.delete')}
-            >
-              <Trash2 size={13} />
-            </button>
           )}
+          <button
+            className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
+            onClick={() => handleDeleteCategory(cat)}
+            disabled={deleteCatMutation.isPending}
+            title={t('common.delete')}
+          >
+            <Trash2 size={13} />
+          </button>
         </div>
       )}
     </div>
@@ -312,7 +378,7 @@ export default function CategoriesPage() {
                       >
                         <Pencil size={13} />
                       </button>
-                      {group.is_system ? (
+                      {group.is_system && (
                         <button
                           className="p-1.5 rounded-md text-muted-foreground hover:text-primary hover:bg-primary/5 transition-colors"
                           onClick={() => updateGroupMutation.mutate({ id: group.id, is_hidden: !group.is_hidden })}
@@ -321,16 +387,15 @@ export default function CategoriesPage() {
                         >
                           {group.is_hidden ? <Eye size={13} /> : <EyeOff size={13} />}
                         </button>
-                      ) : (
-                        <button
-                          className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
-                          onClick={() => setDeletingGroup(group)}
-                          disabled={deleteGroupMutation.isPending}
-                          title={t('common.delete')}
-                        >
-                          <Trash2 size={13} />
-                        </button>
                       )}
+                      <button
+                        className="p-1.5 rounded-md text-muted-foreground hover:text-rose-500 hover:bg-rose-50 transition-colors"
+                        onClick={() => setDeletingGroup(group)}
+                        disabled={deleteGroupMutation.isPending}
+                        title={t('common.delete')}
+                      >
+                        <Trash2 size={13} />
+                      </button>
                     </div>
                   )}
                 </div>
@@ -500,7 +565,9 @@ export default function CategoriesPage() {
         description={t('categories.confirmDeleteDescription', { name: deletingCategory?.name })}
         isPending={deleteCatMutation.isPending}
         onClose={() => setDeletingCategory(null)}
-        onConfirm={() => deletingCategory && deleteCatMutation.mutate(deletingCategory.id)}
+        onConfirm={() =>
+          deletingCategory && deleteCatMutation.mutate({ id: deletingCategory.id })
+        }
       />
 
       <DeleteConfirmationDialog
@@ -511,6 +578,74 @@ export default function CategoriesPage() {
         onClose={() => setDeletingGroup(null)}
         onConfirm={() => deletingGroup && deleteGroupMutation.mutate(deletingGroup.id)}
       />
+
+      <Dialog
+        open={!!transferringCategory}
+        onOpenChange={(open) => {
+          if (!open && !deleteCatMutation.isPending) setTransferringCategory(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-md" showCloseButton={!deleteCatMutation.isPending}>
+          <DialogHeader>
+            <DialogTitle>
+              {t('categories.deleteInUseTitle', { name: transferringCategory?.category.name })}
+            </DialogTitle>
+            <DialogDescription>{t('categories.deleteInUseDescription')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <ul className="rounded-lg border border-border divide-y divide-border">
+              {([
+                ['nav.transactions', transferringCategory?.usage.transactions ?? 0],
+                ['nav.budgets', transferringCategory?.usage.budgets ?? 0],
+                ['nav.recurring', transferringCategory?.usage.recurring_transactions ?? 0],
+                ['nav.rules', transferringCategory?.usage.rules.length ?? 0],
+              ] as const)
+                .filter(([, count]) => count > 0)
+                .map(([label, count]) => (
+                  <li
+                    key={label}
+                    className="flex items-center justify-between px-3 py-2 text-sm"
+                  >
+                    <span className="text-muted-foreground">{t(label)}</span>
+                    <span className="font-medium text-foreground tabular-nums">{count}</span>
+                  </li>
+                ))}
+            </ul>
+            <div className="space-y-2">
+              <Label>{t('categories.deleteTransferLabel')}</Label>
+              <CategorySelect
+                value={transferTargetId}
+                onChange={setTransferTargetId}
+                categories={transferOptions.categories}
+                groups={transferOptions.groups}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setTransferringCategory(null)}
+              disabled={deleteCatMutation.isPending}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!transferTargetId || deleteCatMutation.isPending}
+              onClick={() =>
+                transferringCategory
+                && deleteCatMutation.mutate({
+                  id: transferringCategory.category.id,
+                  transferToId: transferTargetId,
+                })
+              }
+            >
+              <Trash2 size={14} className="mr-1" />
+              {t('categories.deleteAndTransfer')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!hidingCategory} onOpenChange={(open) => !open && setHidingCategory(null)}>
         <DialogContent className="sm:max-w-lg">

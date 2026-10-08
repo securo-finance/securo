@@ -15,17 +15,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.account import Account
+from app.models.bank_connection import BankConnection
 from app.models.category import Category
 from app.models.rule import Rule
 from app.models.transaction import Transaction
 from app.schemas.transaction import TransactionImport, FailedRow
 from app.services import reconciliation_service, recurring_match_service
 from app.services.credit_card_service import apply_effective_date
-from app.services.category_service import get_hidden_category_ids
+from app.services.category_service import get_assignable_category_ids
 from app.services.rule_engine import apply_rule_actions, evaluate_conditions, merge_notes
 from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
 from app.services.fx_rate_service import stamp_primary_amount
 from app.services.payee_service import get_or_create_payee
+from app.services.transaction_match_service import find_unique_transaction_match
 
 
 # Descriptions used by some Brazilian banks (e.g. Banco do Brasil) for
@@ -87,6 +89,77 @@ def _patch_empty_fitids(text: str) -> str:
     )
 
 
+_OFX_SGML_ENCODING_RE = re.compile(
+    r"(^|\r?\n)\s*ENCODING\s*:\s*([^\r\n]*)", re.IGNORECASE
+)
+
+_OFX_SGML_CHARSET_RE = re.compile(
+    r"(^|\r?\n)\s*CHARSET\s*:\s*([^\r\n]*)", re.IGNORECASE
+)
+
+# Values of ENCODING that ofxparse 0.21 handles without crashing.
+_OFX_USASCII_VARIANTS = frozenset({
+    "USASCII", "ISO88591", "ISO8859-1", "ISO885915", "ISO8859-15",
+    "CP1252", "WINDOWS-1252", "WINDOWS1252",
+})
+_OFX_UTF8_VARIANTS = frozenset({
+    "UNICODE", "UTF8", "UTF-8",
+})
+
+
+def _normalize_ofx_encoding(text: str, encoding: str) -> str:
+    """Fix SGML headers with ENCODING values that crash ofxparse.
+
+    ofxparse 0.21 only handles USASCII, UNICODE and UTF-8. Any other value
+    (e.g. ISO-8859-1, WINDOWS-1252, or a misspelling) leaves its local
+    ``encoding`` variable unbound, raising ``UnboundLocalError`` inside
+    ``handle_encoding()``.
+
+    This function normalises **only the preamble** (everything before the
+    first ``<``) so transaction memo content is never modified. Latin-1
+    decoded files get ``ENCODING:USASCII``; the ``CHARSET`` distinguishes
+    the two byte layouts Python's ``latin-1`` codec can represent, so
+    ofxparse decodes the same bytes the same way the source declared:
+    ``CHARSET:1252`` when the file declared WINDOWS-1252/CP1252 (whose
+    0x80-0x9F range holds real typographic characters — em dash, curly
+    quotes — that ISO-8859-1 leaves as undefined control codes), and
+    ``CHARSET:8859-1`` otherwise. UTF-8 files get ``ENCODING:UTF-8`` with
+    ``CHARSET:NONE``.
+    """
+    preamble, first_tag, body = text.lstrip("\ufeff \t\r\n").partition("<")
+    if not first_tag or not preamble.strip():
+        return text
+
+    raw_match = _OFX_SGML_ENCODING_RE.search(preamble)
+    if not raw_match:
+        return text
+
+    raw_value = raw_match.group(2).strip().upper().replace("-", "").replace(" ", "")
+
+    # Only the three exact values that ofxparse 0.21 handles are left alone.
+    # Everything else — including valid IANA names like ISO-8859-1 — must be
+    # rewritten so ofxparse doesn't crash on the UnboundLocalError.
+    if raw_value in ("USASCII", "UNICODE", "UTF8"):
+        return text
+
+    # Unknown or unsupported encoding — rewrite to match the actual byte
+    # encoding so ofxparse decodes consistently.
+    if encoding == "latin-1":
+        new_encoding = "USASCII"
+        new_charset = "1252" if raw_value in ("CP1252", "WINDOWS1252") else "8859-1"
+    else:
+        new_encoding = "UTF-8"
+        new_charset = "NONE"
+
+    new_preamble = _OFX_SGML_ENCODING_RE.sub(
+        lambda m: f"{m.group(1)}ENCODING:{new_encoding}", preamble, count=1,
+    )
+    new_preamble = _OFX_SGML_CHARSET_RE.sub(
+        lambda m: f"{m.group(1)}CHARSET:{new_charset}", new_preamble, count=1,
+    )
+    return new_preamble + first_tag + body
+
+
 def _ensure_ofx_sgml_header(text: str, encoding: str) -> str:
     """Prepend a legacy OFX 1.x SGML header for OFX 2.x files that omit it.
 
@@ -110,8 +183,14 @@ def _ensure_ofx_sgml_header(text: str, encoding: str) -> str:
     so the declared header and the actual bytes stay consistent.
     """
     preamble, first_tag, _ = text.lstrip("\ufeff \t\r\n").partition("<")
-    if not first_tag or preamble.strip():
+    if not first_tag:
         return text
+    if preamble.strip():
+        # File already has a header — normalise the ENCODING value so
+        # ofxparse doesn't crash on values it doesn't handle (e.g.
+        # ISO-8859-1, WINDOWS-1252). Only the preamble is touched;
+        # transaction body content is preserved verbatim.
+        return _normalize_ofx_encoding(text, encoding)
     if encoding == "latin-1":
         enc_lines = "ENCODING:USASCII\r\nCHARSET:8859-1\r\n"
     else:
@@ -457,7 +536,7 @@ def parse_csv(
     date_cols = ['date', 'data', 'dt', 'transaction_date', 'data_transacao']
     desc_cols = ['description', 'descricao', 'desc', 'memo', 'historico', 'lancamento']
     amount_cols = ['amount', 'valor', 'value', 'quantia']
-    type_cols = ['type', 'tipo']
+    type_cols = ['type', 'tipo', 'transaction type', 'transaction_type']
     category_cols = ['category', 'categoria']
     currency_cols = ['currency', 'moeda', 'currency_code']
     fx_rate_cols = ['fx_rate', 'fx_rate_used', 'taxa_cambio', 'exchange_rate', 'taxa']
@@ -535,6 +614,17 @@ def parse_csv(
     else:
         date_formats = ['%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y', '%m/%d/%Y', '%d.%m.%Y']
 
+    # Decide the decimal separator once per file from every amount cell, so
+    # "25,000" next to "1,500.50" reads as twenty-five thousand rather than
+    # being guessed in isolation.
+    amount_fields = [c for c in (inflow_col, outflow_col) if c] if use_split else [amount_col]
+    decimal_separator = infer_decimal_separator(
+        v
+        for r in csv.DictReader(io.StringIO(text), dialect=dialect)
+        for k, v in r.items()
+        if k is not None and k.lower().strip() in amount_fields
+    )
+
     transactions = []
     failed_rows = []
     for row in reader:
@@ -565,8 +655,8 @@ def parse_csv(
 
         # Parse amount
         if use_split:
-            inflow_str = normalize_amount(row.get(inflow_col, ""))
-            outflow_str = normalize_amount(row.get(outflow_col, ""))
+            inflow_str = normalize_amount(row.get(inflow_col, ""), decimal_separator)
+            outflow_str = normalize_amount(row.get(outflow_col, ""), decimal_separator)
 
             try:
                 inflow = Decimal(inflow_str) if inflow_str else Decimal('0')
@@ -588,7 +678,7 @@ def parse_csv(
                 failed_rows.append(FailedRow(line_number=reader.line_num, description=row.get(desc_col, "").strip(), raw_value=raw_val, error_reason="no_amount"))
                 continue  # Skip rows with no amount
         else:
-            amount_str = normalize_amount(row[amount_col])
+            amount_str = normalize_amount(row[amount_col], decimal_separator)
 
             try:
                 amount = Decimal(amount_str)
@@ -599,8 +689,9 @@ def parse_csv(
             if flip_amount:
                 amount = -amount
 
-            if type_col and row.get(type_col, '').strip() in ('credit', 'debit'):
-                txn_type = row[type_col].strip()
+            raw_type = row.get(type_col, '').strip().lower() if type_col else ''
+            if raw_type in ('credit', 'debit'):
+                txn_type = raw_type
             else:
                 txn_type = "credit" if amount > 0 else "debit"
             amount = abs(amount)
@@ -655,12 +746,12 @@ async def enrich_with_category_suggestions(
         select(Category).where(Category.workspace_id == workspace_id)
     )
     categories = category_result.scalars().all()
-    hidden_categories = await get_hidden_category_ids(session, workspace_id)
+    assignable_categories = await get_assignable_category_ids(session, workspace_id)
     category_name_map = {str(c.id): c.name for c in categories}
     category_name_to_id = {
-        c.name.strip().lower(): c.id 
-        for c in categories 
-        if c.id not in hidden_categories
+        c.name.strip().lower(): c.id
+        for c in categories
+        if c.id in assignable_categories
     }
 
     if not rules and not category_name_to_id:
@@ -672,13 +763,14 @@ async def enrich_with_category_suggestions(
             amount=txn.amount,
             date=txn.date,
             type=txn.type,
+            status="posted",
             account_id=None,
             payee_id=None,
             notes=None,
             category_id=None,
         )
         category_set = False
-        
+
         for rule in rules:
             conditions = rule.conditions or []
             actions = rule.actions or []
@@ -687,9 +779,9 @@ async def enrich_with_category_suggestions(
                     actions,
                     proxy,
                     category_set,
-                    hidden_category_ids=hidden_categories,
+                    assignable_category_ids=assignable_categories,
                 )
-        
+
         # If rules did not set a category, apply the CSV category if found
         if not category_set and txn.category_name:
             csv_cat_id = category_name_to_id.get(txn.category_name.strip().lower())
@@ -743,10 +835,19 @@ async def import_transactions(
     await session.flush()  # Get the import_log.id
 
     # Look up account currency for fallback
-    account_result = await session.execute(
-        select(Account).where(Account.id == account_id)
-    )
+    account_result = await session.execute(select(Account).where(Account.id == account_id))
     account = account_result.scalar_one_or_none()
+    if account and account.connection_id:
+        await session.execute(
+            select(BankConnection.id)
+            .where(BankConnection.id == account.connection_id)
+            .with_for_update()
+        )
+    if account:
+        account_result = await session.execute(
+            select(Account).where(Account.id == account_id).with_for_update()
+        )
+        account = account_result.scalar_one()
     account_currency = account.currency if account else get_settings().default_currency
 
     # Build category name → id map scoped to the workspace, on the same terms
@@ -757,16 +858,17 @@ async def import_transactions(
     category_result = await session.execute(
         select(Category).where(Category.workspace_id == workspace_id)
     )
-    hidden_categories = await get_hidden_category_ids(session, workspace_id)
+    assignable_categories = await get_assignable_category_ids(session, workspace_id)
     category_map = {
         c.name.strip().lower(): c.id
         for c in category_result.scalars()
-        if c.id not in hidden_categories
+        if c.id in assignable_categories
     }
 
     imported = 0
     landed: list[Transaction] = []
     skipped = 0
+    matched_existing_ids: set[uuid.UUID] = set()
     effective_format = (detected_format or source or "").lower()
     should_detect_duplicates = detect_duplicates if effective_format == "csv" else True
 
@@ -776,34 +878,53 @@ async def import_transactions(
 
         if should_detect_duplicates:
             # Prefer an external ID (OFX FITID), with date retained because some
-            # Brazilian cards reuse one purchase FITID across monthly installments.
+            # Brazilian cards reuse one purchase FITID across monthly installments,
+            # and amount and type retained because some banks reuse one FITID for
+            # several distinct entries posted on the same day.
             # Formats without unique IDs fall back to transaction fields; compare
             # both descriptions because rules may have changed the displayed one.
             if txn_data.external_id:
-                existing = await session.execute(
-                    select(Transaction).where(
-                        Transaction.account_id == account_id,
-                        Transaction.external_id == txn_data.external_id,
-                        Transaction.date == txn_data.date,
-                    )
+                existing_statement = select(Transaction).where(
+                    Transaction.account_id == account_id,
+                    Transaction.external_id == txn_data.external_id,
+                    Transaction.date == txn_data.date,
+                    Transaction.amount == txn_data.amount,
+                    Transaction.type == txn_data.type,
                 )
             else:
-                existing = await session.execute(
-                    select(Transaction).where(
-                        Transaction.account_id == account_id,
-                        Transaction.date == txn_data.date,
-                        Transaction.amount == txn_data.amount,
-                        Transaction.type == txn_data.type,
-                        or_(
-                            Transaction.description == txn_data.description,
-                            Transaction.original_description == txn_data.description,
-                        ),
-                    )
+                existing_statement = select(Transaction).where(
+                    Transaction.account_id == account_id,
+                    Transaction.date == txn_data.date,
+                    Transaction.amount == txn_data.amount,
+                    Transaction.type == txn_data.type,
+                    or_(
+                        Transaction.description == txn_data.description,
+                        Transaction.original_description == txn_data.description,
+                    ),
                 )
-            # `.first()` is intentional: duplicate keys can legitimately match
-            # multiple rows after an import/sync race or reused bank identifier,
-            # and duplicate detection only needs to establish that any row exists.
-            if existing.scalars().first() is not None:
+            # `.first()` rather than `.scalar_one_or_none()`: the dedup key can
+            # legitimately match more than one row (e.g. a prior sync/import race
+            # left a duplicate, or a bank reuses one FITID across statements),
+            # and we only need to know whether *any* match exists. Requiring
+            # exactly one would raise MultipleResultsFound and abort the import.
+            if matched_existing_ids and not txn_data.external_id:
+                existing_statement = existing_statement.where(
+                    Transaction.id.not_in(matched_existing_ids)
+                )
+            existing = await session.execute(
+                existing_statement.order_by(Transaction.created_at, Transaction.id)
+            )
+            duplicate = existing.scalars().first()
+            if not duplicate:
+                duplicate = await find_unique_transaction_match(
+                    session,
+                    account_id,
+                    txn_data,
+                    {"sync"},
+                    exclude_ids=matched_existing_ids,
+                )
+            if duplicate:
+                matched_existing_ids.add(duplicate.id)
                 skipped += 1
                 continue
 
@@ -817,7 +938,7 @@ async def import_transactions(
             import_payee_id = import_payee_entity.id
 
         user_category_id = txn_data.category_id
-        suggested_cat_id = txn_data.suggested_category_id
+        suggested_category_id = txn_data.suggested_category_id
         csv_category_id = (
             category_map.get(txn_data.category_name.strip().lower())
             if txn_data.category_name
@@ -826,7 +947,7 @@ async def import_transactions(
         category_id = (
             None
             if txn_data.force_uncategorized
-            else user_category_id or suggested_cat_id or csv_category_id
+            else user_category_id or suggested_category_id
         )
 
         incoming = Transaction(
@@ -838,6 +959,7 @@ async def import_transactions(
             amount=txn_data.amount,
             date=txn_data.date,
             type=txn_data.type,
+            status="posted",
             source=source,
             import_id=import_log.id,
             external_id=txn_data.external_id,
@@ -854,6 +976,8 @@ async def import_transactions(
             incoming,
             skip_category_rules=txn_data.force_uncategorized,
         )
+        if preview.category_id is None and not txn_data.force_uncategorized:
+            preview.category_id = csv_category_id
 
         # Normalize a detached candidate before either recurring match. If a
         # generated placeholder already represents this occurrence, upgrade it
@@ -911,6 +1035,8 @@ async def import_transactions(
 
         session.add(incoming)
         await session.flush()
+        if should_detect_duplicates and not txn_data.external_id:
+            matched_existing_ids.add(incoming.id)
         if recurring_link is not None:
             recurring_match_service.advance_past(recurring_link, txn_data.date)
 
@@ -920,6 +1046,8 @@ async def import_transactions(
             incoming,
             skip_category_rules=txn_data.force_uncategorized,
         )
+        if incoming.category_id is None and not txn_data.force_uncategorized:
+            incoming.category_id = csv_category_id
 
         if not txn_data.fx_rate:
             await stamp_primary_amount(session, user_id, incoming)
@@ -939,21 +1067,112 @@ async def import_transactions(
     await session.commit()
     return imported, skipped, excluded_count, import_log.id
 
-def normalize_amount(amount_str: str | None) -> str:
+# Currency symbols and ISO codes around a number ("R$", "$", "NGN ", " EUR").
+_AMOUNT_EDGE_LEADING = re.compile(r'^[^\d\-+(),.]+')
+_AMOUNT_EDGE_TRAILING = re.compile(r'[^\d\-+(),.]+$')
+_COMMA_DECIMAL_TAIL = re.compile(r',\d{1,2}$')
+_DOT_DECIMAL_TAIL = re.compile(r'\.\d{1,2}$')
+_COMMA_THOUSANDS = re.compile(r'^\d{1,3}(,\d{3})+$')
+_ZERO_COMMA_DECIMAL = re.compile(r'^0,\d+$')
+_DR_CR_SUFFIX = re.compile(r'(?i)(?<![a-z])(dr|cr)\.?$')
+# U+2212 minus, U+2012 figure dash, U+2013 en dash, U+FE63 small and
+# U+FF0D fullwidth hyphen-minus: spreadsheet exports use them as a minus.
+_UNICODE_MINUS = str.maketrans({c: '-' for c in '\u2212\u2012\u2013\ufe63\uff0d'})
+
+
+def _strip_amount_decorations(amount_str: str) -> tuple[str, bool]:
+    """Remove currency symbols, codes, whitespace and sign markers.
+
+    Returns the bare number and whether it was negative. A leading minus
+    (ASCII or a Unicode minus sign), accounting parentheses, e.g. "(12.50)",
+    or a trailing "DR" mark a negative amount; a trailing "CR" marks a
+    positive one.
+    """
+    s = re.sub(r"[\s'\u00a0\u202f]", "", amount_str).translate(_UNICODE_MINUS)
+    # A standalone DR/CR suffix carries the sign, so read it before the edge
+    # strip below would drop it as a currency code. Codes such as "XDR" or
+    # "CRC" do not match.
+    marker = _DR_CR_SUFFIX.search(s)
+    if marker:
+        s = s[: marker.start()]
+    negative = False
+    while True:
+        before = s
+        s = _AMOUNT_EDGE_LEADING.sub("", s)
+        s = _AMOUNT_EDGE_TRAILING.sub("", s)
+        if len(s) >= 2 and s[0] == "(" and s[-1] == ")":
+            negative = not negative
+            s = s[1:-1]
+        elif s[:1] == "-":
+            negative = not negative
+            s = s[1:]
+        elif s[:1] == "+":
+            s = s[1:]
+        if s == before:
+            if marker:
+                negative = marker.group(1).lower() == "dr"
+            return s, negative
+
+
+def infer_decimal_separator(values) -> str | None:
+    """Infer the decimal separator used by a whole column of amounts.
+
+    Returns "." or ",", or None when the values give no clear signal, in
+    which case normalize_amount falls back to deciding cell by cell.
+    """
+    votes: set[str] = set()
+    comma_thousands = False
+    for raw in values:
+        if not raw:
+            continue
+        s, _ = _strip_amount_decorations(str(raw))
+        if not s:
+            continue
+        if ',' in s and '.' in s:
+            votes.add(',' if s.rfind(',') > s.rfind('.') else '.')
+        elif _COMMA_DECIMAL_TAIL.search(s):
+            votes.add(',')
+        elif _DOT_DECIMAL_TAIL.search(s):
+            votes.add('.')
+        elif _COMMA_THOUSANDS.match(s) and not s.startswith('0,'):
+            comma_thousands = True
+    if len(votes) == 1:
+        return votes.pop()
+    if not votes and comma_thousands:
+        return '.'
+    return None
+
+
+def normalize_amount(amount_str: str | None, decimal_separator: str | None = None) -> str:
     """
     Normalize monetary string into a standard decimal format compatible with Decimal.
+
+    Currency symbols and codes around the number are dropped, and accounting
+    parentheses read as a negative amount. When decimal_separator is known
+    for the column ("." or ","), the other separator is treated as grouping;
+    otherwise the separator is guessed from the cell alone.
 
     Example:
         1.442,20 -> 1442.20
         1,442.20 -> 1442.20
+        $40.00 -> 40.00
+        25,000 (decimal_separator=".") -> 25000
     """
     if not amount_str:
         return ""
 
-    # Strip currency prefix and Swiss thousands separators (single quote)
-    amount_str = str(amount_str).replace('R$', '').replace("'", "").strip()
+    amount_str, negative = _strip_amount_decorations(str(amount_str))
+    if not amount_str:
+        return ""
 
-    if ',' in amount_str and '.' in amount_str:
+    if decimal_separator == ',':
+        amount_str = amount_str.replace('.', '').replace(',', '.')
+    elif decimal_separator == '.':
+        if _ZERO_COMMA_DECIMAL.match(amount_str):
+            amount_str = amount_str.replace(',', '.')
+        else:
+            amount_str = amount_str.replace(',', '')
+    elif ',' in amount_str and '.' in amount_str:
         if amount_str.rfind(',') > amount_str.rfind('.'):
             amount_str = amount_str.replace('.', '').replace(',', '.')
         else:
@@ -961,4 +1180,4 @@ def normalize_amount(amount_str: str | None) -> str:
     elif ',' in amount_str:
         amount_str = amount_str.replace(',', '.')
 
-    return amount_str
+    return f"-{amount_str}" if negative else amount_str

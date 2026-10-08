@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next'
-import { Plus, Trash2 } from 'lucide-react'
+import { Package, Plus, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -7,6 +7,8 @@ import { Label } from '@/components/ui/label'
 import { formatCurrency } from '@/lib/format'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
 import { linesTotal } from '@/lib/invoice-utils'
+import { lineFromProduct } from '@/lib/product-utils'
+import { ProductPicker } from '@/components/product-picker'
 import type { InvoiceLineInput } from '@/types'
 
 /**
@@ -117,7 +119,18 @@ export function InvoiceLineEditor({
                 data-testid="invoice-line-row"
                 className="grid grid-cols-2 sm:grid-cols-[1fr_4.5rem_5rem_7rem_6rem_2rem] gap-2 px-3 py-2.5 items-center"
               >
-                <div className="col-span-2 sm:col-span-1">
+                <div className="col-span-2 sm:col-span-1 flex items-center gap-1.5">
+                  {/* The catalog, one click away and never in the way: the
+                      description stays a plain input, and a product fills
+                      it (and the unit and price) when picked. */}
+                  <ProductPicker
+                    currency={currency}
+                    onPick={(product, price) =>
+                      onChange(
+                        rows.map((row, i) => (i === index ? lineFromProduct(row, product, price) : row)),
+                      )
+                    }
+                  />
                   <Input
                     className="h-9"
                     placeholder={t('invoices.field.lineDescription')}
@@ -126,6 +139,16 @@ export function InvoiceLineEditor({
                     data-testid={`invoice-line-description-${index}`}
                     aria-label={t('invoices.field.lineDescription')}
                   />
+                  {line.product_id && (
+                    <span
+                      className="inline-flex shrink-0 items-center text-muted-foreground"
+                      title={t('invoices.products.fromCatalog')}
+                      aria-label={t('invoices.products.fromCatalog')}
+                      data-testid={`invoice-line-from-catalog-${index}`}
+                    >
+                      <Package className="h-3.5 w-3.5" />
+                    </span>
+                  )}
                 </div>
 
                 <Field label={t('invoices.column.quantity')}>

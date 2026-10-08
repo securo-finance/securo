@@ -346,6 +346,12 @@ class AgentExecutor:
         #      6. Conversation history
         #      7. The new user message (appended in step 4 below)
         history = await conversation_service.list_messages(session, conversation_id, limit=agent.max_history_messages * 2 + 2)
+        # The window can open mid-turn: a turn with parallel tool calls has an
+        # odd number of rows, so the cut can land on a tool result whose
+        # assistant call fell outside it. Providers reject an orphaned tool
+        # result, so replay from the first user message in the window.
+        while history and history[0].role != "user":
+            history.pop(0)
         messages: list[ChatMessage] = []
         # Runtime guardrail goes FIRST and applies to every conversation,
         # regardless of agent settings or per-agent system prompt. Locks
