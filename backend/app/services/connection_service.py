@@ -1326,8 +1326,58 @@ async def _find_existing_connected_account(
         )
     )
     account = result.scalar_one_or_none()
-    if account or connection.provider != "simplefin":
+    if account is not None:
         return account
+
+    # The provider re-keyed this account. Enable Banking issues a `uid` scoped to
+    # one session, so reauthorising changes it while `stable_external_id` (the
+    # identification_hash) survives. Rebind the existing row — keeping its
+    # transactions, rules and name overrides — instead of inserting a duplicate.
+    # EB does not guarantee the hash is unique, so require exactly one unclaimed
+    # candidate: a row another incoming account already took in this run carries
+    # an external_id that is in the batch, and adopting it a second time would
+    # put both transaction feeds on one account.id.
+    if acc_data.stable_external_id:
+        stable_rows = (await session.execute(
+            select(Account).where(
+                Account.connection_id == connection.id,
+                Account.stable_external_id == acc_data.stable_external_id,
+            )
+        )).scalars().all()
+        stable_rows = [
+            row for row in stable_rows if row.external_id not in incoming_external_ids
+        ]
+        if len(stable_rows) > 1:
+            return None
+        if len(stable_rows) == 1:
+            stable_rows[0].external_id = acc_data.external_id
+            return stable_rows[0]
+
+    # Last resort for rows that predate `stable_external_id` (added by migration
+    # 097, and only ever backfilled by a *successful* sync — which a user whose
+    # bank was failing never had). The masked identifier is the closest thing to
+    # an account number we keep. Two guards, both fail-closed: a single candidate
+    # (a shared last-4 must never merge two accounts), and candidates limited to
+    # rows with no stable id — a row that is already identified is a different
+    # account, so adopting it would overwrite its identity and mix histories.
+    if connection.provider == "enable_banking" and acc_data.masked_number:
+        masked_rows = (await session.execute(
+            select(Account).where(
+                Account.connection_id == connection.id,
+                Account.masked_number == acc_data.masked_number,
+                Account.currency == acc_data.currency,
+                Account.stable_external_id.is_(None),
+            )
+        )).scalars().all()
+        masked_rows = [
+            row for row in masked_rows if row.external_id not in incoming_external_ids
+        ]
+        if len(masked_rows) == 1:
+            masked_rows[0].external_id = acc_data.external_id
+            return masked_rows[0]
+
+    if connection.provider != "simplefin":
+        return None
 
     normalized_name = _normalized_account_name(acc_data.name)
     if not normalized_name:
@@ -2029,6 +2079,11 @@ async def sync_connection(
                 # that intermittently omits it can't blank out a known mask.
                 if acc_data.masked_number is not None:
                     account.masked_number = acc_data.masked_number
+                # Backfills existing accounts on their next sync, same rule as
+                # masked_number: provider-owned, and a payload that omits it
+                # must not blank a value that is already known.
+                if acc_data.stable_external_id is not None:
+                    account.stable_external_id = acc_data.stable_external_id
                 # Backfills existing accounts on next sync (issue #345).
                 if institution is not None:
                     account.institution_id = institution.id
@@ -2067,6 +2122,7 @@ async def sync_connection(
                     workspace_id=workspace_id,
                     connection_id=connection.id,
                     external_id=acc_data.external_id,
+                    stable_external_id=acc_data.stable_external_id,
                     name=acc_data.name,
                     display_name=institution.name if institution else None,
                     masked_number=acc_data.masked_number,

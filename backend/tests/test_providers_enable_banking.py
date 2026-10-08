@@ -6,6 +6,7 @@ HTTP is mocked end-to-end via httpx.MockTransport.
 """
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import patch
@@ -552,6 +553,78 @@ async def test_refresh_credentials_valid_passes(eb_keys):
     creds = {"valid_until": future, "session_id_enc": "enc"}
     out = await provider.refresh_credentials(creds)
     assert out is creds
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_raises_session_expired_when_details_unauthorized(eb_keys):
+    """A 401 on one account's /details kills the whole consent, not just it.
+
+    ``_request`` maps 401/410 to SessionExpiredError precisely because EB's
+    access token is session-scoped: the consent is dead for every account. The
+    per-account ``except httpx.HTTPError`` must not swallow it — doing so stored
+    an empty account list and left the connection "active" (issue #1013).
+    """
+    provider = EnableBankingProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/sessions/sess-x":
+            return httpx.Response(200, json={
+                "session_id": "sess-x",
+                "accounts_data": [{"uid": "acc-1"}, {"uid": "acc-2"}],
+            })
+        # Anchored on purpose: ``endswith`` would also match a deeper path such
+        # as /accounts/a/b/details, and ``.+`` in the middle matches it too.
+        if re.fullmatch(r"/accounts/[^/]+/details", request.url.path):
+            return httpx.Response(401, json={"code": 401, "error": "INVALID_TOKEN"})
+        raise AssertionError(f"unexpected path {request.url.path}")
+
+    with _patch_client(provider, handler):
+        with pytest.raises(SessionExpiredError):
+            await provider.get_accounts(_CREDENTIALS)
+
+
+@pytest.mark.asyncio
+async def test_get_accounts_exposes_stable_external_id(eb_keys):
+    """EB's `uid` is session-scoped; `identification_hash` is the stable key.
+
+    Reauthorising mints a new session, so the same real account comes back with
+    a new uid. The hash is what survives that, and it already rides in the
+    /sessions payload this method fetches — carry it out on AccountData so the
+    sync can re-match the existing row instead of creating a duplicate.
+    """
+    provider = EnableBankingProvider()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/sessions/sess-x":
+            return httpx.Response(200, json={
+                "session_id": "sess-x",
+                "accounts_data": [
+                    {
+                        "uid": "acc-1",
+                        "identification_hash": "hash-1",
+                        "identification_hashes": ["hash-1"],
+                    },
+                ],
+            })
+        if path == "/accounts/acc-1/details":
+            return httpx.Response(200, json={
+                "uid": "acc-1",
+                "display_name": "Main",
+                "currency": "EUR",
+                "cash_account_type": "CACC",
+            })
+        if path == "/accounts/acc-1/balances":
+            return httpx.Response(200, json={"balances": []})
+        raise AssertionError(f"unexpected path {path}")
+
+    with _patch_client(provider, handler):
+        accounts = await provider.get_accounts(_CREDENTIALS)
+
+    assert len(accounts) == 1
+    assert accounts[0].external_id == "acc-1"
+    assert accounts[0].stable_external_id == "hash-1"
+
 
 
 # ----- account identifier / masking (issue #408) -----
