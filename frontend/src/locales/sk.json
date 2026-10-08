@@ -2231,6 +2231,7 @@
     }
   },
   "common": {
+    "invalidAmount": "Zadajte platnú sumu",
     "selectTimezone": "Vyberte časové pásmo",
     "searchTimezone": "Hľadať časové pásmo...",
     "noTimezoneFound": "Nenašlo sa žiadne časové pásmo.",

@@ -4,6 +4,7 @@ import {
   formatAmountInput,
   formatCurrency,
   parseAmountInput,
+  convertAmountInput,
   resolveDateLocale,
   resolveDateOrder,
   resolveDisplayLocale,
@@ -184,6 +185,14 @@ describe('parseAmountInput', () => {
     expect(parseAmountInput('1\u202f234,56', 'fr-FR')).toBe(1234.56)
   })
 
+  it('reads a lone dot as the decimal under a space_comma locale', () => {
+    expect(parseAmountInput('50.25', 'fr-FR')).toBe(50.25)
+    expect(parseAmountInput('1 234.5', 'fr-FR')).toBe(1234.5)
+    expect(parseAmountInput('1.2.3', 'fr-FR')).toBeNull()
+    // dot_comma keeps the dot as grouping.
+    expect(parseAmountInput('1.500', 'de-DE')).toBe(1500)
+  })
+
   it('keeps sign and defaults to en-US', () => {
     expect(parseAmountInput('-2.50')).toBe(-2.5)
     expect(parseAmountInput('-1.234,56', 'de-DE')).toBe(-1234.56)
@@ -229,5 +238,19 @@ describe('formatAmountInput', () => {
 
   it('falls back to a dot format on a malformed locale', () => {
     expect(formatAmountInput(1.5, 'not a locale')).toBe('1.50')
+  })
+})
+
+describe('convertAmountInput', () => {
+  it('keeps the number when the locale changes under typed text', () => {
+    expect(convertAmountInput('1234.56', 'en-US', 'de-DE')).toBe('1234,56')
+    expect(convertAmountInput('1,5', 'de-DE', 'en-US')).toBe('1.5')
+    expect(convertAmountInput('33.3333', 'en-US', 'fr-FR')).toBe('33,3333')
+  })
+
+  it('leaves empty, unparseable and same-locale text alone', () => {
+    expect(convertAmountInput('', 'en-US', 'de-DE')).toBe('')
+    expect(convertAmountInput('12abc', 'en-US', 'de-DE')).toBe('12abc')
+    expect(convertAmountInput('1.500', 'de-DE', 'de-DE')).toBe('1.500')
   })
 })

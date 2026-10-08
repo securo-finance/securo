@@ -2124,6 +2124,7 @@
     }
   },
   "common": {
+    "invalidAmount": "Введите корректную сумму",
     "selectTimezone": "Выберите часовой пояс",
     "searchTimezone": "Поиск часового пояса...",
     "noTimezoneFound": "Часовой пояс не найден.",

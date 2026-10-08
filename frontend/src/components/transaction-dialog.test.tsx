@@ -1,11 +1,13 @@
-import { screen } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { TransactionDialog } from '@/components/transaction-dialog'
 import { currencies, groups, payees } from '@/lib/api'
 import { renderWithProviders, t } from '@/test/utils'
-import type { RecurringTransaction } from '@/types'
+import { toast } from 'sonner'
+import type { Account, RecurringTransaction } from '@/types'
 
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }),
 }))
@@ -71,3 +73,39 @@ it.each(['America/Los_Angeles', 'Pacific/Kiritimati'])(
     }
   },
 )
+
+it('names the problem and blocks the save when the amount cannot be read', async () => {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  const onSave = vi.fn()
+  const account = { id: 'a', name: 'Checking', type: 'checking', currency: 'USD' } as Account
+
+  renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={null}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={[account]}
+      onSave={onSave}
+      loading={false}
+      error={null}
+    />,
+  )
+
+  // The form mounts with its fields; the description is the first text input.
+  await screen.findByText(t('transactions.description'))
+  const form = document.querySelector('form')!
+  const description = form.querySelector<HTMLInputElement>('input')!
+  const field = form.querySelector<HTMLInputElement>('input[inputmode="decimal"]')!
+  fireEvent.change(description, { target: { value: 'Coffee' } })
+  fireEvent.change(field, { target: { value: '12abc' } })
+  expect(field).toHaveAttribute('aria-invalid', 'true')
+
+  fireEvent.submit(form)
+
+  expect(toast.error).toHaveBeenCalledWith(t('common.invalidAmount'))
+  expect(onSave).not.toHaveBeenCalled()
+})

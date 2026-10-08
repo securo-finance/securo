@@ -2111,6 +2111,7 @@
     }
   },
   "common": {
+    "invalidAmount": "Saisissez un montant valide",
     "selectTimezone": "Choisir un fuseau horaire",
     "searchTimezone": "Rechercher un fuseau horaire...",
     "noTimezoneFound": "Aucun fuseau horaire trouvé.",

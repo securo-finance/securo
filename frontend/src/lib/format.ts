@@ -229,6 +229,13 @@ export function parseAmountInput(value: string, locale = 'en-US'): number | null
     sign = -1
     text = text.slice(1)
   }
+  // On space_comma a dot can't be grouping (spaces are), so a lone dot is a
+  // decimal typed from habit or a numeric keypad — read it as one instead of
+  // rejecting the amount (issue #1072). dot_comma stays strict: there
+  // "1.500" is fifteen hundred.
+  if (decimal === ',' && group !== '.' && !text.includes(',') && text.split('.').length === 2) {
+    text = text.replace('.', ',')
+  }
   const decimalIndex = text.lastIndexOf(decimal)
   const integerPart = (decimalIndex >= 0 ? text.slice(0, decimalIndex) : text)
     .split(group)
@@ -258,4 +265,18 @@ export function formatAmountInput(
   } catch {
     return value.toFixed(2)
   }
+}
+
+/**
+ * Re-render text typed under one locale's separators for another, keeping
+ * the number it meant. Used when the display locale resolves while a form is
+ * open (the number-format setting loads after the form seeded its fields):
+ * "1234.56" seeded under en-US must become "1234,56" under de-DE, or saving
+ * the untouched field would read it as 123456. Text that doesn't parse under
+ * the old locale is left as typed.
+ */
+export function convertAmountInput(text: string, fromLocale: string, toLocale: string): string {
+  if (fromLocale === toLocale) return text
+  const value = parseAmountInput(text, fromLocale)
+  return value == null ? text : formatAmountInput(value, toLocale, 8)
 }

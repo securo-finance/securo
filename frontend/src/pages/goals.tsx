@@ -32,7 +32,8 @@ import { PageHeader } from '@/components/page-header'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
-import { formatCurrency } from '@/lib/format'
+import { formatAmountInput, formatCurrency, parseAmountInput } from '@/lib/format'
+import { FormAmountInput } from '@/components/amount-input'
 
 function getGoalIcon(iconKey: string | null) {
   return (iconKey && ICON_MAP[iconKey]) || Target
@@ -433,9 +434,18 @@ export default function GoalsPage() {
             onSubmit={(e) => {
               e.preventDefault()
               const formData = new FormData(e.currentTarget)
+              const targetAmount = parseAmountInput(formData.get('target_amount') as string, locale)
+              const tt = formData.get('tracking_type') as string
+              const currentAmount = tt === 'manual'
+                ? parseAmountInput((formData.get('current_amount') as string) || '0', locale)
+                : 0
+              if (targetAmount == null || currentAmount == null) {
+                toast.error(t('common.invalidAmount'))
+                return
+              }
               const payload: Record<string, unknown> = {
                 name: formData.get('name') as string,
-                target_amount: parseFloat(formData.get('target_amount') as string),
+                target_amount: targetAmount,
                 currency: (formData.get('currency') as string) || userCurrency,
                 tracking_type: formData.get('tracking_type') as string,
                 target_date: targetDate || null,
@@ -443,9 +453,8 @@ export default function GoalsPage() {
                 color: selectedColor || null,
               }
 
-              const tt = formData.get('tracking_type') as string
               if (tt === 'manual') {
-                payload.current_amount = parseFloat((formData.get('current_amount') as string) || '0')
+                payload.current_amount = currentAmount
               }
               if (tt === 'account') {
                 payload.account_id = (formData.get('account_id') as string) || null
@@ -473,11 +482,9 @@ export default function GoalsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>{t('goals.targetAmount')}</Label>
-                <Input
+                <FormAmountInput
                   name="target_amount"
-                  type="number"
-                  step="0.01"
-                  defaultValue={editing?.target_amount?.toString() ?? ''}
+                  defaultValue={editing?.target_amount != null ? formatAmountInput(editing.target_amount, locale) : ''}
                   required
                 />
               </div>
@@ -525,11 +532,9 @@ export default function GoalsPage() {
             {trackingType === 'manual' && (
               <div className="space-y-2">
                 <Label>{t('goals.currentAmount')}</Label>
-                <Input
+                <FormAmountInput
                   name="current_amount"
-                  type="number"
-                  step="0.01"
-                  defaultValue={editing?.tracking_type === 'manual' ? editing?.current_amount?.toString() : '0'}
+                  defaultValue={editing?.tracking_type === 'manual' && editing.current_amount != null ? formatAmountInput(editing.current_amount, locale) : '0'}
                 />
               </div>
             )}

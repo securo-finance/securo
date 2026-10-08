@@ -2107,6 +2107,7 @@
     }
   },
   "common": {
+    "invalidAmount": "मान्य राशि दर्ज करें",
     "selectTimezone": "समय क्षेत्र चुनें",
     "searchTimezone": "समय क्षेत्र खोजें...",
     "noTimezoneFound": "कोई समय क्षेत्र नहीं मिला।",

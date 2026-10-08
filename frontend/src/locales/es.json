@@ -2111,6 +2111,7 @@
     }
   },
   "common": {
+    "invalidAmount": "Introduce un importe válido",
     "selectTimezone": "Seleccionar zona horaria",
     "searchTimezone": "Buscar zona horaria...",
     "noTimezoneFound": "No se encontró ninguna zona horaria.",

@@ -2202,6 +2202,7 @@
     }
   },
   "common": {
+    "invalidAmount": "Wprowadź prawidłową kwotę",
     "selectTimezone": "Wybierz strefę czasową",
     "searchTimezone": "Szukaj strefy czasowej...",
     "noTimezoneFound": "Nie znaleziono strefy czasowej.",

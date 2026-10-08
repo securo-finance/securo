@@ -6,9 +6,10 @@ import { Users } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { groups as groupsApi, type GroupCreatePayload } from '@/lib/api'
-import { formatCurrency } from '@/lib/format'
+import { convertAmountInput, formatAmountInput, formatCurrency, parseAmountInput } from '@/lib/format'
+import { AmountInput } from '@/components/amount-input'
+import { useDisplayLocaleChange } from '@/hooks/use-display-locale-change'
 import type { Group, GroupKind, ShareType, TransactionSplitsInput } from '@/types'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { GroupForm } from '@/components/group-form'
@@ -22,7 +23,11 @@ interface RowState {
   percent: string
 }
 
-function buildRows(group: Group | null | undefined, current: TransactionSplitsInput | null): RowState[] {
+function buildRows(
+  group: Group | null | undefined,
+  current: TransactionSplitsInput | null,
+  locale: string,
+): RowState[] {
   if (!group) return []
   // Pydantic serializes Decimal as a string, so values arriving from
   // the API may be either number or string. Coerce both shapes.
@@ -43,8 +48,8 @@ function buildRows(group: Group | null | undefined, current: TransactionSplitsIn
     return {
       member_id: m.id,
       selected: !!existing,
-      amount: existing?.amount != null ? existing.amount.toFixed(2) : '',
-      percent: existing?.pct != null ? existing.pct.toString() : '',
+      amount: existing?.amount != null ? formatAmountInput(existing.amount, locale) : '',
+      percent: existing?.pct != null ? formatAmountInput(existing.pct, locale, 4) : '',
     }
   })
 }
@@ -68,6 +73,14 @@ export function TransactionSplitsSection({
   const [groupId, setGroupId] = useState<string>('')
   const [shareType, setShareType] = useState<ShareType>(value?.share_type ?? 'equal')
   const [rows, setRows] = useState<RowState[]>([])
+  // Typed shares keep their value when the locale resolves mid-edit.
+  useDisplayLocaleChange(locale, (prev, next) =>
+    setRows((current) => current.map((r) => ({
+      ...r,
+      amount: convertAmountInput(r.amount, prev, next),
+      percent: convertAmountInput(r.percent, prev, next),
+    }))),
+  )
   // Snapshot of the initial value so row hydration survives the
   // first push-state-up cycle (which zeros the parent before the
   // group has finished loading).
@@ -190,7 +203,7 @@ export function TransactionSplitsSection({
       // If first hydration or switched groups, rebuild completely
       if (!hydratedRef.current || groupChanged) {
         const source = hydratedRef.current ? null : seedRef.current
-        return buildRows(group, source)
+        return buildRows(group, source, locale)
       }
 
       // Otherwise, merge new group members into existing rows state to preserve user selections
@@ -208,7 +221,7 @@ export function TransactionSplitsSection({
     })
 
     hydratedRef.current = true
-  }, [group])
+  }, [group, locale])
 
   // Push state up whenever it changes meaningfully.
   useEffect(() => {
@@ -225,13 +238,13 @@ export function TransactionSplitsSection({
       if (shareType === 'exact') {
         return {
           group_member_id: r.member_id,
-          share_amount: r.amount ? parseFloat(r.amount) : 0,
+          share_amount: parseAmountInput(r.amount, locale) ?? 0,
         }
       }
       if (shareType === 'percent') {
         return {
           group_member_id: r.member_id,
-          share_pct: r.percent ? parseFloat(r.percent) : 0,
+          share_pct: parseAmountInput(r.percent, locale) ?? 0,
         }
       }
       return { group_member_id: r.member_id }
@@ -249,10 +262,10 @@ export function TransactionSplitsSection({
       return amount
     }
     if (shareType === 'exact') {
-      return selected.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0)
+      return selected.reduce((sum, r) => sum + (parseAmountInput(r.amount, locale) ?? 0), 0)
     }
-    return selected.reduce((sum, r) => sum + (parseFloat(r.percent) || 0), 0)
-  }, [enabled, shareType, rows, amount])
+    return selected.reduce((sum, r) => sum + (parseAmountInput(r.percent, locale) ?? 0), 0)
+  }, [enabled, shareType, rows, amount, locale])
 
   // True when the splits payload is acceptable for the backend. Equal mode
   // always materializes correctly; exact must sum to the parent amount;
@@ -263,13 +276,17 @@ export function TransactionSplitsSection({
     const selected = rows.filter((r) => r.selected)
     if (selected.length === 0) return false
     if (shareType === 'equal') return true
+    // A share that doesn't parse must block the save, not count as zero:
+    // "abc" + 100 would otherwise pass an exact split of 100.
+    const field = shareType === 'exact' ? 'amount' : 'percent'
+    if (selected.some((r) => r[field].trim() !== '' && parseAmountInput(r[field], locale) == null)) return false
     if (shareType === 'exact') {
-      const sum = selected.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0)
+      const sum = selected.reduce((s, r) => s + (parseAmountInput(r.amount, locale) ?? 0), 0)
       return Math.abs(sum - Math.abs(amount)) < 0.005
     }
-    const pctSum = selected.reduce((s, r) => s + (parseFloat(r.percent) || 0), 0)
+    const pctSum = selected.reduce((s, r) => s + (parseAmountInput(r.percent, locale) ?? 0), 0)
     return Math.abs(pctSum - 100) < 0.005
-  }, [enabled, shareType, rows, amount])
+  }, [enabled, shareType, rows, amount, locale])
 
   useEffect(() => {
     onValidityChange?.(isValid)
@@ -415,7 +432,7 @@ export function TransactionSplitsSection({
                               ? absAmount / selectedCount
                               : null
                             : shareType === 'percent'
-                              ? (parseFloat(row.percent) || 0) * absAmount / 100
+                              ? (parseAmountInput(row.percent, locale) ?? 0) * absAmount / 100
                               : null
                         return (
                           <div key={m.id} className="flex items-center gap-2">
@@ -443,9 +460,7 @@ export function TransactionSplitsSection({
                               </span>
                             )}
                             {shareType === 'exact' && row.selected && (
-                              <Input
-                                type="number"
-                                step="0.01"
+                              <AmountInput
                                 className="w-24 h-8 text-sm"
                                 value={row.amount}
                                 onChange={(e) => updateRow(m.id, { amount: e.target.value })}
@@ -453,9 +468,7 @@ export function TransactionSplitsSection({
                             )}
                             {shareType === 'percent' && row.selected && (
                               <div className="flex items-center gap-1">
-                                <Input
-                                  type="number"
-                                  step="0.01"
+                                <AmountInput
                                   className="w-20 h-8 text-sm"
                                   value={row.percent}
                                   onChange={(e) => updateRow(m.id, { percent: e.target.value })}
