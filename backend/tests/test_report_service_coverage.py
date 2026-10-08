@@ -90,11 +90,13 @@ async def _make_account(
     session: AsyncSession, user_id: uuid.UUID, name: str,
     acc_type: str = "checking", balance: str = "0.00", currency: str = "BRL",
     connection_id: uuid.UUID | None = None, is_closed: bool = False,
+    workspace_id: uuid.UUID | None = None,
 ) -> Account:
     acct = Account(
         id=uuid.uuid4(), user_id=user_id, name=name, type=acc_type,
         balance=Decimal(balance), currency=currency,
         connection_id=connection_id, is_closed=is_closed,
+        workspace_id=workspace_id,
     )
     session.add(acct)
     await session.commit()
@@ -684,6 +686,124 @@ async def test_net_worth_composition_asset_zero_value_excluded(session, test_use
         session, test_workspace.id, test_user.id, months=1, interval="monthly"
     )
     assert all(c.label != "Future Buy" for c in report.composition)
+
+
+# ---------------------------------------------------------------------------
+# Issue #1083: investment account holdings must not be double-counted
+# ---------------------------------------------------------------------------
+
+
+async def test_net_worth_investment_asset_skipped_when_connection_synced(
+    session, test_user, test_workspace,
+):
+    """An asset whose connection_id matches an open account is excluded
+    from the assets_total (its value is already inside the account balance).
+
+    This covers the fix for GitHub issue #1083 where SimpleFIN/Pluggy
+    create both an investment Account and Holdings-based Asset rows that
+    share the same connection_id — without the skip they are counted twice
+    in the net-worth calculation.
+    """
+    from app.models.bank_connection import BankConnection
+
+    # Create a SimpleFIN connection
+    conn = BankConnection(
+        id=uuid.uuid4(), user_id=test_user.id, provider="simplefin",
+        external_id="sf-demo", institution_name="Fidelity Demo",
+        credentials={}, status="active",
+        last_sync_at=datetime.now(timezone.utc),
+        created_at=datetime.now(timezone.utc),
+    )
+    session.add(conn)
+    await session.flush()
+
+    # Investment account with balance that already includes holdings
+    acct = await _make_account(
+        session, test_user.id, "Fidelity Demo",
+        acc_type="investment", balance="1000.00",
+        connection_id=conn.id,
+    )
+
+    # A stock holding synced from the same connection (double-count offender)
+    asset = Asset(
+        id=uuid.uuid4(), user_id=test_user.id, name="AAPL Stock",
+        type="stock", currency="USD", connection_id=conn.id,
+        purchase_price=Decimal("1000"),
+    )
+    session.add(asset)
+    await session.commit()
+
+    # Manually-add a value (simulating what the sync does)
+    session.add(AssetValue(
+        id=uuid.uuid4(), asset_id=asset.id,
+        amount=Decimal("1000"), date=date.today(),
+    ))
+    await session.commit()
+
+    report = await get_net_worth_report(
+        session, test_workspace.id, test_user.id, months=1, interval="monthly"
+    )
+
+    # The account contributes 1000 to accounts_total
+    acct_items = [c for c in report.composition if c.group == "accounts"]
+    assert any(c.label == "Fidelity Demo" for c in acct_items)
+
+    # The AAPL asset should NOT appear (connection already counted)
+    asset_items = [c for c in report.composition if c.group == "assets"]
+    assert not any(c.label == "AAPL Stock" for c in asset_items)
+
+    # Net worth primary_value should be ~1000 (account only, asset skipped)
+    # not ~2000 (double-counted)
+    assert report.summary.primary_value == pytest.approx(1000.0, abs=1)
+
+
+async def test_net_worth_manual_asset_still_counted_without_connection(
+    session, test_user, test_workspace,
+):
+    """A manually-created asset (no connection_id) is NOT affected by the
+    skip — only synced assets sharing a connection_id are excluded.
+    """
+    # A checking account (not investment) with a deposit transaction so
+    # _account_balance_at returns a non-zero balance.
+    acct = await _make_account(
+        session, test_user.id, "My Checking",
+        acc_type="checking", balance="100.00",
+        workspace_id=test_workspace.id,
+    )
+    # Add a deposit so _account_balance_at picks up a balance
+    from app.models.transaction import Transaction
+    txn = Transaction(
+        id=uuid.uuid4(), user_id=test_user.id, date=date.today(),
+        account_id=acct.id, type="transfer", amount=100.00,
+        source="manual", description="Opening deposit",
+    )
+    session.add(txn)
+
+    # A manually-held asset with today's value entry (no connection_id)
+    asset = Asset(
+        id=uuid.uuid4(), user_id=test_user.id, name="My Gold",
+        type="other", currency="BRL",
+        purchase_price=Decimal("2000"), purchase_date=date.today() - timedelta(days=30),
+    )
+    session.add(asset)
+    await session.commit()
+
+    # Add a value entry for the asset
+    session.add(AssetValue(
+        id=uuid.uuid4(), asset_id=asset.id,
+        amount=Decimal("2000"), date=date.today(),
+    ))
+    await session.commit()
+
+    report = await get_net_worth_report(
+        session, test_workspace.id, test_user.id, months=1, interval="monthly"
+    )
+
+    # The manual asset SHOULD appear in composition
+    asset_items = [c for c in report.composition if c.group == "assets"]
+    assert any(c.label == "My Gold" for c in asset_items), (
+        f"Expected 'My Gold' in assets but got {[c.label for c in asset_items]}"
+    )
 
 
 async def test_cash_flow_foreign_currency_conversion_path(session, test_user, test_workspace):
