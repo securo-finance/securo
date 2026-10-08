@@ -43,12 +43,6 @@ from app.services.account_service import (
 FROZEN_TODAY = date(2026, 9, 20)
 
 
-class _FrozenDate(date):
-    @classmethod
-    def today(cls):
-        return FROZEN_TODAY
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -967,7 +961,7 @@ async def test_get_account_summary_opening_balance_connected_excludes_period_pen
         session, test_user.id, "Conn Opening", balance="780.00",
         connection_id=test_connection.id,
     )
-    monkeypatch.setattr(account_service, "_Date", _FrozenDate)
+    monkeypatch.setattr(account_service, "app_today", lambda: FROZEN_TODAY)
     today = FROZEN_TODAY
     month_start = today.replace(day=1)
     prev_month = (month_start - timedelta(days=1)).replace(day=1)
@@ -1007,7 +1001,7 @@ async def test_get_account_summary_connected_keeps_recurring_pending_in_the_walk
         session, test_user.id, "Conn Recurring", balance="780.00",
         connection_id=test_connection.id,
     )
-    monkeypatch.setattr(account_service, "_Date", _FrozenDate)
+    monkeypatch.setattr(account_service, "app_today", lambda: FROZEN_TODAY)
     today = FROZEN_TODAY
     month_start = today.replace(day=1)
     prev_month = (month_start - timedelta(days=1)).replace(day=1)
@@ -1048,7 +1042,7 @@ async def test_get_account_summary_connected_excludes_future_rows_from_opening_b
         session, test_user.id, "Conn Future Rows", balance="780.00",
         connection_id=test_connection.id,
     )
-    monkeypatch.setattr(account_service, "_Date", _FrozenDate)
+    monkeypatch.setattr(account_service, "app_today", lambda: FROZEN_TODAY)
     today = FROZEN_TODAY
     month_start = today.replace(day=1)
     prev_month = (month_start - timedelta(days=1)).replace(day=1)
