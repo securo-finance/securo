@@ -798,6 +798,7 @@ async def get_income_expenses_report(
             Category.id,
             Category.name,
             Category.color,
+            Category.is_income,
             Transaction.type,
             func.sum(amount_expr),
         )
@@ -814,19 +815,19 @@ async def get_income_expenses_report(
             counts_as_user_pnl(),
             *acct_filter,
         )
-        .group_by(Category.id, Category.name, Category.color, Transaction.type)
+        .group_by(Category.id, Category.name, Category.color, Category.is_income, Transaction.type)
     )
 
     # Collect composition into a mutable map so projections can be added
     # Key: (cat_key, group) -> {label, color, value}
     comp_map: dict[tuple[str, str], dict] = {}
     for row in cat_result.all():
-        cat_id, cat_name, cat_color, txn_type, total_amount = row
+        cat_id, cat_name, cat_color, cat_is_income, txn_type, total_amount = row
         amount = abs(float(total_amount or 0))
         if amount <= 0:
             continue
         cat_key = str(cat_id) if cat_id else "uncategorized"
-        group = "income" if txn_type == "credit" else "expenses"
+        group = "income" if (cat_is_income or (cat_is_income is None and txn_type == "credit")) else "expenses"
         comp_map[(cat_key, group)] = {
             "label": cat_name if cat_name else "Uncategorized",
             "color": cat_color if cat_color else "#6B7280",
@@ -901,6 +902,7 @@ async def get_income_expenses_report(
             Category.id,
             Category.name,
             Category.color,
+            Category.is_income,
             Transaction.type,
             func.sum(amount_expr),
         )
@@ -917,18 +919,18 @@ async def get_income_expenses_report(
             counts_as_user_pnl(),
             *acct_filter,
         )
-        .group_by(label_expr, Category.id, Category.name, Category.color, Transaction.type)
+        .group_by(label_expr, Category.id, Category.name, Category.color, Category.is_income, Transaction.type)
     )
 
     # Collect into dict[(cat_key, group)] -> {label, color, total, periods}
     cat_trend_map: dict[tuple[str, str], dict] = {}
     for row in cat_trend_result.all():
-        period_label, cat_id, cat_name, cat_color, txn_type, total_amount = row
+        period_label, cat_id, cat_name, cat_color, cat_is_income, txn_type, total_amount = row
         amount = abs(float(total_amount or 0))
         if amount <= 0:
             continue
         cat_key = str(cat_id) if cat_id else "uncategorized"
-        group = "income" if txn_type == "credit" else "expenses"
+        group = "income" if (cat_is_income or (cat_is_income is None and txn_type == "credit")) else "expenses"
         map_key = (cat_key, group)
         if map_key not in cat_trend_map:
             cat_trend_map[map_key] = {
