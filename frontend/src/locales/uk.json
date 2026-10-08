@@ -1872,6 +1872,8 @@
     "yearly": "Щороку",
     "activeAssets": "Активні активи",
     "soldAssets": "Продані активи",
+    "showArchived": "Показати архівні",
+    "archivedHint": "Не враховуються в підсумках",
     "archivedAssets": "Архівовані активи",
     "noAssets": "Активів поки немає",
     "created": "Актив створено",

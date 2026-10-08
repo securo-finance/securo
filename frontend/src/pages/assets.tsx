@@ -185,6 +185,8 @@ function assetErrorMessage(e: unknown, fallback: string): string {
   return resp?.status ? `${fallback} (${resp.status})` : fallback
 }
 
+const SHOW_ARCHIVED_STORAGE_KEY = 'securo.assets.showArchived'
+
 export default function AssetsPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
@@ -255,9 +257,27 @@ export default function AssetsPage() {
   const [formUnitPrice, setFormUnitPrice] = useState('')
   const [quoteLoading, setQuoteLoading] = useState(false)
 
+  // Archived holdings stay out of the page unless asked for (issue #1046):
+  // archiving is how a double-counted synced holding is taken out of net
+  // worth, and that shouldn't cost the user the view of the position.
+  const [showArchived, setShowArchived] = useState(() => {
+    try {
+      return localStorage.getItem(SHOW_ARCHIVED_STORAGE_KEY) === 'true'
+    } catch {
+      return false
+    }
+  })
+  const toggleShowArchived = (next: boolean) => {
+    setShowArchived(next)
+    try {
+      localStorage.setItem(SHOW_ARCHIVED_STORAGE_KEY, String(next))
+    } catch {
+      // Remembering the choice is best-effort.
+    }
+  }
   const { data: rawAssetsList, isLoading } = useQuery({
-    queryKey: ['assets'],
-    queryFn: () => assets.list(false),
+    queryKey: ['assets', { includeArchived: showArchived }],
+    queryFn: () => assets.list(showArchived),
   })
 
   // Active Collection filter (issue #105): when a collection is active, scope
@@ -302,12 +322,13 @@ export default function AssetsPage() {
   // Publish a snapshot of what's on the Assets page so the global chat
   // (⌘J) can answer "what does this chart mean / what are these
   // wallets?" without needing the user to spell it out.
-  const totalValue = (assetsList ?? []).reduce(
+  const summaryAssets = useMemo(() => (assetsList ?? []).filter((a) => !a.is_archived), [assetsList])
+  const totalValue = summaryAssets.reduce(
     (acc: number, a: { current_value?: number | null }) => acc + Number(a.current_value || 0),
     0,
   )
   const byType: Record<string, number> = {}
-  for (const a of (assetsList ?? []) as Array<{ type?: string; current_value?: number | null }>) {
+  for (const a of summaryAssets as Array<{ type?: string; current_value?: number | null }>) {
     if (!a.type) continue
     byType[a.type] = (byType[a.type] || 0) + Number(a.current_value || 0)
   }
@@ -492,6 +513,8 @@ export default function AssetsPage() {
 
   const activeAssets = useMemo(() => assetsList?.filter(a => !a.sell_date && !a.is_archived) ?? [], [assetsList])
   const soldAssets = assetsList?.filter(a => a.sell_date) ?? []
+  // Only present when "Show archived" is on; never part of the totals.
+  const archivedAssets = assetsList?.filter(a => a.is_archived && !a.sell_date) ?? []
   // Denominator for the "% of portfolio" column: current holdings only, in the
   // user's primary currency, so the active rows add up to 100%.
   const portfolioTotalPrimary = getPortfolioTotalPrimary(activeAssets)
@@ -737,7 +760,8 @@ export default function AssetsPage() {
     const isProviderOwned = isSynced && !isMarketPriced
     const hasCost = asset.average_price != null && asset.total_invested != null
     const profit = getAssetProfit(asset)
-    const pctOfPortfolio = asset.sell_date ? null : getPortfolioShare(asset, portfolioTotalPrimary)
+    // Sold and archived holdings aren't part of the portfolio the share is of.
+    const pctOfPortfolio = asset.sell_date || asset.is_archived ? null : getPortfolioShare(asset, portfolioTotalPrimary)
     const needsBuys = isMarketPriced && !hasCost && !asset.sell_date
 
     return (
@@ -1075,10 +1099,22 @@ export default function AssetsPage() {
           {t('assets.tabTransactions')}
         </button>
       </div>
+      {activeTab === 'holdings' && (
+        <label className="ml-3 inline-flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(e) => toggleShowArchived(e.target.checked)}
+            className="h-3.5 w-3.5 rounded border-border accent-primary"
+          />
+          {t('assets.showArchived')}
+        </label>
+      )}
 
       {activeTab === 'transactions' ? (
         <AssetTransactionsTab
-          holdings={assetsList ?? []}
+          // Archived holdings are a Holdings-view option only.
+          holdings={summaryAssets}
           wallets={sortedWallets}
           locale={locale}
           dateLocale={dateLocale}
@@ -1132,7 +1168,20 @@ export default function AssetsPage() {
             </div>
           )}
 
-          {activeAssets.length === 0 && soldAssets.length === 0 && (
+          {/* Archived Assets */}
+          {archivedAssets.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-baseline gap-2 px-1">
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  {t('assets.archivedAssets')}
+                </h3>
+                <span className="text-xs text-muted-foreground">{t('assets.archivedHint')}</span>
+              </div>
+              <div className="opacity-60">{renderHoldingsTable(archivedAssets)}</div>
+            </div>
+          )}
+
+          {activeAssets.length === 0 && soldAssets.length === 0 && archivedAssets.length === 0 && (
             <div className="text-center py-16">
               <Package className="mx-auto h-12 w-12 text-muted-foreground/40 mb-3" />
               <p className="text-muted-foreground">{t('assets.noAssets')}</p>

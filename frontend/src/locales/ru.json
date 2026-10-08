@@ -1872,6 +1872,8 @@
     "yearly": "Ежегодно",
     "activeAssets": "Активные активы",
     "soldAssets": "Проданные активы",
+    "showArchived": "Показать архивные",
+    "archivedHint": "Не учитываются в итогах",
     "archivedAssets": "Архивированные активы",
     "noAssets": "Активов пока нет",
     "created": "Актив создан",

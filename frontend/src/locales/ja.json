@@ -1855,6 +1855,8 @@
     "yearly": "毎年",
     "activeAssets": "保有資産",
     "soldAssets": "売却済み資産",
+    "showArchived": "アーカイブ済みを表示",
+    "archivedHint": "合計には含まれません",
     "archivedAssets": "アーカイブ済み資産",
     "noAssets": "資産はまだありません",
     "created": "資産を作成しました",

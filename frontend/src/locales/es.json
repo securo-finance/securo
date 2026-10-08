@@ -1859,6 +1859,8 @@
     "yearly": "Anual",
     "activeAssets": "Activos activos",
     "soldAssets": "Activos vendidos",
+    "showArchived": "Mostrar archivados",
+    "archivedHint": "No se incluyen en los totales",
     "archivedAssets": "Activos archivados",
     "noAssets": "Aún no hay activos",
     "created": "Activo creado",

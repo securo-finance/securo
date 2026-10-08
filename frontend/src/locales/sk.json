@@ -1971,6 +1971,8 @@
     "yearly": "Ročne",
     "activeAssets": "Aktívne aktíva",
     "soldAssets": "Predané aktíva",
+    "showArchived": "Zobraziť archivované",
+    "archivedHint": "Nezapočítavajú sa do súčtov",
     "archivedAssets": "Archivované aktíva",
     "noAssets": "Zatiaľ žiadne aktíva",
     "created": "Aktívum vytvorené",

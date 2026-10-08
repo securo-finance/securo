@@ -1856,6 +1856,8 @@
     "yearly": "Jährlich",
     "activeAssets": "Aktive Vermögenswerte",
     "soldAssets": "Verkaufte Vermögenswerte",
+    "showArchived": "Archivierte anzeigen",
+    "archivedHint": "Nicht in den Summen enthalten",
     "archivedAssets": "Archivierte Vermögenswerte",
     "noAssets": "Noch keine Vermögenswerte",
     "created": "Vermögenswert erstellt",

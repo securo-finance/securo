@@ -1944,6 +1944,8 @@
     "yearly": "Rocznie",
     "activeAssets": "Aktywne",
     "soldAssets": "Sprzedane",
+    "showArchived": "Pokaż zarchiwizowane",
+    "archivedHint": "Nie wliczane do sum",
     "archivedAssets": "Zarchiwizowane",
     "noAssets": "Brak aktywów",
     "created": "Utworzono aktywo",

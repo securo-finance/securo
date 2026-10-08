@@ -1855,6 +1855,8 @@
     "yearly": "Yearly",
     "activeAssets": "Active Assets",
     "soldAssets": "Sold Assets",
+    "showArchived": "Show archived",
+    "archivedHint": "Not counted in totals",
     "archivedAssets": "Archived Assets",
     "noAssets": "No assets yet",
     "created": "Asset created",
