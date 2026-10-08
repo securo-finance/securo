@@ -1,6 +1,6 @@
 [project]
 name = "securo-backend"
-version = "0.15.1"
+version = "0.16.3"
 description = "Securo API - Personal Finance Manager"
 requires-python = ">=3.11"
 # These ranges express intent; the resolved versions live in uv.lock, which is
@@ -46,6 +46,8 @@ dependencies = [
     # agents feature pay zero cost (the package is installed but never
     # imported).
     "fastembed>=0.4.0",
+    # Resolve the host's IANA timezone when no app setting or TZ override exists.
+    "tzlocal>=5.0.0",
 ]
 
 [project.optional-dependencies]
@@ -64,13 +66,16 @@ dev = [
     # 0.0.x release can add new checks, so letting it float would turn a green
     # CI red on an unrelated PR. Bump deliberately, together with whatever
     # annotations the new release asks for.
-    "ty==0.0.81",
+    "ty==0.0.84",
 ]
 
 [tool.setuptools.packages.find]
 include = ["app*"]
 
 [tool.pytest.ini_options]
+# Fail on configuration/marker typos, duplicate parameter IDs and unexpected
+# xfail passes instead of silently weakening the suite.
+strict = true
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
@@ -95,6 +100,9 @@ omit = [
 # Match ruff's target-version: check against the oldest Python we support, so a
 # 3.12+-only construct is caught here rather than by a self-hoster on 3.11.
 python-version = "3.11"
+
+[tool.ty.rules]
+unused-ignore-comment = "error"
 
 [tool.ruff]
 line-length = 100

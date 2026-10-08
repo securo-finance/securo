@@ -185,7 +185,7 @@ export function GlobalChatPanel({ open, onOpenChange }: Props) {
                     variant="ghost"
                     className="-ml-1 px-1.5"
                     onClick={() => setView('chat')}
-                    aria-label="Back to chat"
+                    aria-label={t('agents.globalChat.backToChat')}
                   >
                     <ArrowLeft className="h-4 w-4" />
                   </Button>
@@ -291,7 +291,7 @@ export function GlobalChatPanel({ open, onOpenChange }: Props) {
                 </Link>
               </Button>
               <DialogPrimitive.Close asChild>
-                <Button size="sm" variant="ghost" aria-label="Close">
+                <Button size="sm" variant="ghost" aria-label={t('common.close')}>
                   <X className="h-4 w-4" />
                 </Button>
               </DialogPrimitive.Close>

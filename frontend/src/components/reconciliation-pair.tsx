@@ -30,7 +30,11 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { cn } from '@/lib/utils'
 
 export interface PairSide {
-  kind: 'invoice' | 'recurring'
+  /** `transaction` is the other leg of a transfer. It is not a promise
+   *  anybody wrote down, which is why it reads differently below: there
+   *  is nothing outstanding to subtract from, only two records asking
+   *  whether they are the same money. */
+  kind: 'invoice' | 'recurring' | 'transaction'
   id: string
   label?: string | null
   /** What this movement puts, or would put, against this promise. */
@@ -98,6 +102,31 @@ function PromiseLine({
 }) {
   const { t } = useTranslation()
   const { data: invoice } = useInvoice(side.id, open && side.kind === 'invoice')
+  const { data: leg } = useQuery<Transaction>({
+    queryKey: ['transaction', side.id],
+    queryFn: () => transactionsApi.get(side.id),
+    enabled: open && side.kind === 'transaction',
+  })
+
+  if (side.kind === 'transaction') {
+    // The account, then what it did and when. Never the description: on
+    // the leg that matters it is a reference number, and the question
+    // being asked is about two accounts.
+    return (
+      <div className="space-y-0.5">
+        <p className="text-sm font-medium text-foreground truncate">
+          {side.label ?? t('reconciliation.pair.otherLeg')}
+        </p>
+        <Facts
+          items={[
+            leg && showDate(leg.date),
+            leg && money(leg.amount, leg.currency),
+            leg?.description,
+          ]}
+        />
+      </div>
+    )
+  }
 
   if (side.kind !== 'invoice') {
     return (
@@ -190,6 +219,11 @@ export function ReconciliationPair({
   const outstanding = Number(firstInvoice?.balance ?? 0)
   const remaining = outstanding - applied
   const singleInvoice = sides.length === 1 && first?.kind === 'invoice'
+  // A transfer has no balance to subtract from, so the three-figure
+  // arithmetic above would be answering a question nobody asked. What
+  // matters is the two amounts side by side, because when they differ
+  // the difference is the whole reason this is a question.
+  const isTransfer = first?.kind === 'transaction'
 
   return (
     <div className="mt-3 pt-3 border-t border-border">
@@ -225,6 +259,21 @@ export function ReconciliationPair({
               />
             )}
           </>
+        ) : isTransfer ? (
+          <>
+            <Figure
+              value={money(applied)}
+              caption={t('reconciliation.pair.otherLegAmount')}
+              tone="quiet"
+            />
+            {transaction && (
+              <Figure
+                value={money(transaction.amount, transaction.currency)}
+                caption={t('reconciliation.pair.thisLegAmount')}
+                tone="applied"
+              />
+            )}
+          </>
         ) : (
           <>
             <Figure
@@ -250,7 +299,7 @@ export function ReconciliationPair({
       <div className="mt-4 grid gap-4 sm:grid-cols-2 sm:divide-x divide-border">
         <div className="space-y-2 sm:pr-5">
           <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-            {t('reconciliation.pair.owed')}
+            {t(isTransfer ? 'reconciliation.pair.otherLeg' : 'reconciliation.pair.owed')}
           </p>
           {sides.map((side) => (
             <PromiseLine
@@ -265,22 +314,35 @@ export function ReconciliationPair({
 
         <div className="space-y-2 sm:pl-5">
           <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-            {t('reconciliation.pair.arrived')}
+            {t(isTransfer ? 'reconciliation.pair.thisLeg' : 'reconciliation.pair.arrived')}
           </p>
           {transaction ? (
             <div className="space-y-0.5">
+              {/* For a transfer both columns lead with the account, so the
+                  two sides read as one comparison. Leading with the
+                  description on this side and the account on the other
+                  asked the reader to hold two different shapes in their
+                  head and work out which field to compare with which. */}
               <p className="text-sm font-medium text-foreground truncate">
-                {transaction.description}
+                {isTransfer ? (accountName ?? transaction.description) : transaction.description}
               </p>
               <Facts
-                items={[
-                  showDate(transaction.date),
-                  accountName,
-                  // `payee_name` is the resolved one; `payee` is the raw
-                  // string the bank sent, worth falling back to when
-                  // nothing has been mapped yet.
-                  transaction.payee_name || transaction.payee,
-                ]}
+                items={
+                  isTransfer
+                    ? [
+                        showDate(transaction.date),
+                        money(transaction.amount, transaction.currency),
+                        transaction.description,
+                      ]
+                    : [
+                        showDate(transaction.date),
+                        accountName,
+                        // `payee_name` is the resolved one; `payee` is the
+                        // raw string the bank sent, worth falling back to
+                        // when nothing has been mapped yet.
+                        transaction.payee_name || transaction.payee,
+                      ]
+                }
               />
             </div>
           ) : (

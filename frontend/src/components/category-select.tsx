@@ -1,14 +1,26 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useContext } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronDownIcon, CheckIcon } from 'lucide-react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import { ChevronDownIcon, CheckIcon, PlusIcon } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
+import { WorkspaceContext } from '@/contexts/workspace-context'
+import { categories as categoriesApi } from '@/lib/api'
+import { extractApiError } from '@/lib/api-errors'
+import { invalidateCategoryQueries } from '@/lib/invalidate-queries'
+import { inlineCreateItemValue, inlineCreateName } from '@/lib/inline-create'
 import type { Category, CategoryGroup } from '@/types'
 import { cn, normalizeText } from '@/lib/utils'
 import {
   isCategoryHiddenFromSelection,
   resolveSelectedCategory,
 } from '@/lib/category-selection-utils'
+
+// Same starting look the categories page gives a new category, so one made
+// from a picker is indistinguishable from one made there.
+const NEW_CATEGORY_ICON = 'circle-help'
+const NEW_CATEGORY_COLOR = '#6366f1'
 
 interface CategorySelectProps {
   value: string
@@ -20,6 +32,11 @@ interface CategorySelectProps {
   disabled?: boolean
   className?: string
   allowNone?: boolean
+  /**
+   * Offer to create a category named after the search text when nothing
+   * matches it. Only shown to members who can write to the workspace.
+   */
+  creatable?: boolean
   contentProps?: React.ComponentProps<typeof PopoverContent>
 }
 
@@ -34,10 +51,44 @@ export function CategorySelect({
   disabled = false,
   className,
   allowNone = false,
+  creatable = false,
   contentProps,
 }: CategorySelectProps) {
   const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  // The category just created here. The list catches up once the refetch
+  // lands; until then this keeps the trigger showing the new name.
+  const [created, setCreated] = useState<Category | null>(null)
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
+  // Read the context directly rather than through useWorkspace, so the
+  // picker still renders (without creation) outside a workspace provider.
+  const canWrite = useContext(WorkspaceContext)?.canWrite ?? false
+  const canCreate = creatable && canWrite
+
+  const createMutation = useMutation({
+    mutationFn: (name: string) =>
+      categoriesApi.create({ name, icon: NEW_CATEGORY_ICON, color: NEW_CATEGORY_COLOR }),
+    onSuccess: (category) => {
+      // Only the category lists refetch. Whatever form hosts this picker
+      // (an import preview, a half-filled transaction) keeps its state.
+      invalidateCategoryQueries(queryClient)
+      setCreated(category)
+      onChange(category.id)
+      handleOpenChange(false)
+      toast.success(t('categories.created'))
+    },
+    onError: (err: unknown) => toast.error(extractApiError(err, t('common.error'))),
+  })
+
+  function handleOpenChange(next: boolean) {
+    setOpen(next)
+    if (!next) setSearch('')
+  }
+
+  const createName = canCreate
+    ? inlineCreateName(search, (categories ?? []).map((c) => c.name))
+    : null
 
   const resolvedPlaceholder = placeholder ?? t('transactions.selectCategory', 'Select category')
 
@@ -56,15 +107,16 @@ export function CategorySelect({
   }, [categories, groups, t])
 
   const selectedCategory = useMemo(() => {
-    return resolveSelectedCategory(categories ?? [], value, currentCategory)
-  }, [categories, currentCategory, value])
-  const selectedCategoryIsHidden = isCategoryHiddenFromSelection(
-    categories ?? [],
-    selectedCategory
-  )
+    const fallback = created && created.id === value ? created : currentCategory
+    return resolveSelectedCategory(categories ?? [], value, fallback)
+  }, [categories, created, currentCategory, value])
+  // A category created a moment ago is not hidden, only not refetched yet.
+  const selectedCategoryIsHidden =
+    selectedCategory !== created
+    && isCategoryHiddenFromSelection(categories ?? [], selectedCategory)
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -109,7 +161,11 @@ export function CategorySelect({
             return normalizeText(itemValue).includes(normalizeText(search)) ? 1 : 0
           }}
         >
-          <CommandInput placeholder={t('transactions.searchCategory')} />
+          <CommandInput
+            placeholder={t('transactions.searchCategory')}
+            value={search}
+            onValueChange={setSearch}
+          />
           <CommandList>
             <CommandEmpty>{t('transactions.noCategoryFound')}</CommandEmpty>
             {allowNone && (
@@ -118,7 +174,7 @@ export function CategorySelect({
                   value={`none ${t('transactions.noCategory')}`}
                   onSelect={() => {
                     onChange('')
-                    setOpen(false)
+                    handleOpenChange(false)
                   }}
                   className="italic text-muted-foreground cursor-pointer"
                 >
@@ -138,7 +194,7 @@ export function CategorySelect({
                     value={`${group.name} ${cat.name}`}
                     onSelect={() => {
                       onChange(cat.id)
-                      setOpen(false)
+                      handleOpenChange(false)
                     }}
                     className="cursor-pointer"
                   >
@@ -156,6 +212,19 @@ export function CategorySelect({
                 ))}
               </CommandGroup>
             ))}
+            {createName && (
+              <CommandGroup>
+                <CommandItem
+                  value={inlineCreateItemValue(search)}
+                  disabled={createMutation.isPending}
+                  onSelect={() => createMutation.mutate(createName)}
+                  className="cursor-pointer"
+                >
+                  <PlusIcon className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{t('common.createNamed', { name: createName })}</span>
+                </CommandItem>
+              </CommandGroup>
+            )}
           </CommandList>
         </Command>
       </PopoverContent>

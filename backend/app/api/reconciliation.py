@@ -5,18 +5,25 @@ where a decision was not confident enough to be made alone. Seeing them
 side by side is the point: somebody staring at a long queue should be
 one click from the rule that keeps sending things there.
 
-Gated on the invoices module, and every route in it answers 404 rather
-than 403: a workspace without the module should not be able to tell the
-feature is there.
+**Open to every workspace, gated per set.** The router itself asks only
+for a workspace, because one of the sets it serves belongs to no module:
+pairing the two legs of a transfer has run on every sync for every
+workspace, personal ones included, since long before modules existed.
+Gating the router on invoicing would have hidden the rules for the
+automation that touches the most people's data.
 
-It was not always. While the recurring rules were editable here too, the
-router served a personal workspace something real, so it stayed open and
-the invoice set carried an "inactive" flag as the honest signal. Those
-rules left the page (they decide whether an arriving charge is a row we
-generated ourselves, which is bookkeeping about our own duplicates), and
-what is left decides whose money settles which invoice. A personal
-workspace could still write, reorder and import matching rules that could
-never fire, which is configuration accumulating for a module nobody has.
+Which *set* you may touch is still a second question, asked per node by
+`_assert_node`, and it answers 404 rather than 403: a workspace without
+invoicing should not learn that invoice matching exists by being told it
+may not look.
+
+This has moved twice, and both moves were the same correction. The
+router was open while recurring rules were editable here, then closed to
+the modules when those left the page, and a personal workspace was left
+able to write and reorder rules that could never fire: configuration
+accumulating for a module nobody had. The answer was never the gate. It
+was that the page had nothing on it for a personal workspace. Now it
+does.
 """
 import uuid
 from decimal import Decimal
@@ -28,8 +35,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_async_session
-from app.core.module_gate import require_any_module, require_any_module_write
-from app.core.workspace_context import WorkspaceContext
+from app.core.workspace_context import (
+    WorkspaceContext,
+    current_workspace,
+    current_writable_workspace,
+)
+from app.models.account import Account
 from app.models.invoice import Invoice
 from app.models.reconciliation import ReconciliationRule
 from app.models.recurring_transaction import RecurringTransaction
@@ -54,17 +65,17 @@ from app.services import (
     reconciliation_rule_service as rules,
     reconciliation_suggestion_service as suggestions,
 )
-from app.services.module_service import ModuleId, resolve_modules
+from app.services.module_service import resolve_modules
 
 router = APIRouter(prefix="/api/reconciliation", tags=["reconciliation"])
 
-#: Reaching the router at all takes one of the two, because the sets it
-#: serves belong to different modules: a workspace with recurring bills
-#: and no invoicing has real rules here. Which *set* you may touch is a
-#: second question, asked per node by `_assert_node`.
-_MATCHING_MODULES = (ModuleId.INVOICES, ModuleId.RECURRING)
-_read = require_any_module(*_MATCHING_MODULES)
-_write = require_any_module_write(*_MATCHING_MODULES)
+#: A workspace, and for writes a role that may write. No module: every
+#: workspace has transfer pairing, so there is no version of this page
+#: that is empty, and a gate that hid it would be hiding the rules for
+#: something already running on the reader's own data. The per-node check
+#: below is what keeps the invoice set out of a workspace without it.
+_read = current_workspace
+_write = current_writable_workspace
 
 
 def _assert_node(ctx: WorkspaceContext, node: str) -> None:
@@ -120,10 +131,10 @@ async def list_rules(
         out.append(
             ReconciliationNodeRead(
                 node=node,
-                # Structural now: reaching this route at all means the
-                # module is on, so a set that is listed is a set that
-                # runs. The flag stays on the wire for the day a node
-                # depends on something else.
+                # Structural: `nodes_for` already dropped the sets this
+                # workspace does not have, so a set that is listed is a
+                # set that runs. The flag stays on the wire for the day a
+                # node depends on something else.
                 active=True,
                 rules=[
                     _as_read(node, strategy, index)
@@ -281,13 +292,23 @@ async def reset_rule(
 # ---------------------------------------------------------------------------
 @router.get("/rules/export")
 async def export_rules(
+    node: Optional[str] = None,
     ctx: WorkspaceContext = Depends(_read),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """The matching policy as a file, with ids resolved to names."""
-    payload = await portability.export_policy(
-        session, ctx.workspace.id, rules.nodes_for(resolve_modules(ctx.workspace))
-    )
+    """The matching policy as a file, with ids resolved to names.
+
+    `node` narrows it to one set. Each set is its own card on the page
+    with its own button, and a button under *Transfers* that quietly
+    hands over the invoice rules too is a button that lies. Without it
+    the file carries everything this workspace has, which is what the
+    page-level export always meant.
+    """
+    available = rules.nodes_for(resolve_modules(ctx.workspace))
+    if node is not None:
+        _assert_node(ctx, node)
+        available = (node,)
+    payload = await portability.export_policy(session, ctx.workspace.id, available)
     return JSONResponse(
         content=payload,
         headers={
@@ -299,9 +320,22 @@ async def export_rules(
 @router.post("/rules/import", response_model=ReconciliationImportResponse)
 async def import_rules(
     data: ReconciliationImportRequest,
+    node: Optional[str] = None,
     ctx: WorkspaceContext = Depends(_write),
     session: AsyncSession = Depends(get_async_session),
 ):
+    """Take a policy file back in.
+
+    `node` narrows it the same way the export does, and for the stronger
+    reason: the button sits on one card, so a file dropped on *Transfers*
+    must not be able to rewrite the invoice rules. Sets the file carries
+    and this call did not ask for are skipped and counted, exactly as a
+    set this workspace does not have already is.
+    """
+    available = rules.nodes_for(resolve_modules(ctx.workspace))
+    if node is not None:
+        _assert_node(ctx, node)
+        available = (node,)
     try:
         result = await portability.import_policy(
             session,
@@ -309,7 +343,7 @@ async def import_rules(
             ctx.user_id,
             data.payload,
             overwrite=data.overwrite,
-            nodes=rules.nodes_for(resolve_modules(ctx.workspace)),
+            nodes=available,
         )
     except rules.ExistingPolicyError as exc:
         # 409 rather than 400: nothing is wrong with the file, and the
@@ -431,10 +465,102 @@ async def accept_suggestion(
     return await _with_label(session, row)
 
 
+#: What must still be true of two rows before they may be bound as one
+#: transfer, whatever rule proposed them.
+#:
+#: The first four are the definition: money crossing between two accounts
+#: moves the opposite way on each side, in one currency. They are checked
+#: rather than assumed because a transaction stays editable while its
+#: suggestion sits in the queue.
+#:
+#: The amounts are checked against what was recorded when the question
+#: was raised, not against each other. A rule may well have matched an
+#: approximate pair, so "are they equal" is the wrong question; "are they
+#: what the person is being shown" is the right one.
+def _transfer_still_holds(moved: Transaction, counterpart: Transaction, row) -> bool:
+    if moved.account_id == counterpart.account_id:
+        return False
+    if moved.type == counterpart.type:
+        return False
+    if moved.currency != counterpart.currency:
+        return False
+
+    scores = row.scores or {}
+    for leg, key in ((moved, "amount_moved"), (counterpart, "amount_expected")):
+        recorded = scores.get(key)
+        if recorded is None:
+            # An older row from before the breakdown carried these. The
+            # definitional checks above still ran; there is nothing more
+            # to compare against, and refusing every one of them would be
+            # answering uncertainty with a dead queue.
+            continue
+        try:
+            if abs(Decimal(leg.amount)) != Decimal(str(recorded)):
+                return False
+        except (ArithmeticError, ValueError):
+            return False
+    return True
+
+
 async def _settle(
     session: AsyncSession, ctx: WorkspaceContext, row
 ) -> None:
     """Write one member of an accepted question."""
+    if row.expectation_kind == "transaction":
+        # The two legs of a transfer. Nothing is allocated and nothing is
+        # replaced: they are both real rows that stay, and agreeing means
+        # they learn they are halves of one movement.
+        #
+        # **Both rows are locked, not just the suggestion.** The lock on
+        # the suggestion guards this row and no other, and one transaction
+        # can sit in two pending questions at once: the ambiguous case
+        # that raises them puts the same credit against two debits, side
+        # by side in the queue with a button each. Two accepts a moment
+        # apart would both read it as unpaired, both write, and leave the
+        # loser's other leg carrying a pair id with nothing on the far
+        # end. Ordered by id so two requests cannot take the locks in
+        # opposite orders and deadlock.
+        locked = await session.execute(
+            select(Transaction)
+            .where(
+                Transaction.id.in_([row.transaction_id, row.expectation_id]),
+                Transaction.workspace_id == ctx.workspace.id,
+            )
+            .order_by(Transaction.id)
+            .with_for_update(of=Transaction)
+        )
+        by_id = {leg.id: leg for leg in locked.scalars().all()}
+        moved = by_id.get(row.transaction_id)
+        counterpart = by_id.get(row.expectation_id)
+        if moved is None or counterpart is None:
+            raise invoice_service.InvoiceError(
+                "transaction_missing", "One of the transactions is no longer there"
+            )
+        legs = (moved, counterpart)
+        if any(leg.transfer_pair_id is not None for leg in legs):
+            # Paired since we asked, by a sync, a rule someone edited, or
+            # the person doing it by hand. Re-pairing would overwrite a
+            # link somebody may have chosen deliberately.
+            raise invoice_service.InvoiceError(
+                "already_paired", "One of these is already part of a transfer"
+            )
+        if not _transfer_still_holds(moved, counterpart, row):
+            # **The rows are not the ones the question was about.** A
+            # transaction stays editable while its suggestion waits, so
+            # the amount, the account, the direction or the currency can
+            # all have moved since we asked. Accepting anyway would bind
+            # two rows on the strength of an answer to a different
+            # question, and a paired row leaves income and expense, so
+            # the damage is a total quietly changing.
+            raise invoice_service.InvoiceError(
+                "suggestion_stale",
+                "These transactions changed since we asked. Check them again.",
+            )
+        pair_id = uuid.uuid4()
+        for leg in legs:
+            leg.transfer_pair_id = pair_id
+        return
+
     if row.expectation_kind == "invoice":
         invoice = await session.get(Invoice, row.expectation_id)
         if invoice is None or invoice.workspace_id != ctx.workspace.id:
@@ -548,6 +674,16 @@ async def _with_label(session: AsyncSession, row) -> SuggestionRead:
 
 
 async def _name_of(session: AsyncSession, row) -> Optional[str]:
+    if row.expectation_kind == "transaction":
+        # The account it came from or went to, not the statement text.
+        # "Is this the other half of a transfer" is a question about two
+        # accounts, and the description is usually a reference number
+        # that answers nothing.
+        leg = await session.get(Transaction, row.expectation_id)
+        if leg is None:
+            return None
+        account = await session.get(Account, leg.account_id)
+        return account.name if account else leg.description
     if row.expectation_kind == "invoice":
         invoice = await session.get(Invoice, row.expectation_id)
         return await _invoice_name(session, invoice) if invoice else None
@@ -562,6 +698,9 @@ async def _currency_of(session: AsyncSession, row) -> Optional[str]:
     settlement was written in the promise's currency and matching refuses
     a pair whose currencies disagree, so there is only ever one answer.
     """
+    if row.expectation_kind == "transaction":
+        leg = await session.get(Transaction, row.expectation_id)
+        return leg.currency if leg else None
     if row.expectation_kind == "invoice":
         invoice = await session.get(Invoice, row.expectation_id)
         return invoice.currency if invoice else None

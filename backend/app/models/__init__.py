@@ -25,8 +25,17 @@ from app.models.group import Group, GroupMember
 from app.models.transaction_split import TransactionSplit
 from app.models.group_settlement import GroupSettlement
 from app.models.collection import Collection, collection_accounts, collection_asset_groups
-from app.models.invoice import Invoice, InvoiceAllocation, InvoiceLine, InvoiceSettings
+from app.models.invoice import (
+    Invoice,
+    InvoiceAllocation,
+    InvoiceDeduction,
+    InvoiceInstallment,
+    InvoiceLine,
+    InvoiceSettings,
+)
 from app.models.invoice_attachment import InvoiceAttachment
+from app.models.invoice_schedule import InvoiceSchedule, InvoiceScheduleTerm
+from app.models.product import Product, ProductPrice
 from app.models.reconciliation import (
     ReconciliationEvent,
     ReconciliationRule,
@@ -76,6 +85,12 @@ __all__ = [
     "InvoiceLine",
     "InvoiceSettings",
     "InvoiceAttachment",
+    "InvoiceDeduction",
+    "InvoiceInstallment",
+    "InvoiceSchedule",
+    "InvoiceScheduleTerm",
+    "Product",
+    "ProductPrice",
     "ReconciliationEvent",
     "ReconciliationRule",
     "ReconciliationSuggestion",

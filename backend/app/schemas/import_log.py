@@ -12,6 +12,8 @@ class ImportLogRead(BaseModel):
     #: Null for an order import, which lands on holdings rather than an account.
     account_id: Optional[uuid.UUID] = None
     account_name: Optional[str] = None
+    #: Currency of the totals; null when the import has no account.
+    account_currency: Optional[str] = None
     #: "transactions" for a bank statement, "asset_orders" for a broker file.
     entity: str = "transactions"
     filename: str

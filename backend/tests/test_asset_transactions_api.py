@@ -211,3 +211,60 @@ async def test_oversell_rejected_via_api(client: AsyncClient, auth_headers: dict
 @pytest.mark.asyncio
 async def test_transactions_require_auth(client: AsyncClient):
     assert (await client.get("/api/assets/transactions")).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_editing_ledger_backed_holding_keeps_cost_basis(
+    client: AsyncClient, auth_headers: dict, market_asset_api: Asset
+):
+    """Renaming a tracked holding must not wipe its ledger-derived position (issue #965)."""
+    await client.post(
+        f"/api/assets/{market_asset_api.id}/transactions",
+        headers=auth_headers,
+        json={"kind": "buy", "quantity": 10, "price": 20, "date": "2026-01-01"},
+    )
+
+    # Same shape the edit dialog used to send: cleared cost and form units.
+    resp = await client.patch(
+        f"/api/assets/{market_asset_api.id}",
+        headers=auth_headers,
+        json={
+            "name": "Petrobras PN",
+            "purchase_price": None,
+            "purchase_date": None,
+            "sell_date": None,
+            "sell_price": None,
+            "units": 3,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["name"] == "Petrobras PN"
+    assert body["units"] == 10
+    assert body["purchase_price"] == 200
+    assert body["total_invested"] == 200
+    assert round(body["average_price"], 2) == 20.00
+    assert body["purchase_date"] == "2026-01-01"
+    assert body["transaction_count"] == 1
+
+    listed = await client.get("/api/assets", headers=auth_headers)
+    holding = next(a for a in listed.json() if a["id"] == str(market_asset_api.id))
+    assert holding["total_invested"] == 200
+    assert holding["units"] == 10
+
+
+@pytest.mark.asyncio
+async def test_editing_legacy_market_asset_without_ledger_updates_units(
+    client: AsyncClient, auth_headers: dict, market_asset_api: Asset
+):
+    """A market holding with no transactions keeps its units editable."""
+    resp = await client.patch(
+        f"/api/assets/{market_asset_api.id}",
+        headers=auth_headers,
+        json={"units": 5},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["units"] == 5
+    assert body["average_price"] is None
+    assert body["transaction_count"] == 0

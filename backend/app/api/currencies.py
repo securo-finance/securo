@@ -32,6 +32,7 @@ CURRENCY_META = {
     "CRC": {"symbol": "₡", "name": "Costa Rican Colón", "flag": "\U0001F1E8\U0001F1F7"},
     "IDR": {"symbol": "Rp", "name": "Indonesian Rupiah", "flag": "\U0001F1EE\U0001F1E9"},
     "DOP": {"symbol": "RD$", "name": "Peso Dominicano", "flag": "\U0001F1E9\U0001F1F4"},
+    "KZT": {"symbol": "₸", "name": "Kazakhstani Tenge", "flag": "\U0001F1F0\U0001F1FF"},
     "RUB": {"symbol": "₽", "name": "Russian Ruble", "flag": "\U0001F1F7\U0001F1FA"},
     "GTQ": {"symbol": "Q", "name": "Guatemalan Quetzal", "flag": "\U0001F1EC\U0001F1F9"},
     "PHP": {"symbol": "₱", "name": "Philippine Peso", "flag": "\U0001F1F5\U0001F1ED"},
@@ -44,6 +45,12 @@ CURRENCY_META = {
     "MDL": {"symbol": "L", "name": "Moldovan Leu", "flag": "\U0001F1F2\U0001F1E9"},
     "AED": {"symbol": "د.إ", "name": "UAE Dirham", "flag": "\U0001F1E6\U0001F1EA"},
     "THB": {"symbol": "\u0e3f", "name": "Thai Baht", "flag": "\U0001F1F9\U0001F1ED"},
+    "EGP": {"symbol": "E£", "name": "Egyptian Pound", "flag": "\U0001F1EA\U0001F1EC"},
+    "MYR": {"symbol": "RM", "name": "Malaysian Ringgit", "flag": "\U0001F1F2\U0001F1FE"},
+    "SAR": {"symbol": "ر.س", "name": "Saudi Riyal", "flag": "\U0001F1F8\U0001F1E6"},
+    "QAR": {"symbol": "ر.ق", "name": "Qatari Riyal", "flag": "\U0001F1F6\U0001F1E6"},
+    "JMD": {"symbol": "J$", "name": "Jamaican Dollar", "flag": "\U0001F1EF\U0001F1F2"},
+    "RSD": {"symbol": "RSD", "name": "Serbian Dinar", "flag": "\U0001F1F7\U0001F1F8"},
 }
 
 

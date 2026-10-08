@@ -124,6 +124,7 @@ export function InvoiceDocumentView({ document }: { document: InvoiceDocumentPay
   const L = document.labels
   const accent = document.accent_color
   const hasPaid = Number(document.amount_paid) > 0
+  const hasDeducted = Number(document.amount_deducted ?? 0) > 0
 
   const money = (value: string) => formatCurrency(Number(value), document.currency, locale)
   const showDate = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString(dateLocale)
@@ -139,10 +140,12 @@ export function InvoiceDocumentView({ document }: { document: InvoiceDocumentPay
     totals.push({ label: L.tax, value: money(document.tax_total) })
   }
   totals.push({ label: L.total, value: money(document.total), strong: true })
-  // Paid and balance only once money has moved: on an untouched invoice
-  // they restate the total twice and add nothing.
-  if (hasPaid) {
-    totals.push({ label: L.paid, value: money(document.amount_paid) })
+  // Paid and balance only once something has settled: on an untouched
+  // invoice they restate the total twice and add nothing. Deductions get
+  // their own row, or total, paid and balance would not add up.
+  if (hasPaid || hasDeducted) {
+    if (hasPaid) totals.push({ label: L.paid, value: money(document.amount_paid) })
+    if (hasDeducted) totals.push({ label: L.deducted, value: money(document.amount_deducted) })
     totals.push({ label: L.balance, value: money(document.balance), strong: true })
   }
 
@@ -229,6 +232,25 @@ export function InvoiceDocumentView({ document }: { document: InvoiceDocumentPay
             <Field key={field.label} label={field.label} value={field.value} />
           ))}
         </div>
+
+        {document.installments.length > 0 && (
+          <div className="mt-6" data-testid="document-installments">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: MUTED }}>
+              {L.schedule}
+            </div>
+            <table className="mt-1.5 w-full text-sm">
+              <tbody>
+                {document.installments.map((row, index) => (
+                  <tr key={index} style={{ borderBottom: `1px solid ${RULE}` }}>
+                    <td className="py-1.5 pr-4">{row.label ?? `${index + 1}/${document.installments.length}`}</td>
+                    <td className="py-1.5 pr-4 tabular-nums" style={{ color: MUTED }}>{showDate(row.due_date)}</td>
+                    <td className="py-1.5 text-right tabular-nums">{money(row.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {document.lines.length > 0 ? (
           <table className="mt-9 w-full">

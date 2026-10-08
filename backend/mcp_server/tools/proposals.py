@@ -15,13 +15,13 @@ unchanged for Securo's own UI.
 
 from __future__ import annotations
 
-from datetime import date
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.app_clock import app_today
 from app.models.account import Account
 from app.models.category import Category
 from app.models.group import Group, GroupMember
@@ -291,7 +291,7 @@ async def propose_create_budget(
 ) -> dict[str, Any]:
     ws_id = await resolve_workspace_id(session, ctx)
     cat_id = parse_uuid(category_id)
-    target_month = (parse_date(month) or date.today()).replace(day=1)
+    target_month = (parse_date(month) or app_today()).replace(day=1)
 
     cat = (
         await session.execute(

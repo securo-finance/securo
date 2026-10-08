@@ -56,6 +56,7 @@ const CURRENCY_LOCALE: Record<string, string> = {
   CRC: 'es-CR',
   IDR: 'id-ID',
   DOP: 'es-DO',
+  KZT: 'ru-KZ',
   RUB: 'ru-RU',
   GTQ: 'es-GT',
   PHP: 'en-PH',
@@ -69,6 +70,12 @@ const CURRENCY_LOCALE: Record<string, string> = {
   MDL: 'ro-MD',
   AED: 'ar-AE',
   THB: 'th-TH',
+  EGP: 'en-EG',
+  MYR: 'ms-MY',
+  SAR: 'en-SA',
+  QAR: 'en-QA',
+  JMD: 'en-JM',
+  RSD: 'sr-RS',
 }
 
 /**

@@ -285,9 +285,27 @@ async def test_list_accounts(session: AsyncSession, ctx: CallContext, test_accou
 async def test_get_account_summary(session: AsyncSession, ctx: CallContext, test_account, test_transactions):
     handler = REGISTRY["get_account_summary"].handler
     result = await handler(session=session, ctx=ctx, account_id=str(test_account.id))
-    # Real service returns a dict with income/expense/etc. We just verify it's not an error.
     assert isinstance(result, dict)
     assert "error" not in result or result.get("error") is None
+    assert set(result) == {
+        "account_id",
+        "current_balance",
+        "opening_balance",
+        "monthly_income",
+        "monthly_expenses",
+        "projected_income",
+        "projected_expenses",
+    }
+    income = float(sum(t.amount for t in test_transactions if t.type == "credit"))
+    expenses = float(sum(t.amount for t in test_transactions if t.type == "debit"))
+    current_balance = float(test_account.balance)
+    assert result["account_id"] == str(test_account.id)
+    assert result["current_balance"] == pytest.approx(current_balance)
+    assert result["opening_balance"] == pytest.approx(current_balance - (income - expenses))
+    assert result["monthly_income"] == pytest.approx(income)
+    assert result["monthly_expenses"] == pytest.approx(expenses)
+    assert result["projected_income"] == pytest.approx(income)
+    assert result["projected_expenses"] == pytest.approx(expenses)
 
 
 async def test_get_account_summary_unknown_account(session: AsyncSession, ctx: CallContext):
@@ -335,18 +353,6 @@ async def test_aggregate_by_category(
     # We have UBER (Transporte) and IFOOD (Alimentação) as expenses.
     labels = {item.get("label") for item in result["items"]}
     assert "Transporte" in labels or "Alimentação" in labels
-
-
-@pytest.mark.skip(reason="aggregate by month uses PostgreSQL to_char, not portable to SQLite test DB")
-async def test_aggregate_by_month(
-    session: AsyncSession, ctx: CallContext, test_transactions
-):
-    handler = REGISTRY["aggregate"].handler
-    result = await handler(session=session, ctx=ctx, metric="count", group_by="month")
-    assert "items" in result
-    for item in result["items"]:
-        if item["bucket"]:
-            assert len(item["bucket"]) == 7 and item["bucket"][4] == "-"
 
 
 async def test_aggregate_unknown_group_by(session: AsyncSession, ctx: CallContext):

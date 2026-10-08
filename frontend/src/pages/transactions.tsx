@@ -50,12 +50,15 @@ import { TransactionsPageActions } from '@/components/transactions-page-actions'
 import { MobileBulkSelectionActions } from '@/components/mobile-bulk-selection-actions'
 import { type ColumnDef, type ColumnId, useTransactionsGridState } from '@/components/transactions-grid-columns'
 import { TransferDialog } from '@/components/transfer-dialog'
+import { useSidebarState } from '@/contexts/sidebar-state-context'
+import { cn } from '@/lib/utils'
 import { LinkTransferDialog } from '@/components/link-transfer-dialog'
 import { BulkAddToGroupDialog, type BulkAddToGroupSubmission } from '@/components/bulk-add-to-group-dialog'
 import { TransactionsFilterBar } from '@/components/transactions-filter-bar'
 import { TransactionCalendarView } from '@/components/transaction-calendar-view'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useIsMobile } from '@/hooks/use-mobile'
+import { useCreateTransaction } from '@/hooks/use-create-transaction'
 import { MobileTransactionRow } from '@/components/mobile-transaction-row'
 import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
@@ -83,6 +86,7 @@ const HIDE_IGNORED_STORAGE_KEY = 'securo.transactions.hideIgnored'
 
 export default function TransactionsPage() {
   const { t, i18n } = useTranslation()
+  const { collapsed: sidebarCollapsed } = useSidebarState()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const locale = useDisplayLocale()
@@ -143,8 +147,6 @@ export default function TransactionsPage() {
   // Manual installment-series scoped delete. Scoped edits are handled by the
   // shared TransactionDialog so account detail and dashboard behave the same.
   const [pendingSeriesDeleteId, setPendingSeriesDeleteId] = useState<string | null>(null)
-  const [formResetKey, setFormResetKey] = useState(0)
-  const [duplicateDraft, setDuplicateDraft] = useState<TransactionEditPayload | null>(null)
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>(() => (
     searchParams.get('view') === 'calendar' ? 'calendar' : 'list'
   ))
@@ -522,56 +524,14 @@ export default function TransactionsPage() {
 
   const invalidateAfterTxMutation = () => invalidateFinancialQueries(queryClient)
 
-  const createMutation = useMutation({
-    mutationFn: async (payload: { tx: TransactionEditPayload; recurringData?: { frequency: string; end_date?: string }; installmentData?: InstallmentSeriesInput; pendingFiles?: File[]; action?: SaveAction }) => {
-      let created: Transaction
-      if (payload.installmentData) {
-        // Manual installment series: the backend repeats the base row N
-        // times with the shared installment fingerprint.
-        const series = await transactions.createInstallments(payload.installmentData)
-        created = series[0]
-      } else {
-        created = await transactions.create(payload.tx)
-      }
-      if (payload.recurringData) {
-        await recurring.create({
-          description: payload.tx.description,
-          amount: payload.tx.amount,
-          currency: payload.tx.currency ?? userCurrency,
-          type: payload.tx.type,
-          frequency: payload.recurringData.frequency,
-          start_date: payload.tx.date,
-          end_date: payload.recurringData.end_date || undefined,
-          category_id: payload.tx.category_id || undefined,
-          account_id: payload.tx.account_id || undefined,
-          skip_first: true,
-        } as Record<string, unknown>)
-      }
-      if (payload.pendingFiles?.length) {
-        await Promise.all(
-          payload.pendingFiles.map(file => transactions.attachments.upload(created.id, file))
-        )
-      }
-      return created
-    },
-    onSuccess: (_created, variables) => {
-      invalidateAfterTxMutation()
-      queryClient.invalidateQueries({ queryKey: ['recurring'] })
-      toast.success(t('transactions.created'))
-      if (variables.action === 'saveAndNew') {
-        setDuplicateDraft(null)
-        setFormResetKey(k => k + 1)
-      } else if (variables.action === 'saveAndDuplicate') {
-        setDuplicateDraft(variables.tx)
-        setFormResetKey(k => k + 1)
-      } else {
-        setDialogOpen(false)
-      }
-    },
-    onError: (error) => {
-      toast.error(extractApiError(error))
-    },
-  })
+  const {
+    mutation: createMutation,
+    create: createTransaction,
+    duplicateDraft,
+    setDuplicateDraft,
+    formResetKey,
+    resetForm,
+  } = useCreateTransaction({ onDone: () => setDialogOpen(false) })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, ...data }: TransactionUpdatePayload & { id: string }) =>
@@ -906,7 +866,7 @@ export default function TransactionsPage() {
     action?: SaveAction,
   ) => {
     if (!editingTx) {
-      createMutation.mutate({ tx: data, recurringData, installmentData, pendingFiles, action })
+      createTransaction(data, recurringData, installmentData, pendingFiles, action)
       return
     }
 
@@ -949,8 +909,7 @@ export default function TransactionsPage() {
       notes: tx.notes,
     }
     setEditingTx(null)
-    setDuplicateDraft(draft)
-    setFormResetKey(k => k + 1)
+    resetForm(draft)
     setDialogOpen(true)
   }
 
@@ -1491,7 +1450,7 @@ export default function TransactionsPage() {
             <button
               onClick={() => { setFilterGroupId(''); setPage(1) }}
               className="ml-0.5 text-primary/60 hover:text-primary"
-              aria-label="Clear group filter"
+              aria-label={t('transactions.clearGroupFilter')}
             >
               ×
             </button>
@@ -1804,9 +1763,15 @@ export default function TransactionsPage() {
       {/* Bulk Action Bar — aligned with the main content area: clears the
           fixed sidebar on lg+ and matches the page's max-w-7xl + p-6 wrapper
           so the bar visually sits over the transactions list, not the
-          full viewport. */}
+          full viewport. The left offset follows the sidebar's real
+          collapsed state (240px expanded / 64px collapsed) so it stays
+          centered when the nav is collapsed (issue #1027). */}
       {viewMode === 'list' && selectedIds.size > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 lg:left-60 z-50">
+        <div className={cn(
+          "fixed bottom-0 left-0 right-0 z-50",
+          "transition-[left] duration-300 ease-in-out motion-reduce:transition-none",
+          sidebarCollapsed ? 'lg:left-16' : 'lg:left-60',
+        )}>
         <div className="mx-auto max-w-7xl px-3 md:px-6 pb-4 md:pb-6">
           <div className="flex items-stretch gap-1.5 bg-card border border-border shadow-xl rounded-2xl p-2">
             <MobileBulkSelectionActions
@@ -1837,7 +1802,7 @@ export default function TransactionsPage() {
               onClear={() => { setSelectedIds(new Set()); setBulkCategory(''); setBulkTagInput('') }}
             />
 
-            <div className="hidden w-full items-stretch gap-1.5 sm:flex">
+            <div className="hidden w-full items-center gap-1.5 sm:flex">
             {/* Selection count + net total — stacked vertically so the
                 sum (issue #185) adds no horizontal width to an already
                 crowded bar. The sum is hidden below sm where only the

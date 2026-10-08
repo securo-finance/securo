@@ -1363,3 +1363,88 @@ async def test_preview_rule_reports_no_change_when_the_draft_would_not_be_applie
     assert applied["will_apply"] is True
     assert applied["will_change"] == 1
     assert applied["sample"][0]["new_category_name"] == target.name
+
+
+@pytest.mark.asyncio
+async def test_preview_rule_filters_by_status(
+    client: AsyncClient, auth_headers, session: AsyncSession, test_categories, test_transactions
+):
+    """A status condition previews only the transactions in that status."""
+    netflix = next(t for t in test_transactions if t.description == "NETFLIX")
+    netflix.status = "pending"
+    await session.commit()
+
+    response = await client.post(
+        "/api/rules/preview",
+        json={
+            "conditions_op": "and",
+            "conditions": [{"field": "status", "op": "equals", "value": "pending"}],
+            "actions": [{"op": "set_category", "value": str(test_categories[0].id)}],
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["matched"] == 1
+    assert data["sample"][0]["description"] == "NETFLIX"
+
+
+@pytest.mark.asyncio
+async def test_create_rule_rejects_unknown_status_value(
+    client: AsyncClient, auth_headers, test_categories
+):
+    response = await client.post(
+        "/api/rules",
+        json={
+            "name": "Bad status",
+            "conditions_op": "and",
+            "conditions": [{"field": "status", "op": "equals", "value": "reserved"}],
+            "actions": [{"op": "set_category", "value": str(test_categories[0].id)}],
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code in (400, 422)
+
+
+@pytest.mark.asyncio
+async def test_preview_rule_skips_a_hidden_category_like_the_save_path(
+    client: AsyncClient,
+    auth_headers,
+    session: AsyncSession,
+    test_categories,
+    test_transactions,
+):
+    """A rule filing into a hidden category changes nothing, and preview says so.
+
+    Hiding a category does not deactivate the rules pointing at it, so this is
+    a reachable state rather than a corner. `apply_rule_actions` drops the
+    `set_category` for a hidden target; a preview that did not would promise a
+    move that saving never makes.
+    """
+    target = test_categories[0]
+    target.is_hidden = True
+    await session.commit()
+
+    body = {
+        "conditions_op": "and",
+        "conditions": [{"field": "description", "op": "contains", "value": "NETFLIX"}],
+        "actions": [{"op": "set_category", "value": str(target.id)}],
+    }
+    data = (await client.post("/api/rules/preview", json=body, headers=auth_headers)).json()
+    assert data["matched"] == 1
+    assert data["will_change"] == 0
+    item = data["sample"][0]
+    assert item["will_change"] is False
+    assert item["new_category_id"] == item["current_category_id"] is None
+
+    # Saving agrees: the transaction keeps the category it had.
+    created = await client.post(
+        "/api/rules",
+        json={**body, "name": "Hidden target", "apply_to_existing": True},
+        headers=auth_headers,
+    )
+    assert created.status_code == 201
+    txn = (
+        await client.get(f"/api/transactions/{item['id']}", headers=auth_headers)
+    ).json()
+    assert txn["category_id"] is None

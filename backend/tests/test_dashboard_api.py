@@ -271,20 +271,6 @@ async def test_recurring_projection_respects_end_date(
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip(reason="to_char() is PostgreSQL-specific; tests use SQLite")
-async def test_monthly_trend_numeric_fields(client, auth_headers, test_transactions):
-    """Monthly trend returns numeric values, not strings."""
-    response = await client.get("/api/dashboard/monthly-trend", headers=auth_headers)
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) > 0
-
-    for item in data:
-        assert isinstance(item["income"], (int, float))
-        assert isinstance(item["expenses"], (int, float))
-
-
-@pytest.mark.asyncio
 async def test_opening_balance_not_counted_as_monthly_income(client, auth_headers):
     """Opening balance transactions must NOT inflate monthly_income on dashboard."""
     # Create a manual account with a 5000 opening balance (this month)

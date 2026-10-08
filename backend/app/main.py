@@ -36,10 +36,13 @@ from app.api.fx_rates import router as fx_rates_router
 from app.api.attachments import router as attachments_router
 from app.api.fiscal import router as fiscal_router
 from app.api.invoice_attachments import router as invoice_attachments_router
+from app.api.invoice_schedules import router as invoice_schedules_router
 from app.api.invoices import router as invoices_router
+from app.api.products import router as products_router
 from app.api.public_invoices import router as public_invoices_router
 from app.api.payees import router as payees_router
 from app.api.settings import router as settings_router
+from app.api.timezones import router as timezones_router
 from app.api.transactions import router as transactions_router
 from app.api.two_factor import router as two_factor_router
 from app.api.user_lookup import router as user_lookup_router
@@ -69,6 +72,7 @@ async def _warm_tesouro_cache() -> None:
             return
         from sqlalchemy import select
 
+        from app.core.app_clock import get_timezone, use_resolved_timezone
         from app.core.database import async_session_maker
         from app.models.workspace import Workspace
 
@@ -76,13 +80,15 @@ async def _warm_tesouro_cache() -> None:
             has_brl = await session.scalar(
                 select(Workspace.id).where(Workspace.default_currency == "BRL").limit(1)
             )
-        if not has_brl:
-            return
+            if not has_brl:
+                return
+            operation_timezone = await get_timezone(session)
 
         from app.providers.tesouro_direto import get_tesouro_direto_provider
 
-        await get_tesouro_direto_provider().get_available_bonds()
-        logger.info("Startup: warmed Tesouro Direto price cache")
+        with use_resolved_timezone(operation_timezone):
+            await get_tesouro_direto_provider().get_available_bonds()
+            logger.info("Startup: warmed Tesouro Direto price cache")
     except Exception:
         logger.exception("Startup: Tesouro Direto cache warm failed")
 
@@ -188,6 +194,7 @@ app.include_router(reports_router)
 app.include_router(search_router)
 app.include_router(setup_router)
 app.include_router(currencies_router)
+app.include_router(timezones_router)
 app.include_router(fx_rates_router)
 app.include_router(export_router)
 app.include_router(attachments_router)
@@ -195,7 +202,9 @@ app.include_router(fiscal_router)
 app.include_router(payees_router)
 app.include_router(invoices_router)
 app.include_router(invoice_attachments_router)
+app.include_router(invoice_schedules_router)
 app.include_router(public_invoices_router)
+app.include_router(products_router)
 app.include_router(settings_router)
 app.include_router(workspaces_router)
 app.include_router(admin_router)
