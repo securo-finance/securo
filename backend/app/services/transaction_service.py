@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional, cast
 
-from sqlalchemy import CursorResult, delete, select, func, or_, not_, update
+from sqlalchemy import CursorResult, case, delete, select, func, or_, not_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -16,6 +16,7 @@ from app.models.category import Category
 from app.models.group import Group, GroupMember
 from app.models.payee import Payee
 from app.schemas.transaction import (
+    DescriptionSuggestion,
     InstallmentSeriesCreate,
     TransactionCreate,
     TransactionUpdate,
@@ -1962,3 +1963,102 @@ async def bulk_delete_transactions(
     )
     await session.commit()
     return len(valid_ids)
+
+
+async def suggest_descriptions(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    query: str,
+    limit: int = 8,
+) -> list[DescriptionSuggestion]:
+    """Distinct descriptions in the workspace that contain ``query``.
+
+    Powers the description autocomplete in the transaction form (issue
+    #1127). Each suggestion carries the category and payee of the most
+    recent transaction with that description, so picking one can prefill
+    them. Matching is case-insensitive; descriptions that *start* with the
+    query rank before ones that merely contain it, newest first otherwise.
+    """
+    term = query.strip()
+    if len(term) < 2:
+        return []
+    escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    filters = (
+        Transaction.workspace_id == workspace_id,
+        Transaction.source != "opening_balance",
+        Transaction.is_ignored.is_(False),
+        Transaction.description.ilike(f"%{escaped}%", escape="\\"),
+    )
+    # Distinct and ranked in SQL *before* the limit, so many recent rows of
+    # one description can't push an older prefix match out of the results.
+    prefix_rank = func.min(
+        case((Transaction.description.ilike(f"{escaped}%", escape="\\"), 0), else_=1)
+    )
+    # Headroom over `limit` for spellings that differ only by case or
+    # surrounding spaces, which collapse into one suggestion below.
+    candidates = (
+        await session.execute(
+            select(Transaction.description)
+            .where(*filters)
+            .group_by(Transaction.description)
+            .order_by(prefix_rank, func.max(Transaction.date).desc(), Transaction.description)
+            .limit(limit * 4)
+        )
+    ).scalars().all()
+
+    chosen: dict[str, str] = {}  # casefolded key -> displayed description
+    spellings: dict[str, list[str]] = {}
+    for description in candidates:
+        key = description.strip().casefold()
+        if not key:
+            continue
+        if key not in chosen:
+            if len(chosen) == limit:
+                continue
+            chosen[key] = description.strip()
+        spellings.setdefault(key, []).append(description)
+    if not chosen:
+        return []
+
+    # Category and payee from the latest use of each chosen description: one
+    # row per spelling (ranked in SQL), however often it was used.
+    recency = (
+        func.row_number()
+        .over(
+            partition_by=Transaction.description,
+            order_by=(Transaction.date.desc(), Transaction.created_at.desc()),
+        )
+        .label("recency")
+    )
+    newest = (
+        select(
+            Transaction.description,
+            Transaction.category_id,
+            Transaction.payee_id,
+            Transaction.date,
+            Transaction.created_at,
+            recency,
+        )
+        .where(
+            *filters[:3],
+            Transaction.description.in_([d for k in chosen for d in spellings[k]]),
+        )
+        .subquery()
+    )
+    rows = await session.execute(
+        select(newest.c.description, newest.c.category_id, newest.c.payee_id)
+        .where(newest.c.recency == 1)
+        .order_by(newest.c.date.desc(), newest.c.created_at.desc())
+    )
+    latest: dict[str, tuple[Optional[uuid.UUID], Optional[uuid.UUID]]] = {}
+    for description, category_id, payee_id in rows:
+        latest.setdefault(description.strip().casefold(), (category_id, payee_id))
+
+    return [
+        DescriptionSuggestion(
+            description=display,
+            category_id=latest.get(key, (None, None))[0],
+            payee_id=latest.get(key, (None, None))[1],
+        )
+        for key, display in chosen.items()
+    ]

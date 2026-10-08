@@ -267,6 +267,14 @@ class BulkTagsRequest(BaseModel):
     tags: list[str]
 
 
+class DescriptionSuggestion(BaseModel):
+    """A description typed before, with what was last filed under it."""
+
+    description: str
+    category_id: Optional[uuid.UUID] = None
+    payee_id: Optional[uuid.UUID] = None
+
+
 class TransferRead(BaseModel):
     debit: TransactionRead
     credit: TransactionRead

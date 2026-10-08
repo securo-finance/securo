@@ -16,7 +16,7 @@ from app.core.workspace_context import (
     current_workspace,
     current_writable_workspace,
 )
-from app.schemas.transaction import BulkAddToGroupRequest, BulkCategorizeRequest, BulkTagsRequest, CreateCounterpartRequest, InstallmentSeriesCreate, LinkTransferRequest, TransactionBulkDeleteRequest, TransactionCreate, TransactionRead, TransactionUpdate, TransferCreate, TransferRead
+from app.schemas.transaction import BulkAddToGroupRequest, BulkCategorizeRequest, DescriptionSuggestion, BulkTagsRequest, CreateCounterpartRequest, InstallmentSeriesCreate, LinkTransferRequest, TransactionBulkDeleteRequest, TransactionCreate, TransactionRead, TransactionUpdate, TransferCreate, TransferRead
 from app.schemas.transaction_calendar import TransactionCalendarResponse
 from app.services import transaction_service
 from app.services.admin_service import get_credit_card_accounting_mode
@@ -185,6 +185,17 @@ async def transaction_calendar(
         month,
         account_ids=_merge_id_filters(account_id, account_ids),
     )
+
+
+@router.get("/description-suggestions", response_model=list[DescriptionSuggestion])
+async def description_suggestions(
+    q: str = Query("", max_length=100),
+    limit: int = Query(8, ge=1, le=20),
+    ctx: WorkspaceContext = Depends(current_workspace),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Descriptions used before in this workspace that contain ``q``."""
+    return await transaction_service.suggest_descriptions(session, ctx.workspace.id, q, limit)
 
 
 @router.get("/export")

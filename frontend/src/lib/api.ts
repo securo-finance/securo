@@ -17,6 +17,7 @@ import type {
   AccountSummary,
   Collection,
   CreditCardBill,
+  DescriptionSuggestion,
   Transaction,
   Payee,
   PayeeSummary,
@@ -548,6 +549,10 @@ export const transactions = {
   },
   get: async (id: string): Promise<Transaction> => {
     const { data } = await api.get(`/transactions/${id}`)
+    return data
+  },
+  descriptionSuggestions: async (q: string, limit = 8): Promise<DescriptionSuggestion[]> => {
+    const { data } = await api.get('/transactions/description-suggestions', { params: { q, limit } })
     return data
   },
   create: async (transaction: TransactionEditPayload): Promise<Transaction> => {

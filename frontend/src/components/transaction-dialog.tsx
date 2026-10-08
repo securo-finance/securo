@@ -15,6 +15,7 @@ import { flattenConditions, hasConditionGroups } from '@/lib/rule-conditions'
 import { cn, normalizeText } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { DescriptionInput } from '@/components/description-input'
 import { Label } from '@/components/ui/label'
 import { DatePickerInput } from '@/components/ui/date-picker-input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -974,9 +975,15 @@ function TransactionForm({
             rows={1}
           />
         ) : (
-          <Input
+          <DescriptionInput
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={setDescription}
+            // Prefill what was last filed under this description, without
+            // overwriting anything the user already chose (issue #1127).
+            onPick={(suggestion) => {
+              if (!categoryId && suggestion.category_id) setCategoryId(suggestion.category_id)
+              if (!payeeId && suggestion.payee_id) setPayeeId(suggestion.payee_id)
+            }}
             required
             className="bg-card"
           />

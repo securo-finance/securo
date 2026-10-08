@@ -240,6 +240,13 @@ export interface TransactionInvoiceLink {
   amount: string
 }
 
+/** A description used before, with the category and payee of its latest use. */
+export interface DescriptionSuggestion {
+  description: string
+  category_id: string | null
+  payee_id: string | null
+}
+
 export interface Transaction {
   /** Every invoice this transaction settles — a payout net of fees
    *  settles several. Absent in a workspace without the module. */
