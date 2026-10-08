@@ -18,6 +18,7 @@ from app.services.dashboard_service import (
     _account_balance_at,
     _total_balance_by_currency,
     get_balance_history,
+    get_monthly_trend,
     get_summary,
     get_spending_by_category,
     get_projected_transactions,
@@ -378,9 +379,14 @@ async def test_get_summary_basic(session: AsyncSession, test_user, test_workspac
 
 
 @pytest.mark.asyncio
-async def test_summary_matches_drilldown_and_excludes_closed_accounts(
+async def test_summary_keeps_closed_account_history_and_matches_drilldown(
     session: AsyncSession, test_user, test_workspace
 ):
+    """Closing an account stops it counting as current money, not as history.
+
+    Past income and expenses of a closed account stay in the month's totals
+    (issue #1112), and the drill-down behind those totals lists the same rows.
+    """
     month = (date.today().replace(day=1) - timedelta(days=1)).replace(day=1)
     month_start, month_end = _month_range(month)
     open_account = await _make_account(session, test_user.id, "Open")
@@ -404,13 +410,55 @@ async def test_summary_matches_drilldown_and_excludes_closed_accounts(
         user_pnl_only=True,
     )
 
-    assert {row.account_id for row in rows} == {open_account.id}
+    assert {row.account_id for row in rows} == {open_account.id, closed_account.id}
+    assert summary.monthly_income == pytest.approx(1000.0)
+    assert summary.monthly_expenses == pytest.approx(840.0)
     assert summary.monthly_income == pytest.approx(
         sum(float(row.amount) for row in rows if row.type == "credit")
     )
     assert summary.monthly_expenses == pytest.approx(
         sum(float(row.amount) for row in rows if row.type == "debit")
     )
+
+
+@pytest.mark.asyncio
+async def test_closed_account_balance_stays_out_of_current_totals(
+    session: AsyncSession, test_user, test_workspace
+):
+    """History of a closed account counts; its balance does not."""
+    month = date.today().replace(day=1)
+    open_account = await _make_account(session, test_user.id, "Open")
+    closed_account = await _make_account(
+        session, test_user.id, "Closed", is_closed=True
+    )
+    await _add_txn(session, test_user.id, open_account.id, 100, "credit", month)
+    await _add_txn(session, test_user.id, closed_account.id, 250, "credit", month)
+
+    summary = await get_summary(session, test_workspace.id, test_user.id, month=month)
+
+    assert summary.monthly_income == pytest.approx(350.0)
+    assert summary.total_balance.get("BRL", 0.0) == pytest.approx(100.0)
+    accounts = await _get_open_accounts(session, test_workspace.id)
+    assert {a.id for a in accounts} == {open_account.id}
+
+
+@pytest.mark.asyncio
+async def test_spending_and_trend_keep_closed_account_history(
+    session: AsyncSession, test_user, test_workspace
+):
+    cat = await _make_category(session, test_user.id, "Savings fees")
+    closed_account = await _make_account(
+        session, test_user.id, "Closed saver", is_closed=True
+    )
+    today = date.today()
+    await _add_txn(session, test_user.id, closed_account.id, 60, "debit", today, category_id=cat.id)
+
+    spending = await get_spending_by_category(session, test_workspace.id, test_user.id)
+    fees = next((s for s in spending if s.category_id == str(cat.id)), None)
+    assert fees is not None and fees.total == pytest.approx(60.0)
+
+    trend = await get_monthly_trend(session, test_workspace.id, test_user.id, months=1)
+    assert sum(point.expenses for point in trend) == pytest.approx(60.0)
 
 
 @pytest.mark.asyncio

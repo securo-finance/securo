@@ -272,11 +272,14 @@ async def test_income_expenses_yearly_interval(session, test_user, test_workspac
     assert bd["income"] == pytest.approx(2000.0)
 
 
-async def test_income_expenses_excludes_opening_and_closed(session, test_user, test_workspace):
-    """opening_balance source and closed accounts contribute nothing."""
+async def test_income_expenses_excludes_opening_but_keeps_closed_history(
+    session, test_user, test_workspace
+):
+    """opening_balance rows contribute nothing; a closed account's history still counts."""
     closed = await _make_account(session, test_user.id, "IE Closed", is_closed=True)
     today = date.today()
     await _add_txn(session, test_user.id, closed.id, 1000, "credit", today)
+    await _add_txn(session, test_user.id, closed.id, 300, "debit", today)
 
     open_acct = await _make_account(session, test_user.id, "IE Open")
     await _add_txn(session, test_user.id, open_acct.id, 7000, "credit", today, source="opening_balance")
@@ -285,8 +288,8 @@ async def test_income_expenses_excludes_opening_and_closed(session, test_user, t
         session, test_workspace.id, test_user.id, months=2, interval="monthly"
     )
     bd = {b.key: b.value for b in report.summary.breakdowns}
-    assert bd["income"] == 0.0
-    assert bd["expenses"] == 0.0
+    assert bd["income"] == 1000.0
+    assert bd["expenses"] == 300.0
 
 
 async def test_income_expenses_with_recurring_projection(session, test_user, test_workspace):

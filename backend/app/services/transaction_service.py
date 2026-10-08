@@ -264,7 +264,9 @@ async def get_transactions(
     if exclude_transfers:
         base_query = base_query.where(Transaction.transfer_pair_id.is_(None))
     if user_pnl_only:
-        base_query = base_query.where(Account.is_closed == False, counts_as_user_pnl())
+        # Closed accounts are not excluded here: their history stays in the
+        # period totals this list drills into (issue #1112).
+        base_query = base_query.where(counts_as_user_pnl())
     if exclude_ignored:
         # Only drops rows; the summary below keeps computing over the same
         # filtered set, so the totals a hidden list shows stay the totals of
