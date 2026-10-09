@@ -458,7 +458,7 @@ function TransactionForm({
   )
   const [categoryId, setCategoryId] = useState(seed?.category_id ?? '')
   const [payeeId, setPayeeId] = useState(seed?.payee_id ?? '')
-  const [accountId, setAccountId] = useState(seed?.account_id ?? defaultAccountId ?? sortedAccounts[0]?.id ?? '')
+  const [accountId, setAccountId] = useState(seed?.account_id ?? defaultAccountId ?? '')
   const [notes, setNotes] = useState(seed?.notes ?? '')
   // Manual CC bucketing override (issue #92). Empty = auto. Visible only
   // when the selected account is a credit card.
@@ -1180,6 +1180,7 @@ function TransactionForm({
               onChange={(e) => setAccountId(e.target.value)}
               required
             >
+              {!accountId && <option value="" disabled hidden>{t('transactions.createCounterpartSelectAccount')}</option>}
               {sortedAccounts.map((acc) => (
                 <option key={acc.id} value={acc.id}>{getAccountLabel(acc)}</option>
               ))}

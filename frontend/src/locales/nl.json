@@ -1439,7 +1439,6 @@
     "endDate": "Einddatum (optioneel)",
     "category": "Categorie",
     "account": "Rekening",
-    "noAccount": "Geen",
     "nextOccurrence": "Volgende",
     "status": "Status",
     "actions": "Acties",

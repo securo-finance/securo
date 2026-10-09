@@ -1454,7 +1454,6 @@
     "endDate": "Дата окончания (опционально)",
     "category": "Категория",
     "account": "Счёт",
-    "noAccount": "Нет",
     "nextOccurrence": "Следующая",
     "status": "Статус",
     "actions": "Действия",

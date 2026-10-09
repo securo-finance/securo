@@ -1496,7 +1496,6 @@
     "endDate": "Data zakończenia (opcjonalnie)",
     "category": "Kategoria",
     "account": "Konto",
-    "noAccount": "Brak",
     "nextOccurrence": "Następna",
     "status": "Status",
     "actions": "Akcje",

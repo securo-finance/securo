@@ -1437,7 +1437,6 @@
     "endDate": "終了日(任意)",
     "category": "カテゴリ",
     "account": "口座",
-    "noAccount": "なし",
     "nextOccurrence": "次回",
     "status": "ステータス",
     "actions": "操作",

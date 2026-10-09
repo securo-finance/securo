@@ -1454,7 +1454,6 @@
     "endDate": "Дата закінчення (необов'язково)",
     "category": "Категорія",
     "account": "Рахунок",
-    "noAccount": "Немає",
     "nextOccurrence": "Наступна",
     "status": "Статус",
     "actions": "Дії",

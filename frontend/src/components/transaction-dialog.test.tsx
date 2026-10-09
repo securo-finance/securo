@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { TransactionDialog } from '@/components/transaction-dialog'
 import { currencies, groups, payees } from '@/lib/api'
 import { renderWithProviders, t } from '@/test/utils'
-import type { RecurringTransaction } from '@/types'
+import type { Account, RecurringTransaction } from '@/types'
 
 vi.mock('@/contexts/auth-context', () => ({
   useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }),
@@ -71,3 +71,48 @@ it.each(['America/Los_Angeles', 'Pacific/Kiritimati'])(
     }
   },
 )
+
+const accountFixtures = [
+  { id: 'acc-z', name: 'Zeta Bank', type: 'checking', currency: 'USD' },
+  { id: 'acc-a', name: 'Alpha Card', type: 'checking', currency: 'USD' },
+] as Account[]
+
+function renderNewTransaction(defaultAccountId?: string) {
+  vi.spyOn(currencies, 'list').mockResolvedValue([])
+  vi.spyOn(payees, 'list').mockResolvedValue([])
+  vi.spyOn(groups, 'list').mockResolvedValue([])
+  renderWithProviders(
+    <TransactionDialog
+      open
+      onClose={vi.fn()}
+      transaction={null}
+      categories={[]}
+      categoryGroups={[]}
+      accounts={accountFixtures}
+      defaultAccountId={defaultAccountId}
+      onSave={vi.fn()}
+      loading={false}
+      error={null}
+    />,
+  )
+  return screen.getByRole('option', { name: 'Zeta Bank' }).closest('select') as HTMLSelectElement
+}
+
+it('starts a new transaction with no account selected, so one must be chosen', () => {
+  const accountSelect = renderNewTransaction()
+
+  expect(accountSelect).toHaveValue('')
+  // The placeholder shows in the closed field but is hidden from the open list.
+  const placeholder = accountSelect.selectedOptions[0]
+  expect(placeholder).toHaveTextContent(t('transactions.createCounterpartSelectAccount'))
+  expect(placeholder).toBeDisabled()
+  expect(placeholder).toHaveAttribute('hidden')
+  expect(accountSelect.validity.valueMissing).toBe(true)
+})
+
+it('keeps preselecting the account the form was opened from', () => {
+  const accountSelect = renderNewTransaction('acc-z')
+
+  expect(accountSelect).toHaveValue('acc-z')
+  expect(screen.queryByText(t('transactions.createCounterpartSelectAccount'))).not.toBeInTheDocument()
+})

@@ -1437,7 +1437,6 @@
     "endDate": "End date (optional)",
     "category": "Category",
     "account": "Account",
-    "noAccount": "None",
     "nextOccurrence": "Next",
     "status": "Status",
     "actions": "Actions",

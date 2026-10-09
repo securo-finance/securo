@@ -1441,7 +1441,6 @@
     "endDate": "Date de fin (optionnel)",
     "category": "Catégorie",
     "account": "Compte",
-    "noAccount": "Aucun",
     "nextOccurrence": "Prochaine",
     "status": "Statut",
     "actions": "Actions",
