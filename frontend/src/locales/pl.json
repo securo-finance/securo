@@ -2241,6 +2241,8 @@
     "remove": "Usuń"
   },
   "splitGroups": {
+    "searchPlaceholder": "Szukaj grup...",
+    "clearSearch": "Wyczyść wyszukiwanie",
     "title": "Grupy",
     "section": "Konfiguracja",
     "add": "Dodaj grupę",

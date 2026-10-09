@@ -926,8 +926,8 @@ export interface GroupSettlementPayload {
 }
 
 export const groups = {
-  list: async (includeArchived = false): Promise<Group[]> => {
-    const { data } = await api.get('/groups', { params: { include_archived: includeArchived } })
+  list: async (includeArchived = false, filters: { q?: string; status?: 'active' | 'archived' | 'all' } = {}): Promise<Group[]> => {
+    const { data } = await api.get('/groups', { params: { include_archived: includeArchived, ...filters } })
     return data
   },
   get: async (id: string): Promise<Group> => {

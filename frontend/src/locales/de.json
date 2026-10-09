@@ -2144,6 +2144,8 @@
     "remove": "Entfernen"
   },
   "splitGroups": {
+    "searchPlaceholder": "Gruppen suchen...",
+    "clearSearch": "Suche löschen",
     "title": "Gruppen",
     "section": "Einrichtung",
     "add": "Gruppe hinzufügen",

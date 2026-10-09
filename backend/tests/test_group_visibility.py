@@ -105,6 +105,11 @@ async def test_linked_member_sees_group_in_list(
     # Linked member sees is_owner=False; the original owner sees True.
     assert visible[0].is_owner is False
 
+    searched = await group_service.list_groups(
+        session, other_ws.id, other.id, q="SHARED", status="all"
+    )
+    assert {g.id for g in searched} == {group.id}
+
     owners_view = await group_service.list_groups(
         session, test_workspace.id, test_user.id
     )
@@ -124,6 +129,11 @@ async def test_unrelated_user_does_not_see_group(
 
     visible = await group_service.list_groups(session, stranger_ws.id, stranger.id)
     assert visible == []
+
+    searched = await group_service.list_groups(
+        session, stranger_ws.id, stranger.id, q="Private", status="all"
+    )
+    assert searched == []
 
 
 @pytest.mark.asyncio

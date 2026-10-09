@@ -2160,6 +2160,8 @@
     "remove": "Удалить"
   },
   "splitGroups": {
+    "searchPlaceholder": "Поиск групп...",
+    "clearSearch": "Очистить поиск",
     "title": "Группы",
     "section": "Настройка",
     "add": "Добавить группу",

@@ -1,4 +1,5 @@
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,11 +33,14 @@ router = APIRouter(prefix="/api/groups", tags=["groups"])
 @router.get("", response_model=list[GroupRead])
 async def list_groups(
     include_archived: bool = Query(False),
+    q: str | None = Query(None),
+    group_status: Literal['active', 'archived', 'all'] | None = Query(None, alias='status'),
     ctx: WorkspaceContext = Depends(current_workspace),
     session: AsyncSession = Depends(get_async_session),
 ):
     return await group_service.list_groups(
-        session, ctx.workspace.id, ctx.user_id, include_archived=include_archived
+        session, ctx.workspace.id, ctx.user_id, include_archived=include_archived,
+        q=q, status=group_status,
     )
 
 

@@ -2143,6 +2143,8 @@
     "remove": "削除"
   },
   "splitGroups": {
+    "searchPlaceholder": "グループを検索...",
+    "clearSearch": "検索をクリア",
     "title": "グループ",
     "section": "設定",
     "add": "グループを追加",

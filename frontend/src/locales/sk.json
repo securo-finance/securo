@@ -2271,6 +2271,8 @@
     "remove": "Odstrániť"
   },
   "splitGroups": {
+    "searchPlaceholder": "Hľadať skupiny...",
+    "clearSearch": "Vymazať vyhľadávanie",
     "title": "Skupiny",
     "section": "Nastavenie",
     "add": "Pridať skupinu",

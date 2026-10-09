@@ -2145,6 +2145,8 @@
     "remove": "Verwijderen"
   },
   "splitGroups": {
+    "searchPlaceholder": "Groepen zoeken...",
+    "clearSearch": "Zoekopdracht wissen",
     "title": "Groepen",
     "section": "Instellen",
     "add": "Groep toevoegen",
