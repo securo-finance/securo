@@ -1133,9 +1133,9 @@ export default function AssetsPage() {
           )}
 
           {activeAssets.length === 0 && soldAssets.length === 0 && (
-            <div className="text-center py-16">
-              <Package className="mx-auto h-12 w-12 text-muted-foreground/40 mb-3" />
-              <p className="text-muted-foreground">{t('assets.noAssets')}</p>
+            <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden text-center py-16 text-muted-foreground">
+              <Package size={32} className="mx-auto mb-2 opacity-50" />
+              <p>{t('assets.noAssets')}</p>
             </div>
           )}
         </div>
@@ -2473,9 +2473,9 @@ function AssetTransactionsTab({
         </div>
       ) : (txs ?? []).length === 0 ? (
         holdingsWithoutCost.length === 0 ? (
-          <div className="text-center py-16">
-            <TrendingUp className="mx-auto h-12 w-12 text-muted-foreground/40 mb-3" />
-            <p className="text-muted-foreground">{t('assets.noTransactions')}</p>
+          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden text-center py-16 text-muted-foreground">
+            <TrendingUp size={32} className="mx-auto mb-2 opacity-50" />
+            <p>{t('assets.noTransactions')}</p>
           </div>
         ) : null
       ) : (
