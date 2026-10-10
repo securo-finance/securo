@@ -1148,7 +1148,8 @@
     "invoiceBadgeTooltip": "この取引は請求書を決済しています。開く。",
     "suggestionBadge": "要確認",
     "suggestionBadgeTooltip": "これが何かを消し込む可能性があります。キューを開いて回答してください。",
-    "clearGroupFilter": "グループフィルターを解除"
+    "clearGroupFilter": "グループフィルターを解除",
+    "splitByCategory": "分割"
   },
   "accounts": {
     "title": "口座",
@@ -2259,15 +2260,15 @@
       "other": "その他"
     },
     "categorySplits": {
-      "title": "Split by category",
-      "addRow": "Add category",
-      "category": "Category",
-      "amount": "Amount",
-      "remove": "Remove",
-      "sum": "Sum: {{sum}} / {{total}} {{currency}}",
-      "badge": "Split",
-      "modeAmongPeople": "Among people",
-      "modeByCategory": "By category"
+      "title": "カテゴリで分割",
+      "addRow": "カテゴリを追加",
+      "category": "カテゴリ",
+      "amount": "金額",
+      "remove": "削除",
+      "sum": "合計: {{sum}} / {{total}} {{currency}}",
+      "badge": "分割",
+      "modeAmongPeople": "人の間で分割",
+      "modeByCategory": "カテゴリ別"
     }
   },
   "privacy": {

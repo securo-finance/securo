@@ -1162,7 +1162,8 @@
     "invoiceBadgeTooltip": "Ця операція закриває рахунок. Відкрити.",
     "suggestionBadge": "Питання",
     "suggestionBadgeTooltip": "Платіж може закрити цей рахунок. Відкрийте чергу, щоб відповісти.",
-    "clearGroupFilter": "Скинути фільтр групи"
+    "clearGroupFilter": "Скинути фільтр групи",
+    "splitByCategory": "Розподілено"
   },
   "accounts": {
     "title": "Рахунки",
@@ -2276,15 +2277,15 @@
       "other": "Інше"
     },
     "categorySplits": {
-      "title": "Split by category",
-      "addRow": "Add category",
-      "category": "Category",
-      "amount": "Amount",
-      "remove": "Remove",
-      "sum": "Sum: {{sum}} / {{total}} {{currency}}",
-      "badge": "Split",
-      "modeAmongPeople": "Among people",
-      "modeByCategory": "By category"
+      "title": "Розподілити за категоріями",
+      "addRow": "Додати категорію",
+      "category": "Категорія",
+      "amount": "Сума",
+      "remove": "Видалити",
+      "sum": "Сума: {{sum}} / {{total}} {{currency}}",
+      "badge": "Розподілено",
+      "modeAmongPeople": "Між людьми",
+      "modeByCategory": "За категоріями"
     }
   },
   "privacy": {
