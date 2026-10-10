@@ -16,7 +16,6 @@ from app.models.transaction import Transaction
 from app.models.category import Category
 from app.models.user import User
 from app.services._query_filters import (
-    category_allocation_deltas,
     counts_as_pnl,
     counts_as_user_pnl,
     owner_split_offset_by_category,
