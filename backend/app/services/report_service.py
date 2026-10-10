@@ -1017,7 +1017,7 @@ async def get_income_expenses_report(
 
     # Re-attribute per-category trend for category-split transactions.
     if not filtered:
-        from app.models.transaction_category_allocation import TransactionCategoryAllocation as _TCA_
+        from app.models.transaction_category_allocation import TransactionCategoryAllocation
 
         alloc_trend_result = await session.execute(
             select(
