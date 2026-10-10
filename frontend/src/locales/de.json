@@ -2258,6 +2258,17 @@
       "project": "Projekt",
       "client": "Kunde",
       "other": "Sonstiges"
+    },
+    "categorySplits": {
+      "title": "Split by category",
+      "addRow": "Add category",
+      "category": "Category",
+      "amount": "Amount",
+      "remove": "Remove",
+      "sum": "Sum: {{sum}} / {{total}} {{currency}}",
+      "badge": "Split",
+      "modeAmongPeople": "Among people",
+      "modeByCategory": "By category"
     }
   },
   "privacy": {

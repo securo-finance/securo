@@ -1132,6 +1132,11 @@ export default function TransactionsPage() {
                     : t('transactions.invoiceBadgeNoNumber')}
               </Link>
             ))}
+            {tx.category_allocations && tx.category_allocations.length > 0 && (
+              <span className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wide text-teal-700 bg-teal-50 border border-teal-200 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-900 px-1.5 py-0.5 rounded-full">
+                {t('splitGroups.categorySplits.badge')}
+              </span>
+            )}
             {!!tx.transfer_pair_id && (
               <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full">
                 <ArrowLeftRight className="h-3 w-3" />

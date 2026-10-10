@@ -40,9 +40,10 @@ import { RuleDialog, type RuleDialogInitialData } from '@/components/rule-dialog
 import { TransactionAttachments } from '@/components/transaction-attachments'
 import type { AttachmentPreview } from '@/components/transaction-attachments'
 import { TransactionSplitsSection } from '@/components/transaction-splits-section'
+import { TransactionCategorySplitsSection } from '@/components/transaction-category-splits-section'
 import { buildInstallmentSeriesInput, hasNonStatusChange, isManualInstallmentSeriesRow } from '@/lib/installment-series'
 import { usePrivacyMode } from '@/hooks/use-privacy-mode'
-import type { Transaction, RecurringTransaction, TransactionSplitsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, Rule, RuleCondition, RuleConditionNode } from '@/types'
+import type { Transaction, RecurringTransaction, TransactionSplitsInput, CategoryAllocationsInput, TransactionEditPayload, InstallmentSeriesInput, TransactionApplyScope, CategoryGroup, Category, Rule, RuleCondition, RuleConditionNode } from '@/types'
 import { toast } from 'sonner'
 
 export type SaveAction = 'save' | 'saveAndNew' | 'saveAndDuplicate'
@@ -505,6 +506,29 @@ function TransactionForm({
     const existing = (seed as Transaction | null | undefined)?.splits
     return !!(existing && existing.length > 0)
   })
+
+  // Category-split section state (orthogonal to people-splits)
+  const [categorySplitsValid, setCategorySplitsValid] = useState(true)
+  const [categoryAllocations, setCategoryAllocations] = useState<CategoryAllocationsInput | null>(() => {
+    const existing = (seed as Transaction | null | undefined)?.category_allocations
+    if (!existing || existing.length === 0) return null
+    return {
+      allocations: existing.map((a) => ({
+        category_id: a.category_id,
+        amount: String(a.amount),
+      })),
+    }
+  })
+  const [hadInitialCategoryAllocations] = useState<boolean>(() => {
+    const existing = (seed as Transaction | null | undefined)?.category_allocations
+    return !!(existing && existing.length > 0)
+  })
+
+  // Split mode: null = no split shown, 'people' = among people, 'category' = by category
+  type SplitMode = null | 'people' | 'category'
+  const initialSplitMode: SplitMode = hadInitialSplits ? 'people' : hadInitialCategoryAllocations ? 'category' : null
+  const [splitMode, setSplitMode] = useState<SplitMode>(initialSplitMode)
+
   const isCreating = !transaction
   const showConversion = currency !== userCurrency && !isSynced
   // Privacy mode hides monetary values across the app, but the edit modal
@@ -799,6 +823,12 @@ function TransactionForm({
           : hadInitialSplits
             ? { splits: { share_type: 'equal', splits: [] } }
             : {}
+        const categoryAllocationsPayload: { category_allocations?: CategoryAllocationsInput | null } =
+          categoryAllocations
+            ? { category_allocations: categoryAllocations }
+            : hadInitialCategoryAllocations
+              ? { category_allocations: { allocations: [] } }
+              : {}
         const pnlExclusionPayload = transaction
           ? { exclude_from_pnl: excludeFromReports }
           : {}
@@ -812,6 +842,8 @@ function TransactionForm({
               ...pnlExclusionPayload,
               ...overridePayload,
               ...splitsPayload,
+              ...categoryAllocationsPayload,
+              status,
             } as TransactionEditPayload
           : {
               description,
@@ -831,6 +863,7 @@ function TransactionForm({
               ...fxFields,
               ...overridePayload,
               ...splitsPayload,
+              ...categoryAllocationsPayload,
             } as TransactionEditPayload
         const recurringData = isCreating && isRecurring
           ? { frequency, end_date: endDate || undefined }
@@ -1252,13 +1285,63 @@ function TransactionForm({
           (the share would settle a debt that this debit is already
           settling). Hide the section entirely in that case. */}
       {transaction?.source !== 'settlement' && (
-        <TransactionSplitsSection
-          amount={parseAmountInput(amount, displayLocale) ?? 0}
-          currency={currency}
-          value={splits}
-          onChange={setSplits}
-          onValidityChange={setSplitsValid}
-        />
+        <div className="space-y-2">
+          {/* Split mode toggle */}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (splitMode === 'people') {
+                  setSplitMode(null)
+                  setSplitsValid(true)
+                } else {
+                  setSplitMode('people')
+                  setCategoryAllocations(null)
+                  setCategorySplitsValid(true)
+                }
+              }}
+              className={`text-xs px-3 py-1 rounded-full border transition-colors ${splitMode === 'people' ? 'bg-primary text-primary-foreground border-primary' : 'border-muted-foreground/30 text-muted-foreground'}`}
+            >
+              {t('splitGroups.categorySplits.modeAmongPeople')}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (splitMode === 'category') {
+                  setSplitMode(null)
+                  setCategorySplitsValid(true)
+                } else {
+                  setSplitMode('category')
+                  setSplits(null)
+                  setSplitsValid(true)
+                }
+              }}
+              className={`text-xs px-3 py-1 rounded-full border transition-colors ${splitMode === 'category' ? 'bg-primary text-primary-foreground border-primary' : 'border-muted-foreground/30 text-muted-foreground'}`}
+            >
+              {t('splitGroups.categorySplits.modeByCategory')}
+            </button>
+          </div>
+
+          {splitMode === 'people' && (
+            <TransactionSplitsSection
+              amount={parseAmountInput(amount, displayLocale) ?? 0}
+              currency={currency}
+              value={splits}
+              onChange={setSplits}
+              onValidityChange={setSplitsValid}
+            />
+          )}
+
+          {splitMode === 'category' && (
+            <TransactionCategorySplitsSection
+              amount={parseAmountInput(amount, displayLocale) ?? 0}
+              currency={currency}
+              value={categoryAllocations}
+              onChange={setCategoryAllocations}
+              onValidityChange={setCategorySplitsValid}
+            />
+          )}
+        </div>
       )}
 
       {!isCreating && transaction ? (
@@ -1441,7 +1524,7 @@ function TransactionForm({
             <div className="inline-flex">
               <Button
                 type="submit"
-                disabled={loading || !splitsValid}
+                disabled={loading || !splitsValid || !categorySplitsValid}
                 className="rounded-r-none whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9"
               >
                 {loading ? t('common.loading') : t('common.save')}
@@ -1450,7 +1533,7 @@ function TransactionForm({
                 <DropdownMenuTrigger asChild>
                   <Button
                     type="button"
-                    disabled={loading || !splitsValid}
+                    disabled={loading || !splitsValid || !categorySplitsValid}
                     aria-label={t('transactions.moreSaveOptions')}
                     className="rounded-l-none border-l border-l-primary-foreground/20 px-1.5 sm:px-2 has-[>svg]:px-1.5 sm:has-[>svg]:px-2 h-8 sm:h-9"
                   >
@@ -1468,7 +1551,7 @@ function TransactionForm({
               </DropdownMenu>
             </div>
           ) : (
-            <Button type="submit" disabled={loading || !splitsValid} className="whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9">
+            <Button type="submit" disabled={loading || !splitsValid || !categorySplitsValid} className="whitespace-nowrap text-xs sm:text-sm h-8 sm:h-9">
               {loading ? t('common.loading') : t('common.save')}
             </Button>
           )}
