@@ -6,6 +6,10 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.schemas.category import CategoryRead
+from app.schemas.transaction_category_allocation import (
+    CategoryAllocationRead,
+    CategoryAllocationsInput,
+)
 from app.schemas.transaction_split import (
     TransactionSplitInput,
     TransactionSplitRead,
@@ -34,6 +38,7 @@ class TransactionCreate(TransactionBase):
     fx_rate_used: Optional[Decimal] = None
     effective_bill_date: Optional[_Date] = None
     splits: Optional[TransactionSplitsInput] = None
+    category_allocations: Optional[CategoryAllocationsInput] = None
     # Manual status override. When omitted the transaction is created as
     # "posted" (settled), matching the model default. Pass "pending"
     # (not yet settled) to record an entry that isn't settled yet. Only
@@ -112,6 +117,8 @@ class TransactionUpdate(BaseModel):
     # When provided, replaces the transaction's splits wholesale. Pass
     # an object with an empty `splits` list to clear them.
     splits: Optional[TransactionSplitsInput] = None
+    # When provided, replaces category allocations wholesale.
+    category_allocations: Optional[CategoryAllocationsInput] = None
     # Installment-series scope for edits. "this" (default) only touches the
     # target row; "future" touches it plus all later installments of the
     # same series; "all" touches every row in the series. Ignored when the
@@ -188,6 +195,7 @@ class TransactionRead(TransactionBase):
     effective_bill_date: Optional[_Date] = None
     recurring_transaction_id: Optional[uuid.UUID] = None
     splits: list[TransactionSplitRead] = []
+    category_allocations: list[CategoryAllocationRead] = []
     # Shared-transaction view fields. Set per-request when the viewer
     # is a linked member of one of this transaction's splits but not
     # its owner. The viewer sees their share amount instead of the
