@@ -1150,7 +1150,8 @@
     "invoiceBadgeTooltip": "Questa transazione salda una fattura. Aprila.",
     "suggestionBadge": "Domanda",
     "suggestionBadgeTooltip": "Un pagamento potrebbe saldare questa fattura. Apri la coda per rispondere.",
-    "clearGroupFilter": "Rimuovi filtro gruppo"
+    "clearGroupFilter": "Rimuovi filtro gruppo",
+    "splitByCategory": "Suddiviso"
   },
   "accounts": {
     "title": "Conti",
@@ -2261,6 +2262,17 @@
       "project": "Progetto",
       "client": "Cliente",
       "other": "Altro"
+    },
+    "categorySplits": {
+      "title": "Suddividi per categoria",
+      "addRow": "Aggiungi categoria",
+      "category": "Categoria",
+      "amount": "Importo",
+      "remove": "Rimuovi",
+      "sum": "Somma: {{sum}} / {{total}} {{currency}}",
+      "badge": "Suddiviso",
+      "modeAmongPeople": "Tra persone",
+      "modeByCategory": "Per categoria"
     }
   },
   "privacy": {

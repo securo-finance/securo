@@ -55,16 +55,18 @@ export function TransactionSplitsSection({
   value,
   onChange,
   onValidityChange,
+  showToggle = true,
 }: {
   amount: number
   currency: string
   value: TransactionSplitsInput | null
   onChange: (next: TransactionSplitsInput | null) => void
   onValidityChange?: (valid: boolean) => void
+  showToggle?: boolean
 }) {
   const { t } = useTranslation()
   const locale = useDisplayLocale()
-  const [enabled, setEnabled] = useState(value !== null)
+  const [enabled, setEnabled] = useState(showToggle ? value !== null : true)
   const [groupId, setGroupId] = useState<string>('')
   const [shareType, setShareType] = useState<ShareType>(value?.share_type ?? 'equal')
   const [rows, setRows] = useState<RowState[]>([])
@@ -186,11 +188,17 @@ export function TransactionSplitsSection({
     const groupChanged = lastGroupIdRef.current !== group.id
     lastGroupIdRef.current = group.id
 
+    // Capture synchronously — hydratedRef.current is set to true right after
+    // enqueuing setRows, so if we read it inside the updater (which runs
+    // asynchronously during the next render) it would already be true and
+    // we'd lose the seed on first hydration.
+    const wasHydrated = hydratedRef.current
+    hydratedRef.current = true
+
     setRows((prevRows) => {
       // If first hydration or switched groups, rebuild completely
-      if (!hydratedRef.current || groupChanged) {
-        const source = hydratedRef.current ? null : seedRef.current
-        return buildRows(group, source)
+      if (!wasHydrated || groupChanged) {
+        return buildRows(group, wasHydrated ? null : seedRef.current)
       }
 
       // Otherwise, merge new group members into existing rows state to preserve user selections
@@ -206,8 +214,6 @@ export function TransactionSplitsSection({
         }
       })
     })
-
-    hydratedRef.current = true
   }, [group])
 
   // Push state up whenever it changes meaningfully.
@@ -281,16 +287,18 @@ export function TransactionSplitsSection({
 
   return (
     <div className="space-y-3 pt-2 border-t border-border">
-      <label className="text-sm font-medium inline-flex items-center gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={enabled}
-          onChange={(e) => setEnabled(e.target.checked)}
-          className="h-4 w-4 rounded border-border accent-primary"
-        />
-        <Users size={14} />
-        {t('splitGroups.splitTransaction')}
-      </label>
+      {showToggle && (
+        <label className="text-sm font-medium inline-flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => setEnabled(e.target.checked)}
+            className="h-4 w-4 rounded border-border accent-primary"
+          />
+          <Users size={14} />
+          {t('splitGroups.splitTransaction')}
+        </label>
+      )}
 
       {enabled && (
         <div className="space-y-3 pl-6">

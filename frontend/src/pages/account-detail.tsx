@@ -1630,6 +1630,11 @@ export default function AccountDetailPage() {
                                 {t('accounts.openingBalance')}
                               </span>
                             )}
+                            {tx.category_allocations && tx.category_allocations.length > 0 && (
+                              <span className="ml-2 inline-flex items-center text-xs text-teal-700 font-semibold bg-teal-50 border border-teal-200 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-900 rounded px-1.5 py-0.5">
+                                {t('splitGroups.categorySplits.badge')}
+                              </span>
+                            )}
                             {isTransfer && (
                               <span className="ml-2 inline-flex items-center gap-1 text-xs text-blue-600 font-normal bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5">
                                 <ArrowLeftRight className="h-3 w-3" />

@@ -1200,7 +1200,8 @@
     "invoiceBadgeTooltip": "Táto transakcia vyrovnáva faktúru. Otvorte ju.",
     "suggestionBadge": "Otázka",
     "suggestionBadgeTooltip": "Platba môže uhradiť túto faktúru. Otvorte front a odpovedzte.",
-    "clearGroupFilter": "Zrušiť filter skupiny"
+    "clearGroupFilter": "Zrušiť filter skupiny",
+    "splitByCategory": "Rozdelené"
   },
   "accounts": {
     "title": "Účty",
@@ -2393,6 +2394,17 @@
       "project": "Projekt",
       "client": "Klient",
       "other": "Iné"
+    },
+    "categorySplits": {
+      "title": "Rozdeliť podľa kategórie",
+      "addRow": "Pridať kategóriu",
+      "category": "Kategória",
+      "amount": "Suma",
+      "remove": "Odstrániť",
+      "sum": "Súčet: {{sum}} / {{total}} {{currency}}",
+      "badge": "Rozdelené",
+      "modeAmongPeople": "Medzi ľuďmi",
+      "modeByCategory": "Podľa kategórie"
     }
   },
   "privacy": {

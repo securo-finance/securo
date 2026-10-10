@@ -21,8 +21,9 @@ from app.schemas.transaction import (
     TransactionUpdate,
     TransferCreate,
 )
+from app.schemas.transaction_category_allocation import CategoryAllocationsInput
 from app.schemas.transaction_split import TransactionSplitInput, TransactionSplitsInput
-from app.services import reconciliation_service, split_service
+from app.services import category_allocation_service, reconciliation_service, split_service
 from app.services.credit_card_service import apply_effective_date
 from app.services.rule_service import apply_rules_to_transaction
 from app.services.fx_rate_service import stamp_primary_amount, convert as fx_convert
@@ -187,6 +188,7 @@ async def get_transactions(
             selectinload(Transaction.account),
             selectinload(Transaction.payee_entity),
             selectinload(Transaction.splits),
+            selectinload(Transaction.category_allocations),
         )
     )
     if transaction_ids:
@@ -672,6 +674,7 @@ async def get_transaction(
             selectinload(Transaction.category),
             selectinload(Transaction.payee_entity),
             selectinload(Transaction.splits),
+            selectinload(Transaction.category_allocations),
         )
     )
     transaction = result.scalar_one_or_none()
@@ -684,6 +687,60 @@ async def get_transaction(
         transaction.attachment_count = count_result.scalar_one()
         transaction.payee_name = transaction.payee_entity.name if transaction.payee_entity else None
     return transaction
+
+
+def _assert_single_split_mode(
+    splits_payload: Optional[TransactionSplitsInput],
+    category_allocations_payload: Optional[CategoryAllocationsInput],
+) -> None:
+    """Raise ValueError if both people-splits and category-allocations are provided."""
+    has_splits = splits_payload is not None and bool(splits_payload.splits)
+    has_allocations = (
+        category_allocations_payload is not None
+        and bool(category_allocations_payload.allocations)
+    )
+    if has_splits and has_allocations:
+        raise ValueError(
+            "A transaction cannot have both people-splits and category allocations at once"
+        )
+
+
+async def _assert_single_split_mode_stored(
+    session: AsyncSession,
+    tx: "Transaction",
+) -> None:
+    """Raise ValueError if the stored transaction has both split types after replacements.
+
+    Covers PATCH gaps: a payload that touches only one side (splits=None or
+    category_allocations=None) leaves the other side's stored rows untouched,
+    so a payload-only check can miss the conflict.  This check runs after both
+    replace operations so it reflects the final DB state.
+    """
+    from app.models.transaction_category_allocation import TransactionCategoryAllocation
+    from app.models.transaction_split import TransactionSplit
+
+    has_splits = bool(
+        (
+            await session.execute(
+                select(TransactionSplit.id)
+                .where(TransactionSplit.transaction_id == tx.id)
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+    )
+    has_allocs = bool(
+        (
+            await session.execute(
+                select(TransactionCategoryAllocation.id)
+                .where(TransactionCategoryAllocation.transaction_id == tx.id)
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+    )
+    if has_splits and has_allocs:
+        raise ValueError(
+            "A transaction cannot have both people-splits and category allocations at once"
+        )
 
 
 async def create_transaction(
@@ -754,8 +811,15 @@ async def create_transaction(
     else:
         await stamp_primary_amount(session, user_id, transaction)
 
+    _assert_single_split_mode(data.splits, data.category_allocations)
+
     if data.splits is not None:
         await split_service.replace_splits(session, transaction, data.splits, user_id)
+
+    if data.category_allocations is not None:
+        await category_allocation_service.replace_category_allocations(
+            session, transaction, data.category_allocations, user_id
+        )
 
     # A payment recorded by hand settles an invoice exactly as a synced one
     # does. Someone who reconciles by typing the Pix in should not have to
@@ -765,7 +829,7 @@ async def create_transaction(
     await reconciliation_service.match_incoming(session, workspace_id, [transaction])
 
     await session.commit()
-    await session.refresh(transaction, ["category", "splits"])
+    await session.refresh(transaction, ["category", "splits", "category_allocations"])
     return transaction
 
 
@@ -1041,6 +1105,7 @@ async def get_transfer_candidates(
             selectinload(Transaction.account),
             selectinload(Transaction.payee_entity),
             selectinload(Transaction.splits),
+            selectinload(Transaction.category_allocations),
         )
     )
     candidates = list(result.scalars().all())
@@ -1111,6 +1176,7 @@ async def get_transfer_pair(
             selectinload(Transaction.account),
             selectinload(Transaction.payee_entity),
             selectinload(Transaction.splits),
+            selectinload(Transaction.category_allocations),
         )
         .limit(1)
     )
@@ -1395,6 +1461,7 @@ async def _apply_update_to_row(
     update_data: dict,
     apply_to_transfer_pair: bool,
     splits_payload: Optional[TransactionSplitsInput],
+    category_allocations_payload: Optional[CategoryAllocationsInput] = None,
 ) -> None:
     """Apply a parsed TransactionUpdate payload to a single row.
 
@@ -1500,9 +1567,57 @@ async def _apply_update_to_row(
             if "date" in update_data:
                 paired_account = await session.get(Account, paired_tx.account_id)
                 apply_effective_date(paired_tx, paired_account)
+            # Reject if the paired leg's stored allocations no longer sum to its
+            # (possibly just-cascaded) amount — mirrors the same guard on tx.
+            if "amount" in (cascade_fields & update_data.keys()):
+                from app.models.transaction_category_allocation import TransactionCategoryAllocation
+                from sqlalchemy import func as _func
+                paired_alloc_sum = (
+                    await session.execute(
+                        select(_func.sum(TransactionCategoryAllocation.amount)).where(
+                            TransactionCategoryAllocation.transaction_id == paired_tx.id
+                        )
+                    )
+                ).scalar_one_or_none()
+                if paired_alloc_sum is not None:
+                    paired_new_amount = Decimal(str(paired_tx.amount)).copy_abs()
+                    paired_stored_sum = Decimal(str(paired_alloc_sum)).quantize(Decimal("0.01"))
+                    if abs(paired_stored_sum - paired_new_amount) >= Decimal("0.01"):
+                        raise ValueError(
+                            "Transfer leg amount changed but its category allocations were not updated. "
+                            "Provide updated category_allocations that sum to the new amount."
+                        )
 
     if splits_payload is not None:
         await split_service.replace_splits(session, tx, splits_payload, user_id)
+
+    if category_allocations_payload is not None:
+        await category_allocation_service.replace_category_allocations(
+            session, tx, category_allocations_payload, user_id
+        )
+    elif "amount" in update_data:
+        # Amount changed but no new allocations supplied. If stored allocations
+        # exist and their sum no longer matches the new amount, reject — silently
+        # keeping stale rows would break the zero-sum guarantee.
+        from app.models.transaction_category_allocation import TransactionCategoryAllocation
+        from sqlalchemy import func as _func
+        alloc_sum_row = (
+            await session.execute(
+                select(_func.sum(TransactionCategoryAllocation.amount)).where(
+                    TransactionCategoryAllocation.transaction_id == tx.id
+                )
+            )
+        ).scalar_one_or_none()
+        if alloc_sum_row is not None:
+            new_amount = Decimal(str(update_data["amount"])).copy_abs()
+            stored_sum = Decimal(str(alloc_sum_row)).quantize(Decimal("0.01"))
+            if abs(stored_sum - new_amount) >= Decimal("0.01"):
+                raise ValueError(
+                    "Transaction amount changed but category allocations were not updated. "
+                    "Provide updated category_allocations that sum to the new amount."
+                )
+
+    await _assert_single_split_mode_stored(session, tx)
 
 
 async def update_transaction(
@@ -1520,10 +1635,14 @@ async def update_transaction(
     apply_to_transfer_pair = update_data.pop("apply_to_transfer_pair", False)
     apply_to = update_data.pop("apply_to", "this")
 
-    # Splits are processed separately after column updates land so the
-    # service can validate against the new amount.
+    # Splits and category allocations are processed separately after column
+    # updates land so the service can validate against the new amount.
     splits_payload = data.splits if "splits" in update_data else None
     update_data.pop("splits", None)
+    category_allocations_payload = (
+        data.category_allocations if "category_allocations" in update_data else None
+    )
+    update_data.pop("category_allocations", None)
 
     # Verify the new account belongs to the workspace before touching the
     # row. When changing the account on one side of a transfer pair,
@@ -1601,12 +1720,14 @@ async def update_transaction(
         if is_anchor:
             row_update = update_data
             row_splits = splits_payload
+            row_allocations = category_allocations_payload
         else:
             # Non-anchor rows only exist in the scoped branch above, where
             # scoped_update is always built.
             assert scoped_update is not None
             row_update = scoped_update
             row_splits = None
+            row_allocations = None
         await _apply_update_to_row(
             session,
             user_id,
@@ -1614,6 +1735,7 @@ async def update_transaction(
             row_update,
             apply_to_transfer_pair,
             row_splits,
+            row_allocations,
         )
 
     # A changed parcel amount makes the stored series total stale, whatever
@@ -1624,7 +1746,7 @@ async def update_transaction(
         await _resync_installment_series_total(session, workspace_id, transaction)
 
     await session.commit()
-    await session.refresh(transaction, ["category", "payee_entity", "splits"])
+    await session.refresh(transaction, ["category", "payee_entity", "splits", "category_allocations"])
     return transaction
 
 
@@ -1813,7 +1935,10 @@ async def bulk_add_to_group(
             Transaction.id.in_(transaction_ids),
             Transaction.workspace_id == workspace_id,
         )
-        .options(selectinload(Transaction.splits))
+        .options(
+            selectinload(Transaction.splits),
+            selectinload(Transaction.category_allocations),
+        )
     )
     txs = txs_result.scalars().all()
 

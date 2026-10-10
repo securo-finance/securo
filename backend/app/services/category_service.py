@@ -12,6 +12,7 @@ from app.models.category_group import CategoryGroup
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.rule import Rule
 from app.models.transaction import Transaction
+from app.models.transaction_category_allocation import TransactionCategoryAllocation
 from app.schemas.category import CategoryCreate, CategoryUpdate
 from app.services.category_group_service import CATEGORY_TO_GROUP, create_default_groups
 
@@ -34,22 +35,54 @@ class CategoryTransferError(ValueError):
 # income/expense — they're excluded from report aggregations like paired
 # transfers are.
 DEFAULT_CATEGORIES_I18N = {
-    "housing":       {"en": "Housing",         "pt-BR": "Moradia",           "pt-PT": "Habitação",             "de": "Wohnen",             "fr": "Logement",                   "nl": "Wonen",                   "sk": "Bývanie", "icon": "house",            "color": "#8B5CF6"},
-    "food":          {"en": "Food & Dining",   "pt-BR": "Alimentação",       "pt-PT": "Alimentação",           "de": "Essen & Trinken",    "fr": "Alimentation & Restaurants", "nl": "Eten & Drinken",          "sk": "Jedlo a reštaurácie", "icon": "utensils-crossed", "color": "#F59E0B"},
-    "transport":     {"en": "Transport",       "pt-BR": "Transporte",        "pt-PT": "Transportes",           "de": "Transport",          "fr": "Transport",                  "nl": "Transport",               "sk": "Doprava", "icon": "car",              "color": "#3B82F6"},
-    "groceries":     {"en": "Groceries",       "pt-BR": "Mercado",           "pt-PT": "Supermercado",          "de": "Lebensmittel",       "fr": "Courses",                    "nl": "Boodschappen",            "sk": "Potraviny", "icon": "shopping-cart",    "color": "#10B981"},
-    "health":        {"en": "Health",          "pt-BR": "Saúde",             "pt-PT": "Saúde",                 "de": "Gesundheit",         "fr": "Santé",                      "nl": "Gezondheid",              "sk": "Zdravie", "icon": "pill",             "color": "#EF4444"},
-    "leisure":       {"en": "Leisure",         "pt-BR": "Lazer",             "pt-PT": "Lazer",                 "de": "Freizeit",           "fr": "Loisirs",                    "nl": "Vrije tijd",              "sk": "Voľný čas", "icon": "gamepad-2",        "color": "#EC4899"},
-    "subscriptions": {"en": "Subscriptions",   "pt-BR": "Assinaturas",       "pt-PT": "Subscrições",           "de": "Abonnements",        "fr": "Abonnements",                "nl": "Abonnementen",            "sk": "Predplatné", "icon": "smartphone",       "color": "#6366F1"},
-    "education":     {"en": "Education",       "pt-BR": "Educação",          "pt-PT": "Educação",              "de": "Bildung",            "fr": "Éducation",                  "nl": "Educatie",                "sk": "Vzdelávanie", "icon": "book-open",        "color": "#22C55E"},
-    "transfers":     {"en": "Transfers",       "pt-BR": "Transferências",    "pt-PT": "Transferências",        "de": "Umbuchungen",        "fr": "Virements",                  "nl": "Overboekingen",           "sk": "Prevody", "icon": "arrow-left-right", "color": "#64748B", "treat_as_transfer": True},
-    "investments":   {"en": "Investments",     "pt-BR": "Investimentos",     "pt-PT": "Investimentos",         "de": "Investitionen",      "fr": "Investissements",            "nl": "Investeringen",           "sk": "Investície", "icon": "trending-up",      "color": "#0EA5E9", "treat_as_transfer": True},
-    "salary":        {"en": "Salary & Income", "pt-BR": "Salário & Renda",   "pt-PT": "Salário & Rendimentos", "de": "Gehalt & Einnahmen", "fr": "Salaire & Revenus",          "nl": "Salaris & Inkomen",       "sk": "Mzda a príjmy", "icon": "banknote",         "color": "#16A34A"},
-    "shopping":      {"en": "Shopping",        "pt-BR": "Compras",           "pt-PT": "Compras",               "de": "Shopping",           "fr": "Achats",                     "nl": "Winkelen",                "sk": "Nákupy", "icon": "shopping-bag",     "color": "#F97316"},
-    "donations":     {"en": "Donations",       "pt-BR": "Doações",           "pt-PT": "Donativos",             "de": "Spenden",            "fr": "Dons",                       "nl": "Donaties",                "sk": "Dary", "icon": "heart-handshake",  "color": "#D946EF"},
-    "personal_care": {"en": "Personal Care",   "pt-BR": "Cuidados Pessoais", "pt-PT": "Cuidados Pessoais",     "de": "Körperpflege",       "fr": "Soins personnels",           "nl": "Persoonlijke verzorging", "sk": "Osobná starostlivosť", "icon": "scissors",         "color": "#F472B6"},
-    "taxes":         {"en": "Taxes & Fees",    "pt-BR": "Impostos & Taxas",  "pt-PT": "Impostos & Taxas",      "de": "Steuern & Gebühren", "fr": "Impôts & Taxes",             "nl": "Belastingen & Heffingen", "sk": "Dane a poplatky", "icon": "landmark",         "color": "#78716C"},
-    "other":         {"en": "Other",           "pt-BR": "Outros",            "pt-PT": "Outros",                "de": "Sonstiges",          "fr": "Autres",                     "nl": "Overig",                  "sk": "Ostatné", "icon": "circle-help",      "color": "#6B7280"},
+    "housing":       {
+        "en": "Housing",         "pt-BR": "Moradia",           "pt-PT": "Habitação",             "de": "Wohnen",             "fr": "Logement",                   "nl": "Wonen",                   "sk": "Bývanie", "icon": "house",            "color": "#8B5CF6"
+    },
+    "food":          {
+        "en": "Food & Dining",   "pt-BR": "Alimentação",       "pt-PT": "Alimentação",           "de": "Essen & Trinken",    "fr": "Alimentation & Restaurants", "nl": "Eten & Drinken",          "sk": "Jedlo a reštaurácie", "icon": "utensils-crossed", "color": "#F59E0B"
+    },
+    "transport":     {
+        "en": "Transport",       "pt-BR": "Transporte",        "pt-PT": "Transportes",           "de": "Transport",          "fr": "Transport",                  "nl": "Transport",               "sk": "Doprava", "icon": "car",              "color": "#3B82F6"
+    },
+    "groceries":     {
+        "en": "Groceries",       "pt-BR": "Mercado",           "pt-PT": "Supermercado",          "de": "Lebensmittel",       "fr": "Courses",                    "nl": "Boodschappen",            "sk": "Potraviny", "icon": "shopping-cart",    "color": "#10B981"
+    },
+    "health":        {
+        "en": "Health",          "pt-BR": "Saúde",             "pt-PT": "Saúde",                 "de": "Gesundheit",         "fr": "Santé",                      "nl": "Gezondheid",              "sk": "Zdravie", "icon": "pill",             "color": "#EF4444"
+    },
+    "leisure":       {
+        "en": "Leisure",         "pt-BR": "Lazer",             "pt-PT": "Lazer",                 "de": "Freizeit",           "fr": "Loisirs",                    "nl": "Vrije tijd",              "sk": "Voľný čas", "icon": "gamepad-2",        "color": "#EC4899"
+    },
+    "subscriptions": {
+        "en": "Subscriptions",   "pt-BR": "Assinaturas",       "pt-PT": "Subscrições",           "de": "Abonnements",        "fr": "Abonnements",                "nl": "Abonnementen",            "sk": "Predplatné", "icon": "smartphone",       "color": "#6366F1"
+    },
+    "education":     {
+        "en": "Education",       "pt-BR": "Educação",          "pt-PT": "Educação",              "de": "Bildung",            "fr": "Éducation",                  "nl": "Educatie",                "sk": "Vzdelávanie", "icon": "book-open",        "color": "#22C55E"
+    },
+    "transfers":     {
+        "en": "Transfers",       "pt-BR": "Transferências",    "pt-PT": "Transferências",        "de": "Umbuchungen",        "fr": "Virements",                  "nl": "Overboekingen",           "sk": "Prevody", "icon": "arrow-left-right", "color": "#64748B", "treat_as_transfer": True
+    },
+    "investments":   {
+        "en": "Investments",     "pt-BR": "Investimentos",     "pt-PT": "Investimentos",         "de": "Investitionen",      "fr": "Investissements",            "nl": "Investeringen",           "sk": "Investície", "icon": "trending-up",      "color": "#0EA5E9", "treat_as_transfer": True
+    },
+    "salary":        {
+        "en": "Salary & Income", "pt-BR": "Salário & Renda",   "pt-PT": "Salário & Rendimentos", "de": "Gehalt & Einnahmen", "fr": "Salaire & Revenus",          "nl": "Salaris & Inkomen",       "sk": "Mzda a príjmy", "icon": "banknote",         "color": "#16A34A", "is_income": True
+    },
+    "shopping":      {
+        "en": "Shopping",        "pt-BR": "Compras",           "pt-PT": "Compras",               "de": "Shopping",           "fr": "Achats",                     "nl": "Winkelen",                "sk": "Nákupy", "icon": "shopping-bag",     "color": "#F97316"
+    },
+    "donations":     {
+        "en": "Donations",       "pt-BR": "Doações",           "pt-PT": "Donativos",             "de": "Spenden",            "fr": "Dons",                       "nl": "Donaties",                "sk": "Dary", "icon": "heart-handshake",  "color": "#D946EF"
+    },
+    "personal_care": {
+        "en": "Personal Care",   "pt-BR": "Cuidados Pessoais", "pt-PT": "Cuidados Pessoais",     "de": "Körperpflege",       "fr": "Soins personnels",           "nl": "Persoonlijke verzorging", "sk": "Osobná starostlivosť", "icon": "scissors",         "color": "#F472B6"
+    },
+    "taxes":         {
+        "en": "Taxes & Fees",    "pt-BR": "Impostos & Taxas",  "pt-PT": "Impostos & Taxas",      "de": "Steuern & Gebühren", "fr": "Impôts & Taxes",             "nl": "Belastingen & Heffingen", "sk": "Dane a poplatky", "icon": "landmark",         "color": "#78716C"
+    },
+    "other":         {
+        "en": "Other",           "pt-BR": "Outros",            "pt-PT": "Outros",                "de": "Sonstiges",          "fr": "Autres",                     "nl": "Overig",                  "sk": "Ostatné", "icon": "circle-help",      "color": "#6B7280"
+    },
 }
 
 
@@ -103,6 +136,7 @@ async def create_default_categories(
             is_system=True,
             group_id=group.id if group else None,
             treat_as_transfer=data.get("treat_as_transfer", False),
+            is_income=data.get("is_income", None),
         )
         session.add(category)
         categories.append(category)
@@ -266,6 +300,7 @@ class CategoryUsage:
     transactions: int = 0
     budgets: int = 0
     recurring_transactions: int = 0
+    category_allocations: int = 0
     rules: list[Rule] = field(default_factory=list)
 
     @property
@@ -274,6 +309,7 @@ class CategoryUsage:
             self.transactions
             or self.budgets
             or self.recurring_transactions
+            or self.category_allocations
             or self.rules
         )
 
@@ -297,6 +333,16 @@ async def get_category_usage(
             )
         )
         counts[key] = int(result.scalar_one())
+
+    alloc_result = await session.execute(
+        select(func.count())
+        .select_from(TransactionCategoryAllocation)
+        .where(
+            TransactionCategoryAllocation.workspace_id == workspace_id,
+            TransactionCategoryAllocation.category_id == category_id,
+        )
+    )
+    counts["category_allocations"] = int(alloc_result.scalar_one())
 
     rules = await get_rules_assigning_category(
         session, workspace_id, category_id, include_inactive=True
@@ -392,6 +438,49 @@ async def _repoint_rules(
         ]
 
 
+async def _merge_category_allocations(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    category_id: uuid.UUID,
+    destination_id: uuid.UUID,
+) -> None:
+    """Transfer allocation rows from one category to another.
+
+    If a transaction already has a destination row, sum amounts and delete the
+    source row. Otherwise update category_id in place.
+    """
+    result = await session.execute(
+        select(TransactionCategoryAllocation).where(
+            TransactionCategoryAllocation.workspace_id == workspace_id,
+            TransactionCategoryAllocation.category_id == category_id,
+        )
+    )
+    source_rows = result.scalars().all()
+    if not source_rows:
+        return
+
+    # Load destination rows that share a transaction_id with source rows
+    source_tx_ids = [r.transaction_id for r in source_rows]
+    dest_result = await session.execute(
+        select(TransactionCategoryAllocation).where(
+            TransactionCategoryAllocation.workspace_id == workspace_id,
+            TransactionCategoryAllocation.category_id == destination_id,
+            TransactionCategoryAllocation.transaction_id.in_(source_tx_ids),
+        )
+    )
+    dest_by_tx: dict[uuid.UUID, TransactionCategoryAllocation] = {
+        r.transaction_id: r for r in dest_result.scalars().all()
+    }
+
+    for src in source_rows:
+        dest = dest_by_tx.get(src.transaction_id)
+        if dest is not None:
+            dest.amount += src.amount
+            await session.delete(src)
+        else:
+            src.category_id = destination_id
+
+
 async def _transfer_category_references(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -409,6 +498,7 @@ async def _transfer_category_references(
             .values(category_id=destination_id)
         )
     await _merge_budgets(session, workspace_id, category_id, destination_id)
+    await _merge_category_allocations(session, workspace_id, category_id, destination_id)
     await _repoint_rules(session, workspace_id, category_id, destination_id)
 
 

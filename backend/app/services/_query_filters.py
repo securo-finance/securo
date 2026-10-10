@@ -418,6 +418,100 @@ async def owner_split_offset_by_category(
     return out
 
 
+async def category_allocation_deltas(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    month_start: date,
+    month_end: date,
+    use_effective_date: bool = False,
+    primary_currency: Optional[str] = None,
+    workspace_id: Optional[uuid.UUID] = None,
+    debit_only: bool = False,
+) -> dict:
+    """Return per-category adjustments caused by category splits.
+
+    A transaction with category C and allocations C1=100, C2=50 means:
+    - subtract 150 from C (the parent category)
+    - add 100 to C1 and 50 to C2
+
+    Return value: {category_id: signed_float_delta}
+      debit allocations → positive (expense) delta on allocation category
+      credit allocations → negative (income) delta on allocation category
+    Parent category subtracts the same signed amount.
+
+    When `debit_only=True`, only debit transactions are included. Pass this
+    for expense-only consumers (budget, spending chart) to avoid income
+    allocation deltas polluting debit-only maps.
+
+    When `primary_currency` is given, amounts are FX-converted.
+    """
+    from app.models.transaction_category_allocation import TransactionCategoryAllocation
+
+    date_col = func.coalesce(
+        Transaction.effective_bill_date,
+        Transaction.effective_date if use_effective_date else Transaction.date,
+    )
+
+    type_filter = [Transaction.type == "debit"] if debit_only else []
+
+    result = await session.execute(
+        select(
+            Transaction.category_id,
+            TransactionCategoryAllocation.category_id,
+            Transaction.type,
+            Transaction.currency,
+            func.sum(TransactionCategoryAllocation.amount),
+        )
+        .join(Transaction, TransactionCategoryAllocation.transaction_id == Transaction.id)
+        .where(
+            *(
+                [Transaction.workspace_id == workspace_id]
+                if workspace_id is not None
+                else [Transaction.user_id == user_id]
+            ),
+            *type_filter,
+            Transaction.source != "opening_balance",
+            date_col >= month_start,
+            date_col < month_end,
+            date_col <= app_today(),
+            Transaction.status == "posted",
+            counts_as_user_pnl(),
+        )
+        .group_by(
+            Transaction.category_id,
+            TransactionCategoryAllocation.category_id,
+            Transaction.type,
+            Transaction.currency,
+        )
+    )
+
+    out: dict = {}
+
+    if primary_currency is None:
+        for parent_cat_id, alloc_cat_id, tx_type, _cur, total in result.all():
+            if not total:
+                continue
+            signed = float(total) if tx_type == "debit" else -float(total)
+            # parent_cat_id may be None (uncategorized) — key None so callers can handle it
+            out[parent_cat_id] = out.get(parent_cat_id, 0.0) - signed
+            out[alloc_cat_id] = out.get(alloc_cat_id, 0.0) + signed
+        return out
+
+    from decimal import Decimal as _Decimal
+
+    from app.services.fx_rate_service import convert as _convert
+
+    for parent_cat_id, alloc_cat_id, tx_type, cur, total in result.all():
+        if not total:
+            continue
+        converted, _ = await _convert(session, _Decimal(str(total)), cur, primary_currency)
+        signed = float(converted) if tx_type == "debit" else -float(converted)
+        # parent_cat_id may be None (uncategorized) — key None so callers can handle it
+        out[parent_cat_id] = out.get(parent_cat_id, 0.0) - signed
+        out[alloc_cat_id] = out.get(alloc_cat_id, 0.0) + signed
+    return out
+
+
 async def viewer_shared_pnl(
     session: AsyncSession,
     user_id: uuid.UUID,

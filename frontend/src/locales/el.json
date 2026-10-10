@@ -1332,7 +1332,8 @@
     "invoiceBadgeTooltip": "Αυτή η συναλλαγή εξοφλεί ένα τιμολόγιο. Ανοίξτε το.",
     "suggestionBadge": "Ερώτηση",
     "suggestionBadgeTooltip": "Μια πληρωμή μπορεί να εξοφλεί ένα τιμολόγιο. Ανοίξτε την ουρά για να απαντήσετε.",
-    "clearGroupFilter": "Κατάργηση φίλτρου ομάδας"
+    "clearGroupFilter": "Κατάργηση φίλτρου ομάδας",
+    "splitByCategory": "Κατανεμημένο"
   },
   "budgets": {
     "title": "Προϋπολογισμοί",
@@ -2257,6 +2258,17 @@
       "project": "Έργο",
       "client": "Πελάτης",
       "other": "Άλλο"
+    },
+    "categorySplits": {
+      "title": "Κατανομή ανά κατηγορία",
+      "addRow": "Προσθήκη κατηγορίας",
+      "category": "Κατηγορία",
+      "amount": "Ποσό",
+      "remove": "Αφαίρεση",
+      "sum": "Σύνολο: {{sum}} / {{total}} {{currency}}",
+      "badge": "Κατανεμημένο",
+      "modeAmongPeople": "Μεταξύ ατόμων",
+      "modeByCategory": "Ανά κατηγορία"
     }
   },
   "privacy": {

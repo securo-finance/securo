@@ -1148,7 +1148,8 @@
     "invoiceBadgeTooltip": "Deze transactie rekent een factuur af. Openen.",
     "suggestionBadge": "Vraag",
     "suggestionBadgeTooltip": "Een betaling kan deze factuur voldoen. Open de wachtrij om te antwoorden.",
-    "clearGroupFilter": "Groepsfilter wissen"
+    "clearGroupFilter": "Groepsfilter wissen",
+    "splitByCategory": "Gesplitst"
   },
   "accounts": {
     "title": "Rekeningen",
@@ -2259,7 +2260,18 @@
       "other": "Anders"
     },
     "confirmDeleteTitle": "Groep verwijderen?",
-    "confirmDeleteDescription": "De groep \"{{name}}\" en de leden ervan worden permanent verwijderd. Groepen waarnaar wordt verwezen door transactiesplitsingen of afrekeningen kunnen pas worden verwijderd als die verwijzingen zijn weggehaald. Deze actie kan niet ongedaan worden gemaakt."
+    "confirmDeleteDescription": "De groep \"{{name}}\" en de leden ervan worden permanent verwijderd. Groepen waarnaar wordt verwezen door transactiesplitsingen of afrekeningen kunnen pas worden verwijderd als die verwijzingen zijn weggehaald. Deze actie kan niet ongedaan worden gemaakt.",
+    "categorySplits": {
+      "title": "Opsplitsen per categorie",
+      "addRow": "Categorie toevoegen",
+      "category": "Categorie",
+      "amount": "Bedrag",
+      "remove": "Verwijderen",
+      "sum": "Som: {{sum}} / {{total}} {{currency}}",
+      "badge": "Gesplitst",
+      "modeAmongPeople": "Onder mensen",
+      "modeByCategory": "Per categorie"
+    }
   },
   "privacy": {
     "hide": "Waarden verbergen",

@@ -1150,7 +1150,8 @@
     "invoiceBadgeTooltip": "Cette transaction solde une facture. Ouvrir.",
     "suggestionBadge": "Question",
     "suggestionBadgeTooltip": "Un paiement peut solder cette facture. Ouvrez la file pour répondre.",
-    "clearGroupFilter": "Effacer le filtre de groupe"
+    "clearGroupFilter": "Effacer le filtre de groupe",
+    "splitByCategory": "Réparti"
   },
   "accounts": {
     "title": "Comptes",
@@ -2261,6 +2262,17 @@
       "project": "Projet",
       "client": "Client",
       "other": "Autre"
+    },
+    "categorySplits": {
+      "title": "Répartir par catégorie",
+      "addRow": "Ajouter une catégorie",
+      "category": "Catégorie",
+      "amount": "Montant",
+      "remove": "Supprimer",
+      "sum": "Somme : {{sum}} / {{total}} {{currency}}",
+      "badge": "Réparti",
+      "modeAmongPeople": "Entre personnes",
+      "modeByCategory": "Par catégorie"
     }
   },
   "privacy": {
