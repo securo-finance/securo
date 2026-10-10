@@ -136,7 +136,7 @@ async def create_default_categories(
             is_system=True,
             group_id=group.id if group else None,
             treat_as_transfer=data.get("treat_as_transfer", False),
-            is_income=data.get("is_income", False),
+            is_income=data.get("is_income", None),
         )
         session.add(category)
         categories.append(category)

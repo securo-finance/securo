@@ -28,7 +28,7 @@ class Category(Base):
     is_hidden: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     # Whether this category represents an income source (True) or expense (False).
-    is_income: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    is_income: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True, default=None)
 
     # Flag for "money that moves rather than money earned or spent".
     # Transactions in these categories are excluded from income/expense
