@@ -55,16 +55,18 @@ export function TransactionSplitsSection({
   value,
   onChange,
   onValidityChange,
+  showToggle = true,
 }: {
   amount: number
   currency: string
   value: TransactionSplitsInput | null
   onChange: (next: TransactionSplitsInput | null) => void
   onValidityChange?: (valid: boolean) => void
+  showToggle?: boolean
 }) {
   const { t } = useTranslation()
   const locale = useDisplayLocale()
-  const [enabled, setEnabled] = useState(value !== null)
+  const [enabled, setEnabled] = useState(showToggle ? value !== null : true)
   const [groupId, setGroupId] = useState<string>('')
   const [shareType, setShareType] = useState<ShareType>(value?.share_type ?? 'equal')
   const [rows, setRows] = useState<RowState[]>([])
@@ -281,16 +283,18 @@ export function TransactionSplitsSection({
 
   return (
     <div className="space-y-3 pt-2 border-t border-border">
-      <label className="text-sm font-medium inline-flex items-center gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={enabled}
-          onChange={(e) => setEnabled(e.target.checked)}
-          className="h-4 w-4 rounded border-border accent-primary"
-        />
-        <Users size={14} />
-        {t('splitGroups.splitTransaction')}
-      </label>
+      {showToggle && (
+        <label className="text-sm font-medium inline-flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => setEnabled(e.target.checked)}
+            className="h-4 w-4 rounded border-border accent-primary"
+          />
+          <Users size={14} />
+          {t('splitGroups.splitTransaction')}
+        </label>
+      )}
 
       {enabled && (
         <div className="space-y-3 pl-6">

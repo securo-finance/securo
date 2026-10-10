@@ -27,7 +27,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { AlertTriangle, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ChevronLeft, Download, Eye, EyeClosed, Paperclip, Upload, X, FileText, Plus, Unlink, SlidersHorizontal, ListPlus, Check, SplitSquareHorizontal } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1285,63 +1285,82 @@ function TransactionForm({
           (the share would settle a debt that this debit is already
           settling). Hide the section entirely in that case. */}
       {transaction?.source !== 'settlement' && (
-        <div className="space-y-2">
-          {/* Split mode toggle */}
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                if (splitMode === 'people') {
-                  setSplitMode(null)
+        <div className="space-y-2 pt-2 border-t border-border">
+          {/* Outer split toggle */}
+          <label className="text-sm font-medium inline-flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={splitMode !== null}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  setSplitMode('category')
+                  setSplits(null)
                   setSplitsValid(true)
                 } else {
-                  setSplitMode('people')
+                  setSplitMode(null)
+                  setSplits(null)
+                  setSplitsValid(true)
                   setCategoryAllocations(null)
                   setCategorySplitsValid(true)
                 }
               }}
-              className={`text-xs px-3 py-1 rounded-full border transition-colors ${splitMode === 'people' ? 'bg-primary text-primary-foreground border-primary' : 'border-muted-foreground/30 text-muted-foreground'}`}
-            >
-              {t('splitGroups.categorySplits.modeAmongPeople')}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (splitMode === 'category') {
-                  setSplitMode(null)
-                  setCategorySplitsValid(true)
-                } else {
-                  setSplitMode('category')
-                  setSplits(null)
-                  setSplitsValid(true)
-                }
-              }}
-              className={`text-xs px-3 py-1 rounded-full border transition-colors ${splitMode === 'category' ? 'bg-primary text-primary-foreground border-primary' : 'border-muted-foreground/30 text-muted-foreground'}`}
-            >
-              {t('splitGroups.categorySplits.modeByCategory')}
-            </button>
-          </div>
-
-          {splitMode === 'people' && (
-            <TransactionSplitsSection
-              amount={parseAmountInput(amount, displayLocale) ?? 0}
-              currency={currency}
-              value={splits}
-              onChange={setSplits}
-              onValidityChange={setSplitsValid}
+              className="h-4 w-4 rounded border-border accent-primary"
             />
-          )}
+            <SplitSquareHorizontal size={14} />
+            {t('splitGroups.splitTransaction')}
+          </label>
 
-          {splitMode === 'category' && (
-            <TransactionCategorySplitsSection
-              amount={parseAmountInput(amount, displayLocale) ?? 0}
-              currency={currency}
-              value={categoryAllocations}
-              onChange={setCategoryAllocations}
-              onValidityChange={setCategorySplitsValid}
-              categories={categories}
-              categoryGroups={categoryGroups}
-            />
+          {splitMode !== null && (
+            <div className="pl-6 space-y-3">
+              {/* Mode pills */}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSplitMode('people')
+                    setCategoryAllocations(null)
+                    setCategorySplitsValid(true)
+                  }}
+                  className={`text-xs px-3 py-1 rounded-full border transition-colors ${splitMode === 'people' ? 'bg-primary text-primary-foreground border-primary' : 'border-muted-foreground/30 text-muted-foreground'}`}
+                >
+                  {t('splitGroups.categorySplits.modeAmongPeople')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSplitMode('category')
+                    setSplits(null)
+                    setSplitsValid(true)
+                  }}
+                  className={`text-xs px-3 py-1 rounded-full border transition-colors ${splitMode === 'category' ? 'bg-primary text-primary-foreground border-primary' : 'border-muted-foreground/30 text-muted-foreground'}`}
+                >
+                  {t('splitGroups.categorySplits.modeByCategory')}
+                </button>
+              </div>
+
+              {splitMode === 'people' && (
+                <TransactionSplitsSection
+                  amount={parseAmountInput(amount, displayLocale) ?? 0}
+                  currency={currency}
+                  value={splits}
+                  onChange={setSplits}
+                  onValidityChange={setSplitsValid}
+                  showToggle={false}
+                />
+              )}
+
+              {splitMode === 'category' && (
+                <TransactionCategorySplitsSection
+                  amount={parseAmountInput(amount, displayLocale) ?? 0}
+                  currency={currency}
+                  value={categoryAllocations}
+                  onChange={setCategoryAllocations}
+                  onValidityChange={setCategorySplitsValid}
+                  categories={categories}
+                  categoryGroups={categoryGroups}
+                />
+              )}
+            </div>
           )}
         </div>
       )}

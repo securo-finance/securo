@@ -84,7 +84,7 @@ export function TransactionCategorySplitsSection({
   }
 
   return (
-    <div className="space-y-2 rounded-md border p-3">
+    <div className="space-y-2">
       <div className="text-sm font-medium">{t('splitGroups.categorySplits.title')}</div>
 
       <div className="space-y-2">
