@@ -190,7 +190,10 @@ export default function AccountsPage() {
       setEditingAccount(null)
       toast.success(t('accounts.updated'))
     },
-    onError: () => toast.error(t('common.error')),
+    onError: (err) => {
+      const detail = axios.isAxiosError(err) ? err.response?.data?.detail : null
+      toast.error(typeof detail === 'string' ? detail : t('common.error'))
+    },
   })
 
   const deleteMutation = useMutation({

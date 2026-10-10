@@ -308,6 +308,9 @@ async def update_account(
 
     update_data = data.model_dump(exclude_unset=True)
     balance_date = update_data.pop("balance_date", None)
+    currency_changed = (
+        "currency" in update_data and update_data["currency"] != account.currency
+    )
 
     # Track whether we need to recompute effective_date for all transactions.
     # Changes to the CC cycle days shift which bill each historical purchase
@@ -376,8 +379,36 @@ async def update_account(
         await session.refresh(account)
         return account
 
+    if currency_changed:
+        # The account currency also determines how its opening balance is
+        # interpreted. Preserve that amount in the new currency, but don't
+        # silently relabel a ledger that already contains real transactions.
+        existing_transactions = await session.execute(
+            select(Transaction.id)
+            .where(
+                Transaction.account_id == account_id,
+                Transaction.source != "opening_balance",
+            )
+            .limit(1)
+        )
+        if existing_transactions.scalar_one_or_none() is not None:
+            raise ValueError("Cannot change account currency after transactions exist")
+
     for key, value in update_data.items():
         setattr(account, key, value)
+
+    if currency_changed:
+        opening_result = await session.execute(
+            select(Transaction).where(
+                Transaction.account_id == account_id,
+                Transaction.source == "opening_balance",
+            )
+        )
+        opening_tx = opening_result.scalar_one_or_none()
+        if opening_tx:
+            opening_tx.currency = account.currency
+            opening_tx.amount_primary = None
+            opening_tx.fx_rate_used = None
 
     if account.type != "credit_card":
         account.credit_limit = None

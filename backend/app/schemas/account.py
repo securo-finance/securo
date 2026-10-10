@@ -33,6 +33,7 @@ class AccountUpdate(BaseModel):
     type: Optional[str] = None
     balance: Optional[Decimal] = None
     balance_date: Optional[date] = None
+    currency: Optional[str] = None
     credit_limit: Optional[Decimal] = None
     statement_close_day: Optional[int] = None
     payment_due_day: Optional[int] = None
