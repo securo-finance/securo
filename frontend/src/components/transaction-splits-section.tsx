@@ -188,11 +188,17 @@ export function TransactionSplitsSection({
     const groupChanged = lastGroupIdRef.current !== group.id
     lastGroupIdRef.current = group.id
 
+    // Capture synchronously — hydratedRef.current is set to true right after
+    // enqueuing setRows, so if we read it inside the updater (which runs
+    // asynchronously during the next render) it would already be true and
+    // we'd lose the seed on first hydration.
+    const wasHydrated = hydratedRef.current
+    hydratedRef.current = true
+
     setRows((prevRows) => {
       // If first hydration or switched groups, rebuild completely
-      if (!hydratedRef.current || groupChanged) {
-        const source = hydratedRef.current ? null : seedRef.current
-        return buildRows(group, source)
+      if (!wasHydrated || groupChanged) {
+        return buildRows(group, wasHydrated ? null : seedRef.current)
       }
 
       // Otherwise, merge new group members into existing rows state to preserve user selections
@@ -208,8 +214,6 @@ export function TransactionSplitsSection({
         }
       })
     })
-
-    hydratedRef.current = true
   }, [group])
 
   // Push state up whenever it changes meaningfully.
