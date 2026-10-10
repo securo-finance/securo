@@ -16,6 +16,7 @@ from typing import Optional
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.category import Category
 from app.models.transaction import Transaction
 from app.models.transaction_category_allocation import TransactionCategoryAllocation
 from app.schemas.transaction_category_allocation import (
@@ -93,6 +94,24 @@ async def replace_category_allocations(
 
     if not payload.allocations:
         return
+
+    # Validate every allocation category belongs to the transaction's workspace.
+    # The FK only proves the row exists somewhere; it does not enforce cross-workspace isolation.
+    allocation_category_ids = [r.category_id for r in payload.allocations]
+    existing = (
+        await session.execute(
+            select(Category.id).where(
+                Category.id.in_(allocation_category_ids),
+                Category.workspace_id == transaction.workspace_id,
+            )
+        )
+    ).scalars().all()
+    found_ids = set(existing)
+    missing = [str(cid) for cid in allocation_category_ids if cid not in found_ids]
+    if missing:
+        raise ValueError(
+            f"Category IDs not found in this workspace: {', '.join(missing)}"
+        )
 
     for category_id, amount, notes, position in _materialize(transaction.amount, payload):
         session.add(

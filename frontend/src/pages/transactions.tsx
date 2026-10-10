@@ -1637,7 +1637,7 @@ export default function TransactionsPage() {
                               {cat ? cat.name : <span className="italic">{t('transactions.noCategory')}</span>}
                             </span>
                             <span className="text-xs tabular-nums text-muted-foreground">
-                              {formatCurrency(Number(alloc.amount), tx.currency, locale)}
+                              {mask(formatCurrency(Number(alloc.amount), tx.currency, locale))}
                             </span>
                           </div>
                         </TableCell>

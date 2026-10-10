@@ -844,6 +844,17 @@ async def get_spending_by_category(
             for cat_uuid, delta in alloc_deltas.items():
                 if delta == 0 or cat_uuid is None:
                     continue
+                # get_spending_by_category is debit-only. Credit allocations produce
+                # positive deltas on the parent and negative on alloc categories — both
+                # wrong here. Only apply positive deltas (debit re-attribution).
+                if delta < 0:
+                    if cat_uuid is not None:
+                        cat_id = str(cat_uuid)
+                        if cat_id in spending_map:
+                            spending_map[cat_id]["total"] += delta
+                            if spending_map[cat_id]["total"] <= 0:
+                                spending_map.pop(cat_id)
+                    continue
                 cat_id = str(cat_uuid)
                 if cat_id not in spending_map and delta > 0:
                     if cat_id not in alloc_cat_meta_cache:

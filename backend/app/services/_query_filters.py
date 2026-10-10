@@ -457,11 +457,10 @@ async def category_allocation_deltas(
         )
         .join(Transaction, TransactionCategoryAllocation.transaction_id == Transaction.id)
         .where(
-            Transaction.user_id == user_id,
             *(
                 [Transaction.workspace_id == workspace_id]
                 if workspace_id is not None
-                else []
+                else [Transaction.user_id == user_id]
             ),
             Transaction.source != "opening_balance",
             date_col >= month_start,

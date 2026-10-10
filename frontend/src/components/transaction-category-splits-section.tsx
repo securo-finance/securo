@@ -3,8 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useDisplayLocale } from '@/hooks/use-display-locale'
 import { Trash2, Plus } from 'lucide-react'
 
-import { formatCurrency } from '@/lib/format'
-import { parseAmountInput } from '@/lib/format'
+import { formatCurrency, formatAmountInput, parseAmountInput } from '@/lib/format'
 import type { CategoryAllocationsInput } from '@/types'
 import type { Category, CategoryGroup } from '@/types'
 import { Input } from '@/components/ui/input'
@@ -20,7 +19,7 @@ const BLANK_ROW: AllocationRow = { category_id: '', amount: '' }
 
 function buildRows(value: CategoryAllocationsInput | null): AllocationRow[] {
   if (!value || value.allocations.length === 0) return [{ ...BLANK_ROW }, { ...BLANK_ROW }]
-  return value.allocations.map((a) => ({ category_id: a.category_id, amount: String(a.amount) }))
+  return value.allocations.map((a) => ({ category_id: a.category_id, amount: a.amount }))
 }
 
 export function TransactionCategorySplitsSection({
@@ -51,9 +50,12 @@ export function TransactionCategorySplitsSection({
     return acc + (n ?? 0)
   }, 0)
 
+  const categoryIds = rows.map((r) => r.category_id).filter((id) => id !== '')
   const isValid =
     rows.length >= 2 &&
     rows.every((r) => r.category_id !== '') &&
+    rows.every((r) => (parseAmountInput(r.amount, displayLocale) ?? 0) > 0) &&
+    new Set(categoryIds).size === categoryIds.length &&
     Math.abs(rowSum - total) < 0.01
 
   useEffect(() => {

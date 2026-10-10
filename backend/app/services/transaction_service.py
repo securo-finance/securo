@@ -705,6 +705,44 @@ def _assert_single_split_mode(
         )
 
 
+async def _assert_single_split_mode_stored(
+    session: AsyncSession,
+    tx: "Transaction",
+) -> None:
+    """Raise ValueError if the stored transaction has both split types after replacements.
+
+    Covers PATCH gaps: a payload that touches only one side (splits=None or
+    category_allocations=None) leaves the other side's stored rows untouched,
+    so a payload-only check can miss the conflict.  This check runs after both
+    replace operations so it reflects the final DB state.
+    """
+    from app.models.transaction_category_allocation import TransactionCategoryAllocation
+    from app.models.transaction_split import TransactionSplit
+
+    has_splits = bool(
+        (
+            await session.execute(
+                select(TransactionSplit.id)
+                .where(TransactionSplit.transaction_id == tx.id)
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+    )
+    has_allocs = bool(
+        (
+            await session.execute(
+                select(TransactionCategoryAllocation.id)
+                .where(TransactionCategoryAllocation.transaction_id == tx.id)
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+    )
+    if has_splits and has_allocs:
+        raise ValueError(
+            "A transaction cannot have both people-splits and category allocations at once"
+        )
+
+
 async def create_transaction(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -1537,8 +1575,29 @@ async def _apply_update_to_row(
         await category_allocation_service.replace_category_allocations(
             session, tx, category_allocations_payload, user_id
         )
+    elif "amount" in update_data:
+        # Amount changed but no new allocations supplied. If stored allocations
+        # exist and their sum no longer matches the new amount, reject — silently
+        # keeping stale rows would break the zero-sum guarantee.
+        from app.models.transaction_category_allocation import TransactionCategoryAllocation
+        from sqlalchemy import func as _func
+        alloc_sum_row = (
+            await session.execute(
+                select(_func.sum(TransactionCategoryAllocation.amount)).where(
+                    TransactionCategoryAllocation.transaction_id == tx.id
+                )
+            )
+        ).scalar_one_or_none()
+        if alloc_sum_row is not None:
+            new_amount = Decimal(str(update_data["amount"])).copy_abs()
+            stored_sum = Decimal(str(alloc_sum_row)).quantize(Decimal("0.01"))
+            if abs(stored_sum - new_amount) >= Decimal("0.01"):
+                raise ValueError(
+                    "Transaction amount changed but category allocations were not updated. "
+                    "Provide updated category_allocations that sum to the new amount."
+                )
 
-    _assert_single_split_mode(splits_payload, category_allocations_payload)
+    await _assert_single_split_mode_stored(session, tx)
 
 
 async def update_transaction(
