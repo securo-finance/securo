@@ -853,27 +853,73 @@ async def get_income_expenses_report(
 
     # Re-attribute composition for category-split transactions.
     if not filtered:
-        alloc_deltas = await category_allocation_deltas(
-            session, user_id, start, axis_end + timedelta(days=1),
-            use_effective_date=accounting_mode == "accrual",
-            primary_currency=primary_currency,
+        from app.models.transaction_category_allocation import TransactionCategoryAllocation as _TCA_comp_
+
+        alloc_comp_result = await session.execute(
+            select(
+                Transaction.category_id,
+                _TCA_comp_.category_id,
+                Category.name,
+                Category.color,
+                Transaction.type,
+                Transaction.currency,
+                func.sum(_TCA_comp_.amount),
+            )
+            .select_from(_TCA_comp_)
+            .join(Transaction, _TCA_comp_.transaction_id == Transaction.id)
+            .outerjoin(Category, _TCA_comp_.category_id == Category.id)
+            .where(
+                Transaction.user_id == user_id,
+                Transaction.workspace_id == workspace_id,
+                report_date >= start,
+                report_date <= axis_end,
+                Transaction.source != "opening_balance",
+                Transaction.status == "posted",
+                counts_as_user_pnl(),
+            )
+            .group_by(
+                Transaction.category_id,
+                _TCA_comp_.category_id,
+                Category.name,
+                Category.color,
+                Transaction.type,
+                Transaction.currency,
+            )
         )
-        for cat_uuid, delta in alloc_deltas.items():
-            if delta == 0:
+        _alloc_cat_meta: dict[str, dict] = {}
+        for parent_cat_id, alloc_cat_id, alloc_cat_name, alloc_cat_color, tx_type, currency, raw_total in alloc_comp_result.all():
+            if not raw_total:
                 continue
-            cat_key = str(cat_uuid) if cat_uuid else "uncategorized"
-            group = "expenses" if delta > 0 else "income"
-            comp_key = (cat_key, group)
-            if comp_key in comp_map:
-                comp_map[comp_key]["value"] += delta
-                if comp_map[comp_key]["value"] <= 0:
-                    comp_map.pop(comp_key)
-            elif delta > 0:
-                # Allocation target category has no base spending yet — add it.
-                comp_map[comp_key] = {
-                    "label": cat_key,
-                    "color": "#6B7280",
-                    "value": delta,
+            converted_dec, _ = await fx_convert(
+                session, Decimal(str(raw_total)), currency, primary_currency,
+            )
+            val = float(converted_dec)
+            signed = val if tx_type == "debit" else -val
+            alloc_group = "expenses" if signed > 0 else "income"
+
+            # Subtract from parent category (handles null parent → uncategorized)
+            parent_key_str = str(parent_cat_id) if parent_cat_id is not None else "uncategorized"
+            parent_comp_key = (parent_key_str, alloc_group)
+            if parent_comp_key in comp_map:
+                comp_map[parent_comp_key]["value"] -= abs(signed)
+                if comp_map[parent_comp_key]["value"] <= 0:
+                    comp_map.pop(parent_comp_key)
+
+            # Add to allocation category
+            alloc_key_str = str(alloc_cat_id)
+            alloc_comp_key = (alloc_key_str, alloc_group)
+            if alloc_comp_key in comp_map:
+                comp_map[alloc_comp_key]["value"] += abs(signed)
+            elif signed > 0:
+                if alloc_key_str not in _alloc_cat_meta:
+                    _alloc_cat_meta[alloc_key_str] = {
+                        "label": alloc_cat_name if alloc_cat_name else alloc_key_str,
+                        "color": alloc_cat_color if alloc_cat_color else "#6B7280",
+                    }
+                comp_map[alloc_comp_key] = {
+                    "label": _alloc_cat_meta[alloc_key_str]["label"],
+                    "color": _alloc_cat_meta[alloc_key_str]["color"],
+                    "value": abs(signed),
                 }
 
     # Investment-style outflows: transactions in `treat_as_transfer` categories

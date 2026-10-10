@@ -485,8 +485,8 @@ async def category_allocation_deltas(
             if not total:
                 continue
             signed = float(total) if tx_type == "debit" else -float(total)
-            if parent_cat_id is not None:
-                out[parent_cat_id] = out.get(parent_cat_id, 0.0) - signed
+            # parent_cat_id may be None (uncategorized) — key None so callers can handle it
+            out[parent_cat_id] = out.get(parent_cat_id, 0.0) - signed
             out[alloc_cat_id] = out.get(alloc_cat_id, 0.0) + signed
         return out
 
@@ -499,8 +499,8 @@ async def category_allocation_deltas(
             continue
         converted, _ = await _convert(session, _Decimal(str(total)), cur, primary_currency)
         signed = float(converted) if tx_type == "debit" else -float(converted)
-        if parent_cat_id is not None:
-            out[parent_cat_id] = out.get(parent_cat_id, 0.0) - signed
+        # parent_cat_id may be None (uncategorized) — key None so callers can handle it
+        out[parent_cat_id] = out.get(parent_cat_id, 0.0) - signed
         out[alloc_cat_id] = out.get(alloc_cat_id, 0.0) + signed
     return out
 
