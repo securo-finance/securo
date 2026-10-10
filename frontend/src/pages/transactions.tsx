@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, Fragment } from 'react'
 import { useRegisterPageChatContext } from '@/lib/page-chat-context'
 import { getAccountName } from '@/lib/account-utils'
 import { AccountIcon } from '@/components/account-icon'
@@ -1243,6 +1243,8 @@ export default function TransactionsPage() {
           <TableCell key={col.id} style={widthStyle} className={baseClass}>
             {tx.category ? (
               <span className="text-sm text-muted-foreground">{tx.category.name}</span>
+            ) : tx.category_allocations && tx.category_allocations.length > 0 ? (
+              <span className="text-xs text-muted-foreground italic">~ {t('transactions.splitByCategory')}</span>
             ) : (
               <span className="text-xs text-muted-foreground italic">{t('transactions.noCategory')}</span>
             )}
@@ -1576,42 +1578,73 @@ export default function TransactionsPage() {
             </TableHeader>
             <TableBody>
               {filteredItems.map((tx) => (
-                <TableRow
-                  key={tx.id}
-                  ref={tx.id === highlightId ? highlightedRowRef : undefined}
-                  className={`hover:bg-muted border-b border-border last:border-0 ${
-                    selectedIds.has(tx.id) ? 'bg-primary/5' : ''
-                  } ${tx.is_shared || !canWrite ? 'cursor-default' : 'cursor-pointer'}`}
-                  onClick={() => {
-                    if (tx.is_shared) {
-                      // Owned by another user — view in the group context instead.
-                      if (tx.group_id) navigate(`/groups/${tx.group_id}`)
-                      return
-                    }
-                    if (!canWrite) return
-                    setEditingTx(tx)
-                    setDialogOpen(true)
-                  }}
-                >
-                  <TableCell style={{ width: 40, minWidth: 40 }} className="py-2.5 pl-4 pr-0">
-                    {/* Bulk operations are scoped to user.id so they
-                        silently skip shared rows — hide the checkbox
-                        on those to avoid the dead-end UX. */}
-                    {canWrite && !tx.is_shared && (
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(tx.id)}
-                        onChange={() => {}}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          toggleSelect(tx.id, e.shiftKey)
+                <Fragment key={tx.id}>
+                  <TableRow
+                    ref={tx.id === highlightId ? highlightedRowRef : undefined}
+                    className={`hover:bg-muted border-b border-border ${
+                      tx.category_allocations && tx.category_allocations.length > 0 ? '' : 'last:border-0'
+                    } ${
+                      selectedIds.has(tx.id) ? 'bg-primary/5' : ''
+                    } ${tx.is_shared || !canWrite ? 'cursor-default' : 'cursor-pointer'}`}
+                    onClick={() => {
+                      if (tx.is_shared) {
+                        // Owned by another user — view in the group context instead.
+                        if (tx.group_id) navigate(`/groups/${tx.group_id}`)
+                        return
+                      }
+                      if (!canWrite) return
+                      setEditingTx(tx)
+                      setDialogOpen(true)
+                    }}
+                  >
+                    <TableCell style={{ width: 40, minWidth: 40 }} className="py-2.5 pl-4 pr-0">
+                      {/* Bulk operations are scoped to user.id so they
+                          silently skip shared rows — hide the checkbox
+                          on those to avoid the dead-end UX. */}
+                      {canWrite && !tx.is_shared && (
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(tx.id)}
+                          onChange={() => {}}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            toggleSelect(tx.id, e.shiftKey)
+                          }}
+                          className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
+                        />
+                      )}
+                    </TableCell>
+                    {grid.visibleColumns.map(col => renderBodyCell(col, tx))}
+                  </TableRow>
+                  {tx.category_allocations && tx.category_allocations.length > 0 && tx.category_allocations.map((alloc, i) => {
+                    const cat = categoriesList?.find(c => c.id === alloc.category_id)
+                    const isLast = i === tx.category_allocations!.length - 1
+                    return (
+                      <TableRow
+                        key={alloc.id}
+                        className={`border-b border-border/50 ${isLast ? 'last:border-0' : ''} bg-muted/20 hover:bg-muted/40 ${!canWrite ? 'cursor-default' : 'cursor-pointer'}`}
+                        onClick={() => {
+                          if (!canWrite) return
+                          setEditingTx(tx)
+                          setDialogOpen(true)
                         }}
-                        className="h-4 w-4 rounded border-border accent-primary cursor-pointer"
-                      />
-                    )}
-                  </TableCell>
-                  {grid.visibleColumns.map(col => renderBodyCell(col, tx))}
-                </TableRow>
+                      >
+                        <TableCell style={{ width: 40, minWidth: 40 }} className="py-1.5 pl-4 pr-0" />
+                        <TableCell colSpan={grid.visibleColumns.length} className="py-1.5">
+                          <div className="flex items-center justify-between pr-5">
+                            <span className="flex items-center gap-1.5 pl-4 text-xs text-muted-foreground">
+                              <span className="opacity-50">↳</span>
+                              {cat ? cat.name : <span className="italic">{t('transactions.noCategory')}</span>}
+                            </span>
+                            <span className="text-xs tabular-nums text-muted-foreground">
+                              {formatCurrency(Number(alloc.amount), tx.currency, locale)}
+                            </span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </Fragment>
               ))}
               {filteredItems.length === 0 && (
                 <TableRow>
