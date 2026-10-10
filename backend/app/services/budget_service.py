@@ -336,6 +336,7 @@ async def get_budget_vs_actual(
         use_effective_date=accounting_mode == "accrual",
         primary_currency=primary_currency,
         workspace_id=workspace_id,
+        debit_only=True,
     )
     for cat_uuid, delta in alloc_deltas.items():
         if cat_uuid is None:
@@ -439,6 +440,7 @@ async def get_budget_vs_actual(
         use_effective_date=accounting_mode == "accrual",
         primary_currency=primary_currency,
         workspace_id=workspace_id,
+        debit_only=True,
     )
     for cat_uuid, delta in prev_alloc_deltas.items():
         if cat_uuid is None:

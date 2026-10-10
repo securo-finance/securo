@@ -516,6 +516,7 @@ function TransactionForm({
       allocations: existing.map((a) => ({
         category_id: a.category_id,
         amount: formatAmountInput(Number(a.amount), displayLocale),
+        notes: a.notes,
       })),
     }
   })

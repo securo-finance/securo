@@ -811,6 +811,8 @@ async def create_transaction(
     else:
         await stamp_primary_amount(session, user_id, transaction)
 
+    _assert_single_split_mode(data.splits, data.category_allocations)
+
     if data.splits is not None:
         await split_service.replace_splits(session, transaction, data.splits, user_id)
 
@@ -818,8 +820,6 @@ async def create_transaction(
         await category_allocation_service.replace_category_allocations(
             session, transaction, data.category_allocations, user_id
         )
-
-    _assert_single_split_mode(data.splits, data.category_allocations)
 
     # A payment recorded by hand settles an invoice exactly as a synced one
     # does. Someone who reconciles by typing the Pix in should not have to

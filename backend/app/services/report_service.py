@@ -909,7 +909,7 @@ async def get_income_expenses_report(
             alloc_comp_key = (alloc_key_str, alloc_group)
             if alloc_comp_key in comp_map:
                 comp_map[alloc_comp_key]["value"] += abs(signed)
-            elif signed > 0:
+            else:
                 if alloc_key_str not in _alloc_cat_meta:
                     _alloc_cat_meta[alloc_key_str] = {
                         "label": alloc_cat_name if alloc_cat_name else alloc_key_str,
@@ -1120,7 +1120,7 @@ async def get_income_expenses_report(
                 cat_trend_map[alloc_key]["periods"][period_label] = (
                     cat_trend_map[alloc_key]["periods"].get(period_label, 0.0) + abs(signed)
                 )
-            elif signed > 0:
+            else:
                 cat_trend_map[alloc_key] = {
                     "label": alloc_cat_name if alloc_cat_name else str(alloc_cat_id),
                     "color": alloc_cat_color if alloc_cat_color else "#6B7280",

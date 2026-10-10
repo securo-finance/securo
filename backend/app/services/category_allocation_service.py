@@ -58,7 +58,7 @@ def _materialize(
     last = total - running
     # Validate the caller's last amount is reasonably close (within 1 cent)
     # before we override it with the residual
-    if abs(amounts[-1] - last) > _CENT:
+    if abs(amounts[-1] - last) >= _CENT:
         raise ValueError(
             f"Category amounts must sum to the transaction amount "
             f"(got {sum(amounts, Decimal('0'))}, expected {total})"

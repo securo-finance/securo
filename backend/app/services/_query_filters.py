@@ -426,6 +426,7 @@ async def category_allocation_deltas(
     use_effective_date: bool = False,
     primary_currency: Optional[str] = None,
     workspace_id: Optional[uuid.UUID] = None,
+    debit_only: bool = False,
 ) -> dict:
     """Return per-category adjustments caused by category splits.
 
@@ -438,6 +439,10 @@ async def category_allocation_deltas(
       credit allocations → negative (income) delta on allocation category
     Parent category subtracts the same signed amount.
 
+    When `debit_only=True`, only debit transactions are included. Pass this
+    for expense-only consumers (budget, spending chart) to avoid income
+    allocation deltas polluting debit-only maps.
+
     When `primary_currency` is given, amounts are FX-converted.
     """
     from app.models.transaction_category_allocation import TransactionCategoryAllocation
@@ -446,6 +451,8 @@ async def category_allocation_deltas(
         Transaction.effective_bill_date,
         Transaction.effective_date if use_effective_date else Transaction.date,
     )
+
+    type_filter = [Transaction.type == "debit"] if debit_only else []
 
     result = await session.execute(
         select(
@@ -462,6 +469,7 @@ async def category_allocation_deltas(
                 if workspace_id is not None
                 else [Transaction.user_id == user_id]
             ),
+            *type_filter,
             Transaction.source != "opening_balance",
             date_col >= month_start,
             date_col < month_end,

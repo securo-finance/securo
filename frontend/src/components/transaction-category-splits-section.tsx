@@ -13,13 +13,14 @@ import { CategorySelect } from '@/components/category-select'
 interface AllocationRow {
   category_id: string
   amount: string
+  notes?: string | null
 }
 
 const BLANK_ROW: AllocationRow = { category_id: '', amount: '' }
 
 function buildRows(value: CategoryAllocationsInput | null): AllocationRow[] {
   if (!value || value.allocations.length === 0) return [{ ...BLANK_ROW }, { ...BLANK_ROW }]
-  return value.allocations.map((a) => ({ category_id: a.category_id, amount: a.amount }))
+  return value.allocations.map((a) => ({ category_id: a.category_id, amount: a.amount, notes: a.notes }))
 }
 
 export function TransactionCategorySplitsSection({
@@ -81,6 +82,7 @@ export function TransactionCategorySplitsSection({
       allocations: next.map((r) => ({
         category_id: r.category_id,
         amount: r.amount,
+        notes: r.notes,
       })),
     })
   }
