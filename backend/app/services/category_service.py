@@ -12,6 +12,7 @@ from app.models.category_group import CategoryGroup
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.rule import Rule
 from app.models.transaction import Transaction
+from app.models.transaction_category_allocation import TransactionCategoryAllocation
 from app.schemas.category import CategoryCreate, CategoryUpdate
 from app.services.category_group_service import CATEGORY_TO_GROUP, create_default_groups
 
@@ -299,6 +300,7 @@ class CategoryUsage:
     transactions: int = 0
     budgets: int = 0
     recurring_transactions: int = 0
+    category_allocations: int = 0
     rules: list[Rule] = field(default_factory=list)
 
     @property
@@ -307,6 +309,7 @@ class CategoryUsage:
             self.transactions
             or self.budgets
             or self.recurring_transactions
+            or self.category_allocations
             or self.rules
         )
 
@@ -330,6 +333,16 @@ async def get_category_usage(
             )
         )
         counts[key] = int(result.scalar_one())
+
+    alloc_result = await session.execute(
+        select(func.count())
+        .select_from(TransactionCategoryAllocation)
+        .where(
+            TransactionCategoryAllocation.workspace_id == workspace_id,
+            TransactionCategoryAllocation.category_id == category_id,
+        )
+    )
+    counts["category_allocations"] = int(alloc_result.scalar_one())
 
     rules = await get_rules_assigning_category(
         session, workspace_id, category_id, include_inactive=True
@@ -425,6 +438,49 @@ async def _repoint_rules(
         ]
 
 
+async def _merge_category_allocations(
+    session: AsyncSession,
+    workspace_id: uuid.UUID,
+    category_id: uuid.UUID,
+    destination_id: uuid.UUID,
+) -> None:
+    """Transfer allocation rows from one category to another.
+
+    If a transaction already has a destination row, sum amounts and delete the
+    source row. Otherwise update category_id in place.
+    """
+    result = await session.execute(
+        select(TransactionCategoryAllocation).where(
+            TransactionCategoryAllocation.workspace_id == workspace_id,
+            TransactionCategoryAllocation.category_id == category_id,
+        )
+    )
+    source_rows = result.scalars().all()
+    if not source_rows:
+        return
+
+    # Load destination rows that share a transaction_id with source rows
+    source_tx_ids = [r.transaction_id for r in source_rows]
+    dest_result = await session.execute(
+        select(TransactionCategoryAllocation).where(
+            TransactionCategoryAllocation.workspace_id == workspace_id,
+            TransactionCategoryAllocation.category_id == destination_id,
+            TransactionCategoryAllocation.transaction_id.in_(source_tx_ids),
+        )
+    )
+    dest_by_tx: dict[uuid.UUID, TransactionCategoryAllocation] = {
+        r.transaction_id: r for r in dest_result.scalars().all()
+    }
+
+    for src in source_rows:
+        dest = dest_by_tx.get(src.transaction_id)
+        if dest is not None:
+            dest.amount += src.amount
+            await session.delete(src)
+        else:
+            src.category_id = destination_id
+
+
 async def _transfer_category_references(
     session: AsyncSession,
     workspace_id: uuid.UUID,
@@ -442,6 +498,7 @@ async def _transfer_category_references(
             .values(category_id=destination_id)
         )
     await _merge_budgets(session, workspace_id, category_id, destination_id)
+    await _merge_category_allocations(session, workspace_id, category_id, destination_id)
     await _repoint_rules(session, workspace_id, category_id, destination_id)
 
 
