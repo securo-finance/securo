@@ -14,6 +14,7 @@ from app.models.transaction import Transaction
 from app.models.user import User
 from app.schemas.budget import BudgetCreate, BudgetUpdate, BudgetVsActual
 from app.services._query_filters import (
+    category_allocation_deltas,
     counts_as_user_pnl,
     owner_split_offset_by_category,
     reporting_date_col,
@@ -329,6 +330,21 @@ async def get_budget_vs_actual(
         cat_id = str(cat_uuid)
         spending_map[cat_id] = spending_map.get(cat_id, Decimal("0")) + Decimal(str(total))
 
+    # Re-attribute spending from transactions split across categories.
+    alloc_deltas = await category_allocation_deltas(
+        session, user_id, month_start, month_end,
+        use_effective_date=accounting_mode == "accrual",
+        primary_currency=primary_currency,
+        workspace_id=workspace_id,
+    )
+    for cat_uuid, delta in alloc_deltas.items():
+        if cat_uuid is None:
+            continue
+        cat_id = str(cat_uuid)
+        spending_map[cat_id] = spending_map.get(cat_id, Decimal("0")) + Decimal(str(delta))
+        if spending_map[cat_id] <= 0:
+            spending_map.pop(cat_id, None)
+
     projected_spending_map = dict(spending_map)
 
     # Add projected recurring transactions for this month (converted to primary currency)
@@ -417,6 +433,20 @@ async def get_budget_vs_actual(
             continue
         cat_id = str(cat_uuid)
         prev_spending_map[cat_id] = prev_spending_map.get(cat_id, Decimal("0")) + Decimal(str(total))
+
+    prev_alloc_deltas = await category_allocation_deltas(
+        session, user_id, prev_month_start, prev_month_end,
+        use_effective_date=accounting_mode == "accrual",
+        primary_currency=primary_currency,
+        workspace_id=workspace_id,
+    )
+    for cat_uuid, delta in prev_alloc_deltas.items():
+        if cat_uuid is None:
+            continue
+        cat_id = str(cat_uuid)
+        prev_spending_map[cat_id] = prev_spending_map.get(cat_id, Decimal("0")) + Decimal(str(delta))
+        if prev_spending_map[cat_id] <= 0:
+            prev_spending_map.pop(cat_id, None)
 
     projected_prev_spending_map = dict(prev_spending_map)
 

@@ -16,6 +16,7 @@ from app.models.transaction import Transaction
 from app.models.category import Category
 from app.models.user import User
 from app.services._query_filters import (
+    category_allocation_deltas,
     counts_as_pnl,
     counts_as_user_pnl,
     owner_split_offset_by_category,
@@ -850,6 +851,31 @@ async def get_income_expenses_report(
             if comp_map[comp_key]["value"] <= 0:
                 comp_map.pop(comp_key)
 
+    # Re-attribute composition for category-split transactions.
+    if not filtered:
+        alloc_deltas = await category_allocation_deltas(
+            session, user_id, start, axis_end + timedelta(days=1),
+            use_effective_date=accounting_mode == "accrual",
+            primary_currency=primary_currency,
+        )
+        for cat_uuid, delta in alloc_deltas.items():
+            if delta == 0:
+                continue
+            cat_key = str(cat_uuid) if cat_uuid else "uncategorized"
+            group = "expenses" if delta > 0 else "income"
+            comp_key = (cat_key, group)
+            if comp_key in comp_map:
+                comp_map[comp_key]["value"] += delta
+                if comp_map[comp_key]["value"] <= 0:
+                    comp_map.pop(comp_key)
+            elif delta > 0:
+                # Allocation target category has no base spending yet — add it.
+                comp_map[comp_key] = {
+                    "label": cat_key,
+                    "color": "#6B7280",
+                    "value": delta,
+                }
+
     # Investment-style outflows: transactions in `treat_as_transfer` categories
     # are excluded from P&L by counts_as_user_pnl (an investment application's
     # counterpart is an Asset/Holding, not spending). But for the cashflow Sankey
@@ -988,6 +1014,73 @@ async def get_income_expenses_report(
     for key in list(cat_trend_map.keys()):
         if cat_trend_map[key]["total"] <= 0:
             cat_trend_map.pop(key)
+
+    # Re-attribute per-category trend for category-split transactions.
+    if not filtered:
+        from app.models.transaction_category_allocation import TransactionCategoryAllocation as _TCA_
+
+        alloc_trend_result = await session.execute(
+            select(
+                label_expr,
+                Transaction.category_id,
+                TransactionCategoryAllocation.category_id,
+                Transaction.type,
+                Transaction.currency,
+                func.sum(TransactionCategoryAllocation.amount),
+            )
+            .select_from(TransactionCategoryAllocation)
+            .join(Transaction, TransactionCategoryAllocation.transaction_id == Transaction.id)
+            .where(
+                Transaction.user_id == user_id,
+                Transaction.workspace_id == workspace_id,
+                report_date >= start,
+                report_date <= axis_end,
+                Transaction.source != "opening_balance",
+                Transaction.status == "posted",
+                counts_as_user_pnl(),
+            )
+            .group_by(
+                label_expr,
+                Transaction.category_id,
+                TransactionCategoryAllocation.category_id,
+                Transaction.type,
+                Transaction.currency,
+            )
+        )
+        for period_label, parent_cat_id, alloc_cat_id, tx_type, currency, raw_total in alloc_trend_result.all():
+            if not raw_total:
+                continue
+            converted_dec, _ = await fx_convert(
+                session, Decimal(str(raw_total)), currency, primary_currency
+            )
+            val = float(converted_dec)
+            signed = val if tx_type == "debit" else -val
+            # Subtract from parent category trend
+            if parent_cat_id is not None:
+                parent_key = (str(parent_cat_id), "expenses" if signed > 0 else "income")
+                if parent_key in cat_trend_map:
+                    cat_trend_map[parent_key]["total"] = max(0.0, cat_trend_map[parent_key]["total"] - abs(signed))
+                    cur_p = cat_trend_map[parent_key]["periods"].get(period_label, 0.0)
+                    cat_trend_map[parent_key]["periods"][period_label] = max(0.0, cur_p - abs(signed))
+            # Add to allocation category trend
+            alloc_group = "expenses" if signed > 0 else "income"
+            alloc_key = (str(alloc_cat_id), alloc_group)
+            if alloc_key in cat_trend_map:
+                cat_trend_map[alloc_key]["total"] += abs(signed)
+                cat_trend_map[alloc_key]["periods"][period_label] = (
+                    cat_trend_map[alloc_key]["periods"].get(period_label, 0.0) + abs(signed)
+                )
+            elif signed > 0:
+                cat_trend_map[alloc_key] = {
+                    "label": str(alloc_cat_id),
+                    "color": "#6B7280",
+                    "total": abs(signed),
+                    "periods": {period_label: abs(signed)},
+                }
+        # Re-drop zeroed categories
+        for key in list(cat_trend_map.keys()):
+            if cat_trend_map[key]["total"] <= 0:
+                cat_trend_map.pop(key)
 
     # Add recurring projections to composition and category trend
     cat_cache: dict[str, dict] = {}

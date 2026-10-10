@@ -16,6 +16,7 @@ from app.models.category import Category
 from app.models.recurring_transaction import RecurringTransaction
 from app.schemas.dashboard import DashboardSummary, SpendingByCategory, MonthlyTrend, ProjectedTransaction, DailyBalance, BalanceHistory
 from app.services._query_filters import (
+    category_allocation_deltas,
     counts_as_user_pnl,
     owner_split_offset_by_category,
     owner_split_offset_pnl,
@@ -829,6 +830,51 @@ async def get_spending_by_category(
                     "total": share_total,
                     "projected": 0.0,
                 }
+
+    # Re-attribute spending from category-split transactions.
+    if not filtered:
+        alloc_deltas = await category_allocation_deltas(
+            session, user_id, month_start, month_end,
+            use_effective_date=accounting_mode == "accrual",
+            primary_currency=primary_currency,
+            workspace_id=workspace_id,
+        )
+        if alloc_deltas:
+            alloc_cat_meta_cache: dict[str, dict] = {}
+            for cat_uuid, delta in alloc_deltas.items():
+                if delta == 0 or cat_uuid is None:
+                    continue
+                cat_id = str(cat_uuid)
+                if cat_id not in spending_map and delta > 0:
+                    if cat_id not in alloc_cat_meta_cache:
+                        meta_row = (
+                            await session.execute(
+                                select(Category.name, Category.icon, Category.color).where(
+                                    Category.id == cat_uuid
+                                )
+                            )
+                        ).one_or_none()
+                        if meta_row:
+                            alloc_cat_meta_cache[cat_id] = {
+                                "name": meta_row[0],
+                                "icon": meta_row[1],
+                                "color": meta_row[2],
+                            }
+                    meta = alloc_cat_meta_cache.get(
+                        cat_id,
+                        {"name": "Sem categoria", "icon": "circle-help", "color": "#6B7280"},
+                    )
+                    spending_map[cat_id] = {
+                        "name": meta["name"],
+                        "icon": meta["icon"],
+                        "color": meta["color"],
+                        "total": delta,
+                        "projected": 0.0,
+                    }
+                elif cat_id in spending_map:
+                    spending_map[cat_id]["total"] += delta
+                    if spending_map[cat_id]["total"] <= 0:
+                        spending_map.pop(cat_id)
 
     # Add virtual recurring projections (debit only), converted to primary currency
     projections = await _get_recurring_projections(
