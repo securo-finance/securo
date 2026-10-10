@@ -703,7 +703,7 @@ function AccountDialog({
   const [displayName, setDisplayName] = useState(account?.display_name ?? '')
   const [type, setType] = useState(account?.type ?? 'checking')
   const [balance, setBalance] = useState(account?.balance?.toString() ?? '0')
-  const [currency, setCurrency] = useState(account?.currency ?? userCurrency)
+  const [currency, setCurrency] = useState(account?.currency ?? '')
   const [balanceDate, setBalanceDate] = useState(localDateString)
   const [creditLimit, setCreditLimit] = useState(account?.credit_limit?.toString() ?? '')
   const [statementCloseDay, setStatementCloseDay] = useState(account?.statement_close_day?.toString() ?? '')
@@ -716,7 +716,7 @@ function AccountDialog({
     setDisplayName(account?.display_name ?? '')
     setType(account?.type ?? 'checking')
     setBalance(account?.balance?.toString() ?? '0')
-    setCurrency(account?.currency ?? userCurrency)
+    setCurrency(account?.currency ?? '')
     setBalanceDate(localDateString())
     setCreditLimit(account?.credit_limit?.toString() ?? '')
     setStatementCloseDay(account?.statement_close_day?.toString() ?? '')
@@ -805,7 +805,9 @@ function AccountDialog({
                     className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                     value={currency}
                     onChange={(e) => setCurrency(e.target.value)}
+                    required
                   >
+                    <option value="">{t('accounts.currency')}</option>
                     {(supportedCurrencies ?? [{ code: userCurrency, symbol: userCurrency, name: userCurrency, flag: '' }]).map((c) => (
                       <option key={c.code} value={c.code}>{c.flag} {c.name}</option>
                     ))}
