@@ -1024,12 +1024,15 @@ async def get_income_expenses_report(
                 label_expr,
                 Transaction.category_id,
                 TransactionCategoryAllocation.category_id,
+                Category.name,
+                Category.color,
                 Transaction.type,
                 Transaction.currency,
                 func.sum(TransactionCategoryAllocation.amount),
             )
             .select_from(TransactionCategoryAllocation)
             .join(Transaction, TransactionCategoryAllocation.transaction_id == Transaction.id)
+            .outerjoin(Category, TransactionCategoryAllocation.category_id == Category.id)
             .where(
                 Transaction.user_id == user_id,
                 Transaction.workspace_id == workspace_id,
@@ -1043,11 +1046,13 @@ async def get_income_expenses_report(
                 label_expr,
                 Transaction.category_id,
                 TransactionCategoryAllocation.category_id,
+                Category.name,
+                Category.color,
                 Transaction.type,
                 Transaction.currency,
             )
         )
-        for period_label, parent_cat_id, alloc_cat_id, tx_type, currency, raw_total in alloc_trend_result.all():
+        for period_label, parent_cat_id, alloc_cat_id, alloc_cat_name, alloc_cat_color, tx_type, currency, raw_total in alloc_trend_result.all():
             if not raw_total:
                 continue
             converted_dec, _ = await fx_convert(
@@ -1055,13 +1060,13 @@ async def get_income_expenses_report(
             )
             val = float(converted_dec)
             signed = val if tx_type == "debit" else -val
-            # Subtract from parent category trend
-            if parent_cat_id is not None:
-                parent_key = (str(parent_cat_id), "expenses" if signed > 0 else "income")
-                if parent_key in cat_trend_map:
-                    cat_trend_map[parent_key]["total"] = max(0.0, cat_trend_map[parent_key]["total"] - abs(signed))
-                    cur_p = cat_trend_map[parent_key]["periods"].get(period_label, 0.0)
-                    cat_trend_map[parent_key]["periods"][period_label] = max(0.0, cur_p - abs(signed))
+            # Subtract from parent category trend (handles null parent → "uncategorized")
+            parent_key_str = str(parent_cat_id) if parent_cat_id is not None else "uncategorized"
+            parent_key = (parent_key_str, "expenses" if signed > 0 else "income")
+            if parent_key in cat_trend_map:
+                cat_trend_map[parent_key]["total"] = max(0.0, cat_trend_map[parent_key]["total"] - abs(signed))
+                cur_p = cat_trend_map[parent_key]["periods"].get(period_label, 0.0)
+                cat_trend_map[parent_key]["periods"][period_label] = max(0.0, cur_p - abs(signed))
             # Add to allocation category trend
             alloc_group = "expenses" if signed > 0 else "income"
             alloc_key = (str(alloc_cat_id), alloc_group)
@@ -1072,8 +1077,8 @@ async def get_income_expenses_report(
                 )
             elif signed > 0:
                 cat_trend_map[alloc_key] = {
-                    "label": str(alloc_cat_id),
-                    "color": "#6B7280",
+                    "label": alloc_cat_name if alloc_cat_name else str(alloc_cat_id),
+                    "color": alloc_cat_color if alloc_cat_color else "#6B7280",
                     "total": abs(signed),
                     "periods": {period_label: abs(signed)},
                 }
