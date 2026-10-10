@@ -1241,10 +1241,10 @@ export default function TransactionsPage() {
       case 'category':
         return (
           <TableCell key={col.id} style={widthStyle} className={baseClass}>
-            {tx.category ? (
-              <span className="text-sm text-muted-foreground">{tx.category.name}</span>
-            ) : tx.category_allocations && tx.category_allocations.length > 0 ? (
+            {tx.category_allocations && tx.category_allocations.length > 0 ? (
               <span className="text-xs text-muted-foreground italic">~ {t('transactions.splitByCategory')}</span>
+            ) : tx.category ? (
+              <span className="text-sm text-muted-foreground">{tx.category.name}</span>
             ) : (
               <span className="text-xs text-muted-foreground italic">{t('transactions.noCategory')}</span>
             )}

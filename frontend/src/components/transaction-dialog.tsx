@@ -1170,19 +1170,21 @@ function TransactionForm({
             <option value="credit">{t('transactions.income')}</option>
           </select>
         </div>
-        <div className="space-y-2">
-          <Label>{t('transactions.category')}</Label>
-          <CategorySelect
-            value={categoryId}
-            onChange={setCategoryId}
-            categories={displayCategories}
-            groups={displayCategoryGroups}
-            currentCategory={seed?.category}
-            allowNone={true}
-            creatable
-            className="bg-card"
-          />
-        </div>
+        {splitMode !== 'category' && (
+          <div className="space-y-2">
+            <Label>{t('transactions.category')}</Label>
+            <CategorySelect
+              value={categoryId}
+              onChange={setCategoryId}
+              categories={displayCategories}
+              groups={displayCategoryGroups}
+              currentCategory={seed?.category}
+              allowNone={true}
+              creatable
+              className="bg-card"
+            />
+          </div>
+        )}
       </div>
       <div className={cn("grid gap-4", isSynced ? "grid-cols-1" : "grid-cols-2")}>
         <div className="space-y-2">
@@ -1296,6 +1298,7 @@ function TransactionForm({
                   setSplitMode('category')
                   setSplits(null)
                   setSplitsValid(true)
+                  setCategoryId(null)
                 } else {
                   setSplitMode(null)
                   setSplits(null)
@@ -1331,6 +1334,7 @@ function TransactionForm({
                     setSplitMode('category')
                     setSplits(null)
                     setSplitsValid(true)
+                    setCategoryId(null)
                   }}
                   className={`text-xs px-3 py-1 rounded-full border transition-colors ${splitMode === 'category' ? 'bg-primary text-primary-foreground border-primary' : 'border-muted-foreground/30 text-muted-foreground'}`}
                 >
