@@ -255,6 +255,13 @@ function TransactionImportPanel() {
     ))
   }, [])
 
+  const handleToggleAllFiltered = useCallback((ids: string[], excluded: boolean) => {
+    const idSet = new Set(ids)
+    setReviewTransactions(prev => prev.map(t =>
+      idSet.has(t._id) ? { ...t, excluded } : t
+    ))
+  }, [])
+
   const handleChangeCategory = useCallback((id: string, categoryId: string | null) => {
     setReviewTransactions(prev => prev.map(t =>
       t._id === id ? { ...t, selected_category_id: categoryId } : t
@@ -553,6 +560,7 @@ function TransactionImportPanel() {
             statusFilter={statusFilter}
             currentPage={currentPage}
             onToggleExcluded={handleToggleExcluded}
+            onToggleAllFiltered={handleToggleAllFiltered}
             onChangeCategory={handleChangeCategory}
             onSearchChange={setSearchQuery}
             onCategoryIdsChange={setFilterCategoryIds}

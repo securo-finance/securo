@@ -1808,7 +1808,8 @@
       "invalid_date": "Nieprawidłowy format daty",
       "no_amount": "Brak kwoty wpływu lub wypływu",
       "invalid_amount": "Nieprawidłowy format kwoty"
-    }
+    },
+    "selectAll": "Zaznacz wszystko"
   },
   "assetImport": {
     "title": "Importuj zlecenia inwestycyjne",

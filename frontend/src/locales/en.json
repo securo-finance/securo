@@ -1719,7 +1719,8 @@
       "invalid_date": "Invalid Date Format",
       "no_amount": "No Inflow or Outflow Amount",
       "invalid_amount": "Invalid Amount Format"
-    }
+    },
+    "selectAll": "Select all"
   },
   "assetImport": {
     "title": "Import investment orders",

@@ -1835,7 +1835,8 @@
       "invalid_date": "Neplatný formát dátumu",
       "no_amount": "Chýba suma príjmu alebo výdaja",
       "invalid_amount": "Neplatný formát sumy"
-    }
+    },
+    "selectAll": "Vybrať všetko"
   },
   "assetImport": {
     "title": "Import investičných pokynov",
