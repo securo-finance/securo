@@ -1339,6 +1339,8 @@ function TransactionForm({
               value={categoryAllocations}
               onChange={setCategoryAllocations}
               onValidityChange={setCategorySplitsValid}
+              categories={categories}
+              categoryGroups={categoryGroups}
             />
           )}
         </div>

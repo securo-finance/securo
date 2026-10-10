@@ -6,6 +6,7 @@ import { Trash2, Plus } from 'lucide-react'
 import { formatCurrency } from '@/lib/format'
 import { parseAmountInput } from '@/lib/format'
 import type { CategoryAllocationsInput } from '@/types'
+import type { Category, CategoryGroup } from '@/types'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { CategorySelect } from '@/components/category-select'
@@ -28,12 +29,16 @@ export function TransactionCategorySplitsSection({
   value,
   onChange,
   onValidityChange,
+  categories,
+  categoryGroups,
 }: {
   amount: number
   currency: string
   value: CategoryAllocationsInput | null
   onChange: (v: CategoryAllocationsInput | null) => void
   onValidityChange: (valid: boolean) => void
+  categories: Category[]
+  categoryGroups: CategoryGroup[]
 }) {
   const { t } = useTranslation()
   const displayLocale = useDisplayLocale()
@@ -87,9 +92,12 @@ export function TransactionCategorySplitsSection({
           <div key={i} className="flex items-center gap-2">
             <div className="flex-1 min-w-0">
               <CategorySelect
-                value={row.category_id || null}
-                onValueChange={(id) => update(i, { category_id: id ?? '' })}
+                value={row.category_id || ''}
+                onChange={(id) => update(i, { category_id: id ?? '' })}
+                categories={categories}
+                groups={categoryGroups}
                 placeholder={t('splitGroups.categorySplits.category')}
+                allowNone
               />
             </div>
             <div className="w-28">
