@@ -1721,7 +1721,8 @@
       "invalid_date": "Ongeldige datumformaat",
       "no_amount": "Geen in- of uitstroombedrag",
       "invalid_amount": "Ongeldig bedragformaat"
-    }
+    },
+    "selectAll": "Alles selecteren"
   },
   "assetImport": {
     "title": "Investeringsorders importeren",

@@ -1723,7 +1723,8 @@
       "invalid_date": "Formato data non valido",
       "no_amount": "Nessun importo in entrata o in uscita",
       "invalid_amount": "Formato importo non valido"
-    }
+    },
+    "selectAll": "Seleziona tutto"
   },
   "assetImport": {
     "title": "Importa ordini di investimento",

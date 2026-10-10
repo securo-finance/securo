@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ImportReviewTransaction, Category, CategoryGroup } from '@/types'
 import { formatCurrency } from '@/lib/format'
@@ -42,6 +42,7 @@ interface ImportReviewTableProps {
   statusFilter: 'all' | 'included' | 'excluded'
   currentPage: number
   onToggleExcluded: (id: string) => void
+  onToggleAllFiltered: (ids: string[], excluded: boolean) => void
   onChangeCategory: (id: string, categoryId: string | null) => void
   onSearchChange: (query: string) => void
   onCategoryIdsChange: (ids: string[]) => void
@@ -63,6 +64,7 @@ export function ImportReviewTable({
   statusFilter,
   currentPage,
   onToggleExcluded,
+  onToggleAllFiltered,
   onChangeCategory,
   onSearchChange,
   onCategoryIdsChange,
@@ -80,6 +82,7 @@ export function ImportReviewTable({
     }
   })
 
+  const selectAllRef = useRef<HTMLInputElement>(null)
   const hasCategoryFilter = filterCategoryIds.length > 0 || filterUncategorized
 
   const filtered = useMemo(() => {
@@ -103,6 +106,15 @@ export function ImportReviewTable({
       return true
     })
   }, [transactions, searchQuery, filterCategoryIds, filterUncategorized, hasCategoryFilter, statusFilter])
+
+  const allFilteredIncluded = filtered.length > 0 && filtered.every(tx => !tx.excluded)
+  const someFilteredIncluded = filtered.some(tx => !tx.excluded)
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someFilteredIncluded && !allFilteredIncluded
+    }
+  }, [allFilteredIncluded, someFilteredIncluded])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const safePage = Math.min(currentPage, totalPages)
@@ -144,7 +156,18 @@ export function ImportReviewTable({
           <TableHeader>
             <TableRow className="hover:bg-transparent bg-transparent border-b border-border">
               <TableHead className="text-xs font-medium text-muted-foreground py-3 pl-4 w-[40px]">
-                <span className="sr-only">Toggle</span>
+                <input
+                  ref={selectAllRef}
+                  type="checkbox"
+                  checked={allFilteredIncluded}
+                  onChange={() => {
+                    const ids = filtered.map(tx => tx._id)
+                    onToggleAllFiltered(ids, allFilteredIncluded)
+                  }}
+                  disabled={filtered.length === 0}
+                  title={t('import.selectAll')}
+                  className="rounded border-border text-primary focus:ring-primary"
+                />
               </TableHead>
               <TableHead className="text-xs font-medium text-muted-foreground py-3 w-[100px]">
                 {t('transactions.date')}

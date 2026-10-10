@@ -1719,7 +1719,8 @@
       "invalid_date": "無効な日付形式",
       "no_amount": "入金/出金金額なし",
       "invalid_amount": "無効な金額形式"
-    }
+    },
+    "selectAll": "すべて選択"
   },
   "assetImport": {
     "title": "投資注文をインポート",
