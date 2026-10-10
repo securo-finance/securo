@@ -1567,6 +1567,26 @@ async def _apply_update_to_row(
             if "date" in update_data:
                 paired_account = await session.get(Account, paired_tx.account_id)
                 apply_effective_date(paired_tx, paired_account)
+            # Reject if the paired leg's stored allocations no longer sum to its
+            # (possibly just-cascaded) amount — mirrors the same guard on tx.
+            if "amount" in (cascade_fields & update_data.keys()):
+                from app.models.transaction_category_allocation import TransactionCategoryAllocation
+                from sqlalchemy import func as _func
+                paired_alloc_sum = (
+                    await session.execute(
+                        select(_func.sum(TransactionCategoryAllocation.amount)).where(
+                            TransactionCategoryAllocation.transaction_id == paired_tx.id
+                        )
+                    )
+                ).scalar_one_or_none()
+                if paired_alloc_sum is not None:
+                    paired_new_amount = Decimal(str(paired_tx.amount)).copy_abs()
+                    paired_stored_sum = Decimal(str(paired_alloc_sum)).quantize(Decimal("0.01"))
+                    if abs(paired_stored_sum - paired_new_amount) >= Decimal("0.01"):
+                        raise ValueError(
+                            "Transfer leg amount changed but its category allocations were not updated. "
+                            "Provide updated category_allocations that sum to the new amount."
+                        )
 
     if splits_payload is not None:
         await split_service.replace_splits(session, tx, splits_payload, user_id)
