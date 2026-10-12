@@ -1855,6 +1855,8 @@
     "yearly": "वार्षिक",
     "activeAssets": "सक्रिय संपत्तियाँ",
     "soldAssets": "बेची गई संपत्तियाँ",
+    "showArchived": "संग्रहीत दिखाएँ",
+    "archivedHint": "कुल में शामिल नहीं",
     "archivedAssets": "संग्रहीत संपत्तियाँ",
     "noAssets": "अभी कोई संपत्ति नहीं",
     "created": "संपत्ति बनी",
