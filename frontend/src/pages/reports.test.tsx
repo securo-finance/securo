@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { cleanup, screen, waitFor } from '@testing-library/react'
 
 import ReportsPage from '@/pages/reports'
 import { renderWithProviders, t } from '@/test/utils'
@@ -11,9 +11,13 @@ const api = vi.hoisted(() => ({
     incomeExpenses: vi.fn(),
     cashFlow: vi.fn(),
   },
+  // The page reads the workspace timezone to tell a balance that is already
+  // negative from one that crosses later. Unresolved here, which lands on the
+  // browser's own day.
+  timezones: { list: vi.fn().mockResolvedValue({ timezones: [], default: null }) },
 }))
 
-vi.mock('@/lib/api', () => ({ reports: api.reports }))
+vi.mock('@/lib/api', () => ({ reports: api.reports, timezones: api.timezones }))
 
 vi.mock('@/hooks/use-display-locale', () => ({
   useDisplayLocale: () => 'en-US',
@@ -261,6 +265,36 @@ describe('Reports page, cash-flow runway', () => {
     // Only the crossing date is shown: a second date next to the amount reads
     // as part of the same sentence rather than as the bottom of the dip.
     expect(callout).not.toHaveTextContent('Dec 20')
+  })
+
+  it('reads today in the workspace timezone, not the browser one', async () => {
+    // 23:30 UTC on the 13th is already the 14th fourteen hours ahead, so the
+    // same crossing date is "already negative" there and still ahead in UTC.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date('2026-10-13T23:30:00Z'))
+    try {
+      api.timezones.list.mockResolvedValue({ timezones: [], default: 'Pacific/Kiritimati' })
+      const ahead = await openCashFlow({
+        runway_date: '2026-10-14',
+        lowest_balance: -10,
+        lowest_balance_date: '2026-10-14',
+      })
+      await waitFor(() => expect(ahead).toHaveTextContent(t('reports.runwayAlreadyNegative')))
+
+      cleanup()
+      api.timezones.list.mockResolvedValue({ timezones: [], default: 'UTC' })
+      const behind = await openCashFlow({
+        runway_date: '2026-10-14',
+        lowest_balance: -10,
+        lowest_balance_date: '2026-10-14',
+      })
+      await waitFor(() =>
+        expect(behind).toHaveTextContent(t('reports.runwayNegativeOn', { date: 'Oct 14' })),
+      )
+    } finally {
+      vi.useRealTimers()
+      api.timezones.list.mockResolvedValue({ timezones: [], default: null })
+    }
   })
 
   it('says the balance is already negative rather than naming today', async () => {

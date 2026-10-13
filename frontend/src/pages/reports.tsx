@@ -31,7 +31,8 @@ import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import type { ReportResponse, CategoryTrendItem } from '@/types'
 import { formatCurrency } from '@/lib/format'
-import { localDateString } from '@/lib/date-utils'
+import { localDateString, todayInTimezone } from '@/lib/date-utils'
+import { useEffectiveTimezone } from '@/hooks/use-timezone'
 
 // A small qualitative palette of well-separated hues for the composition
 // detail ring. Capped to a handful of slices, distinct colours make each
@@ -176,6 +177,7 @@ const REPORT_TABS: ReportTab[] = [
 ]
 
 export default function ReportsPage() {
+  const timeZone = useEffectiveTimezone()
   const { t } = useTranslation()
   const { mask, privacyMode, MASK } = usePrivacyMode()
   const { user } = useAuth()
@@ -308,10 +310,10 @@ export default function ReportsPage() {
   const lowestBalanceDate = meta?.type === 'cash_flow' ? meta.lowest_balance_date ?? null : null
   // The backend reports today as the runway date when the balance is already
   // below zero, which is a different thing to say than "it will go negative".
-  // Reading the day off the browser is enough to tell those two apart; a
-  // workspace in another timezone can only disagree about the single day the
-  // balance crosses, and the label is then the one this already shows today.
-  const alreadyNegative = runwayDate !== null && runwayDate <= localDateString()
+  // It reckons that day in the workspace's own timezone, so this has to as
+  // well: a browser already past midnight would otherwise call tomorrow's
+  // crossing a balance that is negative today.
+  const alreadyNegative = runwayDate !== null && runwayDate <= todayInTimezone(timeZone)
   // Day and month are enough inside the current year; a longer horizon reaches
   // into the next one, where the year stops being obvious.
   const formatDay = (iso: string) => {
