@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 
 from app.models.account import Account
+from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
 from app.models.workspace import Workspace
 from app.services.cashflow_forecast_service import _date_matches_cadence, generate_cashflow_forecast
@@ -127,3 +128,77 @@ async def test_cashflow_forecast_simulation(session):
     assert forecast.summary.total_projected_inflow > Decimal("0.00")
     assert forecast.summary.total_projected_outflow > Decimal("0.00")
     assert forecast.summary.has_shortfall_risk is False
+
+
+@pytest.mark.asyncio
+async def test_cashflow_forecast_skips_transactions_linked_to_manual_recurring(session):
+    user_id = uuid.uuid4()
+    ws = Workspace(id=uuid.uuid4(), name="Forecast Linked WS", default_currency="USD")
+    session.add(ws)
+    await session.flush()
+
+    checking = Account(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        workspace_id=ws.id,
+        name="Main Checking",
+        type="checking",
+        balance=Decimal("10000.00"),
+        currency="USD",
+    )
+    session.add(checking)
+    await session.flush()
+
+    rent = RecurringTransaction(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        workspace_id=ws.id,
+        account_id=checking.id,
+        description="Apartment Rent",
+        amount=Decimal("2000.00"),
+        currency="USD",
+        type="debit",
+        frequency="monthly",
+        start_date=date(2026, 6, 1),
+        next_occurrence=date(2026, 10, 1),
+        is_active=True,
+    )
+    session.add(rent)
+    await session.flush()
+
+    # Posted rent payments generated from the manual rule carry a payee that
+    # differs from the rule's description.
+    for m in range(6, 10):
+        tx_date = date(2026, m, 1)
+        session.add(
+            Transaction(
+                id=uuid.uuid4(),
+                user_id=user_id,
+                workspace_id=ws.id,
+                account_id=checking.id,
+                recurring_transaction_id=rent.id,
+                description="Apartment Rent",
+                payee="Landlord LLC",
+                amount=Decimal("2000.00"),
+                amount_primary=Decimal("2000.00"),
+                currency="USD",
+                date=tx_date,
+                effective_date=tx_date,
+                type="debit",
+                source="recurring",
+                status="posted",
+            )
+        )
+    await session.commit()
+
+    forecast = await generate_cashflow_forecast(
+        session,
+        ws.id,
+        horizon_days=45,
+        include_discretionary_burn=True,
+        reference_date=date(2026, 9, 2),
+    )
+
+    rent_day = next(p for p in forecast.daily_trajectory if p.date == date(2026, 10, 1))
+    assert rent_day.recurring_outflow == Decimal("2000.00")
+    assert forecast.summary.total_projected_discretionary == Decimal("0.00")

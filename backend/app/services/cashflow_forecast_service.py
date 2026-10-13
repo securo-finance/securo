@@ -104,9 +104,17 @@ async def generate_cashflow_forecast(
     rec_result = await session.execute(rec_query)
     manual_recurrings = list(rec_result.scalars().all())
 
-    # 3. Detect historical recurring patterns
+    # 3. Detect historical recurring patterns. Transactions already linked to
+    # an active manual recurring record are left out: the manual rule schedules
+    # them, and their payee may not match the manual description.
+    manual_recurring_ids = {r.id for r in manual_recurrings}
     detected_res = await recurring_detector_service.detect_recurring_patterns(
-        session, workspace_id, min_occurrences=2, lookback_days=180, reference_date=today
+        session,
+        workspace_id,
+        min_occurrences=2,
+        lookback_days=180,
+        reference_date=today,
+        exclude_recurring_ids=manual_recurring_ids,
     )
 
     # Deduplicate: if an auto-detected item shares payee with manual recurring, prefer manual
@@ -178,7 +186,8 @@ async def generate_cashflow_forecast(
         detected_names_lower = {item.normalized_key.lower() for item in detected_res.items}
         discretionary_txs = [
             t for t in hist_txs
-            if recurring_detector_service.normalize_merchant_name(t.payee or t.description).lower() not in detected_names_lower
+            if t.recurring_transaction_id not in manual_recurring_ids
+            and recurring_detector_service.normalize_merchant_name(t.payee or t.description).lower() not in detected_names_lower
             and recurring_detector_service.normalize_merchant_name(t.payee or t.description).lower() not in manual_payee_set
         ]
 

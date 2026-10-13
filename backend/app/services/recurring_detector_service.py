@@ -124,8 +124,14 @@ async def detect_recurring_patterns(
     min_occurrences: int = 3,
     lookback_days: int = 365,
     reference_date: Optional[date] = None,
+    exclude_recurring_ids: Optional[set[uuid.UUID]] = None,
 ) -> RecurringDetectionResponse:
-    """Scan workspace transactions and identify recurring bills, subscriptions, and regular inflows."""
+    """Scan workspace transactions and identify recurring bills, subscriptions, and regular inflows.
+
+    Transactions linked to a recurring record in ``exclude_recurring_ids`` are
+    skipped, so a caller that already schedules those records does not see
+    them detected a second time under a different payee name.
+    """
     today = reference_date or date.today()
     start_date = today - timedelta(days=lookback_days)
 
@@ -147,6 +153,8 @@ async def detect_recurring_patterns(
     # Cluster transactions by (normalized_name, direction)
     clusters: dict[tuple[str, FlowDirectionEnum], list[Transaction]] = {}
     for tx in transactions:
+        if exclude_recurring_ids and tx.recurring_transaction_id in exclude_recurring_ids:
+            continue
         raw_name = tx.payee or tx.description
         if not raw_name:
             continue
