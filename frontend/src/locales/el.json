@@ -814,6 +814,23 @@
   },
   "dashboard": {
     "title": "Πίνακας ελέγχου",
+    "customize": {
+      "button": "Προσαρμογή",
+      "title": "Προσαρμογή πίνακα ελέγχου",
+      "description": "Επιλέξτε ποιες ενότητες εμφανίζονται και με ποια σειρά.",
+      "reset": "Επαναφορά προεπιλογής",
+      "moveUp": "Μετακίνηση {{widget}} πάνω",
+      "moveDown": "Μετακίνηση {{widget}} κάτω",
+      "saveError": "Δεν ήταν δυνατή η αποθήκευση της διάταξης",
+      "widgets": {
+        "hero": "Υπόλοιπο και μηνιαία σύνοψη",
+        "uncategorized": "Συναλλαγές χωρίς κατηγορία",
+        "categorySpending": "Δαπάνες ανά κατηγορία",
+        "balanceFlow": "Ροή υπολοίπου",
+        "goals": "Στόχοι",
+        "transactions": "Συναλλαγές"
+      }
+    },
     "greetingMorning": "Καλημέρα",
     "greetingAfternoon": "Καλό απόγευμα",
     "greetingEvening": "Καλησπέρα",
@@ -1332,7 +1349,8 @@
     "invoiceBadgeTooltip": "Αυτή η συναλλαγή εξοφλεί ένα τιμολόγιο. Ανοίξτε το.",
     "suggestionBadge": "Ερώτηση",
     "suggestionBadgeTooltip": "Μια πληρωμή μπορεί να εξοφλεί ένα τιμολόγιο. Ανοίξτε την ουρά για να απαντήσετε.",
-    "clearGroupFilter": "Κατάργηση φίλτρου ομάδας"
+    "clearGroupFilter": "Κατάργηση φίλτρου ομάδας",
+    "splitByCategory": "Κατανεμημένο"
   },
   "budgets": {
     "title": "Προϋπολογισμοί",
@@ -2258,6 +2276,17 @@
       "project": "Έργο",
       "client": "Πελάτης",
       "other": "Άλλο"
+    },
+    "categorySplits": {
+      "title": "Κατανομή ανά κατηγορία",
+      "addRow": "Προσθήκη κατηγορίας",
+      "category": "Κατηγορία",
+      "amount": "Ποσό",
+      "remove": "Αφαίρεση",
+      "sum": "Σύνολο: {{sum}} / {{total}} {{currency}}",
+      "badge": "Κατανεμημένο",
+      "modeAmongPeople": "Μεταξύ ατόμων",
+      "modeByCategory": "Ανά κατηγορία"
     }
   },
   "privacy": {

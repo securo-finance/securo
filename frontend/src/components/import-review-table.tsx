@@ -205,7 +205,14 @@ export function ImportReviewTable({
                     {formatLocalDate(tx.date, dateLocale)}
                   </TableCell>
                   <TableCell className={`py-2.5 text-sm ${tx.excluded ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
-                    {tx.description}
+                    <div className="flex items-center gap-2">
+                      <span>{tx.description}</span>
+                      {tx.allocations && tx.allocations.length >= 2 && (
+                        <span className="text-xs bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded whitespace-nowrap">
+                          {t('transaction.categorySplits.badge')}
+                        </span>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className={`py-2.5 text-right text-sm font-bold tabular-nums ${tx.type === 'credit' ? 'text-emerald-600' : 'text-rose-500'}`}>
                     {tx.type === 'credit' ? '+' : '−'}{formatCurrency(Math.abs(Number(tx.amount)), userCurrency, locale)}

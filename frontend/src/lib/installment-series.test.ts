@@ -19,6 +19,7 @@ const base: InstallmentSeriesFormInput = {
   notes: '',
   fxFields: { amount_primary: 150, fx_rate_used: 1 },
   splits: null,
+  categoryAllocations: null,
   installmentCount: '3',
   installmentFrequency: 'monthly',
   status: 'posted',

@@ -814,6 +814,23 @@
   },
   "dashboard": {
     "title": "ダッシュボード",
+    "customize": {
+      "button": "カスタマイズ",
+      "title": "ダッシュボードをカスタマイズ",
+      "description": "表示するセクションと順序を選択します。",
+      "reset": "デフォルトに戻す",
+      "moveUp": "{{widget}}を上へ移動",
+      "moveDown": "{{widget}}を下へ移動",
+      "saveError": "ダッシュボードのレイアウトを保存できませんでした",
+      "widgets": {
+        "hero": "残高と月次サマリー",
+        "uncategorized": "未分類の取引",
+        "categorySpending": "カテゴリ別支出",
+        "balanceFlow": "残高推移",
+        "goals": "目標",
+        "transactions": "取引"
+      }
+    },
     "greetingMorning": "おはようございます",
     "greetingAfternoon": "こんにちは",
     "greetingEvening": "こんばんは",
@@ -1148,7 +1165,8 @@
     "invoiceBadgeTooltip": "この取引は請求書を決済しています。開く。",
     "suggestionBadge": "要確認",
     "suggestionBadgeTooltip": "これが何かを消し込む可能性があります。キューを開いて回答してください。",
-    "clearGroupFilter": "グループフィルターを解除"
+    "clearGroupFilter": "グループフィルターを解除",
+    "splitByCategory": "分割"
   },
   "accounts": {
     "title": "口座",
@@ -2258,6 +2276,17 @@
       "project": "プロジェクト",
       "client": "クライアント",
       "other": "その他"
+    },
+    "categorySplits": {
+      "title": "カテゴリで分割",
+      "addRow": "カテゴリを追加",
+      "category": "カテゴリ",
+      "amount": "金額",
+      "remove": "削除",
+      "sum": "合計: {{sum}} / {{total}} {{currency}}",
+      "badge": "分割",
+      "modeAmongPeople": "人の間で分割",
+      "modeByCategory": "カテゴリ別"
     }
   },
   "privacy": {

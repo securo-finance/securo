@@ -115,6 +115,16 @@ def _match_condition(condition: dict, tx: "Transaction") -> bool:
                 return tx_date <= val_date
 
         tx_num = _to_decimal(tx_val)
+
+        # `Transaction.amount` is always stored as an absolute value; the sign
+        # is carried by `tx.type` ("debit" → negative, "credit" → positive).
+        # Rules that compare `amount` must see the signed value so that
+        # `amount > 1000` only matches income and `amount < -500` only matches
+        # expenses, not every row in the ledger.
+        if field == "amount":
+            signed = tx_num if getattr(tx, "type", "") == "credit" else -tx_num
+            tx_num = signed
+
         val_num = _to_decimal(value)
         if op == "gt":
             return tx_num > val_num

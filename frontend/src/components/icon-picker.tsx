@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CATEGORY_ICONS } from '@/lib/category-icons'
+import { CATEGORY_ICONS, iconLabel } from '@/lib/category-icons'
 import { cn } from '@/lib/utils'
 
 interface IconPickerProps {
@@ -14,12 +14,12 @@ export function IconPicker({ value, color, onChange }: IconPickerProps) {
   const [search, setSearch] = useState('')
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return CATEGORY_ICONS
-    const q = search.toLowerCase()
+    const q = search.trim().toLowerCase()
+    if (!q) return CATEGORY_ICONS
     return CATEGORY_ICONS.filter(
       (entry) =>
         entry.name.includes(q) ||
-        entry.label.toLowerCase().includes(q)
+        entry.keywords.some((keyword) => keyword.includes(q))
     )
   }, [search])
 
@@ -32,7 +32,9 @@ export function IconPicker({ value, color, onChange }: IconPickerProps) {
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
-      <div className="grid grid-cols-8 gap-1.5 max-h-48 overflow-y-auto p-1">
+      {/* Taller than the 56-icon catalogue needed: 282 icons scroll a long way
+          otherwise, and the search box above is the fast path anyway. */}
+      <div className="grid grid-cols-8 gap-1.5 max-h-64 overflow-y-auto p-1">
         {filtered.map((entry) => {
           const isSelected = value === entry.name
           const Icon = entry.icon
@@ -40,7 +42,7 @@ export function IconPicker({ value, color, onChange }: IconPickerProps) {
             <button
               key={entry.name}
               type="button"
-              title={entry.label}
+              title={iconLabel(entry.name)}
               className={cn(
                 'w-9 h-9 rounded-lg flex items-center justify-center transition-all',
                 isSelected

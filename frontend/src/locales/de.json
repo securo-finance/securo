@@ -814,6 +814,23 @@
   },
   "dashboard": {
     "title": "Dashboard",
+    "customize": {
+      "button": "Anpassen",
+      "title": "Dashboard anpassen",
+      "description": "Wähle aus, welche Bereiche erscheinen und in welcher Reihenfolge.",
+      "reset": "Auf Standard zurücksetzen",
+      "moveUp": "{{widget}} nach oben verschieben",
+      "moveDown": "{{widget}} nach unten verschieben",
+      "saveError": "Das Dashboard-Layout konnte nicht gespeichert werden",
+      "widgets": {
+        "hero": "Saldo und Monatsübersicht",
+        "uncategorized": "Nicht kategorisierte Transaktionen",
+        "categorySpending": "Ausgaben nach Kategorie",
+        "balanceFlow": "Saldoverlauf",
+        "goals": "Ziele",
+        "transactions": "Transaktionen"
+      }
+    },
     "greetingMorning": "Guten Morgen",
     "greetingAfternoon": "Guten Tag",
     "greetingEvening": "Guten Abend",
@@ -1148,7 +1165,8 @@
     "invoiceBadgeTooltip": "Diese Transaktion begleicht eine Rechnung. Öffnen.",
     "suggestionBadge": "Frage",
     "suggestionBadgeTooltip": "Eine Zahlung könnte diese Rechnung begleichen. Öffnen Sie die Warteschlange.",
-    "clearGroupFilter": "Gruppenfilter entfernen"
+    "clearGroupFilter": "Gruppenfilter entfernen",
+    "splitByCategory": "Aufgeteilt"
   },
   "accounts": {
     "title": "Konten",
@@ -2259,6 +2277,17 @@
       "project": "Projekt",
       "client": "Kunde",
       "other": "Sonstiges"
+    },
+    "categorySplits": {
+      "title": "Nach Kategorie aufteilen",
+      "addRow": "Kategorie hinzufügen",
+      "category": "Kategorie",
+      "amount": "Betrag",
+      "remove": "Entfernen",
+      "sum": "Summe: {{sum}} / {{total}} {{currency}}",
+      "badge": "Aufgeteilt",
+      "modeAmongPeople": "Unter Personen",
+      "modeByCategory": "Nach Kategorie"
     }
   },
   "privacy": {

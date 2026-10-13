@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { Fragment, useState, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { getAccountLabel, getAccountName, sortAccountsByAbsoluteBalance, sumAccountBalances } from '@/lib/account-utils'
 import { currentMonth, shiftMonth, monthLastDay, monthLabel, monthRange } from '@/lib/month-utils'
 import { useTranslation } from 'react-i18next'
@@ -38,7 +38,7 @@ import {
   Tooltip as RechartsTooltip,
   ResponsiveContainer,
 } from 'recharts'
-import { CheckCircle2, CalendarIcon, Clock, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed, AlertCircle } from 'lucide-react'
+import { CheckCircle2, CalendarIcon, Clock, Paperclip, Target, ArrowUpDown, HelpCircle, EyeClosed, AlertCircle, SlidersHorizontal } from 'lucide-react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ICON_MAP } from '@/lib/category-icons'
 import { PageHeader } from '@/components/page-header'
@@ -58,6 +58,9 @@ import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import type { Rule, Transaction } from '@/types'
 import { formatCurrency } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
+import { CustomizeDashboardDialog } from '@/components/dashboard/customize-dashboard-dialog'
+import { useDashboardLayout } from '@/components/dashboard/use-dashboard-layout'
+import { layoutRows, type WidgetId } from '@/components/dashboard/widgets'
 
 function formatDate(dateStr: string, locale = 'pt-BR') {
   return new Date(dateStr + 'T00:00:00').toLocaleDateString(locale)
@@ -187,6 +190,14 @@ export default function DashboardPage() {
   // silently falling back to "all accounts".
   const noAccounts = activeAccountIds !== null && activeAccountIds.length === 0
 
+  const { layout, saveLayout } = useDashboardLayout()
+  const [customizeOpen, setCustomizeOpen] = useState(false)
+  // Queries feeding only one widget are skipped while that widget is hidden.
+  const isVisible = (id: WidgetId) => !layout.hidden.includes(id)
+  const showCategorySpending = isVisible('category-spending')
+  const showBalanceFlow = isVisible('balance-flow')
+  const showTransactions = isVisible('transactions')
+
   const { data: summary, isLoading: summaryLoading } = useQuery({
     queryKey: ['dashboard', 'summary', selectedMonth, activeAccountIds, activeWalletIds],
     queryFn: () => dashboard.summary(monthParam, undefined, acctIds, walletIds),
@@ -195,7 +206,7 @@ export default function DashboardPage() {
   const { data: spending, isLoading: spendingLoading } = useQuery({
     queryKey: ['dashboard', 'spending', selectedMonth, activeAccountIds],
     queryFn: () => dashboard.spendingByCategory(monthParam, acctIds),
-    enabled: !noAccounts,
+    enabled: !noAccounts && showCategorySpending,
   })
 
   const prevMonth = shiftMonth(selectedMonth, -1)
@@ -203,7 +214,7 @@ export default function DashboardPage() {
   const { data: balanceHistory, isLoading: balanceHistoryLoading } = useQuery({
     queryKey: ['dashboard', 'balance-history', selectedMonth, activeAccountIds],
     queryFn: () => dashboard.balanceHistory(monthParam, acctIds),
-    enabled: !noAccounts,
+    enabled: !noAccounts && showBalanceFlow,
   })
 
   const { data: currentMonthTxs, isLoading: currentTxLoading } = useQuery({
@@ -215,7 +226,7 @@ export default function DashboardPage() {
       exclude_transfers: true,
       account_ids: acctIds,
     }),
-    enabled: !noAccounts,
+    enabled: !noAccounts && showTransactions,
   })
 
   // Same month grid the transactions page renders, scoped to the active
@@ -223,7 +234,7 @@ export default function DashboardPage() {
   const calendarAccountIds = acctIds && acctIds.length > 0 ? acctIds : undefined
   const { data: calendarData, isLoading: calendarLoading } = useQuery({
     queryKey: ['transactions', 'calendar', selectedMonth, activeAccountIds],
-    enabled: txViewMode === 'calendar' && !noAccounts,
+    enabled: txViewMode === 'calendar' && !noAccounts && showTransactions,
     queryFn: () => transactions.calendar({
       month: monthStart,
       account_ids: calendarAccountIds,
@@ -235,6 +246,7 @@ export default function DashboardPage() {
     queryKey: ['groups', 'all'],
     queryFn: () => groupsApi.list(true),
     staleTime: 60_000,
+    enabled: showTransactions,
   })
   const groupNameById = useMemo(() => {
     const map = new Map<string, string>()
@@ -245,11 +257,13 @@ export default function DashboardPage() {
   const { data: projectedTxs, isLoading: projectedTxLoading } = useQuery({
     queryKey: ['dashboard', 'projected-transactions', selectedMonth],
     queryFn: () => dashboard.projectedTransactions({ month: monthParam }),
+    enabled: showTransactions,
   })
 
   const { data: budgetComparison } = useQuery({
     queryKey: ['budgets', 'comparison', selectedMonth],
     queryFn: () => budgets.comparison(monthParam),
+    enabled: showCategorySpending,
   })
 
   const { data: categoriesList } = useQuery({
@@ -275,6 +289,7 @@ export default function DashboardPage() {
   const { data: goalsSummary } = useQuery({
     queryKey: ['goals', 'summary'],
     queryFn: () => goalsApi.summary(3),
+    enabled: isVisible('goals'),
   })
 
   const updateMutation = useMutation({
@@ -614,51 +629,11 @@ export default function DashboardPage() {
     ? '---'
     : `${savingsRate.toFixed(0)}%`
 
-  return (
-    <div>
-      {/* Header */}
-      <PageHeader
-        section={greeting}
-        title={monthLabel(selectedMonth, uiLocale).replace(/^\w/, c => c.toUpperCase())}
-        action={
-          <div className="flex items-center gap-1">
-            <button
-              className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
-              onClick={() => handleMonthChange(shiftMonth(selectedMonth, -1))}
-            >&#8249;</button>
-            <Popover open={headerCalOpen} onOpenChange={setHeaderCalOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className="inline-flex items-center justify-center gap-2 border border-border rounded-lg px-3 py-1.5 text-sm bg-card text-foreground hover:bg-muted/50 transition-all cursor-pointer min-w-[180px]"
-                >
-                  <CalendarIcon className="size-3.5 text-muted-foreground" />
-                  {monthLabel(selectedMonth, uiLocale).replace(/^\w/, c => c.toUpperCase())}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="center" className="w-auto p-0">
-                <MonthPicker
-                  locale={dateFnsLocale}
-                  selectedMonth={new Date(`${selectedMonth}-01T00:00:00`)}
-                  onMonthSelect={(date) => {
-                    if (!date) return
-                    const newMonth = format(date, 'yyyy-MM')
-                    setSelectedMonth(newMonth)
-                    setHeaderCalOpen(false)
-                  }}
-                />
-              </PopoverContent>
-            </Popover>
-            <button
-              className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
-              onClick={() => handleMonthChange(shiftMonth(selectedMonth, 1))}
-            >&#8250;</button>
-          </div>
-        }
-      />
-
-      {/* Hero Card: Available Balance + secondary indicators */}
-      <div className="bg-card rounded-xl border border-border shadow-sm mb-5 px-5 pt-5 pb-4">
+  // Each dashboard section, keyed by widget id; rendered below in the
+  // order the user saved (see components/dashboard/widgets.ts).
+  const widgets: Record<WidgetId, ReactNode> = {
+    hero: (
+      <div className="bg-card rounded-xl border border-border shadow-sm px-5 pt-5 pb-4">
         {/* Available balance in checking/savings accounts */}
         <div className="pb-4 mb-4 border-b border-border">
           <p className="text-xs font-semibold text-muted-foreground mb-1">{t('dashboard.availableBalance')}</p>
@@ -864,13 +839,13 @@ export default function DashboardPage() {
           </p>
         )}
       </div>
-
-      {/* Uncategorized banner */}
-      {!summaryLoading && (
+    ),
+    uncategorized:
+      !summaryLoading && (
         uncategorizedCount > 0 ? (
           <button
             type="button"
-            className="w-full flex items-center justify-between gap-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg px-4 py-2.5 mb-5 cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors"
+            className="w-full flex items-center justify-between gap-3 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 rounded-lg px-4 py-2.5 cursor-pointer hover:bg-amber-100 dark:hover:bg-amber-500/20 transition-colors"
             onClick={() => setDrillDown({
               title: t('dashboard.drillDownUncategorized'),
               uncategorized: true,
@@ -896,258 +871,254 @@ export default function DashboardPage() {
             </span>
           </button>
         ) : (
-          <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg px-4 py-2.5 mb-5">
+          <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 rounded-lg px-4 py-2.5">
             <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
             <span className="text-sm text-emerald-900 dark:text-emerald-200">{t('dashboard.allCategorized')}</span>
           </div>
         )
-      )}
+      ),
+    'category-spending': (
+      <div className="bg-card rounded-xl border border-border shadow-sm flex flex-col max-h-[420px]">
+        <div className="px-5 py-4 border-b border-border shrink-0 flex items-center justify-between">
+          <p className="text-sm font-semibold text-foreground">{t('dashboard.spendingByCategory')}</p>
+          <button
+            onClick={() => setCatSortDesc(v => !v)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+          >
+            <ArrowUpDown size={13} />
+            {catSortDesc ? t('dashboard.sortHighest') : t('dashboard.sortLowest')}
+          </button>
+        </div>
+        <div className="p-3 overflow-y-auto flex-1">
+          {spendingLoading ? (
+            <div className="space-y-3 p-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : mergedCategories.length > 0 ? (
+            <div className="space-y-1.5">
+              {mergedCategories.map((item) => {
+                const hasBudget = item.budget_amount != null && item.budget_amount > 0
+                const pct = item.percentage_used
+                const barColor = hasBudget
+                  ? pct! > 100 ? 'bg-rose-500' : pct! >= 80 ? 'bg-amber-400' : 'bg-emerald-500'
+                  : 'bg-muted-foreground/20'
 
-      {/* Charts: Category Spending Bars + Balance Evolution */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5" style={{ gridAutoRows: 'minmax(380px, auto)' }}>
-        {/* Category Spending Bars */}
-        <div className="bg-card rounded-xl border border-border shadow-sm flex flex-col max-h-[420px]">
-          <div className="px-5 py-4 border-b border-border shrink-0 flex items-center justify-between">
-            <p className="text-sm font-semibold text-foreground">{t('dashboard.spendingByCategory')}</p>
-            <button
-              onClick={() => setCatSortDesc(v => !v)}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-            >
-              <ArrowUpDown size={13} />
-              {catSortDesc ? t('dashboard.sortHighest') : t('dashboard.sortLowest')}
-            </button>
-          </div>
-          <div className="p-3 overflow-y-auto flex-1">
-            {spendingLoading ? (
-              <div className="space-y-3 p-2">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            ) : mergedCategories.length > 0 ? (
-              <div className="space-y-1.5">
-                {mergedCategories.map((item) => {
-                  const hasBudget = item.budget_amount != null && item.budget_amount > 0
-                  const pct = item.percentage_used
-                  const barColor = hasBudget
-                    ? pct! > 100 ? 'bg-rose-500' : pct! >= 80 ? 'bg-amber-400' : 'bg-emerald-500'
-                    : 'bg-muted-foreground/20'
-
-                  return (
-                    <div
-                      key={item.category_id}
-                      className="rounded-lg px-3 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer"
-                      onClick={() => setDrillDown({
-                        title: t('dashboard.drillDownCategory', { category: item.category_name, month: monthLabelStr }),
-                        category_id: item.category_id,
-                        type: 'debit',
-                        from: monthStart,
-                        to: monthEnd,
-                      })}
-                    >
-                      <div className="flex items-center gap-3">
-                        <CategoryIcon icon={item.category_icon} color={item.category_color} size="lg" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2 mb-1">
-                            <span className="text-sm font-semibold text-foreground truncate">{item.category_name}</span>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <span className="text-sm font-bold tabular-nums text-foreground">{mask(formatCurrency(item.actual, userCurrency, locale))}</span>
-                              {item.momPct !== null && (
-                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold tabular-nums ${
-                                  item.momPct > 0 ? 'bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400' : item.momPct < 0 ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400' : 'bg-muted text-muted-foreground'
-                                }`}>
-                                  {item.momPct > 0 ? '\u2191' : item.momPct < 0 ? '\u2193' : '='}{Math.abs(item.momPct).toFixed(0)}%
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                          {hasBudget && (
-                            <div className="flex items-center gap-2">
-                              <div className="flex-1 h-1.5 bg-muted/60 rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full transition-all ${barColor}`}
-                                  style={{ width: `${Math.min(pct!, 100)}%` }}
-                                />
-                              </div>
-                              <span className={`text-[11px] tabular-nums font-medium shrink-0 ${
-                                pct! > 100 ? 'text-rose-500' : pct! >= 80 ? 'text-amber-500' : 'text-muted-foreground'
+                return (
+                  <div
+                    key={item.category_id}
+                    className="rounded-lg px-3 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer"
+                    onClick={() => setDrillDown({
+                      title: t('dashboard.drillDownCategory', { category: item.category_name, month: monthLabelStr }),
+                      category_id: item.category_id,
+                      type: 'debit',
+                      from: monthStart,
+                      to: monthEnd,
+                    })}
+                  >
+                    <div className="flex items-center gap-3">
+                      <CategoryIcon icon={item.category_icon} color={item.category_color} size="lg" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="text-sm font-semibold text-foreground truncate">{item.category_name}</span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-sm font-bold tabular-nums text-foreground">{mask(formatCurrency(item.actual, userCurrency, locale))}</span>
+                            {item.momPct !== null && (
+                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold tabular-nums ${
+                                item.momPct > 0 ? 'bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400' : item.momPct < 0 ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400' : 'bg-muted text-muted-foreground'
                               }`}>
-                                {mask(t('dashboard.ofBudget', { budget: formatCurrency(item.budget_amount!, userCurrency, locale) }))}
+                                {item.momPct > 0 ? '\u2191' : item.momPct < 0 ? '\u2193' : '='}{Math.abs(item.momPct).toFixed(0)}%
                               </span>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
+                        {hasBudget && (
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 h-1.5 bg-muted/60 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${barColor}`}
+                                style={{ width: `${Math.min(pct!, 100)}%` }}
+                              />
+                            </div>
+                            <span className={`text-[11px] tabular-nums font-medium shrink-0 ${
+                              pct! > 100 ? 'text-rose-500' : pct! >= 80 ? 'text-amber-500' : 'text-muted-foreground'
+                            }`}>
+                              {mask(t('dashboard.ofBudget', { budget: formatCurrency(item.budget_amount!, userCurrency, locale) }))}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
-                  )
-                })}
-              </div>
-            ) : (
-              <p className="text-muted-foreground text-sm text-center py-12">{t('dashboard.noData')}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Cumulative Spending Comparison */}
-        <div className="bg-card rounded-xl border border-border shadow-sm max-h-[420px] flex flex-col">
-          <div className="px-5 pt-5 pb-3 shrink-0">
-            <div className="flex items-start justify-between mb-0.5">
-              <div>
-                <p className="text-base font-bold text-foreground">{t('dashboard.balanceFlow')}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {new Date(`${selectedMonth}-01T00:00:00`).toLocaleDateString(dateLocale)} → {new Date(`${selectedMonth}-${String(lastCurrentPoint?.day ?? monthLastDay(selectedMonth)).padStart(2, '0')}T00:00:00`).toLocaleDateString(dateLocale)}
-                </p>
-              </div>
-              {!balanceHistoryLoading && lastCurrentPoint && (
-                <div className="text-right">
-                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{t('dashboard.balancePeriodVariation')}</p>
-                  <span className={`text-lg font-bold tabular-nums ${monthVariation >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                    {mask(`${monthVariation > 0 ? '+' : ''}${formatCurrency(monthVariation, userCurrency, locale)}`)}
-                  </span>
-                </div>
-              )}
+                  </div>
+                )
+              })}
             </div>
-            <div className="flex items-center gap-3 mt-2">
-              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <span className="inline-block w-3 h-0.5 rounded-full bg-emerald-500" />
-                {t('dashboard.balanceCurrentMonthLegend')}
-              </span>
-              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <span className="inline-block w-3 border-t-2 border-dashed border-slate-400" />
-                {t('dashboard.balancePreviousMonthLegend')}
-              </span>
-            </div>
-          </div>
-          <div className="px-1 pb-4 flex-1 min-h-0">
-            {balanceHistoryLoading ? (
-              <Skeleton className="h-full w-full" />
-            ) : cumulativeData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart
-                  data={cumulativeData}
-                  margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
-                  className="cursor-pointer"
-                  onMouseMove={(state) => {
-                    const idx = state?.activeTooltipIndex
-                    if (typeof idx === 'number') {
-                      const point = cumulativeData[idx]
-                      if (point) setHoveredDay(point.day)
-                    }
-                  }}
-                  onMouseLeave={() => setHoveredDay(null)}
-                  onClick={(_state) => {
-                    // Access activePayload from the underlying native event target chart state
-                    const chartState = _state as unknown as { activePayload?: Array<{ payload: { day: number } }> }
-                    const payload = chartState?.activePayload ?? []
-                    if (payload[0]) {
-                      const day = String(payload[0].payload.day).padStart(2, '0')
-                      const dateStr = `${selectedMonth}-${day}`
-                      setDrillDown({
-                        title: t('dashboard.drillDownDay', { date: new Date(dateStr + 'T00:00:00').toLocaleDateString(dateLocale) }),
-                        from: dateStr,
-                        to: dateStr,
-                      })
-                    }
-                  }}
-                >
-                  <defs>
-                    <linearGradient id="cumGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10B981" stopOpacity={0.18} />
-                      <stop offset="95%" stopColor="#10B981" stopOpacity={0.02} />
-                    </linearGradient>
-                  </defs>
-                  <XAxis
-                    dataKey="day"
-                    tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
-                    axisLine={false}
-                    tickLine={false}
-                    interval={3}
-                  />
-                  <YAxis
-                    tickFormatter={(v) => {
-                      if (privacyMode) return ''
-                      if (v === 0) return '0'
-                      return formatCurrency(v, userCurrency, locale).replace(/,00$/, '').replace(/\.00$/, '')
-                    }}
-                    tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
-                    axisLine={false}
-                    tickLine={false}
-                    width={56}
-                    tickCount={5}
-                    domain={[
-                      (dataMin: number) => dataMin < 0 ? Math.floor(dataMin / 100) * 100 : 0,
-                      (dataMax: number) => Math.ceil(dataMax / 100) * 100,
-                    ]}
-                  />
-                  <RechartsTooltip
-                    formatter={(value, name) => [
-                      value !== null ? (privacyMode ? MASK : formatCurrency(Number(value), userCurrency, locale)) : '\u2014',
-                      name === 'current' ? monthLabel(selectedMonth, uiLocale).split(' ')[0] : monthLabel(prevMonth, uiLocale).split(' ')[0],
-                    ]}
-                    labelFormatter={(day) => t('dashboard.day', { day })}
-                    contentStyle={{
-                      background: 'var(--card)',
-                      color: 'var(--foreground)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '0.75rem',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-                      fontSize: '12px',
-                    }}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="current"
-                    stroke="#10B981"
-                    strokeWidth={2}
-                    fill="url(#cumGrad)"
-                    dot={false}
-                    activeDot={{ r: 3, fill: '#10B981' }}
-                    connectNulls={false}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="previous"
-                    stroke="#94A3B8"
-                    strokeWidth={2}
-                    strokeDasharray="5 3"
-                    dot={false}
-                    activeDot={{ r: 3, fill: '#94A3B8' }}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="text-muted-foreground text-sm text-center py-12">{t('dashboard.noData')}</p>
-            )}
-          </div>
-          {!balanceHistoryLoading && lastCurrentPoint && (() => {
-            const footerDay = hoveredDay ?? lastDay
-            const footerPrev = balanceHistory?.previous.find(d => d.day === footerDay)?.balance ?? 0
-            const footerCurrent = cumulativeData.find(d => d.day === footerDay)?.current ?? totalBalance
-            const footerPct = footerPrev !== 0 ? ((footerCurrent - footerPrev) / Math.abs(footerPrev)) * 100 : null
-            if (footerPrev === 0 || footerPct === null) return null
-            return (
-              <div className="px-5 pb-4 pt-0 shrink-0">
-                <p className="text-xs text-muted-foreground">
-                  {t('dashboard.balanceFlowVsPrev', {
-                    month: monthLabel(prevMonth, uiLocale).split(' ')[0],
-                    day: footerDay,
-                    amount: mask(formatCurrency(footerPrev, userCurrency, locale)),
-                    delta: `${footerPct >= 0 ? '+' : ''}${footerPct.toFixed(1)}%`,
-                  })}
-                  {' '}
-                  <span className={footerPct >= 0 ? 'text-emerald-600' : 'text-rose-500'}>
-                    {footerPct >= 0 ? '\u25B2' : '\u25BC'}
-                  </span>
-                </p>
-              </div>
-            )
-          })()}
+          ) : (
+            <p className="text-muted-foreground text-sm text-center py-12">{t('dashboard.noData')}</p>
+          )}
         </div>
       </div>
-
-      {/* Goals Progress Widget */}
-      {goalsSummary && goalsSummary.length > 0 && (
-        <div className="bg-card rounded-xl border border-border shadow-sm mb-5">
+    ),
+    'balance-flow': (
+      <div className="bg-card rounded-xl border border-border shadow-sm max-h-[420px] flex flex-col">
+        <div className="px-5 pt-5 pb-3 shrink-0">
+          <div className="flex items-start justify-between mb-0.5">
+            <div>
+              <p className="text-base font-bold text-foreground">{t('dashboard.balanceFlow')}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {new Date(`${selectedMonth}-01T00:00:00`).toLocaleDateString(dateLocale)} → {new Date(`${selectedMonth}-${String(lastCurrentPoint?.day ?? monthLastDay(selectedMonth)).padStart(2, '0')}T00:00:00`).toLocaleDateString(dateLocale)}
+              </p>
+            </div>
+            {!balanceHistoryLoading && lastCurrentPoint && (
+              <div className="text-right">
+                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">{t('dashboard.balancePeriodVariation')}</p>
+                <span className={`text-lg font-bold tabular-nums ${monthVariation >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                  {mask(`${monthVariation > 0 ? '+' : ''}${formatCurrency(monthVariation, userCurrency, locale)}`)}
+                </span>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-3 mt-2">
+            <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span className="inline-block w-3 h-0.5 rounded-full bg-emerald-500" />
+              {t('dashboard.balanceCurrentMonthLegend')}
+            </span>
+            <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span className="inline-block w-3 border-t-2 border-dashed border-slate-400" />
+              {t('dashboard.balancePreviousMonthLegend')}
+            </span>
+          </div>
+        </div>
+        <div className="px-1 pb-4 flex-1 min-h-0">
+          {balanceHistoryLoading ? (
+            <Skeleton className="h-full w-full" />
+          ) : cumulativeData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart
+                data={cumulativeData}
+                margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+                className="cursor-pointer"
+                onMouseMove={(state) => {
+                  const idx = state?.activeTooltipIndex
+                  if (typeof idx === 'number') {
+                    const point = cumulativeData[idx]
+                    if (point) setHoveredDay(point.day)
+                  }
+                }}
+                onMouseLeave={() => setHoveredDay(null)}
+                onClick={(_state) => {
+                  // Access activePayload from the underlying native event target chart state
+                  const chartState = _state as unknown as { activePayload?: Array<{ payload: { day: number } }> }
+                  const payload = chartState?.activePayload ?? []
+                  if (payload[0]) {
+                    const day = String(payload[0].payload.day).padStart(2, '0')
+                    const dateStr = `${selectedMonth}-${day}`
+                    setDrillDown({
+                      title: t('dashboard.drillDownDay', { date: new Date(dateStr + 'T00:00:00').toLocaleDateString(dateLocale) }),
+                      from: dateStr,
+                      to: dateStr,
+                    })
+                  }
+                }}
+              >
+                <defs>
+                  <linearGradient id="cumGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10B981" stopOpacity={0.18} />
+                    <stop offset="95%" stopColor="#10B981" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <XAxis
+                  dataKey="day"
+                  tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
+                  axisLine={false}
+                  tickLine={false}
+                  interval={3}
+                />
+                <YAxis
+                  tickFormatter={(v) => {
+                    if (privacyMode) return ''
+                    if (v === 0) return '0'
+                    return formatCurrency(v, userCurrency, locale).replace(/,00$/, '').replace(/\.00$/, '')
+                  }}
+                  tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={56}
+                  tickCount={5}
+                  domain={[
+                    (dataMin: number) => dataMin < 0 ? Math.floor(dataMin / 100) * 100 : 0,
+                    (dataMax: number) => Math.ceil(dataMax / 100) * 100,
+                  ]}
+                />
+                <RechartsTooltip
+                  formatter={(value, name) => [
+                    value !== null ? (privacyMode ? MASK : formatCurrency(Number(value), userCurrency, locale)) : '\u2014',
+                    name === 'current' ? monthLabel(selectedMonth, uiLocale).split(' ')[0] : monthLabel(prevMonth, uiLocale).split(' ')[0],
+                  ]}
+                  labelFormatter={(day) => t('dashboard.day', { day })}
+                  contentStyle={{
+                    background: 'var(--card)',
+                    color: 'var(--foreground)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '0.75rem',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                    fontSize: '12px',
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="current"
+                  stroke="#10B981"
+                  strokeWidth={2}
+                  fill="url(#cumGrad)"
+                  dot={false}
+                  activeDot={{ r: 3, fill: '#10B981' }}
+                  connectNulls={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="previous"
+                  stroke="#94A3B8"
+                  strokeWidth={2}
+                  strokeDasharray="5 3"
+                  dot={false}
+                  activeDot={{ r: 3, fill: '#94A3B8' }}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          ) : (
+            <p className="text-muted-foreground text-sm text-center py-12">{t('dashboard.noData')}</p>
+          )}
+        </div>
+        {!balanceHistoryLoading && lastCurrentPoint && (() => {
+          const footerDay = hoveredDay ?? lastDay
+          const footerPrev = balanceHistory?.previous.find(d => d.day === footerDay)?.balance ?? 0
+          const footerCurrent = cumulativeData.find(d => d.day === footerDay)?.current ?? totalBalance
+          const footerPct = footerPrev !== 0 ? ((footerCurrent - footerPrev) / Math.abs(footerPrev)) * 100 : null
+          if (footerPrev === 0 || footerPct === null) return null
+          return (
+            <div className="px-5 pb-4 pt-0 shrink-0">
+              <p className="text-xs text-muted-foreground">
+                {t('dashboard.balanceFlowVsPrev', {
+                  month: monthLabel(prevMonth, uiLocale).split(' ')[0],
+                  day: footerDay,
+                  amount: mask(formatCurrency(footerPrev, userCurrency, locale)),
+                  delta: `${footerPct >= 0 ? '+' : ''}${footerPct.toFixed(1)}%`,
+                })}
+                {' '}
+                <span className={footerPct >= 0 ? 'text-emerald-600' : 'text-rose-500'}>
+                  {footerPct >= 0 ? '\u25B2' : '\u25BC'}
+                </span>
+              </p>
+            </div>
+          )
+        })()}
+      </div>
+    ),
+    goals:
+      goalsSummary && goalsSummary.length > 0 && (
+        <div className="bg-card rounded-xl border border-border shadow-sm">
           <div className="px-5 py-4 border-b border-border flex items-center justify-between">
             <p className="text-sm font-semibold text-foreground">{t('goals.dashboardTitle')}</p>
             <Link to="/goals" className="text-xs font-medium text-primary hover:underline">
@@ -1214,9 +1185,8 @@ export default function DashboardPage() {
             })}
           </div>
         </div>
-      )}
-
-      {/* Period Transactions */}
+      ),
+    transactions: (
       <div>
         {/* One control bar for both views, so the switch never moves between them. */}
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -1552,6 +1522,77 @@ export default function DashboardPage() {
         </div>
         )}
       </div>
+    ),
+  }
+
+  return (
+    <div>
+      {/* Header */}
+      <PageHeader
+        section={greeting}
+        title={monthLabel(selectedMonth, uiLocale).replace(/^\w/, c => c.toUpperCase())}
+        action={
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 mr-1"
+              aria-label={t('dashboard.customize.title')}
+              onClick={() => setCustomizeOpen(true)}
+            >
+              <SlidersHorizontal className="size-3.5" />
+              <span className="hidden sm:inline">{t('dashboard.customize.button')}</span>
+            </Button>
+            <button
+              className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
+              onClick={() => handleMonthChange(shiftMonth(selectedMonth, -1))}
+            >&#8249;</button>
+            <Popover open={headerCalOpen} onOpenChange={setHeaderCalOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex items-center justify-center gap-2 border border-border rounded-lg px-3 py-1.5 text-sm bg-card text-foreground hover:bg-muted/50 transition-all cursor-pointer min-w-[180px]"
+                >
+                  <CalendarIcon className="size-3.5 text-muted-foreground" />
+                  {monthLabel(selectedMonth, uiLocale).replace(/^\w/, c => c.toUpperCase())}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="center" className="w-auto p-0">
+                <MonthPicker
+                  locale={dateFnsLocale}
+                  selectedMonth={new Date(`${selectedMonth}-01T00:00:00`)}
+                  onMonthSelect={(date) => {
+                    if (!date) return
+                    const newMonth = format(date, 'yyyy-MM')
+                    setSelectedMonth(newMonth)
+                    setHeaderCalOpen(false)
+                  }}
+                />
+              </PopoverContent>
+            </Popover>
+            <button
+              className="h-8 w-8 flex items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:border-border hover:text-foreground transition-all text-base"
+              onClick={() => handleMonthChange(shiftMonth(selectedMonth, 1))}
+            >&#8250;</button>
+          </div>
+        }
+      />
+
+      <div className="flex flex-col gap-5">
+        {layoutRows(layout).map((row) => row.kind === 'full' ? (
+          <Fragment key={row.id}>{widgets[row.id]}</Fragment>
+        ) : (
+          // Half-width widgets share a row on large screens; the fixed
+          // row height keeps the two charts the same size side by side.
+          <div
+            key={row.ids.join('+')}
+            className={`grid grid-cols-1 gap-5 ${row.ids.length > 1 ? 'lg:grid-cols-2' : ''}`}
+            style={{ gridAutoRows: 'minmax(380px, auto)' }}
+          >
+            {row.ids.map((id) => <Fragment key={id}>{widgets[id]}</Fragment>)}
+          </div>
+        ))}
+      </div>
 
       <TransactionDrillDown
         filter={
@@ -1605,6 +1646,13 @@ export default function DashboardPage() {
         onSave={(data) => createRuleMutation.mutate(data as Omit<Rule, 'id' | 'user_id'>)}
         loading={createRuleMutation.isPending}
         initialData={createRuleInitialData}
+      />
+
+      <CustomizeDashboardDialog
+        open={customizeOpen}
+        onOpenChange={setCustomizeOpen}
+        layout={layout}
+        onSave={saveLayout}
       />
     </div>
   )

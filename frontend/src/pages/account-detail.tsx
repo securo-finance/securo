@@ -690,6 +690,7 @@ export default function AccountDetailPage() {
       effective_bill_date: null,
       recurring_transaction_id: p.recurring_id,
       splits: [],
+      category_allocations: [],
       is_ignored: false,
       virtual: true,
       runningBalance: 0,
@@ -1628,6 +1629,11 @@ export default function AccountDetailPage() {
                             {isOpening && (
                               <span className="ml-2 text-xs text-muted-foreground font-normal border border-border rounded px-1.5 py-0.5">
                                 {t('accounts.openingBalance')}
+                              </span>
+                            )}
+                            {tx.category_allocations && tx.category_allocations.length > 0 && (
+                              <span className="ml-2 inline-flex items-center text-xs text-teal-700 font-semibold bg-teal-50 border border-teal-200 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-900 rounded px-1.5 py-0.5">
+                                {t('splitGroups.categorySplits.badge')}
                               </span>
                             )}
                             {isTransfer && (

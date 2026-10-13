@@ -18,3 +18,8 @@ docker-compose.override.yml
 # downloaded ONNX embedding models, transaction attachments). User data
 # — never commit.
 backend/data/
+
+# Generated knowledge graph (graph.json, the extraction cache, the HTML
+# view). Rebuildable from source with `graphify update .`, and large enough
+# that keeping it in history is pure bloat.
+graphify-out/

@@ -822,6 +822,23 @@
   },
   "dashboard": {
     "title": "Prehľad",
+    "customize": {
+      "button": "Prispôsobiť",
+      "title": "Prispôsobiť nástenku",
+      "description": "Vyberte, ktoré sekcie sa zobrazia a v akom poradí.",
+      "reset": "Obnoviť predvolené",
+      "moveUp": "Posunúť {{widget}} hore",
+      "moveDown": "Posunúť {{widget}} dole",
+      "saveError": "Rozloženie nástenky sa nepodarilo uložiť",
+      "widgets": {
+        "hero": "Zostatok a mesačný prehľad",
+        "uncategorized": "Nekategorizované transakcie",
+        "categorySpending": "Výdavky podľa kategórie",
+        "balanceFlow": "Vývoj zostatku",
+        "goals": "Ciele",
+        "transactions": "Transakcie"
+      }
+    },
     "greetingMorning": "Dobré ráno",
     "greetingAfternoon": "Dobrý deň",
     "greetingEvening": "Dobrý večer",
@@ -1200,7 +1217,8 @@
     "invoiceBadgeTooltip": "Táto transakcia vyrovnáva faktúru. Otvorte ju.",
     "suggestionBadge": "Otázka",
     "suggestionBadgeTooltip": "Platba môže uhradiť túto faktúru. Otvorte front a odpovedzte.",
-    "clearGroupFilter": "Zrušiť filter skupiny"
+    "clearGroupFilter": "Zrušiť filter skupiny",
+    "splitByCategory": "Rozdelené"
   },
   "accounts": {
     "title": "Účty",
@@ -2394,6 +2412,17 @@
       "project": "Projekt",
       "client": "Klient",
       "other": "Iné"
+    },
+    "categorySplits": {
+      "title": "Rozdeliť podľa kategórie",
+      "addRow": "Pridať kategóriu",
+      "category": "Kategória",
+      "amount": "Suma",
+      "remove": "Odstrániť",
+      "sum": "Súčet: {{sum}} / {{total}} {{currency}}",
+      "badge": "Rozdelené",
+      "modeAmongPeople": "Medzi ľuďmi",
+      "modeByCategory": "Podľa kategórie"
     }
   },
   "privacy": {

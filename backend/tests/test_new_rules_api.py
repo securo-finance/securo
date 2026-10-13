@@ -1240,7 +1240,9 @@ async def test_preview_rule_pages_through_the_matches(
     """
     body = {
         "conditions_op": "and",
-        "conditions": [{"field": "amount", "op": "gt", "value": "0"}],
+        # Signed amounts (issue #981) make "> 0" income-only, so the floor
+        # sits below every expense in the fixture to match all five rows.
+        "conditions": [{"field": "amount", "op": "gt", "value": "-100000"}],
         "actions": [{"op": "set_category", "value": str(test_categories[0].id)}],
         "limit": 2,
     }
