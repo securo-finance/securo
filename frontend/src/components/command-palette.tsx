@@ -36,6 +36,7 @@ import {
 
 import { search as searchApi, type SearchHit, type SearchHitType } from '@/lib/api'
 import { cn, normalizeText } from '@/lib/utils'
+import { transactionDescription } from '@/lib/transaction-description'
 
 // ---------------------------------------------------------------------------
 // Static actions & navigation registry
@@ -170,6 +171,7 @@ type RecentItem = {
   path: string
   icon: string // lucide name, stored as string; resolved via fallback icon
   sublabel?: string | null
+  source?: 'opening_balance'
 }
 
 const RECENT_KEY = 'securo.cmdk.recent'
@@ -335,13 +337,14 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   }, [debounced, t])
 
   const runAndClose = useCallback(
-    (item: { id: string; label: string; path: string; iconName: string; sublabel?: string | null }) => {
+    (item: { id: string; label: string; path: string; iconName: string; sublabel?: string | null; source?: RecentItem['source'] }) => {
       saveRecent({
         id: item.id,
         label: item.label,
         path: item.path,
         icon: item.iconName,
         sublabel: item.sublabel,
+        source: item.source,
       })
       handleOpenChange(false)
       // Slight delay so dialog closes before navigation animation
@@ -434,7 +437,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                       {recents.map((r) => (
                         <Command.Item
                           key={`recent-${r.id}`}
-                          value={`recent ${r.label}`}
+                          value={`recent ${transactionDescription(r.label, r.icon === 'transaction' ? r.source : undefined, t)}`}
                           onSelect={() =>
                             runAndClose({
                               id: r.id,
@@ -442,6 +445,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                               path: r.path,
                               iconName: r.icon,
                               sublabel: r.sublabel,
+                              source: r.source,
                             })
                           }
                           className={itemClasses()}
@@ -450,7 +454,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                             <Compass size={14} />
                           </ItemIcon>
                           <div className="min-w-0 flex-1">
-                            <div className="truncate text-[13.5px] text-foreground">{r.label}</div>
+                            <div className="truncate text-[13.5px] text-foreground">{transactionDescription(r.label, r.icon === 'transaction' ? r.source : undefined, t)}</div>
                             {r.sublabel && (
                               <div className="truncate text-[11.5px] text-muted-foreground">{r.sublabel}</div>
                             )}
@@ -549,6 +553,9 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                         labelKey={meta.labelKey}
                       >
                         {items.map((hit) => {
+                          const source = hit.type === 'transaction' && hit.meta?.source === 'opening_balance'
+                            ? 'opening_balance' : undefined
+                          const label = transactionDescription(hit.label, source, t)
                           const amount = formatHitAmount(hit.amount, hit.currency, locale)
                           const dateLabel = formatHitDate(hit.date, locale)
                           const isPositive = (hit.amount ?? 0) > 0 && hit.type === 'transaction' && (hit.meta?.tx_type === 'credit' || hit.amount! > 0)
@@ -556,7 +563,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                           return (
                             <Command.Item
                               key={`${hit.type}-${hit.id}`}
-                              value={`${hit.type} ${hit.label} ${hit.subtitle ?? ''}`}
+                              value={`${hit.type} ${label} ${hit.subtitle ?? ''}`}
                               onSelect={() =>
                                 runAndClose({
                                   id: `${hit.type}-${hit.id}`,
@@ -564,6 +571,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                                   path: meta.pathFor(hit),
                                   iconName: hit.type,
                                   sublabel: hit.subtitle,
+                                  source,
                                 })
                               }
                               className={itemClasses()}
@@ -572,7 +580,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                                 <GroupIcon size={14} />
                               </ItemIcon>
                               <div className="min-w-0 flex-1">
-                                <div className="truncate text-[13.5px] text-foreground">{hit.label}</div>
+                                <div className="truncate text-[13.5px] text-foreground">{label}</div>
                                 {hit.subtitle && (
                                   <div className="truncate text-[11.5px] text-muted-foreground/90">
                                     {hit.subtitle}

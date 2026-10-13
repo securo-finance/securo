@@ -1156,6 +1156,7 @@
     "confirmDeleteTitle": "Account verwijderen?",
     "confirmDeleteDesc": "Deze actie is onomkeerbaar. Het verwijdert ook elke transactie, importrecord en terugkerende transactie die aan dit account is gekoppeld, en ontkoppelt alle doelen die het bijhielden.",
     "openingBalance": "openingsbalans",
+    "openingBalanceDescription": "Openingsbalans",
     "notFound": "Account niet gevonden.",
     "balance": "Balans",
     "balanceCreditCard": "Verschuldigd bedrag",
@@ -1721,7 +1722,8 @@
       "invalid_date": "Ongeldige datumformaat",
       "no_amount": "Geen in- of uitstroombedrag",
       "invalid_amount": "Ongeldig bedragformaat"
-    }
+    },
+    "selectAll": "Alles selecteren"
   },
   "assetImport": {
     "title": "Investeringsorders importeren",
@@ -1941,6 +1943,9 @@
     "inflowOutflow": "Instroom versus uitstroom",
     "startingBalance": "Beginsaldo",
     "endingBalance": "Geprojecteerd saldo",
+    "runwayNegativeOn": "Het saldo wordt negatief op {{date}}",
+    "runwayAlreadyNegative": "Al negatief",
+    "lowestBalance": "Laagste saldo",
     "projectedIncome": "Geprojecteerd inkomen",
     "projectedExpenses": "Geprojecteerde uitgaven",
     "incomeExpenses": "Inkomsten versus uitgaven",
@@ -2070,6 +2075,7 @@
       "ro_cui": "CUI",
       "ch_uid": "UID",
       "inn": "herberg",
+      "kz_biniin": "BIN/IIN",
       "edrpou": "EDRPOU",
       "cuit": "CUIT",
       "rfc": "RFC",
@@ -2144,6 +2150,8 @@
     "remove": "Verwijderen"
   },
   "splitGroups": {
+    "searchPlaceholder": "Groepen zoeken...",
+    "clearSearch": "Zoekopdracht wissen",
     "title": "Groepen",
     "section": "Instellen",
     "add": "Groep toevoegen",

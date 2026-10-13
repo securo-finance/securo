@@ -1170,6 +1170,7 @@
     "confirmDeleteTitle": "Удалить счёт?",
     "confirmDeleteDesc": "Это действие необратимо. Оно также удалит все транзакции, записи импорта и регулярные транзакции, привязанные к этому счёту, и отвяжет цели, которые отслеживали его.",
     "openingBalance": "начальный баланс",
+    "openingBalanceDescription": "Начальный баланс",
     "notFound": "Счёт не найден.",
     "balance": "Баланс",
     "balanceCreditCard": "Задолженность",
@@ -1736,7 +1737,8 @@
       "invalid_date": "Неверный формат даты",
       "no_amount": "Нет суммы прихода или расхода",
       "invalid_amount": "Неверный формат суммы"
-    }
+    },
+    "selectAll": "Выбрать все"
   },
   "assetImport": {
     "title": "Импорт инвестиционных заявок",
@@ -1956,6 +1958,9 @@
     "inflowOutflow": "Поступления vs Списания",
     "startingBalance": "Начальный баланс",
     "endingBalance": "Прогнозируемый баланс",
+    "runwayNegativeOn": "Баланс станет отрицательным {{date}}",
+    "runwayAlreadyNegative": "Уже отрицательный",
+    "lowestBalance": "Минимальный баланс",
     "projectedIncome": "Прогнозируемый доход",
     "projectedExpenses": "Прогнозируемые расходы",
     "incomeExpenses": "Доходы vs Расходы",
@@ -2085,6 +2090,7 @@
       "ro_cui": "CUI",
       "ch_uid": "UID",
       "inn": "INN",
+      "kz_biniin": "BIN/IIN",
       "edrpou": "EDRPOU",
       "cuit": "CUIT",
       "rfc": "RFC",
@@ -2159,6 +2165,8 @@
     "remove": "Удалить"
   },
   "splitGroups": {
+    "searchPlaceholder": "Поиск групп...",
+    "clearSearch": "Очистить поиск",
     "title": "Группы",
     "section": "Настройка",
     "add": "Добавить группу",

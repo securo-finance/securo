@@ -747,3 +747,60 @@ async def test_get_account_bills_rejects_invalid_limit(
         f"/api/accounts/{cc.id}/bills", headers=auth_headers, params={"limit": 0},
     )
     assert resp.status_code == 422  # Query(ge=1) bound
+
+
+@pytest.mark.asyncio
+async def test_get_account_reports_same_balance_as_list(
+    client: AsyncClient, auth_headers, session, test_user, test_workspace
+):
+    """A manual credit card's detail read must agree with the list (issue #535).
+
+    The detail endpoint used to serialize with no balance, so available_credit
+    fell back to the full limit while the list showed the real figure for the
+    same card at the same moment.
+    """
+    import uuid as _uuid
+    from datetime import date
+    from decimal import Decimal
+
+    from app.models.account import Account
+    from app.models.transaction import Transaction
+
+    card = Account(
+        id=_uuid.uuid4(),
+        user_id=test_user.id,
+        workspace_id=test_workspace.id,
+        name="Card",
+        type="credit_card",
+        balance=Decimal("0.00"),
+        credit_limit=Decimal("1000.00"),
+        currency="BRL",
+    )
+    session.add(card)
+    await session.commit()
+
+    session.add(
+        Transaction(
+            id=_uuid.uuid4(),
+            user_id=test_user.id,
+            workspace_id=test_workspace.id,
+            account_id=card.id,
+            description="Spend",
+            amount=Decimal("400.00"),
+            type="debit",
+            date=date.today(),
+            status="posted",
+            source="manual",
+            currency="BRL",
+        )
+    )
+    await session.commit()
+
+    listed = next(
+        a for a in (await client.get("/api/accounts", headers=auth_headers)).json()
+        if a["id"] == str(card.id)
+    )
+    detail = (await client.get(f"/api/accounts/{card.id}", headers=auth_headers)).json()
+
+    assert detail["current_balance"] == listed["current_balance"] == -400.0
+    assert detail["available_credit"] == listed["available_credit"] == 600.0

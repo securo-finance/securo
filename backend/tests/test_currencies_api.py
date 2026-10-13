@@ -239,3 +239,15 @@ async def test_currencies_include_rsd_with_metadata(client: AsyncClient):
     assert rsd["symbol"] == "RSD"
     assert rsd["name"] == "Serbian Dinar"
     assert rsd["flag"] == "🇷🇸"
+
+
+@pytest.mark.asyncio
+async def test_currencies_include_mkd_with_metadata(client: AsyncClient):
+    response = await client.get("/api/currencies")
+    data = response.json()
+    mkd = next((currency for currency in data if currency["code"] == "MKD"), None)
+
+    assert mkd is not None
+    assert mkd["symbol"] == "ден"
+    assert mkd["name"] == "Macedonian Denar"
+    assert mkd["flag"] == "🇲🇰"

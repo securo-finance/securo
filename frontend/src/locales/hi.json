@@ -1156,6 +1156,7 @@
     "confirmDeleteTitle": "खाता हटाएँ?",
     "confirmDeleteDesc": "यह कार्रवाई वापस नहीं ली जा सकती। यह इस खाते से जुड़े हर लेन-देन, इंपोर्ट रिकॉर्ड और आवर्ती लेन-देन को भी हटा देगी, और इसे ट्रैक कर रहे किसी भी लक्ष्य को अलग कर देगी।",
     "openingBalance": "आरंभिक शेष",
+    "openingBalanceDescription": "आरंभिक शेष",
     "notFound": "खाता नहीं मिला।",
     "balance": "शेष राशि",
     "balanceCreditCard": "बकाया राशि",
@@ -1719,7 +1720,8 @@
       "invalid_date": "अमान्य तिथि प्रारूप",
       "no_amount": "कोई आवक या जावक राशि नहीं",
       "invalid_amount": "अमान्य राशि प्रारूप"
-    }
+    },
+    "selectAll": "सभी चुनें"
   },
   "assetImport": {
     "title": "निवेश ऑर्डर इंपोर्ट करें",
@@ -1939,6 +1941,9 @@
     "inflowOutflow": "आवक बनाम जावक",
     "startingBalance": "आरंभिक शेष राशि",
     "endingBalance": "अनुमानित शेष राशि",
+    "runwayNegativeOn": "{{date}} को शेष राशि ऋणात्मक हो जाती है",
+    "runwayAlreadyNegative": "पहले से ऋणात्मक",
+    "lowestBalance": "न्यूनतम शेष",
     "projectedIncome": "अनुमानित आय",
     "projectedExpenses": "अनुमानित खर्च",
     "incomeExpenses": "आय बनाम खर्च",
@@ -2068,6 +2073,7 @@
       "ro_cui": "CUI",
       "ch_uid": "UID",
       "inn": "INN",
+      "kz_biniin": "BIN/IIN",
       "edrpou": "EDRPOU",
       "cuit": "CUIT",
       "rfc": "RFC",
@@ -2142,6 +2148,8 @@
     "remove": "हटाएँ"
   },
   "splitGroups": {
+    "searchPlaceholder": "समूह खोजें...",
+    "clearSearch": "खोज साफ़ करें",
     "title": "समूह",
     "section": "सेटअप",
     "add": "समूह जोड़ें",

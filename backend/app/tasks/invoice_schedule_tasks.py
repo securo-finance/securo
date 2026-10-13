@@ -9,6 +9,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.core.app_clock import use_timezone
 from app.core.config import get_settings
 from app.models.workspace import Workspace
 from app.services import invoice_schedule_service, invoice_service
@@ -31,37 +32,38 @@ async def _generate_one(session_maker, schedule_id) -> int:
         schedule = await session.get(invoice_schedule_service.InvoiceSchedule, schedule_id)
         if schedule is None:
             return 0
-        try:
-            emitted = await invoice_schedule_service.generate_due(session, schedule)
-        except Exception as exc:
-            if isinstance(exc, InvoiceError) and exc.code == "period_already_issued":
-                # Another run emitted the period first. Nothing failed,
-                # and `generate_due` already rolled back.
+        async with use_timezone(session, schedule.workspace_id, fresh=True):
+            try:
+                emitted = await invoice_schedule_service.generate_due(session, schedule)
+            except Exception as exc:
+                if isinstance(exc, InvoiceError) and exc.code == "period_already_issued":
+                    # Another run emitted the period first. Nothing failed,
+                    # and `generate_due` already rolled back.
+                    return 0
+                # `generate_due` already counted the failure on the row and
+                # may have paused the schedule; what it did not do is commit.
+                # Anything half-written for the invoice is rolled back, then
+                # the count is written on its own.
+                logger.exception("Failed to emit invoices for schedule %s", schedule_id)
+                failures = schedule.consecutive_failures
+                status = schedule.status
+                pause_reason = schedule.pause_reason
+                await session.rollback()
+                fresh = await session.get(invoice_schedule_service.InvoiceSchedule, schedule_id)
+                if fresh is not None:
+                    fresh.consecutive_failures = failures
+                    fresh.status = status
+                    fresh.pause_reason = pause_reason
+                    await session.commit()
                 return 0
-            # `generate_due` already counted the failure on the row and
-            # may have paused the schedule; what it did not do is commit.
-            # Anything half-written for the invoice is rolled back, then
-            # the count is written on its own.
-            logger.exception("Failed to emit invoices for schedule %s", schedule_id)
-            failures = schedule.consecutive_failures
-            status = schedule.status
-            pause_reason = schedule.pause_reason
-            await session.rollback()
-            fresh = await session.get(invoice_schedule_service.InvoiceSchedule, schedule_id)
-            if fresh is not None:
-                fresh.consecutive_failures = failures
-                fresh.status = status
-                fresh.pause_reason = pause_reason
-                await session.commit()
-            return 0
-        await session.commit()
+            await session.commit()
 
-        workspace = await session.get(Workspace, schedule.workspace_id)
-        for invoice in emitted:
-            loaded = await invoice_service.get_invoice(session, invoice.id, schedule.workspace_id)
-            if loaded is not None and workspace is not None:
-                await invoice_schedule_service.after_generation(session, loaded, workspace)
-        return len(emitted)
+            workspace = await session.get(Workspace, schedule.workspace_id)
+            for invoice in emitted:
+                loaded = await invoice_service.get_invoice(session, invoice.id, schedule.workspace_id)
+                if loaded is not None and workspace is not None:
+                    await invoice_schedule_service.after_generation(session, loaded, workspace)
+            return len(emitted)
 
 
 async def _generate_all() -> int:

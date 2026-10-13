@@ -373,8 +373,15 @@ def validate_ru_inn(value: str) -> str | None:
         return None
     return "length"
 
-def validate_kz_biniin(value:str) -> str | None:
-    """Kazakhstan BIN/IIN: twelve digits, mod-11 check digit."""
+def validate_kz_biniin(value: str) -> str | None:
+    """Validate a Kazakhstani BIN or IIN.
+
+    BIN (legal entities) and IIN (individuals) share the same 12-digit length
+    and the same published checksum scheme, so one validator serves both. The
+    scheme is two-pass: each pass uses a different weight vector, and the
+    weighted sum modulo 11 is the check digit. A result of 10 from either
+    pass means the number was never issued and the code is rejected.
+    """
     if not value.isdigit():
         return "invalid"
     if len(value) != 12:

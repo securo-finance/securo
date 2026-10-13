@@ -137,6 +137,7 @@ async def search_all(
                     "account_id": str(tx.account_id),
                     "category_id": str(tx.category_id) if tx.category_id else None,
                     "tx_type": tx.type,
+                    "source": tx.source,
                 },
             )
         )

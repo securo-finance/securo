@@ -1158,6 +1158,7 @@
     "confirmDeleteTitle": "¿Eliminar cuenta?",
     "confirmDeleteDesc": "Esta acción es irreversible. También eliminará todas las transacciones, registros de importación y transacciones recurrentes adjuntas a esta cuenta, y desvinculará cualquier objetivo que la estuviera siguiendo.",
     "openingBalance": "saldo inicial",
+    "openingBalanceDescription": "Saldo inicial",
     "notFound": "Cuenta no encontrada.",
     "balance": "Saldo",
     "balanceCreditCard": "Importe adeudado",
@@ -1723,7 +1724,8 @@
       "invalid_date": "Formato de fecha no válido",
       "no_amount": "Sin importe de entrada o salida",
       "invalid_amount": "Formato de importe no válido"
-    }
+    },
+    "selectAll": "Seleccionar todo"
   },
   "assetImport": {
     "title": "Importar órdenes de inversión",
@@ -1943,6 +1945,9 @@
     "inflowOutflow": "Entrada vs. salida",
     "startingBalance": "Saldo inicial",
     "endingBalance": "Saldo proyectado",
+    "runwayNegativeOn": "El saldo queda en negativo el {{date}}",
+    "runwayAlreadyNegative": "Ya está en negativo",
+    "lowestBalance": "Saldo mínimo",
     "projectedIncome": "Ingresos proyectados",
     "projectedExpenses": "Gastos proyectados",
     "incomeExpenses": "Ingresos vs. gastos",
@@ -2072,6 +2077,7 @@
       "ro_cui": "CUI",
       "ch_uid": "UID",
       "inn": "INN",
+      "kz_biniin": "BIN/IIN",
       "edrpou": "EDRPOU",
       "cuit": "CUIT",
       "rfc": "RFC",
@@ -2146,6 +2152,8 @@
     "remove": "Quitar"
   },
   "splitGroups": {
+    "searchPlaceholder": "Buscar grupos...",
+    "clearSearch": "Limpiar búsqueda",
     "title": "Grupos",
     "section": "Configuración",
     "add": "Agregar grupo",

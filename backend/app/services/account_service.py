@@ -50,8 +50,13 @@ def _opening_balance_values(account_type: str, balance: Decimal) -> tuple[Decima
     return amount, "credit" if is_credit else "debit"
 
 
-async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_closed: bool = False) -> list[dict]:
-    today = app_today()
+def _balance_subqueries(today: _Date):
+    """Per-account current and previous balances, as two subqueries.
+
+    Shared by the list and the single-account read so both report the same
+    number for the same account: the detail endpoint used to serialize with no
+    balance at all, which made available_credit fall back to the full limit.
+    """
     # Subquery: compute current_balance per account from transactions in one pass
     # Use amount_primary only when tx currency differs from account currency
     # (converts foreign txs to account's reporting currency)
@@ -107,8 +112,11 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
         .subquery()
     )
 
-    # Build the query
-    query = (
+    return balance_sq, prev_balance_sq
+
+
+def _accounts_with_balances_query(workspace_id: uuid.UUID, balance_sq, prev_balance_sq):
+    return (
         select(
             Account,
             BankConnection,
@@ -125,6 +133,11 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
             )
         )
     )
+
+
+async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_closed: bool = False) -> list[dict]:
+    balance_sq, prev_balance_sq = _balance_subqueries(app_today())
+    query = _accounts_with_balances_query(workspace_id, balance_sq, prev_balance_sq)
     if not include_closed:
         query = query.where(Account.is_closed == False)
     query = query.order_by(Account.name)
@@ -133,6 +146,21 @@ async def get_accounts(session: AsyncSession, workspace_id: uuid.UUID, include_c
             serialize_account(acc, current_balance, previous_balance, connection)
             for acc, connection, current_balance, previous_balance in result.all()
         ]
+
+
+async def get_account_with_balances(
+    session: AsyncSession, account_id: uuid.UUID, workspace_id: uuid.UUID
+) -> Optional[dict]:
+    """One account, serialized with the same balances the list reports."""
+    balance_sq, prev_balance_sq = _balance_subqueries(app_today())
+    query = _accounts_with_balances_query(workspace_id, balance_sq, prev_balance_sq).where(
+        Account.id == account_id
+    )
+    row = (await session.execute(query)).first()
+    if row is None:
+        return None
+    acc, connection, current_balance, previous_balance = row
+    return serialize_account(acc, current_balance, previous_balance, connection)
 
 
 def _institution(

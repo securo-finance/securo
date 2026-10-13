@@ -886,6 +886,7 @@
     "confirmDeleteTitle": "Διαγραφή λογαριασμού;",
     "confirmDeleteDesc": "Αυτή η ενέργεια είναι μη αναστρέψιμη. Θα διαγράψει επίσης κάθε συναλλαγή, εγγραφή εισαγωγής και επαναλαμβανόμενη συναλλαγή που συνδέεται με αυτόν τον λογαριασμό, και θα αποσυνδέσει τυχόν στόχους που τον παρακολουθούσαν.",
     "openingBalance": "αρχικό υπόλοιπο",
+    "openingBalanceDescription": "Αρχικό υπόλοιπο",
     "notFound": "Ο λογαριασμός δεν βρέθηκε.",
     "balance": "Υπόλοιπο",
     "balanceCreditCard": "Οφειλόμενο ποσό",
@@ -1719,7 +1720,8 @@
       "invalid_date": "Μη έγκυρη μορφή ημερομηνίας",
       "no_amount": "Χωρίς ποσό εισροής ή εκροής",
       "invalid_amount": "Μη έγκυρη μορφή ποσού"
-    }
+    },
+    "selectAll": "Επιλογή όλων"
   },
   "assetImport": {
     "title": "Εισαγωγή επενδυτικών εντολών",
@@ -1995,6 +1997,9 @@
     "inflowOutflow": "Εισροές έναντι Εκροών",
     "startingBalance": "Αρχικό υπόλοιπο",
     "endingBalance": "Προβλεπόμενο υπόλοιπο",
+    "runwayNegativeOn": "Το υπόλοιπο γίνεται αρνητικό στις {{date}}",
+    "runwayAlreadyNegative": "Ήδη αρνητικό",
+    "lowestBalance": "Χαμηλότερο υπόλοιπο",
     "projectedIncome": "Προβλεπόμενα έσοδα",
     "projectedExpenses": "Προβλεπόμενα έξοδα",
     "incomeExpenses": "Έσοδα έναντι Εξόδων",
@@ -2068,6 +2073,7 @@
       "ro_cui": "CUI",
       "ch_uid": "UID",
       "inn": "INN",
+      "kz_biniin": "BIN/IIN",
       "edrpou": "EDRPOU",
       "cuit": "CUIT",
       "rfc": "RFC",
@@ -2142,6 +2148,8 @@
     "remove": "Αφαίρεση"
   },
   "splitGroups": {
+    "searchPlaceholder": "Αναζήτηση ομάδων...",
+    "clearSearch": "Εκκαθάριση αναζήτησης",
     "title": "Ομάδες",
     "section": "Ρύθμιση",
     "add": "Προσθήκη ομάδας",

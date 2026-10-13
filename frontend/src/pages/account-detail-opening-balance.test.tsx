@@ -118,21 +118,24 @@ describe.each([false, true])('account-detail opening-balance description (mobile
     }).length).toBeGreaterThan(0))
 
     // The translated badge alone must not satisfy this: check the description element.
-    expect(description('opening balance', mobile)).toBeVisible()
-    expect(screen.getAllByText('opening balance')).toHaveLength(1)
+    expect(description('Opening balance', mobile)).toBeVisible()
+    expect(screen.getAllByText('Opening balance')).toHaveLength(1)
     expect(description('Saldo inicial', mobile)).toBeVisible() // manual row, same stored text
     expect(api.transactions.list).toHaveBeenCalledWith(expect.objectContaining({ include_opening_balance: true }))
     expect(items).toEqual(originalItems)
     captureAsgiRender('en')
 
     await act(async () => { await i18n.changeLanguage('pt-BR') })
-    expect(screen.getAllByText('saldo inicial', {
+    expect(screen.getAllByText('Saldo inicial', {
       selector: mobile ? 'p.font-semibold' : 'span.font-semibold',
-      exact: false,
+      exact: true,
     })).toHaveLength(2)
     captureAsgiRender('pt-BR')
+    await act(async () => { await i18n.changeLanguage('nl') })
+    expect(description('Openingsbalans', mobile)).toBeVisible()
+    expect(description('Saldo inicial', mobile)).toBeVisible()
     await act(async () => { await i18n.changeLanguage('en') })
-    expect(description('opening balance', mobile)).toBeVisible()
+    expect(description('Opening balance', mobile)).toBeVisible()
     expect(description('Saldo inicial', mobile)).toBeVisible()
     expect(opening.description).toBe('Saldo inicial')
     expect(manual.description).toBe('Saldo inicial')

@@ -1158,6 +1158,7 @@
     "confirmDeleteTitle": "Supprimer le compte ?",
     "confirmDeleteDesc": "Cette action est irréversible. Elle supprimera également toutes les transactions, enregistrements d'import et transactions récurrentes attachés à ce compte, et dissociera tous les objectifs qui le suivaient.",
     "openingBalance": "solde d'ouverture",
+    "openingBalanceDescription": "Solde d'ouverture",
     "notFound": "Compte introuvable.",
     "balance": "Solde",
     "balanceCreditCard": "Montant dû",
@@ -1723,7 +1724,8 @@
       "invalid_date": "Format de date invalide",
       "no_amount": "Aucun montant d'entrée ou de sortie",
       "invalid_amount": "Format de montant invalide"
-    }
+    },
+    "selectAll": "Tout sélectionner"
   },
   "assetImport": {
     "title": "Importer des ordres d'investissement",
@@ -1943,6 +1945,9 @@
     "inflowOutflow": "Entrées vs sorties",
     "startingBalance": "Solde de départ",
     "endingBalance": "Solde projeté",
+    "runwayNegativeOn": "Le solde devient négatif le {{date}}",
+    "runwayAlreadyNegative": "Déjà négatif",
+    "lowestBalance": "Solde le plus bas",
     "projectedIncome": "Revenus projetés",
     "projectedExpenses": "Dépenses projetées",
     "incomeExpenses": "Revenus vs dépenses",
@@ -2072,6 +2077,7 @@
       "ro_cui": "CUI",
       "ch_uid": "UID",
       "inn": "INN",
+      "kz_biniin": "BIN/IIN",
       "edrpou": "EDRPOU",
       "cuit": "CUIT",
       "rfc": "RFC",
@@ -2146,6 +2152,8 @@
     "remove": "Supprimer"
   },
   "splitGroups": {
+    "searchPlaceholder": "Rechercher des groupes...",
+    "clearSearch": "Effacer la recherche",
     "title": "Groupes",
     "section": "Configuration",
     "add": "Ajouter un groupe",

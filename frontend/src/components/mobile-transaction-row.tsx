@@ -7,6 +7,7 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useTranslation } from 'react-i18next'
 import { formatCurrency } from '@/lib/format'
 import { shouldShowPendingBadge } from '@/lib/transaction-status'
+import { transactionDescription } from '@/lib/transaction-description'
 
 /** Keep long merchant references on one line when there are no word breaks. */
 function hasWordBreaks(text: string): boolean {
@@ -50,8 +51,8 @@ export function MobileTransactionRow({
 }: MobileTransactionRowProps) {
   const { mask } = usePrivacyMode()
   const { t } = useTranslation()
-  const description = localizeOpeningBalance && tx.source === 'opening_balance'
-    ? t('accounts.openingBalance')
+  const description = localizeOpeningBalance
+    ? transactionDescription(tx.description, tx.source, t)
     : tx.description
 
   const displayAmount = tx.is_shared && tx.viewer_share != null
