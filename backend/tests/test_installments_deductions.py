@@ -11,7 +11,7 @@ split between *settled* and *received*: a deduction moves the balance
 and the state, never `amount_paid` or "received this month".
 """
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -30,6 +30,14 @@ from app.services.invoice_service import InvoiceError
 
 TODAY = date(2026, 9, 24)
 ISSUE = date(2026, 9, 1)
+
+# The service resolves "today" from the real clock, so a test that goes through
+# the API cannot pin it the way the ones below pass `today=` do. Dates written
+# out in full here stop being future dates the moment that day arrives, and an
+# installment the test calls open turns overdue. These stay ahead of whatever
+# day the suite runs on.
+FIRST_DUE = date.today() + timedelta(days=30)
+SECOND_DUE = date.today() + timedelta(days=90)
 
 
 @pytest_asyncio.fixture
@@ -326,19 +334,22 @@ async def test_installments_and_deductions_over_http(client: AsyncClient, biz_he
     resp = await client.post(
         "/api/invoices", headers=biz_headers,
         json={"total": "3000.00", "issue_date": str(ISSUE), "currency": "USD",
-              "installments": [{"due_date": "2026-10-01", "amount": "1500.00", "label": "Upfront"},
-                               {"due_date": "2026-12-01", "amount": "1500.00", "label": "On delivery"}]},
+              "installments": [{"due_date": str(FIRST_DUE), "amount": "1500.00", "label": "Upfront"},
+                               {"due_date": str(SECOND_DUE), "amount": "1500.00", "label": "On delivery"}]},
     )
     assert resp.status_code == 201, resp.text
     body = resp.json()
-    assert body["due_date"] == "2026-12-01"
-    assert body["next_due_date"] == "2026-10-01"
+    assert body["due_date"] == str(SECOND_DUE)
+    assert body["next_due_date"] == str(FIRST_DUE)
     assert [(i["label"], i["state"], i["settled"]) for i in body["installments"]] == [
         ("Upfront", "open", "0.00"), ("On delivery", "open", "0.00"),
     ]
     invoice_id = body["id"]
 
-    resp = await client.post("/api/invoices", headers=biz_headers, json={"total": "10", "installments": [{"due_date": "2026-10-01", "amount": "5"}, {"due_date": "2026-11-01", "amount": "6"}]})
+    # Dated ahead of today as well: without an issue_date the service dates the
+    # invoice today, and a past installment would trip due_before_issue first,
+    # hiding the mismatch this line is about.
+    resp = await client.post("/api/invoices", headers=biz_headers, json={"total": "10", "installments": [{"due_date": str(FIRST_DUE), "amount": "5"}, {"due_date": str(SECOND_DUE), "amount": "6"}]})
     assert resp.status_code == 400 and resp.json()["detail"]["code"] == "installments_mismatch"
 
     # A deduction of 100 closes part of the first installment.

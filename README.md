@@ -3,7 +3,7 @@
 </p>
 <h1 align="center">Securo</h1>
 <p align="center">
-  <a href="https://github.com/securo-finance/securo/actions/workflows/ci.yml"><img src="https://github.com/securo-finance/securo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/securo-finance/securo/actions/workflows/ci.yml?query=branch%3Amain"><img src="https://github.com/securo-finance/securo/actions/workflows/ci.yml/badge.svg?branch=main&amp;event=push" alt="CI" /></a>
   <img src="https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/tassionoronha/ae627b744aaa2ba89d850ea541c311be/raw/coverage.json" alt="Coverage" />
   <a href="https://github.com/securo-finance/securo/pkgs/container/securo-frontend"><img src="https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/tassionoronha/ae627b744aaa2ba89d850ea541c311be/raw/downloads.json" alt="Downloads" /></a>
   <br />

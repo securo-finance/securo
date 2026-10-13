@@ -22,7 +22,7 @@ from app.models.transaction import Transaction
 from app.schemas.transaction import TransactionImport, FailedRow
 from app.services import reconciliation_service, recurring_match_service
 from app.services.credit_card_service import apply_effective_date
-from app.services.category_service import get_hidden_category_ids
+from app.services.category_service import get_assignable_category_ids
 from app.services.rule_engine import apply_rule_actions, evaluate_conditions, merge_notes
 from app.services.rule_service import apply_rules_to_transaction, preview_rules_for_transaction
 from app.services.fx_rate_service import stamp_primary_amount
@@ -89,6 +89,77 @@ def _patch_empty_fitids(text: str) -> str:
     )
 
 
+_OFX_SGML_ENCODING_RE = re.compile(
+    r"(^|\r?\n)\s*ENCODING\s*:\s*([^\r\n]*)", re.IGNORECASE
+)
+
+_OFX_SGML_CHARSET_RE = re.compile(
+    r"(^|\r?\n)\s*CHARSET\s*:\s*([^\r\n]*)", re.IGNORECASE
+)
+
+# Values of ENCODING that ofxparse 0.21 handles without crashing.
+_OFX_USASCII_VARIANTS = frozenset({
+    "USASCII", "ISO88591", "ISO8859-1", "ISO885915", "ISO8859-15",
+    "CP1252", "WINDOWS-1252", "WINDOWS1252",
+})
+_OFX_UTF8_VARIANTS = frozenset({
+    "UNICODE", "UTF8", "UTF-8",
+})
+
+
+def _normalize_ofx_encoding(text: str, encoding: str) -> str:
+    """Fix SGML headers with ENCODING values that crash ofxparse.
+
+    ofxparse 0.21 only handles USASCII, UNICODE and UTF-8. Any other value
+    (e.g. ISO-8859-1, WINDOWS-1252, or a misspelling) leaves its local
+    ``encoding`` variable unbound, raising ``UnboundLocalError`` inside
+    ``handle_encoding()``.
+
+    This function normalises **only the preamble** (everything before the
+    first ``<``) so transaction memo content is never modified. Latin-1
+    decoded files get ``ENCODING:USASCII``; the ``CHARSET`` distinguishes
+    the two byte layouts Python's ``latin-1`` codec can represent, so
+    ofxparse decodes the same bytes the same way the source declared:
+    ``CHARSET:1252`` when the file declared WINDOWS-1252/CP1252 (whose
+    0x80-0x9F range holds real typographic characters — em dash, curly
+    quotes — that ISO-8859-1 leaves as undefined control codes), and
+    ``CHARSET:8859-1`` otherwise. UTF-8 files get ``ENCODING:UTF-8`` with
+    ``CHARSET:NONE``.
+    """
+    preamble, first_tag, body = text.lstrip("\ufeff \t\r\n").partition("<")
+    if not first_tag or not preamble.strip():
+        return text
+
+    raw_match = _OFX_SGML_ENCODING_RE.search(preamble)
+    if not raw_match:
+        return text
+
+    raw_value = raw_match.group(2).strip().upper().replace("-", "").replace(" ", "")
+
+    # Only the three exact values that ofxparse 0.21 handles are left alone.
+    # Everything else — including valid IANA names like ISO-8859-1 — must be
+    # rewritten so ofxparse doesn't crash on the UnboundLocalError.
+    if raw_value in ("USASCII", "UNICODE", "UTF8"):
+        return text
+
+    # Unknown or unsupported encoding — rewrite to match the actual byte
+    # encoding so ofxparse decodes consistently.
+    if encoding == "latin-1":
+        new_encoding = "USASCII"
+        new_charset = "1252" if raw_value in ("CP1252", "WINDOWS1252") else "8859-1"
+    else:
+        new_encoding = "UTF-8"
+        new_charset = "NONE"
+
+    new_preamble = _OFX_SGML_ENCODING_RE.sub(
+        lambda m: f"{m.group(1)}ENCODING:{new_encoding}", preamble, count=1,
+    )
+    new_preamble = _OFX_SGML_CHARSET_RE.sub(
+        lambda m: f"{m.group(1)}CHARSET:{new_charset}", new_preamble, count=1,
+    )
+    return new_preamble + first_tag + body
+
+
 def _ensure_ofx_sgml_header(text: str, encoding: str) -> str:
     """Prepend a legacy OFX 1.x SGML header for OFX 2.x files that omit it.
 
@@ -112,8 +183,14 @@ def _ensure_ofx_sgml_header(text: str, encoding: str) -> str:
     so the declared header and the actual bytes stay consistent.
     """
     preamble, first_tag, _ = text.lstrip("\ufeff \t\r\n").partition("<")
-    if not first_tag or preamble.strip():
+    if not first_tag:
         return text
+    if preamble.strip():
+        # File already has a header — normalise the ENCODING value so
+        # ofxparse doesn't crash on values it doesn't handle (e.g.
+        # ISO-8859-1, WINDOWS-1252). Only the preamble is touched;
+        # transaction body content is preserved verbatim.
+        return _normalize_ofx_encoding(text, encoding)
     if encoding == "latin-1":
         enc_lines = "ENCODING:USASCII\r\nCHARSET:8859-1\r\n"
     else:
@@ -669,12 +746,12 @@ async def enrich_with_category_suggestions(
         select(Category).where(Category.workspace_id == workspace_id)
     )
     categories = category_result.scalars().all()
-    hidden_categories = await get_hidden_category_ids(session, workspace_id)
+    assignable_categories = await get_assignable_category_ids(session, workspace_id)
     category_name_map = {str(c.id): c.name for c in categories}
     category_name_to_id = {
         c.name.strip().lower(): c.id
         for c in categories
-        if c.id not in hidden_categories
+        if c.id in assignable_categories
     }
 
     if not rules and not category_name_to_id:
@@ -686,6 +763,7 @@ async def enrich_with_category_suggestions(
             amount=txn.amount,
             date=txn.date,
             type=txn.type,
+            status="posted",
             account_id=None,
             payee_id=None,
             notes=None,
@@ -701,7 +779,7 @@ async def enrich_with_category_suggestions(
                     actions,
                     proxy,
                     category_set,
-                    hidden_category_ids=hidden_categories,
+                    assignable_category_ids=assignable_categories,
                 )
 
         # If rules did not set a category, apply the CSV category if found
@@ -780,11 +858,11 @@ async def import_transactions(
     category_result = await session.execute(
         select(Category).where(Category.workspace_id == workspace_id)
     )
-    hidden_categories = await get_hidden_category_ids(session, workspace_id)
+    assignable_categories = await get_assignable_category_ids(session, workspace_id)
     category_map = {
         c.name.strip().lower(): c.id
         for c in category_result.scalars()
-        if c.id not in hidden_categories
+        if c.id in assignable_categories
     }
 
     imported = 0
@@ -881,6 +959,7 @@ async def import_transactions(
             amount=txn_data.amount,
             date=txn_data.date,
             type=txn_data.type,
+            status="posted",
             source=source,
             import_id=import_log.id,
             external_id=txn_data.external_id,

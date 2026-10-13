@@ -7,6 +7,7 @@ import { ThemeProvider } from '@/components/theme-provider'
 import { AuthProvider } from '@/contexts/auth-provider'
 import { WorkspaceProvider } from '@/contexts/workspace-provider'
 import { CollectionFilterProvider } from '@/contexts/collection-filter-provider'
+import { SidebarStateProvider } from '@/contexts/sidebar-state-provider'
 import { ProtectedRoute } from '@/components/protected-route'
 import { AdminRoute } from '@/components/admin-route'
 import { AgentsRoute } from '@/components/agents-route'
@@ -86,7 +87,9 @@ function App() {
                   element={
                     <ProtectedRoute>
                       <CollectionFilterProvider>
-                        <AppLayout />
+                        <SidebarStateProvider>
+                          <AppLayout />
+                        </SidebarStateProvider>
                       </CollectionFilterProvider>
                     </ProtectedRoute>
                   }
