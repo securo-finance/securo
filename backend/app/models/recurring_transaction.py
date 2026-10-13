@@ -48,10 +48,9 @@ class RecurringTransaction(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     # When True (the default), generate_pending materializes this bill's due
     # occurrences into real transactions. When False, no placeholder is written
-    # on its own and the bill is only shown as a projection until the actual
-    # charge is matched to it (e.g. from bank sync) or the user asks for it
-    # with Generate Pending. Either way, incoming real transactions are linked
-    # back to the bill to avoid duplicates.
+    # and the bill is only shown as a projection until the actual charge is
+    # matched to it (e.g. from bank sync). Either way, incoming real
+    # transactions are linked back to the bill to avoid duplicates.
     auto_generate: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     next_occurrence: Mapped[date] = mapped_column(Date)
     amount_primary: Mapped[Optional[Decimal]] = mapped_column(Numeric(precision=15, scale=2), nullable=True)
