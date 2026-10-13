@@ -408,6 +408,39 @@ async def test_generate_pending_skips_auto_generate_off(session, test_user, test
 
 
 @pytest.mark.asyncio
+async def test_generate_pending_include_manual_covers_auto_generate_off(
+    session, test_user, test_workspace, account
+):
+    """The Generate Pending button asks for schedules the hourly task skips."""
+    bill = await _make_bill(session, test_workspace, test_user, account, auto_generate=False)
+    count = await generate_pending(
+        session, test_user.id, up_to=date(2025, 1, 20), include_manual=True
+    )
+    assert count == 1
+    result = await session.execute(
+        select(Transaction).where(Transaction.account_id == account.id)
+    )
+    txs = result.scalars().all()
+    assert len(txs) == 1
+    assert txs[0].recurring_transaction_id == bill.id
+    assert txs[0].date == date(2025, 1, 10)
+
+
+@pytest.mark.asyncio
+async def test_generate_pending_include_manual_links_real_tx_instead_of_duplicating(
+    session, test_user, test_workspace, account
+):
+    bill = await _make_bill(session, test_workspace, test_user, account, auto_generate=False)
+    real = await _add_tx(session, test_user, test_workspace, account, date=date(2025, 1, 10))
+    count = await generate_pending(
+        session, test_user.id, up_to=date(2025, 1, 20), include_manual=True
+    )
+    assert count == 0
+    await session.refresh(real)
+    assert real.recurring_transaction_id == bill.id
+
+
+@pytest.mark.asyncio
 async def test_generate_pending_description_mismatch_creates_placeholder(
     session, test_user, test_workspace, account
 ):
