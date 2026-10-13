@@ -18,7 +18,7 @@ import {
   ReferenceLine,
   ResponsiveContainer,
 } from 'recharts'
-import { AlertCircle, AlertTriangle, CheckCircle2, HelpCircle, X } from 'lucide-react'
+import { AlertCircle, HelpCircle, X } from 'lucide-react'
 import { reports } from '@/lib/api'
 import { extractApiError } from '@/lib/api-errors'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -306,8 +306,23 @@ export default function ReportsPage() {
   const runwayDate = meta?.type === 'cash_flow' ? meta.runway_date ?? null : null
   const lowestBalance = meta?.type === 'cash_flow' ? meta.lowest_balance ?? null : null
   const lowestBalanceDate = meta?.type === 'cash_flow' ? meta.lowest_balance_date ?? null : null
-  const formatDay = (iso: string) =>
-    new Date(iso + 'T00:00:00').toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' })
+  // The backend reports today as the runway date when the balance is already
+  // below zero, which is a different thing to say than "it will go negative".
+  // Reading the day off the browser is enough to tell those two apart; a
+  // workspace in another timezone can only disagree about the single day the
+  // balance crosses, and the label is then the one this already shows today.
+  const alreadyNegative = runwayDate !== null && runwayDate <= localDateString()
+  // Day and month are enough inside the current year; a longer horizon reaches
+  // into the next one, where the year stops being obvious.
+  const formatDay = (iso: string) => {
+    const day = new Date(iso + 'T00:00:00')
+    const sameYear = day.getFullYear() === new Date().getFullYear()
+    return day.toLocaleDateString(locale, {
+      day: 'numeric',
+      month: 'short',
+      ...(sameYear ? {} : { year: 'numeric' }),
+    })
+  }
 
   const allBreakdowns = summary?.breakdowns ?? []
   const breakdownData = allBreakdowns.filter((b) => b.value > 0)
@@ -726,37 +741,42 @@ export default function ReportsPage() {
                     </p>
                   </div>
                 ))}
+                {/* Cash flow only: the lowest point of the projection. It keeps
+                    one permanent slot and lets the label and the colour carry
+                    the state, instead of a banner that comes and goes. */}
+                {lowestBalance !== null && lowestBalanceDate && (
+                  <div className="min-w-0" data-testid="cash-flow-runway">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <div
+                        className={`w-2.5 h-2.5 rounded-full shrink-0 ${runwayDate ? 'bg-rose-500' : 'bg-muted-foreground/40'}`}
+                      />
+                      <p className="text-xs font-medium text-muted-foreground">
+                        {!runwayDate
+                          ? t('reports.lowestBalance')
+                          : alreadyNegative
+                            ? t('reports.runwayAlreadyNegative')
+                            : t('reports.runwayNegativeOn', { date: formatDay(runwayDate) })}
+                      </p>
+                    </div>
+                    <p
+                      className={`text-lg font-bold tabular-nums ${runwayDate ? 'text-rose-600 dark:text-rose-400' : 'text-foreground'}`}
+                    >
+                      {mask(formatCurrency(lowestBalance, userCurrency, locale))}
+                      {/* The day the balance bottoms out, but only when the
+                          label is not already naming the day it crosses zero.
+                          Two dates side by side read as one fact, not two. */}
+                      {!runwayDate || alreadyNegative ? (
+                        <span className="ml-1.5 text-xs font-medium text-muted-foreground">
+                          {formatDay(lowestBalanceDate)}
+                        </span>
+                      ) : null}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           )}
         </div>
-        {!isLoading && lowestBalance !== null && lowestBalanceDate && (
-          <div
-            data-testid="cash-flow-runway"
-            className={`flex items-start gap-2.5 px-5 py-3 border-t border-border text-sm ${
-              runwayDate ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'
-            }`}
-          >
-            {runwayDate ? (
-              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
-            ) : (
-              <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
-            )}
-            <div>
-              <p className="font-semibold">
-                {runwayDate
-                  ? t('reports.runwayNegativeOn', { date: formatDay(runwayDate) })
-                  : t('reports.runwayNeverNegative')}
-              </p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {t('reports.lowestBalanceOn', {
-                  amount: mask(formatCurrency(lowestBalance, userCurrency, locale)),
-                  date: formatDay(lowestBalanceDate),
-                })}
-              </p>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Flow (Sankey) */}

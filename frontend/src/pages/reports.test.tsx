@@ -239,7 +239,7 @@ describe('Reports page — query failure', () => {
   })
 })
 
-describe('Reports page — cash-flow runway', () => {
+describe('Reports page, cash-flow runway', () => {
   async function openCashFlow(meta: Partial<ReportResponse['meta']>) {
     const report = emptyReport('cash_flow')
     api.reports.cashFlow.mockResolvedValue({ ...report, meta: { ...report.meta, ...meta } })
@@ -251,15 +251,27 @@ describe('Reports page — cash-flow runway', () => {
 
   it('names the day the balance goes negative and its lowest point', async () => {
     const callout = await openCashFlow({
-      runway_date: '2026-10-05',
+      runway_date: '2099-10-05',
       lowest_balance: -500,
-      lowest_balance_date: '2026-10-05',
+      lowest_balance_date: '2099-12-20',
     })
 
-    expect(callout).toHaveTextContent(t('reports.runwayNegativeOn', { date: 'Oct 5, 2026' }))
-    expect(callout).toHaveTextContent(
-      t('reports.lowestBalanceOn', { amount: '-$500.00', date: 'Oct 5, 2026' }),
-    )
+    expect(callout).toHaveTextContent(t('reports.runwayNegativeOn', { date: 'Oct 5, 2099' }))
+    expect(callout).toHaveTextContent('-$500.00')
+    // Only the crossing date is shown: a second date next to the amount reads
+    // as part of the same sentence rather than as the bottom of the dip.
+    expect(callout).not.toHaveTextContent('Dec 20')
+  })
+
+  it('says the balance is already negative rather than naming today', async () => {
+    const callout = await openCashFlow({
+      runway_date: '2020-01-02',
+      lowest_balance: -500,
+      lowest_balance_date: '2020-01-31',
+    })
+
+    expect(callout).toHaveTextContent(t('reports.runwayAlreadyNegative'))
+    expect(callout).not.toHaveTextContent(t('reports.runwayNegativeOn', { date: 'Jan 2' }))
   })
 
   it.each([
@@ -272,10 +284,9 @@ describe('Reports page — cash-flow runway', () => {
       lowest_balance_date: '2026-12-01',
     })
 
-    expect(callout).toHaveTextContent(t('reports.runwayNeverNegative'))
-    expect(callout).toHaveTextContent(
-      t('reports.lowestBalanceOn', { amount, date: 'Dec 1, 2026' }),
-    )
+    expect(callout).toHaveTextContent(t('reports.lowestBalance'))
+    expect(callout).toHaveTextContent(amount)
+    expect(callout).toHaveTextContent('Dec 1')
   })
 
   it('is not shown on the other tabs', async () => {
