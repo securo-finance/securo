@@ -30,7 +30,7 @@ from typing import NotRequired, TypedDict
 # Allow running from repo root or backend root
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.auth import UserManager
@@ -39,7 +39,14 @@ from app.models.account import Account
 from app.models.asset import Asset
 from app.models.asset_group import AssetGroup
 from app.models.asset_value import AssetValue
+from app.models.budget import Budget
 from app.models.category import Category
+from app.models.goal import Goal
+from app.models.group import Group, GroupMember
+from app.models.group_settlement import GroupSettlement
+from app.models.payee import Payee
+from app.models.transaction_category_allocation import TransactionCategoryAllocation
+from app.models.transaction_split import TransactionSplit
 from app.models.fx_rate import FxRate
 from app.models.recurring_transaction import RecurringTransaction
 from app.models.transaction import Transaction
@@ -170,10 +177,198 @@ async def _wipe_user_data(session, user_id: uuid.UUID) -> None:
     )
     await session.execute(delete(Asset).where(Asset.user_id == user_id))
     await session.execute(delete(AssetGroup).where(AssetGroup.user_id == user_id))
+    await session.execute(delete(Budget).where(Budget.user_id == user_id))
+    await session.execute(delete(Goal).where(Goal.user_id == user_id))
+    user_tx_ids = select(Transaction.id).where(Transaction.user_id == user_id)
+    await session.execute(delete(TransactionCategoryAllocation).where(
+        TransactionCategoryAllocation.transaction_id.in_(user_tx_ids)))
+    await session.execute(delete(TransactionSplit).where(TransactionSplit.transaction_id.in_(user_tx_ids)))
+    user_group_ids = select(Group.id).where(Group.user_id == user_id)
+    await session.execute(delete(GroupSettlement).where(GroupSettlement.group_id.in_(user_group_ids)))
+    await session.execute(delete(GroupMember).where(GroupMember.group_id.in_(user_group_ids)))
+    await session.execute(delete(Group).where(Group.user_id == user_id))
     await session.execute(delete(Transaction).where(Transaction.user_id == user_id))
+    await session.execute(delete(Payee).where(Payee.user_id == user_id))
     await session.execute(delete(Category).where(Category.user_id == user_id))
     await session.execute(delete(Account).where(Account.user_id == user_id))
     await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Feature data: budgets, goals, payees, groups, category splits
+# ---------------------------------------------------------------------------
+
+BUDGET_MONTHS = 12
+BUDGET_AMOUNTS = {
+    "Rent": Decimal("1500"), "Groceries": Decimal("600"), "Utilities": Decimal("250"),
+    "Transport": Decimal("300"), "Dining Out": Decimal("400"), "Entertainment": Decimal("150"),
+    "Healthcare": Decimal("200"), "Subscriptions": Decimal("120"), "Clothing": Decimal("150"),
+    "Travel": Decimal("500"),
+}
+
+GOAL_TEMPLATES: list[dict] = [
+    {"name": "Emergency fund", "target_amount": Decimal("15000"), "current_amount": Decimal("6200"),
+     "initial_amount": Decimal("1000"), "tracking_type": "manual", "target_date": date(2027, 6, 30),
+     "icon": "shield", "color": "#22c55e"},
+    {"name": "Japan trip", "target_amount": Decimal("8000"), "current_amount": Decimal("0"),
+     "initial_amount": Decimal("0"), "tracking_type": "account", "account": "Savings",
+     "target_date": date(2027, 3, 1), "icon": "plane", "color": "#0ea5e9"},
+    {"name": "New laptop", "target_amount": Decimal("3000"), "current_amount": Decimal("3000"),
+     "initial_amount": Decimal("0"), "tracking_type": "manual", "status": "completed",
+     "icon": "smartphone", "color": "#6366f1"},
+    {"name": "Car down payment", "target_amount": Decimal("20000"), "current_amount": Decimal("4500"),
+     "initial_amount": Decimal("0"), "tracking_type": "manual", "target_date": date(2028, 1, 1),
+     "icon": "car", "color": "#f97316"},
+]
+
+# (group name, member names besides "Me")
+GROUP_TEMPLATES = [
+    ("Roommates", ["Ana", "Bruno"]),
+    ("Trip to Lisbon", ["Carla", "Diego", "Elisa"]),
+]
+
+# Volume at scale=1.0; multiplied by --scale like the other counts.
+GROUP_SPLIT_TX_AT_SCALE_1 = 300
+CATEGORY_SPLIT_TX_AT_SCALE_1 = 2500
+GROUP_SPLIT_MIN_AMOUNT = Decimal("30")
+CATEGORY_SPLIT_MIN_AMOUNT = Decimal("40")
+CATEGORY_SPLIT_RATIOS = [0.25, 0.4, 0.5, 0.6, 0.75]
+
+
+def _month_starts(today: date, n: int) -> list[date]:
+    out = []
+    y, m = today.year, today.month
+    for _ in range(n):
+        out.append(date(y, m, 1))
+        m -= 1
+        if m == 0:
+            y, m = y - 1, 12
+    return sorted(out)
+
+
+async def _seed_budgets(session, uid, wid, categories_by_name: dict, today: date) -> int:
+    rows = 0
+    for name, amount in BUDGET_AMOUNTS.items():
+        cat = categories_by_name.get(name)
+        if cat is None:
+            continue
+        for month in _month_starts(today, BUDGET_MONTHS):
+            session.add(Budget(user_id=uid, workspace_id=wid, category_id=cat.id, amount=amount,
+                               month=month, is_recurring=False, currency="USD"))
+            rows += 1
+    await session.flush()
+    return rows
+
+
+async def _seed_goals(session, uid, wid, accounts_by_name: dict) -> int:
+    rows = 0
+    for i, tmpl in enumerate(GOAL_TEMPLATES):
+        fields = dict(tmpl)
+        account_name = fields.pop("account", None)
+        account = accounts_by_name.get(account_name) if account_name else None
+        if account_name and account is None:
+            continue
+        session.add(Goal(user_id=uid, workspace_id=wid, currency="USD", position=i,
+                         account_id=account.id if account else None, **fields))
+        rows += 1
+    await session.flush()
+    return rows
+
+
+async def _seed_payees(session, uid, wid, payee_names: list[str]) -> int:
+    for name in sorted(set(payee_names)):
+        payee = Payee(user_id=uid, workspace_id=wid, name=name, source="manual")
+        session.add(payee)
+        await session.flush()
+        await session.execute(
+            update(Transaction)
+            .where(Transaction.user_id == uid, Transaction.payee == name)
+            .values(payee_id=payee.id)
+        )
+    return len(set(payee_names))
+
+
+async def _seed_groups(session, uid, wid, rng: random.Random, scale: float) -> int:
+    groups: list[tuple[Group, list[GroupMember]]] = []
+    for gname, others in GROUP_TEMPLATES:
+        group = Group(user_id=uid, workspace_id=wid, name=gname, kind="social", default_currency="USD")
+        session.add(group)
+        await session.flush()
+        members = [GroupMember(group_id=group.id, workspace_id=wid, name="Me", is_self=True)]
+        members += [GroupMember(group_id=group.id, workspace_id=wid, name=o) for o in others]
+        session.add_all(members)
+        await session.flush()
+        groups.append((group, members))
+
+    candidates = (await session.execute(
+        select(Transaction).where(
+            Transaction.user_id == uid,
+            Transaction.type == "debit",
+            Transaction.amount >= GROUP_SPLIT_MIN_AMOUNT,
+            Transaction.transfer_pair_id.is_(None),
+        ).order_by(Transaction.date)
+    )).scalars().all()
+    n_split = min(len(candidates), max(1, int(GROUP_SPLIT_TX_AT_SCALE_1 * scale)))
+    for tx in rng.sample(candidates, n_split):
+        _, members = rng.choice(groups)
+        k = len(members)
+        base = (tx.amount / k).quantize(Decimal("0.01"))
+        for idx, member in enumerate(members):
+            share = base if idx < k - 1 else tx.amount - base * (k - 1)
+            session.add(TransactionSplit(transaction_id=tx.id, workspace_id=wid,
+                                         group_member_id=member.id, share_amount=share,
+                                         share_type="equal"))
+
+    group, members = groups[0]
+    session.add_all([
+        GroupSettlement(group_id=group.id, workspace_id=wid, from_member_id=members[1].id,
+                        to_member_id=members[0].id, amount=Decimal("85.50"), currency="USD",
+                        date=date(2026, 9, 15), notes="Rent share"),
+        GroupSettlement(group_id=group.id, workspace_id=wid, from_member_id=members[0].id,
+                        to_member_id=members[-1].id, amount=Decimal("40.00"), currency="USD",
+                        date=date(2026, 10, 2), notes="Groceries"),
+    ])
+    await session.flush()
+    return n_split
+
+
+async def _seed_category_splits(session, uid, wid, rng: random.Random, scale: float, debit_cats: list[Category]) -> int:
+    candidates = (await session.execute(
+        select(Transaction).where(
+            Transaction.user_id == uid,
+            Transaction.type == "debit",
+            Transaction.amount >= CATEGORY_SPLIT_MIN_AMOUNT,
+            Transaction.transfer_pair_id.is_(None),
+        ).order_by(Transaction.date)
+    )).scalars().all()
+    n_split = min(len(candidates), max(1, int(CATEGORY_SPLIT_TX_AT_SCALE_1 * scale)))
+    for tx in rng.sample(candidates, n_split):
+        first_cat, second_cat = rng.sample(debit_cats, 2)
+        first = (tx.amount * Decimal(str(rng.choice(CATEGORY_SPLIT_RATIOS)))).quantize(Decimal("0.01"))
+        session.add(TransactionCategoryAllocation(transaction_id=tx.id, workspace_id=wid,
+                                                  category_id=first_cat.id, amount=first, position=0))
+        session.add(TransactionCategoryAllocation(transaction_id=tx.id, workspace_id=wid,
+                                                  category_id=second_cat.id, amount=tx.amount - first,
+                                                  notes="Split demo", position=1))
+    await session.flush()
+    return n_split
+
+
+async def _seed_feature_data(session, uid, wid, rng: random.Random, scale: float, today: date,
+                             accounts: list[Account], categories: list[Category],
+                             debit_cats: list[Category]) -> None:
+    categories_by_name = {c.name: c for c in categories}
+    accounts_by_name = {a.name: a for a in accounts}
+    n_budgets = await _seed_budgets(session, uid, wid, categories_by_name, today)
+    print(f"  {n_budgets} budgets")
+    n_goals = await _seed_goals(session, uid, wid, accounts_by_name)
+    print(f"  {n_goals} goals")
+    n_payees = await _seed_payees(session, uid, wid, PAYEES)
+    print(f"  {n_payees} payees")
+    n_group_txs = await _seed_groups(session, uid, wid, rng, scale)
+    print(f"  {len(GROUP_TEMPLATES)} groups, {n_group_txs} group split transactions, 2 settlements")
+    n_cat_splits = await _seed_category_splits(session, uid, wid, rng, scale, debit_cats)
+    print(f"  {n_cat_splits} category-split transactions")
 
 
 # ---------------------------------------------------------------------------
@@ -327,7 +522,7 @@ async def seed(
                 "payee": rng.choice(PAYEES),
             })
 
-        chunk = 2000  # asyncpg limit: 32767 params / 14 cols per tx = 2340 max
+        chunk = 1000  # asyncpg limit: 32767 params / ~17 cols per tx ≈ 1900 max; 2000 overflows
         for i in range(0, len(tx_rows), chunk):
             await session.execute(pg_insert(Transaction).values(tx_rows[i : i + chunk]))
             done = min(i + chunk, n_tx)
@@ -423,6 +618,11 @@ async def seed(
             ))
         await session.commit()
         print(f"  {n_rec} recurring transactions")
+
+        # ── 9. Feature data (budgets, goals, payees, groups, splits) ─────────
+        print("Creating feature data (budgets, goals, payees, groups, splits) …")
+        await _seed_feature_data(session, uid, wid, rng, scale, today, accounts, categories, debit_cats)
+        await session.commit()
 
     print("\nSeed complete.")
     print(f"  Login : {email}")

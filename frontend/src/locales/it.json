@@ -816,6 +816,23 @@
   },
   "dashboard": {
     "title": "Dashboard",
+    "customize": {
+      "button": "Personalizza",
+      "title": "Personalizza dashboard",
+      "description": "Scegli quali sezioni mostrare e in quale ordine.",
+      "reset": "Ripristina predefinito",
+      "moveUp": "Sposta {{widget}} su",
+      "moveDown": "Sposta {{widget}} giù",
+      "saveError": "Impossibile salvare il layout della dashboard",
+      "widgets": {
+        "hero": "Saldo e riepilogo del mese",
+        "uncategorized": "Transazioni senza categoria",
+        "categorySpending": "Spese per categoria",
+        "balanceFlow": "Andamento del saldo",
+        "goals": "Obiettivi",
+        "transactions": "Transazioni"
+      }
+    },
     "greetingMorning": "Buongiorno",
     "greetingAfternoon": "Buon pomeriggio",
     "greetingEvening": "Buonasera",
@@ -1150,7 +1167,8 @@
     "invoiceBadgeTooltip": "Questa transazione salda una fattura. Aprila.",
     "suggestionBadge": "Domanda",
     "suggestionBadgeTooltip": "Un pagamento potrebbe saldare questa fattura. Apri la coda per rispondere.",
-    "clearGroupFilter": "Rimuovi filtro gruppo"
+    "clearGroupFilter": "Rimuovi filtro gruppo",
+    "splitByCategory": "Suddiviso"
   },
   "accounts": {
     "title": "Conti",
@@ -2261,6 +2279,17 @@
       "project": "Progetto",
       "client": "Cliente",
       "other": "Altro"
+    },
+    "categorySplits": {
+      "title": "Suddividi per categoria",
+      "addRow": "Aggiungi categoria",
+      "category": "Categoria",
+      "amount": "Importo",
+      "remove": "Rimuovi",
+      "sum": "Somma: {{sum}} / {{total}} {{currency}}",
+      "badge": "Suddiviso",
+      "modeAmongPeople": "Tra persone",
+      "modeByCategory": "Per categoria"
     }
   },
   "privacy": {

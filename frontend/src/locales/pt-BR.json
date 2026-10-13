@@ -816,6 +816,23 @@
   },
   "dashboard": {
     "title": "Painel",
+    "customize": {
+      "button": "Personalizar",
+      "title": "Personalizar painel",
+      "description": "Escolha quais seções aparecem e em que ordem.",
+      "reset": "Restaurar padrão",
+      "moveUp": "Mover {{widget}} para cima",
+      "moveDown": "Mover {{widget}} para baixo",
+      "saveError": "Não foi possível salvar o layout do painel",
+      "widgets": {
+        "hero": "Saldo e resumo do mês",
+        "uncategorized": "Transações sem categoria",
+        "categorySpending": "Gastos por categoria",
+        "balanceFlow": "Fluxo do saldo",
+        "goals": "Metas",
+        "transactions": "Transações"
+      }
+    },
     "greetingMorning": "Bom dia",
     "greetingAfternoon": "Boa tarde",
     "greetingEvening": "Boa noite",
@@ -1150,7 +1167,8 @@
     "invoiceBadgeTooltip": "Esta transação quita uma cobrança. Abrir.",
     "suggestionBadge": "Pergunta",
     "suggestionBadgeTooltip": "Um pagamento pode quitar esta cobrança. Abra a fila para responder.",
-    "clearGroupFilter": "Limpar filtro de grupo"
+    "clearGroupFilter": "Limpar filtro de grupo",
+    "splitByCategory": "Dividido"
   },
   "accounts": {
     "title": "Contas",
@@ -2261,6 +2279,17 @@
       "project": "Projeto",
       "client": "Cliente",
       "other": "Outro"
+    },
+    "categorySplits": {
+      "title": "Dividir por categoria",
+      "addRow": "Adicionar categoria",
+      "category": "Categoria",
+      "amount": "Valor",
+      "remove": "Remover",
+      "sum": "Soma: {{sum}} / {{total}} {{currency}}",
+      "badge": "Dividido",
+      "modeAmongPeople": "Entre pessoas",
+      "modeByCategory": "Por categoria"
     }
   },
   "privacy": {

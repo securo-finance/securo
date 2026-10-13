@@ -822,6 +822,23 @@
   },
   "dashboard": {
     "title": "Pulpit",
+    "customize": {
+      "button": "Dostosuj",
+      "title": "Dostosuj pulpit",
+      "description": "Wybierz, które sekcje się pojawiają i w jakiej kolejności.",
+      "reset": "Przywróć domyślne",
+      "moveUp": "Przesuń {{widget}} w górę",
+      "moveDown": "Przesuń {{widget}} w dół",
+      "saveError": "Nie udało się zapisać układu pulpitu",
+      "widgets": {
+        "hero": "Saldo i podsumowanie miesiąca",
+        "uncategorized": "Transakcje bez kategorii",
+        "categorySpending": "Wydatki według kategorii",
+        "balanceFlow": "Przepływ salda",
+        "goals": "Cele",
+        "transactions": "Transakcje"
+      }
+    },
     "greetingMorning": "Dzień dobry",
     "greetingAfternoon": "Dzień dobry",
     "greetingEvening": "Dobry wieczór",
@@ -1189,7 +1206,8 @@
     "invoiceBadgeTooltip": "Ta transakcja rozlicza fakturę. Otwórz ją.",
     "suggestionBadge": "Pytanie",
     "suggestionBadgeTooltip": "Płatność może opłacić tę fakturę. Otwórz kolejkę, aby odpowiedzieć.",
-    "clearGroupFilter": "Wyczyść filtr grupy"
+    "clearGroupFilter": "Wyczyść filtr grupy",
+    "splitByCategory": "Podzielone"
   },
   "accounts": {
     "title": "Konta",
@@ -2361,6 +2379,17 @@
       "project": "Projekt",
       "client": "Klient",
       "other": "Inne"
+    },
+    "categorySplits": {
+      "title": "Podziel według kategorii",
+      "addRow": "Dodaj kategorię",
+      "category": "Kategoria",
+      "amount": "Kwota",
+      "remove": "Usuń",
+      "sum": "Suma: {{sum}} / {{total}} {{currency}}",
+      "badge": "Podzielone",
+      "modeAmongPeople": "Między osobami",
+      "modeByCategory": "Według kategorii"
     }
   },
   "privacy": {

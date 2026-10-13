@@ -822,6 +822,23 @@
   },
   "dashboard": {
     "title": "Панель",
+    "customize": {
+      "button": "Настроить",
+      "title": "Настроить панель",
+      "description": "Выберите, какие разделы показывать и в каком порядке.",
+      "reset": "Сбросить по умолчанию",
+      "moveUp": "Переместить «{{widget}}» вверх",
+      "moveDown": "Переместить «{{widget}}» вниз",
+      "saveError": "Не удалось сохранить макет панели",
+      "widgets": {
+        "hero": "Баланс и сводка за месяц",
+        "uncategorized": "Транзакции без категории",
+        "categorySpending": "Расходы по категориям",
+        "balanceFlow": "Динамика баланса",
+        "goals": "Цели",
+        "transactions": "Транзакции"
+      }
+    },
     "greetingMorning": "Доброе утро",
     "greetingAfternoon": "Добрый день",
     "greetingEvening": "Добрый вечер",
@@ -1162,7 +1179,8 @@
     "invoiceBadgeTooltip": "Эта операция закрывает счёт. Открыть.",
     "suggestionBadge": "Вопрос",
     "suggestionBadgeTooltip": "Платёж может закрыть этот счёт. Откройте очередь, чтобы ответить.",
-    "clearGroupFilter": "Сбросить фильтр группы"
+    "clearGroupFilter": "Сбросить фильтр группы",
+    "splitByCategory": "Распределено"
   },
   "accounts": {
     "title": "Счета",
@@ -2274,6 +2292,17 @@
       "project": "Проект",
       "client": "Клиент",
       "other": "Другое"
+    },
+    "categorySplits": {
+      "title": "Распределить по категориям",
+      "addRow": "Добавить категорию",
+      "category": "Категория",
+      "amount": "Сумма",
+      "remove": "Удалить",
+      "sum": "Сумма: {{sum}} / {{total}} {{currency}}",
+      "badge": "Распределено",
+      "modeAmongPeople": "Между людьми",
+      "modeByCategory": "По категориям"
     }
   },
   "privacy": {

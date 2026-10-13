@@ -23,6 +23,12 @@ const api = vi.hoisted(() => ({
   groups: { list: vi.fn() },
   payees: { list: vi.fn() },
   rules: { create: vi.fn() },
+  auth: { updateMe: vi.fn() },
+}))
+
+const authState = vi.hoisted(() => ({
+  user: { preferences: { currency_display: 'USD' } as Record<string, unknown> },
+  updateUser: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => api)
@@ -37,7 +43,7 @@ vi.mock('@/hooks/use-privacy-mode', () => ({
 }))
 
 vi.mock('@/contexts/auth-context', () => ({
-  useAuth: () => ({ user: { preferences: { currency_display: 'USD' } } }),
+  useAuth: () => authState,
 }))
 
 vi.mock('@/contexts/collection-filter-context', () => ({
@@ -106,6 +112,7 @@ const summary: DashboardSummary = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  authState.user = { preferences: { currency_display: 'USD' } }
   api.dashboard.summary.mockResolvedValue(summary)
   api.dashboard.spendingByCategory.mockResolvedValue([])
   api.dashboard.balanceHistory.mockResolvedValue({ current: [], previous: [] })
@@ -134,5 +141,76 @@ describe('Dashboard net worth breakdown', () => {
     const tooltip = await screen.findByRole('tooltip')
     const cardRow = within(tooltip).getByText(t('dashboard.creditCardBalance')).parentElement!
     expect(cardRow).toHaveTextContent(formatCurrency(-500, 'USD', 'en-US'))
+  })
+})
+
+describe('Dashboard layout', () => {
+  const goal = {
+    id: 'g1',
+    name: 'Emergency fund',
+    current_amount: 100,
+    target_amount: 1000,
+    currency: 'USD',
+    percentage: 10,
+    color: null,
+    icon: null,
+    monthly_contribution: null,
+    on_track: null,
+  }
+
+  it('does not render or fetch a hidden widget', async () => {
+    api.goals.summary.mockResolvedValue([goal])
+    authState.user = {
+      preferences: { currency_display: 'USD', dashboard_layout: { order: [], hidden: ['goals'] } },
+    }
+
+    renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+    )
+
+    await screen.findByText(t('dashboard.periodTransactions'))
+    expect(screen.queryByText(t('goals.dashboardTitle'))).not.toBeInTheDocument()
+    expect(api.goals.summary).not.toHaveBeenCalled()
+  })
+
+  it('renders widgets in the saved order', async () => {
+    authState.user = {
+      preferences: { currency_display: 'USD', dashboard_layout: { order: ['transactions'], hidden: [] } },
+    }
+
+    renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+    )
+
+    const transactions = await screen.findByText(t('dashboard.periodTransactions'))
+    const balance = screen.getByText(t('dashboard.availableBalance'))
+    expect(transactions.compareDocumentPosition(balance) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('saves the layout into the user preferences', async () => {
+    const updated = { preferences: { currency_display: 'USD', dashboard_layout: { order: [], hidden: ['goals'] } } }
+    api.auth.updateMe.mockResolvedValue(updated)
+
+    const { user } = renderWithProviders(
+      <TooltipProvider delayDuration={0}>
+        <DashboardPage />
+      </TooltipProvider>,
+    )
+
+    await user.click(await screen.findByRole('button', { name: t('dashboard.customize.title') }))
+    await user.click(screen.getByRole('switch', { name: t('dashboard.customize.widgets.goals') }))
+    await user.click(screen.getByRole('button', { name: t('common.save') }))
+
+    expect(api.auth.updateMe).toHaveBeenCalledWith({
+      preferences: {
+        currency_display: 'USD',
+        dashboard_layout: expect.objectContaining({ hidden: ['goals'] }),
+      },
+    })
+    expect(authState.updateUser).toHaveBeenCalledWith(updated)
   })
 })

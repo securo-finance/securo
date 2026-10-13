@@ -814,6 +814,23 @@
   },
   "dashboard": {
     "title": "डैशबोर्ड",
+    "customize": {
+      "button": "अनुकूलित करें",
+      "title": "डैशबोर्ड अनुकूलित करें",
+      "description": "चुनें कि कौन से अनुभाग किस क्रम में दिखें।",
+      "reset": "डिफ़ॉल्ट पर रीसेट करें",
+      "moveUp": "{{widget}} को ऊपर ले जाएँ",
+      "moveDown": "{{widget}} को नीचे ले जाएँ",
+      "saveError": "डैशबोर्ड लेआउट सहेजा नहीं जा सका",
+      "widgets": {
+        "hero": "शेष राशि और मासिक सारांश",
+        "uncategorized": "बिना श्रेणी के लेनदेन",
+        "categorySpending": "श्रेणी के अनुसार खर्च",
+        "balanceFlow": "शेष राशि प्रवाह",
+        "goals": "लक्ष्य",
+        "transactions": "लेनदेन"
+      }
+    },
     "greetingMorning": "सुप्रभात",
     "greetingAfternoon": "नमस्कार",
     "greetingEvening": "शुभ संध्या",
@@ -1148,7 +1165,8 @@
     "invoiceBadgeTooltip": "यह लेन-देन एक इनवॉइस चुकाता है। इसे खोलें।",
     "suggestionBadge": "सवाल",
     "suggestionBadgeTooltip": "एक भुगतान इसे चुका सकता है। जवाब देने के लिए कतार खोलें।",
-    "clearGroupFilter": "समूह फ़िल्टर हटाएँ"
+    "clearGroupFilter": "समूह फ़िल्टर हटाएँ",
+    "splitByCategory": "विभाजित"
   },
   "accounts": {
     "title": "खाते",
@@ -2257,6 +2275,17 @@
       "project": "प्रोजेक्ट",
       "client": "क्लाइंट",
       "other": "अन्य"
+    },
+    "categorySplits": {
+      "title": "श्रेणी के अनुसार विभाजित करें",
+      "addRow": "श्रेणी जोड़ें",
+      "category": "श्रेणी",
+      "amount": "राशि",
+      "remove": "हटाएं",
+      "sum": "योग: {{sum}} / {{total}} {{currency}}",
+      "badge": "विभाजित",
+      "modeAmongPeople": "लोगों के बीच",
+      "modeByCategory": "श्रेणी के अनुसार"
     }
   },
   "privacy": {

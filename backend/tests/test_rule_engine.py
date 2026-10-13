@@ -317,39 +317,43 @@ def test_not_equals_same_value():
     assert evaluate_conditions("and", conditions, tx) is False
 
 
+# `amount` comparisons see the signed value (issue #981), so these boundary
+# tests use credits: with a debit they would answer a question about the sign
+# instead of a question about the operator.
+
 def test_gte_equal():
     conditions = [{"field": "amount", "op": "gte", "value": 25.50}]
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(amount=Decimal("25.50"), type="credit")
     assert evaluate_conditions("and", conditions, tx) is True
 
 
 def test_gte_greater():
     conditions = [{"field": "amount", "op": "gte", "value": 20}]
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(amount=Decimal("25.50"), type="credit")
     assert evaluate_conditions("and", conditions, tx) is True
 
 
 def test_gte_less():
     conditions = [{"field": "amount", "op": "gte", "value": 30}]
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(amount=Decimal("25.50"), type="credit")
     assert evaluate_conditions("and", conditions, tx) is False
 
 
 def test_lte_equal():
     conditions = [{"field": "amount", "op": "lte", "value": 25.50}]
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(amount=Decimal("25.50"), type="credit")
     assert evaluate_conditions("and", conditions, tx) is True
 
 
 def test_lte_less():
     conditions = [{"field": "amount", "op": "lte", "value": 30}]
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(amount=Decimal("25.50"), type="credit")
     assert evaluate_conditions("and", conditions, tx) is True
 
 
 def test_lte_greater():
     conditions = [{"field": "amount", "op": "lte", "value": 20}]
-    tx = make_tx(amount=Decimal("25.50"))
+    tx = make_tx(amount=Decimal("25.50"), type="credit")
     assert evaluate_conditions("and", conditions, tx) is False
 
 
@@ -570,9 +574,29 @@ def test_blank_numeric_value_never_matches():
 
 def test_zero_value_still_matches():
     """0 is a real value, not a blank one — it must keep working."""
-    tx = make_tx(amount=Decimal("25.50"))
     conditions = [{"field": "amount", "op": "gt", "value": 0}]
-    assert evaluate_conditions("and", conditions, tx) is True
+    assert evaluate_conditions(
+        "and", conditions, make_tx(amount=Decimal("25.50"), type="credit")
+    ) is True
+
+
+def test_amount_comparisons_follow_the_transaction_sign():
+    """`amount > 0` is income only, `amount < 0` expenses only (issue #981).
+
+    `Transaction.amount` is stored as a magnitude with the sign carried by
+    `type`, so a rule comparing `amount` has to be handed the signed value or
+    every threshold matches the whole ledger.
+    """
+    income = make_tx(amount=Decimal("8000.00"), type="credit")
+    expense = make_tx(amount=Decimal("8000.00"), type="debit")
+
+    positive = [{"field": "amount", "op": "gt", "value": 0}]
+    assert evaluate_conditions("and", positive, income) is True
+    assert evaluate_conditions("and", positive, expense) is False
+
+    negative = [{"field": "amount", "op": "lt", "value": 0}]
+    assert evaluate_conditions("and", negative, income) is False
+    assert evaluate_conditions("and", negative, expense) is True
 
 
 # --- nested condition groups (mixing AND and OR) ---
@@ -621,13 +645,17 @@ def test_and_of_or_group_no_leaf_matches():
 
 
 def test_or_of_and_group():
-    """`description contains IFOOD OR (contains MERCADO AND amount > 100)`."""
+    """`contains IFOOD OR (contains MERCADO AND amount < -100)`.
+
+    The inner threshold is negative because the group selects a supermarket
+    bill, and expenses carry a negative signed amount (issue #981).
+    """
     conditions = [
         {"field": "description", "op": "contains", "value": "IFOOD"},
         _group(
             "and",
             {"field": "description", "op": "contains", "value": "MERCADO"},
-            {"field": "amount", "op": "gt", "value": 100},
+            {"field": "amount", "op": "lt", "value": -100},
         ),
     ]
     assert evaluate_conditions("or", conditions, make_tx(description="IFOOD PEDIDO")) is True

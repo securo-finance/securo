@@ -10,7 +10,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "dev:docker": "node ../scripts/dev-frontend.mjs",
-    "test": "vitest run"
+    "test": "NODE_OPTIONS=--no-experimental-webstorage vitest run"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

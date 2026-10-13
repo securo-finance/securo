@@ -7,6 +7,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.app_clock import app_today
@@ -16,6 +17,7 @@ from app.core.workspace_context import (
     current_workspace,
     current_writable_workspace,
 )
+from app.models.category import Category
 from app.schemas.transaction import BulkAddToGroupRequest, BulkCategorizeRequest, BulkTagsRequest, CreateCounterpartRequest, InstallmentSeriesCreate, LinkTransferRequest, TransactionBulkDeleteRequest, TransactionCreate, TransactionRead, TransactionUpdate, TransferCreate, TransferRead
 from app.schemas.transaction_calendar import TransactionCalendarResponse
 from app.services import transaction_service
@@ -231,24 +233,66 @@ async def export_transactions(
     output = io.StringIO()
     output.write("﻿")  # UTF-8 BOM for Excel
     writer = csv.writer(output)
-    writer.writerow(["date", "description", "amount", "type", "currency", "category", "account", "payee", "payee_name", "notes", "status", "source", "amount_primary", "fx_rate_used"])
+    writer.writerow(["date", "description", "amount", "type", "currency", "category", "account", "payee", "payee_name", "notes", "status", "source", "amount_primary", "fx_rate_used", "split_group", "split_index", "parent_category"])
+
+    # Collect allocation category IDs and resolve names in one query
+    alloc_cat_ids = set()
     for tx in transactions:
-        writer.writerow([
-            tx.date.isoformat(),
-            tx.description,
-            str(tx.amount),
-            tx.type,
-            tx.currency,
-            tx.category.name if tx.category else "",
-            tx.account.name if tx.account else "",
-            tx.payee or "",
-            getattr(tx, "payee_name", "") or "",
-            tx.notes or "",
-            tx.status,
-            tx.source,
-            str(tx.amount_primary) if tx.amount_primary is not None else "",
-            str(tx.fx_rate_used) if tx.fx_rate_used is not None else "",
-        ])
+        for alloc in tx.category_allocations:
+            alloc_cat_ids.add(alloc.category_id)
+
+    alloc_cat_names: dict[uuid.UUID, str] = {}
+    if alloc_cat_ids:
+        result = await session.execute(select(Category.id, Category.name).where(Category.id.in_(alloc_cat_ids)))
+        alloc_cat_names = {cid: cname for cid, cname in result.all()}
+
+    for tx in transactions:
+        if not tx.category_allocations:
+            writer.writerow([
+                tx.date.isoformat(),
+                tx.description,
+                str(tx.amount),
+                tx.type,
+                tx.currency,
+                tx.category.name if tx.category else "",
+                tx.account.name if tx.account else "",
+                tx.payee or "",
+                getattr(tx, "payee_name", "") or "",
+                tx.notes or "",
+                tx.status,
+                tx.source,
+                str(tx.amount_primary) if tx.amount_primary is not None else "",
+                str(tx.fx_rate_used) if tx.fx_rate_used is not None else "",
+                "", "", "",
+            ])
+        else:
+            for alloc in tx.category_allocations:
+                pct = alloc.amount / tx.amount if tx.amount else 0
+                prorated_primary = (tx.amount_primary * pct) if tx.amount_primary is not None else None
+                if alloc.position == len(tx.category_allocations) - 1 and tx.amount_primary is not None:
+                    prorated_primary = tx.amount_primary - sum(
+                        ((tx.amount_primary * (a.amount / tx.amount)) if tx.amount else 0)
+                        for a in tx.category_allocations[:-1]
+                    )
+                writer.writerow([
+                    tx.date.isoformat(),
+                    tx.description,
+                    str(alloc.amount),
+                    tx.type,
+                    tx.currency,
+                    alloc_cat_names.get(alloc.category_id, ""),
+                    tx.account.name if tx.account else "",
+                    tx.payee or "",
+                    getattr(tx, "payee_name", "") or "",
+                    tx.notes or "",
+                    tx.status,
+                    tx.source,
+                    str(prorated_primary) if prorated_primary is not None else "",
+                    str(tx.fx_rate_used) if tx.fx_rate_used is not None else "",
+                    str(tx.id),
+                    str(alloc.position + 1),
+                    tx.category.name if tx.category else "",
+                ])
 
     output.seek(0)
     today = app_today().isoformat()

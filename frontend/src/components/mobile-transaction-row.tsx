@@ -110,6 +110,11 @@ export function MobileTransactionRow({
               {tx.is_shared && tx.parent_owner_name ? tx.parent_owner_name : t('splitGroups.ownerRowBadge', { group: groupName ?? '' })}
             </span>
           )}
+          {tx.category_allocations && tx.category_allocations.length > 0 && (
+            <span className="inline-flex items-center text-[9px] font-semibold uppercase tracking-wide text-teal-700 bg-teal-50 border border-teal-200 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-900 px-1 py-0.5 rounded-full shrink-0">
+              {t('splitGroups.categorySplits.badge')}
+            </span>
+          )}
           {!!tx.transfer_pair_id && (
             <ArrowLeftRight className="h-3 w-3 text-blue-600 shrink-0" />
           )}
