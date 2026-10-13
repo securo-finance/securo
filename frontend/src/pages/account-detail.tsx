@@ -33,7 +33,9 @@ import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { useCreateTransaction } from '@/hooks/use-create-transaction'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
-import { formatCurrency } from '@/lib/format'
+import { convertAmountInput, formatAmountInput, formatCurrency, parseAmountInput } from '@/lib/format'
+import { AmountInput } from '@/components/amount-input'
+import { useDisplayLocaleChange } from '@/hooks/use-display-locale-change'
 import {
   AreaChart,
   Area,
@@ -1787,16 +1789,18 @@ function CreditCardSettingsDialog({
   loading: boolean
 }) {
   const { t } = useTranslation()
+  const displayLocale = useDisplayLocale()
   const [creditLimit, setCreditLimit] = useState('')
   const [closeDay, setCloseDay] = useState('')
   const [dueDay, setDueDay] = useState('')
+  useDisplayLocaleChange(displayLocale, (prev, next) => setCreditLimit((v) => convertAmountInput(v, prev, next)))
 
   const formKey = JSON.stringify([open, account.credit_limit, account.statement_close_day, account.payment_due_day])
   const [previousFormKey, setPreviousFormKey] = useState<string | null>(null)
   if (formKey !== previousFormKey) {
     setPreviousFormKey(formKey)
     if (open) {
-      setCreditLimit(account.credit_limit != null ? String(account.credit_limit) : '')
+      setCreditLimit(account.credit_limit != null ? formatAmountInput(account.credit_limit, displayLocale) : '')
       setCloseDay(account.statement_close_day != null ? String(account.statement_close_day) : '')
       setDueDay(account.payment_due_day != null ? String(account.payment_due_day) : '')
     }
@@ -1816,8 +1820,13 @@ function CreditCardSettingsDialog({
         <form
           onSubmit={(e) => {
             e.preventDefault()
+            const parsedCreditLimit = creditLimit.trim() === '' ? null : parseAmountInput(creditLimit, displayLocale)
+            if (creditLimit.trim() !== '' && parsedCreditLimit == null) {
+              toast.error(t('common.invalidAmount'))
+              return
+            }
             onSave({
-              credit_limit: creditLimit !== '' ? parseFloat(creditLimit) : null,
+              credit_limit: parsedCreditLimit,
               statement_close_day: parseDay(closeDay),
               payment_due_day: parseDay(dueDay),
             })
@@ -1831,10 +1840,7 @@ function CreditCardSettingsDialog({
           )}
           <div className="space-y-2">
             <Label>{t('accounts.creditLimit')}</Label>
-            <Input
-              type="number"
-              step="0.01"
-              min="0"
+            <AmountInput
               value={creditLimit}
               onChange={(e) => setCreditLimit(e.target.value)}
               placeholder="0.00"

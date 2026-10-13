@@ -2109,6 +2109,7 @@
     }
   },
   "common": {
+    "invalidAmount": "Gib einen gültigen Betrag ein",
     "selectTimezone": "Zeitzone wählen",
     "searchTimezone": "Zeitzone suchen...",
     "noTimezoneFound": "Keine Zeitzone gefunden.",

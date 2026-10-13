@@ -39,7 +39,9 @@ import { usePrivacyMode } from '@/hooks/use-privacy-mode'
 import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import { useWorkspace } from '@/contexts/workspace-context'
-import { formatCurrency } from '@/lib/format'
+import { convertAmountInput, formatAmountInput, formatCurrency, parseAmountInput } from '@/lib/format'
+import { AmountInput } from '@/components/amount-input'
+import { useDisplayLocaleChange } from '@/hooks/use-display-locale-change'
 
 // Account types offered in the create/edit dialog. Shared between the manual
 // type selector and the connected-account override selector so the list stays
@@ -691,6 +693,9 @@ function AccountDialog({
   const { t } = useTranslation()
   const { user } = useAuth()
   const userCurrency = user?.preferences?.currency_display ?? 'USD'
+  const displayLocale = useDisplayLocale()
+  const toInput = (v: number | null | undefined, empty: string) =>
+    v != null ? formatAmountInput(v, displayLocale) : empty
   const { data: supportedCurrencies } = useQuery({
     queryKey: ['currencies'],
     queryFn: currencies.list,
@@ -699,12 +704,16 @@ function AccountDialog({
   const [name, setName] = useState(account?.name ?? '')
   const [displayName, setDisplayName] = useState(account?.display_name ?? '')
   const [type, setType] = useState(account?.type ?? 'checking')
-  const [balance, setBalance] = useState(account?.balance?.toString() ?? '0')
+  const [balance, setBalance] = useState(() => toInput(account?.balance, '0'))
   const [currency, setCurrency] = useState(account?.currency ?? userCurrency)
   const [balanceDate, setBalanceDate] = useState(localDateString)
-  const [creditLimit, setCreditLimit] = useState(account?.credit_limit?.toString() ?? '')
+  const [creditLimit, setCreditLimit] = useState(() => toInput(account?.credit_limit, ''))
   const [statementCloseDay, setStatementCloseDay] = useState(account?.statement_close_day?.toString() ?? '')
   const [paymentDueDay, setPaymentDueDay] = useState(account?.payment_due_day?.toString() ?? '')
+  useDisplayLocaleChange(displayLocale, (prev, next) => {
+    setBalance((v) => convertAmountInput(v, prev, next))
+    setCreditLimit((v) => convertAmountInput(v, prev, next))
+  })
 
   const [formSource, setFormSource] = useState<{ account: typeof account } | null>(null)
   if (!formSource || formSource.account !== account) {
@@ -712,10 +721,10 @@ function AccountDialog({
     setName(account?.name ?? '')
     setDisplayName(account?.display_name ?? '')
     setType(account?.type ?? 'checking')
-    setBalance(account?.balance?.toString() ?? '0')
+    setBalance(toInput(account?.balance, '0'))
     setCurrency(account?.currency ?? userCurrency)
     setBalanceDate(localDateString())
-    setCreditLimit(account?.credit_limit?.toString() ?? '')
+    setCreditLimit(toInput(account?.credit_limit, ''))
     setStatementCloseDay(account?.statement_close_day?.toString() ?? '')
     setPaymentDueDay(account?.payment_due_day?.toString() ?? '')
   }
@@ -738,12 +747,21 @@ function AccountDialog({
               return Number.isFinite(n) && n >= 1 && n <= 31 ? n : null
             }
             const isConnected = !!account?.connection_id
+            const parsedBalance = balance.trim() === '' ? 0 : parseAmountInput(balance, displayLocale)
+            const parsedCreditLimit = creditLimit.trim() === '' ? null : parseAmountInput(creditLimit, displayLocale)
+            if (
+              (!isConnected && parsedBalance == null)
+              || (isCC && creditLimit.trim() !== '' && parsedCreditLimit == null)
+            ) {
+              toast.error(t('common.invalidAmount'))
+              return
+            }
             onSave({
-              ...(!isConnected && { name, balance: parseFloat(balance), balance_date: balanceDate, currency }),
+              ...(!isConnected && { name, balance: parsedBalance ?? 0, balance_date: balanceDate, currency }),
               type,
               display_name: displayName.trim() || null,
               ...(isCC && {
-                credit_limit: creditLimit !== '' ? parseFloat(creditLimit) : null,
+                credit_limit: parsedCreditLimit,
                 statement_close_day: parseDay(statementCloseDay),
                 payment_due_day: parseDay(paymentDueDay),
               }),
@@ -816,10 +834,7 @@ function AccountDialog({
                       ? t('accounts.balanceCreditCard')
                       : t('accounts.balance')}
                   </Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min={type === 'credit_card' ? '0' : undefined}
+                  <AmountInput
                     value={balance}
                     onChange={(e) => setBalance(e.target.value)}
                   />
@@ -844,10 +859,7 @@ function AccountDialog({
             <div className="space-y-4 rounded-lg border border-border bg-muted/30 p-4">
               <div className="space-y-2">
                 <Label>{t('accounts.creditLimit')}</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
+                <AmountInput
                   value={creditLimit}
                   onChange={(e) => setCreditLimit(e.target.value)}
                   placeholder="0.00"

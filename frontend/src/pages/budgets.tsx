@@ -8,7 +8,7 @@ import { extractApiError } from '@/lib/api-errors'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
-import { Input } from '@/components/ui/input'
+import { FormAmountInput } from '@/components/amount-input'
 import { Label } from '@/components/ui/label'
 import {
   Dialog,
@@ -29,7 +29,7 @@ import { useAuth } from '@/contexts/auth-context'
 import { useWorkspace } from '@/contexts/workspace-context'
 import { resolveDateFnsLocale } from '@/lib/date-fns-locale'
 import { findCategoryReference } from '@/lib/category-reference-utils'
-import { formatCurrency } from '@/lib/format'
+import { formatAmountInput, formatCurrency, parseAmountInput } from '@/lib/format'
 
 function currentMonth() {
   const now = new Date()
@@ -268,16 +268,21 @@ export default function BudgetsPage() {
             onSubmit={(e) => {
               e.preventDefault()
               const formData = new FormData(e.currentTarget)
+              const amount = parseAmountInput(formData.get('amount') as string, locale)
+              if (amount == null) {
+                toast.error(t('common.invalidAmount'))
+                return
+              }
               if (editing) {
                 updateMutation.mutate({
                   id: editing.id,
-                  amount: parseFloat(formData.get('amount') as string),
+                  amount,
                 })
               } else {
                 const isRecurring = formData.get('is_recurring') === 'on'
                 createMutation.mutate({
                   category_id: formData.get('category_id') as string,
-                  amount: parseFloat(formData.get('amount') as string),
+                  amount,
                   month: monthParam,
                   is_recurring: isRecurring,
                 })
@@ -315,11 +320,9 @@ export default function BudgetsPage() {
             )}
             <div className="space-y-2">
               <Label>{t('budgets.amount')}</Label>
-              <Input
+              <FormAmountInput
                 name="amount"
-                type="number"
-                step="0.01"
-                defaultValue={editing?.amount?.toString() ?? ''}
+                defaultValue={editing?.amount != null ? formatAmountInput(editing.amount, locale) : ''}
                 required
               />
             </div>
