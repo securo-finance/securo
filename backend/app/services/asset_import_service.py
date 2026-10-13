@@ -46,6 +46,7 @@ from app.schemas.asset_import import (
     AssetOrderImport,
 )
 from app.services import asset_transaction_service
+from app.services.asset_group_service import ensure_group_in_workspace
 from app.services.import_service import (
     DATE_FORMAT_MAP,
     _sniff_csv_dialect,
@@ -470,6 +471,7 @@ async def import_orders(
     without writing anything, so the preview can promise what the import will
     do instead of guessing.
     """
+    await ensure_group_in_workspace(session, group_id, workspace_id)
     ordered = sorted(orders, key=lambda o: (o.date, o.row))
     tickers = [o.ticker for o in ordered]
 

@@ -91,6 +91,7 @@ class TaxIdKind(str, Enum):
     RO_CUI = "ro_cui"
     CH_UID = "ch_uid"
     INN = "inn"
+    KZ_BINIIN = "kz_biniin"
     EDRPOU = "edrpou"
     # Latin America
     CUIT = "cuit"
@@ -187,6 +188,7 @@ KIND_SPECS: dict[TaxIdKind, KindSpec] = {
     # the nine digits were typed.
     TaxIdKind.CH_UID: _spec(TaxIdKind.CH_UID, "upper_alnum", "ch_uid", "CHE-###.###.###"),
     TaxIdKind.INN: _spec(TaxIdKind.INN, "digits", "ru_inn"),
+    TaxIdKind.KZ_BINIIN: _spec(TaxIdKind.KZ_BINIIN, "digits", "kz_biniin", "### ### ### ###"),
     TaxIdKind.EDRPOU: _spec(TaxIdKind.EDRPOU, "digits", "ua_edrpou"),
     # Latin America
     TaxIdKind.CUIT: _spec(TaxIdKind.CUIT, "digits", "ar_cuit", "##-########-#"),

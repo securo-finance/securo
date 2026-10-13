@@ -3038,3 +3038,91 @@ def test_normalize_amount_dr_cr_markers():
     assert normalize_amount("-10.00 CR") == "10.00"
     assert normalize_amount("10.00 XDR") == "10.00"
     assert normalize_amount("\u20131.50") == "-1.50"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rule_status", ["posted", "pending"])
+async def test_import_suggestions_evaluate_status_as_posted(
+    session: AsyncSession, test_user, test_workspace, test_categories, rule_status: str,
+):
+    from app.models.rule import Rule
+    from app.schemas.transaction import TransactionImport
+    from app.services.import_service import enrich_with_category_suggestions
+
+    category = test_categories[0]
+    session.add(Rule(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Status category",
+        conditions_op="and",
+        conditions=[{"field": "status", "op": "equals", "value": rule_status}],
+        actions=[{"op": "set_category", "value": str(category.id)}],
+        is_active=True,
+    ))
+    await session.commit()
+    transactions = [TransactionImport(
+        description="Coffee", amount=Decimal("12.34"), date=date(2025, 4, 15), type="debit",
+    )]
+
+    preview = await enrich_with_category_suggestions(session, test_workspace.id, transactions)
+
+    assert preview[0].suggested_category_id == (category.id if rule_status == "posted" else None)
+    assert preview[0].suggested_category_name == (
+        category.name if rule_status == "posted" else None
+    )
+
+
+@pytest.mark.asyncio
+async def test_import_posted_status_rule_applies_to_matched_recurring_placeholder(
+    session: AsyncSession, test_user, test_workspace, test_account, test_categories,
+):
+    from sqlalchemy import select
+
+    from app.models.recurring_transaction import RecurringTransaction
+    from app.models.rule import Rule
+    from app.models.transaction import Transaction
+    from app.schemas.transaction import TransactionImport
+
+    day = date(2025, 4, 15)
+    category = test_categories[0]
+    recurring = RecurringTransaction(
+        user_id=test_user.id, workspace_id=test_workspace.id, account_id=test_account.id,
+        description="Coffee", amount=Decimal("12.34"), currency=test_account.currency,
+        type="debit", frequency="monthly", start_date=day, next_occurrence=day,
+    )
+    session.add(recurring)
+    await session.flush()
+    placeholder = Transaction(
+        user_id=test_user.id, workspace_id=test_workspace.id, account_id=test_account.id,
+        recurring_transaction_id=recurring.id, description="Coffee", amount=Decimal("12.34"),
+        currency=test_account.currency, date=day, type="debit", source="recurring", status="pending",
+    )
+    session.add(placeholder)
+    session.add(Rule(
+        user_id=test_user.id, workspace_id=test_workspace.id, name="Posted coffee",
+        conditions_op="and",
+        conditions=[{"field": "status", "op": "equals", "value": "posted"}],
+        actions=[
+            {"op": "set_category", "value": str(category.id)},
+            {"op": "append_notes", "value": "Rule applied"},
+        ],
+        is_active=True,
+    ))
+    await session.commit()
+    transaction = TransactionImport(
+        description="Coffee", external_id="statement-coffee", amount=Decimal("12.34"),
+        currency=test_account.currency, date=day, type="debit",
+    )
+
+    imported, skipped, _, import_id = await import_transactions(
+        session, test_workspace.id, test_user.id, test_account.id, [transaction],
+        "ofx", detected_format="ofx",
+    )
+
+    assert (imported, skipped) == (1, 0)
+    rows = (await session.scalars(
+        select(Transaction).where(Transaction.import_id == import_id)
+    )).all()
+    assert [row.id for row in rows] == [placeholder.id]
+    assert rows[0].status == "posted"
+    assert rows[0].source == "ofx"
+    assert rows[0].category_id == category.id
+    assert rows[0].notes == "Rule applied"

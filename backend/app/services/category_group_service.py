@@ -143,12 +143,14 @@ async def update_group(
 
 async def delete_group(session: AsyncSession, group_id: uuid.UUID, workspace_id: uuid.UUID) -> bool:
     group = await get_group(session, group_id, workspace_id)
-    if not group or group.is_system:
+    if not group:
         return False
 
     # Unlink children before deleting
     await session.execute(
-        update(Category).where(Category.group_id == group_id).values(group_id=None)
+        update(Category)
+        .where(Category.workspace_id == workspace_id, Category.group_id == group_id)
+        .values(group_id=None)
     )
 
     await session.delete(group)

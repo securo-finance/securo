@@ -107,6 +107,14 @@ export interface CategoryRuleUsage {
   rules: { id: string; name: string }[]
 }
 
+/** Everything that still points at a category, used when deleting one. */
+export interface CategoryUsage {
+  transactions: number
+  budgets: number
+  recurring_transactions: number
+  rules: { id: string; name: string }[]
+}
+
 export interface CategoryGroup {
   id: string
   user_id: string
