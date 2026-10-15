@@ -31,7 +31,8 @@ import { useAuth } from '@/contexts/auth-context'
 import { useCollectionFilter } from '@/contexts/collection-filter-context'
 import type { ReportResponse, CategoryTrendItem } from '@/types'
 import { formatCurrency } from '@/lib/format'
-import { localDateString } from '@/lib/date-utils'
+import { localDateString, todayInTimezone } from '@/lib/date-utils'
+import { useEffectiveTimezone } from '@/hooks/use-timezone'
 
 // A small qualitative palette of well-separated hues for the composition
 // detail ring. Capped to a handful of slices, distinct colours make each
@@ -176,6 +177,7 @@ const REPORT_TABS: ReportTab[] = [
 ]
 
 export default function ReportsPage() {
+  const timeZone = useEffectiveTimezone()
   const { t } = useTranslation()
   const { mask, privacyMode, MASK } = usePrivacyMode()
   const { user } = useAuth()
@@ -300,6 +302,29 @@ export default function ReportsPage() {
       ...breakdowns,
     } as Record<string, string | number | null>
   })
+
+  // Cash-flow runway: the first projected day below zero and the lowest
+  // point of the horizon, both computed day by day on the backend.
+  const runwayDate = meta?.type === 'cash_flow' ? meta.runway_date ?? null : null
+  const lowestBalance = meta?.type === 'cash_flow' ? meta.lowest_balance ?? null : null
+  const lowestBalanceDate = meta?.type === 'cash_flow' ? meta.lowest_balance_date ?? null : null
+  // The backend reports today as the runway date when the balance is already
+  // below zero, which is a different thing to say than "it will go negative".
+  // It reckons that day in the workspace's own timezone, so this has to as
+  // well: a browser already past midnight would otherwise call tomorrow's
+  // crossing a balance that is negative today.
+  const alreadyNegative = runwayDate !== null && runwayDate <= todayInTimezone(timeZone)
+  // Day and month are enough inside the current year; a longer horizon reaches
+  // into the next one, where the year stops being obvious.
+  const formatDay = (iso: string) => {
+    const day = new Date(iso + 'T00:00:00')
+    const sameYear = day.getFullYear() === new Date().getFullYear()
+    return day.toLocaleDateString(locale, {
+      day: 'numeric',
+      month: 'short',
+      ...(sameYear ? {} : { year: 'numeric' }),
+    })
+  }
 
   const allBreakdowns = summary?.breakdowns ?? []
   const breakdownData = allBreakdowns.filter((b) => b.value > 0)
@@ -718,6 +743,38 @@ export default function ReportsPage() {
                     </p>
                   </div>
                 ))}
+                {/* Cash flow only: the lowest point of the projection. It keeps
+                    one permanent slot and lets the label and the colour carry
+                    the state, instead of a banner that comes and goes. */}
+                {lowestBalance !== null && lowestBalanceDate && (
+                  <div className="min-w-0" data-testid="cash-flow-runway">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <div
+                        className={`w-2.5 h-2.5 rounded-full shrink-0 ${runwayDate ? 'bg-rose-500' : 'bg-muted-foreground/40'}`}
+                      />
+                      <p className="text-xs font-medium text-muted-foreground">
+                        {!runwayDate
+                          ? t('reports.lowestBalance')
+                          : alreadyNegative
+                            ? t('reports.runwayAlreadyNegative')
+                            : t('reports.runwayNegativeOn', { date: formatDay(runwayDate) })}
+                      </p>
+                    </div>
+                    <p
+                      className={`text-lg font-bold tabular-nums ${runwayDate ? 'text-rose-600 dark:text-rose-400' : 'text-foreground'}`}
+                    >
+                      {mask(formatCurrency(lowestBalance, userCurrency, locale))}
+                      {/* The day the balance bottoms out, but only when the
+                          label is not already naming the day it crosses zero.
+                          Two dates side by side read as one fact, not two. */}
+                      {!runwayDate || alreadyNegative ? (
+                        <span className="ml-1.5 text-xs font-medium text-muted-foreground">
+                          {formatDay(lowestBalanceDate)}
+                        </span>
+                      ) : null}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -881,6 +938,9 @@ export default function ReportsPage() {
                       strokeDasharray="4 4"
                       strokeOpacity={0.5}
                     />
+                    {lowestBalance !== null && lowestBalance < 0 && (
+                      <ReferenceLine y={0} stroke="#F43F5E" strokeOpacity={0.6} />
+                    )}
                     {forecastStart && (
                       <ReferenceLine
                         x={forecastStart}

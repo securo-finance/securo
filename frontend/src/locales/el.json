@@ -1719,7 +1719,8 @@
       "invalid_date": "Μη έγκυρη μορφή ημερομηνίας",
       "no_amount": "Χωρίς ποσό εισροής ή εκροής",
       "invalid_amount": "Μη έγκυρη μορφή ποσού"
-    }
+    },
+    "selectAll": "Επιλογή όλων"
   },
   "assetImport": {
     "title": "Εισαγωγή επενδυτικών εντολών",
@@ -1995,6 +1996,9 @@
     "inflowOutflow": "Εισροές έναντι Εκροών",
     "startingBalance": "Αρχικό υπόλοιπο",
     "endingBalance": "Προβλεπόμενο υπόλοιπο",
+    "runwayNegativeOn": "Το υπόλοιπο γίνεται αρνητικό στις {{date}}",
+    "runwayAlreadyNegative": "Ήδη αρνητικό",
+    "lowestBalance": "Χαμηλότερο υπόλοιπο",
     "projectedIncome": "Προβλεπόμενα έσοδα",
     "projectedExpenses": "Προβλεπόμενα έξοδα",
     "incomeExpenses": "Έσοδα έναντι Εξόδων",
@@ -2143,6 +2147,8 @@
     "remove": "Αφαίρεση"
   },
   "splitGroups": {
+    "searchPlaceholder": "Αναζήτηση ομάδων...",
+    "clearSearch": "Εκκαθάριση αναζήτησης",
     "title": "Ομάδες",
     "section": "Ρύθμιση",
     "add": "Προσθήκη ομάδας",

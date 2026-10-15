@@ -867,11 +867,29 @@ function UserMenu({
                 )}
               </DropdownMenuItem>
               <DropdownMenuItem
+                onClick={() => i18n.changeLanguage('cs')}
+                className="flex items-center gap-2"
+              >
+                <span className="flex-1">Čeština</span>
+                {currentLang === 'cs' && (
+                  <Check size={13} className="text-primary" />
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuItem
                 onClick={() => i18n.changeLanguage('sk')}
                 className="flex items-center gap-2"
               >
                 <span className="flex-1">Slovenčina</span>
                 {currentLang === 'sk' && (
+                  <Check size={13} className="text-primary" />
+                )}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => i18n.changeLanguage('hu')}
+                className="flex items-center gap-2"
+              >
+                <span className="flex-1">Magyar</span>
+                {currentLang === 'hu' && (
                   <Check size={13} className="text-primary" />
                 )}
               </DropdownMenuItem>

@@ -1,5 +1,6 @@
+import unicodedata
 import uuid
-from typing import Optional
+from typing import Literal, Optional
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -100,6 +101,8 @@ async def list_groups(
     workspace_id: uuid.UUID,
     user_id: uuid.UUID,
     include_archived: bool = False,
+    q: Optional[str] = None,
+    status: Optional[Literal['active', 'archived', 'all']] = None,
 ) -> list[Group]:
     query = (
         select(Group)
@@ -107,10 +110,22 @@ async def list_groups(
         .options(selectinload(Group.members))
         .order_by(Group.created_at.desc())
     )
-    if not include_archived:
+    if status == 'archived':
+        query = query.where(Group.is_archived.is_(True))
+    elif status == 'active' or (status is None and not include_archived):
         query = query.where(Group.is_archived.is_(False))
     result = await session.execute(query)
-    return [_tag_owner(g, user_id) for g in result.scalars().all()]
+    groups = result.scalars().all()
+    if q and q.strip():
+        def normalize(value: str) -> str:
+            return ''.join(
+                char for char in unicodedata.normalize('NFD', value.casefold())
+                if not unicodedata.combining(char)
+            )
+
+        search = normalize(q.strip())
+        groups = [group for group in groups if search in normalize(group.name)]
+    return [_tag_owner(g, user_id) for g in groups]
 
 
 async def get_group(

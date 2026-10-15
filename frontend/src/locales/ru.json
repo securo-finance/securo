@@ -1736,7 +1736,8 @@
       "invalid_date": "Неверный формат даты",
       "no_amount": "Нет суммы прихода или расхода",
       "invalid_amount": "Неверный формат суммы"
-    }
+    },
+    "selectAll": "Выбрать все"
   },
   "assetImport": {
     "title": "Импорт инвестиционных заявок",
@@ -1956,6 +1957,9 @@
     "inflowOutflow": "Поступления vs Списания",
     "startingBalance": "Начальный баланс",
     "endingBalance": "Прогнозируемый баланс",
+    "runwayNegativeOn": "Баланс станет отрицательным {{date}}",
+    "runwayAlreadyNegative": "Уже отрицательный",
+    "lowestBalance": "Минимальный баланс",
     "projectedIncome": "Прогнозируемый доход",
     "projectedExpenses": "Прогнозируемые расходы",
     "incomeExpenses": "Доходы vs Расходы",
@@ -2160,6 +2164,8 @@
     "remove": "Удалить"
   },
   "splitGroups": {
+    "searchPlaceholder": "Поиск групп...",
+    "clearSearch": "Очистить поиск",
     "title": "Группы",
     "section": "Настройка",
     "add": "Добавить группу",

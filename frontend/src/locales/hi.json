@@ -1719,7 +1719,8 @@
       "invalid_date": "अमान्य तिथि प्रारूप",
       "no_amount": "कोई आवक या जावक राशि नहीं",
       "invalid_amount": "अमान्य राशि प्रारूप"
-    }
+    },
+    "selectAll": "सभी चुनें"
   },
   "assetImport": {
     "title": "निवेश ऑर्डर इंपोर्ट करें",
@@ -1939,6 +1940,9 @@
     "inflowOutflow": "आवक बनाम जावक",
     "startingBalance": "आरंभिक शेष राशि",
     "endingBalance": "अनुमानित शेष राशि",
+    "runwayNegativeOn": "{{date}} को शेष राशि ऋणात्मक हो जाती है",
+    "runwayAlreadyNegative": "पहले से ऋणात्मक",
+    "lowestBalance": "न्यूनतम शेष",
     "projectedIncome": "अनुमानित आय",
     "projectedExpenses": "अनुमानित खर्च",
     "incomeExpenses": "आय बनाम खर्च",
@@ -2143,6 +2147,8 @@
     "remove": "हटाएँ"
   },
   "splitGroups": {
+    "searchPlaceholder": "समूह खोजें...",
+    "clearSearch": "खोज साफ़ करें",
     "title": "समूह",
     "section": "सेटअप",
     "add": "समूह जोड़ें",

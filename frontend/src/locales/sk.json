@@ -1835,7 +1835,8 @@
       "invalid_date": "Neplatný formát dátumu",
       "no_amount": "Chýba suma príjmu alebo výdaja",
       "invalid_amount": "Neplatný formát sumy"
-    }
+    },
+    "selectAll": "Vybrať všetko"
   },
   "assetImport": {
     "title": "Import investičných pokynov",
@@ -2055,6 +2056,9 @@
     "inflowOutflow": "Prítok vs odtok",
     "startingBalance": "Počiatočný zostatok",
     "endingBalance": "Predpokladaný zostatok",
+    "runwayNegativeOn": "Zostatok bude záporný {{date}}",
+    "runwayAlreadyNegative": "Už v mínuse",
+    "lowestBalance": "Najnižší zostatok",
     "projectedIncome": "Predpokladaný príjem",
     "projectedExpenses": "Predpokladané výdavky",
     "incomeExpenses": "Príjmy vs výdavky",
@@ -2271,6 +2275,8 @@
     "remove": "Odstrániť"
   },
   "splitGroups": {
+    "searchPlaceholder": "Hľadať skupiny...",
+    "clearSearch": "Vymazať vyhľadávanie",
     "title": "Skupiny",
     "section": "Nastavenie",
     "add": "Pridať skupinu",

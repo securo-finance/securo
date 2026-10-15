@@ -1736,7 +1736,8 @@
       "invalid_date": "Недійсний формат дати",
       "no_amount": "Немає суми надходження або витрати",
       "invalid_amount": "Недійсний формат суми"
-    }
+    },
+    "selectAll": "Вибрати все"
   },
   "assetImport": {
     "title": "Імпорт інвестиційних заявок",
@@ -1956,6 +1957,9 @@
     "inflowOutflow": "Надходження vs Списання",
     "startingBalance": "Початковий баланс",
     "endingBalance": "Прогнозований баланс",
+    "runwayNegativeOn": "Баланс стане від'ємним {{date}}",
+    "runwayAlreadyNegative": "Уже від’ємний",
+    "lowestBalance": "Мінімальний баланс",
     "projectedIncome": "Прогнозований дохід",
     "projectedExpenses": "Прогнозовані витрати",
     "incomeExpenses": "Доходи vs Витрати",
@@ -2160,6 +2164,8 @@
     "remove": "Видалити"
   },
   "splitGroups": {
+    "searchPlaceholder": "Пошук груп...",
+    "clearSearch": "Очистити пошук",
     "title": "Групи",
     "section": "Налаштування",
     "add": "Додати групу",
